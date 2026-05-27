@@ -77,6 +77,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -89,6 +90,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -2033,23 +2035,34 @@ class ValueStore extends AbstractValueFactory {
 		return new LmdbLiteral(revision, value, language, baseDirection);
 	}
 
-	/*----------------------------------------------------------------------*
-	 * Methods for converting model objects to LmdbStore-specific objects *
-	 *----------------------------------------------------------------------*/
-
 	@Override
 	public LmdbLiteral createLiteral(String value, IRI datatype) {
 		return new LmdbLiteral(revision, value, datatype);
 	}
 
+	@Override
+	public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+		return new LmdbTripleTerm(revision, subject, predicate, object);
+	}
+
 	public LmdbValue getLmdbValue(Value value) {
 		if (value instanceof Resource) {
 			return getLmdbResource((Resource) value);
+		} else if (value instanceof TripleTerm) {
+			return getLmdbTripleTerm((TripleTerm) value);
 		} else if (value instanceof Literal) {
 			return getLmdbLiteral((Literal) value);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
+	}
+
+	public LmdbTripleTerm getLmdbTripleTerm(TripleTerm tripleTerm) {
+		if (isOwnValue(tripleTerm)) {
+			return (LmdbTripleTerm) tripleTerm;
+		}
+
+		return new LmdbTripleTerm(revision, tripleTerm.getSubject(), tripleTerm.getPredicate(), tripleTerm.getObject());
 	}
 
 	public LmdbResource getLmdbResource(Resource resource) {

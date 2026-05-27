@@ -38,7 +38,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -445,6 +447,24 @@ public class ValueStoreTest {
 		assertEquals("GC should make the old ID reusable", firstId, secondId);
 		assertNotEquals("test values must not share the same hash", firstHash, secondHash);
 		assertEquals("stale values must keep their original hash after a revision change", firstHash, first.hashCode());
+	}
+
+	@Test
+	public void testCreateTripleTermReturnsLmdbTripleTerm() {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", tripleTerm.getClass().getName());
+	}
+
+	@Test
+	public void testGetLmdbValueWrapsTripleTerm() {
+		TripleTerm tripleTerm = SimpleValueFactory.getInstance()
+				.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+
+		LmdbValue lmdbValue = valueStore.getLmdbValue(tripleTerm);
+
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", lmdbValue.getClass().getName());
+		assertEquals(tripleTerm, lmdbValue);
 	}
 
 	@Test

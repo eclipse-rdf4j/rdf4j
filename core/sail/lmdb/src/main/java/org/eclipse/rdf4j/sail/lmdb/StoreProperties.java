@@ -34,11 +34,18 @@ class StoreProperties {
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
 
+	/**
+	 * The key used to store the triple term indexes specification that specifies which triple indexes exist.
+	 */
+	static final String TRIPLE_TERM_INDEXES_KEY = "triple-term-indexes";
+
 	protected final File propertiesFile;
 
 	protected String version;
 
 	protected String tripleIndexes;
+
+	protected String tripleTermIndexes;
 
 	protected boolean loaded;
 
@@ -67,6 +74,7 @@ class StoreProperties {
 			}
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
+			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -86,6 +94,9 @@ class StoreProperties {
 			}
 			if (tripleIndexes != null) {
 				properties.setProperty(INDEXES_KEY, tripleIndexes);
+			}
+			if (tripleTermIndexes != null) {
+				properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -120,6 +131,16 @@ class StoreProperties {
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
 		this.tripleIndexes = tripleIndexes;
+		this.dirty = true;
+		return this;
+	}
+
+	String getTripleTermIndexes() {
+		return tripleTermIndexes;
+	}
+
+	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
+		this.tripleTermIndexes = tripleTermIndexes;
 		this.dirty = true;
 		return this;
 	}
