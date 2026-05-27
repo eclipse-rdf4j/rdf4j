@@ -25,12 +25,14 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
@@ -53,6 +55,16 @@ class TxnManager {
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
 	private final long env;
 	private volatile int poolIndex = -1;
+	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private final ThreadLocal<Txn> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
+		try {
+			Txn txn = createReadTxn();
+			cleaner.register(txn, txn::close);
+			return txn;
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	});
 
 	TxnManager(long env, Mode mode) {
 		this.env = env;
@@ -154,6 +166,35 @@ class TxnManager {
 	}
 
 	/**
+	 * Gets or create a new thread-local read-only transaction reference.
+	 *
+	 * @return the transaction reference
+	 * @throws IOException if the transaction cannot be started for some reason
+	 */
+	void closeReadTxn() throws IOException {
+		try {
+			threadLocalReadTxn.get().close();
+			threadLocalReadTxn.remove();
+		} catch (UncheckedIOException e) {
+			throw e.getCause();
+		}
+	}
+
+	/**
+	 * Gets or create a new thread-local read-only transaction reference.
+	 *
+	 * @return the transaction reference
+	 * @throws IOException if the transaction cannot be started for some reason
+	 */
+	Txn getReadTxn() throws IOException {
+		try {
+			return threadLocalReadTxn.get();
+		} catch (UncheckedIOException e) {
+			throw e.getCause();
+		}
+	}
+
+	/**
 	 * Creates a new read-only transaction that is treated as untracked for reset semantics.
 	 *
 	 * <p>
@@ -233,6 +274,12 @@ class TxnManager {
 	void reset() throws IOException {
 		for (Txn txn : resettableActiveTransactions()) {
 			txn.reset();
+		}
+	}
+
+	void close() {
+		for (Txn txn : activeTransactions()) {
+			txn.close();
 		}
 	}
 
