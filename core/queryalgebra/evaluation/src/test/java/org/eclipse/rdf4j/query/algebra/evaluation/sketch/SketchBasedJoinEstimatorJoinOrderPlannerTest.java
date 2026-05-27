@@ -194,6 +194,61 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void statementPlanningRequestsAccessPathTransitions() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI predicate = VF.createIRI("urn:stateful-access:path");
+		Resource subject = VF.createIRI("urn:stateful-access:subject");
+		store.add(VF.createStatement(subject, predicate, VF.createIRI("urn:stateful-access:object")));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern lookup = pattern("s", predicate, "o");
+		List<String> requestedAccessModes = new ArrayList<>();
+		Set<Integer> requestedLookupMasks = new LinkedHashSet<>();
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				if (!context.hasRequestedAccessPath()) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+				}
+				requestedAccessModes.add(context.getRequestedAccessMode());
+				requestedLookupMasks.add(context.getRequestedLookupComponentMask());
+				double workRows = context.isRequestedDirectLookup() ? 1.0d
+						: "prefixScan".equals(context.getRequestedAccessMode()) ? 5.0d : 100.0d;
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d,
+						Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, context.getRequestedAccessMode()),
+						Map.of(TelemetryMetricNames.PLANNED_ACCESS_ROWS, workRows), true,
+						context.isRequestedDirectLookup(), context.getRequestedLookupComponentMask(),
+						context.getRequestedMissingLookupComponentMask(), workRows));
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(lookup), Set.of("s"), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertTrue(requestedAccessModes.contains("fullScan"), requestedAccessModes::toString);
+		assertTrue(requestedAccessModes.contains("prefixScan"), requestedAccessModes::toString);
+		assertTrue(requestedAccessModes.contains("directLookup"), requestedAccessModes::toString);
+		assertTrue(requestedLookupMasks.contains(componentMask(SketchBasedJoinEstimator.Component.S)),
+				requestedLookupMasks::toString);
+		assertTrue(requestedLookupMasks
+				.contains(componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P)),
+				requestedLookupMasks::toString);
+		assertEquals(1.0d, plan.getEstimatedFinalRows(), 1.0e-9d);
+	}
+
+	@Test
 	void dynamicProgrammingExpansionAvoidsExactContextualFactorCosts() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI firstPredicate = VF.createIRI("urn:tier:first");
@@ -1723,9 +1778,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.orElseThrow();
 
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		List<Double> stepWorkRows = plan.getSteps()
+				.stream()
+				.map(JoinOrderPlanner.PlanStep::getStepWorkRows)
+				.toList();
 		assertTrue(orderedArgs.indexOf(secondPattern) < orderedArgs.indexOf(typePattern),
 				"Costed relationship bridge should not be displaced by an rdf:type guard. orderedArgs=" + orderedArgs
-						+ ", steps=" + plan.getSteps() + ", metrics=" + plan.getSummaryDoubleMetrics());
+						+ ", stepWorkRows=" + stepWorkRows + ", metrics=" + plan.getSummaryDoubleMetrics()
+						+ ", strings=" + plan.getSummaryStringMetrics());
 		assertPlanWorkMatchesStepSum(plan);
 	}
 

@@ -1473,14 +1473,20 @@ final class SketchJoinOrderPlanner {
 			return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows);
 		}
 		return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows, factorCost.getStringMetrics(),
-				factorCost.getDoubleMetrics(), factorCost.hasPhysicalAccessPath(), factorCost.isDirectLookup(),
-				factorCost.getLookupComponentMask(), factorCost.getMissingLookupComponentMask(),
-				factorCost.getAccessRowsBeforeFilter(), factorCost.isRepeatedInvocationsCosted(),
+				factorCost.getDoubleMetrics(), physicalEstimate.physicalComparable(), physicalEstimate.directLookup(),
+				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
+				physicalEstimate.accessRowsBeforeFilter(), factorCost.isRepeatedInvocationsCosted(),
 				factorCost.hasExactOutputRows());
 	}
 
 	private static String transitionAccessMode(FactorPhysicalEstimate physicalEstimate) {
-		if (physicalEstimate == null || physicalEstimate.factorCostEstimate() == null) {
+		if (physicalEstimate == null) {
+			return "logicalFactor";
+		}
+		if (physicalEstimate.accessMode() != null) {
+			return physicalEstimate.accessMode();
+		}
+		if (physicalEstimate.factorCostEstimate() == null) {
 			return "logicalFactor";
 		}
 		return physicalEstimate.factorCostEstimate()
@@ -3812,12 +3818,19 @@ final class SketchJoinOrderPlanner {
 		boolean directLookup = false;
 		double accessRowsBeforeFilter = Double.NaN;
 		boolean exactOutputRows = false;
+		String accessMode = null;
 		SketchBasedJoinEstimator.AccessShape accessShape = null;
 		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(factorIndex, mask, currentlyBoundVarMask,
 				prefixEstimate);
-		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = isPlainBindingSetAssignment(factorIndex) ? null
-				: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
+		AccessPathFactorEstimate accessPathEstimate = isPlainBindingSetAssignment(factorIndex) ? null
+				: requestedAccessPathFactorEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
 						!endpointDomainPreparation, estimationTier, selectedPrefix);
+		AccessPathCandidate selectedAccessPath = accessPathEstimate == null ? null : accessPathEstimate.candidate();
+		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = accessPathEstimate == null
+				? isPlainBindingSetAssignment(factorIndex) ? null
+						: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
+								!endpointDomainPreparation, estimationTier, selectedPrefix)
+				: accessPathEstimate.estimate();
 		factorCostEstimate = refineConnectedPageWalkFactorCostEstimate(factorCostEstimate, factorIndex,
 				currentlyBoundVarMask);
 		if (factorCostEstimate != null) {
@@ -3828,22 +3841,32 @@ final class SketchJoinOrderPlanner {
 				accessWorkRows = factorCostEstimate.getWorkRows();
 			}
 			exactOutputRows = factorCostEstimate.hasExactOutputRows();
-			physicalComparable = factorCostEstimate.hasPhysicalAccessPath()
+			physicalComparable = selectedAccessPath != null || factorCostEstimate.hasPhysicalAccessPath()
 					|| (!factorCostEstimate.getStringMetrics().isEmpty()
 							&& factorCostEstimate.getStringMetrics()
 									.containsKey(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 			if (physicalComparable) {
 				accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
-				if (factorCostEstimate.hasPhysicalAccessPath()) {
+				if (selectedAccessPath != null) {
+					accessMode = selectedAccessPath.accessMode();
+					directLookup = selectedAccessPath.directLookup();
+					missingLookupComponentMask = selectedAccessPath.missingLookupComponentMask();
+					missingLookupComponents = Integer.bitCount(missingLookupComponentMask);
+					lookupComponentMask = selectedAccessPath.lookupComponentMask();
+					lookupComponents = Integer.bitCount(lookupComponentMask);
+					accessRowsBeforeFilter = accessRowsBeforeFilter(factorCostEstimate, accessShape,
+							lookupComponentMask);
+				} else if (factorCostEstimate.hasPhysicalAccessPath()) {
 					directLookup = factorCostEstimate.isDirectLookup();
 					missingLookupComponentMask = factorCostEstimate.getMissingLookupComponentMask();
 					missingLookupComponents = Integer.bitCount(missingLookupComponentMask);
 					lookupComponentMask = factorCostEstimate.getLookupComponentMask();
 					lookupComponents = Integer.bitCount(lookupComponentMask);
 					accessRowsBeforeFilter = factorCostEstimate.getAccessRowsBeforeFilter();
+					accessMode = accessModeMetric(factorCostEstimate);
 				} else {
-					directLookup = "directLookup".equals(
-							factorCostEstimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+					accessMode = accessModeMetric(factorCostEstimate);
+					directLookup = "directLookup".equals(accessMode);
 					missingLookupComponents = componentCount(
 							factorCostEstimate.getStringMetrics()
 									.get(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS));
@@ -3901,7 +3924,101 @@ final class SketchJoinOrderPlanner {
 		}
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
 				missingLookupComponentMask, lookupComponents, lookupComponentMask, directLookup,
-				accessRowsBeforeFilter, exactOutputRows, factorCostEstimate);
+				accessRowsBeforeFilter, exactOutputRows, accessMode, factorCostEstimate);
+	}
+
+	private AccessPathFactorEstimate requestedAccessPathFactorEstimate(int factorIndex, long mask,
+			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier,
+			StatePlan selectedPrefix) {
+		if (factorCostModel == null || statementPatternFactor(factorIndex) == null) {
+			return null;
+		}
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+		int lookupComponentMask = accessShape == null ? 0 : accessShape.lookupBoundComponentMask();
+		List<AccessPathCandidate> candidates = AccessPathCandidate.statementAlternatives(
+				factors.get(factorIndex).tupleExpr(), factors.get(factorIndex).bindingVars(), lookupComponentMask);
+		AccessPathFactorEstimate best = null;
+		for (AccessPathCandidate candidate : candidates) {
+			JoinFactorCostModel.FactorCostEstimate estimate = estimateAccessPathFactorCostUncached(factorIndex, mask,
+					currentlyBoundVarMask, prefixEstimate, accessShape, candidate, nestedIteratorInvocation,
+					estimationTier, selectedPrefix);
+			if (estimate == null) {
+				continue;
+			}
+			AccessPathFactorEstimate current = new AccessPathFactorEstimate(candidate, estimate);
+			if (best == null || isBetterAccessPathEstimate(current, best)) {
+				best = current;
+			}
+		}
+		return best;
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate estimateAccessPathFactorCostUncached(int factorIndex, long mask,
+			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			SketchBasedJoinEstimator.AccessShape accessShape, AccessPathCandidate candidate,
+			boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier,
+			StatePlan selectedPrefix) {
+		double outerPrefixRows = effectiveInvocationRows(mask, prefixEstimate);
+		double distinctLookupBindings = prefixEstimate == null ? Double.NaN
+				: distinctLookupBindings(factorIndex, mask, prefixEstimate, accessShape,
+						candidate.lookupComponentMask(), selectedPrefix);
+		Map<String, Set<Value>> finiteBindingValues = finiteBindingLookupValues(factorIndex, mask,
+				currentlyBoundVarMask);
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(variableNames,
+				currentlyBoundVarMask,
+				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues,
+				selectedPrefixFactorsProvider, mask, estimationTier)
+				.withRequestedAccessPath(candidate.accessMode(), candidate.lookupComponentMask(),
+						candidate.missingLookupComponentMask(), candidate.directLookup());
+		return factorCostModel.estimateFactorCost(factors.get(factorIndex).tupleExpr(), context)
+				.orElse(null);
+	}
+
+	private static boolean isBetterAccessPathEstimate(AccessPathFactorEstimate candidate,
+			AccessPathFactorEstimate incumbent) {
+		int comparison = Double.compare(accessPathWorkRows(candidate), accessPathWorkRows(incumbent));
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Double.compare(accessPathRows(candidate), accessPathRows(incumbent));
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Integer.compare(Integer.bitCount(candidate.candidate().lookupComponentMask()),
+				Integer.bitCount(incumbent.candidate().lookupComponentMask()));
+		if (comparison != 0) {
+			return comparison > 0;
+		}
+		return candidate.candidate().directLookup() && !incumbent.candidate().directLookup();
+	}
+
+	private static double accessPathWorkRows(AccessPathFactorEstimate estimate) {
+		double workRows = estimate.estimate().getWorkRows();
+		return isFiniteNonNegative(workRows) ? workRows : Double.POSITIVE_INFINITY;
+	}
+
+	private static double accessPathRows(AccessPathFactorEstimate estimate) {
+		double rows = estimate.estimate().getOutputRows();
+		return isFiniteNonNegative(rows) ? rows : Double.POSITIVE_INFINITY;
+	}
+
+	private static String accessModeMetric(JoinFactorCostModel.FactorCostEstimate estimate) {
+		return estimate.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+	}
+
+	private static double accessRowsBeforeFilter(JoinFactorCostModel.FactorCostEstimate estimate,
+			SketchBasedJoinEstimator.AccessShape accessShape, int lookupComponentMask) {
+		double rows = estimate.getAccessRowsBeforeFilter();
+		if (!isFiniteNonNegative(rows)) {
+			rows = estimate.getDoubleMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
+		}
+		if (!isFiniteNonNegative(rows) && accessShape != null) {
+			rows = accessShape.estimateAccessRows(lookupComponentMask);
+		}
+		return rows;
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate scaleCostedLookupDomainByPrefixMultiplicity(int factorIndex,
@@ -6629,7 +6746,11 @@ final class SketchJoinOrderPlanner {
 	private record FactorPhysicalEstimate(double workRows, double factorOutputRows, boolean physicalComparable,
 			int missingLookupComponents, int missingLookupComponentMask, int lookupComponents,
 			int lookupComponentMask, boolean directLookup, double accessRowsBeforeFilter, boolean exactOutputRows,
-			JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
+			String accessMode, JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
+	}
+
+	private record AccessPathFactorEstimate(AccessPathCandidate candidate,
+			JoinFactorCostModel.FactorCostEstimate estimate) {
 	}
 
 	private record ForwardChainState(long lastIntroducedVars, boolean previousStepForwardExpansion) {

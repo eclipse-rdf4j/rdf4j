@@ -31,6 +31,7 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 	private final double maxIntermediateRows;
 	private final double uncertaintyRows;
 	private final double cartesianWorkRows;
+	private final double cumulativeWorkRows;
 	private final double robustWorkRows;
 	private final double rowQErrorMax;
 	private final double workQErrorMax;
@@ -38,13 +39,14 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 	private final double evidenceCount;
 
 	private JoinCostVector(double totalWorkRows, double finalRows, double maxIntermediateRows,
-			double uncertaintyRows, double cartesianWorkRows, double robustWorkRows, double rowQErrorMax,
-			double workQErrorMax, double confidence, double evidenceCount) {
+			double uncertaintyRows, double cartesianWorkRows, double cumulativeWorkRows, double robustWorkRows,
+			double rowQErrorMax, double workQErrorMax, double confidence, double evidenceCount) {
 		this.totalWorkRows = finiteNonNegative(totalWorkRows);
 		this.finalRows = finiteNonNegative(finalRows);
 		this.maxIntermediateRows = finiteNonNegative(maxIntermediateRows);
 		this.uncertaintyRows = finiteNonNegative(uncertaintyRows);
 		this.cartesianWorkRows = finiteNonNegative(cartesianWorkRows);
+		this.cumulativeWorkRows = finiteNonNegative(cumulativeWorkRows);
 		this.robustWorkRows = finiteNonNegative(robustWorkRows);
 		this.rowQErrorMax = finiteQError(rowQErrorMax);
 		this.workQErrorMax = finiteQError(workQErrorMax);
@@ -56,7 +58,7 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 			double uncertaintyRows, double cartesianWorkRows) {
 		double robustWorkRows = robustStepWorkRows(totalWorkRows, uncertaintyRows, 4.0d, 4.0d, 0.0d, 0.0d);
 		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows,
-				robustWorkRows, 4.0d, 4.0d, 0.0d, 0.0d);
+				totalWorkRows, robustWorkRows, 4.0d, 4.0d, 0.0d, 0.0d);
 	}
 
 	static JoinCostVector ofStep(double totalWorkRows, double finalRows, double maxIntermediateRows,
@@ -70,12 +72,13 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		double robustStepWorkRows = robustStepWorkRows(stepWorkRows, stepUncertaintyRows, rowQErrorMax,
 				workQErrorMax, confidence, evidenceCount);
 		double robustWorkRows = prefix == null ? robustStepWorkRows : prefix.robustWorkRows + robustStepWorkRows;
+		double cumulativeWorkRows = prefix == null ? totalWorkRows : prefix.cumulativeWorkRows + totalWorkRows;
 		double combinedRowQErrorMax = prefix == null ? rowQErrorMax : Math.max(prefix.rowQErrorMax, rowQErrorMax);
 		double combinedWorkQErrorMax = prefix == null ? workQErrorMax : Math.max(prefix.workQErrorMax, workQErrorMax);
 		double combinedConfidence = prefix == null ? confidence : Math.min(prefix.confidence, confidence);
 		double combinedEvidenceCount = (prefix == null ? 0.0d : prefix.evidenceCount) + evidenceCount;
 		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows,
-				robustWorkRows, combinedRowQErrorMax, combinedWorkQErrorMax, combinedConfidence,
+				cumulativeWorkRows, robustWorkRows, combinedRowQErrorMax, combinedWorkQErrorMax, combinedConfidence,
 				combinedEvidenceCount);
 	}
 
@@ -181,6 +184,10 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 			if (comparison != 0) {
 				return comparison;
 			}
+			comparison = Double.compare(cumulativeWorkRows, other.cumulativeWorkRows);
+			if (comparison != 0) {
+				return comparison;
+			}
 			comparison = Double.compare(uncertaintyRows, other.uncertaintyRows);
 			if (comparison != 0) {
 				return comparison;
@@ -203,6 +210,10 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		if (comparison != 0) {
 			return comparison;
 		}
+		comparison = Double.compare(cumulativeWorkRows, other.cumulativeWorkRows);
+		if (comparison != 0) {
+			return comparison;
+		}
 		comparison = Double.compare(uncertaintyRows, other.uncertaintyRows);
 		if (comparison != 0) {
 			return comparison;
@@ -221,12 +232,16 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 				|| leftSurface < 0.0d || rightSurface < 0.0d) {
 			return 0;
 		}
-		if (leftSurface <= rightSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
+		if (leftSurface < rightSurface
+				&& rightSurface > 0.0d
+				&& leftSurface <= rightSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
 				&& robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
 						other.robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
 			return -1;
 		}
-		if (rightSurface <= leftSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
+		if (rightSurface < leftSurface
+				&& leftSurface > 0.0d
+				&& rightSurface <= leftSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
 				&& other.robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
 						robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
 			return 1;
@@ -271,6 +286,7 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 				+ ", robustWorkRows=" + robustWorkRows
 				+ ", finalRows=" + finalRows
 				+ ", maxIntermediateRows=" + maxIntermediateRows
+				+ ", cumulativeWorkRows=" + cumulativeWorkRows
 				+ ", uncertaintyRows=" + uncertaintyRows
 				+ ", cartesianWorkRows=" + cartesianWorkRows
 				+ ", rowQErrorMax=" + rowQErrorMax
