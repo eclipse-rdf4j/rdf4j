@@ -263,3 +263,37 @@ path that produced `BinaryLinkServer/SocketException`, the script now fails imme
 Remaining risk: the full LMDB module verify is not fully green because of the two residual failures
 listed in Surprises & Discoveries. They are documented and were not introduced by the estimate model
 changes.
+
+### 2026-05-27 AAS Path / Type Cartesian Follow-Up
+
+User-provided AAS path plans showed Cascades favoring a disconnected `rdf:type` branch because type
+patterns and provider/fallback estimates were sometimes published as row-only scalars with no bag
+variable coverage. After a Cartesian product, a later connected join on `?b`/path variables then fell
+back to `tupleDistinct = branch.rows`, dividing by the whole Cartesian cardinality and collapsing the
+estimate.
+
+Red evidence:
+
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/queryalgebra/evaluation -Dtest=CascadesCostModelTest#providerRowsStillCarryBindingStatsThroughCartesianBranches -DskipITs test`
+- Failure: `expected: <100.0> but was: <5.0>`.
+
+Fix:
+
+- `CascadesCostModel` now normalizes provider/fallback estimates into `BagEstimate` values carrying
+  conservative binding stats for every output binding.
+- Provider filter estimates preserve the input bag through pass-ratio scaling.
+- Pass-through unary wrappers preserve bag variables instead of converting through a scalar vector.
+- Fallback estimates now use `bagWithBindings(...)`.
+
+Validation:
+
+- `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/queryalgebra/evaluation -Dtest=CascadesCostModelTest,CascadesMemoModelTest -DskipITs test`
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbEstimateAuditHarnessTest#noKeyAggregateUsesAggregateOutputRows,LmdbEstimateAuditHarnessTest#auditsGeneratedCorpusTemplatesAcrossNestedPieces -DskipITs test`
+- `git diff --check`
+
+Result:
+
+- Focused core estimator tests pass: `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`.
+- LMDB audit tests pass: `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0`.
+- The generated corpus audit now catches this class of under-estimation before long benchmark runs.
