@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimat
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Costing SPI for Cascades. It intentionally sits above RDF4J algebra so LMDB can provide physical costs without
@@ -219,15 +220,31 @@ public interface CascadesCostModel {
 					: Optional.empty();
 			if (estimate.isPresent()) {
 				JoinFactorCostModel.FactorCostEstimate factor = estimate.get();
+				if (expression.physical()) {
+					stampFactorMetrics(tupleExpr, factor);
+				}
 				CostVector local = factorCostVector(factor);
 				return applyPolicy(composeOperatorCost(inputCost, local), goal);
 			}
-			EstimateVector vector = estimate(tupleExpr, boundVars).vector();
+			StatisticsEstimate statisticsEstimate = estimateForLocalCost(expression, tupleExpr, boundVars,
+					inputWinners);
+			if (expression.physical()) {
+				stampStatisticsEstimate(tupleExpr, statisticsEstimate);
+			}
+			EstimateVector vector = statisticsEstimate.vector();
 			if (expression.kind() == RuleKind.ENFORCER) {
 				vector = vector.withWorkRows(vector.workRows() + Math.max(1.0d,
 						vector.rows() * Math.log(Math.max(2.0d, vector.rows()))), "enforcer-work");
 			}
 			return applyPolicy(composeOperatorCost(inputCost, vector.toCostVector()), goal);
+		}
+
+		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
+				Set<String> boundVars, List<Winner> inputWinners) {
+			if (expression.physical() && !expression.inputGroupIds().isEmpty() && tupleExpr instanceof Join join) {
+				return estimateConcretePhysicalJoin(join, boundVars, inputWinners);
+			}
+			return estimate(tupleExpr, boundVars);
 		}
 
 		private CostVector composeOperatorCost(CostVector inputCost, CostVector operatorCost) {
@@ -349,6 +366,28 @@ public interface CascadesCostModel {
 			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(boundVars,
 					Double.NaN, Double.NaN, false, true, Map.of(), List.of());
 			return factorCostModel.estimateFactorCost(tupleExpr, context);
+		}
+
+		private void stampFactorMetrics(TupleExpr tupleExpr, JoinFactorCostModel.FactorCostEstimate estimate) {
+			if (tupleExpr == null || estimate == null) {
+				return;
+			}
+			for (Map.Entry<String, String> entry : estimate.getStringMetrics().entrySet()) {
+				tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : estimate.getDoubleMetrics().entrySet()) {
+				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
+
+		private void stampStatisticsEstimate(TupleExpr tupleExpr, StatisticsEstimate estimate) {
+			if (tupleExpr == null || estimate == null) {
+				return;
+			}
+			tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.method());
+			for (Map.Entry<String, Double> entry : estimate.metrics().entrySet()) {
+				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
 		}
 
 		private StatisticsEstimate estimate(TupleExpr tupleExpr, Set<String> boundVars) {
@@ -479,6 +518,33 @@ public interface CascadesCostModel {
 				return formula;
 			}
 			return provider.get().withBag(adjustJoinBagRows(formula.bag(), provider.get()));
+		}
+
+		private StatisticsEstimate estimateConcretePhysicalJoin(Join join, Set<String> boundVars,
+				List<Winner> inputWinners) {
+			StatisticsEstimate left = inputWinnerEstimate(inputWinners, 0, join.getLeftArg(), boundVars);
+			StatisticsEstimate right = inputWinnerEstimate(inputWinners, 1, join.getRightArg(), boundVars);
+			Set<String> sharedVars = sharedNames(join.getLeftArg(), join.getRightArg());
+			return StatisticsEstimate.fromBag(EstimateMath.innerJoin(left.bag(), right.bag(), sharedVars),
+					"physical-join");
+		}
+
+		private StatisticsEstimate inputWinnerEstimate(List<Winner> inputWinners, int index, TupleExpr fallback,
+				Set<String> boundVars) {
+			if (inputWinners == null || index >= inputWinners.size()) {
+				return estimate(fallback, boundVars);
+			}
+			Winner winner = inputWinners.get(index);
+			if (winner == null) {
+				return estimate(fallback, boundVars);
+			}
+			TupleExpr plan = winner.plan() == null ? fallback : winner.plan();
+			String source = winner.provenance() == null || winner.provenance().estimate() == null
+					? "physical-input"
+					: winner.provenance().estimate().source();
+			BagEstimate bag = bagWithBindings(plan, winner.cost().rows(), winner.cost().rows(),
+					source + "-physical-input");
+			return StatisticsEstimate.fromBag(bag, source + "-physical-input");
 		}
 
 		private boolean weakZeroContradictsPositiveJoin(StatisticsEstimate provider, StatisticsEstimate formula) {

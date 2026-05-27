@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -251,6 +252,105 @@ class LmdbEstimateAuditHarnessTest {
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void relationshipPowerPathUsesPropertyPathEstimate(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery relationshipPowerQuery = LmdbEstimateAuditQueryCorpus
+						.generatedQueries()
+						.stream()
+						.filter(query -> query.id().equals("audit-q17"))
+						.findFirst()
+						.orElseThrow();
+
+				List<LmdbEstimateAuditHarness.AuditRow> pathRows = LmdbEstimateAuditHarness
+						.auditQuery(connection, relationshipPowerQuery.id(), relationshipPowerQuery.sparql())
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.ARBITRARY_LENGTH_PATH)
+						.toList();
+
+				assertEquals(1, pathRows.size(), pathRows::toString);
+				LmdbEstimateAuditHarness.AuditRow pathRow = pathRows.get(0);
+				assertTrue(pathRow.plannedSource() != null && pathRow.plannedSource().contains("path"),
+						() -> "AAS repeated value path should preserve property-path estimate source: " + pathRow);
+				assertTrue(pathRow.qError() <= 4.0d,
+						() -> "AAS repeated value path estimate too imprecise: " + pathRow);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void relationshipPowerPathDoesNotUseGenericJoinImplementation(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadRelationshipPowerStressData(connection, 600);
+
+				String plan = connection.prepareTupleQuery("""
+						PREFIX aas: <https://admin-shell.io/aas/3/>
+						PREFIX aas-ext: <https://admin-shell.io/aas/3/extended/>
+						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+						SELECT ?lineAAS (COUNT(DISTINCT ?compAAS) AS ?numDrives) (AVG(xsd:double(?val)) AS ?avgPower)
+						WHERE {
+						  ?lineAAS a aas:AssetAdministrationShell ;
+						           aas:submodel / aas:submodelElement ?rel .
+						  ?rel a aas:RelationshipElement ;
+						       aas:second / aas-ext:resolvesTo ?compAAS .
+						  ?compAAS aas:submodel / aas:submodelElement / (aas:value)* ?prop .
+						  ?prop aas:idShort "ratedPower" ;
+						        aas:value ?val .
+						}
+						GROUP BY ?lineAAS
+						""")
+						.explain(Explanation.Level.Optimized)
+						.toString();
+				List<String> genericJoinHeaders = plan.lines()
+						.filter(line -> line.contains("Join (")
+								&& line.contains("optimizer.cascadesRule=generic-physical-implementation"))
+						.toList();
+
+				assertTrue(genericJoinHeaders.isEmpty(),
+						() -> "AAS path query should not execute inner joins through generic Cartesian-prone "
+								+ "RDF4J iterator costing: " + genericJoinHeaders + "\n" + plan);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private static void loadRelationshipPowerStressData(SailRepositoryConnection connection, int lineCount) {
+		for (int lineIndex = 0; lineIndex < lineCount; lineIndex++) {
+			IRI line = VF.createIRI("urn:audit:stress:line:", Integer.toString(lineIndex));
+			IRI lineSubmodel = VF.createIRI("urn:audit:stress:line-submodel:", Integer.toString(lineIndex));
+			IRI relationship = VF.createIRI("urn:audit:stress:relationship:", Integer.toString(lineIndex));
+			IRI second = VF.createIRI("urn:audit:stress:second:", Integer.toString(lineIndex));
+			IRI component = VF.createIRI("urn:audit:stress:component:", Integer.toString(lineIndex));
+			IRI componentSubmodel = VF.createIRI("urn:audit:stress:component-submodel:", Integer.toString(lineIndex));
+			IRI property = VF.createIRI("urn:audit:stress:property:", Integer.toString(lineIndex));
+
+			connection.add(line, RDF.TYPE, AAS_ASSET_ADMINISTRATION_SHELL);
+			connection.add(line, AAS_SUBMODEL, lineSubmodel);
+			connection.add(lineSubmodel, AAS_SUBMODEL_ELEMENT, relationship);
+			connection.add(relationship, RDF.TYPE, AAS_RELATIONSHIP_ELEMENT);
+			connection.add(relationship, AAS_SECOND, second);
+			connection.add(second, AAS_EXT_RESOLVES_TO, component);
+			connection.add(component, RDF.TYPE, AAS_ASSET_ADMINISTRATION_SHELL);
+			connection.add(component, AAS_SUBMODEL, componentSubmodel);
+			connection.add(componentSubmodel, AAS_SUBMODEL_ELEMENT, property);
+			connection.add(property, AAS_ID_SHORT, VF.createLiteral("ratedPower"));
+			connection.add(property, AAS_VALUE, VF.createLiteral(Integer.toString(10 + lineIndex % 50)));
 		}
 	}
 

@@ -138,13 +138,13 @@ final class LmdbEstimateAuditHarness {
 
 	private static AuditRow auditTupleExpr(SailRepositoryConnection connection, String queryId, String pieceId,
 			PieceKind kind, TupleExpr tupleExpr) {
-		PlanEstimate planned = plannedRows(connection, tupleExpr);
+		PlanEstimate planned = plannedRows(connection, kind, tupleExpr);
 		long actualRows = actualRows(connection, tupleExpr);
 		return new AuditRow(queryId, pieceId, kind, planned.rows(), actualRows, qError(planned.rows(), actualRows),
 				planned.source(), planned.usage());
 	}
 
-	private static PlanEstimate plannedRows(SailRepositoryConnection connection, TupleExpr tupleExpr) {
+	private static PlanEstimate plannedRows(SailRepositoryConnection connection, PieceKind kind, TupleExpr tupleExpr) {
 		Explanation explanation = connection.getSailConnection()
 				.explain(Explanation.Level.Optimized, root(tupleExpr.clone()), null, EmptyBindingSet.getInstance(),
 						false, 60);
@@ -155,6 +155,14 @@ final class LmdbEstimateAuditHarness {
 		double rootRows = estimateRows(explained);
 		String source = explained.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String usage = explained.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		if (kind != PieceKind.FULL_QUERY && !isSpecificSource(source)) {
+			ConcreteSourceVisitor sourceVisitor = new ConcreteSourceVisitor();
+			explained.visit(sourceVisitor);
+			if (sourceVisitor.hasSource()) {
+				source = sourceVisitor.source;
+				usage = sourceVisitor.usage;
+			}
+		}
 		if (Double.isFinite(rootRows) && rootRows >= 0.0d) {
 			return new PlanEstimate(rootRows, source, usage);
 		}
@@ -201,6 +209,15 @@ final class LmdbEstimateAuditHarness {
 		return Double.NaN;
 	}
 
+	private static boolean isSpecificSource(String source) {
+		return source != null
+				&& !source.isBlank()
+				&& !"query-root".equals(source)
+				&& !"cascades".equals(source)
+				&& !"cascades-fallback".equals(source)
+				&& !"lmdb-cascades-fallback".equals(source);
+	}
+
 	private static double qError(double plannedRows, long actualRows) {
 		double planned = Double.isFinite(plannedRows) && plannedRows >= 0.0d ? plannedRows : 0.0d;
 		double actual = Math.max(0L, actualRows);
@@ -224,6 +241,30 @@ final class LmdbEstimateAuditHarness {
 			if (!Double.isFinite(rows)) {
 				super.meetNode(node);
 			}
+		}
+	}
+
+	private static final class ConcreteSourceVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+		private String source;
+		private String usage;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (source == null && node instanceof TupleExpr && !(node instanceof QueryRoot)) {
+				String candidate = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+				if (isSpecificSource(candidate)) {
+					source = candidate;
+					usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+					return;
+				}
+			}
+			if (source == null) {
+				super.meetNode(node);
+			}
+		}
+
+		private boolean hasSource() {
+			return source != null;
 		}
 	}
 

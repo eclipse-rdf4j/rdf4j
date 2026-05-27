@@ -221,7 +221,7 @@ class CascadesCostModelTest {
 		StatementPattern right = pattern("maybe", "right", "value");
 		Join join = new Join(left, right);
 		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "", join, PhysicalProperties.ANY,
-				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
 
 		model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left), winner(3, right)));
 
@@ -230,6 +230,63 @@ class CascadesCostModelTest {
 				.noneMatch(boundVars -> boundVars.contains("maybe") || boundVars.contains("value")),
 				"JOIN local cost must not treat input output variables as external bindings: "
 						+ provider.rightPatternBoundVars);
+	}
+
+	@Test
+	void genericPhysicalJoinLocalCostDoesNotUseReorderableMultiPatternEstimate() {
+		TrackingProvider provider = new TrackingProvider(true, 1.0d);
+		CascadesCostModel model = model(provider);
+		StatementPattern left = pattern("left", "p1", "leftValue");
+		StatementPattern right = pattern("right", "p2", "rightValue");
+		Join disconnected = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", disconnected,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 20.0d),
+				winner(3, right, 5.0d)));
+
+		assertEquals(0, provider.multiPatternCalls,
+				"Generic physical JoinIterator costing must not use provider estimates for reorderable joins");
+		assertEquals(100.0d, cost.rows(), 0.0d,
+				"Disconnected generic physical joins must be priced as the concrete Cartesian iterator shape");
+	}
+
+	@Test
+	void genericPhysicalJoinLocalCostUsesInputWinnerRowsForNestedInputs() {
+		TrackingProvider provider = new TrackingProvider(true, 1.0d);
+		CascadesCostModel model = model(provider);
+		Join nestedLeft = new Join(pattern("a", "p1", "x"), pattern("a", "p2", "y"));
+		StatementPattern right = pattern("z", "p3", "w");
+		Join disconnected = new Join(nestedLeft, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", disconnected,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, nestedLeft, 30.0d),
+				winner(3, right, 5.0d)));
+
+		assertEquals(0, provider.multiPatternCalls,
+				"Generic physical JoinIterator costing must use child winners, not re-estimate nested joins");
+		assertEquals(150.0d, cost.rows(), 0.0d,
+				"Disconnected generic physical joins must use concrete child winner row counts");
+	}
+
+	@Test
+	void genericPhysicalJoinLocalCostPreservesZeroRowInputWinners() {
+		TrackingProvider provider = new TrackingProvider(true, 1.0d);
+		CascadesCostModel model = model(provider);
+		StatementPattern left = pattern("left", "p1", "leftValue");
+		StatementPattern right = pattern("right", "p2", "rightValue");
+		Join disconnected = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", disconnected,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 0.0d),
+				winner(3, right, 5.0d)));
+
+		assertEquals(0.0d, cost.rows(), 0.0d,
+				"A concrete physical join with a proven-empty child must stay empty");
+		assertEquals(0, provider.multiPatternCalls,
+				"Zero-row physical input winners must not force a reorderable provider estimate");
 	}
 
 	private static CascadesCostModel model(RdfStatisticsProvider provider) {
@@ -241,12 +298,19 @@ class CascadesCostModelTest {
 	}
 
 	private static Winner winner(int groupId, TupleExpr plan) {
+		return winner(groupId, plan, 0.0d);
+	}
+
+	private static Winner winner(int groupId, TupleExpr plan, double rows) {
 		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), List.of(), "", plan,
 				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(plan.getBindingNames())
 				.build();
-		return new Winner(expression, plan, delivered, CostVector.ZERO, List.of(), false, "");
+		CostVector cost = rows > 0.0d
+				? CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d, "test-winner"))
+				: CostVector.ZERO;
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
 	}
 
 	private static final class TrackingProvider implements RdfStatisticsProvider {

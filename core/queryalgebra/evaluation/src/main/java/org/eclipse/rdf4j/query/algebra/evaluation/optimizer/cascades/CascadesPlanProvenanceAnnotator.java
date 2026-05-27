@@ -133,8 +133,9 @@ public final class CascadesPlanProvenanceAnnotator {
 			}
 		}
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
+		String estimateSource = selectedEstimateSource(node, estimate);
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, plannerId);
-		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimateSource);
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, estimate.usage());
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID,
 				provenance.ruleId() + ":g" + provenance.memoGroupId() + ":e" + provenance.expressionId());
@@ -364,6 +365,28 @@ public final class CascadesPlanProvenanceAnnotator {
 		return isBlank(usage)
 				|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage)
 				|| FALLBACK_NO_WINNER.equals(usage);
+	}
+
+	private static String selectedEstimateSource(QueryModelNode node, EstimateSnapshot estimate) {
+		String existing = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (isCostOnlyCascadesSource(estimate) && isSpecificSource(existing)) {
+			return existing;
+		}
+		return estimate.source();
+	}
+
+	private static boolean isCostOnlyCascadesSource(EstimateSnapshot estimate) {
+		return estimate != null
+				&& "cascades".equals(estimate.source())
+				&& estimate.stringMetrics().isEmpty()
+				&& estimate.doubleMetrics().isEmpty();
+	}
+
+	private static boolean isSpecificSource(String source) {
+		return !isBlank(source)
+				&& !"cascades".equals(source)
+				&& !"cascades-fallback".equals(source)
+				&& !"lmdb-cascades-fallback".equals(source);
 	}
 
 	private static String decisionId(PlanProvenance provenance) {

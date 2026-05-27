@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Task-style top-down Cascades search over memo groups.
@@ -194,6 +195,7 @@ public final class CascadesPlanner {
 		}
 		CostVector cost = composePhysicalCost(costModel.localCost(expression, goal, inputWinners),
 				expression.ruleCost());
+		EstimateSnapshot estimate = costedEstimate(expression, cost);
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED && cost.exceeds(goal.costBound())) {
@@ -212,7 +214,7 @@ public final class CascadesPlanner {
 				.map(Winner::provenance)
 				.toList();
 		PlanProvenance provenance = new PlanProvenance(expression.groupId(), expression.id(), expression.operator(),
-				ruleId, ruleKind, inputProvenance, expression.estimate(), cost, goal.requiredProperties(), delivered,
+				ruleId, ruleKind, inputProvenance, estimate, cost, goal.requiredProperties(), delivered,
 				state.rejectionsFor(expression.groupId()), proofs, state.approximate, state.approximateReason);
 		Winner winner = new Winner(expression, plan, delivered, cost, proofs, state.approximate,
 				state.approximateReason, provenance);
@@ -239,6 +241,37 @@ public final class CascadesPlanner {
 		}
 		return safeBase.plus(ruleCost)
 				.withRows(ruleCost.rows());
+	}
+
+	private EstimateSnapshot costedEstimate(MemoExpr expression, CostVector cost) {
+		EstimateSnapshot estimate = expression.estimate();
+		TupleExpr tupleExpr = expression.tupleExpr();
+		if (!isCostOnlyCascadesEstimate(estimate) || tupleExpr == null) {
+			return estimate.withCost(cost);
+		}
+		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (!isSpecificEstimateSource(source)) {
+			return estimate.withCost(cost);
+		}
+		String plannerId = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID);
+		String usage = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return new EstimateSnapshot(plannerId, source, usage, cost.rows(), cost.workRows(), cost,
+				tupleExpr.getStringMetricsPlanned(), tupleExpr.getDoubleMetricsPlanned());
+	}
+
+	private boolean isCostOnlyCascadesEstimate(EstimateSnapshot estimate) {
+		return estimate != null
+				&& "cascades".equals(estimate.source())
+				&& estimate.stringMetrics().isEmpty()
+				&& estimate.doubleMetrics().isEmpty();
+	}
+
+	private boolean isSpecificEstimateSource(String source) {
+		return source != null
+				&& !source.isBlank()
+				&& !"cascades".equals(source)
+				&& !"cascades-fallback".equals(source)
+				&& !"lmdb-cascades-fallback".equals(source);
 	}
 
 	private List<Winner> optimizeInputs(Memo memo, MemoExpr expression, OptimizationGoal goal, SearchState state) {

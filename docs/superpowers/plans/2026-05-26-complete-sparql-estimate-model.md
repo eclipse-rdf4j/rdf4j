@@ -307,3 +307,46 @@ Result:
 - Focused core estimator tests pass: `Tests run: 25, Failures: 0, Errors: 0, Skipped: 0`.
 - LMDB audit tests pass: `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0`.
 - The generated corpus audit now catches this class of under-estimation before long benchmark runs.
+
+Follow-up root cause:
+
+- Generic physical `JoinIterator` alternatives were still priced through the reorderable provider
+  path for `Join` nodes with physical child groups. That allowed a concrete Cartesian join shape to
+  inherit a multi-pattern/BGP estimate, making disconnected `rdf:type` branches look cheaper than
+  their concrete execution surface.
+- Nested physical join children could re-enter the same provider path while costing the parent join,
+  so the parent must consume child winner row surfaces rather than recursively estimating child
+  joins as reorderable algebra.
+- A zero-row child winner was treated as "no winner", which re-estimated a proven-empty physical
+  child as positive and could reintroduce impossible Cartesian work.
+
+Red evidence:
+
+- `python3 .codex/skills/mvnf/scripts/mvnf.py CascadesCostModelTest#genericPhysicalJoinLocalCostDoesNotUseReorderableMultiPatternEstimate --retain-logs --stream`
+- Failure: `expected: <0> but was: <1>`.
+- `python3 .codex/skills/mvnf/scripts/mvnf.py CascadesCostModelTest#genericPhysicalJoinLocalCostUsesInputWinnerRowsForNestedInputs --retain-logs --stream`
+- Failure: `expected: <0> but was: <1>`.
+- `python3 .codex/skills/mvnf/scripts/mvnf.py CascadesCostModelTest#genericPhysicalJoinLocalCostPreservesZeroRowInputWinners --retain-logs --stream`
+- Failure: `expected: <0.0> but was: <100.0>`.
+
+Fix:
+
+- `CascadesCostModel` now costs physical `Join` nodes from child winner estimates and
+  `EstimateMath.innerJoin(...)`, bypassing reorderable provider estimates for concrete
+  `JoinIterator` shapes.
+- Zero-row child winners are preserved as real row surfaces instead of falling back to generic
+  algebra estimates.
+- `CascadesPlanner` and `CascadesPlanProvenanceAnnotator` preserve the costed estimate source and
+  metrics so the selected plan explains the source that actually won.
+- `LmdbEstimateAuditHarness` unwraps synthetic query-root sources for algebra-piece audits so path
+  coverage reports the concrete path estimator instead of a wrapper source.
+
+Validation:
+
+- `python3 .codex/skills/mvnf/scripts/mvnf.py CascadesCostModelTest --retain-logs --stream`
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=org.eclipse.rdf4j.sail.lmdb.estimate.LmdbEstimateAuditHarnessTest -DskipITs verify`
+
+Result:
+
+- Core cost-model tests pass: `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0`.
+- LMDB audit/path regressions pass: `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`.
