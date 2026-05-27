@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -1085,10 +1086,12 @@ final class SketchJoinOrderPlanner {
 				+ delayedFiniteDomainWorkRows + delayedFiniteInteractionWorkRows;
 		JoinCostVector costVector = costVector(stepWorkRows, seedEstimate.outputRows(), rowsProcessed,
 				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate);
+		PlanState physicalState = factorTransitionState(null, factorIndex, physicalEstimate, stepWorkRows,
+				seedEstimate.outputRows(), costVector);
 		ForwardChainState forwardChainState = forwardChainStateAfter(factorIndex, 0L, initiallyBoundVarMask);
 		StatePlan seed = new StatePlan(seedMask, null, factorIndex, factorIndex, physicalEstimate,
 				1, seedEstimate, stepWorkRows, costVector, 0L, 1,
-				seedBoundVarMask, forwardChainState);
+				seedBoundVarMask, forwardChainState, physicalState);
 		return applyAutomaticFilterActions(seed);
 	}
 
@@ -1336,11 +1339,13 @@ final class SketchJoinOrderPlanner {
 				maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix.costVector(), stepWorkRows,
 				physicalEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
+		PlanState physicalState = factorTransitionState(prefix, candidate, physicalEstimate, stepWorkRows,
+				nextEstimate.outputRows(), costVector);
 		ForwardChainState forwardChainState = forwardChainStateAfter(candidate, mask, currentBoundVarMask);
 		StatePlan extended = new StatePlan(nextMask, prefix, candidate, candidate, physicalEstimate,
 				prefix.orderSize() + 1, nextEstimate, prefix.totalWork() + stepWorkRows, costVector,
 				prefix.appliedFilterMask(), prefix.actionSize() + 1,
-				nextBoundVarMask, forwardChainState);
+				nextBoundVarMask, forwardChainState, physicalState);
 		return applyAutomaticFilterActions(extended);
 	}
 
@@ -1417,9 +1422,68 @@ final class SketchJoinOrderPlanner {
 		JoinCostVector costVector = costVector(totalWork, nextEstimate.outputRows(), maxIntermediateRows,
 				uncertaintyRows, prefix.costVector().cartesianWorkRows(), prefix.costVector(), filterWorkRows,
 				filterEstimateVector(filter, nextEstimate, filterWorkRows, filterUncertaintyRows));
+		PlanState physicalState = filterTransitionState(prefix, filterIndex, nextEstimate, costVector, filterWorkRows,
+				filterUncertaintyRows);
 		return new StatePlan(prefix.mask(), prefix, -1, factors.size() + filterIndex, null, prefix.orderSize(),
 				nextEstimate, totalWork, costVector, nextAppliedFilterMask, prefix.actionSize() + 1,
-				currentBoundVarMask, prefix.forwardChainState());
+				currentBoundVarMask, prefix.forwardChainState(), physicalState);
+	}
+
+	private PlanState factorTransitionState(StatePlan prefix, int factorIndex, FactorPhysicalEstimate physicalEstimate,
+			double stepWorkRows, double outputRows, JoinCostVector costVector) {
+		PlanState prefixState = prefix == null ? initialPhysicalPlanState() : prefix.physicalState();
+		JoinFactorCostModel.FactorCostEstimate factorCost = transitionFactorCost(physicalEstimate, stepWorkRows,
+				outputRows);
+		AccessPathCandidate candidate = AccessPathCandidate.of(factors.get(factorIndex).tupleExpr(),
+				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars());
+		return ScalarFactorTransitionEstimator.transition(prefixState, candidate, factorCost, costVector).nextState();
+	}
+
+	private PlanState filterTransitionState(StatePlan prefix, int filterIndex,
+			SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate, JoinCostVector costVector, double filterWorkRows,
+			double filterUncertaintyRows) {
+		PlanState prefixState = prefix.physicalState();
+		JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(filterIndex);
+		Map<String, String> stringMetrics = Map.of("plannedEstimateSource", "filter-transition");
+		Map<String, Double> doubleMetrics = new HashMap<>();
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, filterWorkRows);
+		doubleMetrics.put("plannedOperatorFeedbackUncertaintyRows", filterUncertaintyRows);
+		if (filter != null) {
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, filter.getConfidenceScore());
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT, (double) filter.getEvidenceCount());
+		}
+		BagEstimate estimate = new BagEstimate(nextEstimate.outputRows(), filterWorkRows,
+				prefixState.estimate().memoryRows(), prefixState.estimate().confidence(), "filter-transition",
+				prefixState.estimate().variables(), prefixState.estimate().finiteRelations(), doubleMetrics);
+		return prefixState.withEstimateAndCost(estimate, costVector, stringMetrics, doubleMetrics);
+	}
+
+	private PlanState initialPhysicalPlanState() {
+		return PlanState.initial(BagEstimate.heuristic(initialPrefixRows, "initial-prefix"),
+				variableNames(initiallyBoundVarMask), selectedFiniteBindingValues(0L));
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate transitionFactorCost(FactorPhysicalEstimate physicalEstimate,
+			double stepWorkRows, double outputRows) {
+		JoinFactorCostModel.FactorCostEstimate factorCost = physicalEstimate == null ? null
+				: physicalEstimate.factorCostEstimate();
+		if (factorCost == null) {
+			return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows);
+		}
+		return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows, factorCost.getStringMetrics(),
+				factorCost.getDoubleMetrics(), factorCost.hasPhysicalAccessPath(), factorCost.isDirectLookup(),
+				factorCost.getLookupComponentMask(), factorCost.getMissingLookupComponentMask(),
+				factorCost.getAccessRowsBeforeFilter(), factorCost.isRepeatedInvocationsCosted(),
+				factorCost.hasExactOutputRows());
+	}
+
+	private static String transitionAccessMode(FactorPhysicalEstimate physicalEstimate) {
+		if (physicalEstimate == null || physicalEstimate.factorCostEstimate() == null) {
+			return "logicalFactor";
+		}
+		return physicalEstimate.factorCostEstimate()
+				.getStringMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "logicalFactor");
 	}
 
 	private JoinFactorCostModel.EstimateVector filterEstimateVector(JoinOrderPlanner.FilterConstraint filter,
@@ -6442,6 +6506,7 @@ final class SketchJoinOrderPlanner {
 		private final double totalWork;
 		private final JoinCostVector costVector;
 		private final ForwardChainState forwardChainState;
+		private final PlanState physicalState;
 		private boolean candidatesMaskLoaded;
 		private long candidatesMask;
 		private boolean candidateActionsMaskLoaded;
@@ -6453,7 +6518,7 @@ final class SketchJoinOrderPlanner {
 				FactorPhysicalEstimate lastPhysicalEstimate, int orderSize,
 				SketchBasedJoinEstimator.TuplePlanEstimate estimate, double totalWork,
 				JoinCostVector costVector, long appliedFilterMask, int actionSize,
-				long boundVarMask, ForwardChainState forwardChainState) {
+				long boundVarMask, ForwardChainState forwardChainState, PlanState physicalState) {
 			this.planningState = JoinPlanningState.append(mask, parent == null ? null : parent.planningState,
 					lastFactor, lastAction, orderSize, appliedFilterMask, actionSize, boundVarMask);
 			this.parent = parent;
@@ -6462,6 +6527,7 @@ final class SketchJoinOrderPlanner {
 			this.totalWork = totalWork;
 			this.costVector = Objects.requireNonNull(costVector, "costVector");
 			this.forwardChainState = Objects.requireNonNull(forwardChainState, "forwardChainState");
+			this.physicalState = Objects.requireNonNull(physicalState, "physicalState");
 		}
 
 		private long mask() {
@@ -6506,6 +6572,10 @@ final class SketchJoinOrderPlanner {
 
 		private ForwardChainState forwardChainState() {
 			return forwardChainState;
+		}
+
+		private PlanState physicalState() {
+			return physicalState;
 		}
 
 	}
