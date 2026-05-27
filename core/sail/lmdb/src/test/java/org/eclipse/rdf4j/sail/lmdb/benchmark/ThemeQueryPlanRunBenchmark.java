@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -92,7 +93,7 @@ public class ThemeQueryPlanRunBenchmark {
 	}
 
 	@State(Scope.Benchmark)
-	public abstract static class BaseState {
+	public static class BaseState {
 
 		@Param({
 				"0",
@@ -113,14 +114,14 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({
 				"MEDICAL_RECORDS",
-				"SOCIAL_MEDIA",
-				"LIBRARY",
-				"ENGINEERING",
-				"HIGHLY_CONNECTED",
-				"TRAIN",
-				"ELECTRICAL_GRID",
-				"PHARMA",
-				"SPARSE"
+//				"SOCIAL_MEDIA",
+//				"LIBRARY",
+//				"ENGINEERING",
+//				"HIGHLY_CONNECTED",
+//				"TRAIN",
+//				"ELECTRICAL_GRID",
+//				"PHARMA",
+//				"SPARSE"
 		})
 		public String themeName;
 
@@ -163,6 +164,15 @@ public class ThemeQueryPlanRunBenchmark {
 				connection = null;
 			}
 			if (repository != null) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+					System.out.println();
+					System.out.println();
+					System.out.println(explain);
+					System.out.println();
+					System.out.println();
+				}
+
 				repository.shutDown();
 				repository = null;
 			}

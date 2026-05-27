@@ -1643,6 +1643,33 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderTreatsOuterBoundVarsAsVirtualConnectivitySeed() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI p1 = VF.createIRI("urn:p1");
+		IRI p2 = VF.createIRI("urn:p2");
+		store.add(VF.createStatement(VF.createIRI("urn:outerA"), p1, VF.createIRI("urn:aValue")));
+		store.add(VF.createStatement(VF.createIRI("urn:outerB"), p2, VF.createIRI("urn:bValue")));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern leftBoundLookup = pattern("outerA", p1, "aValue");
+		StatementPattern rightBoundLookup = pattern("outerB", p2, "bValue");
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrder(List.of(leftBoundLookup, rightBoundLookup), Set.of("outerA", "outerB"),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
+		assertEquals(1.0d, plan.getSummaryDoubleMetrics()
+				.get("optimizer.connectedComponentCount"), 0.0d);
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d);
+	}
+
+	@Test
 	void planJoinOrderDoesNotForceUnboundTypeGuardSeedOverCheaperSubjectExpansion() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");

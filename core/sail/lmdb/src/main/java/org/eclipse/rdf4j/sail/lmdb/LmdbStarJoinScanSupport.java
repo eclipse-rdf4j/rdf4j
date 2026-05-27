@@ -42,7 +42,9 @@ final class LmdbStarJoinScanSupport {
 
 	static Optional<Plan> plan(TupleExpr tupleExpr) {
 		List<StatementPattern> patterns = new ArrayList<>();
-		flatten(tupleExpr, patterns);
+		if (!flatten(tupleExpr, patterns)) {
+			return Optional.empty();
+		}
 		if (patterns.size() < 2) {
 			return Optional.empty();
 		}
@@ -108,19 +110,18 @@ final class LmdbStarJoinScanSupport {
 		}
 	}
 
-	private static void flatten(TupleExpr tupleExpr, List<StatementPattern> patterns) {
+	private static boolean flatten(TupleExpr tupleExpr, List<StatementPattern> patterns) {
 		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-			flatten(join.getLeftArg(), patterns);
-			flatten(join.getRightArg(), patterns);
-			return;
+			return flatten(join.getLeftArg(), patterns) && flatten(join.getRightArg(), patterns);
 		}
 		if (tupleExpr instanceof Projection projection) {
-			flatten(projection.getArg(), patterns);
-			return;
+			return flatten(projection.getArg(), patterns);
 		}
 		if (tupleExpr instanceof StatementPattern pattern) {
 			patterns.add(pattern);
+			return true;
 		}
+		return false;
 	}
 
 	record Plan(String subjectName, List<StatementPattern> patterns, Set<String> predicateValues) {

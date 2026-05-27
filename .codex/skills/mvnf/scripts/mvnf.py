@@ -6,6 +6,7 @@ import argparse
 import datetime
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from collections import deque
@@ -214,6 +215,36 @@ def _delete_logs(log_paths: list[Path]) -> None:
             print(f"[mvnf] Warning: could not delete log {log_path}: {exc}")
 
 
+def _delete_module_test_artifacts(repo_root: Path, module: str) -> bool:
+    module_dir = (repo_root / module).resolve()
+    target_dir = module_dir / "target"
+    if target_dir.is_symlink():
+        raise RuntimeError(f"Refusing to delete through symlinked module target: {target_dir}")
+
+    artifact_paths = [
+        target_dir / "surefire-reports",
+        target_dir / "failsafe-reports",
+        target_dir / "surefire",
+        target_dir / "failsafe",
+    ]
+
+    deleted = False
+    for artifact_path in artifact_paths:
+        try:
+            artifact_path.relative_to(target_dir)
+        except ValueError as exc:
+            raise RuntimeError(f"Refusing to delete outside module target: {artifact_path}") from exc
+
+        if artifact_path.is_symlink() or artifact_path.is_file():
+            artifact_path.unlink()
+            deleted = True
+        elif artifact_path.is_dir():
+            shutil.rmtree(artifact_path)
+            deleted = True
+
+    return deleted
+
+
 def _list_report_files(repo_root: Path, module: str) -> list[Path]:
     module_dir = (repo_root / module).resolve()
     report_dirs = [
@@ -235,7 +266,7 @@ def _list_report_files(repo_root: Path, module: str) -> list[Path]:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="mvnf",
-        description="Clean module, install everything (quick), then run module verify or a single test.",
+        description="Delete stale module test artifacts, install everything (quick), then run module verify or a single test.",
     )
     parser.add_argument(
         "target",
@@ -251,7 +282,7 @@ def main() -> int:
     parser.add_argument(
         "--retain-logs",
         action="store_true",
-        help="Keep clean/install/verify logs even when tests pass.",
+        help="Keep install/verify logs even when tests pass.",
     )
     parser.add_argument("--tail", type=int, default=200, help="Keep the last N Maven output lines for failures.")
     parser.add_argument("--mvn", help="Override the Maven command (default: mvn or ./mvnw).")
@@ -275,33 +306,34 @@ def main() -> int:
     if test_selector is not None:
         print(f"Test selector: {test_selector} ({'failsafe' if args.it else 'surefire'})")
 
-    clean_cmd = mvn_cmd + common_flags + ["-pl", module, "clean"]
     install_cmd = mvn_cmd + (offline_flag + ["-T", "1C", "-Dmaven.repo.local=.m2_repo", "-Pquick", "install"])
 
     verify_cmd = mvn_cmd + common_flags + ["-pl", module]
     if test_selector is not None:
-        verify_cmd.append(f"-Dit.test={test_selector}" if args.it else f"-Dtest={test_selector}")
+        if args.it:
+            verify_cmd.extend(["-PskipUnitTests", f"-Dit.test={test_selector}"])
+        else:
+            verify_cmd.extend(["-DskipITs", f"-Dtest={test_selector}"])
     verify_cmd.append("verify")
 
     run_id = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
     log_dir = _log_dir(repo_root)
     log_paths = [
-        log_dir / f"{run_id}-clean.log",
         log_dir / f"{run_id}-install.log",
         log_dir / f"{run_id}-verify.log",
     ]
 
-    rc, _ = _run(clean_cmd, repo_root, args.tail, log_paths[0], args.stream)
-    if rc != 0:
-        print("\n[mvnf] Module clean failed.")
-        return rc
+    if _delete_module_test_artifacts(repo_root, module):
+        print("\n[mvnf] Deleted stale module test artifacts.")
+    else:
+        print("\n[mvnf] No stale module test artifacts found.")
 
-    rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[1], args.stream)
+    rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[0], args.stream)
     if rc != 0:
         print("\n[mvnf] Root install failed.")
         return rc
 
-    rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[2], args.stream)
+    rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream)
     if rc == 0:
         print("\n[mvnf] Tests passed.")
         if not args.retain_logs:

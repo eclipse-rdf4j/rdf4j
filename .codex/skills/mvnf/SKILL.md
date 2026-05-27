@@ -19,9 +19,9 @@ Run Maven tests with repeatable commands and useful failure pointers.
 
 ## What it does
 
-1. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> clean`
+1. Deletes stale `target/surefire*` and `target/failsafe*` artifacts for the selected module.
 2. `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
-3. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify` (optionally with `-Dtest=` / `-Dit.test=`)
+3. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify` (optionally with `-DskipITs -Dtest=...` for unit tests or `-PskipUnitTests -Dit.test=...` for Failsafe ITs)
 
 If the test run fails, it prints the list of Surefire/Failsafe report files under the module's `target/*-reports/` directories.
 

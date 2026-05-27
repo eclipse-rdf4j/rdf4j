@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -309,6 +310,10 @@ public final class CascadesPlanner {
 		if (inputCount == 2 && tupleExpr instanceof Difference difference) {
 			return List.of(inputGoal(goal, difference.getLeftArg(), Set.of()),
 					inputGoal(goal, difference.getRightArg(), difference.getLeftArg().getAssuredBindingNames()));
+		}
+		if (inputCount == 2 && tupleExpr instanceof Union union) {
+			return List.of(inputGoal(goal, union.getLeftArg(), Set.of()),
+					inputGoal(goal, union.getRightArg(), Set.of()));
 		}
 		List<OptimizationGoal> goals = new ArrayList<>(inputCount);
 		for (int i = 0; i < inputCount; i++) {

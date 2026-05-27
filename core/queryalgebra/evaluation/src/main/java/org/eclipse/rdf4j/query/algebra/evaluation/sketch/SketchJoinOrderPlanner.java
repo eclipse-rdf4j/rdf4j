@@ -533,8 +533,12 @@ final class SketchJoinOrderPlanner {
 		summaryStringMetrics.put(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
 		List<JoinOrderPlanner.PlanStep> steps = buildPlanSteps(result, decisionId);
 		double totalWork = sumStepWorkRows(steps);
+		double finalRows = result.costVector().finalRows();
+		if (!isFiniteNonNegative(finalRows)) {
+			finalRows = result.estimate().outputRows();
+		}
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWork);
-		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, result.estimate().outputRows());
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, totalWork);
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, result.costVector().finalRows());
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_MAX_INTERMEDIATE_ROWS,
@@ -550,7 +554,7 @@ final class SketchJoinOrderPlanner {
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, result.costVector().totalWorkRows());
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS,
 				result.costVector().uncertaintyRows());
-		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), result.estimate().outputRows(),
+		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), finalRows,
 				totalWork, List.copyOf(diagnostics), summaryStringMetrics, summaryDoubleMetrics, steps);
 	}
 
@@ -919,6 +923,13 @@ final class SketchJoinOrderPlanner {
 		long remaining = factorUniverseMask;
 		int components = 0;
 		boolean hasScalarFactor = false;
+		if (initiallyBoundVarMask != 0L) {
+			long seededComponent = structuralComponentMaskFromVars(initiallyBoundVarMask, remaining);
+			if (seededComponent != 0L) {
+				components++;
+				remaining &= ~seededComponent;
+			}
+		}
 		while (remaining != 0L) {
 			int factorIndex = Long.numberOfTrailingZeros(remaining);
 			if (isZeroVarScalarFactor(factorIndex)) {
@@ -930,6 +941,27 @@ final class SketchJoinOrderPlanner {
 			remaining &= ~structuralComponentMask(factorIndex, remaining);
 		}
 		return components == 0 && (hasScalarFactor || !factors.isEmpty()) ? 1 : components;
+	}
+
+	private long structuralComponentMaskFromVars(long seedVars, long availableFactors) {
+		long component = 0L;
+		long componentVars = seedVars;
+		boolean expanded;
+		do {
+			expanded = false;
+			long candidates = availableFactors & ~component;
+			while (candidates != 0L) {
+				int candidate = Long.numberOfTrailingZeros(candidates);
+				candidates &= candidates - 1L;
+				long candidateVars = structuralFactorVarMask(candidate);
+				if (candidateVars != 0L && (candidateVars & componentVars) != 0L) {
+					component |= bit(candidate);
+					componentVars |= candidateVars;
+					expanded = true;
+				}
+			}
+		} while (expanded);
+		return component;
 	}
 
 	private long structuralComponentMask(int startFactor, long availableFactors) {
@@ -6388,7 +6420,7 @@ final class SketchJoinOrderPlanner {
 				if (!drafts.isEmpty()) {
 					PlanStepDraft draft = drafts.get(drafts.size() - 1);
 					draft.stepWorkRows += actionWorkRows;
-					draft.resultRows = node.estimate().outputRows();
+					draft.resultRows = stateFinalRows(node);
 					draft.addUnlockedFilter(filterIndex, describeUnlockedFilter(filter, node.parent.estimate()));
 					if (Double.isFinite(filter.getConfidenceScore())) {
 						draft.doubleMetrics.merge(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
@@ -6439,7 +6471,7 @@ final class SketchJoinOrderPlanner {
 				doubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows);
 			}
 			drafts.add(new PlanStepDraft(boundBefore, physicalEstimate.factorOutputRows(),
-					node.estimate().outputRows(), actionWorkRows, stringMetrics, doubleMetrics));
+					stateFinalRows(node), actionWorkRows, stringMetrics, doubleMetrics));
 			mask = node.mask();
 		}
 		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(drafts.size());
@@ -6447,6 +6479,17 @@ final class SketchJoinOrderPlanner {
 			steps.add(draft.toPlanStep());
 		}
 		return List.copyOf(steps);
+	}
+
+	private double stateFinalRows(StatePlan node) {
+		if (node == null) {
+			return Double.NaN;
+		}
+		double finalRows = node.costVector().finalRows();
+		if (isFiniteNonNegative(finalRows)) {
+			return finalRows;
+		}
+		return node.estimate().outputRows();
 	}
 
 	private double actionWorkRows(StatePlan node) {

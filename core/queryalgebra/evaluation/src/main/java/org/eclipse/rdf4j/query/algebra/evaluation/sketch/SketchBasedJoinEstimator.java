@@ -5088,7 +5088,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private JoinOrderPlanner.PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		if (!isReady()) {
+		boolean ready = isReady();
+		if (!ready && factorCostModel == null) {
 			recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_NOT_READY);
 			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
 					SketchPlannerPath.ROBUST_NOT_READY.name(),
@@ -5105,7 +5106,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		List<TupleExpr> expressions = List.copyOf(args);
 		List<String> inputDiagnostics = List.of("input: algorithm=" + algorithm + " initiallyBoundVars=" + bound
 				+ " originalOrder=" + SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedOrder="
-				+ SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedBoundVars=" + bound);
+				+ SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedBoundVars=" + bound
+				+ (ready ? "" : " sketchReady=false factorCostModelFallback=true"));
 		if (logger.isDebugEnabled()) {
 			logger.debug(
 					"Sketch join planner input: algorithm={} initiallyBoundVars={} originalOrder={} plannedOrder={} plannedBoundVars={}",
@@ -7274,7 +7276,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	@Override
 	public Optional<PropertyPathEstimate> estimate(ArbitraryLengthPath path, Set<String> boundVars) {
-		if (!isReady() || path == null) {
+		if (path == null) {
 			return Optional.empty();
 		}
 		StatementPattern step = singlePredicatePathStep(path.getPathExpression());
@@ -7302,7 +7304,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	@Override
 	public Optional<PropertyPathEstimate> estimate(ZeroLengthPath path, Set<String> boundVars) {
-		if (!isReady() || path == null) {
+		if (path == null) {
 			return Optional.empty();
 		}
 		Value subject = path.getSubjectVar() == null ? null : path.getSubjectVar().getValue();

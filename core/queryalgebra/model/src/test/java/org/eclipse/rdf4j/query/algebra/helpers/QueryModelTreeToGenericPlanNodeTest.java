@@ -191,6 +191,24 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	public void annotatesBoundStatementPatternJoinRightSideVarsAsBound() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setAlgorithm("BoundStatementPatternJoinIteration");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		tupleExpr.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getStringMetricsActual()).isNull();
+		assertThat(statementPattern(root, 1).getPlans().get(0).getStringMetricsActual())
+				.containsEntry("bindingState", "bound");
+		assertThat(statementPattern(root, 1).getPlans().get(1).getStringMetricsActual())
+				.containsEntry("bindingState", "unbound");
+	}
+
+	@Test
 	public void annotatesHashJoinRightSideVarsAsUnbound() {
 		Join hashJoin = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),

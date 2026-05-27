@@ -26,10 +26,22 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -80,12 +92,75 @@ class LmdbCascadesContextPropagationTest {
 		}
 	}
 
+	@Test
+	void sketchJoinIslandDeclaresOuterBindingsItWasCostedWith() {
+		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+		Join island = new Join(
+				new StatementPattern(new Var("person"), new Var("personPredicate"), new Var("event")),
+				new StatementPattern(new Var("account"), new Var("accountPredicate"), new Var("balance")));
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("person", "account"))
+				.build());
+
+		RuleApplication application = ruleApplication(island, statistics, goal,
+				"lmdb-sketch-join-order-provider");
+
+		assertTrue(application.deliveredProperties().inputBoundVars().containsAll(Set.of("person", "account")),
+				"Sketch island must declare the outer bindings used for costing and lookup planning: "
+						+ application.deliveredProperties());
+	}
+
+	@Test
+	void unionBranchJoinIslandsReceiveOuterBindings() {
+		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+		Join branchA = new Join(
+				new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
+				new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
+		Join branchB = new Join(
+				new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
+				new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
+		Union union = new Union(branchA, branchB);
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("line"))
+				.build());
+
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+				.optimize(union, goal);
+
+		assertTrue(statistics.calls.stream()
+				.anyMatch(call -> call.initiallyBoundVars().contains("line")
+						&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
+				"Union left branch join island should see the outside bound variable: " + statistics.calls);
+		assertTrue(statistics.calls.stream()
+				.anyMatch(call -> call.initiallyBoundVars().contains("line")
+						&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
+				"Union right branch join island should see the outside bound variable: " + statistics.calls);
+	}
+
 	private static void restoreMode(String previousMode) {
 		if (previousMode == null) {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		} else {
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
 		}
+	}
+
+	private static RuleApplication ruleApplication(TupleExpr tupleExpr, EvaluationStatistics statistics,
+			OptimizationGoal goal, String ruleId) {
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		Memo memo = new Memo(costModel);
+		RuleRegistry registry = LmdbCascadesRuleProvider.rules(statistics);
+		int groupId = memo.intern(tupleExpr);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		CascadesRule rule = registry.applicableRules(expression, goal, memo)
+				.stream()
+				.filter(candidate -> candidate.id().equals(ruleId))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing rule " + ruleId));
+		return rule.apply(expression, goal,
+				new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null))
+				.getFirst();
 	}
 
 	private record JoinOrderCall(Set<String> initiallyBoundVars, List<Set<String>> argBindingNames) {

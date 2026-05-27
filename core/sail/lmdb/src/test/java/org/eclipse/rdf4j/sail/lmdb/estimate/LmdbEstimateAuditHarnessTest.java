@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -259,6 +260,38 @@ class LmdbEstimateAuditHarnessTest {
 						.toList();
 				double worstQError = worstRows.isEmpty() ? 1.0d : worstRows.get(0).qError();
 				assertTrue(worstQError <= 10.0d, () -> "Worst full corpus estimate q-error too high: " + worstRows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void disconnectedProjectedIslandsUseJoinFinalRowsForCardinality(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.filter(candidate -> candidate.id().equals("audit-q14"))
+						.findFirst()
+						.orElseThrow();
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(312L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.qError() <= 10.0d,
+						() -> "Projection over disconnected planned islands must publish the join final row "
+								+ "estimate, not stale raw cardinality: " + rows);
 			}
 		} finally {
 			repository.shutDown();
@@ -501,6 +534,65 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void specificAssetThresholdPathDoesNotUseCartesianBypass(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
+
+				String plan = connection.prepareTupleQuery("""
+						PREFIX aas: <https://admin-shell.io/aas/3/>
+						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+						SELECT (COUNT(*) AS ?c)
+						WHERE {
+						  ?aas a aas:AssetAdministrationShell ;
+						    aas:assetInformation/aas:specificAssetId [ aas:value "DriveUnit" ] ;
+						    aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
+						  ?p1 aas:idShort "ratedPower" ;
+						      aas:value ?v1 .
+						  FILTER (?v1 > 15.0)
+						}
+						""")
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				List<String> bypassJoinHeaders = plan.lines()
+						.filter(line -> line.contains("Join ("))
+						.filter(line -> line.contains("plannedEstimateUsage=fallback_no_winner")
+								|| line.contains("optimizer.cascadesRule=generic-physical-implementation")
+								|| line.contains("optimizer.cascadesRule=lmdb-access-path"))
+						.toList();
+				List<String> genericPathHeaders = plan.lines()
+						.filter(line -> line.contains("ArbitraryLengthPath")
+								&& line.contains("optimizer.cascadesRule=generic-physical-implementation"))
+						.toList();
+				List<String> cartesianJoinHeaders = plan.lines()
+						.filter(line -> line.contains("Join ("))
+						.filter(line -> plannedCartesianWorkRows(line) > 0.0d)
+						.filter(line -> !line.contains("optimizer.connectedEnumeration=phase2_disconnected_components"))
+						.toList();
+
+				assertTrue(bypassJoinHeaders.isEmpty(),
+						() -> "Connected AAS threshold query should not use fallback, generic, or access-path "
+								+ "physical Join bypasses: " + bypassJoinHeaders + "\n" + plan);
+				assertTrue(genericPathHeaders.isEmpty(),
+						() -> "Connected AAS threshold query should not use a generic full-scan property path: "
+								+ genericPathHeaders + "\n" + plan);
+				assertTrue(cartesianJoinHeaders.isEmpty(),
+						() -> "Connected AAS threshold query should not report Cartesian work outside explicit "
+								+ "disconnected fallback: " + cartesianJoinHeaders + "\n" + plan);
+				assertTrue(plan.contains("optimizer.connectedEnumeration=phase1_connected_only"),
+						() -> "Connected AAS threshold query should be planned by connected-only enumeration:\n"
+								+ plan);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void disconnectedQueryReportsExplicitCartesianFallback(@TempDir File dataDir) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
 		repository.init();
@@ -531,6 +623,35 @@ class LmdbEstimateAuditHarnessTest {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	private static double plannedCartesianWorkRows(String line) {
+		String key = "plannedCostCartesianWorkRows=";
+		int start = line.indexOf(key);
+		if (start < 0) {
+			return 0.0d;
+		}
+		int valueStart = start + key.length();
+		int valueEnd = valueStart;
+		while (valueEnd < line.length()) {
+			char valueChar = line.charAt(valueEnd);
+			if (!(Character.isDigit(valueChar) || valueChar == '.' || valueChar == 'K' || valueChar == 'M'
+					|| valueChar == 'B')) {
+				break;
+			}
+			valueEnd++;
+		}
+		String value = line.substring(valueStart, valueEnd);
+		if (value.endsWith("K")) {
+			return Double.parseDouble(value.substring(0, value.length() - 1)) * 1_000.0d;
+		}
+		if (value.endsWith("M")) {
+			return Double.parseDouble(value.substring(0, value.length() - 1)) * 1_000_000.0d;
+		}
+		if (value.endsWith("B")) {
+			return Double.parseDouble(value.substring(0, value.length() - 1)) * 1_000_000_000.0d;
+		}
+		return Double.parseDouble(value);
 	}
 
 	private static void loadRelationshipPowerStressData(SailRepositoryConnection connection, int lineCount) {

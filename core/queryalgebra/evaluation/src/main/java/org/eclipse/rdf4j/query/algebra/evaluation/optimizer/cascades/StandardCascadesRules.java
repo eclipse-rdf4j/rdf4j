@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -425,13 +426,20 @@ public final class StandardCascadesRules {
 	}
 
 	public static final class GenericImplementationRule extends AbstractRule {
+		private final Predicate<TupleExpr> implementationAllowed;
+
 		public GenericImplementationRule() {
+			this(ignored -> true);
+		}
+
+		public GenericImplementationRule(Predicate<TupleExpr> implementationAllowed) {
 			super("generic-physical-implementation", RuleKind.IMPLEMENTATION, 10);
+			this.implementationAllowed = implementationAllowed == null ? ignored -> true : implementationAllowed;
 		}
 
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical();
+			return expression.logical() && implementationAllowed.test(expression.tupleExpr());
 		}
 
 		@Override

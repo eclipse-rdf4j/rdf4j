@@ -84,6 +84,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
@@ -2955,7 +2957,13 @@ class ValueStore extends AbstractValueFactory {
 
 	@Override
 	public LmdbIRI createIRI(String uri) {
-		return new LmdbIRI(revision, uri);
+
+//		if(uri.startsWith("http://www.w3.org/")) {
+//			//TODO: check if the iri is in the common vocabulary and return that instead
+//		}
+
+		LmdbIRI lmdbIRI = new LmdbIRI(revision, uri);
+		return lmdbIRI;
 	}
 
 	@Override
@@ -3016,6 +3024,13 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbIRI getLmdbURI(IRI uri) {
 		if (isOwnValue(uri)) {
 			return (LmdbIRI) uri;
+		}
+
+		if (uri instanceof InternedIRI || uri.stringValue().startsWith("http://www.w3.org")) {
+			Long l = commonVocabulary.get(uri);
+			if (l != null) {
+				return new LmdbIRI(revision, uri.toString(), l);
+			}
 		}
 
 		return new LmdbIRI(revision, uri.toString());

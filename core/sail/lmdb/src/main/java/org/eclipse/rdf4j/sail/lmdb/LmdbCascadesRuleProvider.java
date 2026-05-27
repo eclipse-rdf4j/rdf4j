@@ -25,11 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -40,7 +36,6 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -93,19 +88,12 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbDistinctCursorSkipRule(statistics))
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
 				.add(new LmdbMinusBoundProbeRule(statistics))
-				.add(new StandardCascadesRules.GenericImplementationRule())
+				.add(new StandardCascadesRules.GenericImplementationRule(
+						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
+								statistics instanceof RdfStatisticsProvider)))
 				.add(new StandardCascadesRules.DistinctEnforcerRule())
 				.add(new StandardCascadesRules.MaterializeEnforcerRule());
 		return builder.build();
-	}
-
-	private static void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
-		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-			flattenJoinFactors(join.getLeftArg(), factors);
-			flattenJoinFactors(join.getRightArg(), factors);
-			return;
-		}
-		factors.add(tupleExpr);
 	}
 
 	private static TupleExpr leftDeepJoin(List<TupleExpr> orderedArgs) {
@@ -360,6 +348,13 @@ final class LmdbCascadesRuleProvider {
 			return bindingNameIntersection(tupleExpr.getBindingNames(), goalBoundVars);
 		}
 
+		Set<String> inputBoundVarsForExpression(TupleExpr tupleExpr, OptimizationGoal goal) {
+			if (tupleExpr == null) {
+				return Set.of();
+			}
+			return bindingNameIntersection(tupleExpr.getBindingNames(), goalBoundVars(goal));
+		}
+
 		private Set<String> goalBoundVars(OptimizationGoal goal) {
 			return goal == null ? Set.of() : goal.requiredProperties().boundVars();
 		}
@@ -496,6 +491,7 @@ final class LmdbCascadesRuleProvider {
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(alternative.getBindingNames())
 					.accessPath(LmdbStarJoinScanSupport.ACCESS_MODE)
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
@@ -625,6 +621,7 @@ final class LmdbCascadesRuleProvider {
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(alternative.getBindingNames())
 					.accessPath("lmdbGuaranteeOptions")
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
@@ -1190,7 +1187,6 @@ final class LmdbCascadesRuleProvider {
 				Set<String> generatedAnchorNames) {
 			int selectedIndex = -1;
 			int selectedScore = Integer.MIN_VALUE;
-			boolean selectedSubjectTypeGuard = false;
 			for (int i = firstCandidateIndex; i < patterns.size(); i++) {
 				Set<String> tupleBindings = patternBindings.get(i);
 				if (tupleBindings.isEmpty() || Collections.disjoint(bound, tupleBindings)) {
@@ -1206,15 +1202,9 @@ final class LmdbCascadesRuleProvider {
 				} else {
 					score += 10_000;
 				}
-				boolean subjectTypeGuard = isSubjectTypeGuardPattern(patterns.get(i));
-				if (subjectTypeGuard) {
-					score -= 100;
-				}
-				if (selectedIndex < 0 || score > selectedScore
-						|| (score == selectedScore && !subjectTypeGuard && selectedSubjectTypeGuard)) {
+				if (selectedIndex < 0 || score > selectedScore) {
 					selectedIndex = i;
 					selectedScore = score;
-					selectedSubjectTypeGuard = subjectTypeGuard;
 				}
 			}
 			return selectedIndex;
@@ -1248,19 +1238,6 @@ final class LmdbCascadesRuleProvider {
 			}
 			T selected = values.remove(selectedIndex);
 			values.add(prefixIndex, selected);
-		}
-
-		private boolean isSubjectTypeGuardPattern(TupleExpr tupleExpr) {
-			if (!(tupleExpr instanceof StatementPattern statementPattern)) {
-				return false;
-			}
-			Var predicate = statementPattern.getPredicateVar();
-			Var object = statementPattern.getObjectVar();
-			return predicate != null
-					&& predicate.hasValue()
-					&& RDF.TYPE.stringValue().equals(predicate.getValue().stringValue())
-					&& object != null
-					&& object.hasValue();
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> estimateSingleFactor(TupleExpr factor,
@@ -1707,8 +1684,6 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private static final class LmdbSketchJoinOrderImplementationRule extends LmdbRule {
-		private static final int MAX_FINITE_ANCHOR_PROMOTION_ROWS = 64;
-
 		private final JoinOrderPlanner joinOrderPlanner;
 		private final RdfStatisticsProvider statisticsProvider;
 
@@ -1722,13 +1697,12 @@ final class LmdbCascadesRuleProvider {
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
 					&& joinOrderPlanner != null
-					&& expression.tupleExpr() instanceof Join;
+					&& LmdbJoinIslandConnectivity.joinProviderCanOwn(expression.tupleExpr());
 		}
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			List<TupleExpr> factors = new java.util.ArrayList<>();
-			flattenJoinFactors(expression.tupleExpr(), factors);
+			List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr());
 			if (factors.size() < 2) {
 				return List.of();
 			}
@@ -1746,6 +1720,7 @@ final class LmdbCascadesRuleProvider {
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(ordered.getBindingNames())
 					.accessPath("lmdbSketchJoinOrder")
+					.inputBoundVars(inputBoundVarsForExpression(ordered, goal))
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
@@ -1761,6 +1736,8 @@ final class LmdbCascadesRuleProvider {
 			Map<String, String> stringMetrics = new LinkedHashMap<>(joinPlan.getSummaryStringMetrics());
 			Map<String, Double> doubleMetrics = new LinkedHashMap<>(joinPlan.getSummaryDoubleMetrics());
 			copyRepresentativeStepMetrics(joinPlan, stringMetrics, doubleMetrics);
+			stringMetrics.put(LmdbJoinIslandConnectivity.OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON,
+					LmdbJoinIslandConnectivity.CONNECTED_JOIN_OWNER_REASON);
 			Optional<LmdbStarJoinScanSupport.Plan> starPlan = LmdbStarJoinScanSupport.plan(ordered);
 			if (starPlan.isPresent() && statisticsProvider != null) {
 				Optional<StatisticsEstimate> starEstimate = statisticsProvider.starMultiPredicateScan(
@@ -1791,183 +1768,9 @@ final class LmdbCascadesRuleProvider {
 					joinPlan.getEstimatedFinalRows(), stringMetrics, doubleMetrics);
 		}
 
-		private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
-			if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-				flattenJoinFactors(join.getLeftArg(), factors);
-				flattenJoinFactors(join.getRightArg(), factors);
-				return;
-			}
-			factors.add(tupleExpr);
-		}
-
 		private TupleExpr leftDeepJoin(JoinOrderPlanner.JoinOrderPlan joinPlan) {
 			List<TupleExpr> orderedArgs = joinPlan.getOrderedArgs();
-			List<TupleExpr> materializationOrder = promoteFiniteBindingInputs(orderedArgs);
-			materializationOrder = promoteFiniteCorrelatedAntiJoinAnchors(materializationOrder);
-			return LmdbCascadesRuleProvider.leftDeepJoin(joinPlan, materializationOrder);
-		}
-
-		private List<TupleExpr> promoteFiniteBindingInputs(List<TupleExpr> orderedArgs) {
-			if (orderedArgs.size() < 2) {
-				return orderedArgs;
-			}
-			List<TupleExpr> promoted = new ArrayList<>(orderedArgs);
-			boolean changed = false;
-			for (int i = 1; i < promoted.size(); i++) {
-				TupleExpr candidate = promoted.get(i);
-				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport
-						.positionableBindingSetAssignmentNames(candidate);
-				if (assignmentNames.isEmpty() || !smallFiniteAssignment(candidate)) {
-					continue;
-				}
-				int targetIndex = i;
-				while (targetIndex > 0) {
-					TupleExpr predecessor = promoted.get(targetIndex - 1);
-					if (TupleExprs.isVariableScopeChange(predecessor)) {
-						break;
-					}
-					if (!referencesAnyBinding(predecessor, assignmentNames.get())) {
-						break;
-					}
-					targetIndex--;
-				}
-				if (targetIndex < i) {
-					promoted.remove(i);
-					promoted.add(targetIndex, candidate);
-					changed = true;
-				}
-			}
-			return changed ? List.copyOf(promoted) : orderedArgs;
-		}
-
-		private boolean smallFiniteAssignment(TupleExpr tupleExpr) {
-			if (!(tupleExpr instanceof BindingSetAssignment assignment) || assignment.getBindingSets() == null) {
-				return false;
-			}
-			int rows = 0;
-			for (BindingSet bindingSet : assignment.getBindingSets()) {
-				if (bindingSet == null || bindingSet.isEmpty()) {
-					return false;
-				}
-				for (String bindingName : assignment.getAssuredBindingNames()) {
-					Value value = bindingSet.getValue(bindingName);
-					if (value == null) {
-						return false;
-					}
-				}
-				rows++;
-				if (rows > MAX_FINITE_ANCHOR_PROMOTION_ROWS) {
-					return false;
-				}
-			}
-			return rows > 0;
-		}
-
-		private boolean referencesAnyBinding(TupleExpr tupleExpr, Set<String> names) {
-			return intersects(LmdbJoinPlanSupport.plannerBindingNames(tupleExpr.getBindingNames()), names);
-		}
-
-		private List<TupleExpr> promoteFiniteCorrelatedAntiJoinAnchors(List<TupleExpr> orderedArgs) {
-			if (orderedArgs.size() < 2) {
-				return orderedArgs;
-			}
-			List<TupleExpr> promoted = new ArrayList<>(orderedArgs);
-			boolean changed = false;
-			for (int i = 1; i < promoted.size(); i++) {
-				TupleExpr candidate = promoted.get(i);
-				Set<String> correlatedVars = correlatedNotExistsVars(candidate);
-				if (correlatedVars.isEmpty()) {
-					continue;
-				}
-				Set<String> finiteBindingNames = finiteBindingNames(candidate);
-				if (finiteBindingNames.isEmpty() || !finiteBindingNames.containsAll(correlatedVars)) {
-					continue;
-				}
-				int targetIndex = i;
-				while (targetIndex > 0
-						&& shouldSeedBeforeProbe(correlatedVars, finiteBindingNames, promoted.get(targetIndex - 1))) {
-					targetIndex--;
-				}
-				if (targetIndex < i) {
-					promoted.remove(i);
-					promoted.add(targetIndex, candidate);
-					changed = true;
-				}
-			}
-			return changed ? List.copyOf(promoted) : orderedArgs;
-		}
-
-		private boolean shouldSeedBeforeProbe(Set<String> correlatedVars, Set<String> finiteBindingNames,
-				TupleExpr predecessor) {
-			if (!(predecessor instanceof StatementPattern statementPattern)) {
-				return false;
-			}
-			Set<String> patternNames = LmdbJoinPlanSupport.plannerBindingNames(statementPattern.getBindingNames());
-			return intersects(patternNames, correlatedVars) || intersects(patternNames, finiteBindingNames);
-		}
-
-		private Set<String> correlatedNotExistsVars(TupleExpr tupleExpr) {
-			LinkedHashSet<String> names = new LinkedHashSet<>();
-			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Filter node) {
-					if (conditionContainsNotExists(node.getCondition())) {
-						names.addAll(DeferredFilter.conditionBindingNames(node.getCondition()));
-					}
-					super.meet(node);
-				}
-			});
-			return names.isEmpty() ? Set.of() : Set.copyOf(names);
-		}
-
-		private boolean conditionContainsNotExists(ValueExpr condition) {
-			final boolean[] containsNotExists = { false };
-			condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Not node) {
-					if (containsNotExists[0]) {
-						return;
-					}
-					if (node.getArg() instanceof Exists) {
-						containsNotExists[0] = true;
-						return;
-					}
-					super.meet(node);
-				}
-			});
-			return containsNotExists[0];
-		}
-
-		private Set<String> finiteBindingNames(TupleExpr tupleExpr) {
-			LinkedHashSet<String> names = new LinkedHashSet<>();
-			collectFiniteBindingNames(tupleExpr, names);
-			return names.isEmpty() ? Set.of() : Set.copyOf(names);
-		}
-
-		private void collectFiniteBindingNames(TupleExpr tupleExpr, Set<String> names) {
-			if (tupleExpr instanceof BindingSetAssignment assignment) {
-				names.addAll(assignment.getAssuredBindingNames());
-				return;
-			}
-			if (tupleExpr instanceof UnaryTupleOperator unary) {
-				collectFiniteBindingNames(unary.getArg(), names);
-				return;
-			}
-			if (tupleExpr instanceof BinaryTupleOperator binary) {
-				collectFiniteBindingNames(binary.getLeftArg(), names);
-				collectFiniteBindingNames(binary.getRightArg(), names);
-			}
-		}
-
-		private boolean intersects(Set<String> left, Set<String> right) {
-			Set<String> smaller = left.size() <= right.size() ? left : right;
-			Set<String> larger = left.size() <= right.size() ? right : left;
-			for (String value : smaller) {
-				if (larger.contains(value)) {
-					return true;
-				}
-			}
-			return false;
+			return LmdbCascadesRuleProvider.leftDeepJoin(joinPlan, orderedArgs);
 		}
 	}
 
@@ -2006,7 +1809,10 @@ final class LmdbCascadesRuleProvider {
 					.build();
 			RuleProof proof = proof(semanticScope(goal), Set.of("propertyPath", "statisticsProvider"),
 					"LMDB property-path statistics are exposed as a Cascades physical alternative");
-			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
+			TupleExpr alternative = expression.tupleExpr().clone();
+			alternative.setStringMetricPlanned(LmdbJoinIslandConnectivity.OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON,
+					LmdbJoinIslandConnectivity.PROPERTY_PATH_OWNER_REASON);
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
 					cost, proof, "lmdb-property-path", snapshot(estimate.get(), cost, "lmdb-property-path")));
 		}
 
@@ -2055,9 +1861,6 @@ final class LmdbCascadesRuleProvider {
 			}
 			if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
 				return isAccessPathCandidate(filter.getArg());
-			}
-			if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-				return isAccessPathCandidate(join.getLeftArg()) && isAccessPathCandidate(join.getRightArg());
 			}
 			return false;
 		}

@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
 
 	private static final Set<String> LEFT_BOUND_RIGHT_ALGORITHMS = Set.of(
+			"BoundStatementPatternJoinIteration",
 			"JoinIterator",
 			"LeftJoinIterator",
 			"BadlyDesignedLeftJoinIterator",

@@ -582,7 +582,7 @@ class LmdbEvaluationStatistics
 	@Override
 	public PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
-		if (!supportsJoinEstimation()) {
+		if (!supportsJoinEstimation() && (sketchBasedJoinEstimator == null || !supportsLmdbPlanning())) {
 			return PlanningAttempt.rejected("lmdb-sketch", algorithm,
 					"ROBUST_NOT_READY", null,
 					List.of("rejected: sketch estimator not ready"));
@@ -940,6 +940,7 @@ class LmdbEvaluationStatistics
 								+ ", prefixRows=" + estimateTraceRows(tracedEnrichedStep.getPrefixOutputRows())
 								+ ", work=" + estimateTraceRows(tracedEnrichedStep.getStepWorkRows()));
 			}
+			enrichedStep = normalizePrefixRows(enrichedStep);
 			if (enrichedSteps != null) {
 				enrichedSteps.add(enrichedStep);
 			} else if (enrichedStep != step) {
@@ -949,8 +950,9 @@ class LmdbEvaluationStatistics
 			}
 			addFiniteBindingValues(finiteBindingValues, tupleExpr);
 			prefixFactors.add(tupleExpr);
-			if (isFiniteNonNegative(enrichedStep.getPrefixOutputRows())) {
-				prefixRowsBeforeStep = enrichedStep.getPrefixOutputRows();
+			double stepFinalRows = stepFinalRows(enrichedStep);
+			if (isFiniteNonNegative(stepFinalRows)) {
+				prefixRowsBeforeStep = stepFinalRows;
 			}
 		}
 
@@ -963,7 +965,7 @@ class LmdbEvaluationStatistics
 		double estimatedFinalRows = plan.getEstimatedFinalRows();
 		List<JoinOrderPlanner.PlanStep> finalSteps = enrichedSteps == null ? originalSteps : enrichedSteps;
 		if (enrichedSteps != null && !finalSteps.isEmpty()) {
-			double finalPrefixRows = finalSteps.get(finalSteps.size() - 1).getPrefixOutputRows();
+			double finalPrefixRows = stepFinalRows(finalSteps.get(finalSteps.size() - 1));
 			if (isFiniteNonNegative(finalPrefixRows)) {
 				estimatedFinalRows = finalPrefixRows;
 			}
@@ -984,8 +986,34 @@ class LmdbEvaluationStatistics
 				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimatedTotalWork);
 			}
 		}
+		if (isFiniteNonNegative(estimatedFinalRows)) {
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimatedFinalRows);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, estimatedFinalRows);
+		}
 		return new JoinOrderPlan(plan.getOrderedArgs(), estimatedFinalRows, estimatedTotalWork,
 				plan.getDiagnostics(), summaryStringMetrics, summaryDoubleMetrics, finalSteps);
+	}
+
+	private JoinOrderPlanner.PlanStep normalizePrefixRows(JoinOrderPlanner.PlanStep step) {
+		double finalRows = stepFinalRows(step);
+		if (!isFiniteNonNegative(finalRows)
+				|| Double.compare(finalRows, step.getPrefixOutputRows()) == 0) {
+			return step;
+		}
+		return new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(), step.getFactorOutputRows(), finalRows,
+				step.getStepWorkRows(), step.getStringMetrics(), step.getDoubleMetrics(),
+				step.getAppliedFilterIndexes());
+	}
+
+	private double stepFinalRows(JoinOrderPlanner.PlanStep step) {
+		if (step == null) {
+			return Double.NaN;
+		}
+		Double finalRows = step.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (finalRows != null && isFiniteNonNegative(finalRows)) {
+			return finalRows;
+		}
+		return step.getPrefixOutputRows();
 	}
 
 	private JoinOrderPlanner.PlanStep refineConnectedPageWalkPlanStep(TupleExpr tupleExpr,
