@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -101,6 +102,46 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void rowCapFailureCarriesQueryPieceKindAndPhase(@TempDir File dataDir) {
+		String previousMaxRows = System.getProperty("rdf4j.lmdb.estimate.audit.maxActualRows");
+		System.setProperty("rdf4j.lmdb.estimate.audit.maxActualRows", "1");
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				IRI p = VF.createIRI("urn:test:audit:rowcap:p");
+				connection.add(VF.createIRI("urn:test:audit:rowcap:s1"), p,
+						VF.createIRI("urn:test:audit:rowcap:o1"));
+				connection.add(VF.createIRI("urn:test:audit:rowcap:s2"), p,
+						VF.createIRI("urn:test:audit:rowcap:o2"));
+
+				LmdbEstimateAuditHarness.AuditLimitExceededException exception = assertThrows(
+						LmdbEstimateAuditHarness.AuditLimitExceededException.class,
+						() -> LmdbEstimateAuditHarness.auditQuery(connection, "audit-rowcap", """
+								SELECT * WHERE {
+								  ?s <urn:test:audit:rowcap:p> ?o .
+								}
+								"""));
+
+				String message = exception.getMessage();
+				assertTrue(message.contains("queryId=audit-rowcap"), message);
+				assertTrue(message.contains("pieceId=full"), message);
+				assertTrue(message.contains("kind=FULL_QUERY"), message);
+				assertTrue(message.contains("phase=actual-rows"), message);
+				assertTrue(message.contains("rowsSeen=2"), message);
+			}
+		} finally {
+			if (previousMaxRows == null) {
+				System.clearProperty("rdf4j.lmdb.estimate.audit.maxActualRows");
+			} else {
+				System.setProperty("rdf4j.lmdb.estimate.audit.maxActualRows", previousMaxRows);
+			}
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void capturesNestedOperatorPiecesWithQError(@TempDir File dataDir) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
 		repository.init();
@@ -184,6 +225,133 @@ class LmdbEstimateAuditHarnessTest {
 						.toList();
 				double worstQError = worstRows.isEmpty() ? 1.0d : worstRows.get(0).qError();
 				assertTrue(worstQError <= 10.0d, () -> "Worst estimate q-error too high: " + worstRows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void auditsEntireGeneratedCorpusAcrossNestedPieces(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.flatMap(query -> LmdbEstimateAuditHarness.auditQuery(connection, query.id(), query.sparql())
+								.stream())
+						.toList();
+
+				assertEquals(300, rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.count());
+				assertTrue(rows.stream().allMatch(row -> row.actualRows() >= 0));
+				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())));
+				assertTrue(rows.stream().allMatch(row -> row.qError() >= 1.0d && Double.isFinite(row.qError())));
+
+				List<LmdbEstimateAuditHarness.AuditRow> worstRows = rows.stream()
+						.sorted(Comparator.comparingDouble(LmdbEstimateAuditHarness.AuditRow::qError).reversed())
+						.limit(10)
+						.toList();
+				double worstQError = worstRows.isEmpty() ? 1.0d : worstRows.get(0).qError();
+				assertTrue(worstQError <= 10.0d, () -> "Worst full corpus estimate q-error too high: " + worstRows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void mixedAasMedicalImpossibleNumericFilterDoesNotFallbackToPositiveRows(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.filter(candidate -> candidate.id().equals("audit-q44"))
+						.findFirst()
+						.orElseThrow();
+
+				LmdbEstimateAuditHarness.AuditRow fullRow = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql())
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(0L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.qError() <= 4.0d,
+						() -> "Impossible numeric filter must not estimate hundreds of positive rows: " + fullRow);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void orderedSliceImpossibleNumericFilterDoesNotEstimateLimitRows(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.filter(candidate -> candidate.id().equals("audit-q98"))
+						.findFirst()
+						.orElseThrow();
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(0L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.qError() <= 4.0d,
+						() -> "ORDER/LIMIT must not hide an impossible known-domain numeric filter: " + rows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void groupedAasRelationshipDoesNotUsePreGroupJoinRows(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.filter(candidate -> candidate.id().equals("audit-q26"))
+						.findFirst()
+						.orElseThrow();
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(18L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.qError() <= 4.0d,
+						() -> "GROUP BY ?lineAAS must use group-variable NDV, not pre-group join rows: " + rows);
 			}
 		} finally {
 			repository.shutDown();
@@ -323,6 +491,41 @@ class LmdbEstimateAuditHarnessTest {
 				assertTrue(genericJoinHeaders.isEmpty(),
 						() -> "AAS path query should not execute inner joins through generic Cartesian-prone "
 								+ "RDF4J iterator costing: " + genericJoinHeaders + "\n" + plan);
+				assertTrue(plan.contains("optimizer.connectedEnumeration=phase1_connected_only"),
+						() -> "Connected AAS join island should be annotated as connected-only enumeration:\n" + plan);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void disconnectedQueryReportsExplicitCartesianFallback(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				IRI leftPredicate = VF.createIRI("urn:audit:disconnected:left");
+				IRI rightPredicate = VF.createIRI("urn:audit:disconnected:right");
+				connection.add(VF.createIRI("urn:audit:disconnected:left:s"), leftPredicate,
+						VF.createIRI("urn:audit:disconnected:left:o"));
+				connection.add(VF.createIRI("urn:audit:disconnected:right:s"), rightPredicate,
+						VF.createIRI("urn:audit:disconnected:right:o"));
+
+				String plan = connection.prepareTupleQuery("""
+						SELECT * WHERE {
+						  ?left <urn:audit:disconnected:left> ?leftValue .
+						  ?right <urn:audit:disconnected:right> ?rightValue .
+						}
+						""")
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertTrue(plan.contains("optimizer.connectedEnumeration=phase2_disconnected_components"),
+						() -> "Disconnected query should make Cartesian fallback explicit:\n" + plan);
+				assertTrue(plan.contains("optimizer.cartesianFallbackReason=disconnected-components"),
+						() -> "Disconnected query should include fallback reason:\n" + plan);
 			}
 		} finally {
 			repository.shutDown();

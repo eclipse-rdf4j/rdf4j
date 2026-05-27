@@ -637,8 +637,10 @@ final class LmdbCascadesRuleProvider {
 		private boolean preselectSemanticRewrite(CostedOption candidate, Optional<CostedOption> original,
 				List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
 			if (!candidate.semanticRewrite()) {
-				return candidate.semanticRewrite();
+				return false;
 			}
+			// Semantic rewrites create logical factors, such as FILTER IN -> VALUES, that the join planner can
+			// move. Do not reject them just because their local access path is worse at the FILTER's old position.
 			if (original.isEmpty()) {
 				return true;
 			}

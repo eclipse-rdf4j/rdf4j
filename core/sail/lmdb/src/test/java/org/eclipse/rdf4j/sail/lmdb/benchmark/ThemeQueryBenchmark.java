@@ -188,6 +188,16 @@ public class ThemeQueryBenchmark {
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
 				System.out.println();
 			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("\n### Timed Query - Before running the query ###");
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				tupleQuery.setMaxExecutionTime(360);
+				Explanation explain = tupleQuery.explain(Explanation.Level.Timed);
+				System.out.println(explain);
+
+				System.out.println();
+			}
 		}
 
 	}

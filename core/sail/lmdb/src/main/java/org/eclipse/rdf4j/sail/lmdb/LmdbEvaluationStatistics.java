@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -7003,6 +7004,10 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public double estimateFilterPassRatio(Filter filter) {
+		Optional<FilterPassEstimate> exactDomainEstimate = exactKnownDomainFilterPass(filter);
+		if (exactDomainEstimate.isPresent()) {
+			return exactDomainEstimate.get().getPlanningPassRatio();
+		}
 		if (sketchBasedJoinEstimator == null) {
 			return -1.0d;
 		}
@@ -7012,6 +7017,10 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public FilterPassEstimate estimateFilterPass(Filter filter) {
+		Optional<FilterPassEstimate> exactDomainEstimate = exactKnownDomainFilterPass(filter);
+		if (exactDomainEstimate.isPresent()) {
+			return exactDomainEstimate.get();
+		}
 		Optional<FilterPassEstimate> localBoundEstimate = learnedLocalBoundFilterPass(filter);
 		if (localBoundEstimate.isPresent()) {
 			return localBoundEstimate.get();
@@ -7020,6 +7029,189 @@ class LmdbEvaluationStatistics
 			return super.estimateFilterPass(filter);
 		}
 		return sketchBasedJoinEstimator.estimateFilterPass(filter);
+	}
+
+	private Optional<FilterPassEstimate> exactKnownDomainFilterPass(Filter filter) {
+		if (filter == null || filter.getArg() == null || filter.getCondition() == null) {
+			return Optional.empty();
+		}
+		Map<String, RdfTermDomain> domains = knownObjectDomainsByVariable(filter.getArg());
+		if (domains.isEmpty()) {
+			return Optional.empty();
+		}
+		Set<String> assuredBindingNames = plannerBindingNames(filter.getArg().getAssuredBindingNames());
+		return exactKnownDomainPassRatio(filter.getCondition(), domains, assuredBindingNames)
+				.map(passRatio -> new FilterPassEstimate(passRatio, FilterPassEstimate.Source.EXACT));
+	}
+
+	private Map<String, RdfTermDomain> knownObjectDomainsByVariable(TupleExpr input) {
+		Map<String, RdfTermDomain> domains = new HashMap<>();
+		input.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				Var predicate = pattern.getPredicateVar();
+				Var object = pattern.getObjectVar();
+				if (predicate != null && predicate.getValue()instanceof IRI predicateIri
+						&& object != null && !object.hasValue() && object.getName() != null) {
+					getKnownRdfTermDomain(predicateIri).ifPresent(domain -> {
+						if (!domain.isUnknown() && !domain.equals(RdfTermDomain.UNRESTRICTED)) {
+							domains.merge(object.getName(), domain, RdfTermDomain::meetRequired);
+						}
+					});
+				}
+				super.meet(pattern);
+			}
+		});
+		return domains;
+	}
+
+	private Optional<Double> exactKnownDomainPassRatio(ValueExpr condition, Map<String, RdfTermDomain> domains,
+			Set<String> assuredBindingNames) {
+		if (condition instanceof And and) {
+			Optional<Double> left = exactKnownDomainPassRatio(and.getLeftArg(), domains, assuredBindingNames);
+			if (left.filter(passRatio -> passRatio == 0.0d).isPresent()) {
+				return left;
+			}
+			Optional<Double> right = exactKnownDomainPassRatio(and.getRightArg(), domains, assuredBindingNames);
+			if (right.filter(passRatio -> passRatio == 0.0d).isPresent()) {
+				return right;
+			}
+			if (left.filter(passRatio -> passRatio == 1.0d).isPresent()) {
+				return right;
+			}
+			if (right.filter(passRatio -> passRatio == 1.0d).isPresent()) {
+				return left;
+			}
+			return Optional.empty();
+		}
+		if (!(condition instanceof Compare compare)) {
+			return Optional.empty();
+		}
+		Optional<VariableCompare> variableCompare = variableCompare(compare);
+		if (variableCompare.isEmpty() || !assuredBindingNames.contains(variableCompare.get().variableName())) {
+			return Optional.empty();
+		}
+		RdfTermDomain domain = domains.get(variableCompare.get().variableName());
+		if (domain == null || domain.isUnknown() || domain.equals(RdfTermDomain.UNRESTRICTED)) {
+			return Optional.empty();
+		}
+		Optional<Double> passRatio = domain.isFinite()
+				? exactFiniteDomainPassRatio(domain, variableCompare.get())
+				: exactIntegerRangePassRatio(domain, variableCompare.get());
+		if (passRatio.filter(ratio -> ratio == 0.0d).isPresent()) {
+			return passRatio;
+		}
+		if (assuredBindingNames.contains(variableCompare.get().variableName())) {
+			return passRatio;
+		}
+		return Optional.empty();
+	}
+
+	private Optional<VariableCompare> variableCompare(Compare compare) {
+		Optional<String> leftVariable = unboundVariableName(compare.getLeftArg());
+		if (leftVariable.isPresent() && compare.getRightArg()instanceof ValueConstant rightConstant) {
+			return Optional.of(new VariableCompare(leftVariable.get(), compare.getOperator(),
+					rightConstant.getValue()));
+		}
+		Optional<String> rightVariable = unboundVariableName(compare.getRightArg());
+		if (rightVariable.isPresent() && compare.getLeftArg()instanceof ValueConstant leftConstant) {
+			return Optional.of(new VariableCompare(rightVariable.get(), reverse(compare.getOperator()),
+					leftConstant.getValue()));
+		}
+		return Optional.empty();
+	}
+
+	private Optional<String> unboundVariableName(ValueExpr expression) {
+		if (expression instanceof Var var && !var.hasValue() && var.getName() != null) {
+			return Optional.of(var.getName());
+		}
+		return Optional.empty();
+	}
+
+	private Compare.CompareOp reverse(Compare.CompareOp operator) {
+		return switch (operator) {
+		case LT -> Compare.CompareOp.GT;
+		case LE -> Compare.CompareOp.GE;
+		case GT -> Compare.CompareOp.LT;
+		case GE -> Compare.CompareOp.LE;
+		case EQ -> Compare.CompareOp.EQ;
+		case NE -> Compare.CompareOp.NE;
+		};
+	}
+
+	private Optional<Double> exactFiniteDomainPassRatio(RdfTermDomain domain, VariableCompare comparison) {
+		Set<Value> values = domain.finiteValues();
+		if (values.isEmpty()) {
+			return Optional.of(0.0d);
+		}
+		int matches = 0;
+		for (Value value : values) {
+			try {
+				if (QueryEvaluationUtil.compare(value, comparison.constant(), comparison.operator(), false)) {
+					matches++;
+				}
+			} catch (ValueExprEvaluationException ignored) {
+				// SPARQL FILTER errors reject the binding.
+			}
+		}
+		return Optional.of(matches / (double) values.size());
+	}
+
+	private Optional<Double> exactIntegerRangePassRatio(RdfTermDomain domain, VariableCompare comparison) {
+		if (!domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER)) {
+			return Optional.empty();
+		}
+		Optional<RdfTermDomain.IntegerRange> domainRange = domain.integerRange();
+		Optional<RdfTermDomain.IntegerRange> constantRange = RdfTermDomain.classify(comparison.constant())
+				.integerRange();
+		if (domainRange.isEmpty() || constantRange.isEmpty()
+				|| constantRange.get().minInclusive() != constantRange.get().maxInclusive()) {
+			return Optional.empty();
+		}
+		long min = domainRange.get().minInclusive();
+		long max = domainRange.get().maxInclusive();
+		long constant = constantRange.get().minInclusive();
+		return switch (comparison.operator()) {
+		case EQ -> {
+			if (constant < min || constant > max) {
+				yield Optional.of(0.0d);
+			}
+			yield min == max && min == constant ? Optional.of(1.0d) : Optional.empty();
+		}
+		case NE -> {
+			if (constant < min || constant > max) {
+				yield Optional.of(1.0d);
+			}
+			yield min == max && min == constant ? Optional.of(0.0d) : Optional.empty();
+		}
+		case LT -> {
+			if (min >= constant) {
+				yield Optional.of(0.0d);
+			}
+			yield max < constant ? Optional.of(1.0d) : Optional.empty();
+		}
+		case LE -> {
+			if (min > constant) {
+				yield Optional.of(0.0d);
+			}
+			yield max <= constant ? Optional.of(1.0d) : Optional.empty();
+		}
+		case GT -> {
+			if (max <= constant) {
+				yield Optional.of(0.0d);
+			}
+			yield min > constant ? Optional.of(1.0d) : Optional.empty();
+		}
+		case GE -> {
+			if (max < constant) {
+				yield Optional.of(0.0d);
+			}
+			yield min >= constant ? Optional.of(1.0d) : Optional.empty();
+		}
+		};
+	}
+
+	private record VariableCompare(String variableName, Compare.CompareOp operator, Value constant) {
 	}
 
 	Optional<FilterPassEstimate> estimatePatternLocalFilterPass(org.eclipse.rdf4j.query.algebra.ValueExpr condition,
@@ -7240,7 +7432,7 @@ class LmdbEvaluationStatistics
 			double inputRows = this.cardinality;
 
 			double passRatio = LmdbEvaluationStatistics.this.estimateFilterPassRatio(node);
-			if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d
+			if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d
 					&& Double.isFinite(inputRows) && inputRows >= 0.0d) {
 				double filteredRows = inputRows * passRatio;
 				if (Double.isFinite(filteredRows) && filteredRows >= 0.0d) {

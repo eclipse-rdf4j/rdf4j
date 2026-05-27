@@ -141,7 +141,7 @@ class ThemeQueryBenchmarkSmokeIT {
 
 	@Test
 	@Order(Integer.MAX_VALUE - 3)
-	void medicalRecordsQueryNineBenchmarkLifecycleRejectsConditionCodeAnchor() throws Exception {
+	void medicalRecordsQueryNineBenchmarkLifecycleKeepsConditionCodeValuesAnchorMovable() throws Exception {
 		ThemeQueryBenchmark benchmark = newBenchmark(Theme.MEDICAL_RECORDS, 9);
 
 		benchmark.setup();
@@ -150,9 +150,9 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(initialPlan.contains("finite-anchor:condCode[valid"),
 					"Expected q9 benchmark setup to expose the condition-code finite anchor candidate\n"
 							+ initialPlan);
-			assertFalse(initialPlan.contains("selected=finite-anchor:condCode"),
-					"q9 benchmark setup should reject a condition-code finite anchor that only wins by a "
-							+ "near-tie scalar work estimate while worsening final rows and intermediate surface\n"
+			assertTrue(initialPlan.contains("selected=finite-anchor:condCode"),
+					"q9 benchmark setup should keep the FILTER-generated condition-code VALUES relation as the "
+							+ "selected, movable finite anchor instead of freezing the original FILTER plan\n"
 							+ initialPlan);
 
 			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.MEDICAL_RECORDS, 9);
@@ -162,10 +162,16 @@ class ThemeQueryBenchmarkSmokeIT {
 			String plan = benchmark.explainOptimizedPlan();
 			assertTrue(plan.contains("finite-anchor:condCode[valid"),
 					"Expected q9 benchmark lifecycle to expose the condition-code finite anchor candidate\n" + plan);
-			assertFalse(plan.contains("selected=finite-anchor:condCode"),
-					"q9 benchmark lifecycle should reject a condition-code finite anchor that only wins by a "
-							+ "near-tie scalar work estimate while worsening final rows and intermediate surface\n"
+			assertTrue(plan.contains("selected=finite-anchor:condCode"),
+					"q9 benchmark lifecycle should still select the condition-code VALUES rewrite after feedback\n"
 							+ plan);
+			String renderedQuery = benchmark.renderOptimizedQuery(ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 9));
+			assertTrue(renderedQuery.contains("VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }"),
+					"q9 should render the safe condition-code FILTER IN as a movable VALUES relation\n"
+							+ renderedQuery + "\n" + plan);
+			assertFalse(renderedQuery.contains("FILTER (?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))"),
+					"q9 should not keep the original condition-code FILTER after selecting the finite anchor\n"
+							+ renderedQuery + "\n" + plan);
 		} finally {
 			benchmark.tearDown();
 		}
