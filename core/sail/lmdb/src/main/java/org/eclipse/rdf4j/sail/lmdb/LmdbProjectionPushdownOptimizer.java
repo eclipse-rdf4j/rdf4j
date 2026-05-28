@@ -151,7 +151,10 @@ final class LmdbProjectionPushdownOptimizer implements QueryOptimizer {
 				&& projectionNames(projection).equals(orderedNames)) {
 			return arg;
 		}
-		return new Projection(arg, projectionElemList(orderedNames));
+		// This projection is a transparent optimizer-created binding-pruning node, not a SPARQL subquery.
+		// Leaving the default subquery flag enabled makes TupleExprs.containsSubquery(...) classify the
+		// argument as out-of-scope, which in turn forces HashJoinIteration for OPTIONAL/LeftJoin.
+		return new Projection(arg, projectionElemList(orderedNames), false);
 	}
 
 	private static List<String> orderedNames(TupleExpr arg, Set<String> neededNames) {

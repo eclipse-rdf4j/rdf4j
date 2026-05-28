@@ -15,7 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -35,18 +37,26 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private final SailDataset dataset;
 	private final QueryEvaluationStep evaluationStep;
 	private final List<String> bindingNames;
+	private final int maxExecutionTimeSeconds;
 
 	private LmdbBenchmarkQueryPlan(SailSource branch, SailDataset dataset, QueryEvaluationStep evaluationStep,
-			List<String> bindingNames) {
+			List<String> bindingNames, int maxExecutionTimeSeconds) {
 		this.branch = branch;
 		this.dataset = dataset;
 		this.evaluationStep = evaluationStep;
 		this.bindingNames = bindingNames;
+		this.maxExecutionTimeSeconds = maxExecutionTimeSeconds;
 	}
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query) {
+		return prepare(store, connection, query, 0);
+	}
+
+	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds) {
 		SailTupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
 		tupleQuery.setIncludeInferred(false);
+		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
 		TupleExpr tupleExpr = tupleQuery.getParsedQuery().getTupleExpr().clone();
 		if (!(tupleExpr instanceof QueryRoot)) {
 			tupleExpr = new QueryRoot(tupleExpr);
@@ -66,7 +76,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 					tupleQuery.getBindings());
 			QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
 			return new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
-					new ArrayList<>(optimized.getBindingNames()));
+					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds);
 		} catch (RuntimeException e) {
 			closeQuietly(dataset);
 			closeQuietly(branch);
@@ -75,7 +85,11 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	}
 
 	public CloseableIteration<BindingSet> evaluate() {
-		return evaluationStep.evaluate(EmptyBindingSet.getInstance());
+		CloseableIteration<BindingSet> result = evaluationStep.evaluate(EmptyBindingSet.getInstance());
+		if (maxExecutionTimeSeconds > 0) {
+			return new QueryInterruptIteration(result, 1000L * maxExecutionTimeSeconds);
+		}
+		return result;
 	}
 
 	public int bindingCount() {
@@ -111,6 +125,18 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		try {
 			closeable.close();
 		} catch (Exception ignored) {
+		}
+	}
+
+	private static final class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {
+
+		private QueryInterruptIteration(CloseableIteration<? extends BindingSet> iter, long timeLimit) {
+			super(iter, timeLimit);
+		}
+
+		@Override
+		protected void throwInterruptedException() {
+			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
 }

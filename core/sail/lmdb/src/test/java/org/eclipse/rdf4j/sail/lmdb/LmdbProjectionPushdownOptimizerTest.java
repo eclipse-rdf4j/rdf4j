@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -112,6 +114,27 @@ class LmdbProjectionPushdownOptimizerTest {
 		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, outer.getArg(), () -> root.getArg().toString());
 		assertProjection(leftJoin.getLeftArg(), "person", "type");
 		assertProjection(leftJoin.getRightArg(), "person");
+	}
+
+	@Test
+	void pushedLeftJoinBranchProjectionsAreTransparentAndDoNotForceHashJoin() {
+		StatementPattern left = statementPattern("person", "type", "type");
+		StatementPattern right = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(project(new LeftJoin(left, right), "name"));
+
+		optimize(root);
+
+		Projection outer = assertProjection(root.getArg(), "name");
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, outer.getArg(), () -> root.getArg().toString());
+		Projection leftProjection = assertProjection(leftJoin.getLeftArg(), "person");
+		Projection rightProjection = assertProjection(leftJoin.getRightArg(), "person", "name");
+
+		assertFalse(leftProjection.isSubquery(), () -> "optimizer-created left projection must be transparent:\n"
+				+ root);
+		assertFalse(rightProjection.isSubquery(), () -> "optimizer-created right projection must be transparent:\n"
+				+ root);
+		assertFalse(TupleExprs.containsSubquery(leftJoin.getRightArg()),
+				() -> "transparent OPTIONAL right projection must not force HashJoinIteration:\n" + root);
 	}
 
 	@Test

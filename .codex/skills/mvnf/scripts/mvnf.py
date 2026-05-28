@@ -11,10 +11,27 @@ import subprocess
 import sys
 from collections import deque
 from pathlib import Path
+from typing import Callable
 
 
 def _quote_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
+
+
+def _maven_build_stream_filter() -> Callable[[str], bool]:
+    summary = False
+
+    def should_print(line: str) -> bool:
+        nonlocal summary
+        if "[WARNING]" in line:
+            return False
+        if "[ERROR]" in line:
+            return True
+        if "Reactor Summary" in line:
+            summary = True
+        return summary
+
+    return should_print
 
 
 def _find_git_root(start: Path) -> Path | None:
@@ -176,6 +193,7 @@ def _run(
     tail_lines: int,
     log_path: Path,
     stream: bool,
+    stream_filter: Callable[[str], bool] | None = None,
 ) -> tuple[int, list[str]]:
     print(f"\n$ {_quote_cmd(cmd)}")
     print(f"[mvnf] Log: {log_path.relative_to(cwd).as_posix()}")
@@ -196,7 +214,7 @@ def _run(
             for line in proc.stdout:
                 log_file.write(line)
                 output_tail.append(line.rstrip("\n"))
-                if stream:
+                if stream and (stream_filter is None or stream_filter(line)):
                     print(line, end="")
 
     tail = list(output_tail)
@@ -334,7 +352,7 @@ def main() -> int:
     else:
         print("\n[mvnf] No stale module test artifacts found.")
 
-    rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[0], args.stream)
+    rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[0], args.stream, _maven_build_stream_filter())
     if rc != 0:
         print("\n[mvnf] Root install failed.")
         return rc

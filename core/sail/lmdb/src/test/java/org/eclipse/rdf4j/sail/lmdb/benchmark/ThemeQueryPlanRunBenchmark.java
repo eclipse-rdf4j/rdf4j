@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -77,6 +78,7 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String COUNT_BINDING_NAME = "count";
+	private static final int QUERY_TIMEOUT_SECONDS = 60;
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
@@ -157,7 +159,7 @@ public class ThemeQueryPlanRunBenchmark {
 			connection = repository.getConnection();
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
+				Explanation explain = prepareQuery(connection).explain(Explanation.Level.Timed);
 				System.out.println();
 				System.out.println();
 				System.out.println(explain);
@@ -174,7 +176,7 @@ public class ThemeQueryPlanRunBenchmark {
 			}
 			if (repository != null) {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
-					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
+					Explanation explain = prepareQuery(connection).explain(Explanation.Level.Timed);
 					System.out.println();
 					System.out.println();
 					System.out.println(explain);
@@ -348,7 +350,13 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan() {
-			return LmdbBenchmarkQueryPlan.prepare(store, connection, query);
+			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS);
+		}
+
+		private TupleQuery prepareQuery(SailRepositoryConnection connection) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+			return tupleQuery;
 		}
 
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {

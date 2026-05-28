@@ -50,6 +50,7 @@ If the test run fails, it prints the list of Surefire/Failsafe report files unde
 - `--module <path>`: Force the module when the test class name exists in multiple modules.
 - `--it`: Treat the selector as an integration test and pass it via `-Dit.test=...`.
 - `--no-offline`: Run Maven commands without `-o` (useful if offline resolution fails).
+- `--stream`: Stream verify output live; install output is filtered to errors plus the reactor summary while the full install log is kept in `maven-build.log`.
 
 ## LMDB regression speedup note
 
