@@ -121,9 +121,9 @@ public class AASQueriesBenchmark {
 	String useCascades;
 
 	@Param({
-			"query1PropertyProjection",
+//			"query1PropertyProjection",
 			"query2ThresholdCount",
-			"query3LineAggregates"
+//			"query3LineAggregates"
 	})
 	private String query;
 

@@ -87,6 +87,10 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = new ArrayList<>();
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(LmdbStandardPlanBaselineOptimizer.standardPipeline(strategy, tripleSource,
+					evaluationStatistics));
+		}
 		optimizers.add(BINDING_ASSIGNER);
 		optimizers.add(new ConstantOptimizer(strategy));
 		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
@@ -113,8 +117,11 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(new LmdbSemanticDependencyOptimizer(semanticDependencies));
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(LmdbStandardPlanBaselineOptimizer.preCascades());
+		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
-				preserveSerializableObservationOrder));
+				preserveSerializableObservationOrder, strategy, tripleSource));
 		boolean legacySketchOptimizer = Boolean.getBoolean(LEGACY_SKETCH_OPTIMIZER_PROPERTY);
 		if (legacySketchOptimizer) {
 			optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
