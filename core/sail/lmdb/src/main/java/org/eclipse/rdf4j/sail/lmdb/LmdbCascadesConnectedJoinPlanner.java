@@ -13,11 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -65,17 +63,30 @@ final class LmdbCascadesConnectedJoinPlanner {
 				|| !LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(joinIsland)) {
 			return Optional.empty();
 		}
-		List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(joinIsland);
+		LmdbEvaluationStatistics scopedStatistics = scopedPlanCacheStatistics(costModel, fallbackStatistics);
+		List<TupleExpr> factors = canonicalFactors(LmdbJoinIslandConnectivity.flattenFactors(joinIsland),
+				scopedStatistics);
 		if (factors.size() < 2) {
 			return Optional.empty();
 		}
-		if (factors.size() > EXACT_DP_FACTOR_LIMIT) {
-			return greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics);
+		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
+		PlanCacheKey cacheKey = scopedPlanCacheAvailable(scopedStatistics)
+				? new PlanCacheKey(factorFingerprints(factors, scopedStatistics), plannerNames(initialBoundVars),
+						greedy)
+				: null;
+		Optional<PlanTemplate> cachedTemplate = cachedPlanTemplate(scopedStatistics, cacheKey);
+		if (cachedTemplate != null) {
+			return cachedTemplate.map(template -> template.toPlan(factors));
 		}
-		return dpPlan(factors, initialBoundVars, costModel, fallbackStatistics);
+
+		Optional<PlanTemplate> template = greedy
+				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics)
+				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics);
+		cachePlanTemplate(scopedStatistics, cacheKey, template);
+		return template.map(planTemplate -> planTemplate.toPlan(factors));
 	}
 
-	private static Optional<Plan> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
+	private static Optional<PlanTemplate> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
 		int factorCount = factors.size();
 		List<Set<String>> factorVars = factorVars(factors);
@@ -86,7 +97,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors);
+		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
 		State[] best = new State[1 << factorCount];
 
 		for (int factorIndex : runtimeFactorIndices) {
@@ -134,10 +145,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (complete == null) {
 			return Optional.empty();
 		}
-		return Optional.of(complete.toPlan(factors, "connected-dp", zeroVarFactorIndices.size()));
+		return Optional.of(new PlanTemplate(complete, "connected-dp", zeroVarFactorIndices.size()));
 	}
 
-	private static Optional<Plan> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
+	private static Optional<PlanTemplate> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
 		List<Set<String>> factorVars = factorVars(factors);
 		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
@@ -145,7 +156,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (remaining.size() < 2) {
 			return Optional.empty();
 		}
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors);
+		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
 		Set<String> boundVars = plannerNames(initialBoundVars);
 		List<Integer> order = new ArrayList<>(factors.size());
 		List<Step> steps = new ArrayList<>(factors.size());
@@ -155,6 +166,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		while (!remaining.isEmpty()) {
 			int selectedPosition = -1;
 			Step selectedStep = null;
+			List<TupleExpr> prefixFactors = prefixFactors(factors, order);
 			for (int position = 0; position < remaining.size(); position++) {
 				int factorIndex = remaining.get(position);
 				TupleExpr factor = factors.get(factorIndex);
@@ -166,7 +178,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
-						prefixFactors(factors, order), costModel, fallbackStatistics);
+						prefixFactors, costModel, fallbackStatistics);
 				if (step == null) {
 					continue;
 				}
@@ -193,7 +205,107 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (complete == null) {
 			return Optional.empty();
 		}
-		return Optional.of(complete.toPlan(factors, "connected-greedy", zeroVarFactorIndices.size()));
+		return Optional.of(new PlanTemplate(complete, "connected-greedy", zeroVarFactorIndices.size()));
+	}
+
+	private static List<TupleExpr> canonicalFactors(List<TupleExpr> factors, LmdbEvaluationStatistics statistics) {
+		if (factors == null || factors.isEmpty()) {
+			return List.of();
+		}
+		if (statistics == null) {
+			return List.copyOf(factors);
+		}
+		List<TupleExpr> canonical = new ArrayList<>(factors);
+		canonical.sort((left, right) -> compareFactors(left, right, statistics));
+		return List.copyOf(canonical);
+	}
+
+	private static int compareFactors(TupleExpr left, TupleExpr right, LmdbEvaluationStatistics statistics) {
+		if (left == right) {
+			return 0;
+		}
+		if (left == null) {
+			return -1;
+		}
+		if (right == null) {
+			return 1;
+		}
+		Object leftFingerprint = factorFingerprint(left, statistics);
+		Object rightFingerprint = factorFingerprint(right, statistics);
+		int comparison = Integer.compare(nullableHash(leftFingerprint), nullableHash(rightFingerprint));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = className(leftFingerprint).compareTo(className(rightFingerprint));
+		if (comparison != 0) {
+			return comparison;
+		}
+		if (leftFingerprint == null ? rightFingerprint == null : leftFingerprint.equals(rightFingerprint)) {
+			return 0;
+		}
+		// Rare hash/class collision: keep equivalent Cascades alternatives deterministic.
+		return String.valueOf(leftFingerprint).compareTo(String.valueOf(rightFingerprint));
+	}
+
+	private static int nullableHash(Object value) {
+		return value == null ? 0 : value.hashCode();
+	}
+
+	private static String className(Object value) {
+		return value == null ? "" : value.getClass().getName();
+	}
+
+	private static List<Object> factorFingerprints(List<TupleExpr> factors, LmdbEvaluationStatistics statistics) {
+		if (factors == null || factors.isEmpty()) {
+			return List.of();
+		}
+		List<Object> fingerprints = new ArrayList<>(factors.size());
+		for (TupleExpr factor : factors) {
+			fingerprints.add(factorFingerprint(factor, statistics));
+		}
+		return List.copyOf(fingerprints);
+	}
+
+	private static Object factorFingerprint(TupleExpr factor, LmdbEvaluationStatistics statistics) {
+		if (statistics != null) {
+			return statistics.optimizationScopedFactorFingerprint(factor);
+		}
+		return factor == null ? null : factor;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Optional<PlanTemplate> cachedPlanTemplate(LmdbEvaluationStatistics statistics,
+			PlanCacheKey cacheKey) {
+		if (statistics == null || cacheKey == null) {
+			return null;
+		}
+		Object cached = statistics.getOptimizationScopedPlannerCacheValue(cacheKey);
+		if (cached instanceof Optional<?>) {
+			return (Optional<PlanTemplate>) cached;
+		}
+		return null;
+	}
+
+	private static void cachePlanTemplate(LmdbEvaluationStatistics statistics, PlanCacheKey cacheKey,
+			Optional<PlanTemplate> template) {
+		if (statistics != null && cacheKey != null && template != null) {
+			statistics.putOptimizationScopedPlannerCacheValue(cacheKey, template);
+		}
+	}
+
+	private static boolean scopedPlanCacheAvailable(LmdbEvaluationStatistics statistics) {
+		return statistics != null && statistics.hasOptimizationScopedPlannerCache();
+	}
+
+	private static LmdbEvaluationStatistics scopedPlanCacheStatistics(JoinFactorCostModel costModel,
+			EvaluationStatistics fallbackStatistics) {
+		if (costModel instanceof LmdbEvaluationStatistics statistics) {
+			return statistics;
+		}
+		if (fallbackStatistics instanceof LmdbEvaluationStatistics statistics) {
+			return statistics;
+		}
+		return null;
 	}
 
 	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
@@ -314,8 +426,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return mask;
 	}
 
-	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors) {
-		List<Set<String>> factorVars = factorVars(factors);
+	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors, List<Set<String>> factorVars) {
 		boolean[] result = new boolean[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
 			TupleExpr factor = factors.get(i);
@@ -465,6 +576,20 @@ final class LmdbCascadesConnectedJoinPlanner {
 			int zeroVarFactorCount) {
 	}
 
+	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount) {
+		private Plan toPlan(List<TupleExpr> factors) {
+			return state.toPlan(factors, algorithm, zeroVarFactorCount);
+		}
+	}
+
+	private record PlanCacheKey(List<Object> factors, Set<String> initialBoundVars, boolean greedy) {
+		private PlanCacheKey {
+			factors = factors == null || factors.isEmpty() ? List.of() : List.copyOf(factors);
+			initialBoundVars = initialBoundVars == null || initialBoundVars.isEmpty() ? Set.of()
+					: Set.copyOf(initialBoundVars);
+		}
+	}
+
 	private record State(int mask, List<Integer> order, List<Step> steps, Set<String> boundVars, double rows,
 			double workRows, double maxRows, double cartesianWorkRows, double rowQErrorMax, double workQErrorMax,
 			double confidence, double evidenceCount) implements Comparable<State> {
@@ -504,13 +629,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		private TupleExpr buildPlan(List<TupleExpr> factors) {
-			Map<Integer, Step> stepsByFactor = new HashMap<>();
-			for (Step step : steps) {
-				stepsByFactor.put(step.factorIndex(), step);
-			}
-			TupleExpr root = cloneFactor(factors.get(order.get(0)), stepsByFactor.get(order.get(0)));
+			TupleExpr root = cloneFactor(factors.get(order.get(0)), steps.get(0));
 			for (int i = 1; i < order.size(); i++) {
-				Step step = stepsByFactor.get(order.get(i));
+				Step step = steps.get(i);
 				TupleExpr right = cloneFactor(factors.get(order.get(i)), step);
 				Join join = new Join(root, right);
 				stampPrefix(join, step, i + 1);
@@ -638,7 +759,20 @@ final class LmdbCascadesConnectedJoinPlanner {
 			if (comparison != 0) {
 				return comparison;
 			}
-			return order.toString().compareTo(other.order.toString());
+			return compareOrder(order, other.order);
+		}
+
+		private int compareOrder(List<Integer> left, List<Integer> right) {
+			int leftSize = left == null ? 0 : left.size();
+			int rightSize = right == null ? 0 : right.size();
+			int limit = Math.min(leftSize, rightSize);
+			for (int i = 0; i < limit; i++) {
+				int comparison = Integer.compare(left.get(i), right.get(i));
+				if (comparison != 0) {
+					return comparison;
+				}
+			}
+			return Integer.compare(leftSize, rightSize);
 		}
 	}
 
@@ -672,8 +806,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			if (comparison != 0) {
 				return comparison;
 			}
-			return String.format(Locale.ROOT, "%08d", factorIndex)
-					.compareTo(String.format(Locale.ROOT, "%08d", other.factorIndex));
+			return Integer.compare(factorIndex, other.factorIndex);
 		}
 	}
 }

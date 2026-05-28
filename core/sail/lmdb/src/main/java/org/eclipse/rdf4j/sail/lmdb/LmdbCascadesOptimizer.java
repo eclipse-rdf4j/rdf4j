@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanProvenanceAnnotator;
@@ -98,39 +99,48 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return;
 		}
 		mode = serializableSafeMode(mode);
-		Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-		boolean budgetedSearch = usesBudgetedSearch(mode, tupleExpr);
-		PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
-		OptimizationGoal goal = OptimizationGoal.exact(required);
-		if (budgetedSearch) {
-			goal = goal.asBudgeted(Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS)),
-					intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
-		} else if (mode == Mode.SHADOW) {
-			goal = new OptimizationGoal(required, OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.CostPolicy.EXACT,
-					org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector.INFINITE, Set.of(),
-					OptimizationGoal.SearchMode.SHADOW, Long.MAX_VALUE, Integer.MAX_VALUE);
-		}
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
+			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
+			boolean budgetedSearch = usesBudgetedSearch(mode, tupleExpr);
+			PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
+			OptimizationGoal goal = OptimizationGoal.exact(required);
+			if (budgetedSearch) {
+				goal = goal.asBudgeted(Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS)),
+						intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
+			} else if (mode == Mode.SHADOW) {
+				goal = new OptimizationGoal(required, OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.CostPolicy.EXACT,
+						org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector.INFINITE, Set.of(),
+						OptimizationGoal.SearchMode.SHADOW, Long.MAX_VALUE, Integer.MAX_VALUE);
+			}
 
-		annotateDistinctPhysicalRequirements(tupleExpr);
-		boolean traceEnabled = Boolean.getBoolean(TRACE_PROPERTY);
-		CascadesTelemetry.Recording telemetry = traceEnabled ? new CascadesTelemetry.Recording() : null;
-		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(statistics),
-				LmdbCascadesRuleProvider.rules(statistics),
-				traceEnabled ? telemetry : CascadesTelemetry.NO_OP);
-		CascadesPlan plan = planner.optimize(tupleExpr, goal);
-		boolean appliesPlan = mode.replacesAlgebra() && plan.tupleExpr().isPresent();
-		annotate(tupleExpr, mode, plan, telemetry, appliesPlan);
-		if (appliesPlan) {
-			TupleExpr replacement = plan.tupleExpr().get();
-			replaceRootIfSafe(tupleExpr, replacement);
+			annotateDistinctPhysicalRequirements(tupleExpr);
+			boolean traceEnabled = Boolean.getBoolean(TRACE_PROPERTY);
+			CascadesTelemetry.Recording telemetry = traceEnabled ? new CascadesTelemetry.Recording() : null;
+			CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(statistics),
+					LmdbCascadesRuleProvider.rules(statistics),
+					traceEnabled ? telemetry : CascadesTelemetry.NO_OP);
+			CascadesPlan plan = planner.optimize(tupleExpr, goal);
+			boolean appliesPlan = mode.replacesAlgebra() && plan.tupleExpr().isPresent();
+			annotate(tupleExpr, mode, plan, telemetry, appliesPlan);
+			if (appliesPlan) {
+				TupleExpr replacement = plan.tupleExpr().get();
+				replaceRootIfSafe(tupleExpr, replacement);
+			}
+			plan.provenance()
+					.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(tupleExpr, provenance,
+							LmdbCascadesExplainFinalizer.PLANNER_ID));
+			if (mode.replacesAlgebra()) {
+				optimizeSubtrees(tupleExpr, planner, goal);
+			}
+			annotateObjectGuarantees(tupleExpr);
 		}
-		plan.provenance()
-				.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(tupleExpr, provenance,
-						LmdbCascadesExplainFinalizer.PLANNER_ID));
-		if (mode.replacesAlgebra()) {
-			optimizeSubtrees(tupleExpr, planner, goal);
+	}
+
+	private QueryOptimizationScopeProvider.QueryOptimizationScope beginQueryOptimizationScope() {
+		if (statistics instanceof QueryOptimizationScopeProvider scopeProvider) {
+			return scopeProvider.beginQueryOptimizationScope();
 		}
-		annotateObjectGuarantees(tupleExpr);
+		return QueryOptimizationScopeProvider.NO_OP_SCOPE;
 	}
 
 	private Mode serializableSafeMode(Mode mode) {

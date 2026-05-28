@@ -214,28 +214,34 @@ class LmdbCascadesOptimizerTest {
 
 	@Test
 	void joinOrderProviderSummaryUsesExtendedEstimateVector() {
-		CascadesRule rule = LmdbCascadesRuleProvider.rules(new JoinOrderSummaryStatistics())
-				.rules()
-				.stream()
-				.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
-				.findFirst()
-				.orElseThrow();
-		TupleExpr join = new Join(pattern(), pattern());
-		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
+		try {
+			CascadesRule rule = LmdbCascadesRuleProvider.rules(new JoinOrderSummaryStatistics())
+					.rules()
+					.stream()
+					.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
+					.findFirst()
+					.orElseThrow();
+			TupleExpr join = new Join(pattern(), pattern());
+			MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
+					RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
 
-		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
-				new RuleContext(null, null, null, null)).getFirst();
-		CostVector cost = application.localCost();
+			RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+					new RuleContext(null, null, null, null)).getFirst();
+			CostVector cost = application.localCost();
 
-		assertEquals(31.0d, cost.pageWalkRows());
-		assertEquals(2.0d, cost.rowQErrorMean());
-		assertEquals(7.0d, cost.rowQErrorMax());
-		assertEquals(3.0d, cost.workQErrorMean());
-		assertEquals(9.0d, cost.workQErrorMax());
-		assertEquals(42.0d, cost.uncertaintyRows());
-		assertEquals(0.75d, cost.confidence());
-		assertEquals(5.0d, cost.evidenceCount());
+			assertEquals(31.0d, cost.pageWalkRows());
+			assertEquals(2.0d, cost.rowQErrorMean());
+			assertEquals(7.0d, cost.rowQErrorMax());
+			assertEquals(3.0d, cost.workQErrorMean());
+			assertEquals(9.0d, cost.workQErrorMax());
+			assertEquals(42.0d, cost.uncertaintyRows());
+			assertEquals(0.75d, cost.confidence());
+			assertEquals(5.0d, cost.evidenceCount());
+		} finally {
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
+		}
 	}
 
 	@Test
@@ -294,21 +300,27 @@ class LmdbCascadesOptimizerTest {
 
 	@Test
 	void budgetedJoinOrderProviderKeepsSegmentAlgorithmPolicy() {
-		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-		CascadesRule rule = LmdbCascadesRuleProvider.rules(statistics)
-				.rules()
-				.stream()
-				.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
-				.findFirst()
-				.orElseThrow();
-		TupleExpr join = new Join(new Join(pattern(), pattern()), pattern());
-		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
-		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(1), 128);
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			CascadesRule rule = LmdbCascadesRuleProvider.rules(statistics)
+					.rules()
+					.stream()
+					.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
+					.findFirst()
+					.orElseThrow();
+			TupleExpr join = new Join(new Join(pattern(), pattern()), pattern());
+			MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
+					RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+			OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(1), 128);
 
-		rule.apply(expression, goal, new RuleContext(null, null, null, null));
+			rule.apply(expression, goal, new RuleContext(null, null, null, null));
 
-		assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
+			assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
+		} finally {
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
+		}
 	}
 
 	@Test
@@ -337,6 +349,8 @@ class LmdbCascadesOptimizerTest {
 	@Test
 	void autoLargeJoinDoesNotUseFastPathOutsideTheMemo() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
 		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		try {
 			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
@@ -354,6 +368,7 @@ class LmdbCascadesOptimizerTest {
 					.contains("fastPath=lmdbSketchJoinOrder"));
 		} finally {
 			restoreMode(previousMode);
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 
@@ -418,8 +433,9 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void connectedJoinIslandUsesSingleOpaqueJoinOrderPlanningPass() {
+	void connectedJoinIslandDoesNotUseLegacyOpaqueProviderByDefault() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		try {
 			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
@@ -427,10 +443,10 @@ class LmdbCascadesOptimizerTest {
 
 			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
 
-			assertEquals(1, statistics.algorithms.size(), statistics.algorithms.toString());
-			assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
+			assertEquals(List.of(), statistics.algorithms);
 		} finally {
 			restoreMode(previousMode);
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 
@@ -516,6 +532,14 @@ class LmdbCascadesOptimizerTest {
 			System.clearProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
 		} else {
 			System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, previousTrace);
+		}
+	}
+
+	private static void restoreProperty(String name, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previousValue);
 		}
 	}
 

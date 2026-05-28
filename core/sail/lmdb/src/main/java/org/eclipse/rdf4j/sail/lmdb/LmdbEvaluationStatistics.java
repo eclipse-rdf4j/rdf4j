@@ -553,10 +553,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
-		if (sketchBasedJoinEstimator == null) {
-			return QueryOptimizationScopeProvider.NO_OP_SCOPE;
-		}
-		QueryOptimizationScope sketchScope = sketchBasedJoinEstimator.beginQueryOptimizationScope();
+		QueryOptimizationScope sketchScope = sketchBasedJoinEstimator == null
+				? QueryOptimizationScopeProvider.NO_OP_SCOPE
+				: sketchBasedJoinEstimator.beginQueryOptimizationScope();
 		OptimizationCostScope costScope = optimizationCostScope.get();
 		if (costScope == null) {
 			costScope = new OptimizationCostScope();
@@ -581,6 +580,29 @@ class LmdbEvaluationStatistics
 		if (costScope.depth <= 0) {
 			optimizationCostScope.remove();
 		}
+	}
+
+	boolean hasOptimizationScopedPlannerCache() {
+		return optimizationCostScope.get() != null;
+	}
+
+	Object getOptimizationScopedPlannerCacheValue(Object key) {
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		if (costScope == null || key == null) {
+			return null;
+		}
+		return costScope.plannerCache.get(key);
+	}
+
+	void putOptimizationScopedPlannerCacheValue(Object key, Object value) {
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		if (costScope != null && key != null && value != null) {
+			costScope.plannerCache.put(key, value);
+		}
+	}
+
+	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
+		return factorFingerprint(factor);
 	}
 
 	@Override
@@ -6798,6 +6820,7 @@ class LmdbEvaluationStatistics
 
 	private static final class OptimizationCostScope {
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
+		private final Map<Object, Object> plannerCache = new HashMap<>();
 		private final Map<TupleExpr, SetFactorCostCacheEntry> setFactorCostCache = new IdentityHashMap<>();
 		private final Map<TupleExpr, MaskFactorCostCacheEntry> maskFactorCostCache = new IdentityHashMap<>();
 		private final Map<TupleExpr, Object> factorFingerprintCache = new IdentityHashMap<>();
