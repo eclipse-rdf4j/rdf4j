@@ -112,11 +112,9 @@ public final class CascadesPlanner {
 			}
 			MemoExpr expression = group.mutableExpressionsView().get(index++);
 			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
-				boolean addedOpaqueAlternative = applyRule(memo, expression, rule, goal, context, state);
-				if (addedOpaqueAlternative && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED) {
-					return;
-				}
-				if (state.approximate && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED) {
+				applyRule(memo, expression, rule, goal, context, state);
+				if (state.approximate && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+						&& memo.bestWinner(goal.key(groupId)).isEmpty()) {
 					return;
 				}
 			}
@@ -150,11 +148,15 @@ public final class CascadesPlanner {
 			if (application.kind() == RuleKind.TRANSFORMATION) {
 				memo.addLogicalAlternative(application.targetGroupId(), application.alternative());
 			} else {
-				memo.addPhysicalAlternative(application.targetGroupId(), application.alternative(),
-						application.deliveredProperties(), application.metadata(), application.kind(),
-						application.localCost(),
+				Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
+						application.alternative(), application.deliveredProperties(), application.metadata(),
+						application.kind(), application.localCost(),
 						application.proofs(), application.estimate(), application.opaque());
 				addedOpaqueAlternative |= application.opaque();
+				if (added.isPresent() && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+						&& memo.bestWinner(goal.key(application.targetGroupId())).isEmpty()) {
+					optimizeExpression(memo, added.get(), goal, state, false);
+				}
 			}
 		}
 		return addedOpaqueAlternative;
@@ -162,7 +164,12 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state) {
-		if (!state.consume("optimizeExpression:" + expression.id()) || goal.expired()) {
+		return optimizeExpression(memo, expression, goal, state, true);
+	}
+
+	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state, boolean chargeBudget) {
+		if ((chargeBudget && !state.consume("optimizeExpression:" + expression.id())) || goal.expired()) {
 			state.markApproximate("budget-or-timeout optimizing expression " + expression.id());
 			return Optional.empty();
 		}

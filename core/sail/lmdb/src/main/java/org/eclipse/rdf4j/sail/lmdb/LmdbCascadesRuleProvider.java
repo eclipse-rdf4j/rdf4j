@@ -79,7 +79,9 @@ final class LmdbCascadesRuleProvider {
 
 	static RuleRegistry rules(EvaluationStatistics statistics) {
 		boolean legacyOpaqueJoinProviders = Boolean.getBoolean(LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
+		boolean cascadesConnectedJoinProviderAvailable = statistics instanceof JoinFactorCostModel;
 		RuleRegistry.Builder builder = RuleRegistry.builder()
+				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
 				.add(new StandardCascadesRules.JoinCommutationRule())
 				.add(new StandardCascadesRules.JoinAssociativityRule())
 				.add(new StandardCascadesRules.FilterPushdownRule())
@@ -90,10 +92,10 @@ final class LmdbCascadesRuleProvider {
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
 				.add(new StandardCascadesRules.MinusAlternativeRule())
-				.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
 		if (legacyOpaqueJoinProviders) {
-			builder.add(new LmdbGuaranteeOptionImplementationRule(statistics))
+			builder.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
+					.add(new LmdbGuaranteeOptionImplementationRule(statistics))
 					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
 		}
 		builder.add(new LmdbStarMultiPredicateScanRule(statistics))
@@ -104,7 +106,9 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbMinusBoundProbeRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
-								legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner,
+								(cascadesConnectedJoinProviderAvailable
+										&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(tupleExpr))
+										|| (legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner),
 								false)))
 				.add(new StandardCascadesRules.DistinctEnforcerRule())
 				.add(new StandardCascadesRules.MaterializeEnforcerRule());
@@ -283,6 +287,48 @@ final class LmdbCascadesRuleProvider {
 
 	private static JoinOrderPlanner.Algorithm cascadesAlgorithm(int factorCount) {
 		return LmdbSketchJoinOptimizer.plannerAlgorithmForSegment(factorCount);
+	}
+
+	private static final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
+		LmdbConnectedHypergraphJoinImplementationRule(EvaluationStatistics statistics) {
+			super(LmdbCascadesConnectedJoinPlanner.RULE_ID, RuleKind.IMPLEMENTATION, 130, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& expression.tupleExpr() instanceof Join
+					&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())
+					&& LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Set<String> initialBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+			Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(
+					expression.tupleExpr(), initialBoundVars, costModel, statistics);
+			if (plan.isEmpty()) {
+				return List.of();
+			}
+			LmdbCascadesConnectedJoinPlanner.Plan connectedPlan = plan.get();
+			TupleExpr ordered = connectedPlan.tupleExpr();
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(ordered.getBindingNames())
+					.accessPath(LmdbCascadesConnectedJoinPlanner.ACCESS_PATH)
+					.inputBoundVars(inputBoundVarsForExpression(ordered, goal))
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("cascadesNative", "connectedOnly", "hypergraph", "legacySketchPlanner=false",
+							"algorithm=" + connectedPlan.algorithm(), "factors=" + connectedPlan.factorCount()),
+					"Cascades implements connected join islands with connected-prefix hypergraph enumeration "
+							+ "and does not delegate to JoinOrderPlanner");
+			return List
+					.of(RuleApplication.opaquePhysical(expression.groupId(), ordered, delivered, connectedPlan.cost(),
+							proof, LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE, connectedPlan.estimate()));
+		}
 	}
 
 	private abstract static class LmdbRule implements CascadesRule {
@@ -498,7 +544,7 @@ final class LmdbCascadesRuleProvider {
 
 	private static final class LmdbConnectedJoinOrderingRule extends LmdbRule {
 		LmdbConnectedJoinOrderingRule(EvaluationStatistics statistics) {
-			super("lmdb-cascades-connected-join-order", RuleKind.TRANSFORMATION, 119, statistics);
+			super("lmdb-cascades-connected-join-order", RuleKind.TRANSFORMATION, 60, statistics);
 		}
 
 		@Override

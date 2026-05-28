@@ -306,7 +306,13 @@ def main() -> int:
     if test_selector is not None:
         print(f"Test selector: {test_selector} ({'failsafe' if args.it else 'surefire'})")
 
-    install_cmd = mvn_cmd + (offline_flag + ["-T", "1C", "-Dmaven.repo.local=.m2_repo", "-Pquick", "install"])
+    install_cmd = mvn_cmd + [
+        "-B",
+        "-ntp",
+        "-Dmaven.compiler.showWarnings=false",
+        "-T",
+        "1C",
+    ] + (offline_flag + ["-Dmaven.repo.local=.m2_repo", "-Pquick", "install"])
 
     verify_cmd = mvn_cmd + common_flags + ["-pl", module]
     if test_selector is not None:
@@ -319,7 +325,7 @@ def main() -> int:
     run_id = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
     log_dir = _log_dir(repo_root)
     log_paths = [
-        log_dir / f"{run_id}-install.log",
+        repo_root / "maven-build.log",
         log_dir / f"{run_id}-verify.log",
     ]
 
@@ -337,7 +343,7 @@ def main() -> int:
     if rc == 0:
         print("\n[mvnf] Tests passed.")
         if not args.retain_logs:
-            _delete_logs(log_paths)
+            _delete_logs([log_paths[1]])
         return 0
 
     print("\n[mvnf] Tests failed.")

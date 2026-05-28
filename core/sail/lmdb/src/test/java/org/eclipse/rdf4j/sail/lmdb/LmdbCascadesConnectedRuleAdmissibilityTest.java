@@ -57,8 +57,9 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		List<String> rules = applicableRuleIds(connectedJoinIsland());
 
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
-		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
-		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 
@@ -89,9 +90,10 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		List<String> rules = applicableRuleIds(island);
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, false, false));
-		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
 		assertTrue(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
 	}
 
@@ -111,8 +113,9 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
-		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
-		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 

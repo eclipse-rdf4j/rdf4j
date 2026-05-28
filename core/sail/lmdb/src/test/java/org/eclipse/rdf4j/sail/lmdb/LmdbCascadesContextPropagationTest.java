@@ -63,6 +63,8 @@ class LmdbCascadesContextPropagationTest {
 	@Test
 	void minusRightSubtreeJoinOrderReceivesLeftAssuredBindings() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
 		try {
 			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
 			StatementPattern left = new StatementPattern(new Var("person"), new Var("leftPredicate"),
@@ -78,6 +80,7 @@ class LmdbCascadesContextPropagationTest {
 							+ statistics.calls);
 		} finally {
 			restoreMode(previousMode);
+			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
 		}
 	}
 
@@ -128,43 +131,55 @@ class LmdbCascadesContextPropagationTest {
 
 	@Test
 	void unionBranchJoinIslandsReceiveOuterBindings() {
-		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-		Join branchA = new Join(
-				new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
-				new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
-		Join branchB = new Join(
-				new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
-				new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
-		Union union = new Union(branchA, branchB);
-		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
-				.boundVars(Set.of("line"))
-				.build());
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			Join branchA = new Join(
+					new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
+					new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
+			Join branchB = new Join(
+					new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
+					new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
+			Union union = new Union(branchA, branchB);
+			OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+					.boundVars(Set.of("line"))
+					.build());
 
-		CascadesCostModel costModel = CascadesCostModel.from(statistics);
-		new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
-				.optimize(union, goal);
+			CascadesCostModel costModel = CascadesCostModel.from(statistics);
+			new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+					.optimize(union, goal);
 
-		assertTrue(statistics.calls.stream()
-				.anyMatch(call -> call.initiallyBoundVars().contains("line")
-						&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
-				"Union left branch join island should see the outside bound variable: " + statistics.calls);
-		assertTrue(statistics.calls.stream()
-				.anyMatch(call -> call.initiallyBoundVars().contains("line")
-						&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
-				"Union right branch join island should see the outside bound variable: " + statistics.calls);
+			assertTrue(statistics.calls.stream()
+					.anyMatch(call -> call.initiallyBoundVars().contains("line")
+							&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
+					"Union left branch join island should see the outside bound variable: " + statistics.calls);
+			assertTrue(statistics.calls.stream()
+					.anyMatch(call -> call.initiallyBoundVars().contains("line")
+							&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
+					"Union right branch join island should see the outside bound variable: " + statistics.calls);
+		} finally {
+			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
+		}
 	}
 
 	@Test
 	void endpointBoundPathPlanDoesNotSpeculativelyReplanConnectedComplements() {
-		EndpointBoundPathStatistics statistics = new EndpointBoundPathStatistics();
-		ruleApplication(thresholdPathIsland(), statistics, OptimizationGoal.root(),
-				"lmdb-connected-join-plan");
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
+		try {
+			EndpointBoundPathStatistics statistics = new EndpointBoundPathStatistics();
+			ruleApplication(thresholdPathIsland(), statistics, OptimizationGoal.root(),
+					"lmdb-connected-join-plan");
 
-		assertEquals(1, statistics.calls.size(),
-				"Connected-complement planning is only useful when the selected join order reaches an "
-						+ "ArbitraryLengthPath with both endpoints unbound. If a path endpoint is already bound, "
-						+ "extra path-side/complement planner calls add prepare-time cost without changing the plan: "
-						+ statistics.calls);
+			assertEquals(1, statistics.calls.size(),
+					"Connected-complement planning is only useful when the selected join order reaches an "
+							+ "ArbitraryLengthPath with both endpoints unbound. If a path endpoint is already bound, "
+							+ "extra path-side/complement planner calls add prepare-time cost without changing the plan: "
+							+ statistics.calls);
+		} finally {
+			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
+		}
 	}
 
 	private static void restoreMode(String previousMode) {

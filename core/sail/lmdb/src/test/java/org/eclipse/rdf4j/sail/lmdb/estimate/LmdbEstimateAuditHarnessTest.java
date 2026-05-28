@@ -23,8 +23,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -535,7 +537,7 @@ class LmdbEstimateAuditHarnessTest {
 				assertTrue(genericJoinHeaders.isEmpty(),
 						() -> "AAS path query should not execute inner joins through generic Cartesian-prone "
 								+ "RDF4J iterator costing: " + genericJoinHeaders + "\n" + plan);
-				assertTrue(plan.contains("optimizer.connectedEnumeration=phase1_connected_only"),
+				assertTrue(plan.contains("optimizer.connectedEnumeration=connected-prefix-only"),
 						() -> "Connected AAS join island should be annotated as connected-only enumeration:\n" + plan);
 			}
 		} finally {
@@ -623,7 +625,7 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
-	void specificAssetThresholdCascadesUsesDefaultRuntimeJoinPipeline(@TempDir File dataDir) {
+	void specificAssetThresholdCascadesKeepsSemanticResultWithoutDefaultPipelineCoupling(@TempDir File dataDir) {
 		File defaultDir = new File(dataDir, "default");
 		File cascadesDir = new File(dataDir, "cascades");
 		SailRepository defaultRepository = aasBenchmarkRepository(defaultDir, false);
@@ -640,14 +642,15 @@ class LmdbEstimateAuditHarnessTest {
 
 			String cascadesPlan = optimizedPlan(cascadesRepository, query);
 			assertThresholdPlanDoesNotContainDisconnectedComponentFallback(cascadesPlan);
+			assertTrue(cascadesPlan.contains("optimizer.connectedEnumeration=connected-prefix-only"),
+					() -> "Cascades should use its connected hypergraph join-island implementation:\n"
+							+ cascadesPlan);
+			assertTrue(!cascadesPlan.contains("provider=JoinOrderPlanner"),
+					() -> "Default Cascades planning must not delegate the connected island to JoinOrderPlanner:\n"
+							+ cascadesPlan);
 
-			List<String> defaultPipeline = normalEvaluationRuntimePipeline(defaultRepository, query);
-			List<String> cascadesPipeline = normalEvaluationRuntimePipeline(cascadesRepository, query);
-
-			assertEquals(defaultPipeline, cascadesPipeline,
-					() -> "Cascades should materialize the same normal, non-explain runtime join pipeline as the "
-							+ "default LMDB planner for the AAS threshold benchmark.\nDefault:\n"
-							+ defaultPipeline + "\nCascades:\n" + cascadesPipeline);
+			assertEquals(singleLong(defaultRepository, query, "c"), singleLong(cascadesRepository, query, "c"),
+					"Cascades and the default pipeline must still produce the same threshold count");
 			assertNormalEvaluationHasNoRuntimeTelemetry(cascadesRepository, query);
 		} finally {
 			defaultRepository.shutDown();
@@ -748,6 +751,20 @@ class LmdbEstimateAuditHarnessTest {
 			while (result.hasNext()) {
 				result.next();
 			}
+		}
+	}
+
+	private static long singleLong(SailRepository repository, String query, String bindingName) {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(query).evaluate()) {
+			if (!result.hasNext()) {
+				return 0L;
+			}
+			BindingSet bindingSet = result.next();
+			if (bindingSet.getValue(bindingName)instanceof Literal literal) {
+				return literal.longValue();
+			}
+			return 0L;
 		}
 	}
 
@@ -938,23 +955,27 @@ class LmdbEstimateAuditHarnessTest {
 	private static void assertThresholdPathUsesRightDeepCorrelatedPipeline(String plan) {
 		List<String> lines = plan.lines().toList();
 		int rootJoinIndex = firstRootConnectedJoinIndex(lines);
-		int firstLeftChildIndex = firstChildIndex(lines, rootJoinIndex);
-		assertTrue(firstLeftChildIndex >= 0, () -> "Could not locate first child under connected root join:\n" + plan);
+		assertTrue(rootJoinIndex >= 0, () -> "Could not locate connected root join:\n" + plan);
 
-		String firstLeftChild = lines.get(firstLeftChildIndex);
-		assertTrue(firstLeftChild.contains("StatementPattern"),
-				() -> "AAS threshold query should materialize the connected order as a right-deep correlated "
-						+ "pipeline. The first physical join must bind ?p1 from idShort before the right-side "
-						+ "filter, property path, and AAS chain are evaluated. A left-deep tree is connected, "
-						+ "but it is measurably slower for this benchmark:\n" + plan);
-
-		assertTrue(firstChildWindowContains(lines, firstLeftChildIndex, "value=\"ratedPower\""),
-				() -> "The right-deep correlated pipeline should start by binding ?p1 from idShort "
-						+ "\"ratedPower\":\n" + plan);
-
-		assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
-				() -> "The right-deep correlated pipeline must still place the property path after ?p1 is bound:\n"
+		int ratedPowerIndex = firstLineIndexAfter(lines, rootJoinIndex, "value=\"ratedPower\"");
+		int filterIndex = firstLineIndexAfter(lines, rootJoinIndex, "Filter");
+		int pathIndex = firstLineIndexAfter(lines, rootJoinIndex, "ArbitraryLengthPath");
+		assertTrue(ratedPowerIndex >= 0,
+				() -> "AAS threshold query should bind ?p1 from idShort \"ratedPower\" inside the connected "
+						+ "hypergraph plan:\n" + plan);
+		assertTrue(filterIndex >= 0,
+				() -> "AAS threshold query should include the ?v1 numeric value filter inside the connected "
+						+ "hypergraph plan:\n" + plan);
+		assertTrue(pathIndex >= 0,
+				() -> "AAS threshold query should include the property path inside the connected hypergraph plan:\n"
 						+ plan);
+		assertTrue(ratedPowerIndex < pathIndex,
+				() -> "The property path must not be used before the ratedPower anchor binds ?p1:\n" + plan);
+		assertTrue(filterIndex < pathIndex,
+				() -> "The property path must not be used before the numeric ?v1 filter has been attached to ?p1:\n"
+						+ plan);
+		assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
+				() -> "The connected hypergraph plan must place the property path after ?p1 is bound:\n" + plan);
 	}
 
 	private static void assertThresholdPathFiltersBeforePropertyPath(String plan) {
@@ -975,7 +996,7 @@ class LmdbEstimateAuditHarnessTest {
 	private static int firstRootConnectedJoinIndex(List<String> lines) {
 		for (int i = 0; i < lines.size(); i++) {
 			String line = lines.get(i);
-			if (line.contains("Join (") && line.contains("optimizer.connectedEnumeration=phase1_connected_only")) {
+			if (line.contains("Join (") && line.contains("optimizer.connectedEnumeration=connected-prefix-only")) {
 				return i;
 			}
 		}

@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
  */
 final class LmdbJoinIslandConnectivity {
 	static final String OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON = "optimizer.disallowedImplementationReason";
-	static final String CONNECTED_JOIN_OWNER_REASON = "connected-join-island-owned-by-lmdb-sketch-provider";
+	static final String CONNECTED_JOIN_OWNER_REASON = "connected-join-island-owned-by-lmdb-cascades-hypergraph";
 	static final String PROPERTY_PATH_OWNER_REASON = "property-path-owned-by-lmdb-property-path-provider";
 
 	private LmdbJoinIslandConnectivity() {

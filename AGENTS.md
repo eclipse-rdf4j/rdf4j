@@ -281,12 +281,12 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+    * Use the module clean-install template below with `-pl <module> -am`.
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+   Use the module clean-install template below.
 2. **Run tests:**
    `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream` or `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` 
 
@@ -301,10 +301,31 @@ Always keep untracked artifacts!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
-* If offline resolution fails due to a missing dependency or plugin, run the command without `-o`: `mvn -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`, then return offline.
-* If it fails for any other reason, run the command without `-T 1C`: `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`.
+* Always run this root clean install before you start working. It typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
+
+```bash
+mvn -B -ntp \
+  -Dmaven.compiler.showWarnings=false \
+  -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 \
+  | tee maven-build.log \
+  | awk '
+     /\[WARNING\]/ { next }
+      /\[ERROR\]/ { print; next }
+
+      /Reactor Summary/ { summary=1 }
+      summary { print }
+    '
+```
+
+* Always run the same root clean install before any `verify` or test runs.
+* If you need install without clean, keep the same flags and output filter, but replace `clean install` with `install`.
+* If you need install for just one module and its dependencies, keep the same flags and output filter, but add `-pl <module> -am` before `-Pquick`. Use `clean install` or `install` as needed.
+  * Root install without clean: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick install`.
+  * Module clean install: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`.
+  * Module install without clean: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`.
+* All install/build output belongs in `maven-build.log`. Skills with their own test logs should keep verify/test output in those logs, not Maven install output.
+* If offline resolution fails due to a missing dependency or plugin, rerun the exact install command without `-o`, then return offline.
+* If it fails for any other reason, rerun the exact install command without `-T 1C`.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
@@ -314,8 +335,8 @@ Why this is mandatory
 
 - Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run the root clean-install template above at the repository root.
+- In tight loops you may also install a specific module and its deps using the module clean-install template to iterate quickly, but before executing tests anywhere that depend on your changes, run the root clean-install template so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Skills (Preferred Runners)
@@ -335,7 +356,7 @@ If you need manual control or a skill does not fit, use the Maven commands below
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-    * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+    * Use the root clean-install template.
 3. **Format (Java, imports, XML)**
     * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources`
     * Ensure every touched Java file has the correct agent signature comment (`// Some portions generated by Codex` for Codex, `// Some portions generated by Co-Pilot` for GitHub Co-Pilot) inserted immediately below the header before formatting.
@@ -452,7 +473,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
+* **Compile (fast):** use the module clean-install template with `-pl <module> -am`.
 * **Test (prefer `mvnf`):** start smallest (class/method → module); use `--it` for integration tests. Use manual Maven only when you need profiles/flags not supported by `mvnf`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
@@ -565,7 +586,7 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Pre‑Commit Checklist
 
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+* **Compile (fast path):** use the root clean-install template.
 * **Tests (targeted, prefer `mvnf`):** `python3 .codex/skills/mvnf/scripts/mvnf.py <module>` (broaden as needed; use Maven fallback if you need profiles/flags)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
@@ -694,7 +715,7 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
+  Use the root clean-install template.
 * **Verify with tests (prefer `mvnf`):**
   Targeted module(s): `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
   Entire repo (fallback): `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
