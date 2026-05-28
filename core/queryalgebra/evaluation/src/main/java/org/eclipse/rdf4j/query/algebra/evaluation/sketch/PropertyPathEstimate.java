@@ -16,15 +16,21 @@ import java.util.Objects;
 /**
  * Cardinality summary for a SPARQL property-path expression.
  */
-public record PropertyPathEstimate(double rows, double distinctSubjects, double distinctObjects,
+public record PropertyPathEstimate(double rows, double workRows, double distinctSubjects, double distinctObjects,
 		double averagePathFanout, String method) {
 
 	public PropertyPathEstimate {
 		requireFiniteNonNegative(rows, "rows");
+		requireFiniteNonNegative(workRows, "workRows");
 		requireFiniteNonNegative(distinctSubjects, "distinctSubjects");
 		requireFiniteNonNegative(distinctObjects, "distinctObjects");
 		requireFiniteNonNegative(averagePathFanout, "averagePathFanout");
 		Objects.requireNonNull(method, "method must not be null");
+	}
+
+	public PropertyPathEstimate(double rows, double distinctSubjects, double distinctObjects,
+			double averagePathFanout, String method) {
+		this(rows, rows, distinctSubjects, distinctObjects, averagePathFanout, method);
 	}
 
 	private static void requireFiniteNonNegative(double value, String field) {

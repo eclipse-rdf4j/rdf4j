@@ -43,6 +43,10 @@ public final class Memo {
 	}
 
 	int intern(TupleExpr tupleExpr, boolean recurse) {
+		return intern(tupleExpr, recurse, true);
+	}
+
+	private int intern(TupleExpr tupleExpr, boolean recurse, boolean cacheExistingNodeIdentity) {
 		if (tupleExpr == null) {
 			throw new IllegalArgumentException("tupleExpr must not be null");
 		}
@@ -50,20 +54,25 @@ public final class Memo {
 		if (identityGroup != null) {
 			return identityGroup;
 		}
-		List<Integer> inputs = recurse ? internInputs(tupleExpr) : List.of();
-		LogicalProperties properties = costModel.logicalProperties(tupleExpr);
+		List<Integer> inputs = recurse ? internInputs(tupleExpr, cacheExistingNodeIdentity) : List.of();
 		String metadata = localMetadata(tupleExpr);
 		String logicalKey = MemoExpr.logicalKey(tupleExpr, inputs, metadata);
 		Integer existingGroup = groupByLogicalExpression.get(logicalKey);
 		if (existingGroup != null) {
-			groupByNodeIdentity.put(tupleExpr, existingGroup);
-			group(existingGroup).mergeLogicalProperties(properties);
+			if (cacheExistingNodeIdentity) {
+				groupByNodeIdentity.put(tupleExpr, existingGroup);
+			}
+			MemoGroup existing = group(existingGroup);
+			if (existing.logicalProperties() == LogicalProperties.EMPTY) {
+				existing.mergeLogicalProperties(costModel.logicalProperties(tupleExpr));
+			}
 			return existingGroup;
 		}
+		LogicalProperties properties = costModel.logicalProperties(tupleExpr);
 		int groupId = groups.size();
 		MemoGroup group = new MemoGroup(groupId, properties);
-		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, tupleExpr, inputs, metadata);
-		group.addExpression(expression);
+		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, tupleExpr, inputs, metadata, logicalKey);
+		group.addExpression(expression, logicalKey);
 		groups.add(group);
 		groupByLogicalExpression.put(logicalKey, groupId);
 		groupByNodeIdentity.put(tupleExpr, groupId);
@@ -84,12 +93,19 @@ public final class Memo {
 	public Optional<MemoExpr> addLogicalAlternative(int groupId, TupleExpr alternative) {
 		Objects.requireNonNull(alternative, "alternative");
 		MemoGroup group = group(groupId);
-		List<Integer> inputs = internInputs(alternative);
+		List<Integer> inputs = internInputs(alternative, false);
 		String metadata = localMetadata(alternative);
-		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, alternative, inputs, metadata);
-		if (!group.addExpression(expression)) {
+		String structuralKey = MemoExpr.logicalKey(alternative, inputs, metadata);
+		if (group.containsExpressionKey(structuralKey)) {
 			return Optional.empty();
 		}
+		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, alternative, inputs, metadata,
+				structuralKey);
+		if (!group.addExpression(expression, structuralKey)) {
+			return Optional.empty();
+		}
+		groupByLogicalExpression.putIfAbsent(structuralKey, groupId);
+		groupByNodeIdentity.put(alternative, groupId);
 		return Optional.of(expression);
 	}
 
@@ -140,11 +156,16 @@ public final class Memo {
 	}
 
 	private List<Integer> internInputs(TupleExpr tupleExpr) {
+		return internInputs(tupleExpr, true);
+	}
+
+	private List<Integer> internInputs(TupleExpr tupleExpr, boolean cacheExistingNodeIdentity) {
 		if (tupleExpr instanceof BinaryTupleOperator binary) {
-			return List.of(intern(binary.getLeftArg(), true), intern(binary.getRightArg(), true));
+			return List.of(intern(binary.getLeftArg(), true, cacheExistingNodeIdentity),
+					intern(binary.getRightArg(), true, cacheExistingNodeIdentity));
 		}
 		if (tupleExpr instanceof UnaryTupleOperator unary) {
-			return List.of(intern(unary.getArg(), true));
+			return List.of(intern(unary.getArg(), true, cacheExistingNodeIdentity));
 		}
 		return List.of();
 	}

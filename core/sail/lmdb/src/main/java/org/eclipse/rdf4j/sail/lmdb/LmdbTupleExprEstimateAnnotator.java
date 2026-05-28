@@ -628,13 +628,14 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private boolean stampPropertyPathEstimate(TupleExpr node, PropertyPathEstimate estimate) {
-		stampPlannerDecisionMetrics(node, estimate.rows(), estimate.rows());
+		stampPlannerDecisionMetrics(node, estimate.rows(), estimate.workRows());
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
-		stampEstimate(node, estimate.rows(), estimate.rows(), "lmdb-property-path", true);
+		stampEstimate(node, estimate.rows(), estimate.workRows(), "lmdb-property-path", true);
 		node.setDoubleMetricPlanned("plannedPathDistinctSubjects", estimate.distinctSubjects());
 		node.setDoubleMetricPlanned("plannedPathDistinctObjects", estimate.distinctObjects());
 		node.setDoubleMetricPlanned("plannedPathAverageFanout", estimate.averagePathFanout());
+		node.setDoubleMetricPlanned("plannedPathWorkRows", estimate.workRows());
 		node.setStringMetricPlanned("plannedPropertyPathMethod", estimate.method());
 		node.setStringMetricPlanned("optimizer.rewriteProof",
 				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.PROPERTY_PATH_COST_ANNOTATION,

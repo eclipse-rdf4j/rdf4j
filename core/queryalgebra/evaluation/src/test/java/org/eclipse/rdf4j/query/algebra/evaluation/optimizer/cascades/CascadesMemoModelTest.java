@@ -48,6 +48,24 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void logicalAlternativeIsIndexedForFutureInterning() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern left = pattern("s", "p1", "o");
+		StatementPattern right = pattern("o", "p2", "x");
+		Join root = new Join(left, right);
+		int groupId = memo.intern(root);
+		Join commuted = new Join(right.clone(), left.clone());
+
+		MemoExpr alternative = memo.addLogicalAlternative(groupId, commuted).orElseThrow();
+
+		assertEquals(groupId, alternative.groupId());
+		assertEquals(2, memo.group(groupId).expressions().size());
+		assertEquals(groupId, memo.intern(commuted.clone()));
+		assertEquals(2, memo.group(groupId).expressions().size());
+		assertTrue(memo.addLogicalAlternative(groupId, commuted.clone()).isEmpty());
+	}
+
+	@Test
 	void constantStatementPatternsDoNotFoldIntoSameGroup() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 

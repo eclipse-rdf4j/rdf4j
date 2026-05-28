@@ -517,9 +517,9 @@ class LmdbEvaluationStatistics
 			estimate = estimatePropertyPath(zeroLengthPath, effectiveBoundVars);
 		}
 		return estimate.map(value -> new StatisticsEstimate(value.rows(),
-				QErrorInterval.heuristic(value.rows(), 3.0d, value.method()), value.rows(), value.method(),
+				QErrorInterval.heuristic(value.rows(), 3.0d, value.method()), value.workRows(), value.method(),
 				Map.of("distinctSubjects", value.distinctSubjects(), "distinctObjects", value.distinctObjects(),
-						"averagePathFanout", value.averagePathFanout())));
+						"averagePathFanout", value.averagePathFanout(), "workRows", value.workRows())));
 	}
 
 	@Override
@@ -2109,7 +2109,7 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
 		}
-		double workRows = Math.max(rows, pathEstimate.distinctSubjects() + rows);
+		double workRows = Math.max(rows, pathEstimate.workRows());
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = rows;
 		}

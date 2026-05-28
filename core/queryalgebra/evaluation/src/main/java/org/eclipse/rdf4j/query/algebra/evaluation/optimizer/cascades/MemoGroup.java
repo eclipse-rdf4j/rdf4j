@@ -56,9 +56,18 @@ public final class MemoGroup {
 		}
 	}
 
+	boolean containsExpressionKey(String structuralKey) {
+		return expressionKeys.contains(structuralKey);
+	}
+
 	boolean addExpression(MemoExpr expression) {
 		Objects.requireNonNull(expression, "expression");
-		if (!expressionKeys.add(expression.structuralKey())) {
+		return addExpression(expression, expression.structuralKey());
+	}
+
+	boolean addExpression(MemoExpr expression, String structuralKey) {
+		Objects.requireNonNull(expression, "expression");
+		if (!expressionKeys.add(structuralKey)) {
 			return false;
 		}
 		expressions.add(expression);

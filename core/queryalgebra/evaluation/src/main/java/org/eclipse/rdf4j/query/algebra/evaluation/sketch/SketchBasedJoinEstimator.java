@@ -7333,6 +7333,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength(), averageFanout, predicateRows);
+		double unboundRows = rows;
+		double unboundDistinctSubjects = distinctSubjects;
+		double unboundDistinctObjects = distinctObjects;
 		boolean subjectBound = isBoundEndpoint(path.getSubjectVar(), boundVars);
 		boolean objectBound = isBoundEndpoint(path.getObjectVar(), boundVars);
 		String method = "sketch-single-predicate-path";
@@ -7360,8 +7363,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			rows = normalizeRows(rows);
 		}
-		return Optional.of(new PropertyPathEstimate(rows, distinctSubjects, distinctObjects, averageFanout,
+		double workRows = estimatePropertyPathWorkRows(rows, unboundRows, unboundDistinctSubjects,
+				unboundDistinctObjects, subjectBound, objectBound);
+		return Optional.of(new PropertyPathEstimate(rows, workRows, distinctSubjects, distinctObjects, averageFanout,
 				method));
+	}
+
+	private double estimatePropertyPathWorkRows(double rows, double unboundRows, double unboundDistinctSubjects,
+			double unboundDistinctObjects, boolean subjectBound, boolean objectBound) {
+		if (subjectBound && objectBound) {
+			return normalizeRows(rows);
+		}
+		double sketchDomainWork = unboundRows + unboundDistinctSubjects + unboundDistinctObjects;
+		if (!Double.isFinite(sketchDomainWork) || sketchDomainWork < 0.0d) {
+			sketchDomainWork = rows;
+		}
+		return normalizeRows(Math.max(rows, sketchDomainWork));
 	}
 
 	private static boolean isBoundEndpoint(Var var, Set<String> boundVars) {
@@ -7391,7 +7408,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			rows = Math.max(1.0d, estimate(Component.S, null, null, null, getValueOrNull(path.getContextVar()))
 					.distinct());
 		}
-		return Optional.of(new PropertyPathEstimate(rows, rows, rows, 1.0d, "sketch-zero-length-path"));
+		return Optional.of(new PropertyPathEstimate(rows, rows, rows, rows, 1.0d, "sketch-zero-length-path"));
 	}
 
 	public Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns,

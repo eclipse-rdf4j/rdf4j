@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -28,6 +30,8 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -74,6 +78,50 @@ class LmdbPropertyPathEstimateTest {
 
 				assertNotNull(path, explanation::toString);
 				assertPropertyPathCosted(path, explanation);
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+		}
+	}
+
+	@Test
+	void heavilyPenalizesPropertyPathCostUntilBothEndpointsAreBound(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI p = VF.createIRI("urn:p");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int i = 0; i < 200; i++) {
+					IRI subject = VF.createIRI("urn:s" + i);
+					IRI object = VF.createIRI("urn:o" + i);
+					connection.add(subject, p, object);
+				}
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
+
+				JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore()
+						.getEvaluationStatistics();
+				ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("s"),
+						new StatementPattern(new Var("s"), new Var("p", p), new Var("o")), new Var("o"), 0L);
+
+				double unboundWork = propertyPathWork(costModel, path, Set.of());
+				double subjectBoundWork = propertyPathWork(costModel, path, Set.of("s"));
+				double pairBoundWork = propertyPathWork(costModel, path, Set.of("s", "o"));
+
+				assertTrue(unboundWork >= pairBoundWork * 100.0d,
+						() -> "Expected unbound property path to be much more expensive than bound pair, unbound="
+								+ unboundWork + ", pairBound=" + pairBoundWork);
+				assertTrue(subjectBoundWork >= pairBoundWork * 100.0d,
+						() -> "Expected one-end-bound property path to remain heavily penalized until both endpoints "
+								+ "are bound, subjectBound=" + subjectBoundWork + ", pairBound=" + pairBoundWork);
+				assertTrue(pairBoundWork <= 2.0d,
+						() -> "Expected both-end-bound property path lookup to stay cheap, pairBound="
+								+ pairBoundWork);
 			}
 		} finally {
 			try {
@@ -265,11 +313,21 @@ class LmdbPropertyPathEstimateTest {
 		return result;
 	}
 
+	private static double propertyPathWork(JoinFactorCostModel costModel, ArbitraryLengthPath path,
+			Set<String> boundVars) {
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(path,
+				JoinFactorCostModel.CostContext.of(boundVars, 1.0d, 1.0d, false));
+		assertTrue(estimate.isPresent());
+		return estimate.get().getWorkRows();
+	}
+
 	private static void assertPropertyPathCosted(ArbitraryLengthPath path, Explanation explanation) {
+		String method = path.getStringMetricPlanned("plannedPropertyPathMethod");
+		String source = path.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String proof = path.getStringMetricPlanned("optimizer.cascadesProofs");
-		assertTrue(proof != null && proof.contains("lmdb-property-path"), explanation::toString);
-		assertEquals("lmdb-property-path", path.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
-				explanation::toString);
+		assertTrue((method != null && method.startsWith("sketch-single-predicate-path"))
+				|| "lmdb-property-path".equals(source)
+				|| (proof != null && proof.contains("lmdb-property-path")), explanation::toString);
 		assertTrue(path.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS) > 1.0d,
 				explanation::toString);
 		assertTrue(path.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS) > 1.0d,

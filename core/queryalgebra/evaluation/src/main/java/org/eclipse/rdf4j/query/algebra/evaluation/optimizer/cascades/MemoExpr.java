@@ -47,8 +47,13 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 	}
 
 	static MemoExpr logical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata) {
+		return logical(id, groupId, tupleExpr, inputs, metadata, null);
+	}
+
+	static MemoExpr logical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
+			String structuralKey) {
 		return new MemoExpr(id, groupId, operatorName(tupleExpr), inputs, metadata, tupleExpr, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null, null);
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null, structuralKey);
 	}
 
 	static MemoExpr physical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
@@ -76,8 +81,8 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 			PhysicalProperties deliveredProperties, RuleKind kind) {
 		StringBuilder builder = new StringBuilder(128);
 		builder.append(kind).append('|').append(operator).append('|');
-		builder.append(inputGroupIds == null ? List.of() : inputGroupIds).append('|');
-		builder.append(localMetadata == null ? "" : localMetadata).append('|');
+		appendIntList(builder, inputGroupIds);
+		builder.append('|').append(localMetadata == null ? "" : localMetadata).append('|');
 		if (tupleExpr != null) {
 			builder.append(tupleExpr.getClass().getName()).append('|').append(safeSignature(tupleExpr));
 		}
@@ -85,6 +90,21 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 			builder.append('|').append(Objects.toString(deliveredProperties, "*"));
 		}
 		return builder.toString();
+	}
+
+	private static void appendIntList(StringBuilder builder, List<Integer> values) {
+		if (values == null || values.isEmpty()) {
+			builder.append("[]");
+			return;
+		}
+		builder.append('[');
+		for (int i = 0; i < values.size(); i++) {
+			if (i > 0) {
+				builder.append(", ");
+			}
+			builder.append(values.get(i));
+		}
+		builder.append(']');
 	}
 
 	static String logicalKey(TupleExpr tupleExpr, List<Integer> inputGroupIds, String metadata) {

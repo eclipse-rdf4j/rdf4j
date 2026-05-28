@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1045,7 +1046,9 @@ public interface CascadesCostModel {
 			if (names == null || names.isEmpty()) {
 				return "[]";
 			}
-			return new TreeSet<>(names).toString();
+			String[] sorted = names.toArray(String[]::new);
+			Arrays.sort(sorted);
+			return Arrays.toString(sorted);
 		}
 	}
 }
