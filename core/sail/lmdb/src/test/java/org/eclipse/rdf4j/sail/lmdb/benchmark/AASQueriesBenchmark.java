@@ -121,9 +121,9 @@ public class AASQueriesBenchmark {
 	String useCascades;
 
 	@Param({
-//			"query1PropertyProjection",
-			"query2ThresholdCount",
-//			"query3LineAggregates"
+			"query1PropertyProjection",
+//			"query2ThresholdCount",
+//		"query3LineAggregates"
 	})
 	private String query;
 
@@ -135,7 +135,6 @@ public class AASQueriesBenchmark {
 	static void main(String[] args) throws RunnerException {
 		Options options = new OptionsBuilder()
 				.include("AASQueriesBenchmark\\.query")
-				.param("query", "query2ThresholdCount")
 				.forks(0)
 				.build();
 		new Runner(options).run();
@@ -155,6 +154,7 @@ public class AASQueriesBenchmark {
 		prepareSketchesIfEnabled();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long before = System.currentTimeMillis();
 			System.out.println();
 			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Timed));
 			System.out.println();

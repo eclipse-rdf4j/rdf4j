@@ -499,7 +499,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
 		return bindings -> {
 			initializeTimeTelemetry(expr);
-			return new TimedIterator(qes.evaluate(bindings), expr);
+			long started = System.nanoTime();
+			CloseableIteration<BindingSet> iteration = null;
+			try {
+				iteration = qes.evaluate(bindings);
+				long elapsed = System.nanoTime() - started;
+				return new TimedIterator(iteration, expr, elapsed);
+			} catch (Throwable t) {
+				long elapsed = System.nanoTime() - started;
+				expr.setTotalTimeNanosActual(expr.getTotalTimeNanosActual() + elapsed);
+				if (iteration != null) {
+					iteration.close();
+				}
+				throw t;
+			}
 		};
 	}
 
@@ -1735,10 +1748,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
+			this(iterator, queryModelNode, 0L);
+		}
+
+		public TimedIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, long initialElapsedNanos) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
-			this.openedAtNanos = System.nanoTime();
+			this.elapsedNanos = Math.max(0L, initialElapsedNanos);
+			this.openedAtNanos = System.nanoTime() - this.elapsedNanos;
 			if (telemetryActive(queryModelNode)) {
 				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
 			}
