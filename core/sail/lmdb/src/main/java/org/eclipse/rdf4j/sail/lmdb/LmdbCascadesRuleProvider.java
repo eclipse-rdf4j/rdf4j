@@ -61,7 +61,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** Registers LMDB physical alternatives for the generic Cascades engine. */
@@ -320,11 +319,20 @@ final class LmdbCascadesRuleProvider {
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("cascadesNative", "connectedOnly", "hypergraph", "legacySketchPlanner=false",
-							"algorithm=" + connectedPlan.algorithm(), "factors=" + connectedPlan.factorCount()),
-					"Cascades implements connected join islands with connected-prefix hypergraph enumeration "
-							+ "and does not delegate to JoinOrderPlanner");
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("cascadesNative");
+			facts.add("hypergraph");
+			facts.add(connectedPlan.zeroVarFactorCount() == 0 ? "connectedOnly" : "runtimeConnected");
+			facts.add("legacySketchPlanner=false");
+			facts.add("algorithm=" + connectedPlan.algorithm());
+			facts.add("factors=" + connectedPlan.factorCount());
+			if (connectedPlan.zeroVarFactorCount() > 0) {
+				facts.add("zeroVarFactors=" + connectedPlan.zeroVarFactorCount());
+			}
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"Cascades implements the runtime-variable component with connected-prefix hypergraph enumeration "
+							+ "and treats zero-variable factors as explicit Cartesian/ground filters; "
+							+ "it does not delegate to JoinOrderPlanner");
 			return List
 					.of(RuleApplication.opaquePhysical(expression.groupId(), ordered, delivered, connectedPlan.cost(),
 							proof, LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE, connectedPlan.estimate()));
@@ -647,7 +655,7 @@ final class LmdbCascadesRuleProvider {
 		}
 
 		private Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
-			return tupleExpr == null ? Set.of() : LmdbJoinPlanSupport.plannerBindingNames(tupleExpr.getBindingNames());
+			return LmdbJoinPlanSupport.runtimeBindingNames(tupleExpr);
 		}
 
 		private boolean intersects(Set<String> left, Set<String> right) {
@@ -1054,17 +1062,11 @@ final class LmdbCascadesRuleProvider {
 		}
 
 		private Set<String> plannerVarNames(TupleExpr tupleExpr) {
-			LinkedHashSet<String> names = new LinkedHashSet<>();
-			for (String name : VarNameCollector.process(tupleExpr)) {
-				if (plannerVarName(name) != null) {
-					names.add(name);
-				}
-			}
-			return names.isEmpty() ? Set.of() : Set.copyOf(names);
+			return LmdbJoinPlanSupport.runtimeBindingNames(tupleExpr);
 		}
 
 		private String plannerVarName(Var var) {
-			if (var == null || var.hasValue()) {
+			if (var == null || var.hasValue() || var.isConstant()) {
 				return null;
 			}
 			return plannerVarName(var.getName());

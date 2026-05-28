@@ -18,7 +18,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -45,6 +44,7 @@ final class LmdbJoinIslandConnectivity {
 	static boolean connectedJoinProviderCanOwn(TupleExpr tupleExpr) {
 		Island island = joinIsland(tupleExpr);
 		return island != null && island.factorCount() > 1 && island.supported()
+				&& island.runtimeFactorCount() > 1
 				&& island.connectedComponentCount() <= 1;
 	}
 
@@ -54,8 +54,16 @@ final class LmdbJoinIslandConnectivity {
 
 	static boolean disconnectedJoinIsland(TupleExpr tupleExpr, Set<String> externallyBoundVars) {
 		Island island = joinIsland(tupleExpr);
-		return island != null && island.factorCount() > 1 && island.supported()
-				&& connectedComponentCount(tupleExpr, externallyBoundVars) > 1;
+		if (island == null || island.factorCount() <= 1 || !island.supported()) {
+			return false;
+		}
+		if (island.zeroVarFactorCount() > 0) {
+			return true;
+		}
+		if (island.runtimeFactorCount() == 0) {
+			return island.factorCount() > 1;
+		}
+		return connectedComponentCount(tupleExpr, externallyBoundVars) > 1;
 	}
 
 	static boolean joinProviderCanOwn(TupleExpr tupleExpr) {
@@ -95,16 +103,20 @@ final class LmdbJoinIslandConnectivity {
 		List<TupleExpr> factors = flattenFactors(tupleExpr);
 		List<Set<String>> runtimeVars = new ArrayList<>(factors.size());
 		boolean supported = true;
-		boolean zeroVarMultiplier = false;
+		int runtimeFactorCount = 0;
+		int zeroVarFactorCount = 0;
 		for (TupleExpr factor : factors) {
 			Set<String> names = runtimeVars(factor);
 			runtimeVars.add(names);
 			supported &= supportedFactor(factor);
-			if (names.isEmpty() && !scalarZeroVarFactor(factor)) {
-				zeroVarMultiplier = true;
+			if (names.isEmpty()) {
+				zeroVarFactorCount++;
+			} else {
+				runtimeFactorCount++;
 			}
 		}
-		return new Island(factors.size(), connectedComponentCount(runtimeVars), supported, zeroVarMultiplier);
+		return new Island(factors.size(), runtimeFactorCount, zeroVarFactorCount,
+				connectedComponentCount(runtimeVars), supported);
 	}
 
 	private static void flatten(TupleExpr tupleExpr, List<TupleExpr> factors) {
@@ -142,10 +154,7 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	private static Set<String> runtimeVars(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return Set.of();
-		}
-		return LmdbJoinPlanSupport.plannerBindingNames(tupleExpr.getBindingNames());
+		return LmdbJoinPlanSupport.runtimeBindingNames(tupleExpr);
 	}
 
 	private static boolean supportedFactor(TupleExpr tupleExpr) {
@@ -162,27 +171,6 @@ final class LmdbJoinIslandConnectivity {
 			return !TupleExprs.isVariableScopeChange(filter);
 		}
 		return false;
-	}
-
-	private static boolean scalarZeroVarFactor(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof BindingSetAssignment assignment) {
-			if (!runtimeVars(assignment).isEmpty()) {
-				return false;
-			}
-			Iterable<BindingSet> bindingSets = assignment.getBindingSets();
-			if (bindingSets == null) {
-				return true;
-			}
-			int rows = 0;
-			for (BindingSet ignored : bindingSets) {
-				rows++;
-				if (rows > 1) {
-					return false;
-				}
-			}
-			return true;
-		}
-		return true;
 	}
 
 	private static int connectedComponentCount(List<Set<String>> runtimeVars) {
@@ -269,7 +257,7 @@ final class LmdbJoinIslandConnectivity {
 		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
-	private record Island(int factorCount, int connectedComponentCount, boolean supported,
-			boolean zeroVarMultiplier) {
+	private record Island(int factorCount, int runtimeFactorCount, int zeroVarFactorCount,
+			int connectedComponentCount, boolean supported) {
 	}
 }

@@ -81,7 +81,9 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return;
 		}
 		if (tupleExpr instanceof Join join) {
-			if (LmdbJoinIslandConnectivity.disconnectedJoinIsland(join, externallyBoundVars)) {
+			if (LmdbJoinIslandConnectivity.disconnectedJoinIsland(join, externallyBoundVars)
+					&& !LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE
+							.equals(join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
 				join.setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
 				join.setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
 				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS,
@@ -102,8 +104,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		if (externallyBoundVars != null) {
 			rightBoundVars.addAll(externallyBoundVars);
 		}
-		rightBoundVars.addAll(join.getLeftArg()
-				.getBindingNames());
+		rightBoundVars.addAll(LmdbJoinPlanSupport.runtimeBindingNames(join.getLeftArg()));
 		return rightBoundVars.isEmpty() ? Set.of() : Set.copyOf(rightBoundVars);
 	}
 

@@ -53,6 +53,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final String ESTIMATE_SOURCE = "lmdb-cascades-connected-hypergraph";
 	static final String RULE_ID = "lmdb-cascades-connected-hypergraph-join";
 	static final String CONNECTED_ENUMERATION = "connected-prefix-only";
+	static final String RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION = "runtime-connected-plus-zero-var-filters";
 	private static final int EXACT_DP_FACTOR_LIMIT = 20;
 
 	private LmdbCascadesConnectedJoinPlanner() {
@@ -77,13 +78,18 @@ final class LmdbCascadesConnectedJoinPlanner {
 	private static Optional<Plan> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
 		int factorCount = factors.size();
-		int fullMask = (1 << factorCount) - 1;
 		List<Set<String>> factorVars = factorVars(factors);
+		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
+		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
+		if (runtimeFactorIndices.size() < 2) {
+			return Optional.empty();
+		}
+		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors);
-		State[] best = new State[fullMask + 1];
+		State[] best = new State[1 << factorCount];
 
-		for (int factorIndex = 0; factorIndex < factorCount; factorIndex++) {
+		for (int factorIndex : runtimeFactorIndices) {
 			if (!admissibleSeed(factors.get(factorIndex), initial, pathHasEndpointBinder[factorIndex])) {
 				continue;
 			}
@@ -103,7 +109,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 				continue;
 			}
 			List<TupleExpr> prefixFactors = state.prefixFactors(factors);
-			for (int factorIndex = 0; factorIndex < factorCount; factorIndex++) {
+			for (int factorIndex : runtimeFactorIndices) {
 				int bit = 1 << factorIndex;
 				if ((mask & bit) != 0 || !connectedExtension(factors.get(factorIndex), state.boundVars(),
 						factorVars.get(factorIndex))) {
@@ -121,19 +127,24 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		State full = best[fullMask];
-		if (full == null || hasDisconnectedStep(full)) {
+		if (full == null) {
 			return Optional.empty();
 		}
-		return Optional.of(full.toPlan(factors, "connected-dp"));
+		State complete = appendZeroVarFactors(full, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
+		if (complete == null) {
+			return Optional.empty();
+		}
+		return Optional.of(complete.toPlan(factors, "connected-dp", zeroVarFactorIndices.size()));
 	}
 
 	private static Optional<Plan> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
-		List<Integer> remaining = new ArrayList<>(factors.size());
-		for (int i = 0; i < factors.size(); i++) {
-			remaining.add(i);
-		}
 		List<Set<String>> factorVars = factorVars(factors);
+		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
+		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
+		if (remaining.size() < 2) {
+			return Optional.empty();
+		}
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors);
 		Set<String> boundVars = plannerNames(initialBoundVars);
 		List<Integer> order = new ArrayList<>(factors.size());
@@ -175,15 +186,26 @@ final class LmdbCascadesConnectedJoinPlanner {
 			maxRows = Math.max(maxRows, rows);
 			boundVars = union(boundVars, factorVars.get(factorIndex));
 		}
-		State state = new State((1 << Math.min(factors.size(), 30)) - 1, List.copyOf(order), List.copyOf(steps),
+		State state = new State(maskFor(order), List.copyOf(order), List.copyOf(steps),
 				boundVars, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps), confidence(steps),
 				evidence(steps));
-		return Optional.of(state.toPlan(factors, "connected-greedy"));
+		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
+		if (complete == null) {
+			return Optional.empty();
+		}
+		return Optional.of(complete.toPlan(factors, "connected-greedy", zeroVarFactorIndices.size()));
 	}
 
 	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
 			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics) {
+		return estimateStep(factors, factorIndex, boundVars, prefixRows, nested, prefixFactors, costModel,
+				fallbackStatistics, false);
+	}
+
+	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
+			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
+			EvaluationStatistics fallbackStatistics, boolean disconnected) {
 		TupleExpr factor = factors.get(factorIndex);
 		CostContext context = CostContext.forOptimization(boundVars, prefixRows,
 				Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows : Double.NaN, nested, true, Map.of(),
@@ -199,7 +221,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, factorEstimate.getStringMetrics(),
 				factorEstimate.getDoubleMetrics(), factorEstimate.getEstimateVector().rowQErrorMax(),
 				factorEstimate.getEstimateVector().workQErrorMax(), factorEstimate.getEstimateVector().confidence(),
-				factorEstimate.getEstimateVector().evidenceCount(), false);
+				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate fallbackEstimate(TupleExpr factor,
@@ -236,7 +258,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return pathHasBoundEndpoint(candidate, prefixVars);
 		}
 		if (candidateVars == null || candidateVars.isEmpty()) {
-			return true;
+			return false;
 		}
 		return intersects(prefixVars, candidateVars);
 	}
@@ -248,6 +270,48 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 		return false;
+	}
+
+	private static State appendZeroVarFactors(State state, List<TupleExpr> factors, List<Integer> zeroVarFactorIndices,
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
+		State current = state;
+		for (int factorIndex : zeroVarFactorIndices) {
+			Step step = estimateStep(factors, factorIndex, current.boundVars(), current.rows(), true,
+					current.prefixFactors(factors), costModel, fallbackStatistics, true);
+			if (step == null) {
+				return null;
+			}
+			current = current.append(current.mask(), factorIndex, step, current.boundVars());
+		}
+		return current;
+	}
+
+	private static List<Integer> runtimeFactorIndices(List<Set<String>> factorVars) {
+		List<Integer> indices = new ArrayList<>();
+		for (int i = 0; i < factorVars.size(); i++) {
+			if (!factorVars.get(i).isEmpty()) {
+				indices.add(i);
+			}
+		}
+		return List.copyOf(indices);
+	}
+
+	private static List<Integer> zeroVarFactorIndices(List<Set<String>> factorVars) {
+		List<Integer> indices = new ArrayList<>();
+		for (int i = 0; i < factorVars.size(); i++) {
+			if (factorVars.get(i).isEmpty()) {
+				indices.add(i);
+			}
+		}
+		return List.copyOf(indices);
+	}
+
+	private static int maskFor(List<Integer> factorIndices) {
+		int mask = 0;
+		for (int factorIndex : factorIndices) {
+			mask |= 1 << factorIndex;
+		}
+		return mask;
 	}
 
 	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors) {
@@ -272,7 +336,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	private static List<Set<String>> factorVars(List<TupleExpr> factors) {
 		List<Set<String>> factorVars = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
-			factorVars.add(plannerNames(factor == null ? Set.of() : factor.getBindingNames()));
+			factorVars.add(LmdbJoinPlanSupport.runtimeBindingNames(factor));
 		}
 		return List.copyOf(factorVars);
 	}
@@ -313,7 +377,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static void addEndpointName(Set<String> names, Var var) {
-		if (var == null || var.hasValue()) {
+		if (var == null || var.hasValue() || var.isConstant()) {
 			return;
 		}
 		String name = var.getName();
@@ -397,7 +461,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return evidence;
 	}
 
-	record Plan(TupleExpr tupleExpr, CostVector cost, EstimateSnapshot estimate, int factorCount, String algorithm) {
+	record Plan(TupleExpr tupleExpr, CostVector cost, EstimateSnapshot estimate, int factorCount, String algorithm,
+			int zeroVarFactorCount) {
 	}
 
 	private record State(int mask, List<Integer> order, List<Step> steps, Set<String> boundVars, double rows,
@@ -417,8 +482,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 			List<Step> nextSteps = new ArrayList<>(steps.size() + 1);
 			nextSteps.addAll(steps);
 			nextSteps.add(step);
+			double nextCartesianWorkRows = cartesianWorkRows + (step.disconnected() ? step.workRows() : 0.0d);
 			return new State(mask, List.copyOf(nextOrder), List.copyOf(nextSteps), boundVars, step.outputRows(),
-					workRows + step.workRows(), Math.max(maxRows, step.outputRows()), cartesianWorkRows,
+					workRows + step.workRows(), Math.max(maxRows, step.outputRows()), nextCartesianWorkRows,
 					Math.max(rowQErrorMax, step.rowQErrorMax()), Math.max(workQErrorMax, step.workQErrorMax()),
 					Math.min(confidence, step.confidence()), evidenceCount + step.evidenceCount());
 		}
@@ -427,14 +493,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return LmdbCascadesConnectedJoinPlanner.prefixFactors(factors, order);
 		}
 
-		Plan toPlan(List<TupleExpr> factors, String algorithm) {
+		Plan toPlan(List<TupleExpr> factors, String algorithm, int zeroVarFactorCount) {
 			TupleExpr tupleExpr = buildPlan(factors);
 			CostVector cost = new CostVector(rows, workRows, 0.0d, 0.0d, 0.0d, rowQErrorMax, rowQErrorMax,
 					workQErrorMax, workQErrorMax, Math.max(0.0d, rows * Math.max(rowQErrorMax - 1.0d, 0.0d)),
 					confidence, evidenceCount);
 			EstimateSnapshot estimate = estimateSnapshot(cost, algorithm, factors.size(), order.size(), maxRows,
-					cartesianWorkRows);
-			return new Plan(tupleExpr, cost, estimate, factors.size(), algorithm);
+					cartesianWorkRows, zeroVarFactorCount);
+			return new Plan(tupleExpr, cost, estimate, factors.size(), algorithm, zeroVarFactorCount);
 		}
 
 		private TupleExpr buildPlan(List<TupleExpr> factors) {
@@ -487,13 +553,15 @@ final class LmdbCascadesConnectedJoinPlanner {
 			join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
 			join.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ALGORITHM, "CONNECTED_HYPERGRAPH_DP");
-			join.setStringMetricPlanned("optimizer.connectedEnumeration", CONNECTED_ENUMERATION);
+			join.setStringMetricPlanned("optimizer.connectedEnumeration",
+					step.disconnected() ? RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION : CONNECTED_ENUMERATION);
 			join.setDoubleMetricPlanned("optimizer.connectedPrefixFactorCount", (double) prefixFactorCount);
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, step.outputRows());
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, step.outputRows());
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, cumulativeWorkThrough(step));
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cumulativeWorkThrough(step));
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS,
+					cumulativeCartesianThrough(step));
 		}
 
 		private double cumulativeWorkThrough(Step step) {
@@ -507,19 +575,35 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return work;
 		}
 
+		private double cumulativeCartesianThrough(Step step) {
+			double work = 0.0d;
+			for (Step current : steps) {
+				if (current.disconnected()) {
+					work += current.workRows();
+				}
+				if (current == step) {
+					return work;
+				}
+			}
+			return work;
+		}
+
 		private EstimateSnapshot estimateSnapshot(CostVector cost, String algorithm, int factorCount,
 				int acceptedStates,
-				double maxRows, double cartesianWorkRows) {
+				double maxRows, double cartesianWorkRows, int zeroVarFactorCount) {
 			Map<String, String> strings = new LinkedHashMap<>();
 			strings.put(TelemetryMetricNames.PLANNER_ID, "lmdb-cascades");
 			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
 			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
 			strings.put(TelemetryMetricNames.PLANNER_ALGORITHM, "CONNECTED_HYPERGRAPH_DP");
-			strings.put("optimizer.connectedEnumeration", CONNECTED_ENUMERATION);
+			strings.put("optimizer.connectedEnumeration", zeroVarFactorCount == 0
+					? CONNECTED_ENUMERATION
+					: RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION);
 			strings.put("optimizer.hypergraphPlanner", algorithm);
 			Map<String, Double> doubles = new LinkedHashMap<>();
-			doubles.put("optimizer.connectedComponentCount", 1.0d);
+			doubles.put("optimizer.connectedComponentCount", 1.0d + zeroVarFactorCount);
+			doubles.put("optimizer.zeroVarFactorCount", (double) zeroVarFactorCount);
 			doubles.put("optimizer.joinIslandFactorCount", (double) factorCount);
 			doubles.put("optimizer.connectedDpStateCount", (double) acceptedStates);
 			doubles.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);

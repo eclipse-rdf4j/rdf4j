@@ -491,6 +491,33 @@ final class LmdbJoinPlanSupport {
 		return plannerNames;
 	}
 
+	static Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Set.of();
+		}
+		if (tupleExpr instanceof BindingSetAssignment) {
+			return plannerBindingNames(tupleExpr.getBindingNames());
+		}
+		Set<String> runtimeNames = new LinkedHashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				addRuntimeBindingName(runtimeNames, node);
+			}
+		});
+		return runtimeNames.isEmpty() ? Set.of() : Set.copyOf(runtimeNames);
+	}
+
+	private static void addRuntimeBindingName(Set<String> runtimeNames, Var var) {
+		if (var == null || var.hasValue() || var.isConstant()) {
+			return;
+		}
+		String name = var.getName();
+		if (name != null && !name.startsWith("_const_")) {
+			runtimeNames.add(name);
+		}
+	}
+
 	private static boolean isBoundVar(Var var, Set<String> boundNames) {
 		return var != null && !var.hasValue() && boundNames.contains(var.getName());
 	}
