@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -30,12 +33,17 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.junit.jupiter.api.Test;
 
 class LmdbCascadesConnectedRuleAdmissibilityTest {
@@ -45,32 +53,50 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	private static final IRI P2 = VF.createIRI("urn:p2");
 
 	@Test
-	void connectedJoinIslandIsOwnedByConnectedJoinProvider() {
+	void connectedJoinIslandUsesBoundedConnectedPlanByDefault() {
 		List<String> rules = applicableRuleIds(connectedJoinIsland());
 
-		assertTrue(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
+		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 
 	@Test
-	void propertyPathUsesLmdbPathImplementationNotGenericFullScan() {
+	void legacyOpaqueJoinProviderCanStillBeEnabledExplicitly() {
+		String previous = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, "true");
+		try {
+			List<String> rules = applicableRuleIds(connectedJoinIsland());
+
+			assertTrue(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
+			assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		} finally {
+			restoreLegacyOpaqueJoinProviderProperty(previous);
+		}
+	}
+
+	@Test
+	void propertyPathUsesLmdbPathImplementationAndGenericFallback() {
 		List<String> rules = applicableRuleIds(propertyPathFactor());
 
 		assertTrue(rules.contains("lmdb-property-path"), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
 	@Test
-	void connectedThresholdPathIslandIsOwnedByConnectedJoinProvider() {
+	void connectedThresholdPathIslandIsSeededByCascadesConnectedOrdering() {
 		TupleExpr island = thresholdPathIsland();
+		List<String> rules = applicableRuleIds(island);
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, true));
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, false, false));
+		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertTrue(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
 	}
 
 	@Test
-	void projectedConnectedSubplansRemainOwnedByConnectedJoinProvider() {
+	void projectedConnectedSubplansRemainCascadesImplementable() {
 		TupleExpr island = new Join(
 				projection(new Join(
 						new StatementPattern(new Var("left"), new Var("p1", P1), new Var("mid")),
@@ -84,13 +110,22 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		List<String> rules = applicableRuleIds(island);
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertTrue(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
+		assertTrue(rules.contains("lmdb-connected-join-plan"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 
+	private static void restoreLegacyOpaqueJoinProviderProperty(String previous) {
+		if (previous == null) {
+			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
+		} else {
+			System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previous);
+		}
+	}
+
 	private static List<String> applicableRuleIds(TupleExpr tupleExpr) {
-		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null);
+		RuleSelectionStatistics statistics = new RuleSelectionStatistics();
 		RuleRegistry registry = LmdbCascadesRuleProvider.rules(statistics);
 		Memo memo = new Memo(CascadesCostModel.from(statistics));
 		int groupId = memo.intern(tupleExpr);
@@ -99,6 +134,31 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				.stream()
 				.map(CascadesRule::id)
 				.toList();
+	}
+
+	private static final class RuleSelectionStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel, RdfStatisticsProvider {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return 10.0d;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(args), 10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> propertyPathNodePairs(TupleExpr path, Set<String> boundVars) {
+			return Optional.of(StatisticsEstimate.heuristic(10.0d, "test-property-path"));
+		}
 	}
 
 	private static TupleExpr connectedJoinIsland() {

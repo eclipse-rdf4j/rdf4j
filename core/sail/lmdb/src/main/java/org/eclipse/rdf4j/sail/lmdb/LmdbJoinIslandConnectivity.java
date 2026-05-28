@@ -48,6 +48,16 @@ final class LmdbJoinIslandConnectivity {
 				&& island.connectedComponentCount() <= 1;
 	}
 
+	static boolean disconnectedJoinIsland(TupleExpr tupleExpr) {
+		return disconnectedJoinIsland(tupleExpr, Set.of());
+	}
+
+	static boolean disconnectedJoinIsland(TupleExpr tupleExpr, Set<String> externallyBoundVars) {
+		Island island = joinIsland(tupleExpr);
+		return island != null && island.factorCount() > 1 && island.supported()
+				&& connectedComponentCount(tupleExpr, externallyBoundVars) > 1;
+	}
+
 	static boolean joinProviderCanOwn(TupleExpr tupleExpr) {
 		Island island = joinIsland(tupleExpr);
 		return island != null && island.factorCount() > 1 && island.supported();
@@ -176,6 +186,23 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	private static int connectedComponentCount(List<Set<String>> runtimeVars) {
+		return connectedComponentCount(runtimeVars, Set.of());
+	}
+
+	private static int connectedComponentCount(TupleExpr tupleExpr, Set<String> externallyBoundVars) {
+		Island island = analyze(tupleExpr);
+		if (island == null || externallyBoundVars == null || externallyBoundVars.isEmpty()) {
+			return island == null ? 0 : island.connectedComponentCount();
+		}
+		List<TupleExpr> factors = flattenFactors(tupleExpr);
+		List<Set<String>> runtimeVars = new ArrayList<>(factors.size());
+		for (TupleExpr factor : factors) {
+			runtimeVars.add(runtimeVars(factor));
+		}
+		return connectedComponentCount(runtimeVars, LmdbJoinPlanSupport.plannerBindingNames(externallyBoundVars));
+	}
+
+	private static int connectedComponentCount(List<Set<String>> runtimeVars, Set<String> externallyBoundVars) {
 		List<Set<String>> nonZeroVars = runtimeVars.stream()
 				.filter(names -> !names.isEmpty())
 				.map(Set::copyOf)
@@ -185,6 +212,18 @@ final class LmdbJoinIslandConnectivity {
 		}
 		Set<Integer> visited = new HashSet<>();
 		int components = 0;
+		if (externallyBoundVars != null && !externallyBoundVars.isEmpty()) {
+			ArrayDeque<Integer> queue = new ArrayDeque<>();
+			for (int i = 0; i < nonZeroVars.size(); i++) {
+				if (!disjoint(externallyBoundVars, nonZeroVars.get(i)) && visited.add(i)) {
+					queue.add(i);
+				}
+			}
+			if (!queue.isEmpty()) {
+				components++;
+				visitConnectedComponent(nonZeroVars, visited, queue);
+			}
+		}
 		for (int i = 0; i < nonZeroVars.size(); i++) {
 			if (!visited.add(i)) {
 				continue;
@@ -192,18 +231,23 @@ final class LmdbJoinIslandConnectivity {
 			components++;
 			ArrayDeque<Integer> queue = new ArrayDeque<>();
 			queue.add(i);
-			while (!queue.isEmpty()) {
-				Set<String> current = nonZeroVars.get(queue.removeFirst());
-				for (int candidate = 0; candidate < nonZeroVars.size(); candidate++) {
-					if (visited.contains(candidate) || disjoint(current, nonZeroVars.get(candidate))) {
-						continue;
-					}
-					visited.add(candidate);
-					queue.add(candidate);
-				}
-			}
+			visitConnectedComponent(nonZeroVars, visited, queue);
 		}
 		return components;
+	}
+
+	private static void visitConnectedComponent(List<Set<String>> nonZeroVars, Set<Integer> visited,
+			ArrayDeque<Integer> queue) {
+		while (!queue.isEmpty()) {
+			Set<String> current = nonZeroVars.get(queue.removeFirst());
+			for (int candidate = 0; candidate < nonZeroVars.size(); candidate++) {
+				if (visited.contains(candidate) || disjoint(current, nonZeroVars.get(candidate))) {
+					continue;
+				}
+				visited.add(candidate);
+				queue.add(candidate);
+			}
+		}
 	}
 
 	private static boolean disjoint(Set<String> left, Set<String> right) {

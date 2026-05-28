@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -859,6 +860,69 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
 				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
 				"A connected island should not retain avoidable Cartesian work: " + plan.getSummaryDoubleMetrics());
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
+	}
+
+	@Test
+	void dynamicProgrammingKeepsAasThresholdPathPrefixConnected() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI aasClass = VF.createIRI("https://admin-shell.io/aas/3/AssetAdministrationShell");
+		IRI assetInformation = VF.createIRI("https://admin-shell.io/aas/3/assetInformation");
+		IRI specificAssetId = VF.createIRI("https://admin-shell.io/aas/3/specificAssetId");
+		IRI submodel = VF.createIRI("https://admin-shell.io/aas/3/submodel");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		IRI value = VF.createIRI("https://admin-shell.io/aas/3/value");
+		for (int i = 0; i < 64; i++) {
+			Resource aas = VF.createIRI("urn:aas:" + i);
+			Resource assetInfoRoot = VF.createIRI("urn:assetInfoRoot:" + i);
+			Resource assetInfo = VF.createIRI("urn:assetInfo:" + i);
+			Resource submodelNode = VF.createIRI("urn:submodel:" + i);
+			Resource element = VF.createIRI("urn:element:" + i);
+			Resource p1 = VF.createIRI("urn:property:" + i);
+			store.add(VF.createStatement(aas, rdfType, aasClass));
+			store.add(VF.createStatement(aas, assetInformation, assetInfoRoot));
+			store.add(VF.createStatement(assetInfoRoot, specificAssetId, assetInfo));
+			store.add(VF.createStatement(assetInfo, value, VF.createLiteral("DriveUnit")));
+			store.add(VF.createStatement(aas, submodel, submodelNode));
+			store.add(VF.createStatement(submodelNode, submodelElement, element));
+			store.add(VF.createStatement(element, value, p1));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("aas"), Var.of("rdfType", rdfType),
+				Var.of("aasClass", aasClass));
+		StatementPattern driveUnitValue = new StatementPattern(Var.of("assetInfo"), Var.of("value", value),
+				Var.of("driveUnit", VF.createLiteral("DriveUnit")));
+		StatementPattern assetInformationPattern = pattern("aas", assetInformation, "assetInfoRoot");
+		StatementPattern specificAssetIdPattern = pattern("assetInfoRoot", specificAssetId, "assetInfo");
+		StatementPattern submodelPattern = pattern("aas", submodel, "submodelNode");
+		StatementPattern submodelElementPattern = pattern("submodelNode", submodelElement, "element");
+		ArbitraryLengthPath valuePath = new ArbitraryLengthPath(new Var("element"),
+				new StatementPattern(new Var("pathS"), new Var("valueStep", value), new Var("pathO")),
+				new Var("p1"), 0L);
+		List<TupleExpr> args = List.of(typePattern, driveUnitValue, assetInformationPattern, specificAssetIdPattern,
+				submodelPattern, submodelElementPattern, valuePath);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == driveUnitValue) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == valuePath) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of("p1"), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertConnectedComponentWithoutSplit(plan, args, Set.of("p1"));
 		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
 				.get("optimizer.connectedEnumeration"));
 	}
@@ -3544,16 +3608,21 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static void assertConnectedComponentWithoutSplit(JoinOrderPlanner.JoinOrderPlan plan,
 			List<TupleExpr> component) {
+		assertConnectedComponentWithoutSplit(plan, component, Set.of());
+	}
+
+	private static void assertConnectedComponentWithoutSplit(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> component, Set<String> initiallyBoundVars) {
 		Set<TupleExpr> componentSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		componentSet.addAll(component);
-		Set<String> boundVars = new LinkedHashSet<>();
+		Set<String> boundVars = new LinkedHashSet<>(initiallyBoundVars);
 		int seen = 0;
 		for (TupleExpr factor : plan.getOrderedArgs()) {
 			if (!componentSet.contains(factor)) {
 				continue;
 			}
 			Set<String> factorVars = factor.getBindingNames();
-			if (seen > 0) {
+			if (seen > 0 || !initiallyBoundVars.isEmpty()) {
 				Set<String> sharedVars = new LinkedHashSet<>(boundVars);
 				sharedVars.retainAll(factorVars);
 				assertTrue(!sharedVars.isEmpty(),

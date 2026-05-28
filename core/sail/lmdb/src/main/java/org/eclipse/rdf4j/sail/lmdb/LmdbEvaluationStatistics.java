@@ -1207,6 +1207,11 @@ class LmdbEvaluationStatistics
 
 		Map<String, Double> doubleMetrics = new HashMap<>(baseEstimate.getDoubleMetrics());
 		double robustWorkRows = robustFeedbackWorkRows(feedback);
+		double physicalWorkFloor = feedbackPhysicalWorkFloor(baseEstimate);
+		if (isFiniteNonNegative(physicalWorkFloor)) {
+			robustWorkRows = Math.max(robustWorkRows, physicalWorkFloor);
+			doubleMetrics.put("plannedOperatorFeedbackPhysicalWorkFloor", physicalWorkFloor);
+		}
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, robustWorkRows);
 		doubleMetrics.put("plannedBaseRows", baseEstimate.getOutputRows());
 		doubleMetrics.put("plannedBaseWorkRows", baseEstimate.getWorkRows());
@@ -1234,6 +1239,31 @@ class LmdbEvaluationStatistics
 				baseEstimate.hasPhysicalAccessPath(), baseEstimate.isDirectLookup(),
 				baseEstimate.getLookupComponentMask(),
 				baseEstimate.getMissingLookupComponentMask(), baseEstimate.getAccessRowsBeforeFilter(), true, false);
+	}
+
+	private double feedbackPhysicalWorkFloor(FactorCostEstimate baseEstimate) {
+		if (baseEstimate == null || !baseEstimate.hasPhysicalAccessPath() || baseEstimate.isDirectLookup()) {
+			return Double.NaN;
+		}
+		Map<String, Double> doubleMetrics = baseEstimate.getDoubleMetrics();
+		double floor = maxFiniteNonNegative(baseEstimate.getWorkRows(), baseEstimate.getAccessRowsBeforeFilter());
+		floor = maxFiniteNonNegative(floor,
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, Double.NaN));
+		floor = maxFiniteNonNegative(floor,
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN));
+		return isFiniteNonNegative(floor) ? floor : Double.NaN;
+	}
+
+	private double maxFiniteNonNegative(double first, double second) {
+		boolean hasFirst = isFiniteNonNegative(first);
+		boolean hasSecond = isFiniteNonNegative(second);
+		if (hasFirst && hasSecond) {
+			return Math.max(first, second);
+		}
+		if (hasFirst) {
+			return first;
+		}
+		return hasSecond ? second : Double.NaN;
 	}
 
 	private double robustFeedbackWorkRows(LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
@@ -1594,6 +1624,12 @@ class LmdbEvaluationStatistics
 			return Double.NaN;
 		}
 		double repeatedRows = rowsPerDistinctLookup * repeatedInvocations;
+		if (estimate.isDirectLookup()) {
+			double repeatedPhysicalRows = repeatedOutputRows(estimate, repeatedInvocations);
+			if (isFiniteNonNegative(repeatedPhysicalRows) && repeatedRows > repeatedPhysicalRows) {
+				repeatedRows = repeatedPhysicalRows;
+			}
+		}
 		if (!estimate.isDirectLookup() && isFiniteNonNegative(perInvocationRows)
 				&& perInvocationRows > distinctLookupBindings && isFiniteNonNegative(repeatedRows)) {
 			double repeatedPhysicalRows = repeatedOutputRows(estimate, repeatedInvocations);
@@ -5883,7 +5919,8 @@ class LmdbEvaluationStatistics
 		int candidateCount = candidates.size();
 		for (TripleStore.IndexAccessPath candidate : candidates) {
 			int coveredLookupComponentMask = lookupComponentMask & candidate.prefixComponentMask();
-			boolean directLookup = (candidate.prefixComponentMask() & lookupComponentMask) == lookupComponentMask;
+			boolean directLookup = isExactDirectLookup(candidate.prefixComponentMask(), lookupComponentMask,
+					rowsBeforeFilter);
 			double workRows = directLookup
 					? Math.max(lookupCombinations, rowsAfterFilter)
 					: rowsBeforeFilter;
@@ -5967,17 +6004,35 @@ class LmdbEvaluationStatistics
 		}
 
 		double workRows = accessPathEstimate == null ? outputRows : accessPathEstimate.workRowsPerInvocation();
+		double factorOutputRows = accessPathEstimate == null
+				? outputRows
+				: estimateAccessPathOutputRows(outputRows, accessShape, accessPathEstimate);
 		double accessRowsBeforeFilter = accessPathEstimate == null ? Double.NaN
 				: accessPathEstimate.rowsBeforeFilterAtAccess();
 		if (collectMetrics) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows);
 		}
-		FactorCostEstimate baseEstimate = new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics,
+		FactorCostEstimate baseEstimate = new FactorCostEstimate(workRows, factorOutputRows, stringMetrics,
+				doubleMetrics,
 				true, "directLookup".equals(indexAccessMode), lookupComponentMask,
 				missingLookupComponentMask, accessRowsBeforeFilter);
-		Optional<FactorCostEstimate> distinctCursorSkipEstimate = estimateDistinctCursorSkipCost(outputRows,
+		Optional<FactorCostEstimate> distinctCursorSkipEstimate = estimateDistinctCursorSkipCost(factorOutputRows,
 				accessShape, baseEstimate, collectMetrics);
 		return distinctCursorSkipEstimate.isPresent() ? distinctCursorSkipEstimate : Optional.of(baseEstimate);
+	}
+
+	private double estimateAccessPathOutputRows(double outputRows, SketchBasedJoinEstimator.AccessShape accessShape,
+			AccessPathEstimate accessPathEstimate) {
+		double accessOutputRows = accessPathEstimate.rowsAfterFilterAtAccess();
+		double filterMultiplier = accessShape.filterMultiplier();
+		if (!canApplyFilterAtAccess(accessShape, accessPathEstimate.prefixComponentMask())
+				&& isFiniteNonNegative(filterMultiplier) && filterMultiplier < 1.0d) {
+			accessOutputRows = accessPathEstimate.rowsBeforeFilterAtAccess() * filterMultiplier;
+		}
+		if (!isFiniteNonNegative(accessOutputRows)) {
+			return outputRows;
+		}
+		return accessOutputRows;
 	}
 
 	private Optional<FactorCostEstimate> estimateDistinctCursorSkipCost(double outputRows,
@@ -6571,7 +6626,7 @@ class LmdbEvaluationStatistics
 				continue;
 			}
 			boolean directLookup = isExactDirectLookup(candidate.prefixComponentMask(), lookupComponentMask,
-					rowsBefore, filterAppliedAtAccess);
+					rowsBefore);
 			boolean exactStatementDirectLookup = directLookup
 					&& isExactStatementLookup(candidate.prefixComponentMask(), lookupComponentMask);
 			double plannedRowsBefore = exactStatementDirectLookup
@@ -6580,8 +6635,7 @@ class LmdbEvaluationStatistics
 			double plannedRowsAfter = exactStatementDirectLookup
 					? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
 					: rowsAfter;
-			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter)
-					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
@@ -6609,8 +6663,12 @@ class LmdbEvaluationStatistics
 		int lookupComponentMask = request.lookupComponentMask() & lookupComponentMaskWithConstants(accessShape,
 				accessShape.pattern());
 		if (lookupComponentMask == 0) {
-			return isFiniteNonNegative(factorRows)
-					? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false, 0,
+			double rowsBefore = accessShape.estimateAccessRows(0);
+			if (!isFiniteNonNegative(rowsBefore)) {
+				rowsBefore = factorRows;
+			}
+			return isFiniteNonNegative(rowsBefore) && isFiniteNonNegative(factorRows)
+					? new AccessPathEstimate(rowsBefore, rowsBefore, rowsBefore, "", 0, 0, false, 0,
 							request.missingLookupComponentMask(), 1)
 					: null;
 		}
@@ -6636,7 +6694,7 @@ class LmdbEvaluationStatistics
 		int prefixLength = indexAccessPath == null ? 0 : indexAccessPath.prefixLength();
 		String indexFieldSequence = indexAccessPath == null ? "" : indexAccessPath.indexFieldSequence();
 		boolean directLookup = request.directLookup()
-				&& (prefixComponentMask & lookupComponentMask) == lookupComponentMask;
+				&& isExactDirectLookup(prefixComponentMask, lookupComponentMask, rowsBefore);
 		boolean exactStatementDirectLookup = directLookup
 				&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
 		double plannedRowsBefore = exactStatementDirectLookup
@@ -6645,8 +6703,7 @@ class LmdbEvaluationStatistics
 		double plannedRowsAfter = exactStatementDirectLookup
 				? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
 				: rowsAfter;
-		double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter)
-				: filterAppliedAtAccess ? rowsAfter : rowsBefore;
+		double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
 		if (!isFiniteNonNegative(workRows)) {
 			return null;
 		}
@@ -6702,13 +6759,9 @@ class LmdbEvaluationStatistics
 		return prefixComparison;
 	}
 
-	private boolean isExactDirectLookup(int prefixComponentMask, int lookupComponentMask, double rowsBeforeFilter,
-			boolean filterAppliedAtAccess) {
+	private boolean isExactDirectLookup(int prefixComponentMask, int lookupComponentMask, double rowsBeforeFilter) {
 		if (lookupComponentMask == 0 || (prefixComponentMask & lookupComponentMask) != lookupComponentMask) {
 			return false;
-		}
-		if (filterAppliedAtAccess) {
-			return true;
 		}
 		int exactStatementMask = componentBit(Component.S) | componentBit(Component.P) | componentBit(Component.O);
 		if ((prefixComponentMask & exactStatementMask) == exactStatementMask) {

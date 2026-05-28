@@ -60,6 +60,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
+		} else if (isHashJoinHint(join)) {
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+					joinAttributes, context);
+			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
@@ -113,6 +118,14 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		return eval.apply(bindings);
+	}
+
+	private static boolean isHashJoinHint(Join join) {
+		if (!"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
+			return false;
+		}
+		return !isOutOfScopeForLeftArgBindings(join.getRightArg())
+				&& HashJoinIteration.hashJoinAttributeNames(join).length > 0;
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {

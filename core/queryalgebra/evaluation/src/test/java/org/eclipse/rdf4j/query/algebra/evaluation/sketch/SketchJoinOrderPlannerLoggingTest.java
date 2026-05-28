@@ -96,18 +96,20 @@ class SketchJoinOrderPlannerLoggingTest {
 		assertThat(logOutput)
 				.contains("Sketch join planner input:")
 				.contains("originalOrder=")
-				.contains("factor[0]")
-				.contains("factor[1]")
 				.contains("pareto beam")
 				.contains("result: order=")
 				.contains("outputRows=")
 				.contains("totalWorkRows=")
 				.contains("SP(?x urn:pB ?y)")
+				.doesNotContain("estimate factor[")
+				.doesNotContain("joinVars=")
 				.doesNotContain("finalFrontier[0]");
 
 		assertThat(diagnostics(plan))
 				.anySatisfy(line -> assertThat(line).contains("pareto beam"))
 				.anySatisfy(line -> assertThat(line).contains("result: order="))
+				.noneSatisfy(line -> assertThat(line).contains("estimate factor["))
+				.noneSatisfy(line -> assertThat(line).contains("joinVars="))
 				.noneSatisfy(line -> assertThat(line).contains("finalFrontier[0]"));
 	}
 

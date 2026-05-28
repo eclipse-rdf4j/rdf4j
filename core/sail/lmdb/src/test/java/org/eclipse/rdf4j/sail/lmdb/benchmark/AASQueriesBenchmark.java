@@ -47,12 +47,14 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3)
+@Warmup(iterations =1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx4G" })
-@Measurement(iterations = 3)
+@Measurement(iterations = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class AASQueriesBenchmark {
+
+	static final String PREPARE_SKETCHES_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.prepareSketches";
 
 	private static final String QUERY_1 = """
 			PREFIX aas: <https://admin-shell.io/aas/3/>
@@ -127,6 +129,7 @@ public class AASQueriesBenchmark {
 
 	private File dataDir;
 	private SailRepository repository;
+	private LmdbStore lmdbStore;
 	private QuerySpec querySpec;
 
 	static void main(String[] args) throws RunnerException {
@@ -149,6 +152,7 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println("Number of statements: " + connection.size());
 		}
+		prepareSketchesIfEnabled();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println();
@@ -172,6 +176,7 @@ public class AASQueriesBenchmark {
 					FileUtils.deleteDirectory(dataDir);
 					dataDir = null;
 				}
+				lmdbStore = null;
 			}
 		}
 
@@ -185,7 +190,18 @@ public class AASQueriesBenchmark {
 		if (!Boolean.parseBoolean(useCascades)) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
-		return new SailRepository(new LmdbStore(dataDir, config));
+		lmdbStore = new LmdbStore(dataDir, config);
+		return new SailRepository(lmdbStore);
+	}
+
+	private void prepareSketchesIfEnabled() throws IOException {
+		if (!Boolean.parseBoolean(useCascades)) {
+			return;
+		}
+		if (!Boolean.parseBoolean(System.getProperty(PREPARE_SKETCHES_PROPERTY, "true"))) {
+			return;
+		}
+		BenchmarkJoinEstimatorSupport.prepareStableEstimatorForBenchmark(lmdbStore);
 	}
 
 	@Benchmark

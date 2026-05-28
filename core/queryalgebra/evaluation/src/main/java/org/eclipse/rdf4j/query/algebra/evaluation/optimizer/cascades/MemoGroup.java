@@ -62,6 +62,7 @@ public final class MemoGroup {
 			return false;
 		}
 		expressions.add(expression);
+		failures.clear();
 		return true;
 	}
 
@@ -87,7 +88,11 @@ public final class MemoGroup {
 		Objects.requireNonNull(key, "key");
 		Objects.requireNonNull(winner, "winner");
 		WinnerFrontier frontier = winnersByGoal.computeIfAbsent(key, ignored -> new WinnerFrontier());
-		return frontier.add(winner, frontierLimit, exactMode);
+		boolean accepted = frontier.add(winner, frontierLimit, exactMode);
+		if (accepted) {
+			failures.remove(key);
+		}
+		return accepted;
 	}
 
 	boolean hasFailure(WinnerKey key) {

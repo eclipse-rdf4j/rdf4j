@@ -66,6 +66,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String TIMEOUT_MILLIS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.timeoutMillis";
 	static final String APPLIED_METRIC = "optimizer.cascadesApplied";
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
+	private static final String CASCADES_RULE = "optimizer.cascadesRule";
+	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
+	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 
@@ -109,11 +112,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 
 		annotateDistinctPhysicalRequirements(tupleExpr);
-		CascadesTelemetry.Recording telemetry = Boolean.getBoolean(TRACE_PROPERTY)
-				? new CascadesTelemetry.Recording()
-				: new CascadesTelemetry.Recording(64);
+		boolean traceEnabled = Boolean.getBoolean(TRACE_PROPERTY);
+		CascadesTelemetry.Recording telemetry = traceEnabled ? new CascadesTelemetry.Recording() : null;
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(statistics),
-				LmdbCascadesRuleProvider.rules(statistics), telemetry);
+				LmdbCascadesRuleProvider.rules(statistics),
+				traceEnabled ? telemetry : CascadesTelemetry.NO_OP);
 		CascadesPlan plan = planner.optimize(tupleExpr, goal);
 		boolean appliesPlan = mode.replacesAlgebra() && plan.tupleExpr().isPresent();
 		annotate(tupleExpr, mode, plan, telemetry, appliesPlan);
@@ -233,6 +236,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				node.visitChildren(this);
 				return;
 			}
+			if (tupleExpr != root && cascadesPlannedSubtree(tupleExpr)) {
+				return;
+			}
 			if (tupleExpr != root && subplanCandidate(tupleExpr)) {
 				candidates.add(new SubtreeCandidate(tupleExpr, contextualBoundVars(boundVars,
 						tupleExpr.getBindingNames())));
@@ -293,6 +299,17 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			}
 			return union.isEmpty() ? Set.of() : Set.copyOf(union);
 		}
+	}
+
+	private static boolean cascadesPlannedSubtree(TupleExpr tupleExpr) {
+		return hasMetric(tupleExpr, CASCADES_RULE)
+				|| hasMetric(tupleExpr, CASCADES_WINNER)
+				|| hasMetric(tupleExpr, CASCADES_COVERED_BY_WINNER);
+	}
+
+	private static boolean hasMetric(TupleExpr tupleExpr, String metric) {
+		String value = tupleExpr.getStringMetricPlanned(metric);
+		return value != null && !value.isBlank();
 	}
 
 	private static boolean hasFilterJoinSegment(TupleExpr tupleExpr) {
@@ -525,7 +542,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (trackResultSize) {
 			tupleExpr.setRuntimeTelemetryEnabled(true);
 		}
-		if (!telemetry.trace().isEmpty()) {
+		if (telemetry != null && !telemetry.trace().isEmpty()) {
 			tupleExpr.setStringMetricPlanned("optimizer.cascadesTrace", String.join(" || ", telemetry.trace()));
 		}
 	}

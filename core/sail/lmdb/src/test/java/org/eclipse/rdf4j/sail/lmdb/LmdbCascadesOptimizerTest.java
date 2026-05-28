@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -357,6 +358,26 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void normalOptimizationDoesNotMaterializePlannerTrace() {
+		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousTrace = System.getProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		System.clearProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			QueryRoot root = new QueryRoot(connectedChainJoin(4));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			assertEquals("auto", root.getStringMetricPlanned("optimizer.cascadesMode"));
+			assertNull(root.getStringMetricPlanned("optimizer.cascadesTrace"));
+		} finally {
+			restoreMode(previousMode);
+			restoreTrace(previousTrace);
+		}
+	}
+
+	@Test
 	void autoDoesNotFallBackToLegacyOptimizerForOptionalUnion() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
@@ -391,6 +412,23 @@ class LmdbCascadesOptimizerTest {
 			assertEquals("auto", root.getStringMetricPlanned("optimizer.cascadesMode"));
 			assertFalse(root.getStringMetricPlanned("optimizer.cascadesDiagnostics")
 					.contains("autoFallback=legacyOptional"));
+		} finally {
+			restoreMode(previousMode);
+		}
+	}
+
+	@Test
+	void connectedJoinIslandUsesSingleOpaqueJoinOrderPlanningPass() {
+		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			QueryRoot root = new QueryRoot(connectedChainJoin(6));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			assertEquals(1, statistics.algorithms.size(), statistics.algorithms.toString());
+			assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
 		} finally {
 			restoreMode(previousMode);
 		}
@@ -432,6 +470,20 @@ class LmdbCascadesOptimizerTest {
 		return root;
 	}
 
+	private static TupleExpr connectedChainJoin(int factors) {
+		TupleExpr root = chainPattern(0);
+		for (int i = 1; i < factors; i++) {
+			root = new Join(root, chainPattern(i));
+		}
+		return root;
+	}
+
+	private static StatementPattern chainPattern(int index) {
+		return new StatementPattern(new Var("v" + index),
+				new Var("p" + index, SimpleValueFactory.getInstance().createIRI("urn:test:p" + index)),
+				new Var("v" + (index + 1)));
+	}
+
 	private static Map<String, Double> robustMetrics() {
 		return Map.of(
 				"plannedMemoryRows", 7.0d,
@@ -456,6 +508,14 @@ class LmdbCascadesOptimizerTest {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		} else {
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+		}
+	}
+
+	private static void restoreTrace(String previousTrace) {
+		if (previousTrace == null) {
+			System.clearProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		} else {
+			System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, previousTrace);
 		}
 	}
 

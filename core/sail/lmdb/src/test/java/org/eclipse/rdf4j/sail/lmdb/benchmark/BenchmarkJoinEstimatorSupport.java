@@ -81,6 +81,21 @@ public final class BenchmarkJoinEstimatorSupport {
 		invoke(persistEstimatorState, backingStore);
 	}
 
+	public static void prepareStableEstimatorForBenchmark(LmdbStore store) throws IOException {
+		SketchBasedJoinEstimator estimator = resolveEstimator(store);
+		estimator.stop();
+		if (!store.forceFlushSketchEstimator()) {
+			estimator.rebuild();
+		}
+		if (!estimator.isReadyNonBlocking()) {
+			estimator.rebuild();
+		}
+		if (!estimator.isReadyNonBlocking()) {
+			throw new IOException("LMDB sketch-based join estimator is not ready after stable benchmark preparation");
+		}
+		persistStoreStatistics(store);
+	}
+
 	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator != null) {

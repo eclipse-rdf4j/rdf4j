@@ -5066,6 +5066,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
 			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP, null,
+				deferredFilters);
+	}
+
+	public Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
+			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm,
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP,
 				Objects.requireNonNull(factorCostModel, "factorCostModel"), deferredFilters);
@@ -6303,6 +6310,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return "baseRows=" + baseRows + ", outputRows=" + outputRows + ", filterMultiplier="
 					+ localFilterMultiplier + ", joinVars=" + summarizeVarStats(varStats);
 		}
+
+		String compactSummary() {
+			return "baseRows=" + baseRows + ", outputRows=" + outputRows + ", filterMultiplier="
+					+ localFilterMultiplier + ", joinVarCount=" + varStats.size();
+		}
 	}
 
 	private record VarPlanStats(double distinct, FastAgmsBindingSummary sketch, StatementPattern pattern) {
@@ -7314,8 +7326,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		JoinEstimate subjectStats = estimate(Component.S, null, predicate, null, context);
 		JoinEstimate objectStats = estimate(Component.O, null, predicate, null, context);
 		double predicateRows = normalizeRows(subjectStats.estimate());
-		double distinctSubjects = finiteOr(subjectStats.distinct(), predicateRows);
-		double distinctObjects = finiteOr(objectStats.distinct(), predicateRows);
+		double endpointFallbackRows = Math.max(directRows, predicateRows);
+		double distinctSubjects = positiveFiniteOr(subjectStats.distinct(), endpointFallbackRows);
+		double distinctObjects = positiveFiniteOr(objectStats.distinct(), endpointFallbackRows);
 		double averageFanout = distinctSubjects > 0.0d ? predicateRows / distinctSubjects : 0.0d;
 		if (!Double.isFinite(averageFanout) || averageFanout < 0.0d) {
 			averageFanout = 0.0d;
@@ -7517,6 +7530,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private static double finiteOr(double value, double fallback) {
 		return Double.isFinite(value) && value >= 0.0d ? value : Math.max(0.0d, fallback);
+	}
+
+	private static double positiveFiniteOr(double value, double fallback) {
+		return Double.isFinite(value) && value > 0.0d ? value : Math.max(1.0d, fallback);
 	}
 
 	public double cardinality(LeftJoin node) {
@@ -10246,9 +10263,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private double resolveSampledFilterMultiplier(Filter filter, StatementPattern pattern) {
 		PatternFilterSampleEstimate estimate = resolveSampledFilterEstimate(filter, pattern);
-		return estimate == null || !isValidFilterMultiplier(estimate.passRatio())
-				? -1.0d
-				: normalizeExactFilterMultiplier(estimate.passRatio());
+		if (estimate == null || !isValidFilterMultiplier(estimate.passRatio())) {
+			return -1.0d;
+		}
+		EvaluationStatistics.FilterPassEstimate passEstimate = new EvaluationStatistics.FilterPassEstimate(
+				normalizeExactFilterMultiplier(estimate.passRatio()),
+				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.sampleSize());
+		return passEstimate.getPlanningPassRatio();
 	}
 
 	private PatternFilterSampleEstimate resolveSampledFilterEstimate(Filter filter, StatementPattern pattern) {

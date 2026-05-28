@@ -61,14 +61,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** Registers LMDB physical alternatives for the generic Cascades engine. */
 final class LmdbCascadesRuleProvider {
+	static final String LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.legacyOpaqueJoinProviders";
+	private static final String OPTIMIZER_CONNECTED_ENUMERATION = "optimizer.connectedEnumeration";
+	private static final String CONNECTED_ENUMERATION_CSG_CMP = "phase1_csg_cmp";
+	private static final String OPTIMIZER_JOIN_ALGORITHM_HINT = "optimizer.joinAlgorithmHint";
+	private static final String JOIN_ALGORITHM_HASH = "hash";
+	private static final double HASH_JOIN_BUILD_ROW_WORK = 1.0d;
+	private static final double HASH_JOIN_PROBE_ROW_WORK = 1.0d;
+
 	private LmdbCascadesRuleProvider() {
 	}
 
 	static RuleRegistry rules(EvaluationStatistics statistics) {
+		boolean legacyOpaqueJoinProviders = Boolean.getBoolean(LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		RuleRegistry.Builder builder = RuleRegistry.builder()
 				.add(new StandardCascadesRules.JoinCommutationRule())
 				.add(new StandardCascadesRules.JoinAssociativityRule())
@@ -80,9 +90,13 @@ final class LmdbCascadesRuleProvider {
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
 				.add(new StandardCascadesRules.MinusAlternativeRule())
-				.add(new LmdbGuaranteeOptionImplementationRule(statistics))
-				.add(new LmdbSketchJoinOrderImplementationRule(statistics))
-				.add(new LmdbStarMultiPredicateScanRule(statistics))
+				.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
+				.add(new LmdbConnectedJoinOrderingRule(statistics));
+		if (legacyOpaqueJoinProviders) {
+			builder.add(new LmdbGuaranteeOptionImplementationRule(statistics))
+					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
+		}
+		builder.add(new LmdbStarMultiPredicateScanRule(statistics))
 				.add(new LmdbPropertyPathImplementationRule(statistics))
 				.add(new LmdbAccessPathImplementationRule(statistics))
 				.add(new LmdbDistinctCursorSkipRule(statistics))
@@ -90,7 +104,8 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbMinusBoundProbeRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
-								statistics instanceof JoinOrderPlanner, statistics instanceof RdfStatisticsProvider)))
+								legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner,
+								false)))
 				.add(new StandardCascadesRules.DistinctEnforcerRule())
 				.add(new StandardCascadesRules.MaterializeEnforcerRule());
 		return builder.build();
@@ -109,6 +124,15 @@ final class LmdbCascadesRuleProvider {
 		TupleExpr root = runtimeMetrics.cloneFactor(orderedArgs.getFirst());
 		for (int i = 1; i < orderedArgs.size(); i++) {
 			root = runtimeMetrics.createJoin(root, runtimeMetrics.cloneFactor(orderedArgs.get(i)));
+		}
+		return root;
+	}
+
+	private static TupleExpr rightDeepJoin(JoinOrderPlanner.JoinOrderPlan plan, List<TupleExpr> orderedArgs) {
+		PlannedRuntimeMetrics runtimeMetrics = PlannedRuntimeMetrics.forPlan(plan, orderedArgs);
+		TupleExpr root = runtimeMetrics.cloneFactor(orderedArgs.getLast());
+		for (int i = orderedArgs.size() - 2; i >= 0; i--) {
+			root = runtimeMetrics.createJoin(runtimeMetrics.cloneFactor(orderedArgs.get(i)), root);
 		}
 		return root;
 	}
@@ -297,12 +321,26 @@ final class LmdbCascadesRuleProvider {
 
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, OptimizationGoal goal,
 				boolean nested) {
+			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+			return estimate(tupleExpr, boundVars, nested);
+		}
+
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, Set<String> boundVars,
+				boolean nested) {
+			return estimate(tupleExpr, boundVars, nested, Double.NaN, Double.NaN, List.of());
+		}
+
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, Set<String> boundVars,
+				boolean nested, double outerPrefixRows, double distinctLookupBindings,
+				List<TupleExpr> prefixFactors) {
 			if (costModel == null || tupleExpr == null) {
 				return Optional.empty();
 			}
-			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
-			return costModel.estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.forOptimization(boundVars,
-					Double.NaN, Double.NaN, nested, true, Map.of(), List.of()));
+			Set<String> safeBoundVars = boundVars == null ? Set.of() : boundVars;
+			return costModel.estimateFactorCost(tupleExpr,
+					JoinFactorCostModel.CostContext.forOptimization(safeBoundVars,
+							outerPrefixRows, distinctLookupBindings, nested, true, Map.of(),
+							prefixFactors == null ? List.of() : prefixFactors));
 		}
 
 		PhysicalProperties delivered(TupleExpr tupleExpr, JoinFactorCostModel.FactorCostEstimate estimate,
@@ -455,6 +493,653 @@ final class LmdbCascadesRuleProvider {
 
 		String semanticScope(OptimizationGoal goal) {
 			return goal == null ? OptimizationGoal.BAG_SEMANTICS : goal.semanticScope();
+		}
+	}
+
+	private static final class LmdbConnectedJoinOrderingRule extends LmdbRule {
+		LmdbConnectedJoinOrderingRule(EvaluationStatistics statistics) {
+			super("lmdb-cascades-connected-join-order", RuleKind.TRANSFORMATION, 119, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical() || costModel == null || !(expression.tupleExpr() instanceof Join)
+					|| !LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())) {
+				return false;
+			}
+			return LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 2;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr());
+			if (factors.size() < 3) {
+				return List.of();
+			}
+			Set<String> initialBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+			List<TupleExpr> ordered = connectedGreedyOrder(factors, initialBoundVars);
+			if (sameOrder(factors, ordered)) {
+				return List.of();
+			}
+			TupleExpr alternative = leftDeepJoin(ordered);
+			RuleProof proof = proof(semanticScope(goal), Set.of("cascadesNative", "legacySketchPlanner=false",
+					"connectedPrefix", "factors=" + factors.size()),
+					"Cascades seeds a connected left-deep join order from LMDB factor costs without invoking the legacy sketch join-order provider");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+
+		private List<TupleExpr> connectedGreedyOrder(List<TupleExpr> factors, Set<String> initialBoundVars) {
+			List<TupleExpr> remaining = new ArrayList<>(factors);
+			List<TupleExpr> ordered = new ArrayList<>(factors.size());
+			Set<String> boundVars = new LinkedHashSet<>(initialBoundVars == null ? Set.of() : initialBoundVars);
+			while (!remaining.isEmpty()) {
+				boolean hasPrefix = !ordered.isEmpty() || !boundVars.isEmpty();
+				int selected = selectFactor(remaining, boundVars, hasPrefix, true);
+				if (selected < 0) {
+					selected = selectFactor(remaining, boundVars, hasPrefix, false);
+				}
+				if (selected < 0) {
+					selected = 0;
+				}
+				TupleExpr factor = remaining.remove(selected);
+				ordered.add(factor);
+				boundVars.addAll(runtimeBindingNames(factor));
+			}
+			return List.copyOf(ordered);
+		}
+
+		private int selectFactor(List<TupleExpr> candidates, Set<String> boundVars, boolean hasPrefix,
+				boolean requireConnected) {
+			FactorChoice best = null;
+			for (int i = 0; i < candidates.size(); i++) {
+				TupleExpr candidate = candidates.get(i);
+				boolean connected = !hasPrefix || intersects(runtimeBindingNames(candidate), boundVars);
+				if (requireConnected && !connected) {
+					continue;
+				}
+				FactorChoice choice = choice(i, candidate, boundVars, hasPrefix, connected);
+				if (best == null || choice.compareTo(best) < 0) {
+					best = choice;
+				}
+			}
+			return best == null ? -1 : best.index();
+		}
+
+		private FactorChoice choice(int index, TupleExpr candidate, Set<String> boundVars, boolean hasPrefix,
+				boolean connected) {
+			JoinFactorCostModel.FactorCostEstimate estimate = estimate(candidate, boundVars, hasPrefix)
+					.orElseGet(() -> fallbackEstimate(candidate));
+			double workRows = finiteOrMax(estimate.getWorkRows());
+			double outputRows = finiteOrMax(estimate.getOutputRows());
+			Set<String> names = runtimeBindingNames(candidate);
+			return new FactorChoice(index, workRows, outputRows, -publicBindingCount(names), names.size(), !connected,
+					candidate.getSignature());
+		}
+
+		private JoinFactorCostModel.FactorCostEstimate fallbackEstimate(TupleExpr candidate) {
+			double rows = statistics == null || candidate == null ? Double.NaN : statistics.getCardinality(candidate);
+			if (!Double.isFinite(rows) || rows < 0.0d) {
+				rows = 1.0d;
+			}
+			return new JoinFactorCostModel.FactorCostEstimate(rows, rows);
+		}
+
+		private double finiteOrMax(double value) {
+			return Double.isFinite(value) && value >= 0.0d ? value : Double.MAX_VALUE;
+		}
+
+		private boolean sameOrder(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (int i = 0; i < left.size(); i++) {
+				if (left.get(i) != right.get(i)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
+			return tupleExpr == null ? Set.of() : LmdbJoinPlanSupport.plannerBindingNames(tupleExpr.getBindingNames());
+		}
+
+		private boolean intersects(Set<String> left, Set<String> right) {
+			if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
+				return false;
+			}
+			Set<String> smaller = left.size() <= right.size() ? left : right;
+			Set<String> larger = left.size() <= right.size() ? right : left;
+			for (String value : smaller) {
+				if (larger.contains(value)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private int publicBindingCount(Set<String> names) {
+			if (names == null || names.isEmpty()) {
+				return 0;
+			}
+			int count = 0;
+			for (String name : names) {
+				if (name != null && !name.startsWith("_anon_")) {
+					count++;
+				}
+			}
+			return count;
+		}
+
+		private record FactorChoice(int index, double workRows, double outputRows, int negativePublicBindingCount,
+				int bindingCount, boolean disconnected, String signature) implements Comparable<FactorChoice> {
+			@Override
+			public int compareTo(FactorChoice other) {
+				int comparison = Boolean.compare(disconnected, other.disconnected);
+				if (comparison != 0) {
+					return comparison;
+				}
+				comparison = Double.compare(workRows, other.workRows);
+				if (comparison != 0) {
+					return comparison;
+				}
+				comparison = Double.compare(outputRows, other.outputRows);
+				if (comparison != 0) {
+					return comparison;
+				}
+				comparison = Integer.compare(negativePublicBindingCount, other.negativePublicBindingCount);
+				if (comparison != 0) {
+					return comparison;
+				}
+				comparison = Integer.compare(bindingCount, other.bindingCount);
+				if (comparison != 0) {
+					return comparison;
+				}
+				comparison = String.valueOf(signature).compareTo(String.valueOf(other.signature));
+				return comparison != 0 ? comparison : Integer.compare(index, other.index);
+			}
+		}
+	}
+
+	private static final class LmdbConnectedJoinPlanImplementationRule extends LmdbRule {
+		private final JoinOrderPlanner joinOrderPlanner;
+		private final RdfStatisticsProvider statisticsProvider;
+
+		LmdbConnectedJoinPlanImplementationRule(EvaluationStatistics statistics) {
+			super("lmdb-connected-join-plan", RuleKind.IMPLEMENTATION, 124, statistics);
+			this.joinOrderPlanner = statistics instanceof JoinOrderPlanner planner ? planner : null;
+			this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& joinOrderPlanner != null
+					&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr());
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr());
+			if (factors.size() < 2) {
+				return List.of();
+			}
+			JoinOrderPlanner.Algorithm algorithm = cascadesAlgorithm(factors.size());
+			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+			Optional<JoinOrderPlanner.JoinOrderPlan> plan = joinOrderPlanner.planJoinOrder(factors, boundVars,
+					algorithm, List.of());
+			if (plan.isEmpty() || plan.get().getOrderedArgs().isEmpty() || !connectedOnly(plan.get())) {
+				return List.of();
+			}
+			JoinOrderPlanner.JoinOrderPlan joinPlan = plan.get();
+			Optional<PathComplementCandidate> complementCandidate = connectedComplementJoinTree(joinPlan, boundVars);
+			TupleExpr ordered = complementCandidate
+					.map(PathComplementCandidate::joinTree)
+					.orElseGet(() -> LmdbCascadesRuleProvider.rightDeepJoin(joinPlan, joinPlan.getOrderedArgs()));
+			JoinOrderPlanner.JoinOrderPlan summaryPlan = complementCandidate
+					.map(candidate -> candidate.summaryPlan(joinPlan))
+					.orElse(joinPlan);
+			JoinFactorCostModel.FactorCostEstimate summaryEstimate = summaryEstimate(summaryPlan, ordered, boundVars);
+			CostVector cost = cost(summaryEstimate);
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(ordered.getBindingNames())
+					.accessPath("lmdbConnectedJoinPlan")
+					.inputBoundVars(inputBoundVarsForExpression(ordered, goal))
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("provider=JoinOrderPlanner", "algorithm=" + algorithm, "connectedOnly",
+							"factors=" + factors.size()),
+					"LMDB join-order planning owns connected join islands as a bounded Cascades physical alternative");
+			return List.of(RuleApplication.opaquePhysical(expression.groupId(), ordered, delivered, cost, proof,
+					"lmdb-connected-join-plan", snapshot(summaryEstimate, cost)));
+		}
+
+		private Optional<PathComplementCandidate> connectedComplementJoinTree(JoinOrderPlanner.JoinOrderPlan plan,
+				Set<String> boundVars) {
+			List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+			if (orderedArgs.size() < 4) {
+				return Optional.empty();
+			}
+			PathComplementCandidate selected = null;
+			LinkedHashSet<String> currentlyBoundVars = new LinkedHashSet<>();
+			if (boundVars != null) {
+				currentlyBoundVars.addAll(boundVars);
+			}
+			for (TupleExpr orderedArg : orderedArgs) {
+				if (orderedArg instanceof ArbitraryLengthPath path
+						&& !pathHasBoundEndpoint(path, currentlyBoundVars)) {
+					Optional<PathComplementCandidate> subjectCandidate = pathComplementCandidate(orderedArgs, path,
+							true, boundVars);
+					if (subjectCandidate.isPresent()) {
+						selected = betterPathComplementCandidate(selected, subjectCandidate.get());
+					}
+					Optional<PathComplementCandidate> objectCandidate = pathComplementCandidate(orderedArgs, path,
+							false, boundVars);
+					if (objectCandidate.isPresent()) {
+						selected = betterPathComplementCandidate(selected, objectCandidate.get());
+					}
+				}
+				Set<String> orderedArgVars = plannerVarNames(orderedArg);
+				if (!orderedArgVars.isEmpty()) {
+					currentlyBoundVars.addAll(orderedArgVars);
+				}
+			}
+			if (selected == null || !selected.strictlyBeats(plan)) {
+				return Optional.empty();
+			}
+			return Optional.of(selected);
+		}
+
+		private boolean pathHasBoundEndpoint(ArbitraryLengthPath path, Set<String> boundVars) {
+			if (boundVars == null || boundVars.isEmpty()) {
+				return false;
+			}
+			String subjectName = plannerVarName(path.getSubjectVar());
+			if (subjectName != null && boundVars.contains(subjectName)) {
+				return true;
+			}
+			String objectName = plannerVarName(path.getObjectVar());
+			return objectName != null && boundVars.contains(objectName);
+		}
+
+		private Optional<PathComplementCandidate> pathComplementCandidate(List<TupleExpr> orderedArgs,
+				ArbitraryLengthPath path, boolean bindSubjectEndpoint, Set<String> boundVars) {
+			String subjectName = plannerVarName(path.getSubjectVar());
+			String objectName = plannerVarName(path.getObjectVar());
+			if (subjectName == null || objectName == null) {
+				return Optional.empty();
+			}
+			String boundEndpoint = bindSubjectEndpoint ? subjectName : objectName;
+			String complementEndpoint = bindSubjectEndpoint ? objectName : subjectName;
+			List<TupleExpr> factors = withoutFactor(orderedArgs, path);
+			List<TupleExpr> pathSideFactors = connectedComponent(factors, boundEndpoint);
+			List<TupleExpr> complementFactors = connectedComponent(factors, complementEndpoint);
+			if (pathSideFactors.isEmpty() || complementFactors.isEmpty()
+					|| !disjoint(pathSideFactors, complementFactors)
+					|| pathSideFactors.size() + complementFactors.size() != factors.size()) {
+				return Optional.empty();
+			}
+
+			Optional<JoinOrderPlanner.JoinOrderPlan> pathPrefixPlan = joinOrderPlanner.planJoinOrder(pathSideFactors,
+					boundVarsFor(pathSideFactors, boundVars), cascadesAlgorithm(pathSideFactors.size()), List.of());
+			if (pathPrefixPlan.isEmpty() || pathPrefixPlan.get().getOrderedArgs().isEmpty()
+					|| !connectedOnly(pathPrefixPlan.get())) {
+				return Optional.empty();
+			}
+			Optional<JoinOrderPlanner.JoinOrderPlan> pathSidePlan = appendBoundPath(pathPrefixPlan.get(), path,
+					boundEndpoint, boundVars);
+			if (pathSidePlan.isEmpty()) {
+				return Optional.empty();
+			}
+
+			Optional<JoinOrderPlanner.JoinOrderPlan> complementPlan = joinOrderPlanner.planJoinOrder(
+					complementFactors, boundVarsFor(complementFactors, boundVars),
+					cascadesAlgorithm(complementFactors.size()), List.of());
+			if (complementPlan.isEmpty() || complementPlan.get().getOrderedArgs().isEmpty()
+					|| !connectedOnly(complementPlan.get())) {
+				return Optional.empty();
+			}
+
+			TupleExpr pathSide = LmdbCascadesRuleProvider.leftDeepJoin(pathSidePlan.get(),
+					pathSidePlan.get().getOrderedArgs());
+			TupleExpr complementSide = LmdbCascadesRuleProvider.leftDeepJoin(complementPlan.get(),
+					complementPlan.get().getOrderedArgs());
+			if (!pathSide.getBindingNames().contains(complementEndpoint)
+					|| !complementSide.getBindingNames().contains(complementEndpoint)) {
+				return Optional.empty();
+			}
+			Join join = new Join(pathSide, complementSide);
+			join.setStringMetricPlanned(OPTIMIZER_CONNECTED_ENUMERATION, CONNECTED_ENUMERATION_CSG_CMP);
+			join.setStringMetricPlanned(OPTIMIZER_JOIN_ALGORITHM_HINT, JOIN_ALGORITHM_HASH);
+			join.setStringMetricPlanned("optimizer.connectedComplementEndpoint", complementEndpoint);
+			join.setStringMetricPlanned("optimizer.connectedComplementPathEndpoint",
+					bindSubjectEndpoint ? "subject" : "object");
+			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+			return Optional.of(new PathComplementCandidate(join, pathSidePlan.get(), complementPlan.get(),
+					bindSubjectEndpoint));
+		}
+
+		private Optional<JoinOrderPlanner.JoinOrderPlan> appendBoundPath(
+				JoinOrderPlanner.JoinOrderPlan prefixPlan, ArbitraryLengthPath path, String boundEndpoint,
+				Set<String> initiallyBoundVars) {
+			Set<String> pathBoundVars = boundVarsAfter(prefixPlan, initiallyBoundVars);
+			if (!pathBoundVars.contains(boundEndpoint)) {
+				return Optional.empty();
+			}
+			double pathInvocations = pathInvocationRows(prefixPlan);
+			Optional<JoinFactorCostModel.FactorCostEstimate> pathEstimate = estimate(path, pathBoundVars, true,
+					pathInvocations, pathInvocations, prefixPlan.getOrderedArgs());
+			if (pathEstimate.isEmpty()) {
+				return Optional.empty();
+			}
+
+			List<TupleExpr> orderedArgs = new ArrayList<>(prefixPlan.getOrderedArgs().size() + 1);
+			orderedArgs.addAll(prefixPlan.getOrderedArgs());
+			orderedArgs.add(path);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = pathEstimate.get();
+			double pathRows = finiteOrMax(estimate.getOutputRows());
+			double pathWorkRows = finiteOrMax(estimate.getWorkRows());
+			double totalWork = plusFinite(prefixPlan.getEstimatedTotalWork(), pathWorkRows);
+			double finalRows = pathRows;
+
+			List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(prefixPlan.getSteps().size() + 1);
+			steps.addAll(prefixPlan.getSteps());
+			steps.add(new JoinOrderPlanner.PlanStep(pathBoundVars, pathRows, finalRows, pathWorkRows,
+					estimate.getStringMetrics(), estimate.getDoubleMetrics()));
+
+			Map<String, String> summaryStringMetrics = new LinkedHashMap<>(prefixPlan.getSummaryStringMetrics());
+			summaryStringMetrics.put(OPTIMIZER_CONNECTED_ENUMERATION, "phase1_connected_only");
+			Map<String, Double> summaryDoubleMetrics = new LinkedHashMap<>(prefixPlan.getSummaryDoubleMetrics());
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWork);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, totalWork);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, finalRows);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+			summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_MAX_INTERMEDIATE_ROWS,
+					maxFinite(prefixPlan.getEstimatedFinalRows(), finalRows));
+			return Optional.of(new JoinOrderPlanner.JoinOrderPlan(orderedArgs, finalRows, totalWork,
+					prefixPlan.getDiagnostics(), summaryStringMetrics, summaryDoubleMetrics, steps));
+		}
+
+		private double pathInvocationRows(JoinOrderPlanner.JoinOrderPlan prefixPlan) {
+			double rows = prefixPlan.getEstimatedFinalRows();
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(rows)) {
+				return Math.max(1.0d, rows);
+			}
+			return Double.NaN;
+		}
+
+		private Set<String> boundVarsAfter(JoinOrderPlanner.JoinOrderPlan plan, Set<String> initiallyBoundVars) {
+			LinkedHashSet<String> boundVars = new LinkedHashSet<>();
+			if (initiallyBoundVars != null) {
+				boundVars.addAll(initiallyBoundVars);
+			}
+			boundVars.addAll(plannerVarNames(plan.getOrderedArgs()));
+			return boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+		}
+
+		private double plusFinite(double left, double right) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(left)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(right)) {
+				return Double.NaN;
+			}
+			return left + right;
+		}
+
+		private double maxFinite(double left, double right) {
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(left)
+					&& LmdbJoinPlanSupport.isFiniteNonNegative(right)) {
+				return Math.max(left, right);
+			}
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(left)) {
+				return left;
+			}
+			return LmdbJoinPlanSupport.isFiniteNonNegative(right) ? right : Double.NaN;
+		}
+
+		private double finiteOrMax(double value) {
+			return LmdbJoinPlanSupport.isFiniteNonNegative(value) ? value : Double.MAX_VALUE;
+		}
+
+		private PathComplementCandidate betterPathComplementCandidate(PathComplementCandidate current,
+				PathComplementCandidate candidate) {
+			if (current == null) {
+				return candidate;
+			}
+			int scoreComparison = Double.compare(candidate.score(), current.score());
+			if (scoreComparison < 0) {
+				return candidate;
+			}
+			if (scoreComparison > 0) {
+				return current;
+			}
+			return current;
+		}
+
+		private List<TupleExpr> connectedComponent(List<TupleExpr> factors, String seedVar) {
+			LinkedHashSet<String> componentVars = new LinkedHashSet<>();
+			componentVars.add(seedVar);
+			Set<TupleExpr> selected = Collections.newSetFromMap(new IdentityHashMap<>());
+			boolean changed;
+			do {
+				changed = false;
+				for (TupleExpr factor : factors) {
+					if (selected.contains(factor)) {
+						continue;
+					}
+					Set<String> factorVars = plannerVarNames(factor);
+					if (intersects(componentVars, factorVars)) {
+						selected.add(factor);
+						componentVars.addAll(factorVars);
+						changed = true;
+					}
+				}
+			} while (changed);
+			if (selected.isEmpty()) {
+				return List.of();
+			}
+			List<TupleExpr> component = new ArrayList<>(selected.size());
+			for (TupleExpr factor : factors) {
+				if (selected.contains(factor)) {
+					component.add(factor);
+				}
+			}
+			return List.copyOf(component);
+		}
+
+		private List<TupleExpr> withoutFactor(List<TupleExpr> factors, TupleExpr excluded) {
+			List<TupleExpr> retained = new ArrayList<>(factors.size());
+			for (TupleExpr factor : factors) {
+				if (factor != excluded) {
+					retained.add(factor);
+				}
+			}
+			return List.copyOf(retained);
+		}
+
+		private boolean disjoint(List<TupleExpr> left, List<TupleExpr> right) {
+			Set<TupleExpr> leftSet = Collections.newSetFromMap(new IdentityHashMap<>());
+			leftSet.addAll(left);
+			for (TupleExpr factor : right) {
+				if (leftSet.contains(factor)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean intersects(Set<String> left, Set<String> right) {
+			if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
+				return false;
+			}
+			Set<String> smaller = left.size() <= right.size() ? left : right;
+			Set<String> larger = left.size() <= right.size() ? right : left;
+			for (String value : smaller) {
+				if (larger.contains(value)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private Set<String> boundVarsFor(List<TupleExpr> factors, Set<String> boundVars) {
+			if (boundVars == null || boundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> factorVars = plannerVarNames(factors);
+			LinkedHashSet<String> retained = new LinkedHashSet<>();
+			for (String boundVar : boundVars) {
+				if (factorVars.contains(boundVar)) {
+					retained.add(boundVar);
+				}
+			}
+			return retained.isEmpty() ? Set.of() : Set.copyOf(retained);
+		}
+
+		private Set<String> plannerVarNames(List<TupleExpr> tupleExprs) {
+			LinkedHashSet<String> names = new LinkedHashSet<>();
+			for (TupleExpr tupleExpr : tupleExprs) {
+				names.addAll(plannerVarNames(tupleExpr));
+			}
+			return names.isEmpty() ? Set.of() : Set.copyOf(names);
+		}
+
+		private Set<String> plannerVarNames(TupleExpr tupleExpr) {
+			LinkedHashSet<String> names = new LinkedHashSet<>();
+			for (String name : VarNameCollector.process(tupleExpr)) {
+				if (plannerVarName(name) != null) {
+					names.add(name);
+				}
+			}
+			return names.isEmpty() ? Set.of() : Set.copyOf(names);
+		}
+
+		private String plannerVarName(Var var) {
+			if (var == null || var.hasValue()) {
+				return null;
+			}
+			return plannerVarName(var.getName());
+		}
+
+		private String plannerVarName(String name) {
+			if (name == null || name.startsWith("_const_")) {
+				return null;
+			}
+			return name;
+		}
+
+		private boolean csgCmpJoinTree(TupleExpr tupleExpr) {
+			return CONNECTED_ENUMERATION_CSG_CMP.equals(
+					tupleExpr.getStringMetricPlanned(OPTIMIZER_CONNECTED_ENUMERATION));
+		}
+
+		private record PathComplementCandidate(TupleExpr joinTree, JoinOrderPlanner.JoinOrderPlan pathSidePlan,
+				JoinOrderPlanner.JoinOrderPlan complementPlan, boolean bindsSubjectEndpoint) {
+
+			private boolean strictlyBeats(JoinOrderPlanner.JoinOrderPlan baselinePlan) {
+				return score() < finiteOrMax(baselinePlan.getEstimatedTotalWork());
+			}
+
+			private JoinOrderPlanner.JoinOrderPlan summaryPlan(JoinOrderPlanner.JoinOrderPlan baselinePlan) {
+				Map<String, String> summaryStringMetrics = new LinkedHashMap<>(baselinePlan.getSummaryStringMetrics());
+				summaryStringMetrics.put(OPTIMIZER_CONNECTED_ENUMERATION, CONNECTED_ENUMERATION_CSG_CMP);
+				summaryStringMetrics.put(OPTIMIZER_JOIN_ALGORITHM_HINT, JOIN_ALGORITHM_HASH);
+				Map<String, Double> summaryDoubleMetrics = new LinkedHashMap<>(baselinePlan.getSummaryDoubleMetrics());
+				double totalWork = score();
+				double finalRows = finalRows();
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWork);
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, totalWork);
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, finalRows);
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_MAX_INTERMEDIATE_ROWS,
+						maxFinite(maxFinite(pathSidePlan.getEstimatedFinalRows(),
+								complementPlan.getEstimatedFinalRows()), finalRows));
+				return new JoinOrderPlanner.JoinOrderPlan(baselinePlan.getOrderedArgs(), finalRows, totalWork,
+						baselinePlan.getDiagnostics(), summaryStringMetrics, summaryDoubleMetrics,
+						baselinePlan.getSteps());
+			}
+
+			private double score() {
+				double pathWork = finiteOrMax(pathSidePlan.getEstimatedTotalWork());
+				double complementWork = finiteOrMax(complementPlan.getEstimatedTotalWork());
+				double hashBuildRows = finiteOrMax(complementPlan.getEstimatedFinalRows());
+				double hashProbeRows = finiteOrMax(pathSidePlan.getEstimatedFinalRows());
+				return pathWork + complementWork
+						+ hashBuildRows * HASH_JOIN_BUILD_ROW_WORK
+						+ hashProbeRows * HASH_JOIN_PROBE_ROW_WORK;
+			}
+
+			private double finalRows() {
+				return Math.min(finiteOrMax(pathSidePlan.getEstimatedFinalRows()),
+						finiteOrMax(complementPlan.getEstimatedFinalRows()));
+			}
+
+			private static double maxFinite(double left, double right) {
+				if (Double.isFinite(left) && left >= 0.0d && Double.isFinite(right) && right >= 0.0d) {
+					return Math.max(left, right);
+				}
+				if (Double.isFinite(left) && left >= 0.0d) {
+					return left;
+				}
+				return Double.isFinite(right) && right >= 0.0d ? right : Double.NaN;
+			}
+
+			private static double finiteOrMax(double value) {
+				return Double.isFinite(value) && value >= 0.0d ? value : Double.MAX_VALUE;
+			}
+		}
+
+		private boolean connectedOnly(JoinOrderPlanner.JoinOrderPlan plan) {
+			String connectedEnumeration = plan.getSummaryStringMetrics()
+					.get(OPTIMIZER_CONNECTED_ENUMERATION);
+			if ("phase2_disconnected_components".equals(connectedEnumeration)) {
+				return false;
+			}
+			double cartesianWork = plan.getSummaryDoubleMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+			return !LmdbJoinPlanSupport.isFiniteNonNegative(cartesianWork) || cartesianWork == 0.0d;
+		}
+
+		private JoinFactorCostModel.FactorCostEstimate summaryEstimate(JoinOrderPlanner.JoinOrderPlan joinPlan,
+				TupleExpr ordered, Set<String> boundVars) {
+			Map<String, String> stringMetrics = new LinkedHashMap<>(joinPlan.getSummaryStringMetrics());
+			Map<String, Double> doubleMetrics = new LinkedHashMap<>(joinPlan.getSummaryDoubleMetrics());
+			copyRepresentativeStepMetrics(joinPlan, stringMetrics, doubleMetrics);
+			stringMetrics.put(LmdbJoinIslandConnectivity.OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON,
+					LmdbJoinIslandConnectivity.CONNECTED_JOIN_OWNER_REASON);
+			Optional<LmdbStarJoinScanSupport.Plan> starPlan = LmdbStarJoinScanSupport.plan(ordered);
+			if (starPlan.isPresent() && statisticsProvider != null) {
+				Optional<StatisticsEstimate> starEstimate = statisticsProvider.starMultiPredicateScan(
+						starPlan.get().patterns(), boundVars);
+				if (starEstimate.isPresent()) {
+					StatisticsEstimate estimate = starEstimate.get();
+					LmdbStarJoinScanSupport.annotate(ordered, starPlan.get(), estimate);
+					stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.method());
+					stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+							LmdbStarJoinScanSupport.ACCESS_MODE);
+					if ("lmdb-characteristic-set".equals(estimate.method())) {
+						stringMetrics.put("optimizer.rewriteProof",
+								new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.CHARACTERISTIC_SET_STAR_ESTIMATE,
+										LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+										Set.of("method=" + estimate.method(), "source=lmdb-characteristic-set",
+												"subject=" + starPlan.get().subjectName()),
+										"characteristic-set-star-cardinality")
+												.metricFragment());
+					}
+					doubleMetrics.putAll(estimate.metrics());
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.rows());
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.workRows());
+					return new JoinFactorCostModel.FactorCostEstimate(estimate.workRows(), estimate.rows(),
+							stringMetrics, doubleMetrics);
+				}
+			}
+			stringMetrics.putIfAbsent(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-join-plan");
+			return new JoinFactorCostModel.FactorCostEstimate(joinPlan.getEstimatedTotalWork(),
+					joinPlan.getEstimatedFinalRows(), stringMetrics, doubleMetrics);
 		}
 	}
 

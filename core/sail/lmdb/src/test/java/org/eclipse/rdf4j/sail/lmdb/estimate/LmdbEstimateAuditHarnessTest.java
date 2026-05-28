@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -24,12 +25,22 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -541,7 +552,7 @@ class LmdbEstimateAuditHarnessTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
 
-				String plan = connection.prepareTupleQuery("""
+				String query = """
 						PREFIX aas: <https://admin-shell.io/aas/3/>
 						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 						SELECT (COUNT(*) AS ?c)
@@ -553,7 +564,23 @@ class LmdbEstimateAuditHarnessTest {
 						      aas:value ?v1 .
 						  FILTER (?v1 > 15.0)
 						}
-						""")
+						""";
+
+				String coldPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+				assertTrue(!coldPlan.contains("plannedEstimateUsage=fallback_no_winner"),
+						() -> "Cold AAS threshold query should still find an LMDB connected-join winner:\n"
+								+ coldPlan);
+				assertThresholdPathDoesNotUseUnboundPropertyPathSeed(coldPlan);
+				assertThresholdPathKeepsConnectedLeftDeepPath(coldPlan);
+				assertThresholdPathUsesEndpointBoundPath(coldPlan);
+				assertThresholdPathUsesRightDeepCorrelatedPipeline(coldPlan);
+				assertThresholdPathFiltersBeforePropertyPath(coldPlan);
+
+				drainQuery(connection, query);
+
+				String plan = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
@@ -582,10 +609,71 @@ class LmdbEstimateAuditHarnessTest {
 				assertTrue(cartesianJoinHeaders.isEmpty(),
 						() -> "Connected AAS threshold query should not report Cartesian work outside explicit "
 								+ "disconnected fallback: " + cartesianJoinHeaders + "\n" + plan);
-				assertTrue(plan.contains("optimizer.connectedEnumeration=phase1_connected_only"),
-						() -> "Connected AAS threshold query should be planned by connected-only enumeration:\n"
-								+ plan);
+				assertDriveUnitValueIsNotDisconnectedPrefixAppend(plan);
+				assertThresholdPathDoesNotUseUnboundPropertyPathSeed(plan);
+				assertThresholdPathKeepsConnectedLeftDeepPath(plan);
+				assertThresholdPathUsesRightDeepCorrelatedPipeline(plan);
+				assertThresholdPathUsesEndpointBoundPath(plan);
+				assertThresholdPathFiltersBeforePropertyPath(plan);
 			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void specificAssetThresholdCascadesUsesDefaultRuntimeJoinPipeline(@TempDir File dataDir) {
+		File defaultDir = new File(dataDir, "default");
+		File cascadesDir = new File(dataDir, "cascades");
+		SailRepository defaultRepository = aasBenchmarkRepository(defaultDir, false);
+		SailRepository cascadesRepository = aasBenchmarkRepository(cascadesDir, true);
+		defaultRepository.init();
+		cascadesRepository.init();
+		try {
+			loadAasBenchmarkData(defaultRepository);
+			loadAasBenchmarkData(cascadesRepository);
+
+			String query = specificAssetThresholdQuery();
+			timedExplain(defaultRepository, query);
+			timedExplain(cascadesRepository, query);
+
+			String cascadesPlan = optimizedPlan(cascadesRepository, query);
+			assertThresholdPlanDoesNotContainDisconnectedComponentFallback(cascadesPlan);
+
+			List<String> defaultPipeline = normalEvaluationRuntimePipeline(defaultRepository, query);
+			List<String> cascadesPipeline = normalEvaluationRuntimePipeline(cascadesRepository, query);
+
+			assertEquals(defaultPipeline, cascadesPipeline,
+					() -> "Cascades should materialize the same normal, non-explain runtime join pipeline as the "
+							+ "default LMDB planner for the AAS threshold benchmark.\nDefault:\n"
+							+ defaultPipeline + "\nCascades:\n" + cascadesPipeline);
+			assertNormalEvaluationHasNoRuntimeTelemetry(cascadesRepository, query);
+		} finally {
+			defaultRepository.shutDown();
+			cascadesRepository.shutDown();
+			LmdbTestUtil.deleteDir(defaultDir);
+			LmdbTestUtil.deleteDir(cascadesDir);
+		}
+	}
+
+	@Test
+	void specificAssetThresholdBenchmarkTimedExplainStartsFromRatedPowerAnchor(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadAasBenchmarkData(repository);
+			BenchmarkJoinEstimatorSupport.prepareStableEstimatorForBenchmark(store);
+
+			String query = specificAssetThresholdQuery();
+			String timedPlan = timedExplainText(repository, query);
+
+			assertThresholdPlanDoesNotContainDisconnectedComponentFallback(timedPlan);
+			assertThresholdPathDoesNotUseUnboundPropertyPathSeed(timedPlan);
+			assertThresholdPathUsesRightDeepCorrelatedPipeline(timedPlan);
+			assertThresholdPathFiltersBeforePropertyPath(timedPlan);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -652,6 +740,330 @@ class LmdbEstimateAuditHarnessTest {
 			return Double.parseDouble(value.substring(0, value.length() - 1)) * 1_000_000_000.0d;
 		}
 		return Double.parseDouble(value);
+	}
+
+	private static void drainQuery(SailRepositoryConnection connection, String query) {
+		try (var result = connection.prepareTupleQuery(query)
+				.evaluate()) {
+			while (result.hasNext()) {
+				result.next();
+			}
+		}
+	}
+
+	private static void assertThresholdPlanDoesNotContainDisconnectedComponentFallback(String plan) {
+		assertTrue(!plan.contains("optimizer.connectedEnumeration=phase2_disconnected_components"),
+				() -> "A connected AAS threshold query must not evolve into a disconnected component fallback "
+						+ "inside the covered LMDB connected-join winner after timed feedback:\n" + plan);
+		assertTrue(!plan.contains("optimizer.cartesianFallbackReason=disconnected-components"),
+				() -> "A connected AAS threshold query must not report disconnected-component Cartesian fallback "
+						+ "inside the covered LMDB connected-join winner after timed feedback:\n" + plan);
+	}
+
+	private static void timedExplain(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Timed);
+		}
+	}
+
+	private static String timedExplainText(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Timed)
+					.toString();
+		}
+	}
+
+	private static List<String> normalEvaluationRuntimePipeline(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			try (var result = tupleQuery.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+			return runtimePipeline(tupleQuery.getParsedQuery()
+					.getTupleExpr());
+		}
+	}
+
+	private static void assertNormalEvaluationHasNoRuntimeTelemetry(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			try (var result = tupleQuery.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+			List<String> telemetryNodes = runtimeTelemetryNodes(tupleQuery.getParsedQuery()
+					.getTupleExpr());
+			assertTrue(telemetryNodes.isEmpty(),
+					() -> "Timed explain must not leak runtime telemetry flags into normal AAS threshold "
+							+ "evaluation. Telemetry collection changes the hot iterator path: " + telemetryNodes);
+		}
+	}
+
+	private static List<String> runtimeTelemetryNodes(TupleExpr tupleExpr) {
+		List<String> nodes = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node.isRuntimeTelemetryEnabled()) {
+					nodes.add(node.getClass()
+							.getSimpleName() + " " + node.getSignature());
+				}
+				super.meetNode(node);
+			}
+		});
+		return nodes;
+	}
+
+	private static List<String> runtimePipeline(TupleExpr tupleExpr) {
+		List<String> descriptors = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				descriptors.add("Join " + node.getAlgorithmName() + " :: " + node.getRightArg()
+						.getClass()
+						.getSimpleName());
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(StatementPattern node) {
+				descriptors.add("SP index=" + node.getIndexName() + " s=" + varDescriptor(node.getSubjectVar())
+						+ " p=" + varDescriptor(node.getPredicateVar()) + " o=" + varDescriptor(node.getObjectVar()));
+				super.meet(node);
+			}
+		});
+		return descriptors;
+	}
+
+	private static String varDescriptor(Var var) {
+		if (var == null) {
+			return "-";
+		}
+		if (var.hasValue()) {
+			return "=" + var.getValue()
+					.stringValue();
+		}
+		if (var.isAnonymous()) {
+			return "?_";
+		}
+		return "?" + var.getName();
+	}
+
+	private static SailRepository aasBenchmarkRepository(File dataDir, boolean useCascades) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		if (!useCascades) {
+			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		}
+		return new SailRepository(new LmdbStore(dataDir, config));
+	}
+
+	private static void loadAasBenchmarkData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			new AASGenerator().generateAndAdd(connection, 100, 100, 100);
+		}
+	}
+
+	private static String optimizedPlan(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+	}
+
+	private static List<String> joinAlgorithmHeaders(String plan) {
+		return plan.lines()
+				.filter(line -> line.contains("Join ("))
+				.map(LmdbEstimateAuditHarnessTest::canonicalJoinAlgorithmHeader)
+				.toList();
+	}
+
+	private static String canonicalJoinAlgorithmHeader(String line) {
+		int joinStart = line.indexOf("Join (");
+		if (joinStart < 0) {
+			return line;
+		}
+		int algorithmEnd = line.indexOf(')', joinStart);
+		if (algorithmEnd < 0) {
+			return line.substring(joinStart);
+		}
+		String side = line.contains("[left]") ? " [left]" : line.contains("[right]") ? " [right]" : "";
+		return line.substring(joinStart, algorithmEnd + 1) + side;
+	}
+
+	private static String specificAssetThresholdQuery() {
+		return """
+				PREFIX aas: <https://admin-shell.io/aas/3/>
+				PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+				SELECT (COUNT(*) AS ?c)
+				WHERE {
+				  ?aas a aas:AssetAdministrationShell ;
+				    aas:assetInformation/aas:specificAssetId [ aas:value "DriveUnit" ] ;
+				    aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
+				  ?p1 aas:idShort "ratedPower" ;
+				      aas:value ?v1 .
+				  FILTER (?v1 > 15.0)
+				}
+				""";
+	}
+
+	private static void assertThresholdPathDoesNotUseUnboundPropertyPathSeed(String plan) {
+		List<String> unboundPathHeaders = plan.lines()
+				.filter(line -> line.contains("ArbitraryLengthPath")
+						&& line.contains("plannedPropertyPathMethod=sketch-single-predicate-path,"))
+				.toList();
+		assertTrue(unboundPathHeaders.isEmpty(),
+				() -> "Connected AAS threshold query must not seed the connected plan with an unbound property "
+						+ "path after learned filter feedback. Bind ?p1 through idShort/value first, then apply "
+						+ "the path over a bound endpoint: " + unboundPathHeaders + "\n" + plan);
+	}
+
+	private static void assertThresholdPathKeepsConnectedLeftDeepPath(String plan) {
+		List<String> hashSplitHeaders = plan.lines()
+				.filter(line -> line.contains("Join (HashJoinIteration)")
+						&& line.contains("optimizer.connectedEnumeration=phase1_csg_cmp"))
+				.toList();
+		assertTrue(hashSplitHeaders.isEmpty(),
+				() -> "DPhyp/csg-cmp enumeration should add a connected complement alternative, not force a "
+						+ "hash split over a cheaper connected left-deep path. The AAS threshold query should keep "
+						+ "the ?p1 -> value filter -> property path -> AAS chain order when the split is not "
+						+ "strictly better: " + hashSplitHeaders + "\n" + plan);
+	}
+
+	private static void assertThresholdPathUsesRightDeepCorrelatedPipeline(String plan) {
+		List<String> lines = plan.lines().toList();
+		int rootJoinIndex = firstRootConnectedJoinIndex(lines);
+		int firstLeftChildIndex = firstChildIndex(lines, rootJoinIndex);
+		assertTrue(firstLeftChildIndex >= 0, () -> "Could not locate first child under connected root join:\n" + plan);
+
+		String firstLeftChild = lines.get(firstLeftChildIndex);
+		assertTrue(firstLeftChild.contains("StatementPattern"),
+				() -> "AAS threshold query should materialize the connected order as a right-deep correlated "
+						+ "pipeline. The first physical join must bind ?p1 from idShort before the right-side "
+						+ "filter, property path, and AAS chain are evaluated. A left-deep tree is connected, "
+						+ "but it is measurably slower for this benchmark:\n" + plan);
+
+		assertTrue(firstChildWindowContains(lines, firstLeftChildIndex, "value=\"ratedPower\""),
+				() -> "The right-deep correlated pipeline should start by binding ?p1 from idShort "
+						+ "\"ratedPower\":\n" + plan);
+
+		assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
+				() -> "The right-deep correlated pipeline must still place the property path after ?p1 is bound:\n"
+						+ plan);
+	}
+
+	private static void assertThresholdPathFiltersBeforePropertyPath(String plan) {
+		List<String> lines = plan.lines().toList();
+		int rootJoinIndex = firstRootConnectedJoinIndex(lines);
+		assertTrue(rootJoinIndex >= 0, () -> "Could not locate connected root join:\n" + plan);
+
+		int filterIndex = firstLineIndexAfter(lines, rootJoinIndex, "Filter");
+		int pathIndex = firstLineIndexAfter(lines, rootJoinIndex, "ArbitraryLengthPath");
+		assertTrue(filterIndex >= 0, () -> "AAS threshold plan should include the numeric value filter:\n" + plan);
+		assertTrue(pathIndex >= 0, () -> "AAS threshold plan should include the property path:\n" + plan);
+		assertTrue(filterIndex < pathIndex,
+				() -> "AAS threshold query must apply ?p1 aas:value ?v1 FILTER (?v1 > 15.0) before the "
+						+ "ArbitraryLengthPath. Running the path first keeps the plan connected but roughly "
+						+ "doubles the benchmark runtime:\n" + plan);
+	}
+
+	private static int firstRootConnectedJoinIndex(List<String> lines) {
+		for (int i = 0; i < lines.size(); i++) {
+			String line = lines.get(i);
+			if (line.contains("Join (") && line.contains("optimizer.connectedEnumeration=phase1_connected_only")) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int firstLineIndexAfter(List<String> lines, int startIndex, String needle) {
+		for (int i = Math.max(0, startIndex + 1); i < lines.size(); i++) {
+			if (lines.get(i).contains(needle)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int firstChildIndex(List<String> lines, int parentIndex) {
+		if (parentIndex < 0 || parentIndex >= lines.size()) {
+			return -1;
+		}
+		for (int i = parentIndex + 1; i < lines.size(); i++) {
+			String line = lines.get(i);
+			if (line.contains("[left]")) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static boolean firstChildWindowContains(List<String> lines, int start, String expected) {
+		return windowContains(lines, start, 8, expected);
+	}
+
+	private static boolean windowContains(List<String> lines, int start, int length, String expected) {
+		int end = Math.min(lines.size(), start + length);
+		for (int i = start; i < end; i++) {
+			if (lines.get(i).contains(expected)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void assertThresholdPathUsesEndpointBoundPath(String plan) {
+		List<String> boundSubjectPathHeaders = plan.lines()
+				.filter(line -> line.contains("ArbitraryLengthPath")
+						&& line.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject"))
+				.toList();
+		assertTrue(boundSubjectPathHeaders.isEmpty(),
+				() -> "Connected complement enumeration must try both sides of the property-path hyperedge. "
+						+ "For the AAS threshold query, ?p1 is the selective endpoint from idShort/value/filter, "
+						+ "so the path should run with the object endpoint bound instead of expanding from the "
+						+ "AAS side first:\n" + plan);
+		assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
+				() -> "AAS threshold query should execute the property path from the bound ?p1 endpoint side:\n"
+						+ plan);
+	}
+
+	private static void assertDriveUnitValueIsNotDisconnectedPrefixAppend(String plan) {
+		String currentHeader = null;
+		String currentSubject = null;
+		for (String line : plan.lines().toList()) {
+			if (line.contains("StatementPattern")) {
+				currentHeader = line;
+				currentSubject = null;
+				continue;
+			}
+			if (line.contains("s: Var ")) {
+				currentSubject = line;
+				continue;
+			}
+			if (!line.contains("value=\"DriveUnit\"")) {
+				continue;
+			}
+			String header = currentHeader;
+			String subject = currentSubject;
+			assertTrue(header != null, () -> "Could not locate DriveUnit statement header:\n" + plan);
+			if (header.contains("plannedBoundVars=")) {
+				assertTrue(header.contains("sharedJoinVars="),
+						() -> "DriveUnit value lookup was appended after bound prefix vars without a shared "
+								+ "join variable. The connected-prefix enumerator must place the asset bridge "
+								+ "before this leaf when the prefix is on the ratedPower side:\n" + plan);
+				assertTrue(subject != null && subject.contains("bindingState=bound"),
+						() -> "DriveUnit value subject should be bound when appended to a non-empty prefix:\n"
+								+ plan);
+			}
+			return;
+		}
+		assertTrue(false, () -> "Could not find DriveUnit value lookup in plan:\n" + plan);
 	}
 
 	private static void loadRelationshipPowerStressData(SailRepositoryConnection connection, int lineCount) {

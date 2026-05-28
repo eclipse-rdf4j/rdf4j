@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -80,6 +81,24 @@ class CascadesRuleEngineTest {
 
 		assertTrue(plan.approximate());
 		assertTrue(plan.diagnostics().stream().anyMatch(text -> text.contains("approximate")));
+	}
+
+	@Test
+	void recordingTelemetryDoesNotAnnotateMemoWinnerPlans() {
+		StatementPattern winnerPlan = pattern("s", "p", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "", winnerPlan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION,
+				CostVector.ofRowsAndWork(1.0d, 1.0d, QErrorInterval.exact(1.0d, "test")), List.of(), null);
+		Winner winner = new Winner(expression, winnerPlan, PhysicalProperties.ANY,
+				CostVector.ofRowsAndWork(1.0d, 1.0d, QErrorInterval.exact(1.0d, "test")), List.of(), false, "");
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(4);
+
+		telemetry.winnerChosen(new WinnerKey(7, PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT), winner);
+
+		assertTrue(String.join("\n", telemetry.trace()).contains("winner group=7"));
+		assertNull(winnerPlan.getStringMetricPlanned("optimizer.cascadesWinner"));
+		assertNull(winnerPlan.getStringMetricPlanned("optimizer.cascadesRule"));
 	}
 
 	@Test

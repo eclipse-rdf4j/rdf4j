@@ -47,12 +47,8 @@ final class ParetoFrontier<T> {
 		for (int i = 0; i < size; i++) {
 			int comparison = compareEntry(i, value, costVector);
 			if (comparison == 0) {
-				if (Objects.equals(valueAt(i), value)) {
-					dominatedRejectedCount++;
-					return false;
-				}
-				insertionPoint = i + 1;
-				continue;
+				dominatedRejectedCount++;
+				return false;
 			}
 			if (comparison > 0) {
 				insertionPoint = i;

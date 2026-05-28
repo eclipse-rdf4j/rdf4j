@@ -22,8 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Planner telemetry hook. The default implementation stores a bounded in-memory trace and annotates selected algebra
- * nodes with planned metrics.
+ * Planner telemetry hook. The recording implementation stores a bounded in-memory trace for diagnostics.
  */
 @Experimental
 public interface CascadesTelemetry {
@@ -138,23 +137,6 @@ public interface CascadesTelemetry {
 					+ " approximate=" + winner.approximate();
 			chosenWinnerByGroup.put(key.groupId(), line);
 			append(line);
-			QueryModelNode node = winner.plan();
-			if (node != null) {
-				CascadesPlanProvenanceAnnotator.annotate(winner);
-				EstimateSnapshot estimate = winner.provenance().estimate();
-				node.setStringMetricPlanned("optimizer.cascadesWinner", line);
-				node.setDoubleMetricPlanned("optimizer.cascadesPlannedRows", estimate.rows());
-				node.setDoubleMetricPlanned("optimizer.cascadesPlannedWorkRows", estimate.workRows());
-				node.setDoubleMetricPlanned("optimizer.cascadesQError", winner.cost().qError());
-				node.setDoubleMetricPlanned("optimizer.cascadesFeedbackConfidence", winner.cost().feedbackConfidence());
-				if (!winner.proofs().isEmpty()) {
-					node.setStringMetricPlanned("optimizer.cascadesProofs", winner.proofs()
-							.stream()
-							.map(RuleProof::metricFragment)
-							.reduce((left, right) -> left + "; " + right)
-							.orElse(""));
-				}
-			}
 		}
 
 		@Override

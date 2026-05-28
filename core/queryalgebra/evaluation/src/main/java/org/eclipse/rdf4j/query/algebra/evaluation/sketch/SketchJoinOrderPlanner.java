@@ -35,11 +35,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.CompareAll;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -87,6 +92,7 @@ final class SketchJoinOrderPlanner {
 	static final String PLANNED_COST_EVIDENCE_COUNT = "plannedCostEvidenceCount";
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
+	private static final double FILTERED_BROAD_SEED_LOOKUP_ANCHOR_ACCESS_RATIO = 2.0d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
@@ -405,7 +411,7 @@ final class SketchJoinOrderPlanner {
 					List.copyOf(diagnostics), null);
 		}
 
-		recordDebug("result: order=" + describeFactorOrder(result) + " estimate=" + result.estimate().summary()
+		recordDebug("result: order=" + describeFactorOrder(result) + " estimate=" + estimateSummary(result)
 				+ " vector=" + result.costVector());
 		return new PlanOutcome(Optional.of(toJoinOrderPlan(result, algorithm)),
 				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, List.copyOf(diagnostics), null);
@@ -444,7 +450,7 @@ final class SketchJoinOrderPlanner {
 		logicalConsideredCandidatesSummary = "[]";
 		logicalRejectedCandidatesSummary = "[]";
 		recordDebug("fixed result: order=" + describeFactorOrder(result) + " estimate="
-				+ result.estimate().summary() + " workRows=" + result.totalWork());
+				+ estimateSummary(result) + " workRows=" + result.totalWork());
 		return new PlanOutcome(Optional.of(toJoinOrderPlan(result, algorithm)),
 				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, List.copyOf(diagnostics), null);
 	}
@@ -1039,6 +1045,15 @@ final class SketchJoinOrderPlanner {
 			if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
 				return null;
 			}
+			if (shouldDelayUnboundPropertyPathSeed(factorIndex)) {
+				return null;
+			}
+			if (shouldDelaySeedUntilCheapEndpointFilterAnchor(factorIndex)) {
+				return null;
+			}
+			if (shouldDelayFilteredBroadSeedUntilLookupAnchor(factorIndex)) {
+				return null;
+			}
 		}
 		long seedMask = bit(factorIndex);
 		long seedBoundVarMask = initiallyBoundVarMask | bindingVarMasks[factorIndex];
@@ -1186,6 +1201,162 @@ final class SketchJoinOrderPlanner {
 		return (missingLookupVars != 0L && (missingLookupVars & ~pendingAssignmentVars) == 0L)
 				|| shouldDelayBroadLookupForFinitePrefixGuard(physicalEstimate, missingLookupVars,
 						pendingAssignmentVars);
+	}
+
+	private boolean shouldDelayUnboundPropertyPathSeed(int factorIndex) {
+		if (!isPropertyPathFactor(factorIndex) || initiallyBoundVarMask != 0L) {
+			return false;
+		}
+		long subjectVars = statementSubjectVarMask(factorIndex) & variableUniverseMask;
+		long objectVars = statementObjectVarMask(factorIndex) & variableUniverseMask;
+		if (subjectVars == 0L || objectVars == 0L || (subjectVars & objectVars) != 0L) {
+			return false;
+		}
+		long seedMask = bit(factorIndex);
+		EndpointDomain subjectDomain = cheapestEndpointDomain(subjectVars, objectVars, factorIndex, seedMask);
+		EndpointDomain objectDomain = cheapestEndpointDomain(objectVars, subjectVars, factorIndex, seedMask);
+		double cheapestEndpointRows = Double.POSITIVE_INFINITY;
+		if (subjectDomain != null) {
+			cheapestEndpointRows = Math.min(cheapestEndpointRows, subjectDomain.rows());
+		}
+		if (objectDomain != null) {
+			cheapestEndpointRows = Math.min(cheapestEndpointRows, objectDomain.rows());
+		}
+		if (!Double.isFinite(cheapestEndpointRows) || cheapestEndpointRows <= 0.0d) {
+			return false;
+		}
+		double bridgeRows = bridgeRows(factorIndex, factors.get(factorIndex).estimate());
+		return isFiniteNonNegative(bridgeRows)
+				&& bridgeRows >= cheapestEndpointRows * BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO;
+	}
+
+	private boolean shouldDelaySeedUntilCheapEndpointFilterAnchor(int factorIndex) {
+		if (initiallyBoundVarMask != 0L || isPropertyPathFactor(factorIndex) || isBindingSetAssignment(factorIndex)) {
+			return false;
+		}
+		long seedVars = bindingVarMasks[factorIndex] & variableUniverseMask;
+		if (seedVars == 0L) {
+			return false;
+		}
+		long bridges = factorUniverseMask & ~bit(factorIndex);
+		while (bridges != 0L) {
+			int bridge = Long.numberOfTrailingZeros(bridges);
+			bridges &= bridges - 1L;
+			if (!isPropertyPathFactor(bridge) || !hasEndpointBridgeVars(bridge)) {
+				continue;
+			}
+			long subjectVars = statementSubjectVarMask(bridge) & variableUniverseMask;
+			long objectVars = statementObjectVarMask(bridge) & variableUniverseMask;
+			boolean reachesSubject = hasPotentialVariableInteractionExcludingFactor(seedVars, subjectVars, bridge);
+			boolean reachesObject = hasPotentialVariableInteractionExcludingFactor(seedVars, objectVars, bridge);
+			if (reachesSubject == reachesObject) {
+				continue;
+			}
+			long oppositeEndpointVars = reachesSubject ? objectVars : subjectVars;
+			if (hasCheapSelectiveEndpointAnchor(oppositeEndpointVars, bridge, factorIndex)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean shouldDelayFilteredBroadSeedUntilLookupAnchor(int factorIndex) {
+		if (initiallyBoundVarMask != 0L || !isFilteredFactor(factorIndex) || isBindingSetAssignment(factorIndex)) {
+			return false;
+		}
+		TupleExpr tupleExpr = factors.get(factorIndex).tupleExpr();
+		if (!(tupleExpr instanceof Filter filter) || !isCheapFilterCondition(filter.getCondition())
+				|| unwrapFilterPattern(filter) == null) {
+			return false;
+		}
+		long endpointVars = statementEndpointVarMask(factorIndex) & variableUniverseMask;
+		if (endpointVars == 0L) {
+			return false;
+		}
+		SketchBasedJoinEstimator.TuplePlanEstimate seedEstimate = conditionedFactorEstimate(factorIndex,
+				initiallyBoundVarMask);
+		FactorPhysicalEstimate seedPhysical = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
+				seedEstimate.outputRows(), null, JoinFactorCostModel.EstimationTier.CHEAP);
+		if (seedPhysical == null) {
+			return false;
+		}
+		double seedAccessRows = seedAccessRows(seedPhysical);
+		if (!isFiniteNonNegative(seedAccessRows) || seedAccessRows < FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS) {
+			return false;
+		}
+		int seedLookupComponents = Integer.bitCount(seedPhysical.lookupComponentMask());
+		long anchors = factorUniverseMask & ~bit(factorIndex);
+		while (anchors != 0L) {
+			int anchor = Long.numberOfTrailingZeros(anchors);
+			anchors &= anchors - 1L;
+			if (isBindingSetAssignment(anchor)
+					|| isPropertyPathFactor(anchor)
+					|| isFilteredFactor(anchor)
+					|| (bindingVarMasks[anchor] & endpointVars) == 0L
+					|| !isFactorActionLegal(anchor, initiallyBoundVarMask)) {
+				continue;
+			}
+			SketchBasedJoinEstimator.TuplePlanEstimate anchorEstimate = conditionedFactorEstimate(anchor,
+					initiallyBoundVarMask);
+			FactorPhysicalEstimate anchorPhysical = factorPhysicalEstimate(anchor, 0L, initiallyBoundVarMask,
+					anchorEstimate.outputRows(), null, JoinFactorCostModel.EstimationTier.CHEAP);
+			if (anchorPhysical == null
+					|| Integer.bitCount(anchorPhysical.lookupComponentMask()) <= seedLookupComponents) {
+				continue;
+			}
+			double anchorAccessRows = seedAccessRows(anchorPhysical);
+			if (isFiniteNonNegative(anchorAccessRows)
+					&& anchorAccessRows * FILTERED_BROAD_SEED_LOOKUP_ANCHOR_ACCESS_RATIO <= seedAccessRows) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private double seedAccessRows(FactorPhysicalEstimate physicalEstimate) {
+		if (physicalEstimate == null) {
+			return Double.NaN;
+		}
+		return maxFinite(physicalEstimate.accessRowsBeforeFilter(), physicalEstimate.workRows());
+	}
+
+	private boolean hasCheapSelectiveEndpointAnchor(long endpointVars, int bridge, int delayedSeed) {
+		long anchors = factorUniverseMask & ~bit(bridge) & ~bit(delayedSeed);
+		while (anchors != 0L) {
+			int anchor = Long.numberOfTrailingZeros(anchors);
+			anchors &= anchors - 1L;
+			if ((bindingVarMasks[anchor] & endpointVars) == 0L
+					|| isPropertyPathFactor(anchor)
+					|| !isFactorActionLegal(anchor, initiallyBoundVarMask)) {
+				continue;
+			}
+			long anchorBound = initiallyBoundVarMask | bindingVarMasks[anchor];
+			if (isCheapSelectiveFilterFactor(anchor, initiallyBoundVarMask, anchorBound)) {
+				return true;
+			}
+			if (hasCheapSelectiveFilterCandidate(anchorBound, endpointVars, bridge, anchor, delayedSeed)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasCheapSelectiveFilterCandidate(long anchorBound, long endpointVars, int bridge, int anchor,
+			int delayedSeed) {
+		long candidates = factorUniverseMask & ~bit(bridge) & ~bit(anchor) & ~bit(delayedSeed);
+		while (candidates != 0L) {
+			int candidate = Long.numberOfTrailingZeros(candidates);
+			candidates &= candidates - 1L;
+			if ((bindingVarMasks[candidate] & endpointVars) == 0L
+					|| !isFactorActionLegal(candidate, anchorBound)) {
+				continue;
+			}
+			long nextBound = anchorBound | bindingVarMasks[candidate];
+			if (isCheapSelectiveFilterFactor(candidate, anchorBound, nextBound)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask) {
@@ -2658,10 +2829,11 @@ final class SketchJoinOrderPlanner {
 			return 0.0d;
 		}
 		double bridgeRows = bridgeRows(factorIndex, seedEstimate);
-		if (!isBroadEndpointBridge(bridgeRows, subjectDomain.rows(), objectDomain.rows())) {
+		if (!isBroadEndpointBridge(factorIndex, bridgeRows, subjectDomain.rows(), objectDomain.rows())) {
 			return 0.0d;
 		}
-		double workRows = bridgeRows - Math.max(subjectDomain.rows(), objectDomain.rows());
+		double workRows = bridgeRows - endpointPreparationRows(factorIndex, subjectDomain.rows(),
+				objectDomain.rows());
 		double subjectWorkRows = delayedStepWorkRows(subjectDomain.factorIndex(), seedMask, seedBoundVarMask,
 				seedEstimate);
 		if (isFiniteNonNegative(subjectWorkRows)) {
@@ -2708,13 +2880,25 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private boolean isBroadEndpointBridge(double bridgeRows, double leftEndpointRows, double rightEndpointRows) {
+		return isBroadEndpointBridge(-1, bridgeRows, leftEndpointRows, rightEndpointRows);
+	}
+
+	private boolean isBroadEndpointBridge(int bridgeIndex, double bridgeRows, double leftEndpointRows,
+			double rightEndpointRows) {
 		if (!(isFiniteNonNegative(bridgeRows) && bridgeRows > 0.0d
 				&& isFiniteNonNegative(leftEndpointRows) && leftEndpointRows > 0.0d
 				&& isFiniteNonNegative(rightEndpointRows) && rightEndpointRows > 0.0d)) {
 			return false;
 		}
-		double endpointRows = Math.max(leftEndpointRows, rightEndpointRows);
+		double endpointRows = endpointPreparationRows(bridgeIndex, leftEndpointRows, rightEndpointRows);
 		return bridgeRows >= endpointRows * BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO;
+	}
+
+	private double endpointPreparationRows(int bridgeIndex, double leftEndpointRows, double rightEndpointRows) {
+		if (bridgeIndex >= 0 && isPropertyPathFactor(bridgeIndex)) {
+			return Math.min(leftEndpointRows, rightEndpointRows);
+		}
+		return Math.max(leftEndpointRows, rightEndpointRows);
 	}
 
 	private double delayedDisconnectedFiniteSeedWorkRows(int factorIndex, long seedMask, long seedBoundVarMask,
@@ -3034,11 +3218,34 @@ final class SketchJoinOrderPlanner {
 		if (legalCandidates == 0L) {
 			return 0L;
 		}
-		// Structural connectivity is a costing signal, not a semantic search-space boundary.
-		// Keep disconnected legal candidates in the frontier so finite VALUES anchors, learned-filter anchors and
-		// path endpoint domains can be chosen before they become structurally connected to the current prefix.
-		// Disconnected work is still charged later by the per-step costing path.
+		long scalarCandidates = zeroVarScalarCandidates(legalCandidates);
+		long connectedCandidates = scalarCandidates
+				| structurallyConnectedCandidates(legalCandidates & ~scalarCandidates,
+						boundVarMask);
+		if (plan.mask() == 0L && connectedCandidates == 0L) {
+			return legalCandidates;
+		}
+		if (connectedCandidates != 0L) {
+			disconnectedCandidateRejectedCount += Long.bitCount(legalCandidates & ~connectedCandidates);
+			return connectedCandidates;
+		}
+		if (structuralConnectedComponentCount <= 1) {
+			disconnectedCandidateRejectedCount += Long.bitCount(legalCandidates);
+			return 0L;
+		}
 		return legalCandidates;
+	}
+
+	private long zeroVarScalarCandidates(long candidates) {
+		long scalars = 0L;
+		while (candidates != 0L) {
+			int candidate = Long.numberOfTrailingZeros(candidates);
+			candidates &= candidates - 1L;
+			if (isZeroVarScalarFactor(candidate)) {
+				scalars |= bit(candidate);
+			}
+		}
+		return scalars;
 	}
 
 	private long structurallyConnectedCandidates(long candidates, long boundVarMask) {
@@ -3064,11 +3271,104 @@ final class SketchJoinOrderPlanner {
 		long candidates = candidatesMask(plan);
 		candidates = delayFiniteCompletableLookupCandidates(plan, candidates);
 		candidates = delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(plan, candidates);
+		candidates = delayEndpointBridgesUntilCheapFilterUnlocks(plan, candidates);
 		// rdf:type guards are compared by cost like any other factor; do not prune competing bridge actions here.
 		long actions = candidates | availableFilterActionMask(plan);
 		plan.candidateActionsMask = actions;
 		plan.candidateActionsMaskLoaded = true;
 		return actions;
+	}
+
+	private long delayEndpointBridgesUntilCheapFilterUnlocks(StatePlan plan, long candidates) {
+		if (candidates == 0L || plan == null) {
+			return candidates;
+		}
+		long boundVarMask = plan.boundVarMask() & variableUniverseMask;
+		if (boundVarMask == 0L) {
+			return candidates;
+		}
+		long delayed = 0L;
+		long remaining = candidates;
+		while (remaining != 0L) {
+			int bridge = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if (!isEndpointBridgeCandidate(plan, bridge)) {
+				continue;
+			}
+			long bridgeBoundEndpointVars = bindingVarMasks[bridge] & boundVarMask;
+			if (bridgeBoundEndpointVars == 0L
+					|| !hasCheapSelectiveFilterAlternative(plan, candidates & ~bit(bridge),
+							bridgeBoundEndpointVars)) {
+				continue;
+			}
+			delayed |= bit(bridge);
+		}
+		long retained = candidates & ~delayed;
+		return retained == 0L ? candidates : retained;
+	}
+
+	private boolean hasCheapSelectiveFilterAlternative(StatePlan plan, long candidates, long sharedBoundVars) {
+		long remaining = candidates;
+		while (remaining != 0L) {
+			int candidate = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if ((bindingVarMasks[candidate] & sharedBoundVars) == 0L) {
+				continue;
+			}
+			long previousBound = plan.boundVarMask();
+			long nextBound = previousBound | bindingVarMasks[candidate];
+			double passRatio = newlyUnlockedCheapAutomaticFilterPassRatio(plan.mask(), plan.mask() | bit(candidate),
+					previousBound, nextBound, plan.estimate());
+			if (isValidPassRatio(passRatio) && passRatio < 1.0d) {
+				return true;
+			}
+			if (isCheapSelectiveFilterFactor(candidate, previousBound, nextBound)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isCheapSelectiveFilterFactor(int candidate, long previousBound, long nextBound) {
+		TupleExpr tupleExpr = factors.get(candidate).tupleExpr();
+		if (!(tupleExpr instanceof Filter filter) || !isCheapFilterCondition(filter.getCondition())) {
+			return false;
+		}
+		long conditionVars = variableMask(VarNameCollector.process(filter.getCondition()), variableIds);
+		if (conditionVars == 0L
+				|| (previousBound & conditionVars) == conditionVars
+				|| (nextBound & conditionVars) != conditionVars) {
+			return false;
+		}
+		return true;
+	}
+
+	private static boolean isCheapFilterCondition(ValueExpr condition) {
+		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
+			return false;
+		}
+		if (condition instanceof Not not && not.getArg() instanceof Exists) {
+			return false;
+		}
+		if (condition instanceof And and) {
+			return isCheapFilterCondition(and.getLeftArg()) && isCheapFilterCondition(and.getRightArg());
+		}
+		return true;
+	}
+
+	private boolean isEndpointBridgeCandidate(StatePlan plan, int factorIndex) {
+		if (!hasEndpointBridgeVars(factorIndex) || isBindingSetAssignment(factorIndex)) {
+			return false;
+		}
+		long boundVarMask = plan.boundVarMask() & variableUniverseMask;
+		long subjectVars = statementSubjectVarMask(factorIndex) & variableUniverseMask;
+		long objectVars = statementObjectVarMask(factorIndex) & variableUniverseMask;
+		boolean subjectBound = (subjectVars & boundVarMask) != 0L;
+		boolean objectBound = (objectVars & boundVarMask) != 0L;
+		if (subjectBound == objectBound) {
+			return false;
+		}
+		return true;
 	}
 
 	private long delayFiniteCompletableLookupCandidates(StatePlan plan, long candidates) {
@@ -3894,11 +4194,20 @@ final class SketchJoinOrderPlanner {
 			if (physicalComparable) {
 				accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
 				if (selectedAccessPath != null) {
-					accessMode = selectedAccessPath.accessMode();
-					directLookup = selectedAccessPath.directLookup();
-					missingLookupComponentMask = selectedAccessPath.missingLookupComponentMask();
+					accessMode = accessModeMetric(factorCostEstimate);
+					if (accessMode == null) {
+						accessMode = selectedAccessPath.accessMode();
+					}
+					directLookup = factorCostEstimate.hasPhysicalAccessPath()
+							? factorCostEstimate.isDirectLookup()
+							: selectedAccessPath.directLookup();
+					missingLookupComponentMask = factorCostEstimate.hasPhysicalAccessPath()
+							? factorCostEstimate.getMissingLookupComponentMask()
+							: selectedAccessPath.missingLookupComponentMask();
 					missingLookupComponents = Integer.bitCount(missingLookupComponentMask);
-					lookupComponentMask = selectedAccessPath.lookupComponentMask();
+					lookupComponentMask = factorCostEstimate.hasPhysicalAccessPath()
+							? factorCostEstimate.getLookupComponentMask()
+							: selectedAccessPath.lookupComponentMask();
 					lookupComponents = Integer.bitCount(lookupComponentMask);
 					accessRowsBeforeFilter = accessRowsBeforeFilter(factorCostEstimate, accessShape,
 							lookupComponentMask);
@@ -5154,7 +5463,7 @@ final class SketchJoinOrderPlanner {
 		while (candidates != 0L) {
 			int bridge = Long.numberOfTrailingZeros(candidates);
 			candidates &= candidates - 1L;
-			if (statementPatternBase(factors.get(bridge).tupleExpr()) == null) {
+			if (!hasEndpointBridgeVars(bridge)) {
 				continue;
 			}
 			long subjectVars = statementSubjectVarMask(bridge) & variableUniverseMask;
@@ -5164,7 +5473,7 @@ final class SketchJoinOrderPlanner {
 			}
 			boolean connectsEndpoints = ((subjectVars & prefixVars) != 0L && (objectVars & factorVars) != 0L)
 					|| ((objectVars & prefixVars) != 0L && (subjectVars & factorVars) != 0L);
-			if (connectsEndpoints && isBroadEndpointBridge(bridgeRows(bridge, null), prefixRows, factorRows)) {
+			if (connectsEndpoints && isBroadEndpointBridge(bridge, bridgeRows(bridge, null), prefixRows, factorRows)) {
 				return true;
 			}
 		}
@@ -5175,7 +5484,28 @@ final class SketchJoinOrderPlanner {
 		if (isExactDirectLookup(physicalEstimate)) {
 			return physicalEstimate.workRows();
 		}
-		return factorStepWorkRows(physicalEstimate.workRows(), rowsProcessed);
+		double accessWorkRows = physicalStepAccessWorkRows(physicalEstimate);
+		return factorStepWorkRows(accessWorkRows, rowsProcessed);
+	}
+
+	private double physicalStepAccessWorkRows(FactorPhysicalEstimate physicalEstimate) {
+		double accessWorkRows = physicalEstimate.workRows();
+		if (physicalEstimate.directLookup()) {
+			return accessWorkRows;
+		}
+		double accessRows = physicalEstimate.accessRowsBeforeFilter();
+		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = physicalEstimate.factorCostEstimate();
+		if (!isFiniteNonNegative(accessRows) && factorCostEstimate != null) {
+			Map<String, Double> doubleMetrics = factorCostEstimate.getDoubleMetrics();
+			accessRows = maxFinite(
+					doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, Double.NaN),
+					doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN));
+		}
+		if (isFiniteNonNegative(accessRows)) {
+			// Prefix scans still visit the pre-filter rows; selectivity may reduce output, not access work.
+			accessWorkRows = Math.max(accessWorkRows, accessRows);
+		}
+		return accessWorkRows;
 	}
 
 	private boolean isExactDirectLookup(FactorPhysicalEstimate physicalEstimate) {
@@ -5416,6 +5746,33 @@ final class SketchJoinOrderPlanner {
 				}
 			}
 			long added = neighbors & ~visited;
+			if ((added & targetVars) != 0L) {
+				return true;
+			}
+			if (added == 0L) {
+				return false;
+			}
+			visited |= added;
+			frontier = added;
+		}
+		return false;
+	}
+
+	private boolean hasPotentialVariableInteractionExcludingFactor(long sourceVars, long targetVars,
+			int excludedFactor) {
+		sourceVars &= variableUniverseMask;
+		targetVars &= variableUniverseMask;
+		if (sourceVars == 0L || targetVars == 0L) {
+			return false;
+		}
+		if ((sourceVars & targetVars) != 0L) {
+			return true;
+		}
+		long availableFactors = factorUniverseMask & ~bit(excludedFactor);
+		long visited = sourceVars;
+		long frontier = sourceVars;
+		while (frontier != 0L) {
+			long added = factorInteractionNeighbors(frontier, availableFactors, variableUniverseMask) & ~visited;
 			if ((added & targetVars) != 0L) {
 				return true;
 			}
@@ -5845,6 +6202,38 @@ final class SketchJoinOrderPlanner {
 		return found ? passRatio : 1.0d;
 	}
 
+	private double newlyUnlockedCheapAutomaticFilterPassRatio(long previousMask, long nextMask, long previousBound,
+			long nextBound, SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
+		if (automaticFilterMask == 0L || deferredFilters.isEmpty()) {
+			return 1.0d;
+		}
+		if (isDisconnectedCorrelatedSeed(previousMask, nextBound)) {
+			return 1.0d;
+		}
+		double passRatio = 1.0d;
+		boolean found = false;
+		long filters = automaticFilterMask;
+		while (filters != 0L) {
+			int filterIndex = Long.numberOfTrailingZeros(filters);
+			filters &= filters - 1L;
+			JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(filterIndex);
+			long requiredVars = deferredFilterRequiredVarMasks[filterIndex];
+			if ((previousBound & requiredVars) == requiredVars
+					|| (nextBound & requiredVars) != requiredVars) {
+				continue;
+			}
+			double filterPassRatio = finiteDomainFilterPassRatio(filter, nextMask);
+			if (!isValidPassRatio(filterPassRatio)) {
+				filterPassRatio = structuralOrFeedbackFilterPassRatio(filter, estimate);
+			}
+			if (isValidPassRatio(filterPassRatio)) {
+				passRatio *= filterPassRatio;
+				found = true;
+			}
+		}
+		return found ? passRatio : 1.0d;
+	}
+
 	private double structuralOrFeedbackFilterPassRatio(JoinOrderPlanner.FilterConstraint filter,
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
 		double structuralPassRatio = structuralFilterPassRatio(filter, estimate);
@@ -5953,12 +6342,35 @@ final class SketchJoinOrderPlanner {
 
 	private long statementSubjectVarMask(int factorIndex) {
 		StatementPattern statementPattern = statementPatternFactor(factorIndex);
-		return statementPattern == null ? 0L : variableMask(statementPattern.getSubjectVar());
+		if (statementPattern != null) {
+			return variableMask(statementPattern.getSubjectVar());
+		}
+		ArbitraryLengthPath path = arbitraryLengthPathFactor(factorIndex);
+		return path == null ? 0L : variableMask(path.getSubjectVar());
 	}
 
 	private long statementObjectVarMask(int factorIndex) {
 		StatementPattern statementPattern = statementPatternFactor(factorIndex);
-		return statementPattern == null ? 0L : variableMask(statementPattern.getObjectVar());
+		if (statementPattern != null) {
+			return variableMask(statementPattern.getObjectVar());
+		}
+		ArbitraryLengthPath path = arbitraryLengthPathFactor(factorIndex);
+		return path == null ? 0L : variableMask(path.getObjectVar());
+	}
+
+	private ArbitraryLengthPath arbitraryLengthPathFactor(int factorIndex) {
+		TupleExpr tupleExpr = factors.get(factorIndex).tupleExpr();
+		return tupleExpr instanceof ArbitraryLengthPath path ? path : null;
+	}
+
+	private boolean isPropertyPathFactor(int factorIndex) {
+		return factorIndex >= 0 && arbitraryLengthPathFactor(factorIndex) != null;
+	}
+
+	private boolean hasEndpointBridgeVars(int factorIndex) {
+		long subjectVars = statementSubjectVarMask(factorIndex) & variableUniverseMask;
+		long objectVars = statementObjectVarMask(factorIndex) & variableUniverseMask;
+		return subjectVars != 0L && objectVars != 0L && (subjectVars & objectVars) == 0L;
 	}
 
 	private long variableMask(Var var) {
@@ -6244,11 +6656,21 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void logFactorEstimates() {
+		if (!traceDiagnostics) {
+			return;
+		}
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
 			recordDebug("estimate factor[" + i + "]: expr=" + describeTupleExpr(factor.tupleExpr()) + " estimate="
 					+ factor.estimate().summary());
 		}
+	}
+
+	private String estimateSummary(StatePlan result) {
+		if (result == null || result.estimate() == null) {
+			return "<unknown>";
+		}
+		return traceDiagnostics ? result.estimate().summary() : result.estimate().compactSummary();
 	}
 
 	private void recordDebug(String message) {

@@ -78,7 +78,6 @@ public final class CascadesPlanProvenanceAnnotator {
 		if (plan == null) {
 			return;
 		}
-		sanitizeSubtree(plan);
 		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
