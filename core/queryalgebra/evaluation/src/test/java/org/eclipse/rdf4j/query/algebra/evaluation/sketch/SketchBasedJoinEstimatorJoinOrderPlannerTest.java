@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -302,7 +303,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void paretoPlanSummaryExposesBoundedFrontierAndCountersWithoutDiagnostics() {
+	void paretoPlanSummaryExposesCountersWithoutVerboseTraceStrings() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:frontier:a");
 		IRI pB = VF.createIRI("urn:frontier:b");
@@ -333,10 +334,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(exploration.contains("mode=pareto-memo"), exploration);
 		assertTrue(exploration.contains("finalVector="), exploration);
 		assertTrue(exploration.contains("finalFrontierWidth=6"), exploration);
-		assertTrue(exploration.contains("finalFrontier=[{order="),
-				"Explain telemetry should show the bounded Pareto frontier alternatives: " + exploration);
-		assertTrue(exploration.contains("considered=[{status=accepted"),
-				"Explain telemetry should show sampled alternatives the planner considered: " + exploration);
+		assertFalse(exploration.contains("finalFrontier=["),
+				"Summary telemetry should keep alternatives out of the hot-path string: " + exploration);
+		assertFalse(exploration.contains("considered=["),
+				"Summary telemetry should keep candidate traces out of the hot-path string: " + exploration);
 		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
 		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT), 0.0d);
 		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT), 0.0d);
@@ -348,7 +349,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void paretoPlanSummaryExposesRejectedCandidateReasons() {
+	void paretoPlanSummaryExposesRejectedCandidateCountersWithoutVerboseTraceStrings() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:frontier-rejected:a");
 		IRI pB = VF.createIRI("urn:frontier-rejected:b");
@@ -381,8 +382,12 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		String exploration = plan.getSummaryStringMetrics()
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
-		assertTrue(exploration.contains("rejected=[{status=dominated"),
-				"Explain telemetry should show sampled rejected alternatives and reason: " + exploration);
+		assertFalse(exploration.contains("rejected=["),
+				"Summary telemetry should keep rejected traces out of the hot-path string: " + exploration);
+		assertTrue(plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT) > 0.0d,
+				"Expected rejected alternatives to remain available as structured counters: "
+						+ plan.getSummaryDoubleMetrics());
 	}
 
 	@Test

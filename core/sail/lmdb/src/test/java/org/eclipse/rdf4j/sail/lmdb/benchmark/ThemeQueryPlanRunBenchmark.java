@@ -96,13 +96,13 @@ public class ThemeQueryPlanRunBenchmark {
 	public static class BaseState {
 
 		@Param({
-				"0",
-				"1",
-				"2",
-				"3",
-				"4",
-				"5",
-				"6",
+//				"0",
+//				"1",
+//				"2",
+//				"3",
+//				"4",
+//				"5",
+//				"6",
 				"7",
 				"8",
 				"9",
@@ -113,14 +113,14 @@ public class ThemeQueryPlanRunBenchmark {
 		public int z_queryIndex;
 
 		@Param({
-				"MEDICAL_RECORDS",
-				"SOCIAL_MEDIA",
+//				"MEDICAL_RECORDS",
+//				"SOCIAL_MEDIA",
 				"LIBRARY",
-				"ENGINEERING",
-				"HIGHLY_CONNECTED",
-				"TRAIN",
-				"ELECTRICAL_GRID",
-				"PHARMA",
+//				"ENGINEERING",
+//				"HIGHLY_CONNECTED",
+//				"TRAIN",
+//				"ELECTRICAL_GRID",
+//				"PHARMA",
 //				"SPARSE"
 		})
 		public String themeName;
@@ -155,6 +155,15 @@ public class ThemeQueryPlanRunBenchmark {
 			ensureDataLoadedAndValidated();
 			waitForSketchesIfEnabled();
 			connection = repository.getConnection();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
+				System.out.println();
+				System.out.println();
+				System.out.println(explain);
+				System.out.println();
+				System.out.println();
+			}
 		}
 
 		@TearDown(Level.Trial)

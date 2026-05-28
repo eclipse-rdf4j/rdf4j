@@ -82,6 +82,13 @@ public interface JoinOrderPlanner {
 					: steps == null || steps.isEmpty() ? List.of() : List.copyOf(steps);
 		}
 
+		public static JoinOrderPlan trustedImmutable(List<TupleExpr> orderedArgs, double estimatedFinalRows,
+				double estimatedTotalWork, List<String> diagnostics, Map<String, String> summaryStringMetrics,
+				Map<String, Double> summaryDoubleMetrics, List<PlanStep> steps) {
+			return new JoinOrderPlan(orderedArgs, estimatedFinalRows, estimatedTotalWork, diagnostics,
+					summaryStringMetrics, summaryDoubleMetrics, steps, true);
+		}
+
 		public List<TupleExpr> getOrderedArgs() {
 			return orderedArgs;
 		}
@@ -420,19 +427,39 @@ public interface JoinOrderPlanner {
 		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
 				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
 				List<Integer> appliedFilterIndexes) {
-			this.boundVarsBefore = Set.copyOf(boundVarsBefore);
+			this(boundVarsBefore, factorOutputRows, prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
+					appliedFilterIndexes, false);
+		}
+
+		private PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
+				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
+				List<Integer> appliedFilterIndexes, boolean trustedImmutable) {
+			this.boundVarsBefore = trustedImmutable ? boundVarsBefore : Set.copyOf(boundVarsBefore);
 			this.factorOutputRows = factorOutputRows;
 			this.prefixOutputRows = prefixOutputRows;
 			this.stepWorkRows = stepWorkRows;
-			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(stringMetrics);
-			this.doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(doubleMetrics);
-			this.appliedFilterIndexes = appliedFilterIndexes == null || appliedFilterIndexes.isEmpty()
-					? List.of()
-					: List.copyOf(appliedFilterIndexes);
+			this.stringMetrics = trustedImmutable
+					? stringMetrics
+					: stringMetrics == null || stringMetrics.isEmpty()
+							? Map.of()
+							: Map.copyOf(stringMetrics);
+			this.doubleMetrics = trustedImmutable
+					? doubleMetrics
+					: doubleMetrics == null || doubleMetrics.isEmpty()
+							? Map.of()
+							: Map.copyOf(doubleMetrics);
+			this.appliedFilterIndexes = trustedImmutable
+					? appliedFilterIndexes
+					: appliedFilterIndexes == null || appliedFilterIndexes.isEmpty()
+							? List.of()
+							: List.copyOf(appliedFilterIndexes);
+		}
+
+		public static PlanStep trustedImmutable(Set<String> boundVarsBefore, double factorOutputRows,
+				double prefixOutputRows, double stepWorkRows, Map<String, String> stringMetrics,
+				Map<String, Double> doubleMetrics, List<Integer> appliedFilterIndexes) {
+			return new PlanStep(boundVarsBefore, factorOutputRows, prefixOutputRows, stepWorkRows, stringMetrics,
+					doubleMetrics, appliedFilterIndexes, true);
 		}
 
 		public Set<String> getBoundVarsBefore() {

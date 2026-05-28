@@ -13,9 +13,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.AbstractSet;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -186,7 +186,7 @@ final class SketchJoinOrderPlanner {
 	private int logicalDominatedCount;
 	private int logicalTrimmedCount;
 	private int disconnectedCandidateRejectedCount;
-	private String logicalExplorationMode;
+	private LogicalExplorationMode logicalExplorationMode = LogicalExplorationMode.UNKNOWN;
 	private String logicalFinalFrontierSummary = "[]";
 	private String logicalConsideredCandidatesSummary = "[]";
 	private String logicalRejectedCandidatesSummary = "[]";
@@ -441,7 +441,7 @@ final class SketchJoinOrderPlanner {
 			}
 			result = applyFixedOrderFilterActions(result);
 		}
-		logicalExplorationMode = "fixed-order";
+		logicalExplorationMode = LogicalExplorationMode.FIXED_ORDER;
 		logicalCandidateCount = factors.size();
 		logicalAcceptedCount = factors.size();
 		logicalFinalFrontierWidth = 1;
@@ -558,14 +558,22 @@ final class SketchJoinOrderPlanner {
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, result.costVector().totalWorkRows());
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS,
 				result.costVector().uncertaintyRows());
-		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), finalRows,
-				totalWork, List.copyOf(diagnostics), summaryStringMetrics, summaryDoubleMetrics, steps);
+		return JoinOrderPlanner.JoinOrderPlan.trustedImmutable(List.copyOf(orderedArgs), finalRows,
+				totalWork, List.copyOf(diagnostics), unmodifiableMetricMap(summaryStringMetrics),
+				unmodifiableMetricMap(summaryDoubleMetrics), steps);
+	}
+
+	private static <K, V> Map<K, V> unmodifiableMetricMap(Map<K, V> metrics) {
+		return metrics == null || metrics.isEmpty() ? Map.of() : Collections.unmodifiableMap(metrics);
 	}
 
 	private String joinOrderDecisionId(StatePlan result, JoinOrderPlanner.Algorithm algorithm) {
-		String signature = algorithm.name() + ':' + describeFactorOrder(result);
+		int hash = algorithm.name().hashCode();
+		for (int i = 0; i < result.orderSize(); i++) {
+			hash = 31 * hash + result.orderAt(i);
+		}
 		return "join-order:" + algorithm.name().toLowerCase(Locale.ROOT) + ':'
-				+ Integer.toUnsignedString(signature.hashCode(), 16);
+				+ Integer.toUnsignedString(hash, 16);
 	}
 
 	private double sumStepWorkRows(List<JoinOrderPlanner.PlanStep> steps) {
@@ -597,7 +605,11 @@ final class SketchJoinOrderPlanner {
 			return new FactorBuildResult(List.of(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
 					expressions.get(Long.SIZE));
 		}
-		List<PendingPlanFactor> pendingFactors = new ArrayList<>(expressions.size());
+		@SuppressWarnings("unchecked")
+		Set<String>[] bindingVarsByFactor = (Set<String>[]) new Set<?>[expressions.size()];
+		SketchBasedJoinEstimator.TuplePlanEstimate[] estimates = new SketchBasedJoinEstimator.TuplePlanEstimate[expressions
+				.size()];
+		TupleExpr[] tupleExprs = new TupleExpr[expressions.size()];
 		LinkedHashSet<String> providedVars = new LinkedHashSet<>(initiallyBoundVars);
 		for (int i = 0; i < expressions.size(); i++) {
 			TupleExpr tupleExpr = expressions.get(i);
@@ -607,17 +619,20 @@ final class SketchJoinOrderPlanner {
 				return new FactorBuildResult(List.of(), unsupportedPath(tupleExpr), tupleExpr);
 			}
 			Set<String> bindingVars = factorBindingVars(tupleExpr);
+			tupleExprs[i] = tupleExpr;
+			estimates[i] = estimate;
+			bindingVarsByFactor[i] = bindingVars;
 			providedVars.addAll(bindingVars);
-			pendingFactors.add(new PendingPlanFactor(i, tupleExpr, estimate, bindingVars));
 		}
-		List<PlanFactor> builtFactors = new ArrayList<>(pendingFactors.size());
-		for (PendingPlanFactor pending : pendingFactors) {
-			Set<String> connectivityVars = connectivityVars(pending.tupleExpr(), pending.joinVars(),
+		PlanFactor[] builtFactors = new PlanFactor[expressions.size()];
+		for (int i = 0; i < tupleExprs.length; i++) {
+			Set<String> bindingVars = bindingVarsByFactor[i];
+			Set<String> connectivityVars = connectivityVars(tupleExprs[i], bindingVars,
 					providedVars);
-			builtFactors.add(new PlanFactor(pending.index(), pending.tupleExpr(), pending.estimate(),
-					pending.joinVars(), connectivityVars, pending.joinVars()));
+			builtFactors[i] = new PlanFactor(i, tupleExprs[i], estimates[i], bindingVars, connectivityVars,
+					bindingVars);
 		}
-		return new FactorBuildResult(List.copyOf(builtFactors), null, null);
+		return new FactorBuildResult(List.of(builtFactors), null, null);
 	}
 
 	private static Set<String> factorBindingVars(TupleExpr tupleExpr) {
@@ -664,22 +679,29 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private static Set<String> connectivityVars(TupleExpr tupleExpr, Set<String> joinVars, Set<String> providedVars) {
-		LinkedHashSet<String> variables = new LinkedHashSet<>(joinVars);
-		addProvidedFilterConditionVars(tupleExpr, providedVars, variables);
-		return Set.copyOf(variables);
-	}
-
-	private static void addProvidedFilterConditionVars(TupleExpr tupleExpr, Set<String> providedVars,
-			Set<String> variables) {
-		if (!(tupleExpr instanceof Filter filter)) {
-			return;
+		if (!(tupleExpr instanceof Filter)) {
+			return joinVars;
 		}
-		for (String conditionVar : VarNameCollector.process(filter.getCondition())) {
-			if (providedVars.contains(conditionVar)) {
-				variables.add(conditionVar);
+		LinkedHashSet<String> extraVariables = null;
+		TupleExpr current = tupleExpr;
+		while (current instanceof Filter filter) {
+			for (String conditionVar : VarNameCollector.process(filter.getCondition())) {
+				if (providedVars.contains(conditionVar) && !joinVars.contains(conditionVar)) {
+					if (extraVariables == null) {
+						extraVariables = new LinkedHashSet<>();
+					}
+					extraVariables.add(conditionVar);
+				}
 			}
+			current = filter.getArg();
 		}
-		addProvidedFilterConditionVars(filter.getArg(), providedVars, variables);
+		if (extraVariables == null || extraVariables.isEmpty()) {
+			return joinVars;
+		}
+		LinkedHashSet<String> variables = new LinkedHashSet<>(joinVars.size() + extraVariables.size());
+		variables.addAll(joinVars);
+		variables.addAll(extraVariables);
+		return Set.copyOf(variables);
 	}
 
 	private static Map<String, Integer> buildVariableIds(Set<String> initiallyBoundVars,
@@ -741,9 +763,8 @@ final class SketchJoinOrderPlanner {
 		long[] masks = new long[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
-			Set<String> requiredBeforeVars = new LinkedHashSet<>(factor.connectivityVars());
-			requiredBeforeVars.removeAll(factor.bindingVars());
-			masks[i] = variableMask(requiredBeforeVars, variableIds);
+			masks[i] = variableMask(factor.connectivityVars(), variableIds)
+					& ~variableMask(factor.bindingVars(), variableIds);
 		}
 		return masks;
 	}
@@ -751,7 +772,7 @@ final class SketchJoinOrderPlanner {
 	private static long[] buildRuntimeVarMasks(List<PlanFactor> factors, Map<String, Integer> variableIds) {
 		long[] masks = new long[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
-			masks[i] = variableMask(factorBindingVars(factors.get(i).tupleExpr()), variableIds);
+			masks[i] = variableMask(factors.get(i).bindingVars(), variableIds);
 		}
 		return masks;
 	}
@@ -873,8 +894,7 @@ final class SketchJoinOrderPlanner {
 		long[] interactionMasks = new long[variableCount];
 		for (PlanFactor factor : factors) {
 			if (statementPatternBase(factor.tupleExpr()) != null) {
-				addVariableInteractions(interactionMasks, variableMask(factorBindingVars(factor.tupleExpr()),
-						variableIds));
+				addVariableInteractions(interactionMasks, variableMask(factor.bindingVars(), variableIds));
 			}
 		}
 		return interactionMasks;
@@ -902,25 +922,20 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private SketchBasedJoinEstimator.SketchPlannerPath classifyGraph() {
-		List<Set<Integer>> physicalComponents = physicalComponents();
-		int requiredPhysicalComponents = 0;
-		Set<Integer> requiredFactors = new LinkedHashSet<>();
-		for (Set<Integer> component : physicalComponents) {
-			if (!isIgnorableSmallBindingSetAssignmentComponent(component)) {
-				requiredPhysicalComponents++;
-				requiredFactors.addAll(component);
-			}
-		}
+		PhysicalComponentSummary physicalComponents = physicalComponents();
 		int edgeCount = 0;
-		Set<String> variables = new LinkedHashSet<>();
+		long variables = 0L;
 		for (PlanFactor factor : factors) {
 			edgeCount += factor.arity();
-			variables.addAll(factor.connectivityVars());
 		}
-		boolean cyclicOrDense = edgeCount != factors.size() + variables.size() - physicalComponents.size();
-		recordDebug("graph classification: physicalComponents=" + physicalComponents.size()
-				+ " requiredPhysicalComponents=" + requiredPhysicalComponents + " variables="
-				+ new TreeSet<>(variables) + " edgeCount=" + edgeCount + " cyclicOrDense=" + cyclicOrDense);
+		for (long connectivityVarMask : connectivityVarMasks) {
+			variables |= connectivityVarMask;
+		}
+		boolean cyclicOrDense = edgeCount != factors.size() + Long.bitCount(variables)
+				- physicalComponents.componentCount();
+		recordDebug("graph classification: physicalComponents=" + physicalComponents.componentCount()
+				+ " requiredPhysicalComponents=" + physicalComponents.requiredComponentCount() + " variableCount="
+				+ Long.bitCount(variables) + " edgeCount=" + edgeCount + " cyclicOrDense=" + cyclicOrDense);
 		return null;
 	}
 
@@ -990,52 +1005,50 @@ final class SketchJoinOrderPlanner {
 		return component;
 	}
 
-	private List<Set<Integer>> physicalComponents() {
-		Set<Integer> seenFactors = new LinkedHashSet<>();
-		List<Set<Integer>> components = new ArrayList<>();
-		for (int i = 0; i < factors.size(); i++) {
-			if (seenFactors.contains(i)) {
-				continue;
+	private PhysicalComponentSummary physicalComponents() {
+		long remaining = factorUniverseMask;
+		int componentCount = 0;
+		int requiredComponentCount = 0;
+		while (remaining != 0L) {
+			int startFactor = Long.numberOfTrailingZeros(remaining);
+			long component = physicalComponent(startFactor, remaining);
+			componentCount++;
+			if (!isIgnorableSmallBindingSetAssignmentComponent(component)) {
+				requiredComponentCount++;
 			}
-			components.add(physicalComponent(i, seenFactors));
+			remaining &= ~component;
 		}
-		return List.copyOf(components);
+		return new PhysicalComponentSummary(componentCount, requiredComponentCount);
 	}
 
-	private Set<Integer> physicalComponent(int startFactor, Set<Integer> seenFactors) {
-		Set<Integer> component = new LinkedHashSet<>();
-		Set<String> seenVariables = new LinkedHashSet<>();
-		ArrayDeque<Object> queue = new ArrayDeque<>();
-		queue.add(startFactor);
-		seenFactors.add(startFactor);
-		component.add(startFactor);
-		while (!queue.isEmpty()) {
-			Object next = queue.removeFirst();
-			if (next instanceof Integer factorIndex) {
-				for (String variable : factors.get(factorIndex).connectivityVars()) {
-					if (seenVariables.add(variable)) {
-						queue.addLast(variable);
-					}
-				}
-				continue;
-			}
-			String variable = (String) next;
-			for (int i = 0; i < factors.size(); i++) {
-				if (!seenFactors.contains(i) && factors.get(i).connectivityVars().contains(variable)) {
-					seenFactors.add(i);
-					component.add(i);
-					queue.addLast(i);
+	private long physicalComponent(int startFactor, long availableFactors) {
+		long component = bit(startFactor);
+		long componentVars = connectivityVarMasks[startFactor];
+		boolean expanded;
+		do {
+			expanded = false;
+			long candidates = availableFactors & ~component;
+			while (candidates != 0L) {
+				int candidate = Long.numberOfTrailingZeros(candidates);
+				candidates &= candidates - 1L;
+				long candidateVars = connectivityVarMasks[candidate];
+				if (candidateVars != 0L && (candidateVars & componentVars) != 0L) {
+					component |= bit(candidate);
+					componentVars |= candidateVars;
+					expanded = true;
 				}
 			}
-		}
-		return Set.copyOf(component);
+		} while (expanded);
+		return component;
 	}
 
-	private boolean isIgnorableSmallBindingSetAssignmentComponent(Set<Integer> component) {
-		if (component.isEmpty()) {
+	private boolean isIgnorableSmallBindingSetAssignmentComponent(long component) {
+		if (component == 0L) {
 			return false;
 		}
-		for (Integer factorIndex : component) {
+		while (component != 0L) {
+			int factorIndex = Long.numberOfTrailingZeros(component);
+			component &= component - 1L;
 			if (!isSmallBindingSetAssignment(factorIndex)) {
 				return false;
 			}
@@ -3019,7 +3032,7 @@ final class SketchJoinOrderPlanner {
 	private StatePlan optimizeGreedy() {
 		// Keep order selection driven by estimates and available rewrites. Query-shape heuristics can help the
 		// query in front of us while hard-coding an optimization choice that makes a different query worse.
-		logicalExplorationMode = "pareto-beam";
+		logicalExplorationMode = LogicalExplorationMode.PARETO_BEAM;
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planBeam();
 		applyPlannerStats(result.stats());
 		captureFinalFrontierSummary(result);
@@ -3031,7 +3044,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private StatePlan optimizeDynamicProgramming() {
-		logicalExplorationMode = "pareto-memo";
+		logicalExplorationMode = LogicalExplorationMode.PARETO_MEMO;
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planMemo();
 		applyPlannerStats(result.stats());
 		captureFinalFrontierSummary(result);
@@ -3043,7 +3056,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void captureFinalFrontierSummary(ParetoJoinMemoPlanner.Result<StatePlan> result) {
-		if (result == null || result.finalEntries().isEmpty()) {
+		if (!traceDiagnostics || result == null || result.finalEntries().isEmpty()) {
 			logicalFinalFrontierSummary = "[]";
 			return;
 		}
@@ -3068,7 +3081,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void captureCandidateTraceSummary(ParetoJoinMemoPlanner.Result<StatePlan> result) {
-		if (result == null) {
+		if (!traceDiagnostics || result == null) {
 			logicalConsideredCandidatesSummary = "[]";
 			logicalRejectedCandidatesSummary = "[]";
 			return;
@@ -3119,7 +3132,7 @@ final class SketchJoinOrderPlanner {
 				this::extendAction, StatePlan::mask, StatePlan::actionSize,
 				this::memoGroupKey,
 				this::candidateActionsMask, StatePlan::costVector, this::compareCanonicalPlanOrder, this::isFinalPlan,
-				memoGroupArraySize());
+				memoGroupArraySize(), traceDiagnostics);
 	}
 
 	private int memoGroupArraySize() {
@@ -6481,16 +6494,19 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private List<JoinOrderPlanner.PlanStep> buildPlanSteps(StatePlan result, String decisionId) {
-		List<PlanStepDraft> drafts = new ArrayList<>(result.orderSize());
-		ArrayDeque<StatePlan> nodes = new ArrayDeque<>(result.actionSize());
+		PlanStepDraft[] drafts = new PlanStepDraft[result.orderSize()];
+		int draftCount = 0;
+		StatePlan[] nodes = new StatePlan[result.actionSize()];
 		StatePlan current = result;
-		while (current != null) {
-			nodes.push(current);
+		for (int i = nodes.length - 1; i >= 0 && current != null; i--) {
+			nodes[i] = current;
 			current = current.parent;
 		}
 		long mask = 0L;
-		while (!nodes.isEmpty()) {
-			StatePlan node = nodes.pop();
+		for (StatePlan node : nodes) {
+			if (node == null) {
+				continue;
+			}
 			int action = node.lastAction();
 			double actionWorkRows = actionWorkRows(node);
 			if (action >= factors.size()) {
@@ -6499,8 +6515,8 @@ final class SketchJoinOrderPlanner {
 					continue;
 				}
 				JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(filterIndex);
-				if (!drafts.isEmpty()) {
-					PlanStepDraft draft = drafts.get(drafts.size() - 1);
+				if (draftCount > 0) {
+					PlanStepDraft draft = drafts[draftCount - 1];
 					draft.stepWorkRows += actionWorkRows;
 					draft.resultRows = stateFinalRows(node);
 					draft.addUnlockedFilter(filterIndex, describeUnlockedFilter(filter, node.parent.estimate()));
@@ -6544,21 +6560,21 @@ final class SketchJoinOrderPlanner {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS,
 					node.costVector().cartesianWorkRows());
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, node.costVector().totalWorkRows());
-			Set<String> sharedJoinVars = sharedJoinVars(factors.get(factorIndex).tupleExpr(), boundBefore);
-			if (!sharedJoinVars.isEmpty()) {
-				stringMetrics.put(TelemetryMetricNames.SHARED_JOIN_VARS, sharedJoinVars.toString());
+			long sharedJoinVarMask = bindingVarMasks[factorIndex] & boundVariableMask(mask) & variableUniverseMask;
+			if (sharedJoinVarMask != 0L) {
+				stringMetrics.put(TelemetryMetricNames.SHARED_JOIN_VARS, variableNames(sharedJoinVarMask).toString());
 			}
 			double uncertaintyRows = uncertaintyDeltaRows(node);
 			if (uncertaintyRows > 0.0d) {
 				doubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows);
 			}
-			drafts.add(new PlanStepDraft(boundBefore, physicalEstimate.factorOutputRows(),
-					stateFinalRows(node), actionWorkRows, stringMetrics, doubleMetrics));
+			drafts[draftCount++] = new PlanStepDraft(boundBefore, physicalEstimate.factorOutputRows(),
+					stateFinalRows(node), actionWorkRows, stringMetrics, doubleMetrics);
 			mask = node.mask();
 		}
-		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(drafts.size());
-		for (PlanStepDraft draft : drafts) {
-			steps.add(draft.toPlanStep());
+		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(draftCount);
+		for (int i = 0; i < draftCount; i++) {
+			steps.add(drafts[i].toPlanStep());
 		}
 		return List.copyOf(steps);
 	}
@@ -6648,23 +6664,20 @@ final class SketchJoinOrderPlanner {
 		if (componentMask == 0) {
 			return "[]";
 		}
-		List<String> components = new ArrayList<>(COMPONENT_VALUES.length);
+		StringBuilder builder = new StringBuilder(12);
+		builder.append('[');
+		boolean first = true;
 		for (SketchBasedJoinEstimator.Component component : COMPONENT_VALUES) {
 			if ((componentMask & (1 << component.ordinal())) != 0) {
-				components.add(component.name());
+				if (!first) {
+					builder.append(", ");
+				}
+				builder.append(component.name());
+				first = false;
 			}
 		}
-		return components.toString();
-	}
-
-	private Set<String> sharedJoinVars(TupleExpr tupleExpr, Set<String> boundBefore) {
-		TreeSet<String> shared = new TreeSet<>();
-		for (String bindingName : tupleExpr.getBindingNames()) {
-			if (!bindingName.startsWith("_const_") && boundBefore.contains(bindingName)) {
-				shared.add(bindingName);
-			}
-		}
-		return shared;
+		builder.append(']');
+		return builder.toString();
 	}
 
 	private List<Integer> indices() {
@@ -6701,7 +6714,7 @@ final class SketchJoinOrderPlanner {
 	private String logicalExplorationSummary(JoinCostVector finalVector) {
 		StringBuilder builder = new StringBuilder(192);
 		builder.append("mode=")
-				.append(logicalExplorationMode == null ? "unknown" : logicalExplorationMode)
+				.append(logicalExplorationMode.metricValue())
 				.append(", frontierLimit=")
 				.append(FRONTIER_LIMIT)
 				.append(", beamWidth=")
@@ -6722,12 +6735,14 @@ final class SketchJoinOrderPlanner {
 				.append(logicalFinalFrontierWidth)
 				.append(", finalVector=")
 				.append(finalVector);
-		builder.append(", finalFrontier=")
-				.append(logicalFinalFrontierSummary)
-				.append(", considered=")
-				.append(logicalConsideredCandidatesSummary)
-				.append(", rejected=")
-				.append(logicalRejectedCandidatesSummary);
+		if (traceDiagnostics) {
+			builder.append(", finalFrontier=")
+					.append(logicalFinalFrontierSummary)
+					.append(", considered=")
+					.append(logicalConsideredCandidatesSummary)
+					.append(", rejected=")
+					.append(logicalRejectedCandidatesSummary);
+		}
 		return builder.toString();
 	}
 
@@ -6851,19 +6866,29 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private String describeFactorOrder(List<Integer> order) {
-		List<String> labels = new ArrayList<>(order.size());
-		for (Integer index : order) {
-			labels.add(describeFactor(index));
+		StringBuilder builder = new StringBuilder(Math.max(2, order.size() * 24));
+		builder.append('[');
+		for (int i = 0; i < order.size(); i++) {
+			if (i > 0) {
+				builder.append(", ");
+			}
+			builder.append(describeFactor(order.get(i)));
 		}
-		return labels.toString();
+		builder.append(']');
+		return builder.toString();
 	}
 
 	private String describeFactorOrder(StatePlan plan) {
-		List<String> labels = new ArrayList<>(plan.orderSize());
+		StringBuilder builder = new StringBuilder(Math.max(2, plan.orderSize() * 24));
+		builder.append('[');
 		for (int i = 0; i < plan.orderSize(); i++) {
-			labels.add(describeFactor(plan.orderAt(i)));
+			if (i > 0) {
+				builder.append(", ");
+			}
+			builder.append(describeFactor(plan.orderAt(i)));
 		}
-		return labels.toString();
+		builder.append(']');
+		return builder.toString();
 	}
 
 	private long allMask() {
@@ -7089,9 +7114,24 @@ final class SketchJoinOrderPlanner {
 		BINDING
 	}
 
-	private record PendingPlanFactor(int index, TupleExpr tupleExpr,
-			SketchBasedJoinEstimator.TuplePlanEstimate estimate,
-			Set<String> joinVars) {
+	private enum LogicalExplorationMode {
+		UNKNOWN("unknown"),
+		FIXED_ORDER("fixed-order"),
+		PARETO_BEAM("pareto-beam"),
+		PARETO_MEMO("pareto-memo");
+
+		private final String metricValue;
+
+		LogicalExplorationMode(String metricValue) {
+			this.metricValue = metricValue;
+		}
+
+		private String metricValue() {
+			return metricValue;
+		}
+	}
+
+	private record PhysicalComponentSummary(int componentCount, int requiredComponentCount) {
 	}
 
 	private record PlanFactor(int index, TupleExpr tupleExpr, SketchBasedJoinEstimator.TuplePlanEstimate estimate,
@@ -7221,13 +7261,12 @@ final class SketchJoinOrderPlanner {
 		}
 
 		private JoinOrderPlanner.PlanStep toPlanStep() {
-			Map<String, Double> finalDoubleMetrics = doubleMetrics;
 			if (isFiniteNonNegative(stepWorkRows)) {
-				finalDoubleMetrics = new HashMap<>(doubleMetrics);
-				finalDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
 			}
-			return new JoinOrderPlanner.PlanStep(boundBefore, factorOutputRows, resultRows, stepWorkRows,
-					stringMetrics, finalDoubleMetrics, appliedFilterIndexes);
+			return JoinOrderPlanner.PlanStep.trustedImmutable(Set.copyOf(boundBefore), factorOutputRows, resultRows,
+					stepWorkRows, unmodifiableMetricMap(stringMetrics), unmodifiableMetricMap(doubleMetrics),
+					appliedFilterIndexes.isEmpty() ? List.of() : List.copyOf(appliedFilterIndexes));
 		}
 	}
 
