@@ -21,11 +21,22 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 final class FastAgmsFrequencySketch implements FrequencySketch {
 
+	private static final int INNER_PRODUCT_CACHE_SIZE = 8;
+
+	private static long nextSketchId;
+
 	private final int rows;
 	private final int buckets;
 	private final long seed;
 	private final long[] rowSeeds;
 	private final long[] counters;
+	private final long sketchId = allocateSketchId();
+	private final long[] cachedInnerProductSketchIds = new long[INNER_PRODUCT_CACHE_SIZE];
+	private final long[] cachedInnerProductEpochs = new long[INNER_PRODUCT_CACHE_SIZE];
+	private final double[] cachedInnerProducts = new double[INNER_PRODUCT_CACHE_SIZE];
+	private long epoch;
+	private int cachedInnerProductCount;
+	private int cachedInnerProductNextSlot;
 
 	FastAgmsFrequencySketch(int rows, int buckets, long seed) {
 		if (rows <= 0 || buckets <= 0) {
@@ -63,6 +74,7 @@ final class FastAgmsFrequencySketch implements FrequencySketch {
 			long signedWeight = (hash[1] & 1L) == 0L ? weight : -weight;
 			counters[(row * buckets) + bucket] += signedWeight;
 		}
+		changed();
 	}
 
 	@Override
@@ -73,6 +85,17 @@ final class FastAgmsFrequencySketch implements FrequencySketch {
 		if (rows != that.rows || buckets != that.buckets || seed != that.seed) {
 			throw new IllegalArgumentException("Fast-AGMS sketches are not compatible");
 		}
+		int cacheSlot = findCachedInnerProduct(that);
+		if (cacheSlot >= 0) {
+			return cachedInnerProducts[cacheSlot];
+		}
+		double value = computeInnerProduct(that);
+		cacheInnerProduct(that, value);
+		that.cacheInnerProduct(this, value);
+		return value;
+	}
+
+	private double computeInnerProduct(FastAgmsFrequencySketch that) {
 		double[] estimates = new double[rows];
 		for (int row = 0; row < rows; row++) {
 			int offset = row * buckets;
@@ -115,6 +138,7 @@ final class FastAgmsFrequencySketch implements FrequencySketch {
 		for (int i = 0; i < counters.length; i++) {
 			counters[i] += other.counters[i] * multiplier;
 		}
+		changed();
 	}
 
 	FastAgmsFrequencySketch copy() {
@@ -123,6 +147,48 @@ final class FastAgmsFrequencySketch implements FrequencySketch {
 
 	static FastAgmsFrequencySketch fromCounters(int rows, int buckets, long seed, long[] counters) {
 		return new FastAgmsFrequencySketch(rows, buckets, seed, counters.clone());
+	}
+
+	private static synchronized long allocateSketchId() {
+		return ++nextSketchId;
+	}
+
+	private void changed() {
+		epoch++;
+		cachedInnerProductCount = 0;
+		cachedInnerProductNextSlot = 0;
+	}
+
+	private int findCachedInnerProduct(FastAgmsFrequencySketch other) {
+		long otherSketchId = other.sketchId;
+		long otherEpoch = other.epoch;
+		for (int i = 0; i < cachedInnerProductCount; i++) {
+			if (cachedInnerProductSketchIds[i] == otherSketchId && cachedInnerProductEpochs[i] == otherEpoch) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private void cacheInnerProduct(FastAgmsFrequencySketch other, double value) {
+		long otherSketchId = other.sketchId;
+		for (int i = 0; i < cachedInnerProductCount; i++) {
+			if (cachedInnerProductSketchIds[i] == otherSketchId) {
+				cachedInnerProductEpochs[i] = other.epoch;
+				cachedInnerProducts[i] = value;
+				return;
+			}
+		}
+		int slot;
+		if (cachedInnerProductCount < INNER_PRODUCT_CACHE_SIZE) {
+			slot = cachedInnerProductCount++;
+		} else {
+			slot = cachedInnerProductNextSlot;
+			cachedInnerProductNextSlot = (cachedInnerProductNextSlot + 1) % INNER_PRODUCT_CACHE_SIZE;
+		}
+		cachedInnerProductSketchIds[slot] = otherSketchId;
+		cachedInnerProductEpochs[slot] = other.epoch;
+		cachedInnerProducts[slot] = value;
 	}
 
 	private static long[] rowSeeds(int rows, long seed) {

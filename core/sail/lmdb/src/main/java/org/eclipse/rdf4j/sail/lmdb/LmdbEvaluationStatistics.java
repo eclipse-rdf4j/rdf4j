@@ -462,7 +462,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static IRI constantIri(Var var) {
-		if (var == null || !var.hasValue() || !(var.getValue() instanceof IRI iri)) {
+		if (var == null || !var.hasValue() || !(var.getValue()instanceof IRI iri)) {
 			return null;
 		}
 		return iri;
