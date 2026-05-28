@@ -75,6 +75,7 @@ class LmdbCharacteristicSetEstimateTest {
 						.orElseThrow();
 				assertEquals(FULL_STAR_COUNT, estimate.rows(), FULL_STAR_COUNT * 0.25d,
 						() -> estimate + "\n" + explanation);
+				assertEquals(0L, estimate.scannedRows(), "characteristic-set star estimate must not scan statements");
 				StatisticsEstimate starScanEstimate = statistics.starMultiPredicateScan(starPlan.patterns(), Set.of())
 						.orElseThrow();
 				assertEquals(FULL_STAR_COUNT, starScanEstimate.rows(), FULL_STAR_COUNT * 0.25d,

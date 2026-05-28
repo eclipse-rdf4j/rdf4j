@@ -622,12 +622,32 @@ final class SketchJoinOrderPlanner {
 
 	private static Set<String> factorBindingVars(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof BindingSetAssignment) {
-			return plannerVariables(tupleExpr.getBindingNames());
+			Set<String> variables = tupleExpr.getBindingNames();
+			if (variables == null || variables.isEmpty()) {
+				return Set.of();
+			}
+			LinkedHashSet<String> plannerVariables = new LinkedHashSet<>();
+			for (String variable : variables) {
+				if (isPlannerVariableName(variable)) {
+					plannerVariables.add(variable);
+				}
+			}
+			return Set.copyOf(plannerVariables);
 		}
 		if (tupleExpr instanceof Filter filter) {
 			return factorBindingVars(filter.getArg());
 		}
-		return plannerVariables(VarNameCollector.process(tupleExpr));
+		Set<String> variables = VarNameCollector.process(tupleExpr);
+		if (variables == null || variables.isEmpty()) {
+			return Set.of();
+		}
+		LinkedHashSet<String> plannerVariables = new LinkedHashSet<>();
+		for (String variable : variables) {
+			if (isPlannerVariableName(variable)) {
+				plannerVariables.add(variable);
+			}
+		}
+		return Set.copyOf(plannerVariables);
 	}
 
 	private static Set<String> plannerVariables(Set<String> variables) {

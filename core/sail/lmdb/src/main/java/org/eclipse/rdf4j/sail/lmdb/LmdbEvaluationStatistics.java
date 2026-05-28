@@ -414,43 +414,58 @@ class LmdbEvaluationStatistics
 	@Override
 	public Optional<StatisticsEstimate> starMultiPredicateScan(List<StatementPattern> starPatterns,
 			Set<String> boundVars) {
-		if (starPatterns == null || starPatterns.size() < 2) {
+		if (starPatterns == null || starPatterns.size() < 2 || sketchBasedJoinEstimator == null) {
 			return Optional.empty();
 		}
 		Optional<StatisticsEstimate> characteristicSet = characteristicSetStar(starPatterns, boundVars);
+		if (characteristicSet.isEmpty()) {
+			return Optional.empty();
+		}
+
 		double independentWorkRows = 0.0d;
 		for (StatementPattern pattern : starPatterns) {
-			Optional<StatisticsEstimate> estimate = statementPattern(pattern, boundVars);
-			if (estimate.isPresent()) {
-				independentWorkRows += estimate.get().workRows();
-			} else {
-				double rows = estimateFactorOutputRows(pattern, boundVars == null ? Set.of() : boundVars);
-				independentWorkRows += isFiniteNonNegative(rows) ? rows : 1.0d;
+			double rows = sketchOnlySubjectStarPatternRows(pattern);
+			if (!isFiniteNonNegative(rows)) {
+				return Optional.empty();
 			}
+			independentWorkRows += rows;
 		}
-		final double finalIndependentWorkRows = independentWorkRows;
-		double joinedRows = characteristicSet.map(StatisticsEstimate::rows).orElseGet(() -> {
-			List<TupleExpr> factors = new ArrayList<>(starPatterns);
-			double rows = sketchBasedJoinEstimator == null ? Double.NaN : sketchBasedJoinEstimator.cardinality(factors);
-			return isFiniteNonNegative(rows) ? rows
-					: Math.max(1.0d, finalIndependentWorkRows / Math.max(2.0d, starPatterns.size()));
-		});
+
+		double joinedRows = characteristicSet.get().rows();
 		if (!isFiniteNonNegative(joinedRows)) {
 			return Optional.empty();
 		}
-		double batchedWorkRows = characteristicSet.map(StatisticsEstimate::workRows)
-				.orElse(Math.max(joinedRows, independentWorkRows * 0.65d));
-		batchedWorkRows = Math.min(independentWorkRows, Math.max(joinedRows, batchedWorkRows));
+		double batchedWorkRows = Math.min(independentWorkRows,
+				Math.max(joinedRows, characteristicSet.get().workRows()));
 		Map<String, Double> metrics = new HashMap<>();
 		metrics.put(LmdbStarJoinScanSupport.PREDICATES_METRIC, (double) starPatterns.size());
 		metrics.put(LmdbStarJoinScanSupport.INDEPENDENT_WORK_METRIC, independentWorkRows);
 		metrics.put(LmdbStarJoinScanSupport.BATCHED_WORK_METRIC, batchedWorkRows);
 		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, batchedWorkRows);
-		String method = characteristicSet.map(StatisticsEstimate::method)
-				.orElse("lmdb-star-multi-predicate-scan");
+		String method = characteristicSet.get().method();
 		return Optional.of(new StatisticsEstimate(joinedRows,
-				QErrorInterval.heuristic(joinedRows, characteristicSet.isPresent() ? 1.75d : 3.0d, method),
+				QErrorInterval.heuristic(joinedRows, 1.75d, method),
 				batchedWorkRows, method, metrics));
+	}
+
+	private double sketchOnlySubjectStarPatternRows(StatementPattern pattern) {
+		if (pattern == null || sketchBasedJoinEstimator == null) {
+			return Double.NaN;
+		}
+		IRI predicate = constantIri(pattern.getPredicateVar());
+		if (predicate == null || pattern.getContextVar() != null) {
+			return Double.NaN;
+		}
+		Value object = pattern.getObjectVar() == null ? null : pattern.getObjectVar().getValue();
+		return sketchBasedJoinEstimator.estimateCount(Component.S, null, predicate.stringValue(),
+				object == null ? null : object.stringValue(), null);
+	}
+
+	private static IRI constantIri(Var var) {
+		if (var == null || !var.hasValue() || !(var.getValue() instanceof IRI iri)) {
+			return null;
+		}
+		return iri;
 	}
 
 	@Override
@@ -487,8 +502,9 @@ class LmdbEvaluationStatistics
 		return estimateSubjectStar(starPatterns, boundVars == null ? Set.of() : boundVars)
 				.map(estimate -> new StatisticsEstimate(estimate.rows(),
 						QErrorInterval.heuristic(estimate.rows(), 2.0d, "lmdb-characteristic-set"),
-						estimate.scannedRows(), "lmdb-characteristic-set",
-						Map.of("subjectCount", (double) estimate.subjectCount())));
+						Math.max(estimate.rows(), estimate.scannedRows()), "lmdb-characteristic-set",
+						Map.of("subjectCount", (double) estimate.subjectCount(),
+								"sketchOnlyStatementScans", (double) estimate.scannedRows())));
 	}
 
 	@Override

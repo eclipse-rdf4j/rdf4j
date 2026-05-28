@@ -221,8 +221,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
 	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
 	private static final Object FINITE_FILTER_UNBOUND = new Object();
-	private static final long CHARACTERISTIC_SET_SCAN_ROW_BUDGET = 100_000L;
-	private static final int CHARACTERISTIC_SET_SUBJECT_BUDGET = 16_384;
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
 	/* ────────────────────────────────────────────────────────────── */
@@ -7398,7 +7396,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns,
 			Set<String> boundVars) {
-		if (!isReady() || patterns == null || patterns.size() < 3) {
+		if (!isReady() || patterns == null || patterns.size() < 2) {
 			return Optional.empty();
 		}
 
@@ -7439,53 +7437,60 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return Optional.empty();
 		}
 
-		Map<Resource, double[]> countsBySubject = new HashMap<>();
-		long scannedRows = 0L;
-		for (int i = 0; i < accepted.size(); i++) {
-			StatementPattern pattern = accepted.get(i);
-			IRI predicate = (IRI) pattern.getPredicateVar().getValue();
-			Value object = pattern.getObjectVar() == null ? null : pattern.getObjectVar().getValue();
-			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, predicate,
-					object)) {
-				while (statements.hasNext()) {
-					Statement statement = statements.next();
-					scannedRows++;
-					if (scannedRows > CHARACTERISTIC_SET_SCAN_ROW_BUDGET) {
-						return Optional.empty();
-					}
-					double[] counts = countsBySubject.computeIfAbsent(statement.getSubject(),
-							ignored -> new double[accepted.size()]);
-					if (countsBySubject.size() > CHARACTERISTIC_SET_SUBJECT_BUDGET) {
-						return Optional.empty();
-					}
-					counts[i]++;
-				}
-			} catch (SketchStatementSourceException e) {
+		TuplePlanEstimate joined = null;
+		for (StatementPattern pattern : accepted) {
+			TuplePlanEstimate factor = sketchOnlySubjectPatternEstimate(pattern, subjectName);
+			if (factor == null) {
 				return Optional.empty();
 			}
-		}
-
-		long subjectCount = 0L;
-		double rows = 0.0d;
-		for (double[] counts : countsBySubject.values()) {
-			double product = 1.0d;
-			for (double count : counts) {
-				if (count <= 0.0d) {
-					product = 0.0d;
-					break;
-				}
-				product *= count;
-			}
-			if (product > 0.0d) {
-				subjectCount++;
-				rows += product;
+			if (joined == null) {
+				joined = factor;
+			} else {
+				JoinStepEstimate step = estimateJoinStep(joined, factor);
+				joined = new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
 			}
 		}
-		if (!Double.isFinite(rows)) {
+		if (joined == null || !Double.isFinite(joined.outputRows) || joined.outputRows < 0.0d) {
 			return Optional.empty();
 		}
-		return Optional.of(new CharacteristicSetEstimate(predicates, subjectCount, normalizeRows(rows), scannedRows,
-				"exact-subject-characteristic-set"));
+
+		double rows = normalizeRows(joined.outputRows);
+		double subjectDistinct = rows <= 0.0d ? 0.0d : rows;
+		VarPlanStats subjectStats = joined.varStats.get(subjectName);
+		if (subjectStats != null && Double.isFinite(subjectStats.distinct) && subjectStats.distinct >= 0.0d) {
+			subjectDistinct = clampDistinct(subjectStats.distinct, rows);
+		}
+		long subjectCount = Math.max(0L, Math.round(subjectDistinct));
+		return Optional.of(new CharacteristicSetEstimate(predicates, subjectCount, rows, 0L,
+				"sketch-subject-characteristic-set"));
+	}
+
+	private TuplePlanEstimate sketchOnlySubjectPatternEstimate(StatementPattern pattern, String subjectName) {
+		if (pattern == null || subjectName == null) {
+			return null;
+		}
+		IRI predicate = (IRI) pattern.getPredicateVar().getValue();
+		Value object = pattern.getObjectVar() == null ? null : pattern.getObjectVar().getValue();
+		JoinEstimate estimate = estimate(Component.S, null, predicate.stringValue(),
+				object == null ? null : object.stringValue(), null);
+		double rows = normalizeRows(estimate.estimate());
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return null;
+		}
+
+		Map<String, VarPlanStats> varStats = newVarStatsMap(1);
+		if (rows > 0.0d) {
+			double distinct = clampDistinct(estimate.distinct(), rows);
+			FastAgmsBindingSummary bindings = estimate.bindings;
+			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
+				distinct = clampDistinct(rows, rows);
+				bindings = null;
+			}
+			if (Double.isFinite(distinct) && distinct > 0.0d) {
+				varStats.put(subjectName, new VarPlanStats(distinct, bindings, null));
+			}
+		}
+		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
 	}
 
 	private static IRI constantIri(Var var) {
