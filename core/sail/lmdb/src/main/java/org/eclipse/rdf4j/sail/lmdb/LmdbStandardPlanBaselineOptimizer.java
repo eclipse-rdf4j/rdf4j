@@ -17,128 +17,49 @@ import java.util.Map;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCleaner;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
 /**
- * Captures replacement candidates for the Cascades standard-plan fallback.
- * <p>
- * The preferred baseline is the real generic RDF4J standard optimizer pipeline run against a clone of the original
- * algebra, before LMDB-specific optimizers mutate it. That is the plan produced by the standard evaluation factory in
- * side-by-side benchmarks. A second pre-Cascades LMDB clone is kept only as a fallback when the generic standard plan
- * could not be built.
+ * Captures the LMDB no-Cascades plan at the handoff point immediately before {@link LmdbCascadesOptimizer}. This is
+ * the plan the LMDB optimizer pipeline would continue with when Cascades is disabled. It is intentionally not the
+ * generic RDF4J {@code StandardQueryOptimizerPipeline}, because that can reorder path-heavy queries differently from
+ * the LMDB no-Cascades pipeline.
  */
 final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
-	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> STANDARD_BASELINES = ThreadLocal
+	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> BASELINES = ThreadLocal
 			.withInitial(IdentityHashMap::new);
-	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> PRECASCADES_BASELINES = ThreadLocal
-			.withInitial(IdentityHashMap::new);
-
-	private final Kind kind;
-	private final EvaluationStrategy strategy;
-	private final TripleSource tripleSource;
-	private final EvaluationStatistics statistics;
-
-	private LmdbStandardPlanBaselineOptimizer(Kind kind, EvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics statistics) {
-		this.kind = kind;
-		this.strategy = strategy;
-		this.tripleSource = tripleSource;
-		this.statistics = statistics;
-	}
-
-	static LmdbStandardPlanBaselineOptimizer standardPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics statistics) {
-		return new LmdbStandardPlanBaselineOptimizer(Kind.STANDARD_PIPELINE, strategy, tripleSource, statistics);
-	}
-
-	static LmdbStandardPlanBaselineOptimizer preCascades() {
-		return new LmdbStandardPlanBaselineOptimizer(Kind.PRE_CASCADES, null, null, null);
-	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		if (tupleExpr == null) {
 			return;
 		}
-		if (kind == Kind.STANDARD_PIPELINE) {
-			captureStandardPipeline(tupleExpr, dataset, bindings);
-		} else {
-			capturePreCascades(tupleExpr, dataset, bindings);
-		}
-	}
-
-	private void captureStandardPipeline(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		if (strategy == null || tripleSource == null) {
-			return;
-		}
-		try {
-			TupleExpr standardPlan = tupleExpr.clone();
-			for (QueryOptimizer optimizer : new StandardQueryOptimizerPipeline(strategy, tripleSource,
-					standardPipelineStatistics()).getOptimizers()) {
-				optimizer.optimize(standardPlan, dataset, bindings);
-			}
-			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			STANDARD_BASELINES.get().put(tupleExpr, standardPlan);
-		} catch (RuntimeException ignored) {
-			STANDARD_BASELINES.get().remove(tupleExpr);
-		}
-	}
-
-	private EvaluationStatistics standardPipelineStatistics() {
-		// Match the standard evaluation factory baseline, not LMDB's custom statistics. LMDB statistics can make
-		// RDF4J's standard QueryJoinOptimizer choose a different order, especially around ArbitraryLengthPath.
-		return new EvaluationStatistics();
-	}
-
-	private void capturePreCascades(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			PRECASCADES_BASELINES.get().put(tupleExpr, standardPlan);
+			BASELINES.get().put(tupleExpr, standardPlan);
 		} catch (RuntimeException ignored) {
-			PRECASCADES_BASELINES.get().remove(tupleExpr);
+			BASELINES.get().remove(tupleExpr);
 		}
 	}
 
-	static TupleExpr standardPipelineBaselineFor(TupleExpr tupleExpr) {
-		return baselineFor(tupleExpr, STANDARD_BASELINES);
-	}
-
-	static TupleExpr preCascadesBaselineFor(TupleExpr tupleExpr) {
-		return baselineFor(tupleExpr, PRECASCADES_BASELINES);
-	}
-
-	private static TupleExpr baselineFor(TupleExpr tupleExpr, ThreadLocal<Map<TupleExpr, TupleExpr>> storage) {
+	static TupleExpr baselineFor(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return null;
 		}
-		TupleExpr baseline = storage.get().get(tupleExpr);
+		TupleExpr baseline = BASELINES.get().get(tupleExpr);
 		return baseline == null ? null : baseline.clone();
 	}
 
 	static void clearBaseline(TupleExpr tupleExpr) {
-		clearBaseline(tupleExpr, STANDARD_BASELINES);
-		clearBaseline(tupleExpr, PRECASCADES_BASELINES);
-	}
-
-	private static void clearBaseline(TupleExpr tupleExpr, ThreadLocal<Map<TupleExpr, TupleExpr>> storage) {
 		if (tupleExpr == null) {
 			return;
 		}
-		Map<TupleExpr, TupleExpr> baselines = storage.get();
+		Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
 		baselines.remove(tupleExpr);
 		if (baselines.isEmpty()) {
-			storage.remove();
+			BASELINES.remove();
 		}
-	}
-
-	private enum Kind {
-		STANDARD_PIPELINE,
-		PRE_CASCADES
 	}
 }

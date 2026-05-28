@@ -207,18 +207,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (!policy.enabled() || tupleExpr == null || preserveSerializableObservationOrder) {
 			return StandardPlanCandidate.empty();
 		}
-		TupleExpr standardPipelinePlan = LmdbStandardPlanBaselineOptimizer.standardPipelineBaselineFor(tupleExpr);
-		if (standardPipelinePlan != null) {
-			return standardPlanCandidate(standardPipelinePlan, initiallyBoundVars, "standard-pipeline");
-		}
-		TupleExpr preCascadesPlan = LmdbStandardPlanBaselineOptimizer.preCascadesBaselineFor(tupleExpr);
-		if (preCascadesPlan != null) {
-			return standardPlanCandidate(preCascadesPlan, initiallyBoundVars, "pre-cascades");
+		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.baselineFor(tupleExpr);
+		if (capturedPlan != null) {
+			return standardPlanCandidate(capturedPlan, initiallyBoundVars, "lmdb-no-cascades");
 		}
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			return standardPlanCandidate(standardPlan, initiallyBoundVars, "current");
+			return standardPlanCandidate(standardPlan, initiallyBoundVars, "current-lmdb-no-cascades");
 		} catch (RuntimeException e) {
 			return StandardPlanCandidate.empty();
 		}

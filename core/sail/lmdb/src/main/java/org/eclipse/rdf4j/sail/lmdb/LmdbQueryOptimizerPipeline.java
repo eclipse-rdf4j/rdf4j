@@ -87,10 +87,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = new ArrayList<>();
-		if (!preserveSerializableObservationOrder) {
-			optimizers.add(LmdbStandardPlanBaselineOptimizer.standardPipeline(strategy, tripleSource,
-					evaluationStatistics));
-		}
 		optimizers.add(BINDING_ASSIGNER);
 		optimizers.add(new ConstantOptimizer(strategy));
 		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
@@ -118,7 +114,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
 		if (!preserveSerializableObservationOrder) {
-			optimizers.add(LmdbStandardPlanBaselineOptimizer.preCascades());
+			optimizers.add(new LmdbStandardPlanBaselineOptimizer());
 		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
