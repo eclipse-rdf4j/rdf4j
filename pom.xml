@@ -45,7 +45,7 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
-		<!-- for maven Central deployment it is important that bom is the last module -->
+        <!-- for maven Central deployment it is important that bom is the last module -->
 		<module>bom</module>
 	</modules>
 	<properties>
@@ -300,9 +300,9 @@
 						<version>1.1.0</version>
 						<configuration>
 							<failWhenReviewNeeded>true</failWhenReviewNeeded>
-							<!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
+                            <!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
 							<excludeGroupIds>org.openjdk.jmh</excludeGroupIds>
-							<!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
+                            <!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
 							<excludeArtifactIds>elasticsearch</excludeArtifactIds>
 						</configuration>
 					</plugin>
@@ -358,17 +358,17 @@
 								<importOrder>
 									<order>java,javax,org,com</order>
 								</importOrder>
-<!--								<removeUnusedImports /> RE-ENABLE THIS WHEN WE MOVE TO USING JAVA 25-->
+                                <!--								<removeUnusedImports /> RE-ENABLE THIS WHEN WE MOVE TO USING JAVA 25-->
 								<trimTrailingWhitespace />
 								<endWithNewline />
 							</java>
 							<formats>
 								<format>
-									<!-- All XML files, except those excluded below -->
+                                    <!-- All XML files, except those excluded below -->
 									<includes>
 										<include>**/*.xml</include>
 									</includes>
-									<!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
+                                    <!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
 									<excludes>
 										<exclude>esclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
@@ -459,16 +459,16 @@
 			</build>
 		</profile>
 		<profile>
-			<!--
-				Print a dependency-update report grouped by: major version updates,
-				minor/patch updates, up-to-date, unknown (fetch failed), and
-				current version unresolved (module-level BOM).
-				Queries Maven Central, so an internet connection is required.
-				Run only at the root level (non-recursive) to avoid repeating the report
-				for every sub-module:
+            <!--
+                Print a dependency-update report grouped by: major version updates,
+                minor/patch updates, up-to-date, unknown (fetch failed), and
+                current version unresolved (module-level BOM).
+                Queries Maven Central, so an internet connection is required.
+                Run only at the root level (non-recursive) to avoid repeating the report
+                for every sub-module:
 
-				    mvn -N -P dependency-updates validate
-			-->
+                    mvn -N -P dependency-updates validate
+            -->
 			<id>dependency-updates</id>
 			<build>
 				<plugins>
@@ -499,7 +499,7 @@
 	</profiles>
 	<dependencyManagement>
 		<dependencies>
-			<!-- Jackson Bill-of-Materials -->
+            <!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
@@ -507,7 +507,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- fix dependencies for elasticsearch client libraries -->
+            <!-- fix dependencies for elasticsearch client libraries -->
 			<dependency>
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
@@ -534,8 +534,8 @@
 				<artifactId>wiremock</artifactId>
 				<version>${wiremock.version}</version>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
-				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
+            <!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
+                2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-annotations</artifactId>
@@ -560,13 +560,13 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
-			<!-- Apache Commons -->
+            <!-- Apache Commons -->
 			<dependency>
 				<groupId>commons-cli</groupId>
 				<artifactId>commons-cli</artifactId>
 				<version>1.4</version>
 			</dependency>
-			<!-- note this affects the xlsx query result format using apache POI -->
+            <!-- note this affects the xlsx query result format using apache POI -->
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
@@ -714,7 +714,7 @@
 				<artifactId>fastutil</artifactId>
 				<version>${fastutil.version}</version>
 			</dependency>
-			<!-- Logging: SLF4J and logback -->
+            <!-- Logging: SLF4J and logback -->
 			<dependency>
 				<groupId>org.slf4j</groupId>
 				<artifactId>slf4j-api</artifactId>
@@ -730,7 +730,7 @@
 				<artifactId>log4j-over-slf4j</artifactId>
 				<version>${slf4j.version}</version>
 			</dependency>
-			<!-- bridging component for log4j2 to slf4j -->
+            <!-- bridging component for log4j2 to slf4j -->
 			<dependency>
 				<groupId>org.apache.logging.log4j</groupId>
 				<artifactId>log4j-to-slf4j</artifactId>
@@ -756,7 +756,7 @@
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
 			</dependency>
-			<!-- Testing: JUnit -->
+            <!-- Testing: JUnit -->
 			<dependency>
 				<groupId>org.junit</groupId>
 				<artifactId>junit-bom</artifactId>
@@ -868,7 +868,7 @@
 				<artifactId>hasmac-json-ld</artifactId>
 				<version>0.10.2</version>
 			</dependency>
-			<!-- kerby is used by transitive search dependencies -->
+            <!-- kerby is used by transitive search dependencies -->
 			<dependency>
 				<groupId>org.apache.kerby</groupId>
 				<artifactId>kerb-core</artifactId>
@@ -910,6 +910,12 @@
 					<version>3.14.0</version>
 					<configuration>
 						<fork>false</fork>
+						<compilerArgs>
+							<arg>-Xlint:-deprecation</arg>
+							<arg>-Xlint:-removal</arg>
+							<arg>-Xlint:-dep-ann</arg>
+						</compilerArgs>
+						>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1009,7 +1015,7 @@
 								<goal>write-project-properties</goal>
 							</goals>
 							<configuration>
-								<!--  make maven project properties available to read from Java -->
+                                <!--  make maven project properties available to read from Java -->
 								<outputFile>${project.build.outputDirectory}/maven-config.properties</outputFile>
 							</configuration>
 						</execution>
@@ -1020,7 +1026,7 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.4</version>
 					<configuration>
-						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+                        <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
 					</configuration>
 				</plugin>
@@ -1031,7 +1037,7 @@
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
-						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+                        <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
 						<includes>
 							<include>**/*IT.java</include>
@@ -1124,12 +1130,12 @@
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
-								<!-- The override below was previously activated, left as a comment in case we want to activate it again.
+                                <!-- The override below was previously activated, left as a comment in case we want to activate it again.
                                 <overrideCompatibilityChangeParameter>
-                                	<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
-                                	<binaryCompatible>true</binaryCompatible>
-                                	<sourceCompatible>true</sourceCompatible>
-                                	<semanticVersionLevel>MINOR</semanticVersionLevel>
+                                    <compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+                                    <binaryCompatible>true</binaryCompatible>
+                                    <sourceCompatible>true</sourceCompatible>
+                                    <semanticVersionLevel>MINOR</semanticVersionLevel>
                                 </overrideCompatibilityChangeParameter>
                                  -->
 								<overrideCompatibilityChangeParameter>
@@ -1191,9 +1197,9 @@
 										<includes>
 											<include>org.apache.logging.log4j:log4j-to-slf4j</include>
 											<include>org.apache.logging.log4j:log4j-api</include>
-											<!-- elasticsearch-cluster-runner needs log4j-core -->
+                                            <!-- elasticsearch-cluster-runner needs log4j-core -->
 											<include>org.apache.logging.log4j:log4j-core:*:*:test</include>
-											<!-- kept for transitive embedded search server test cases -->
+                                            <!-- kept for transitive embedded search server test cases -->
 											<include>org.apache.logging.log4j:log4j-web</include>
 										</includes>
 									</bannedDependencies>
@@ -1226,11 +1232,11 @@
 								<rules>
 									<banDuplicateClasses>
 										<ignoreClasses>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.junit.*</ignoreClass>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.slf4j.*</ignoreClass>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.opentest4j.*</ignoreClass>
 										</ignoreClasses>
 										<ignoreWhenIdentical>true</ignoreWhenIdentical>
@@ -1270,7 +1276,7 @@
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>
 				<configuration>
-	<!--suppress UnresolvedMavenProperty -->
+                    <!--suppress UnresolvedMavenProperty -->
 					<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
 					<lineEnding>LF</lineEnding>
 					<skipHtmlFormatting>true</skipHtmlFormatting>

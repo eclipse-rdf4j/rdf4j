@@ -117,8 +117,8 @@ public class ThemeQueryPlanRunBenchmark {
 				"SOCIAL_MEDIA",
 				"LIBRARY",
 				"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
+				"HIGHLY_CONNECTED",
+				"TRAIN",
 				"ELECTRICAL_GRID",
 				"PHARMA",
 //				"SPARSE"
