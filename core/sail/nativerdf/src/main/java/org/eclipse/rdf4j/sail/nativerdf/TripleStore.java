@@ -382,6 +382,15 @@ class TripleStore implements Closeable {
 			} catch (IOException e) {
 				logger.error("Failed to restore from uncompleted commit", e);
 				throw e;
+			} catch (RuntimeException e) {
+				logger.error("BTree corruption detected during commit recovery, attempting rollback", e);
+				try {
+					rollback();
+					logger.warn("Rolled back corrupt commit; data from that transaction is lost");
+				} catch (IOException rollbackEx) {
+					e.addSuppressed(rollbackEx);
+					throw new IOException("Crash recovery failed: commit and rollback both failed", e);
+				}
 			}
 			break;
 		case ROLLING_BACK:

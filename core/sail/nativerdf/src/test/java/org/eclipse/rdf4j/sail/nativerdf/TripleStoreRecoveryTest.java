@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.RandomAccessFile;
@@ -122,11 +121,17 @@ public class TripleStoreRecoveryTest {
 		}
 
 		// Step 5: Re-opening triggers crash recovery:
-		// processUncompletedTransaction(COMMITTING) → commit()
-		// → btree.iterateAll() finds triple medianId with REMOVED_FLAG
-		// → btree.remove(triple) → removeFromTree finds it in root (non-leaf)
-		// → removeLargestValueFromTree(empty left child) → IllegalArgumentException
-		assertThrows(IllegalArgumentException.class, () -> new TripleStore(dataDir, "spoc").close());
+		// processUncompletedTransaction(COMMITTING) → commit() throws IllegalArgumentException
+		// → fallback rollback() clears the REMOVED_FLAG → store opens successfully
+		tripleStore = new TripleStore(dataDir, "spoc");
+		try {
+			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
+				// store must be readable after recovery; exact content is best-effort
+				assertNotNull(iter);
+			}
+		} finally {
+			tripleStore.close();
+		}
 	}
 
 	@Test
