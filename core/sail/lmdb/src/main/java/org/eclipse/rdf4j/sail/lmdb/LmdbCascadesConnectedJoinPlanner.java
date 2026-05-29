@@ -52,21 +52,36 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final String RULE_ID = "lmdb-cascades-connected-hypergraph-join";
 	static final String CONNECTED_ENUMERATION = "connected-prefix-only";
 	static final String RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION = "runtime-connected-plus-zero-var-filters";
+	static final String CONNECTED_JOIN_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.trace";
+	static final String CONNECTED_JOIN_TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.traceLimit";
+	static final String CONNECTED_JOIN_TRACE_METRIC = "optimizer.connectedJoinTrace";
 	private static final int EXACT_DP_FACTOR_LIMIT = 20;
+	private static final int DEFAULT_TRACE_LIMIT = 24_000;
 
 	private LmdbCascadesConnectedJoinPlanner() {
 	}
 
 	static Optional<Plan> plan(TupleExpr joinIsland, Set<String> initialBoundVars, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics) {
+		Trace trace = Trace.create();
 		if (joinIsland == null || costModel == null
 				|| !LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(joinIsland)) {
+			if (trace.enabled()) {
+				trace.add("reject not-owned joinIsland=" + factorSummary(joinIsland));
+			}
 			return Optional.empty();
 		}
 		LmdbEvaluationStatistics scopedStatistics = scopedPlanCacheStatistics(costModel, fallbackStatistics);
 		List<TupleExpr> factors = canonicalFactors(LmdbJoinIslandConnectivity.flattenFactors(joinIsland),
 				scopedStatistics);
+		if (trace.enabled()) {
+			trace.add("initialBound=" + plannerNames(initialBoundVars) + " factorCount=" + factors.size());
+			for (int i = 0; i < factors.size(); i++) {
+				trace.add("factor#" + i + ' ' + factorSummary(factors.get(i)));
+			}
+		}
 		if (factors.size() < 2) {
+			trace.add("reject factorCount=" + factors.size());
 			return Optional.empty();
 		}
 		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
@@ -74,20 +89,22 @@ final class LmdbCascadesConnectedJoinPlanner {
 				? new PlanCacheKey(factorFingerprints(factors, scopedStatistics), plannerNames(initialBoundVars),
 						greedy)
 				: null;
-		Optional<PlanTemplate> cachedTemplate = cachedPlanTemplate(scopedStatistics, cacheKey);
+		Optional<PlanTemplate> cachedTemplate = trace.enabled() ? null : cachedPlanTemplate(scopedStatistics, cacheKey);
 		if (cachedTemplate != null) {
 			return cachedTemplate.map(template -> template.toPlan(factors));
 		}
 
 		Optional<PlanTemplate> template = greedy
-				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics)
-				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics);
-		cachePlanTemplate(scopedStatistics, cacheKey, template);
+				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace)
+				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace);
+		if (!trace.enabled()) {
+			cachePlanTemplate(scopedStatistics, cacheKey, template);
+		}
 		return template.map(planTemplate -> planTemplate.toPlan(factors));
 	}
 
 	private static Optional<PlanTemplate> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
 		int factorCount = factors.size();
 		List<Set<String>> factorVars = factorVars(factors);
 		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
@@ -98,20 +115,43 @@ final class LmdbCascadesConnectedJoinPlanner {
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		if (trace.enabled()) {
+			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
+					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
+			for (int i = 0; i < factors.size(); i++) {
+				trace.add("vars f" + i + '=' + factorVars.get(i)
+						+ (path(factors.get(i)) ? " endpoints=" + pathEndpointNames(factors.get(i))
+								+ " hasEndpointBinder=" + pathHasEndpointBinder[i] : ""));
+			}
+		}
 		State[] best = new State[1 << factorCount];
 
 		for (int factorIndex : runtimeFactorIndices) {
 			if (!admissibleSeed(factors.get(factorIndex), initial, pathHasEndpointBinder[factorIndex])) {
+				if (trace.enabled()) {
+					trace.add("seed reject f" + factorIndex + " reason=path-has-later-endpoint-binder endpoints="
+							+ pathEndpointNames(factors.get(factorIndex)) + " factor="
+							+ factorSummary(factors.get(factorIndex)));
+				}
 				continue;
 			}
 			Step step = estimateStep(factors, factorIndex, initial, 0.0d, false, List.of(), costModel,
 					fallbackStatistics);
 			if (step == null) {
+				if (trace.enabled()) {
+					trace.add("seed reject f" + factorIndex + " reason=no-estimate factor="
+							+ factorSummary(factors.get(factorIndex)));
+				}
 				continue;
 			}
 			int mask = 1 << factorIndex;
 			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)));
-			best[mask] = better(best[mask], state);
+			State incumbent = best[mask];
+			best[mask] = better(incumbent, state);
+			if (trace.enabled()) {
+				trace.add("seed accept " + stepSummary(step, factors) + " incumbent="
+						+ stateSummary(incumbent, factors) + " winner=" + (best[mask] == state));
+			}
 		}
 
 		for (int mask = 1; mask <= fullMask; mask++) {
@@ -119,44 +159,74 @@ final class LmdbCascadesConnectedJoinPlanner {
 			if (state == null) {
 				continue;
 			}
+			if (trace.enabled()) {
+				trace.add("prefix " + stateSummary(state, factors));
+			}
 			List<TupleExpr> prefixFactors = state.prefixFactors(factors);
 			for (int factorIndex : runtimeFactorIndices) {
 				int bit = 1 << factorIndex;
-				if ((mask & bit) != 0 || !connectedExtension(factors.get(factorIndex), state.boundVars(),
-						factorVars.get(factorIndex))) {
+				if ((mask & bit) != 0) {
+					continue;
+				}
+				if (!connectedExtension(factors.get(factorIndex), state.boundVars(), factorVars.get(factorIndex))) {
+					if (trace.enabled()) {
+						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
+								+ extensionRejectReason(factors.get(factorIndex), state.boundVars(),
+										factorVars.get(factorIndex)) + " factor="
+								+ factorSummary(factors.get(factorIndex)));
+					}
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
 						prefixFactors, costModel, fallbackStatistics);
 				if (step == null) {
+					if (trace.enabled()) {
+						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+								+ " reason=no-estimate factor=" + factorSummary(factors.get(factorIndex)));
+					}
 					continue;
 				}
 				State next = state.append(mask | bit, factorIndex, step,
 						union(state.boundVars(), factorVars.get(factorIndex)));
-				best[next.mask()] = better(best[next.mask()], next);
+				State incumbent = best[next.mask()];
+				best[next.mask()] = better(incumbent, next);
+				if (trace.enabled()) {
+					trace.add("extend accept prefix=" + state.order() + " + " + stepSummary(step, factors)
+							+ " incumbent=" + stateSummary(incumbent, factors) + " winner="
+							+ (best[next.mask()] == next));
+				}
 			}
 		}
 
 		State full = best[fullMask];
 		if (full == null) {
+			trace.add("reject no-full-connected-state");
 			return Optional.empty();
 		}
 		State complete = appendZeroVarFactors(full, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
 		if (complete == null) {
+			trace.add("reject zero-var-append-failed order=" + full.order());
 			return Optional.empty();
 		}
-		return Optional.of(new PlanTemplate(complete, "connected-dp", zeroVarFactorIndices.size()));
+		trace.add("final " + stateSummary(complete, factors));
+		return Optional.of(new PlanTemplate(complete, "connected-dp", zeroVarFactorIndices.size(),
+				trace.snapshot()));
 	}
 
 	private static Optional<PlanTemplate> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
 		List<Set<String>> factorVars = factorVars(factors);
 		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
 		if (remaining.size() < 2) {
+			trace.add("greedy reject runtimeFactorCount=" + remaining.size());
 			return Optional.empty();
 		}
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		if (trace.enabled()) {
+			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
+					+ " zeroVar=" + zeroVarFactorIndices);
+		}
 		Set<String> boundVars = plannerNames(initialBoundVars);
 		List<Integer> order = new ArrayList<>(factors.size());
 		List<Step> steps = new ArrayList<>(factors.size());
@@ -172,15 +242,31 @@ final class LmdbCascadesConnectedJoinPlanner {
 				TupleExpr factor = factors.get(factorIndex);
 				boolean hasPrefix = !order.isEmpty();
 				if (!hasPrefix && !admissibleSeed(factor, boundVars, pathHasEndpointBinder[factorIndex])) {
+					if (trace.enabled()) {
+						trace.add("greedy seed reject f" + factorIndex
+								+ " reason=path-has-later-endpoint-binder factor=" + factorSummary(factor));
+					}
 					continue;
 				}
 				if (hasPrefix && !connectedExtension(factor, boundVars, factorVars.get(factorIndex))) {
+					if (trace.enabled()) {
+						trace.add("greedy extend reject order=" + order + " f" + factorIndex + " reason="
+								+ extensionRejectReason(factor, boundVars, factorVars.get(factorIndex))
+								+ " factor=" + factorSummary(factor));
+					}
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
 						prefixFactors, costModel, fallbackStatistics);
 				if (step == null) {
+					if (trace.enabled()) {
+						trace.add("greedy reject order=" + order + " f" + factorIndex
+								+ " reason=no-estimate factor=" + factorSummary(factor));
+					}
 					continue;
+				}
+				if (trace.enabled()) {
+					trace.add("greedy candidate order=" + order + " " + stepSummary(step, factors));
 				}
 				if (selectedStep == null || step.compareTo(selectedStep) < 0) {
 					selectedStep = step;
@@ -188,6 +274,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 				}
 			}
 			if (selectedPosition < 0 || selectedStep == null) {
+				trace.add("greedy reject no-selected-step order=" + order + " remaining=" + remaining);
 				return Optional.empty();
 			}
 			int factorIndex = remaining.remove(selectedPosition);
@@ -197,15 +284,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 			workRows += selectedStep.workRows();
 			maxRows = Math.max(maxRows, rows);
 			boundVars = union(boundVars, factorVars.get(factorIndex));
+			if (trace.enabled()) {
+				trace.add("greedy choose f" + factorIndex + " order=" + order + " bound=" + boundVars);
+			}
 		}
 		State state = new State(maskFor(order), List.copyOf(order), List.copyOf(steps),
 				boundVars, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps), confidence(steps),
 				evidence(steps));
 		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
 		if (complete == null) {
+			trace.add("greedy reject zero-var-append-failed order=" + order);
 			return Optional.empty();
 		}
-		return Optional.of(new PlanTemplate(complete, "connected-greedy", zeroVarFactorIndices.size()));
+		trace.add("final " + stateSummary(complete, factors));
+		return Optional.of(new PlanTemplate(complete, "connected-greedy", zeroVarFactorIndices.size(),
+				trace.snapshot()));
 	}
 
 	private static List<TupleExpr> canonicalFactors(List<TupleExpr> factors, LmdbEvaluationStatistics statistics) {
@@ -330,8 +423,15 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		double outputRows = finiteNonNegative(factorEstimate.getOutputRows(), Double.MAX_VALUE);
 		double workRows = finiteNonNegative(factorEstimate.getWorkRows(), outputRows);
-		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, factorEstimate.getStringMetrics(),
-				factorEstimate.getDoubleMetrics(), factorEstimate.getEstimateVector().rowQErrorMax(),
+		Map<String, String> stringMetrics = new LinkedHashMap<>(factorEstimate.getStringMetrics());
+		Map<String, Double> doubleMetrics = new LinkedHashMap<>(factorEstimate.getDoubleMetrics());
+		stringMetrics.put("optimizer.connectedFactor", factorSummary(factor));
+		doubleMetrics.put("optimizer.connectedFactorIndex", (double) factorIndex);
+		if (path(factor)) {
+			stringMetrics.put("optimizer.pathEndpointMode", pathEndpointMode(factor, boundVars));
+		}
+		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, stringMetrics,
+				doubleMetrics, factorEstimate.getEstimateVector().rowQErrorMax(),
 				factorEstimate.getEstimateVector().workQErrorMax(), factorEstimate.getEstimateVector().confidence(),
 				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
 	}
@@ -373,6 +473,44 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return false;
 		}
 		return intersects(prefixVars, candidateVars);
+	}
+
+	private static String extensionRejectReason(TupleExpr candidate, Set<String> prefixVars, Set<String> candidateVars) {
+		if (path(candidate)) {
+			return "path-endpoint-not-bound endpoints=" + pathEndpointNames(candidate) + " bound="
+					+ plannerNames(prefixVars);
+		}
+		if (candidateVars == null || candidateVars.isEmpty()) {
+			return "zero-runtime-vars";
+		}
+		return "no-shared-vars bound=" + plannerNames(prefixVars) + " candidate=" + candidateVars;
+	}
+
+	private static String pathEndpointMode(TupleExpr tupleExpr, Set<String> boundVars) {
+		Set<String> plannerBoundVars = plannerNames(boundVars);
+		boolean subjectBound = false;
+		boolean objectBound = false;
+		if (tupleExpr instanceof ArbitraryLengthPath path) {
+			subjectBound = endpointBound(path.getSubjectVar(), plannerBoundVars);
+			objectBound = endpointBound(path.getObjectVar(), plannerBoundVars);
+		} else if (tupleExpr instanceof ZeroLengthPath path) {
+			subjectBound = endpointBound(path.getSubjectVar(), plannerBoundVars);
+			objectBound = endpointBound(path.getObjectVar(), plannerBoundVars);
+		}
+		if (subjectBound && objectBound) {
+			return "between";
+		}
+		if (subjectBound) {
+			return "fromStart";
+		}
+		if (objectBound) {
+			return "toEnd";
+		}
+		return "fullScan";
+	}
+
+	private static boolean endpointBound(Var var, Set<String> boundVars) {
+		return var != null && !var.hasValue() && boundVars != null && boundVars.contains(var.getName());
 	}
 
 	private static boolean hasDisconnectedStep(State state) {
@@ -572,13 +710,124 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return evidence;
 	}
 
+	private static String factorSummary(TupleExpr factor) {
+		if (factor == null) {
+			return "<null>";
+		}
+		String summary = factor.toString().replace('\n', ' ').replace('\r', ' ').trim();
+		while (summary.contains("  ")) {
+			summary = summary.replace("  ", " ");
+		}
+		return summary.length() <= 240 ? summary : summary.substring(0, 240) + "...";
+	}
+
+	private static String stateSummary(State state, List<TupleExpr> factors) {
+		if (state == null) {
+			return "<none>";
+		}
+		return "order=" + state.order() + " labels=" + orderLabels(state.order(), factors)
+				+ " rows=" + compactDouble(state.rows()) + " work=" + compactDouble(state.workRows())
+				+ " maxRows=" + compactDouble(state.maxRows()) + " bound=" + state.boundVars();
+	}
+
+	private static String stepSummary(Step step, List<TupleExpr> factors) {
+		if (step == null) {
+			return "<null-step>";
+		}
+		return "f" + step.factorIndex() + '=' + factorSummary(factors.get(step.factorIndex()))
+				+ " before=" + step.boundVarsBefore() + " rows=" + compactDouble(step.outputRows())
+				+ " work=" + compactDouble(step.workRows()) + " conf=" + compactDouble(step.confidence())
+				+ " pathMode=" + step.stringMetrics().getOrDefault("optimizer.pathEndpointMode", "-")
+				+ " source=" + step.stringMetrics().getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+						"-");
+	}
+
+	private static String orderLabels(List<Integer> order, List<TupleExpr> factors) {
+		if (order == null || order.isEmpty()) {
+			return "[]";
+		}
+		List<String> labels = new ArrayList<>(order.size());
+		for (int factorIndex : order) {
+			labels.add("f" + factorIndex + ':' + factorSummary(factors.get(factorIndex)));
+		}
+		return labels.toString();
+	}
+
+	private static String compactDouble(double value) {
+		if (!Double.isFinite(value)) {
+			return Double.toString(value);
+		}
+		if (Math.abs(value) >= 1_000_000.0d || Math.abs(value) < 0.01d && value != 0.0d) {
+			return String.format(java.util.Locale.ROOT, "%.3e", value);
+		}
+		if (Math.rint(value) == value) {
+			return Long.toString(Math.round(value));
+		}
+		return String.format(java.util.Locale.ROOT, "%.3f", value);
+	}
+
+	private static int traceLimit() {
+		String value = System.getProperty(CONNECTED_JOIN_TRACE_LIMIT_PROPERTY);
+		if (value == null || value.isBlank()) {
+			return DEFAULT_TRACE_LIMIT;
+		}
+		try {
+			return Math.max(1024, Integer.parseInt(value.trim()));
+		} catch (NumberFormatException e) {
+			return DEFAULT_TRACE_LIMIT;
+		}
+	}
+
+	private static final class Trace {
+		private final boolean enabled;
+		private final int limit;
+		private final StringBuilder builder;
+		private boolean truncated;
+
+		static Trace create() {
+			return new Trace(Boolean.getBoolean(CONNECTED_JOIN_TRACE_PROPERTY), traceLimit());
+		}
+
+		private Trace(boolean enabled, int limit) {
+			this.enabled = enabled;
+			this.limit = limit;
+			this.builder = enabled ? new StringBuilder(Math.min(4096, limit)) : null;
+		}
+
+		boolean enabled() {
+			return enabled;
+		}
+
+		void add(String event) {
+			if (!enabled || event == null || truncated) {
+				return;
+			}
+			String normalized = event.replace('\n', ' ').replace('\r', ' ').replace(',', ';');
+			if (builder.length() + normalized.length() + 3 > limit) {
+				truncated = true;
+				return;
+			}
+			if (builder.length() > 0) {
+				builder.append(" | ");
+			}
+			builder.append(normalized);
+		}
+
+		String snapshot() {
+			if (!enabled || builder.length() == 0) {
+				return "";
+			}
+			return truncated ? builder + " | <trace-truncated>" : builder.toString();
+		}
+	}
+
 	record Plan(TupleExpr tupleExpr, CostVector cost, EstimateSnapshot estimate, int factorCount, String algorithm,
 			int zeroVarFactorCount) {
 	}
 
-	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount) {
+	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount, String trace) {
 		private Plan toPlan(List<TupleExpr> factors) {
-			return state.toPlan(factors, algorithm, zeroVarFactorCount);
+			return state.toPlan(factors, algorithm, zeroVarFactorCount, trace);
 		}
 	}
 
@@ -618,13 +867,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return LmdbCascadesConnectedJoinPlanner.prefixFactors(factors, order);
 		}
 
-		Plan toPlan(List<TupleExpr> factors, String algorithm, int zeroVarFactorCount) {
+		Plan toPlan(List<TupleExpr> factors, String algorithm, int zeroVarFactorCount, String trace) {
 			TupleExpr tupleExpr = buildPlan(factors);
 			CostVector cost = new CostVector(rows, workRows, 0.0d, 0.0d, 0.0d, rowQErrorMax, rowQErrorMax,
 					workQErrorMax, workQErrorMax, Math.max(0.0d, rows * Math.max(rowQErrorMax - 1.0d, 0.0d)),
 					confidence, evidenceCount);
 			EstimateSnapshot estimate = estimateSnapshot(cost, algorithm, factors.size(), order.size(), maxRows,
-					cartesianWorkRows, zeroVarFactorCount);
+					cartesianWorkRows, zeroVarFactorCount, trace);
 			return new Plan(tupleExpr, cost, estimate, factors.size(), algorithm, zeroVarFactorCount);
 		}
 
@@ -711,7 +960,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 		private EstimateSnapshot estimateSnapshot(CostVector cost, String algorithm, int factorCount,
 				int acceptedStates,
-				double maxRows, double cartesianWorkRows, int zeroVarFactorCount) {
+				double maxRows, double cartesianWorkRows, int zeroVarFactorCount, String trace) {
 			Map<String, String> strings = new LinkedHashMap<>();
 			strings.put(TelemetryMetricNames.PLANNER_ID, "lmdb-cascades");
 			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
@@ -722,6 +971,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 					? CONNECTED_ENUMERATION
 					: RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION);
 			strings.put("optimizer.hypergraphPlanner", algorithm);
+			if (trace != null && !trace.isBlank()) {
+				strings.put(CONNECTED_JOIN_TRACE_METRIC, trace);
+			}
 			Map<String, Double> doubles = new LinkedHashMap<>();
 			doubles.put("optimizer.connectedComponentCount", 1.0d + zeroVarFactorCount);
 			doubles.put("optimizer.zeroVarFactorCount", (double) zeroVarFactorCount);

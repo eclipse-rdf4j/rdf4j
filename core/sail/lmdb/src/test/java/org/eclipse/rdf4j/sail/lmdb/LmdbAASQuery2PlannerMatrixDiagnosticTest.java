@@ -53,6 +53,7 @@ import org.junit.jupiter.api.io.TempDir;
  * -Drdf4j.lmdb.diagnostic.aas.query2.sensorCount=100
  * -Drdf4j.lmdb.diagnostic.aas.query2.assertGoodCascades=true
  * -Drdf4j.lmdb.diagnostic.aas.query2.printFullPlans=true
+ * -Drdf4j.lmdb.diagnostic.aas.query2.printConnectedTrace=false
  * </pre>
  */
 class LmdbAASQuery2PlannerMatrixDiagnosticTest {
@@ -60,6 +61,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 	private static final String ENABLE_PROPERTY = "rdf4j.lmdb.diagnostic.aas.query2";
 	private static final String ASSERT_GOOD_CASCADES_PROPERTY = ENABLE_PROPERTY + ".assertGoodCascades";
 	private static final String PRINT_FULL_PLANS_PROPERTY = ENABLE_PROPERTY + ".printFullPlans";
+	private static final String PRINT_CONNECTED_TRACE_PROPERTY = ENABLE_PROPERTY + ".printConnectedTrace";
 	private static final String PRODUCTION_LINE_COUNT_PROPERTY = ENABLE_PROPERTY + ".productionLineCount";
 	private static final String DRIVE_UNIT_COUNT_PROPERTY = ENABLE_PROPERTY + ".driveUnitCount";
 	private static final String SENSOR_COUNT_PROPERTY = ENABLE_PROPERTY + ".sensorCount";
@@ -173,56 +175,56 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 		builder.append("====================================\n");
 		for (PlanDigest digest : digests) {
 			builder.append('\n').append(digest.scenario().name()).append('\n');
-			builder.append("  mode=")
-					.append(digest.scenario().mode())
-					.append(", standardPolicy=")
-					.append(digest.scenario().standardPolicy())
-					.append(", budget=")
-					.append(digest.scenario().budget())
-					.append(", legacyOpaque=")
-					.append(digest.scenario().legacyOpaque())
-					.append('\n');
-			builder.append("  winner: baseline=")
-					.append(digest.hasBaselineWinner())
-					.append(", fallbackNoWinner=")
-					.append(digest.hasFallbackNoWinner())
-					.append(", disconnectedFallback=")
-					.append(digest.hasDisconnectedFallback())
-					.append(", connectedRule=")
-					.append(digest.hasConnectedRule())
-					.append(", pathMode=")
-					.append(digest.pathEndpointMode())
-					.append('\n');
-			builder.append("  factor indexes: ratedPower=")
-					.append(digest.ratedPowerIndex())
-					.append(", valueFilter=")
-					.append(digest.valueFilterIndex())
-					.append(", path=")
-					.append(digest.pathIndex())
-					.append(", aasType=")
-					.append(digest.aasTypeIndex())
-					.append(", driveUnitValue=")
-					.append(digest.driveUnitValueIndex())
-					.append('\n');
-			builder.append("  good guards: ratedPowerBeforePath=")
-					.append(digest.bindsRatedPowerBeforePath())
-					.append(", valueFilterBeforePath=")
-					.append(digest.bindsValueFilterBeforePath())
+			builder.append("  mode=").append(digest.scenario().mode())
+					.append(", standardPolicy=").append(digest.scenario().standardPolicy())
+					.append(", budget=").append(digest.scenario().budget())
+					.append(", legacyOpaque=").append(digest.scenario().legacyOpaque()).append('\n');
+			builder.append("  winner: baseline=").append(digest.hasBaselineWinner())
+					.append(", fallbackNoWinner=").append(digest.hasFallbackNoWinner())
+					.append(", disconnectedFallback=").append(digest.hasDisconnectedFallback())
+					.append(", connectedRule=").append(digest.hasConnectedRule())
+					.append(", pathMode=").append(digest.pathEndpointMode()).append('\n');
+			builder.append("  factor indexes: ratedPower=").append(digest.ratedPowerIndex())
+					.append(", valueFilter=").append(digest.valueFilterIndex())
+					.append(", path=").append(digest.pathIndex())
+					.append(", aasType=").append(digest.aasTypeIndex())
+					.append(", driveUnitValue=").append(digest.driveUnitValueIndex()).append('\n');
+			builder.append("  good guards: ratedPowerBeforePath=").append(digest.bindsRatedPowerBeforePath())
+					.append(", valueFilterBeforePath=").append(digest.bindsValueFilterBeforePath())
 					.append('\n');
 			builder.append("  factors:\n");
 			for (int i = 0; i < digest.factorLabels().size(); i++) {
 				builder.append("    ").append(i).append(": ").append(digest.factorLabels().get(i)).append('\n');
 			}
+			if (printConnectedTrace() && !digest.connectedTrace().isBlank()) {
+				builder.append("  connected trace:\n");
+				appendTrace(builder, digest.connectedTrace());
+			}
 		}
 		return builder.toString();
 	}
 
+	private static boolean printConnectedTrace() {
+		return Boolean.parseBoolean(System.getProperty(PRINT_CONNECTED_TRACE_PROPERTY, "true"));
+	}
+
+	private static void appendTrace(StringBuilder builder, String trace) {
+		String[] events = trace.split(" \\| ");
+		int limit = Math.min(events.length, 2000);
+		for (int i = 0; i < limit; i++) {
+			builder.append("    ").append(events[i]).append('\n');
+		}
+		if (events.length > limit) {
+			builder.append("    ... ").append(events.length - limit).append(" more trace events\n");
+		}
+	}
+
 	private static int indexOfRatedPowerAnchor(List<TupleExpr> factors) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof StatementPattern pattern
+			if (factors.get(i) instanceof StatementPattern pattern
 					&& predicateLocalName(pattern).equals("idShort")
 					&& pattern.getObjectVar() != null
-					&& pattern.getObjectVar().getValue()instanceof Literal literal
+					&& pattern.getObjectVar().getValue() instanceof Literal literal
 					&& "ratedPower".equals(literal.getLabel())) {
 				return i;
 			}
@@ -232,10 +234,10 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 
 	private static int indexOfDriveUnitValue(List<TupleExpr> factors) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof StatementPattern pattern
+			if (factors.get(i) instanceof StatementPattern pattern
 					&& predicateLocalName(pattern).equals("value")
 					&& pattern.getObjectVar() != null
-					&& pattern.getObjectVar().getValue()instanceof Literal literal
+					&& pattern.getObjectVar().getValue() instanceof Literal literal
 					&& "DriveUnit".equals(literal.getLabel())) {
 				return i;
 			}
@@ -245,7 +247,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 
 	private static int indexOfAasType(List<TupleExpr> factors) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof StatementPattern pattern
+			if (factors.get(i) instanceof StatementPattern pattern
 					&& predicateLocalName(pattern).equals("type")
 					&& objectLocalName(pattern).equals("AssetAdministrationShell")) {
 				return i;
@@ -256,10 +258,18 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 
 	private static int indexOfValueThresholdFilter(List<TupleExpr> factors) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof Filter filter
-					&& filter.getArg()instanceof StatementPattern pattern
+			if (factors.get(i) instanceof Filter filter
+					&& filter.getArg() instanceof StatementPattern pattern
 					&& predicateLocalName(pattern).equals("value")
 					&& filter.getCondition().toString().contains(">")) {
+				return i;
+			}
+			if (factors.get(i) instanceof StatementPattern pattern
+					&& predicateLocalName(pattern).equals("value")
+					&& pattern.getSubjectVar() != null
+					&& "p1".equals(pattern.getSubjectVar().getName())
+					&& pattern.getObjectVar() != null
+					&& "v1".equals(pattern.getObjectVar().getName())) {
 				return i;
 			}
 		}
@@ -275,7 +285,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 		return -1;
 	}
 
-	private static List<String> buildFactorLabels(List<TupleExpr> factors) {
+	private static List<String> factorLabels(List<TupleExpr> factors) {
 		List<String> labels = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
 			labels.add(factorLabel(factor));
@@ -312,14 +322,14 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 	}
 
 	private static String predicateLocalName(StatementPattern pattern) {
-		if (pattern.getPredicateVar() == null || !(pattern.getPredicateVar().getValue()instanceof IRI iri)) {
+		if (pattern.getPredicateVar() == null || !(pattern.getPredicateVar().getValue() instanceof IRI iri)) {
 			return "";
 		}
 		return localName(iri.stringValue());
 	}
 
 	private static String objectLocalName(StatementPattern pattern) {
-		if (pattern.getObjectVar() == null || !(pattern.getObjectVar().getValue()instanceof IRI iri)) {
+		if (pattern.getObjectVar() == null || !(pattern.getObjectVar().getValue() instanceof IRI iri)) {
 			return "";
 		}
 		return localName(iri.stringValue());
@@ -365,6 +375,22 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 		return plan.substring(start, end);
 	}
 
+	private static String metricUntilComma(String plan, String prefix) {
+		int index = plan.indexOf(prefix);
+		if (index < 0) {
+			return "";
+		}
+		int start = index + prefix.length();
+		int end = plan.indexOf(", optimizer.", start);
+		if (end < 0) {
+			end = plan.indexOf(')', start);
+		}
+		if (end < 0) {
+			end = plan.length();
+		}
+		return plan.substring(start, end);
+	}
+
 	private static int intProperty(String property, int fallback) {
 		String value = System.getProperty(property);
 		if (value == null || value.isBlank()) {
@@ -398,6 +424,8 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 			set(previous, LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
 					legacyOpaque ? "true" : null);
 			set(previous, LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
+			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_PROPERTY, "true");
+			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_LIMIT_PROPERTY, "640000");
 			return previous;
 		}
 
@@ -413,7 +441,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 
 	private record PlanDigest(Scenario scenario, int ratedPowerIndex, int valueFilterIndex, int pathIndex,
 			int aasTypeIndex, int driveUnitValueIndex, boolean hasBaselineWinner, boolean hasFallbackNoWinner,
-			boolean hasDisconnectedFallback, boolean hasConnectedRule, String pathEndpointMode,
+			boolean hasDisconnectedFallback, boolean hasConnectedRule, String pathEndpointMode, String connectedTrace,
 			List<String> factorLabels) {
 		private static PlanDigest from(Scenario scenario, List<TupleExpr> factors, String plan) {
 			return new PlanDigest(scenario, indexOfRatedPowerAnchor(factors), indexOfValueThresholdFilter(factors),
@@ -423,7 +451,9 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 					plan.contains("optimizer.connectedEnumeration=phase2_disconnected_components")
 							|| plan.contains("optimizer.cartesianFallbackReason=disconnected-components"),
 					plan.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
-					firstMetric(plan, "optimizer.pathEndpointMode="), buildFactorLabels(factors));
+					firstMetric(plan, "optimizer.pathEndpointMode="),
+					metricUntilComma(plan, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_METRIC + "="),
+					LmdbAASQuery2PlannerMatrixDiagnosticTest.factorLabels(factors));
 		}
 
 		private boolean bindsRatedPowerBeforePath() {
