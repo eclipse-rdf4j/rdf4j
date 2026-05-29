@@ -200,17 +200,29 @@ class LmdbEvaluationStatistics
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ArbitraryLengthPath path, Set<String> boundVars) {
+		return estimatePropertyPath(path, boundVars, List.of());
+	}
+
+	Optional<PropertyPathEstimate> estimatePropertyPath(ArbitraryLengthPath path, Set<String> boundVars,
+			List<TupleExpr> prefixFactors) {
 		if (!(sketchBasedJoinEstimator instanceof PropertyPathEstimateProvider provider)) {
 			return Optional.empty();
 		}
-		return provider.estimate(path, boundVars == null ? Set.of() : boundVars);
+		return provider.estimate(path, boundVars == null ? Set.of() : boundVars,
+				prefixFactors == null ? List.of() : prefixFactors);
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ZeroLengthPath path, Set<String> boundVars) {
+		return estimatePropertyPath(path, boundVars, List.of());
+	}
+
+	Optional<PropertyPathEstimate> estimatePropertyPath(ZeroLengthPath path, Set<String> boundVars,
+			List<TupleExpr> prefixFactors) {
 		if (!(sketchBasedJoinEstimator instanceof PropertyPathEstimateProvider provider)) {
 			return Optional.empty();
 		}
-		return provider.estimate(path, boundVars == null ? Set.of() : boundVars);
+		return provider.estimate(path, boundVars == null ? Set.of() : boundVars,
+				prefixFactors == null ? List.of() : prefixFactors);
 	}
 
 	Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns, Set<String> boundVars) {
@@ -1457,6 +1469,11 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor,
 			JoinFactorCostModel.CostContext context) {
 		RequestedAccessPath requestedAccessPath = RequestedAccessPath.of(context);
+		Optional<FactorCostEstimate> prefixPathEstimate = estimatePropertyPathFactorCost(factor,
+				context.getCurrentlyBoundVars(), context.getPrefixFactors(), context.shouldCollectMetrics());
+		if (prefixPathEstimate.isPresent()) {
+			return prefixPathEstimate;
+		}
 		if (context.hasCurrentlyBoundVarMask()) {
 			return estimateLmdbFactorCost(factor, context.getVariableNames(),
 					context.getCurrentlyBoundVarMask(),
@@ -2150,12 +2167,18 @@ class LmdbEvaluationStatistics
 
 	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,
 			boolean collectMetrics) {
+		return estimatePropertyPathFactorCost(factor, boundVars, List.of(), collectMetrics);
+	}
+
+	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,
+			List<TupleExpr> prefixFactors, boolean collectMetrics) {
 		Optional<PropertyPathEstimate> estimate = Optional.empty();
 		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
+		List<TupleExpr> effectivePrefixFactors = prefixFactors == null ? List.of() : prefixFactors;
 		if (factor instanceof ArbitraryLengthPath path) {
-			estimate = estimatePropertyPath(path, effectiveBoundVars);
+			estimate = estimatePropertyPath(path, effectiveBoundVars, effectivePrefixFactors);
 		} else if (factor instanceof ZeroLengthPath path) {
-			estimate = estimatePropertyPath(path, effectiveBoundVars);
+			estimate = estimatePropertyPath(path, effectiveBoundVars, effectivePrefixFactors);
 		}
 		if (estimate.isEmpty()) {
 			return Optional.empty();

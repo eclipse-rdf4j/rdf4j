@@ -7310,6 +7310,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	@Override
 	public Optional<PropertyPathEstimate> estimate(ArbitraryLengthPath path, Set<String> boundVars) {
+		return estimateArbitraryLengthPath(path, boundVars, null);
+	}
+
+	@Override
+	public Optional<PropertyPathEstimate> estimate(ArbitraryLengthPath path, Set<String> boundVars,
+			List<TupleExpr> prefixFactors) {
+		return estimateArbitraryLengthPath(path, boundVars, prefixFactors);
+	}
+
+	private Optional<PropertyPathEstimate> estimateArbitraryLengthPath(ArbitraryLengthPath path, Set<String> boundVars,
+			List<TupleExpr> prefixFactors) {
 		if (path == null) {
 			return Optional.empty();
 		}
@@ -7327,10 +7338,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double endpointFallbackRows = Math.max(directRows, predicateRows);
 		double distinctSubjects = positiveFiniteOr(subjectStats.distinct(), endpointFallbackRows);
 		double distinctObjects = positiveFiniteOr(objectStats.distinct(), endpointFallbackRows);
-		double averageFanout = distinctSubjects > 0.0d ? predicateRows / distinctSubjects : 0.0d;
-		if (!Double.isFinite(averageFanout) || averageFanout < 0.0d) {
-			averageFanout = 0.0d;
-		}
+		double averageFanout = averagePathFanout(predicateRows, distinctSubjects);
 
 		double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength(), averageFanout, predicateRows);
 		double unboundRows = rows;
@@ -7339,6 +7347,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		boolean subjectBound = isBoundEndpoint(path.getSubjectVar(), boundVars);
 		boolean objectBound = isBoundEndpoint(path.getObjectVar(), boundVars);
 		String method = "sketch-single-predicate-path";
+
+		PropertyPathEstimate prefixEstimate = estimateArbitraryLengthPathWithPrefixSketch(path, step, boundVars,
+				prefixFactors, predicateRows, distinctSubjects, distinctObjects, rows);
+		if (prefixEstimate != null) {
+			return Optional.of(prefixEstimate);
+		}
+
 		if (subjectBound || objectBound) {
 			double zeroLengthRows = path.getMinLength() <= 0 ? 1.0d : 0.0d;
 			if (subjectBound && objectBound) {
@@ -7367,6 +7382,119 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				unboundDistinctObjects, subjectBound, objectBound);
 		return Optional.of(new PropertyPathEstimate(rows, workRows, distinctSubjects, distinctObjects, averageFanout,
 				method));
+	}
+
+	private PropertyPathEstimate estimateArbitraryLengthPathWithPrefixSketch(ArbitraryLengthPath path,
+			StatementPattern step, Set<String> boundVars, List<TupleExpr> prefixFactors, double predicateRows,
+			double distinctSubjects, double distinctObjects, double unboundRows) {
+		if (prefixFactors == null || prefixFactors.isEmpty()) {
+			return null;
+		}
+		boolean subjectBound = isBoundEndpoint(path.getSubjectVar(), boundVars);
+		boolean objectBound = isBoundEndpoint(path.getObjectVar(), boundVars);
+		if (!subjectBound && !objectBound) {
+			return null;
+		}
+
+		JoinOrderingSketchIntersectionCache cache = newJoinOrderingSketchIntersectionCache();
+		TuplePlanEstimate prefix = joinedPrefixEstimate(prefixFactors, cache);
+		TuplePlanEstimate stepEstimate = estimateTupleExprPlan(step, Set.of());
+		if (prefix == null || stepEstimate == null || prefix.outputRows <= 0.0d || stepEstimate.baseRows <= 0.0d) {
+			return null;
+		}
+		boolean prefixHasSubject = endpointInPrefix(path.getSubjectVar(), prefix);
+		boolean prefixHasObject = endpointInPrefix(path.getObjectVar(), prefix);
+		if (!prefixHasSubject && !prefixHasObject) {
+			return null;
+		}
+
+		JoinStepEstimate directJoin = estimateJoinStep(prefix, stepEstimate, cache);
+		double directRows = normalizeRows(directJoin.outputRows);
+		if (!(Double.isFinite(directRows) && directRows >= 0.0d)) {
+			return null;
+		}
+		double prefixRows = normalizeRows(prefix.outputRows);
+		double forwardFanout = averagePathFanout(predicateRows, distinctSubjects);
+		double reverseFanout = averagePathFanout(predicateRows, distinctObjects);
+		double fanout = prefixHasSubject && !prefixHasObject ? forwardFanout : reverseFanout;
+		if (prefixHasSubject && prefixHasObject) {
+			fanout = Math.min(forwardFanout, reverseFanout);
+		}
+
+		double rows = estimateConditionedArbitraryLengthPathRows(directRows, prefixRows, path.getMinLength(), fanout);
+		rows = Math.min(rows, unboundRows);
+		rows = normalizeRows(rows);
+		double distinctSubjectEstimate = prefixHasSubject ? endpointDistinct(path.getSubjectVar(), prefix, rows)
+				: Math.min(distinctSubjects, rows);
+		double distinctObjectEstimate = prefixHasObject ? endpointDistinct(path.getObjectVar(), prefix, rows)
+				: Math.min(distinctObjects, rows);
+		double workRows = normalizeRows(Math.max(rows, directRows + Math.max(0.0d, prefixRows)));
+		String method = "sketch-single-predicate-path-prefix-sketch-"
+				+ (prefixHasSubject && prefixHasObject ? "between" : prefixHasSubject ? "fromStart" : "toEnd");
+		return new PropertyPathEstimate(rows, workRows, distinctSubjectEstimate, distinctObjectEstimate, fanout, method);
+	}
+
+	private TuplePlanEstimate joinedPrefixEstimate(List<TupleExpr> prefixFactors,
+			JoinOrderingSketchIntersectionCache cache) {
+		TuplePlanEstimate joined = null;
+		for (TupleExpr prefixFactor : prefixFactors) {
+			TuplePlanEstimate factor = estimateTupleExprPlan(prefixFactor, Set.of());
+			if (factor == null) {
+				return null;
+			}
+			if (joined == null) {
+				joined = factor;
+			} else {
+				joined = joinedPlanEstimate(estimateJoinStep(joined, factor, cache));
+			}
+		}
+		return joined;
+	}
+
+	private boolean endpointInPrefix(Var endpoint, TuplePlanEstimate prefix) {
+		if (endpoint == null) {
+			return false;
+		}
+		if (endpoint.hasValue()) {
+			return true;
+		}
+		String name = endpoint.getName();
+		return name != null && prefix != null && prefix.varStats.containsKey(name);
+	}
+
+	private double endpointDistinct(Var endpoint, TuplePlanEstimate prefix, double rows) {
+		if (endpoint == null || endpoint.hasValue() || prefix == null) {
+			return rows <= 0.0d ? 0.0d : 1.0d;
+		}
+		VarPlanStats stats = prefix.varStats.get(endpoint.getName());
+		if (stats == null) {
+			return Math.min(rows, prefix.outputRows);
+		}
+		return clampDistinct(stats.distinct, rows);
+	}
+
+	private double estimateConditionedArbitraryLengthPathRows(double directRows, double prefixRows, long minLength,
+			double fanout) {
+		double rows = minLength <= 0 ? Math.max(0.0d, prefixRows) : 0.0d;
+		double next = Math.max(0.0d, directRows);
+		double cappedFanout = Math.min(Math.max(fanout, 0.0d), 4.0d);
+		for (int depth = 1; depth <= 4; depth++) {
+			if (!Double.isFinite(next) || next <= 0.0d) {
+				break;
+			}
+			rows += next;
+			next *= cappedFanout;
+		}
+		double capBase = Math.max(Math.max(prefixRows, directRows), 1.0d);
+		return normalizeRows(Math.min(rows, capBase * 4.0d));
+	}
+
+	private double averagePathFanout(double predicateRows, double distinctEndpoints) {
+		double averageFanout = distinctEndpoints > 0.0d ? predicateRows / distinctEndpoints : 0.0d;
+		if (!Double.isFinite(averageFanout) || averageFanout < 0.0d) {
+			return 0.0d;
+		}
+		return averageFanout;
 	}
 
 	private double estimatePropertyPathWorkRows(double rows, double unboundRows, double unboundDistinctSubjects,

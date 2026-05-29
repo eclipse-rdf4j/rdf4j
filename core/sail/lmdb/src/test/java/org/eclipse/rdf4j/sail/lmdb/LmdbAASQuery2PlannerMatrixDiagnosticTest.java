@@ -183,7 +183,8 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 					.append(", fallbackNoWinner=").append(digest.hasFallbackNoWinner())
 					.append(", disconnectedFallback=").append(digest.hasDisconnectedFallback())
 					.append(", connectedRule=").append(digest.hasConnectedRule())
-					.append(", pathMode=").append(digest.pathEndpointMode()).append('\n');
+					.append(", pathMode=").append(digest.pathEndpointMode())
+					.append(", pathMethod=").append(digest.pathEstimateMethod()).append('\n');
 			builder.append("  factor indexes: ratedPower=").append(digest.ratedPowerIndex())
 					.append(", valueFilter=").append(digest.valueFilterIndex())
 					.append(", path=").append(digest.pathIndex())
@@ -423,8 +424,8 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 			set(previous, LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, timeoutMillis);
 			set(previous, LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
 					legacyOpaque ? "true" : null);
-			set(previous, LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
-			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_PROPERTY, "true");
+			set(previous, LmdbCascadesOptimizer.TRACE_PROPERTY, "false");
+			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_PROPERTY, "false");
 			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_LIMIT_PROPERTY, "640000");
 			return previous;
 		}
@@ -441,8 +442,8 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 
 	private record PlanDigest(Scenario scenario, int ratedPowerIndex, int valueFilterIndex, int pathIndex,
 			int aasTypeIndex, int driveUnitValueIndex, boolean hasBaselineWinner, boolean hasFallbackNoWinner,
-			boolean hasDisconnectedFallback, boolean hasConnectedRule, String pathEndpointMode, String connectedTrace,
-			List<String> factorLabels) {
+			boolean hasDisconnectedFallback, boolean hasConnectedRule, String pathEndpointMode,
+			String pathEstimateMethod, String connectedTrace, List<String> factorLabels) {
 		private static PlanDigest from(Scenario scenario, List<TupleExpr> factors, String plan) {
 			return new PlanDigest(scenario, indexOfRatedPowerAnchor(factors), indexOfValueThresholdFilter(factors),
 					indexOfPath(factors), indexOfAasType(factors), indexOfDriveUnitValue(factors),
@@ -452,6 +453,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 							|| plan.contains("optimizer.cartesianFallbackReason=disconnected-components"),
 					plan.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
 					firstMetric(plan, "optimizer.pathEndpointMode="),
+					firstMetric(plan, "plannedPropertyPathMethod="),
 					metricUntilComma(plan, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_METRIC + "="),
 					LmdbAASQuery2PlannerMatrixDiagnosticTest.factorLabels(factors));
 		}
