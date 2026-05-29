@@ -280,9 +280,7 @@ public interface CascadesCostModel {
 			}
 			if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 				delivered = delivered.withDistinctVars(tupleExpr.getBindingNames())
-						.mergedWith(PhysicalProperties.builder()
-								.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
-								.build());
+						.withDuplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES);
 			}
 			return delivered.withInputBoundVars(inputBoundVars);
 		}

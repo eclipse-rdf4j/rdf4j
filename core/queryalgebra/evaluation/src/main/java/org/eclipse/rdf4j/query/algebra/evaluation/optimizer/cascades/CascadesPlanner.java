@@ -87,6 +87,7 @@ public final class CascadesPlanner {
 		}
 
 		state.markGroupExplored(key);
+		seedExistingPlanWinner(memo, groupId, goal, state, "initial-existing-algebra", false);
 		seedPhysicalWinners(memo, groupId, goal, state);
 		exploreGroup(memo, groupId, goal, state);
 		MemoGroup group = memo.group(groupId);
@@ -96,7 +97,7 @@ public final class CascadesPlanner {
 		}
 		Optional<Winner> best = memo.bestWinner(key);
 		if (best.isEmpty()) {
-			best = seedExistingPlanWinner(memo, groupId, goal, state, "no-costed-physical-alternative");
+			best = seedExistingPlanWinner(memo, groupId, goal, state, "no-costed-physical-alternative", true);
 		}
 		if (best.isEmpty()) {
 			memo.recordFailure(key);
@@ -107,10 +108,6 @@ public final class CascadesPlanner {
 	}
 
 	private void seedPhysicalWinners(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
-		WinnerKey key = goal.key(groupId);
-		if (memo.bestWinner(key).isPresent()) {
-			return;
-		}
 		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
 		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
 		for (MemoExpr expression : snapshot) {
@@ -132,7 +129,7 @@ public final class CascadesPlanner {
 	}
 
 	private Optional<Winner> seedExistingPlanWinner(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
-			String reason) {
+			String reason, boolean markApproximate) {
 		for (MemoExpr expression : memo.group(groupId).mutableExpressionsView()) {
 			if (!expression.logical() || expression.tupleExpr() == null) {
 				continue;
@@ -148,9 +145,11 @@ public final class CascadesPlanner {
 			Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
 					"existing-algebra-seed", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
 			if (added.isPresent()) {
-				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false);
+				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false, false);
 				if (winner.isPresent()) {
-					state.markApproximate("seeded existing algebra winner after " + reason);
+					if (markApproximate) {
+						state.markApproximate("seeded existing algebra winner after " + reason);
+					}
 					return winner;
 				}
 			}
@@ -235,6 +234,11 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state, boolean chargeBudget) {
+		return optimizeExpression(memo, expression, goal, state, chargeBudget, true);
+	}
+
+	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state, boolean chargeBudget, boolean enforceCostBound) {
 		if ((chargeBudget && !state.consumeMinor("optimizeExpression:" + expression.id())) || state.expired(goal)) {
 			state.markApproximate("budget-or-timeout optimizing expression " + expression.id());
 			return Optional.empty();
@@ -270,7 +274,8 @@ public final class CascadesPlanner {
 		EstimateSnapshot estimate = costedEstimate(expression, cost);
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
-		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED && cost.exceeds(goal.costBound())) {
+		if (enforceCostBound && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+				&& cost.exceeds(goal.costBound())) {
 			state.recordRejected(expression.groupId(), ruleId, "cost-bound", cost);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "cost-bound", cost, expression.tupleExpr());
 			return Optional.empty();

@@ -894,7 +894,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private static StandardPlanPolicy standardPlanPolicyFromProperty() {
-		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "compare");
+		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "off");
 		return StandardPlanPolicy.from(value);
 	}
 
@@ -903,7 +903,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		COMPARE(true, false, true, false),
 		BOUND(true, true, true, false),
 		SHORTCUT(true, true, true, true),
-		AUTO(true, false, true, false);
+		AUTO(false, false, false, false);
 
 		private final boolean enabled;
 		private final boolean boundsCascades;
@@ -922,12 +922,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				return AUTO;
 			}
 			return switch (value.trim().toLowerCase(Locale.ROOT)) {
-			case "off", "false", "none" -> OFF;
-			case "compare" -> COMPARE;
+			case "off", "false", "none", "auto" -> OFF;
+			case "compare", "true" -> COMPARE;
 			case "bound", "bounded" -> BOUND;
 			case "shortcut", "short-circuit", "standard" -> SHORTCUT;
-			case "auto", "true" -> AUTO;
-			default -> AUTO;
+			default -> OFF;
 			};
 		}
 

@@ -146,6 +146,10 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return builderFrom(this).materialization(Materialization.MATERIALIZED).build();
 	}
 
+	public PhysicalProperties withDuplicateBehavior(DuplicateBehavior duplicateBehavior) {
+		return builderFrom(this).duplicateBehavior(duplicateBehavior).build();
+	}
+
 	private boolean satisfiesOrdering(List<String> requiredOrdering) {
 		if (requiredOrdering.isEmpty()) {
 			return true;
