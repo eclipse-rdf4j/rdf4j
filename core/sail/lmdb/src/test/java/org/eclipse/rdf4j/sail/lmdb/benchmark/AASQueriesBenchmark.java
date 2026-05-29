@@ -123,7 +123,7 @@ public class AASQueriesBenchmark {
 	@Param({
 			"query1PropertyProjection",
 			"query2ThresholdCount",
-		"query3LineAggregates"
+			"query3LineAggregates"
 	})
 	private String query;
 

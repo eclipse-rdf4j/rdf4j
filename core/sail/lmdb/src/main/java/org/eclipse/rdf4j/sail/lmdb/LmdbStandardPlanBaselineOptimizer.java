@@ -21,10 +21,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCleaner;
 
 /**
- * Captures the LMDB no-Cascades plan at the handoff point immediately before {@link LmdbCascadesOptimizer}. This is
- * the plan the LMDB optimizer pipeline would continue with when Cascades is disabled. It is intentionally not the
- * generic RDF4J {@code StandardQueryOptimizerPipeline}, because that can reorder path-heavy queries differently from
- * the LMDB no-Cascades pipeline.
+ * Captures the LMDB no-Cascades plan at the handoff point immediately before {@link LmdbCascadesOptimizer}. This is the
+ * plan the LMDB optimizer pipeline would continue with when Cascades is disabled. It is intentionally not the generic
+ * RDF4J {@code StandardQueryOptimizerPipeline}, because that can reorder path-heavy queries differently from the LMDB
+ * no-Cascades pipeline.
  */
 final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> BASELINES = new ThreadLocal<>();
