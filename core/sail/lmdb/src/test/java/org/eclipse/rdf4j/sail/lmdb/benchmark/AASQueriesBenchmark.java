@@ -121,9 +121,9 @@ public class AASQueriesBenchmark {
 	String useCascades;
 
 	@Param({
-		//	"query1PropertyProjection",
+			"query1PropertyProjection",
 			"query2ThresholdCount",
-	//	"query3LineAggregates"
+		"query3LineAggregates"
 	})
 	private String query;
 
@@ -156,7 +156,7 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long before = System.currentTimeMillis();
 			System.out.println();
-			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Timed));
+			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Telemetry));
 			System.out.println();
 		}
 
@@ -166,7 +166,7 @@ public class AASQueriesBenchmark {
 	public void tearDown() throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println();
-			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Timed));
+			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Telemetry));
 			System.out.println();
 		} finally {
 			try {

@@ -46,6 +46,28 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private static final String END = "$end_from_path_iteration";
 	private static final String START = "$start_from_path_iteration";
 
+	public static final String PATH_CANDIDATE_ROWS_ACTUAL = "optimizer.pathCandidateRowsActual";
+
+	public static final String PATH_RETURNED_ROWS_ACTUAL = "optimizer.pathReturnedRowsActual";
+
+	public static final String PATH_DISCARDED_ROWS_ACTUAL = "optimizer.pathDiscardedRowsActual";
+
+	public static final String PATH_DUPLICATE_ROWS_ACTUAL = "optimizer.pathDuplicateRowsActual";
+
+	public static final String PATH_ENDPOINT_MISS_ROWS_ACTUAL = "optimizer.pathEndpointMissRowsActual";
+
+	public static final String PATH_SELF_LOOP_PRUNED_ROWS_ACTUAL = "optimizer.pathSelfLoopPrunedRowsActual";
+
+	public static final String PATH_QUEUE_ENQUEUE_ROWS_ACTUAL = "optimizer.pathQueueEnqueueRowsActual";
+
+	public static final String PATH_EXPANSION_ITERATIONS_ACTUAL = "optimizer.pathExpansionIterationsActual";
+
+	public static final String PATH_MAX_FRONTIER_SIZE_ACTUAL = "optimizer.pathMaxFrontierSizeActual";
+
+	public static final String PATH_MAX_LENGTH_ACTUAL = "optimizer.pathMaxLengthActual";
+
+	public static final String PATH_DISCARD_RATIO_ACTUAL = "optimizer.pathDiscardRatioActual";
+
 	/**
 	 * Required as we can't prepare the queries yet.
 	 */
@@ -109,8 +131,41 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private boolean done;
 
+	private final QueryModelNode pathNode;
+
+	private final boolean runtimeTelemetryEnabled;
+
+	private long pathCandidateRowsActual;
+
+	private long pathReturnedRowsActual;
+
+	private long pathDiscardedRowsActual;
+
+	private long pathDuplicateRowsActual;
+
+	private long pathEndpointMissRowsActual;
+
+	private long pathSelfLoopPrunedRowsActual;
+
+	private long pathQueueEnqueueRowsActual;
+
+	private long pathExpansionIterationsActual;
+
+	private long pathMaxFrontierSizeActual;
+
+	private long pathMaxLengthActual;
+
+	private boolean telemetryRecorded;
+
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
+			throws QueryEvaluationException {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, null);
+	}
+
+	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryModelNode pathNode)
 			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.scope = scope;
@@ -127,6 +182,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.pathExpression = pathExpression;
 		this.contextVar = contextVar;
+		this.pathNode = pathNode;
+		this.runtimeTelemetryEnabled = pathNode != null;
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -221,12 +278,14 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
 				if (currentIter == null) {
+					recordRuntimeTelemetry();
 					return null;
 				}
 			}
 
 			while (currentIter != null && currentIter.hasNext()) {
 				BindingSet potentialNextElement = currentIter.next();
+				pathCandidateRowsActual++;
 				QueryBindingSet nextElement = asQueryBindingSet(potentialNextElement);
 
 				if (!startVarFixed && !endVarFixed && currentVp != null) {
@@ -242,31 +301,42 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				if (startVarFixed && endVarFixed) {
 					if (!Objects.equals(fixedEndValue, vp.endValue)) {
+						pathEndpointMissRowsActual++;
 						if (add(unreportedValues, vp)) {
 							enqueueIfNotSelfLoop(vp);
+						} else {
+							pathDuplicateRowsActual++;
 						}
+						pathDiscardedRowsActual++;
 						continue;
 					}
 
 					if (!add(reportedValues, vp)) {
+						pathDuplicateRowsActual++;
+						pathDiscardedRowsActual++;
 						continue;
 					}
 
 					addEndpointBindings(nextElement, vp);
 					stopAfterFixedEndpointHit();
+					pathReturnedRowsActual++;
 					return removeIntermediateJoinVars(nextElement);
 				}
 
 				if (!add(reportedValues, vp)) {
+					pathDuplicateRowsActual++;
+					pathDiscardedRowsActual++;
 					continue;
 				}
 
 				enqueueIfNotSelfLoop(vp);
 				addEndpointBindings(nextElement, vp);
+				pathReturnedRowsActual++;
 				return removeIntermediateJoinVars(nextElement);
 			}
 
 			if (currentIter == null) {
+				recordRuntimeTelemetry();
 				return null;
 			}
 		}
@@ -278,7 +348,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private void enqueueIfNotSelfLoop(ValuePair vp) throws QueryEvaluationException {
 		if (!Objects.equals(vp.startValue, vp.endValue)) {
-			addToQueue(valueQueue, vp);
+			if (addToQueue(valueQueue, vp)) {
+				pathQueueEnqueueRowsActual++;
+				pathMaxFrontierSizeActual = Math.max(pathMaxFrontierSizeActual, valueQueue.size());
+			}
+		} else {
+			pathSelfLoopPrunedRowsActual++;
 		}
 	}
 
@@ -334,10 +409,49 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		if (currentIter != null) {
-			currentIter.close();
+		try {
+			if (currentIter != null) {
+				currentIter.close();
+			}
+		} finally {
+			recordRuntimeTelemetry();
+			collectionFactory.close();
 		}
-		collectionFactory.close();
+	}
+
+	private void recordRuntimeTelemetry() {
+		if (!runtimeTelemetryEnabled || telemetryRecorded) {
+			return;
+		}
+		telemetryRecorded = true;
+		addLongMetric(PATH_CANDIDATE_ROWS_ACTUAL, pathCandidateRowsActual);
+		addLongMetric(PATH_RETURNED_ROWS_ACTUAL, pathReturnedRowsActual);
+		addLongMetric(PATH_DISCARDED_ROWS_ACTUAL, pathDiscardedRowsActual);
+		addLongMetric(PATH_DUPLICATE_ROWS_ACTUAL, pathDuplicateRowsActual);
+		addLongMetric(PATH_ENDPOINT_MISS_ROWS_ACTUAL, pathEndpointMissRowsActual);
+		addLongMetric(PATH_SELF_LOOP_PRUNED_ROWS_ACTUAL, pathSelfLoopPrunedRowsActual);
+		addLongMetric(PATH_QUEUE_ENQUEUE_ROWS_ACTUAL, pathQueueEnqueueRowsActual);
+		addLongMetric(PATH_EXPANSION_ITERATIONS_ACTUAL, pathExpansionIterationsActual);
+		setLongMetricAtLeast(PATH_MAX_FRONTIER_SIZE_ACTUAL, pathMaxFrontierSizeActual);
+		setLongMetricAtLeast(PATH_MAX_LENGTH_ACTUAL, pathMaxLengthActual);
+		if (pathCandidateRowsActual > 0L) {
+			pathNode.setDoubleMetricActual(PATH_DISCARD_RATIO_ACTUAL,
+					(double) pathDiscardedRowsActual / (double) pathCandidateRowsActual);
+		}
+	}
+
+	private void addLongMetric(String metricName, long delta) {
+		if (delta <= 0L) {
+			return;
+		}
+		pathNode.setLongMetricActual(metricName, Math.max(0L, pathNode.getLongMetricActual(metricName)) + delta);
+	}
+
+	private void setLongMetricAtLeast(String metricName, long value) {
+		if (value > 0L) {
+			pathNode.setLongMetricActual(metricName,
+					Math.max(Math.max(0L, pathNode.getLongMetricActual(metricName)), value));
+		}
 	}
 
 	/**
@@ -369,6 +483,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private void createIteration() throws QueryEvaluationException {
 		resetCurrentJoinVars();
+		pathMaxLengthActual = Math.max(pathMaxLengthActual, currentLength);
 
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
@@ -377,6 +492,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
 			currentIter = this.strategy.evaluate(zlp, bindings);
+			pathExpansionIterationsActual++;
 			currentLength++;
 		} else if (currentLength == 1) {
 			TupleExpr pathExprClone = pathExpression.clone();
@@ -389,6 +505,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				pathExprClone.visit(replacer);
 			}
 			currentIter = this.strategy.evaluate(pathExprClone, bindings);
+			pathExpansionIterationsActual++;
 			currentLength++;
 		} else {
 
@@ -429,6 +546,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				}
 
 				currentIter = this.strategy.evaluate(pathExprClone, bindings);
+				pathExpansionIterationsActual++;
 			} else {
 				currentIter = null;
 			}

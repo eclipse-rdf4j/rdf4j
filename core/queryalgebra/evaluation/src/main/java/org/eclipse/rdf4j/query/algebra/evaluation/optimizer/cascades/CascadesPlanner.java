@@ -87,7 +87,6 @@ public final class CascadesPlanner {
 		}
 
 		state.markGroupExplored(key);
-		seedExistingPlanWinner(memo, groupId, goal, state, "initial-existing-algebra", false);
 		seedPhysicalWinners(memo, groupId, goal, state);
 		exploreGroup(memo, groupId, goal, state);
 		MemoGroup group = memo.group(groupId);
@@ -97,6 +96,8 @@ public final class CascadesPlanner {
 		}
 		Optional<Winner> best = memo.bestWinner(key);
 		if (best.isEmpty()) {
+			// Opaque existing-algebra is an emergency fallback only. Adding it before rule exploration lets it
+			// dominate cheaper structural alternatives and preserves bad pre-optimized join orders.
 			best = seedExistingPlanWinner(memo, groupId, goal, state, "no-costed-physical-alternative", true);
 		}
 		if (best.isEmpty()) {

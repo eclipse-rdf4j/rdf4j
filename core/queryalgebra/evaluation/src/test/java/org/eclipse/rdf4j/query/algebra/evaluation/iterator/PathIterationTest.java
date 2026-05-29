@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -182,6 +183,26 @@ public class PathIterationTest {
 			assertNull(zlp.getNextElement());
 			assertEquals(callsAfterHit, ts.getStatementsCalls);
 		}
+	}
+
+	@Test
+	public void recordsPathExplorationTelemetry() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		ArbitraryLengthPath pathNode = new ArbitraryLengthPath(startVar.clone(), pathExpression.clone(), endVar.clone(), 1);
+		pathNode.setRuntimeTelemetryEnabled(true);
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet(), pathNode)) {
+			assertExpected(pathIteration.getNextElement(), one, two);
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+		assertEquals(3L, pathNode.getLongMetricActual(PathIteration.PATH_RETURNED_ROWS_ACTUAL));
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_CANDIDATE_ROWS_ACTUAL) >= 3L);
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL) >= 1L);
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL) >= 1L);
 	}
 
 	private static final class CountingTripleSource implements TripleSource {

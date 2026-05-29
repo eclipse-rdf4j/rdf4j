@@ -597,7 +597,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings);
+				contextVar, minLength, bindings, alp);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -609,7 +609,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
+		return new ZeroLengthPathEvaluationStep(zlp, subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
 	}
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
