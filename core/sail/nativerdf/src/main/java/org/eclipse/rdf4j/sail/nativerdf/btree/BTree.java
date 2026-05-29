@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * Documentation about B-Trees can be found on-line at the following URLs:
  * <ul>
  * <li>http://cis.stvincent.edu/swd/btree/btree.html</li>,
- * <li>http://bluerwhite.org/btree/</li>, and
+ * <li>http://bluerwhite.org/btree/ and</li>,
  * <li>http://semaphorecorp.com/btp/algo.html</li>.
  * </ul>
  * The first reference was used to implement this class.
