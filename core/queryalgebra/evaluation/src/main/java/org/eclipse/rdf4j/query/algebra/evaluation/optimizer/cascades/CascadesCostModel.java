@@ -790,8 +790,42 @@ public interface CascadesCostModel {
 					: estimate(pathExpression, boundVars);
 			double directRows = step.rows();
 			double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength());
-			BagEstimate bag = bagWithBindings(path, rows, step.workRows() + rows, "property-path-fallback");
-			return StatisticsEstimate.fromBag(bag, "property-path-fallback");
+			boolean subjectBound = endpointBound(path.getSubjectVar(), boundVars);
+			boolean objectBound = endpointBound(path.getObjectVar(), boundVars);
+			if (subjectBound || objectBound) {
+				double endpointRows = Math.max(1.0d, Math.sqrt(Math.max(1.0d, rows)));
+				rows = Math.min(rows, endpointRows);
+			}
+			if (subjectBound && objectBound) {
+				rows = Math.min(rows, 1.0d);
+			}
+			double workRows = step.workRows() + rows;
+			if (subjectBound || objectBound) {
+				workRows = Math.min(workRows, Math.max(rows, endpointBoundPathWork(step.workRows(), rows)));
+			}
+			BagEstimate bag = bagWithBindings(path, rows, workRows,
+					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback");
+			return StatisticsEstimate.fromBag(bag,
+					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback");
+		}
+
+		private double endpointBoundPathWork(double stepWorkRows, double rows) {
+			double safeRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
+			if (!Double.isFinite(stepWorkRows) || stepWorkRows < 0.0d) {
+				return safeRows;
+			}
+			return Math.max(safeRows, Math.sqrt(Math.max(1.0d, stepWorkRows)) + safeRows);
+		}
+
+		private boolean endpointBound(Var var, Set<String> boundVars) {
+			if (var == null) {
+				return false;
+			}
+			if (var.hasValue()) {
+				return true;
+			}
+			String name = var.getName();
+			return name != null && !name.startsWith("_const_") && boundVars != null && boundVars.contains(name);
 		}
 
 		private StatisticsEstimate estimateZeroLengthPath(ZeroLengthPath path) {

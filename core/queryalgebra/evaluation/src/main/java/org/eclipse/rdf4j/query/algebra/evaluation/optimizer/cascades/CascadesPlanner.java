@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 @Experimental
 public final class CascadesPlanner {
 	private static final int DEFAULT_FRONTIER_LIMIT = 16;
+	private static final int MINOR_TASK_BUDGET_GRANULARITY = 32;
+	private static final int DEADLINE_CHECK_GRANULARITY = 64;
 
 	private final CascadesCostModel costModel;
 	private final RuleRegistry ruleRegistry;
@@ -71,18 +73,21 @@ public final class CascadesPlanner {
 	}
 
 	private Optional<Winner> optimizeGroup(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
-		if (!state.consume("optimizeGroup:" + groupId) || goal.expired()) {
-			state.markApproximate("budget-or-timeout optimizing group " + groupId);
-			return memo.bestWinner(goal.key(groupId));
-		}
 		WinnerKey key = goal.key(groupId);
+		if (!state.consumeMajor("optimizeGroup:" + groupId) || state.expired(goal)) {
+			state.markApproximate("budget-or-timeout optimizing group " + groupId);
+			return memo.bestWinner(key);
+		}
 		Optional<Winner> cached = memo.bestWinner(key);
-		if (cached.isPresent()) {
+		if (cached.isPresent() && state.groupExplored(key)) {
 			return cached;
 		}
-		if (memo.hasFailure(key)) {
+		if (memo.hasFailure(key) && state.groupExplored(key)) {
 			return Optional.empty();
 		}
+
+		state.markGroupExplored(key);
+		seedPhysicalWinners(memo, groupId, goal, state);
 		exploreGroup(memo, groupId, goal, state);
 		MemoGroup group = memo.group(groupId);
 		List<MemoExpr> snapshot = List.copyOf(group.mutableExpressionsView());
@@ -91,14 +96,70 @@ public final class CascadesPlanner {
 		}
 		Optional<Winner> best = memo.bestWinner(key);
 		if (best.isEmpty()) {
-			memo.recordFailure(key);
+			best = seedExistingPlanWinner(memo, groupId, goal, state, "no-costed-physical-alternative");
 		}
-		best.ifPresent(winner -> telemetry.winnerChosen(key, winner));
+		if (best.isEmpty()) {
+			memo.recordFailure(key);
+		} else {
+			telemetry.winnerChosen(key, best.get());
+		}
 		return best;
 	}
 
+	private void seedPhysicalWinners(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
+		WinnerKey key = goal.key(groupId);
+		if (memo.bestWinner(key).isPresent()) {
+			return;
+		}
+		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
+		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
+		for (MemoExpr expression : snapshot) {
+			if (!expression.logical()) {
+				continue;
+			}
+			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
+				if (rule.kind() == RuleKind.IMPLEMENTATION) {
+					applyRule(memo, expression, rule, goal, context, state, false);
+				}
+			}
+		}
+		List<MemoExpr> physicalSnapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
+		for (MemoExpr expression : physicalSnapshot) {
+			if (expression.physical()) {
+				optimizeExpression(memo, expression, goal, state, false);
+			}
+		}
+	}
+
+	private Optional<Winner> seedExistingPlanWinner(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
+			String reason) {
+		for (MemoExpr expression : memo.group(groupId).mutableExpressionsView()) {
+			if (!expression.logical() || expression.tupleExpr() == null) {
+				continue;
+			}
+			TupleExpr tupleExpr = expression.tupleExpr();
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(tupleExpr.getBindingNames())
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.build();
+			RuleProof proof = new RuleProof("existing-algebra-seed", RuleKind.IMPLEMENTATION, goal.semanticScope(),
+					Set.of("seedPhysicalWinner"), reason);
+			Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
+					"existing-algebra-seed", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
+			if (added.isPresent()) {
+				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false);
+				if (winner.isPresent()) {
+					state.markApproximate("seeded existing algebra winner after " + reason);
+					return winner;
+				}
+			}
+		}
+		return Optional.empty();
+	}
+
 	private void exploreGroup(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
-		if (!state.consume("exploreGroup:" + groupId)) {
+		if (!state.consumeMajor("exploreGroup:" + groupId)) {
 			state.markApproximate("budget while exploring group " + groupId);
 			return;
 		}
@@ -106,7 +167,7 @@ public final class CascadesPlanner {
 		MemoGroup group = memo.group(groupId);
 		int index = 0;
 		while (index < group.mutableExpressionsView().size()) {
-			if (goal.expired()) {
+			if (state.expired(goal)) {
 				state.markApproximate("timeout while exploring group " + groupId);
 				return;
 			}
@@ -123,12 +184,17 @@ public final class CascadesPlanner {
 
 	private boolean applyRule(Memo memo, MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
 			RuleContext context, SearchState state) {
+		return applyRule(memo, expression, rule, goal, context, state, true);
+	}
+
+	private boolean applyRule(Memo memo, MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
+			RuleContext context, SearchState state, boolean chargeBudget) {
 		String firedKey = expression.id() + ":" + rule.id() + ":" + goal.requiredProperties() + ":"
 				+ goal.semanticScope() + ":" + goal.costPolicy();
 		if (!state.ruleFired.add(firedKey)) {
 			return false;
 		}
-		if (!state.consume("applyRule:" + rule.id())) {
+		if (chargeBudget && !state.consumeMinor("applyRule:" + rule.id())) {
 			state.markApproximate("budget applying rule " + rule.id());
 			return false;
 		}
@@ -169,7 +235,7 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state, boolean chargeBudget) {
-		if ((chargeBudget && !state.consume("optimizeExpression:" + expression.id())) || goal.expired()) {
+		if ((chargeBudget && !state.consumeMinor("optimizeExpression:" + expression.id())) || state.expired(goal)) {
 			state.markApproximate("budget-or-timeout optimizing expression " + expression.id());
 			return Optional.empty();
 		}
@@ -386,16 +452,34 @@ public final class CascadesPlanner {
 		private String approximateReason = "";
 		private final Set<String> ruleFired = new HashSet<>();
 		private final Set<String> patternExplorationMemory = new HashSet<>();
-		private final Map<String, Integer> taskCounts = new HashMap<>();
+		private final Set<WinnerKey> exploredGroups = new HashSet<>();
 		private final Map<Integer, List<RejectedAlternative>> rejectedAlternativesByGroup = new HashMap<>();
+		private int majorTaskCount;
+		private int minorTaskCount;
+		private int minorTasksSinceCharge;
+		private int deadlineCheckCountdown = DEADLINE_CHECK_GRANULARITY;
 
 		SearchState(int budget, OptimizationGoal.SearchMode mode) {
 			this.remainingBudget = budget <= 0 ? Integer.MAX_VALUE : budget;
 			this.mode = mode == null ? OptimizationGoal.SearchMode.EXACT : mode;
 		}
 
-		boolean consume(String taskName) {
-			taskCounts.merge(taskName, 1, Integer::sum);
+		boolean consumeMajor(String taskName) {
+			majorTaskCount++;
+			return chargeBudget(taskName);
+		}
+
+		boolean consumeMinor(String taskName) {
+			minorTaskCount++;
+			minorTasksSinceCharge++;
+			if (minorTasksSinceCharge < MINOR_TASK_BUDGET_GRANULARITY) {
+				return true;
+			}
+			minorTasksSinceCharge = 0;
+			return chargeBudget(taskName);
+		}
+
+		private boolean chargeBudget(String taskName) {
 			if (remainingBudget == Integer.MAX_VALUE) {
 				return true;
 			}
@@ -407,6 +491,28 @@ public final class CascadesPlanner {
 				markApproximate("task budget exhausted at " + taskName);
 			}
 			return mode != OptimizationGoal.SearchMode.BUDGETED;
+		}
+
+		boolean expired(OptimizationGoal goal) {
+			if (goal == null) {
+				return false;
+			}
+			deadlineCheckCountdown--;
+			if (deadlineCheckCountdown > 0) {
+				return false;
+			}
+			deadlineCheckCountdown = DEADLINE_CHECK_GRANULARITY;
+			return goal.expired();
+		}
+
+		boolean groupExplored(WinnerKey key) {
+			return exploredGroups.contains(key);
+		}
+
+		void markGroupExplored(WinnerKey key) {
+			if (key != null) {
+				exploredGroups.add(key);
+			}
 		}
 
 		void markApproximate(String reason) {
@@ -453,8 +559,10 @@ public final class CascadesPlanner {
 
 		List<String> diagnostics() {
 			List<String> diagnostics = new ArrayList<>();
-			diagnostics.add("tasks=" + taskCounts);
+			diagnostics.add("tasks=major:" + majorTaskCount + ", minor:" + minorTaskCount
+					+ ", remainingBudget:" + remainingBudget);
 			diagnostics.add("ruleFired=" + ruleFired.size());
+			diagnostics.add("groupsExplored=" + exploredGroups.size());
 			diagnostics.add("patternsExplored=" + patternExplorationMemory.size());
 			if (approximate) {
 				diagnostics.add("approximate=" + approximateReason);

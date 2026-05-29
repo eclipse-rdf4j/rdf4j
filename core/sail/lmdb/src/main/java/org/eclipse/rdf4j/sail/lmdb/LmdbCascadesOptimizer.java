@@ -255,6 +255,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
 			return true;
 		}
+		if (mode == Mode.EXACT) {
+			return false;
+		}
 		CostVector standardCost = candidate.cost();
 		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
 			return false;
@@ -891,7 +894,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private static StandardPlanPolicy standardPlanPolicyFromProperty() {
-		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "auto");
+		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "compare");
 		return StandardPlanPolicy.from(value);
 	}
 
@@ -900,7 +903,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		COMPARE(true, false, true, false),
 		BOUND(true, true, true, false),
 		SHORTCUT(true, true, true, true),
-		AUTO(true, true, true, true);
+		AUTO(true, false, true, false);
 
 		private final boolean enabled;
 		private final boolean boundsCascades;

@@ -516,10 +516,67 @@ class LmdbEvaluationStatistics
 		} else if (path instanceof ZeroLengthPath zeroLengthPath) {
 			estimate = estimatePropertyPath(zeroLengthPath, effectiveBoundVars);
 		}
-		return estimate.map(value -> new StatisticsEstimate(value.rows(),
-				QErrorInterval.heuristic(value.rows(), 3.0d, value.method()), value.workRows(), value.method(),
-				Map.of("distinctSubjects", value.distinctSubjects(), "distinctObjects", value.distinctObjects(),
-						"averagePathFanout", value.averagePathFanout(), "workRows", value.workRows())));
+		return estimate.map(value -> {
+			PropertyPathEstimate adjusted = adjustPropertyPathEstimate(path, effectiveBoundVars, value);
+			return new StatisticsEstimate(adjusted.rows(),
+					QErrorInterval.heuristic(adjusted.rows(), 3.0d, adjusted.method()), adjusted.workRows(),
+					adjusted.method(),
+					Map.of("distinctSubjects", adjusted.distinctSubjects(), "distinctObjects",
+							adjusted.distinctObjects(), "averagePathFanout", adjusted.averagePathFanout(),
+							"workRows", adjusted.workRows()));
+		});
+	}
+
+	private PropertyPathEstimate adjustPropertyPathEstimate(TupleExpr path, Set<String> boundVars,
+			PropertyPathEstimate estimate) {
+		if (path == null || estimate == null) {
+			return estimate;
+		}
+		Var subjectVar = null;
+		Var objectVar = null;
+		if (path instanceof ArbitraryLengthPath arbitraryLengthPath) {
+			subjectVar = arbitraryLengthPath.getSubjectVar();
+			objectVar = arbitraryLengthPath.getObjectVar();
+		} else if (path instanceof ZeroLengthPath zeroLengthPath) {
+			subjectVar = zeroLengthPath.getSubjectVar();
+			objectVar = zeroLengthPath.getObjectVar();
+		}
+		boolean subjectBound = pathEndpointBound(subjectVar, boundVars);
+		boolean objectBound = pathEndpointBound(objectVar, boundVars);
+		if (!subjectBound && !objectBound) {
+			return estimate;
+		}
+		double rows = estimate.rows();
+		double workRows = estimate.workRows();
+		if (subjectBound && isPositiveFinite(estimate.distinctSubjects())) {
+			rows = Math.min(rows, Math.max(1.0d, estimate.rows() / estimate.distinctSubjects()));
+		}
+		if (objectBound && isPositiveFinite(estimate.distinctObjects())) {
+			rows = Math.min(rows, Math.max(1.0d, estimate.rows() / estimate.distinctObjects()));
+		}
+		if (subjectBound && objectBound) {
+			rows = Math.min(rows, Math.max(1.0d, estimate.averagePathFanout()));
+		}
+		if (isFiniteNonNegative(rows)) {
+			workRows = Math.min(workRows, Math.max(rows, estimate.averagePathFanout() + rows));
+		}
+		if (!isFiniteNonNegative(workRows)) {
+			workRows = rows;
+		}
+		return new PropertyPathEstimate(rows, Math.max(rows, workRows), estimate.distinctSubjects(),
+				estimate.distinctObjects(), estimate.averagePathFanout(),
+				estimate.method() + (subjectBound && objectBound ? "-both-endpoints-bound" : "-endpoint-bound"));
+	}
+
+	private boolean pathEndpointBound(Var var, Set<String> boundVars) {
+		if (var == null) {
+			return false;
+		}
+		if (var.hasValue()) {
+			return true;
+		}
+		String name = var.getName();
+		return name != null && !name.startsWith("_const_") && boundVars != null && boundVars.contains(name);
 	}
 
 	@Override
@@ -7627,11 +7684,14 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
-		if (operatorFeedbackStats == null || !(node instanceof TupleExpr tupleExpr)
-				|| tupleExpr.getParentNode() != null) {
+		if (operatorFeedbackStats == null || !(node instanceof TupleExpr tupleExpr)) {
 			return;
 		}
-		operatorFeedbackStats.recordCompletedQuery(tupleExpr);
+		if (tupleExpr.getParentNode() == null) {
+			operatorFeedbackStats.recordCompletedQuery(tupleExpr);
+		} else {
+			operatorFeedbackStats.recordOperatorOutcome(tupleExpr);
+		}
 	}
 
 	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
