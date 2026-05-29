@@ -249,11 +249,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private boolean standardPlanWins(Mode mode, StandardPlanPolicy policy, StandardPlanCandidate candidate,
 			CascadesPlan cascadesPlan) {
-		if (!mode.replacesAlgebra() || !candidate.isPresent() || !policy.compares()) {
+		if (!mode.replacesAlgebra() || !candidate.isPresent()) {
 			return false;
 		}
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
-			return true;
+			return policy.fallbacks();
+		}
+		if (!policy.compares()) {
+			return false;
 		}
 		if (mode == Mode.EXACT) {
 			return false;
@@ -894,39 +897,46 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private static StandardPlanPolicy standardPlanPolicyFromProperty() {
-		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "off");
+		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "fallback");
 		return StandardPlanPolicy.from(value);
 	}
 
 	private enum StandardPlanPolicy {
-		OFF(false, false, false, false),
-		COMPARE(true, false, true, false),
-		BOUND(true, true, true, false),
-		SHORTCUT(true, true, true, true),
-		AUTO(false, false, false, false);
+		OFF(false, false, false, false, false),
+		FALLBACK(true, false, false, false, true),
+		COMPARE(true, false, true, false, true),
+		BOUND(true, true, true, false, true),
+		SHORTCUT(true, true, true, true, true),
+		SHADOW(true, false, false, false, false),
+		AUTO(true, false, false, false, true);
 
 		private final boolean enabled;
 		private final boolean boundsCascades;
 		private final boolean compares;
 		private final boolean shortCircuits;
+		private final boolean fallbacks;
 
-		StandardPlanPolicy(boolean enabled, boolean boundsCascades, boolean compares, boolean shortCircuits) {
+		StandardPlanPolicy(boolean enabled, boolean boundsCascades, boolean compares, boolean shortCircuits,
+				boolean fallbacks) {
 			this.enabled = enabled;
 			this.boundsCascades = boundsCascades;
 			this.compares = compares;
 			this.shortCircuits = shortCircuits;
+			this.fallbacks = fallbacks;
 		}
 
 		private static StandardPlanPolicy from(String value) {
 			if (value == null || value.isBlank()) {
-				return AUTO;
+				return FALLBACK;
 			}
 			return switch (value.trim().toLowerCase(Locale.ROOT)) {
-			case "off", "false", "none", "auto" -> OFF;
+			case "off", "false", "none" -> OFF;
+			case "fallback", "auto" -> FALLBACK;
 			case "compare", "true" -> COMPARE;
 			case "bound", "bounded" -> BOUND;
 			case "shortcut", "short-circuit", "standard" -> SHORTCUT;
-			default -> OFF;
+			case "shadow" -> SHADOW;
+			default -> FALLBACK;
 			};
 		}
 
@@ -944,6 +954,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 		private boolean shortCircuits() {
 			return shortCircuits;
+		}
+
+		private boolean fallbacks() {
+			return fallbacks;
 		}
 	}
 

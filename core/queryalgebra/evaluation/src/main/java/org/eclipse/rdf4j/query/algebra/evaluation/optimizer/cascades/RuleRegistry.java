@@ -54,8 +54,9 @@ public final class RuleRegistry {
 				applicable.add(rule);
 			}
 		}
-		applicable.sort(Comparator.comparingInt((CascadesRule rule) -> rule.promise(expression, goal, memo))
-				.reversed()
+		applicable.sort(Comparator.comparingInt((CascadesRule rule) -> rule.phase().priority())
+				.thenComparing(Comparator.comparingInt((CascadesRule rule) -> rule.promise(expression, goal, memo))
+						.reversed())
 				.thenComparing(CascadesRule::id));
 		return applicable;
 	}

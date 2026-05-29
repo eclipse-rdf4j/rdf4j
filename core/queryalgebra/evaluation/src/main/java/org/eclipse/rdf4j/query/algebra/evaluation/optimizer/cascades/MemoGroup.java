@@ -129,7 +129,8 @@ public final class MemoGroup {
 			int insertionPoint = entries.size();
 			for (int i = 0; i < entries.size(); i++) {
 				Winner existing = entries.get(i);
-				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())) {
+				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
+						&& !baselineBlocksRuleAlternative(existing, winner)) {
 					dominatedRejectedCount++;
 					return false;
 				}
@@ -181,6 +182,19 @@ public final class MemoGroup {
 		private static boolean sameDeliveredContext(Winner left, Winner right) {
 			return Objects.equals(left.deliveredProperties(), right.deliveredProperties())
 					&& left.expression().groupId() == right.expression().groupId();
+		}
+
+		private static boolean baselineBlocksRuleAlternative(Winner existing, Winner candidate) {
+			return isBaseline(existing) && !isBaseline(candidate);
+		}
+
+		private static boolean isBaseline(Winner winner) {
+			if (winner == null || winner.proofs() == null || winner.proofs().isEmpty()) {
+				return false;
+			}
+			String ruleId = winner.proofs().getFirst().ruleId();
+			return "baseline-existing-algebra".equals(ruleId)
+					|| "existing-algebra-emergency-fallback".equals(ruleId);
 		}
 	}
 }

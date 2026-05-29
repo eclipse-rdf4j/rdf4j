@@ -2531,22 +2531,101 @@ final class LmdbCascadesRuleProvider {
 			if (estimate.isEmpty()) {
 				return List.of();
 			}
-			CostVector cost = CostVector.ofRowsAndWork(estimate.get().rows(), estimate.get().workRows(),
-					estimate.get().qErrorInterval());
+			EndpointBindingMode endpointMode = endpointBindingMode(expression.tupleExpr(), boundVars);
+			CostVector cost = pathCost(estimate.get(), endpointMode);
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(expression.tupleExpr().getBindingNames())
 					.inputBoundVars(pathInputBoundVars(expression.tupleExpr(), boundVars))
-					.accessPath("lmdbPropertyPath")
+					.accessPath("lmdbPropertyPath:" + endpointMode.accessPathSuffix())
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
-			RuleProof proof = proof(semanticScope(goal), Set.of("propertyPath", "statisticsProvider"),
-					"LMDB property-path statistics are exposed as a Cascades physical alternative");
+			RuleProof proof = proof(semanticScope(goal), endpointMode.proofFacts(),
+					"LMDB property-path implementation is bound-endpoint aware and penalizes unbound full scans");
 			TupleExpr alternative = expression.tupleExpr().clone();
 			alternative.setStringMetricPlanned(LmdbJoinIslandConnectivity.OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON,
 					LmdbJoinIslandConnectivity.PROPERTY_PATH_OWNER_REASON);
+			alternative.setStringMetricPlanned("optimizer.pathEndpointMode", endpointMode.accessPathSuffix());
 			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
 					cost, proof, "lmdb-property-path", snapshot(estimate.get(), cost, "lmdb-property-path")));
+		}
+
+		private CostVector pathCost(StatisticsEstimate estimate, EndpointBindingMode endpointMode) {
+			CostVector base = CostVector.ofRowsAndWork(estimate.rows(), estimate.workRows(), estimate.qErrorInterval());
+			if (endpointMode == EndpointBindingMode.UNBOUND) {
+				double workRows = Math.max(base.workRows(), base.workRows() * 8.0d + base.rows());
+				return new CostVector(base.rows(), workRows, base.memoryRows() + Math.max(1.0d, base.rows()),
+						base.seeks(), base.pageWalkRows() + Math.max(1.0d, base.workRows()),
+						base.rowQErrorMean(), Math.max(base.rowQErrorMax(), 8.0d),
+						base.workQErrorMean(), Math.max(base.workQErrorMax(), 8.0d),
+						Math.max(base.uncertaintyRows(), base.rows()), Math.min(base.confidence(), 0.20d),
+						base.evidenceCount());
+			}
+			if (endpointMode == EndpointBindingMode.BOTH) {
+				return new CostVector(base.rows(), Math.max(base.rows(), base.workRows() * 0.25d), base.memoryRows(),
+						base.seeks(), base.pageWalkRows(), base.rowQErrorMean(), base.rowQErrorMax(),
+						base.workQErrorMean(), base.workQErrorMax(), base.uncertaintyRows(),
+						Math.max(base.confidence(), 0.60d), base.evidenceCount() + 1.0d);
+			}
+			return base;
+		}
+
+		private EndpointBindingMode endpointBindingMode(TupleExpr tupleExpr, Set<String> boundVars) {
+			Var subjectVar = null;
+			Var objectVar = null;
+			if (tupleExpr instanceof ArbitraryLengthPath path) {
+				subjectVar = path.getSubjectVar();
+				objectVar = path.getObjectVar();
+			} else if (tupleExpr instanceof ZeroLengthPath path) {
+				subjectVar = path.getSubjectVar();
+				objectVar = path.getObjectVar();
+			}
+			boolean subjectBound = pathEndpointBound(subjectVar, boundVars);
+			boolean objectBound = pathEndpointBound(objectVar, boundVars);
+			if (subjectBound && objectBound) {
+				return EndpointBindingMode.BOTH;
+			}
+			if (subjectBound) {
+				return EndpointBindingMode.FROM_START;
+			}
+			if (objectBound) {
+				return EndpointBindingMode.TO_END;
+			}
+			return EndpointBindingMode.UNBOUND;
+		}
+
+		private boolean pathEndpointBound(Var var, Set<String> boundVars) {
+			if (var == null) {
+				return false;
+			}
+			if (var.hasValue()) {
+				return true;
+			}
+			String name = var.getName();
+			return name != null && !name.startsWith("_const_") && boundVars != null && boundVars.contains(name);
+		}
+
+		private enum EndpointBindingMode {
+			UNBOUND("fullScan", Set.of("propertyPath", "statisticsProvider", "unboundEndpointPenalty")),
+			FROM_START("fromStart", Set.of("propertyPath", "statisticsProvider", "startEndpointBound")),
+			TO_END("toEnd", Set.of("propertyPath", "statisticsProvider", "endEndpointBound")),
+			BOTH("between", Set.of("propertyPath", "statisticsProvider", "bothEndpointsBound"));
+
+			private final String accessPathSuffix;
+			private final Set<String> proofFacts;
+
+			EndpointBindingMode(String accessPathSuffix, Set<String> proofFacts) {
+				this.accessPathSuffix = accessPathSuffix;
+				this.proofFacts = proofFacts;
+			}
+
+			private String accessPathSuffix() {
+				return accessPathSuffix;
+			}
+
+			private Set<String> proofFacts() {
+				return proofFacts;
+			}
 		}
 
 		private Set<String> pathInputBoundVars(TupleExpr tupleExpr, Set<String> boundVars) {

@@ -800,6 +800,10 @@ public interface CascadesCostModel {
 			double workRows = step.workRows() + rows;
 			if (subjectBound || objectBound) {
 				workRows = Math.min(workRows, Math.max(rows, endpointBoundPathWork(step.workRows(), rows)));
+			} else {
+				// A path with no bound endpoint is not just a row-producing node: it can explore a broad frontier and
+				// discard many candidate paths. Make that internal work visible to join reordering.
+				workRows = Math.max(workRows, unboundEndpointPathWork(step.workRows(), rows, directRows));
 			}
 			BagEstimate bag = bagWithBindings(path, rows, workRows,
 					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback");
@@ -813,6 +817,14 @@ public interface CascadesCostModel {
 				return safeRows;
 			}
 			return Math.max(safeRows, Math.sqrt(Math.max(1.0d, stepWorkRows)) + safeRows);
+		}
+
+		private double unboundEndpointPathWork(double stepWorkRows, double rows, double directRows) {
+			double safeRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
+			double safeDirectRows = Double.isFinite(directRows) && directRows >= 0.0d ? directRows : safeRows;
+			double safeStepWorkRows = Double.isFinite(stepWorkRows) && stepWorkRows >= 0.0d ? stepWorkRows : safeDirectRows;
+			double frontierPenalty = Math.sqrt(Math.max(1.0d, safeDirectRows));
+			return safeStepWorkRows + safeRows * Math.max(4.0d, frontierPenalty);
 		}
 
 		private boolean endpointBound(Var var, Set<String> boundVars) {

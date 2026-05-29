@@ -31,6 +31,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -55,7 +57,7 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 3;
+	private static final int PERSIST_VERSION = 4;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -98,6 +100,14 @@ final class LmdbOperatorFeedbackStats {
 					operators.add(node);
 				}
 				super.meetBinaryTupleOperator(node);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				if (node instanceof TupleExpr tupleExpr && isSupportedOperator(tupleExpr)) {
+					operators.add(tupleExpr);
+				}
+				super.meetOther(node);
 			}
 		});
 		for (TupleExpr operator : operators) {
@@ -253,6 +263,18 @@ final class LmdbOperatorFeedbackStats {
 
 	private double actualWorkRows(TupleExpr node, double actualRows, double leftRows, double rightRows,
 			double leftBranchRows, double rightBranchRows) {
+		if (node instanceof ArbitraryLengthPath) {
+			double candidates = longMetric(node, "optimizer.pathCandidateRowsActual");
+			if (isFiniteNonNegative(candidates)) {
+				return Math.max(actualRows, candidates);
+			}
+		}
+		if (node instanceof ZeroLengthPath) {
+			double candidates = longMetric(node, "optimizer.zeroLengthPathCandidateRowsActual");
+			if (isFiniteNonNegative(candidates)) {
+				return Math.max(actualRows, candidates);
+			}
+		}
 		if (node instanceof Union) {
 			double branchRows = sumFiniteRows(leftBranchRows, rightBranchRows);
 			if (isFiniteNonNegative(branchRows)) {
@@ -325,7 +347,12 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private static boolean isSupportedOperator(TupleExpr node) {
-		return node instanceof Join || node instanceof LeftJoin || node instanceof Union || node instanceof Difference;
+		return node instanceof Join
+				|| node instanceof LeftJoin
+				|| node instanceof Union
+				|| node instanceof Difference
+				|| node instanceof ArbitraryLengthPath
+				|| node instanceof ZeroLengthPath;
 	}
 
 	private static boolean isCompleted(TupleExpr node) {

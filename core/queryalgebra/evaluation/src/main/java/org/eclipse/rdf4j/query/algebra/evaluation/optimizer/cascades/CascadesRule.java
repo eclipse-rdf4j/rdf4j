@@ -27,6 +27,16 @@ public interface CascadesRule {
 
 	int promise(MemoExpr expression, OptimizationGoal goal, Memo memo);
 
+	default RulePhase phase() {
+		if (kind() == RuleKind.IMPLEMENTATION) {
+			return RulePhase.PHYSICAL_IMPLEMENTATION;
+		}
+		if (kind() == RuleKind.ENFORCER) {
+			return RulePhase.ENFORCER;
+		}
+		return RulePhase.CHEAP_LOGICAL;
+	}
+
 	List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context);
 
 	default RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {

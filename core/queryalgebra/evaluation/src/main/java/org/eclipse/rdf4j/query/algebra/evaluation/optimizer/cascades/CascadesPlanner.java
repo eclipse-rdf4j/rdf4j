@@ -87,6 +87,7 @@ public final class CascadesPlanner {
 		}
 
 		state.markGroupExplored(key);
+		seedExistingPlanWinner(memo, groupId, goal, state, "initial-priced-baseline", false);
 		seedPhysicalWinners(memo, groupId, goal, state);
 		exploreGroup(memo, groupId, goal, state);
 		MemoGroup group = memo.group(groupId);
@@ -96,8 +97,6 @@ public final class CascadesPlanner {
 		}
 		Optional<Winner> best = memo.bestWinner(key);
 		if (best.isEmpty()) {
-			// Opaque existing-algebra is an emergency fallback only. Adding it before rule exploration lets it
-			// dominate cheaper structural alternatives and preserves bad pre-optimized join orders.
 			best = seedExistingPlanWinner(memo, groupId, goal, state, "no-costed-physical-alternative", true);
 		}
 		if (best.isEmpty()) {
@@ -141,10 +140,11 @@ public final class CascadesPlanner {
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.build();
-			RuleProof proof = new RuleProof("existing-algebra-seed", RuleKind.IMPLEMENTATION, goal.semanticScope(),
-					Set.of("seedPhysicalWinner"), reason);
-			Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
-					"existing-algebra-seed", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
+				String ruleId = markApproximate ? "existing-algebra-emergency-fallback" : "baseline-existing-algebra";
+				RuleProof proof = new RuleProof(ruleId, RuleKind.IMPLEMENTATION, goal.semanticScope(),
+						Set.of(markApproximate ? "emergencyFallback" : "pricedBaselinePhysicalWinner"), reason);
+				Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
+						ruleId, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
 			if (added.isPresent()) {
 				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false, false);
 				if (winner.isPresent()) {
@@ -214,7 +214,7 @@ public final class CascadesPlanner {
 			if (application.kind() == RuleKind.TRANSFORMATION) {
 				memo.addLogicalAlternative(application.targetGroupId(), application.alternative());
 			} else {
-				Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
+					Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
 						application.alternative(), application.deliveredProperties(), application.metadata(),
 						application.kind(), application.localCost(),
 						application.proofs(), application.estimate(), application.opaque());
