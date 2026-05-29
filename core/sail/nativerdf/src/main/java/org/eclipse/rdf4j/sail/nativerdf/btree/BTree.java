@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -164,6 +165,11 @@ public class BTree implements Closeable {
 	 * with just a root node, and so on.
 	 */
 	private volatile int height = -1;
+
+	/**
+	 * Monotonically increasing counter used to invalidate iterators when the root or node allocation lifecycle changes.
+	 */
+	private final AtomicLong generation = new AtomicLong();
 
 	/**
 	 * Flag indicating whether this BTree has been closed.
@@ -388,6 +394,7 @@ public class BTree implements Closeable {
 	private void close(boolean syncChanges) throws IOException {
 		btreeLock.writeLock().lock();
 		try {
+			generation.incrementAndGet();
 			try {
 				if (syncChanges) {
 					sync();
@@ -414,7 +421,7 @@ public class BTree implements Closeable {
 	 * @throws IOException
 	 */
 	public void sync() throws IOException {
-		btreeLock.readLock().lock();
+		btreeLock.writeLock().lock();
 		try {
 			// Write any changed nodes that still reside in the cache to disk
 			nodeCache.flush();
@@ -425,8 +432,12 @@ public class BTree implements Closeable {
 
 			allocatedNodesList.sync();
 		} finally {
-			btreeLock.readLock().unlock();
+			btreeLock.writeLock().unlock();
 		}
+	}
+
+	long getGeneration() {
+		return generation.get();
 	}
 
 	/**
@@ -718,6 +729,7 @@ public class BTree implements Closeable {
 				// Empty B-Tree, create a root node
 				rootNode = createNewNode();
 				rootNodeID = rootNode.getID();
+				generation.incrementAndGet();
 				writeFileHeader();
 				height = 1;
 			}
@@ -732,6 +744,7 @@ public class BTree implements Closeable {
 				newRootNode.insertValueNodeIDPair(0, insertResult.overflowValue, insertResult.overflowNodeID);
 
 				rootNodeID = newRootNode.getID();
+				generation.incrementAndGet();
 				writeFileHeader();
 				newRootNode.release();
 
@@ -857,6 +870,8 @@ public class BTree implements Closeable {
 						rootNodeID = rootNode.getChildNodeID(0);
 						rootNode.setChildNodeID(0, 0);
 					}
+
+					generation.incrementAndGet();
 
 					// Write new root node ID to file header
 					writeFileHeader();
@@ -994,6 +1009,7 @@ public class BTree implements Closeable {
 	public void clear() throws IOException {
 		btreeLock.writeLock().lock();
 		try {
+			generation.incrementAndGet();
 			nodeCache.clear();
 			nioFile.truncate(HEADER_LENGTH);
 
@@ -1038,7 +1054,7 @@ public class BTree implements Closeable {
 		// Note: this method is called by Node.release()
 		// This method should not be called directly (to prevent concurrency issues)!!!
 
-		if (node.isEmpty() && node.isLeaf() && nodeCache.discardEmptyUnused(node.getID())) {
+		if (node.isEmpty() && node.isLeaf() && nodeCache.discardEmptyUnused(node)) {
 			// allow the discarded node ID to be reused
 			synchronized (allocatedNodesList) {
 				allocatedNodesList.freeNode(node.getID());
