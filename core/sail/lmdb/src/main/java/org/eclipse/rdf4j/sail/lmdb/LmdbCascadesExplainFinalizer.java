@@ -34,7 +34,8 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
  * conservative planner-owned vector metadata when Cascades produced no winner for a node.
  */
 final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
-	static final LmdbCascadesExplainFinalizer INSTANCE = new LmdbCascadesExplainFinalizer(null);
+	static final String FALLBACK_ANNOTATIONS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.explainFallbackAnnotations";
+	static final LmdbCascadesExplainFinalizer INSTANCE = new LmdbCascadesExplainFinalizer(null, true);
 	static final String PLANNER_ID = "lmdb-cascades";
 
 	private static final String FALLBACK_SOURCE = "lmdb-cascades-fallback";
@@ -43,16 +44,24 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
 	private final CascadesCostModel costModel;
+	private final boolean fallbackAnnotationsEnabled;
 
 	LmdbCascadesExplainFinalizer(EvaluationStatistics statistics) {
+		this(statistics, true);
+	}
+
+	LmdbCascadesExplainFinalizer(EvaluationStatistics statistics, boolean fallbackAnnotationsEnabled) {
 		this.costModel = statistics == null ? null : CascadesCostModel.from(statistics);
+		this.fallbackAnnotationsEnabled = fallbackAnnotationsEnabled;
 	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
-				this::fallbackCost);
-		annotateDisconnectedCartesianFallback(tupleExpr);
+		if (fallbackAnnotationsEnabled) {
+			CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
+					this::fallbackCost);
+			annotateDisconnectedCartesianFallback(tupleExpr);
+		}
 		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
 	}
 

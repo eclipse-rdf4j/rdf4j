@@ -27,29 +27,46 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceClean
  * the LMDB no-Cascades pipeline.
  */
 final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
-	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> BASELINES = ThreadLocal
-			.withInitial(IdentityHashMap::new);
+	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> BASELINES = new ThreadLocal<>();
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		if (tupleExpr == null) {
+		if (tupleExpr == null || !LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
 			return;
 		}
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			BASELINES.get().put(tupleExpr, standardPlan);
+			Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+			if (baselines == null) {
+				baselines = new IdentityHashMap<>();
+				BASELINES.set(baselines);
+			}
+			baselines.put(tupleExpr, standardPlan);
 		} catch (RuntimeException ignored) {
-			BASELINES.get().remove(tupleExpr);
+			Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+			if (baselines != null) {
+				baselines.remove(tupleExpr);
+				if (baselines.isEmpty()) {
+					BASELINES.remove();
+				}
+			}
 		}
 	}
 
-	static TupleExpr baselineFor(TupleExpr tupleExpr) {
+	static TupleExpr consumeBaseline(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return null;
 		}
-		TupleExpr baseline = BASELINES.get().get(tupleExpr);
-		return baseline == null ? null : baseline.clone();
+		Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+		if (baselines == null) {
+			return null;
+		}
+		TupleExpr baseline = baselines.remove(tupleExpr);
+		if (baselines.isEmpty()) {
+			BASELINES.remove();
+		}
+		return baseline;
 	}
 
 	static void clearBaseline(TupleExpr tupleExpr) {
@@ -57,6 +74,9 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 			return;
 		}
 		Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+		if (baselines == null) {
+			return;
+		}
 		baselines.remove(tupleExpr);
 		if (baselines.isEmpty()) {
 			BASELINES.remove();

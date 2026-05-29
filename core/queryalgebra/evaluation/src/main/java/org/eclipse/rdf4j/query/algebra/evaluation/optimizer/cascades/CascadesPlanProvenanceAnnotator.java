@@ -40,6 +40,8 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static final String PLANNED_CARDINALITY_Q_ERROR = "plannedCardinalityQError";
 	private static final String PLANNED_COST_ROW_Q_ERROR_MAX = "plannedCostRowQErrorMax";
 	private static final String PLANNED_COST_WORK_Q_ERROR_MAX = "plannedCostWorkQErrorMax";
+	private static final CostVector DEFAULT_FALLBACK_COST = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d,
+			4.0d, 4.0d, 4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
 	private CascadesPlanProvenanceAnnotator() {
 	}
@@ -82,8 +84,7 @@ public final class CascadesPlanProvenanceAnnotator {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				if (node instanceof TupleExpr tupleExpr) {
-					CostVector cost = fallbackCost(tupleExpr, fallbackCostProvider);
-					annotateFallbackNode(node, plannerId, source, usage, cost);
+					annotateFallbackNode(tupleExpr, plannerId, source, usage, fallbackCostProvider);
 				}
 				node.visitChildren(this);
 			}
@@ -193,8 +194,8 @@ public final class CascadesPlanProvenanceAnnotator {
 		setStringIfMissing(node, CASCADES_COVERED_BY_WINNER, decisionId);
 	}
 
-	private static void annotateFallbackNode(QueryModelNode node, String plannerId, String source, String usage,
-			CostVector cost) {
+	private static void annotateFallbackNode(TupleExpr node, String plannerId, String source, String usage,
+			Function<TupleExpr, CostVector> fallbackCostProvider) {
 		boolean replaceFallbackMetrics = missingOrFallbackUsage(
 				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
 		if (!isBlank(plannerId)) {
@@ -207,9 +208,11 @@ public final class CascadesPlanProvenanceAnnotator {
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
 		if (COVERED_BY_PARENT_WINNER.equals(
-				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))) {
+				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
+				|| !fallbackCostRequired(node, replaceFallbackMetrics)) {
 			return;
 		}
+		CostVector cost = fallbackCost(node, fallbackCostProvider);
 		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cost.rows(),
 				replaceFallbackMetrics);
 		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows(),
@@ -232,6 +235,26 @@ public final class CascadesPlanProvenanceAnnotator {
 				replaceFallbackMetrics);
 		setDoubleIfMissingOrFallback(node, "plannedCascadesEvidenceCount", cost.evidenceCount(),
 				replaceFallbackMetrics);
+	}
+
+	private static boolean fallbackCostRequired(QueryModelNode node, boolean replaceFallbackMetrics) {
+		return replaceFallbackMetrics
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_WORK_ROWS)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS)
+				|| missingDoubleMetric(node, TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE)
+				|| missingDoubleMetric(node, PLANNED_CARDINALITY_Q_ERROR)
+				|| missingDoubleMetric(node, PLANNED_COST_ROW_Q_ERROR_MAX)
+				|| missingDoubleMetric(node, PLANNED_COST_WORK_Q_ERROR_MAX)
+				|| missingDoubleMetric(node, "plannedCascadesEvidenceCount");
+	}
+
+	private static boolean missingDoubleMetric(QueryModelNode node, String metricName) {
+		double current = node.getDoubleMetricPlanned(metricName);
+		return !Double.isFinite(current) || current < 0.0d;
 	}
 
 	private static void sanitizeSubtree(TupleExpr root) {
@@ -393,7 +416,7 @@ public final class CascadesPlanProvenanceAnnotator {
 	}
 
 	private static CostVector fallbackCost() {
-		return new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d, 4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
+		return DEFAULT_FALLBACK_COST;
 	}
 
 	private static String proofSummary(List<RuleProof> proofs) {

@@ -74,6 +74,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
 	static final String STANDARD_PLAN_POLICY_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanPolicy";
 	static final String STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanMinImprovement";
+	static final String STANDARD_PLAN_FULL_ANNOTATIONS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations";
 	private static final String CASCADES_RULE = "optimizer.cascadesRule";
 	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
 	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
@@ -126,7 +127,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		mode = serializableSafeMode(mode);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-			boolean budgetedSearch = usesBudgetedSearch(mode, tupleExpr);
+			int nodeCount = countNodes(tupleExpr);
+			boolean budgetedSearch = usesBudgetedSearch(mode, nodeCount);
 			PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
 			OptimizationGoal goal = OptimizationGoal.exact(required);
 			if (budgetedSearch) {
@@ -141,13 +143,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			StandardPlanPolicy standardPlanPolicy = standardPlanPolicy();
 			StandardPlanCandidate standardPlan = mode.replacesAlgebra()
-					? standardPlanCandidate(tupleExpr, dataset, bindings, initiallyBoundVars, standardPlanPolicy)
-					: StandardPlanCandidate.empty();
+					? standardPlanCandidate(tupleExpr, dataset, bindings, standardPlanPolicy)
+					: emptyStandardPlanCandidate();
 			if (useStandardPlanWithoutCascades(mode, budgetedSearch, standardPlanPolicy, standardPlan)) {
 				annotateStandardPlanChoice(tupleExpr, mode, standardPlanPolicy, standardPlan, true, true);
 				if (mode.replacesAlgebra()) {
-					replaceRootIfSafe(tupleExpr, standardPlan.tupleExpr());
-					annotateStandardPlanWinnerTree(tupleExpr, standardPlan);
+					applyStandardPlanWinner(tupleExpr, standardPlan);
 				}
 				annotateObjectGuarantees(tupleExpr);
 				return;
@@ -167,10 +168,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			annotate(tupleExpr, mode, plan, telemetry, appliesPlan, standardPlanPolicy, standardPlan,
 					standardWinner);
 			if (appliesPlan) {
-				TupleExpr replacement = standardWinner ? standardPlan.tupleExpr() : plan.tupleExpr().get();
-				replaceRootIfSafe(tupleExpr, replacement);
 				if (standardWinner) {
-					annotateStandardPlanWinnerTree(tupleExpr, standardPlan);
+					applyStandardPlanWinner(tupleExpr, standardPlan);
+				} else {
+					replaceRootIfSafe(tupleExpr, plan.tupleExpr().get());
 				}
 			}
 			if (!standardWinner) {
@@ -202,32 +203,30 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return Mode.SHADOW;
 	}
 
+	private StandardPlanCandidate emptyStandardPlanCandidate() {
+		return new StandardPlanCandidate(null, "none");
+	}
+
 	private StandardPlanCandidate standardPlanCandidate(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
-			Set<String> initiallyBoundVars, StandardPlanPolicy policy) {
+			StandardPlanPolicy policy) {
 		if (!policy.enabled() || tupleExpr == null || preserveSerializableObservationOrder) {
-			return StandardPlanCandidate.empty();
+			return emptyStandardPlanCandidate();
 		}
-		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.baselineFor(tupleExpr);
+		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.consumeBaseline(tupleExpr);
 		if (capturedPlan != null) {
-			return standardPlanCandidate(capturedPlan, initiallyBoundVars, "lmdb-no-cascades");
+			return standardPlanCandidate(capturedPlan, "lmdb-no-cascades");
 		}
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			return standardPlanCandidate(standardPlan, initiallyBoundVars, "current-lmdb-no-cascades");
+			return standardPlanCandidate(standardPlan, "current-lmdb-no-cascades");
 		} catch (RuntimeException e) {
-			return StandardPlanCandidate.empty();
+			return emptyStandardPlanCandidate();
 		}
 	}
 
-	private StandardPlanCandidate standardPlanCandidate(TupleExpr standardPlan, Set<String> initiallyBoundVars,
-			String origin) {
-		try {
-			CostVector cost = new StandardPlanCostEstimator().cost(standardPlan);
-			return new StandardPlanCandidate(standardPlan, cost, countNodes(standardPlan), initiallyBoundVars, origin);
-		} catch (RuntimeException e) {
-			return StandardPlanCandidate.empty();
-		}
+	private StandardPlanCandidate standardPlanCandidate(TupleExpr standardPlan, String origin) {
+		return new StandardPlanCandidate(standardPlan, origin);
 	}
 
 	private boolean useStandardPlanWithoutCascades(Mode mode, boolean budgetedSearch, StandardPlanPolicy policy,
@@ -256,9 +255,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
 			return true;
 		}
+		CostVector standardCost = candidate.cost();
+		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
+			return false;
+		}
 		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
 				DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT);
-		double standardScore = candidate.cost().objectiveScore();
+		double standardScore = standardCost.objectiveScore();
 		double cascadesScore = cascadesPlan.cost().objectiveScore();
 		if (!Double.isFinite(standardScore) || standardScore >= Double.MAX_VALUE) {
 			return false;
@@ -701,21 +704,43 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			tupleExpr.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
 			tupleExpr.setStringMetricPlanned(APPLIED_METRIC, Boolean.toString(mode.replacesAlgebra()));
 		}
-		if (!standardPlan.isPresent()) {
+		if (!standardPlan.isPresent()
+				|| !standardPlan.hasComputedCost() && !standardPlanFullAnnotationsEnabled()) {
 			return;
 		}
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanRows", standardPlan.cost().rows());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanWorkRows", standardPlan.cost().workRows());
+		CostVector standardCost = standardPlan.cost();
+		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
+			return;
+		}
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanRows", standardCost.rows());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanWorkRows", standardCost.workRows());
 		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanObjective",
-				standardPlan.cost().objectiveScore());
+				standardCost.objectiveScore());
 		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanNodeCount", standardPlan.nodeCount());
+	}
+
+	private void applyStandardPlanWinner(TupleExpr tupleExpr, StandardPlanCandidate standardPlan) {
+		if (standardPlan == null || !standardPlan.isPresent()) {
+			return;
+		}
+		TupleExpr replacement = standardPlan.tupleExpr();
+		if (standardPlanFullAnnotationsEnabled()) {
+			annotateStandardPlanWinnerTree(replacement, standardPlan);
+		}
+		replaceRootIfSafe(tupleExpr, replacement);
+		if (standardPlanFullAnnotationsEnabled() && tupleExpr != replacement) {
+			CostVector cost = standardPlan.cost();
+			if (cost != null && !CostVector.INFINITE.equals(cost)) {
+				annotateStandardPlanNode(tupleExpr, cost, standardPlan.origin());
+			}
+		}
 	}
 
 	private void annotateStandardPlanWinnerTree(TupleExpr tupleExpr, StandardPlanCandidate standardPlan) {
 		if (tupleExpr == null || standardPlan == null || !standardPlan.isPresent()) {
 			return;
 		}
-		StandardPlanCostEstimator estimator = new StandardPlanCostEstimator();
+		StandardPlanCostEstimator estimator = standardPlan.costEstimator();
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
@@ -726,6 +751,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				node.visitChildren(this);
 			}
 		});
+	}
+
+	private boolean standardPlanFullAnnotationsEnabled() {
+		return trackResultSize || Boolean.getBoolean(TRACE_PROPERTY)
+				|| Boolean.getBoolean(STANDARD_PLAN_FULL_ANNOTATIONS_PROPERTY);
 	}
 
 	private void annotateStandardPlanNode(TupleExpr tupleExpr, CostVector cost, String origin) {
@@ -773,6 +803,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private Mode mode(TupleExpr tupleExpr) {
+		return modeFromProperty();
+	}
+
+	static boolean standardPlanBaselineCaptureEnabled() {
+		return modeFromProperty().replacesAlgebra() && standardPlanPolicyFromProperty().enabled();
+	}
+
+	private static Mode modeFromProperty() {
 		String value = System.getProperty(MODE_PROPERTY, "auto").trim().toLowerCase(Locale.ROOT);
 		if (value.isEmpty() || "false".equals(value) || "off".equals(value)) {
 			return Mode.OFF;
@@ -795,14 +833,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return Mode.OFF;
 	}
 
-	private boolean usesBudgetedSearch(Mode mode, TupleExpr tupleExpr) {
+	private boolean usesBudgetedSearch(Mode mode, int nodeCount) {
 		if (mode == Mode.BUDGETED || mode == Mode.SHADOW_BUDGETED) {
 			return true;
 		}
 		if (mode != Mode.AUTO) {
 			return false;
 		}
-		return countNodes(tupleExpr) > intProperty(SMALL_QUERY_MAX_NODES_PROPERTY, DEFAULT_SMALL_QUERY_MAX_NODES);
+		return nodeCount > intProperty(SMALL_QUERY_MAX_NODES_PROPERTY, DEFAULT_SMALL_QUERY_MAX_NODES);
 	}
 
 	private int countNodes(TupleExpr tupleExpr) {
@@ -849,6 +887,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private StandardPlanPolicy standardPlanPolicy() {
+		return standardPlanPolicyFromProperty();
+	}
+
+	private static StandardPlanPolicy standardPlanPolicyFromProperty() {
 		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "auto");
 		return StandardPlanPolicy.from(value);
 	}
@@ -903,24 +945,57 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private record StandardPlanCandidate(TupleExpr tupleExpr, CostVector cost, int nodeCount,
-			Set<String> initiallyBoundVars, String origin) {
+	private final class StandardPlanCandidate {
+		private final TupleExpr tupleExpr;
+		private final String origin;
+		private StandardPlanCostEstimator costEstimator;
+		private CostVector cost;
+		private int nodeCount = -1;
 
-		private static final StandardPlanCandidate EMPTY = new StandardPlanCandidate(null, CostVector.INFINITE, 0,
-				Set.of(), "none");
-
-		private StandardPlanCandidate {
-			initiallyBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
-					: Set.copyOf(initiallyBoundVars);
-			origin = origin == null || origin.isBlank() ? "unknown" : origin;
+		private StandardPlanCandidate(TupleExpr tupleExpr, String origin) {
+			this.tupleExpr = tupleExpr;
+			this.origin = origin == null || origin.isBlank() ? "unknown" : origin;
 		}
 
-		private static StandardPlanCandidate empty() {
-			return EMPTY;
+		private TupleExpr tupleExpr() {
+			return tupleExpr;
+		}
+
+		private String origin() {
+			return origin;
 		}
 
 		private boolean isPresent() {
-			return tupleExpr != null && cost != null && !CostVector.INFINITE.equals(cost);
+			return tupleExpr != null;
+		}
+
+		private boolean hasComputedCost() {
+			return cost != null;
+		}
+
+		private CostVector cost() {
+			if (cost == null) {
+				try {
+					cost = costEstimator().cost(tupleExpr);
+				} catch (RuntimeException e) {
+					cost = CostVector.INFINITE;
+				}
+			}
+			return cost;
+		}
+
+		private StandardPlanCostEstimator costEstimator() {
+			if (costEstimator == null) {
+				costEstimator = new StandardPlanCostEstimator();
+			}
+			return costEstimator;
+		}
+
+		private int nodeCount() {
+			if (nodeCount < 0) {
+				nodeCount = tupleExpr == null ? 0 : countNodes(tupleExpr);
+			}
+			return nodeCount;
 		}
 	}
 
