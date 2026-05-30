@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import java.util.AbstractList;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.RandomAccess;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -41,7 +43,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 				}
 			}
 		}
-		frequencies = Map.copyOf(copy);
+		frequencies = stableFrequencyMap(copy);
 		source = source == null || source.isBlank() ? "finite-relation" : source;
 	}
 
@@ -87,7 +89,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			List<Value> key = project(entry.getKey(), indexes);
 			grouped.merge(key, entry.getValue(), Double::sum);
 		}
-		return Map.copyOf(grouped);
+		return stableFrequencyMap(grouped);
 	}
 
 	public Optional<FiniteRelationEstimate> retainIfVariablesRemain(Collection<String> retainedVariables) {
@@ -129,6 +131,10 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return tupleKey(projected);
 	}
 
+	private static Map<List<Value>, Double> stableFrequencyMap(Map<List<Value>, Double> frequencies) {
+		return frequencies == null || frequencies.isEmpty() ? Map.of() : new StableValueTupleMap(frequencies);
+	}
+
 	static List<Value> tupleKey(List<Value> values) {
 		return new StableValueTuple(values);
 	}
@@ -157,6 +163,48 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			return "T|" + value.stringValue();
 		}
 		return value.getClass().getName() + "|" + value.stringValue();
+	}
+
+	private static final class StableValueTupleMap extends AbstractMap<List<Value>, Double> {
+
+		private final Map<List<Value>, Double> delegate;
+
+		private StableValueTupleMap(Map<List<Value>, Double> values) {
+			Map<List<Value>, Double> canonical = new LinkedHashMap<>();
+			for (Map.Entry<List<Value>, Double> entry : values.entrySet()) {
+				canonical.merge(tupleKey(entry.getKey()), entry.getValue(), Double::sum);
+			}
+			this.delegate = Map.copyOf(canonical);
+		}
+
+		@Override
+		public Set<Entry<List<Value>, Double>> entrySet() {
+			return delegate.entrySet();
+		}
+
+		@Override
+		public Double get(Object key) {
+			return delegate.get(canonicalLookupKey(key));
+		}
+
+		@Override
+		public boolean containsKey(Object key) {
+			return delegate.containsKey(canonicalLookupKey(key));
+		}
+
+		private Object canonicalLookupKey(Object key) {
+			if (!(key instanceof List<?> values)) {
+				return key;
+			}
+			List<Value> tuple = new ArrayList<>(values.size());
+			for (Object value : values) {
+				if (!(value instanceof Value rdfValue)) {
+					return key;
+				}
+				tuple.add(rdfValue);
+			}
+			return tupleKey(tuple);
+		}
 	}
 
 	private static final class StableValueTuple extends AbstractList<Value> implements RandomAccess {

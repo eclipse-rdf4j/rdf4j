@@ -37,8 +37,9 @@ public record VariableEstimate(double distinctRows, double boundRows, double nul
 
 	public VariableEstimate scale(double factor) {
 		double safe = Double.isFinite(factor) && factor >= 0.0d ? factor : 1.0d;
+		DistributionSketch scaledSketch = Math.abs(safe - 1.0d) < 0.000000001d ? sketch : null;
 		return new VariableEstimate(Math.min(distinctRows, boundRows * safe), boundRows * safe, nullableRows * safe,
-				sketch);
+				scaledSketch);
 	}
 
 	public VariableEstimate plus(VariableEstimate other) {

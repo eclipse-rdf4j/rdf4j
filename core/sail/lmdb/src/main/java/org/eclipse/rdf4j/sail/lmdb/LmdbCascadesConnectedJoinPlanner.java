@@ -21,7 +21,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -54,6 +56,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final String RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION = "runtime-connected-plus-zero-var-filters";
 	static final String CONNECTED_JOIN_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.trace";
 	static final String CONNECTED_JOIN_TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.traceLimit";
+	static final String TRACE_PROPERTY = CONNECTED_JOIN_TRACE_PROPERTY;
 	static final String CONNECTED_JOIN_TRACE_METRIC = "optimizer.connectedJoinTrace";
 	private static final int EXACT_DP_FACTOR_LIMIT = 20;
 	private static final int DEFAULT_TRACE_LIMIT = 24_000;
@@ -115,6 +118,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		List<Set<String>> delayedPathEndpointBinders = delayedPathEndpointBinders(factors, factorVars);
 		if (trace.enabled()) {
 			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
 					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
@@ -168,11 +172,12 @@ final class LmdbCascadesConnectedJoinPlanner {
 				if ((mask & bit) != 0) {
 					continue;
 				}
-				if (!connectedExtension(factors.get(factorIndex), state.boundVars(), factorVars.get(factorIndex))) {
+				String extensionRejection = connectedExtensionRejection(factors.get(factorIndex), state.boundVars(),
+						factorVars.get(factorIndex), mask, factorIndex, delayedPathEndpointBinders);
+				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
-								+ extensionRejectReason(factors.get(factorIndex), state.boundVars(),
-										factorVars.get(factorIndex)) + " factor="
+								+ extensionRejection + " factor="
 								+ factorSummary(factors.get(factorIndex)));
 					}
 					continue;
@@ -198,6 +203,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 
+		if (trace.enabled()) {
+			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace);
+		}
 		State full = best[fullMask];
 		if (full == null) {
 			trace.add("reject no-full-connected-state");
@@ -223,6 +231,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return Optional.empty();
 		}
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		List<Set<String>> delayedPathEndpointBinders = delayedPathEndpointBinders(factors, factorVars);
 		if (trace.enabled()) {
 			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
 					+ " zeroVar=" + zeroVarFactorIndices);
@@ -248,10 +257,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 					}
 					continue;
 				}
-				if (hasPrefix && !connectedExtension(factor, boundVars, factorVars.get(factorIndex))) {
+				String extensionRejection = hasPrefix
+						? connectedExtensionRejection(factor, boundVars, factorVars.get(factorIndex), maskFor(order),
+								factorIndex, delayedPathEndpointBinders)
+						: null;
+				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("greedy extend reject order=" + order + " f" + factorIndex + " reason="
-								+ extensionRejectReason(factor, boundVars, factorVars.get(factorIndex))
+								+ extensionRejection
 								+ " factor=" + factorSummary(factor));
 					}
 					continue;
@@ -436,6 +449,55 @@ final class LmdbCascadesConnectedJoinPlanner {
 				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
 	}
 
+	private static void tracePathAlternatives(List<TupleExpr> factors, State[] best, List<Set<String>> factorVars,
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
+		if (factors == null || best == null || factorVars == null || trace == null || !trace.enabled()) {
+			return;
+		}
+		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
+			TupleExpr factor = factors.get(factorIndex);
+			if (!path(factor)) {
+				continue;
+			}
+			PathAlternative fromStart = null;
+			PathAlternative toEnd = null;
+			PathAlternative between = null;
+			int factorBit = 1 << factorIndex;
+			for (State prefix : best) {
+				if (prefix == null || (prefix.mask() & factorBit) != 0
+						|| !pathHasBoundEndpoint(factor, prefix.boundVars())) {
+					continue;
+				}
+				String mode = pathEndpointMode(factor, prefix.boundVars());
+				if (!"fromStart".equals(mode) && !"toEnd".equals(mode) && !"between".equals(mode)) {
+					continue;
+				}
+				Step step = estimateStep(factors, factorIndex, prefix.boundVars(), prefix.rows(), true,
+						prefix.prefixFactors(factors), costModel, fallbackStatistics);
+				if (step == null) {
+					continue;
+				}
+				PathAlternative candidate = new PathAlternative(mode, prefix, step,
+						prefix.workRows() + step.workRows(), Math.max(prefix.maxRows(), step.outputRows()));
+				if ("fromStart".equals(mode)) {
+					fromStart = better(fromStart, candidate);
+				} else if ("toEnd".equals(mode)) {
+					toEnd = better(toEnd, candidate);
+				} else {
+					between = better(between, candidate);
+				}
+			}
+			trace.pathAlternatives(factorIndex, factor, fromStart, toEnd, between);
+		}
+	}
+
+	private static PathAlternative better(PathAlternative incumbent, PathAlternative candidate) {
+		if (incumbent == null) {
+			return candidate;
+		}
+		return candidate.compareTo(incumbent) < 0 ? candidate : incumbent;
+	}
+
 	private static JoinFactorCostModel.FactorCostEstimate fallbackEstimate(TupleExpr factor,
 			EvaluationStatistics fallbackStatistics) {
 		double rows = fallbackStatistics == null || factor == null ? Double.NaN
@@ -465,25 +527,69 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return pathHasBoundEndpoint(factor, initialBoundVars) || !pathHasEndpointBinder;
 	}
 
-	private static boolean connectedExtension(TupleExpr candidate, Set<String> prefixVars, Set<String> candidateVars) {
+	private static String connectedExtensionRejection(TupleExpr candidate, Set<String> prefixVars,
+			Set<String> candidateVars, int currentMask, int candidateIndex,
+			List<Set<String>> delayedPathEndpointBinders) {
 		if (path(candidate)) {
-			return pathHasBoundEndpoint(candidate, prefixVars);
-		}
-		if (candidateVars == null || candidateVars.isEmpty()) {
-			return false;
-		}
-		return intersects(prefixVars, candidateVars);
-	}
-
-	private static String extensionRejectReason(TupleExpr candidate, Set<String> prefixVars, Set<String> candidateVars) {
-		if (path(candidate)) {
-			return "path-endpoint-not-bound endpoints=" + pathEndpointNames(candidate) + " bound="
-					+ plannerNames(prefixVars);
+			if (!pathHasBoundEndpoint(candidate, prefixVars)) {
+				return "path-endpoint-not-bound";
+			}
+			Set<String> delayedEndpoints = delayedEndpointBinders(candidateIndex, delayedPathEndpointBinders);
+			if (!delayedEndpoints.isEmpty()) {
+				Set<String> unplannedDelayedEndpoints = unplannedDelayedEndpointBinders(delayedEndpoints, currentMask,
+						prefixVars, candidateIndex, delayedPathEndpointBinders);
+				if (!unplannedDelayedEndpoints.isEmpty()) {
+					return "path-waits-for-selective-endpoint-binder " + unplannedDelayedEndpoints;
+				}
+			}
+			return null;
 		}
 		if (candidateVars == null || candidateVars.isEmpty()) {
 			return "zero-runtime-vars";
 		}
-		return "no-shared-vars bound=" + plannerNames(prefixVars) + " candidate=" + candidateVars;
+		return intersects(prefixVars, candidateVars) ? null : "no-shared-vars";
+	}
+
+	private static Set<String> delayedEndpointBinders(int candidateIndex,
+			List<Set<String>> delayedPathEndpointBinders) {
+		if (delayedPathEndpointBinders == null || candidateIndex < 0
+				|| candidateIndex >= delayedPathEndpointBinders.size()) {
+			return Set.of();
+		}
+		Set<String> delayedEndpoints = delayedPathEndpointBinders.get(candidateIndex);
+		return delayedEndpoints == null ? Set.of() : delayedEndpoints;
+	}
+
+	private static Set<String> unplannedDelayedEndpointBinders(Set<String> delayedEndpoints, int currentMask,
+			Set<String> prefixVars, int candidateIndex, List<Set<String>> delayedPathEndpointBinders) {
+		if (delayedEndpoints == null || delayedEndpoints.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> unplanned = new LinkedHashSet<>();
+		for (String endpoint : delayedEndpoints) {
+			if (endpoint == null) {
+				continue;
+			}
+			if (prefixVars == null || !prefixVars.contains(endpoint)) {
+				unplanned.add(endpoint);
+				continue;
+			}
+			boolean hasUnplannedBinder = false;
+			for (int factorIndex = 0; factorIndex < delayedPathEndpointBinders.size(); factorIndex++) {
+				if (factorIndex == candidateIndex || (currentMask & (1 << factorIndex)) != 0) {
+					continue;
+				}
+				Set<String> endpoints = delayedPathEndpointBinders.get(factorIndex);
+				if (endpoints != null && endpoints.contains(endpoint)) {
+					hasUnplannedBinder = true;
+					break;
+				}
+			}
+			if (hasUnplannedBinder) {
+				unplanned.add(endpoint);
+			}
+		}
+		return unplanned.isEmpty() ? Set.of() : Set.copyOf(unplanned);
 	}
 
 	private static String pathEndpointMode(TupleExpr tupleExpr, Set<String> boundVars) {
@@ -580,6 +686,102 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 		return result;
+	}
+
+	private static List<Set<String>> delayedPathEndpointBinders(List<TupleExpr> factors,
+			List<Set<String>> factorVars) {
+		if (factors == null || factors.isEmpty()) {
+			return List.of();
+		}
+		List<Set<String>> delayedBindersByFactor = new ArrayList<>(factors.size());
+		for (int i = 0; i < factors.size(); i++) {
+			delayedBindersByFactor.add(Set.of());
+		}
+		for (int pathIndex = 0; pathIndex < factors.size(); pathIndex++) {
+			TupleExpr path = factors.get(pathIndex);
+			if (!path(path)) {
+				continue;
+			}
+			Set<String> delayedEndpoints = new LinkedHashSet<>();
+			for (String endpoint : pathEndpointNames(path)) {
+				if (hasSelectiveEndpointBinder(endpoint, pathIndex, factors, factorVars)) {
+					delayedEndpoints.add(endpoint);
+				}
+			}
+			if (!delayedEndpoints.isEmpty()) {
+				delayedBindersByFactor.set(pathIndex, Set.copyOf(delayedEndpoints));
+			}
+		}
+		for (int pathIndex = 0; pathIndex < factors.size(); pathIndex++) {
+			Set<String> delayedEndpoints = delayedBindersByFactor.get(pathIndex);
+			if (delayedEndpoints.isEmpty()) {
+				continue;
+			}
+			for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
+				if (factorIndex == pathIndex) {
+					continue;
+				}
+				Set<String> factorBindingNames = factorVars.get(factorIndex);
+				if (!intersects(delayedEndpoints, factorBindingNames)) {
+					continue;
+				}
+				Set<String> current = delayedBindersByFactor.get(factorIndex);
+				Set<String> merged = new LinkedHashSet<>(current);
+				for (String endpoint : delayedEndpoints) {
+					if (factorBindingNames.contains(endpoint)) {
+						merged.add(endpoint);
+					}
+				}
+				delayedBindersByFactor.set(factorIndex, Set.copyOf(merged));
+			}
+		}
+		return List.copyOf(delayedBindersByFactor);
+	}
+
+	private static boolean hasSelectiveEndpointBinder(String endpoint, int pathIndex, List<TupleExpr> factors,
+			List<Set<String>> factorVars) {
+		if (endpoint == null || factors == null || factorVars == null) {
+			return false;
+		}
+		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
+			if (factorIndex == pathIndex) {
+				continue;
+			}
+			Set<String> names = factorVars.get(factorIndex);
+			if (names == null || !names.contains(endpoint)) {
+				continue;
+			}
+			if (selectiveEndpointBinder(factors.get(factorIndex), endpoint)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean selectiveEndpointBinder(TupleExpr factor, String endpoint) {
+		if (factor instanceof Filter filter) {
+			return LmdbJoinPlanSupport.runtimeBindingNames(filter).contains(endpoint);
+		}
+		StatementPattern pattern = factor instanceof StatementPattern statementPattern ? statementPattern : null;
+		if (pattern == null) {
+			return false;
+		}
+		boolean containsEndpoint = false;
+		int boundOtherComponents = 0;
+		for (Var var : pattern.getVarList()) {
+			if (var == null) {
+				continue;
+			}
+			String name = var.getName();
+			if (!var.hasValue() && endpoint.equals(name)) {
+				containsEndpoint = true;
+				continue;
+			}
+			if (var.hasValue() || var.isConstant()) {
+				boundOtherComponents++;
+			}
+		}
+		return containsEndpoint && boundOtherComponents >= 2;
 	}
 
 	private static List<Set<String>> factorVars(List<TupleExpr> factors) {
@@ -738,8 +940,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 				+ " before=" + step.boundVarsBefore() + " rows=" + compactDouble(step.outputRows())
 				+ " work=" + compactDouble(step.workRows()) + " conf=" + compactDouble(step.confidence())
 				+ " pathMode=" + step.stringMetrics().getOrDefault("optimizer.pathEndpointMode", "-")
-				+ " source=" + step.stringMetrics().getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-						"-");
+				+ " source=" + step.stringMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+								"-");
 	}
 
 	private static String orderLabels(List<Integer> order, List<TupleExpr> factors) {
@@ -751,6 +954,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 			labels.add("f" + factorIndex + ':' + factorSummary(factors.get(factorIndex)));
 		}
 		return labels.toString();
+	}
+
+	private static String orderSummary(List<Integer> order) {
+		return order == null ? "[]" : order.toString();
+	}
+
+	private static String formatRows(double rows) {
+		return compactDouble(rows);
 	}
 
 	private static String compactDouble(double value) {
@@ -781,7 +992,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 	private static final class Trace {
 		private final boolean enabled;
 		private final int limit;
+		private final StringBuilder priorityBuilder;
 		private final StringBuilder builder;
+		private boolean priorityTruncated;
 		private boolean truncated;
 
 		static Trace create() {
@@ -791,14 +1004,19 @@ final class LmdbCascadesConnectedJoinPlanner {
 		private Trace(boolean enabled, int limit) {
 			this.enabled = enabled;
 			this.limit = limit;
+			this.priorityBuilder = enabled ? new StringBuilder(Math.min(512, limit)) : null;
 			this.builder = enabled ? new StringBuilder(Math.min(4096, limit)) : null;
 		}
 
-		boolean enabled() {
+		private boolean enabled() {
 			return enabled;
 		}
 
 		void add(String event) {
+			append(event);
+		}
+
+		private void append(String event) {
 			if (!enabled || event == null || truncated) {
 				return;
 			}
@@ -813,11 +1031,92 @@ final class LmdbCascadesConnectedJoinPlanner {
 			builder.append(normalized);
 		}
 
+		void pathAlternatives(int factorIndex, TupleExpr factor, PathAlternative fromStart,
+				PathAlternative toEnd, PathAlternative between) {
+			if (fromStart == null && toEnd == null && between == null) {
+				appendPriority("path alternatives f=" + factorIndex + " none " + factorSummary(factor));
+				return;
+			}
+			StringBuilder line = new StringBuilder(256);
+			line.append("path alternatives f=").append(factorIndex).append(' ').append(factorSummary(factor));
+			appendAlternative(line, fromStart);
+			appendAlternative(line, toEnd);
+			appendAlternative(line, between);
+			appendPriority(line.toString());
+		}
+
+		private void appendAlternative(StringBuilder line, PathAlternative alternative) {
+			if (alternative == null) {
+				return;
+			}
+			Step step = alternative.step();
+			String source = step.stringMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+							"<unknown>");
+			String method = step.stringMetrics().getOrDefault("plannedPropertyPathMethod", "");
+			line.append(" ; ")
+					.append(alternative.mode())
+					.append("{prefix=")
+					.append(orderSummary(alternative.prefix().order()))
+					.append(", prefixRows=")
+					.append(formatRows(alternative.prefix().rows()))
+					.append(", prefixWork=")
+					.append(formatRows(alternative.prefix().workRows()))
+					.append(", pathRows=")
+					.append(formatRows(step.outputRows()))
+					.append(", pathWork=")
+					.append(formatRows(step.workRows()))
+					.append(", totalWork=")
+					.append(formatRows(alternative.totalWorkRows()))
+					.append(", maxRows=")
+					.append(formatRows(alternative.maxRows()))
+					.append(", source=")
+					.append(source);
+			if (!method.isBlank()) {
+				line.append(", method=").append(method);
+			}
+			line.append('}');
+		}
+
+		private void appendPriority(String event) {
+			if (!enabled || event == null || priorityTruncated) {
+				return;
+			}
+			String normalized = normalize(event);
+			if (priorityBuilder.length() + normalized.length() + 3 > limit) {
+				priorityTruncated = true;
+				return;
+			}
+			if (priorityBuilder.length() > 0) {
+				priorityBuilder.append(" | ");
+			}
+			priorityBuilder.append(normalized);
+		}
+
 		String snapshot() {
-			if (!enabled || builder.length() == 0) {
+			if (!enabled) {
 				return "";
 			}
-			return truncated ? builder + " | <trace-truncated>" : builder.toString();
+			String priority = snapshot(priorityBuilder, priorityTruncated, "... priority trace truncated ...");
+			String regular = snapshot(builder, truncated, "<trace-truncated>");
+			if (priority.isEmpty()) {
+				return regular;
+			}
+			if (regular.isEmpty()) {
+				return priority;
+			}
+			return priority + " | " + regular;
+		}
+
+		private static String snapshot(StringBuilder builder, boolean truncated, String marker) {
+			if (builder.length() == 0) {
+				return truncated ? marker : "";
+			}
+			return truncated ? builder + " | " + marker : builder.toString();
+		}
+
+		private static String normalize(String event) {
+			return event.replace('\n', ' ').replace('\r', ' ').replace(',', ';');
 		}
 	}
 
@@ -828,6 +1127,29 @@ final class LmdbCascadesConnectedJoinPlanner {
 	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount, String trace) {
 		private Plan toPlan(List<TupleExpr> factors) {
 			return state.toPlan(factors, algorithm, zeroVarFactorCount, trace);
+		}
+	}
+
+	private record PathAlternative(String mode, State prefix, Step step, double totalWorkRows, double maxRows)
+			implements Comparable<PathAlternative> {
+		@Override
+		public int compareTo(PathAlternative other) {
+			if (other == null) {
+				return -1;
+			}
+			int comparison = Double.compare(totalWorkRows, other.totalWorkRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(step.outputRows(), other.step.outputRows());
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(maxRows, other.maxRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			return orderSummary(prefix.order()).compareTo(orderSummary(other.prefix.order()));
 		}
 	}
 

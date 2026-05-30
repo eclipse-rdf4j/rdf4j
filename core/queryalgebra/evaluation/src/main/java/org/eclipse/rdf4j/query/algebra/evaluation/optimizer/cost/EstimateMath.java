@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -78,8 +79,10 @@ public final class EstimateMath {
 		for (Map.Entry<String, VariableEstimate> entry : input.variables().entrySet()) {
 			variables.put(entry.getKey(), entry.getValue().scale(safeRatio));
 		}
+		Map<VariableSetKey, FiniteRelationEstimate> relations = scaleFiniteRelations(input.finiteRelations(), safeRatio,
+				source);
 		return new BagEstimate(rows, input.workRows() + input.rows(), input.memoryRows(), input.confidence(), source,
-				variables, input.finiteRelations(), input.metrics());
+				variables, relations, input.metrics());
 	}
 
 	public static BagEstimate group(BagEstimate input, Set<String> groupVars) {
@@ -119,12 +122,10 @@ public final class EstimateMath {
 
 	public static BagEstimate union(BagEstimate left, BagEstimate right) {
 		double rows = left.rows() + right.rows();
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>(left.variables());
-		for (Map.Entry<String, VariableEstimate> entry : right.variables().entrySet()) {
-			variables.merge(entry.getKey(), entry.getValue(), VariableEstimate::plus);
-		}
+		Map<String, VariableEstimate> variables = unionVariables(left, right);
+		Map<VariableSetKey, FiniteRelationEstimate> relations = unionFiniteRelations(left, right);
 		return new BagEstimate(rows, left.workRows() + right.workRows(), left.memoryRows() + right.memoryRows(),
-				Math.min(left.confidence(), right.confidence()), "union", variables, Map.of(), Map.of());
+				Math.min(left.confidence(), right.confidence()), "union", variables, relations, Map.of());
 	}
 
 	public static BagEstimate project(BagEstimate input, Set<String> projectedVars) {
@@ -180,7 +181,7 @@ public final class EstimateMath {
 
 	private static double innerJoinRows(BagEstimate left, BagEstimate right, Set<String> joinVars) {
 		if (joinVars.isEmpty()) {
-			return left.rows() * right.rows();
+			return multiplyRows(left.rows(), right.rows());
 		}
 		Optional<Map<List<Value>, Double>> leftFrequencies = frequencies(left, joinVars);
 		Optional<Map<List<Value>, Double>> rightFrequencies = frequencies(right, joinVars);
@@ -191,9 +192,13 @@ public final class EstimateMath {
 			}
 			return rows;
 		}
+		OptionalDouble sketchRows = singleVariableInnerProduct(left, right, joinVars);
+		if (sketchRows.isPresent()) {
+			return clampRows(sketchRows.getAsDouble(), 0.0d, multiplyRows(left.rows(), right.rows()));
+		}
 		double leftDistinct = tupleDistinct(left, joinVars);
 		double rightDistinct = tupleDistinct(right, joinVars);
-		return left.rows() * right.rows() / Math.max(1.0d, Math.max(leftDistinct, rightDistinct));
+		return multiplyRows(left.rows(), right.rows()) / Math.max(1.0d, Math.max(leftDistinct, rightDistinct));
 	}
 
 	private static double matchedLeftRows(BagEstimate left, BagEstimate right, Set<String> joinVars) {
@@ -211,6 +216,15 @@ public final class EstimateMath {
 					.sum();
 		}
 		double leftDistinct = Math.max(1.0d, tupleDistinct(left, joinVars));
+		OptionalDouble sketchOverlap = singleVariableOverlapDistinct(left, right, joinVars);
+		if (sketchOverlap.isPresent()) {
+			if (right.rows() <= 0.0d) {
+				return 0.0d;
+			}
+			double matchedDistinct = clampRows(sketchOverlap.getAsDouble(), 0.0d,
+					Math.min(leftDistinct, Math.min(right.rows(), Math.max(0.0d, tupleDistinct(right, joinVars)))));
+			return left.rows() * Math.min(1.0d, matchedDistinct / leftDistinct);
+		}
 		if (rightFrequencies.isPresent()) {
 			double matchRatio = Math.min(1.0d, rightFrequencies.get().size() / leftDistinct);
 			return left.rows() * matchRatio;
@@ -219,6 +233,189 @@ public final class EstimateMath {
 		double coveredRightDistinct = estimatedCoveredDistinct(right.rows(), Math.max(leftDistinct, rightDistinct));
 		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
 		return left.rows() * matchRatio;
+	}
+
+	private static Map<String, VariableEstimate> unionVariables(BagEstimate left, BagEstimate right) {
+		Map<String, VariableEstimate> variables = new LinkedHashMap<>();
+		Set<String> names = new LinkedHashSet<>();
+		names.addAll(left.variables().keySet());
+		names.addAll(right.variables().keySet());
+		for (String name : names) {
+			boolean inLeft = left.variables().containsKey(name);
+			boolean inRight = right.variables().containsKey(name);
+			if (inLeft && inRight) {
+				variables.put(name, unionVariable(left.variable(name), right.variable(name)));
+			} else if (inLeft) {
+				VariableEstimate variable = left.variable(name);
+				variables.put(name, new VariableEstimate(variable.distinctRows(), variable.boundRows(),
+						variable.nullableRows() + right.rows(), variable.sketch()));
+			} else {
+				VariableEstimate variable = right.variable(name);
+				variables.put(name, new VariableEstimate(variable.distinctRows(), variable.boundRows(),
+						left.rows() + variable.nullableRows(), variable.sketch()));
+			}
+		}
+		return Map.copyOf(variables);
+	}
+
+	private static Map<VariableSetKey, FiniteRelationEstimate> unionFiniteRelations(BagEstimate left,
+			BagEstimate right) {
+		Set<VariableSetKey> keys = new LinkedHashSet<>();
+		keys.addAll(left.finiteRelations().keySet());
+		keys.addAll(right.finiteRelations().keySet());
+		if (keys.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, FiniteRelationEstimate> relations = new LinkedHashMap<>();
+		for (VariableSetKey key : keys) {
+			List<String> variables = key.names();
+			boolean leftCanContributeBoundTuples = bindsAll(left, variables);
+			boolean rightCanContributeBoundTuples = bindsAll(right, variables);
+			Optional<Map<List<Value>, Double>> leftFrequencies = normalizedFrequencies(left, variables);
+			Optional<Map<List<Value>, Double>> rightFrequencies = normalizedFrequencies(right, variables);
+			if ((leftCanContributeBoundTuples && leftFrequencies.isEmpty())
+					|| (rightCanContributeBoundTuples && rightFrequencies.isEmpty())) {
+				continue;
+			}
+			Map<List<Value>, Double> merged = new LinkedHashMap<>();
+			leftFrequencies.ifPresent(frequencies -> mergeFrequencies(merged, frequencies));
+			rightFrequencies.ifPresent(frequencies -> mergeFrequencies(merged, frequencies));
+			if (!merged.isEmpty()) {
+				FiniteRelationEstimate relation = FiniteRelationEstimate.fromFrequencies(variables, merged,
+						"union-finite-relation");
+				relations.put(relation.variableSetKey(), relation);
+			}
+		}
+		return Map.copyOf(relations);
+	}
+
+	private static boolean bindsAll(BagEstimate estimate, Collection<String> variables) {
+		for (String variable : variables) {
+			if (!estimate.variables().containsKey(variable) || estimate.variable(variable).boundRows() <= 0.0d) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Optional<Map<List<Value>, Double>> normalizedFrequencies(BagEstimate estimate,
+			List<String> variables) {
+		return estimate.relationContaining(Set.copyOf(variables))
+				.map(relation -> relation.frequencyBy(variables));
+	}
+
+	private static void mergeFrequencies(Map<List<Value>, Double> target, Map<List<Value>, Double> source) {
+		for (Map.Entry<List<Value>, Double> entry : source.entrySet()) {
+			target.merge(FiniteRelationEstimate.tupleKey(entry.getKey()), entry.getValue(), Double::sum);
+		}
+	}
+
+	private static Map<VariableSetKey, FiniteRelationEstimate> scaleFiniteRelations(
+			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations, double scale, String source) {
+		if (finiteRelations.isEmpty()) {
+			return Map.of();
+		}
+		if (scale <= 0.0d) {
+			return Map.of();
+		}
+		if (scale == 1.0d) {
+			return finiteRelations;
+		}
+		Map<VariableSetKey, FiniteRelationEstimate> scaled = new LinkedHashMap<>();
+		String relationSource = source == null || source.isBlank() ? "filtered-finite-relation"
+				: source + ":filtered-finite-relation";
+		for (FiniteRelationEstimate relation : finiteRelations.values()) {
+			Map<List<Value>, Double> frequencies = new LinkedHashMap<>();
+			for (Map.Entry<List<Value>, Double> entry : relation.frequencies().entrySet()) {
+				double count = entry.getValue() * scale;
+				if (Double.isFinite(count) && count > 0.0d) {
+					frequencies.put(entry.getKey(), count);
+				}
+			}
+			if (!frequencies.isEmpty()) {
+				FiniteRelationEstimate scaledRelation = FiniteRelationEstimate.fromFrequencies(relation.variables(),
+						frequencies, relationSource);
+				scaled.put(scaledRelation.variableSetKey(), scaledRelation);
+			}
+		}
+		return Map.copyOf(scaled);
+	}
+
+	private static VariableEstimate unionVariable(VariableEstimate left, VariableEstimate right) {
+		if (right == null) {
+			return left;
+		}
+		if (left == null) {
+			return right;
+		}
+		double boundRows = left.boundRows() + right.boundRows();
+		double nullableRows = left.nullableRows() + right.nullableRows();
+		double distinctRows = left.distinctRows() + right.distinctRows();
+		OptionalDouble overlap = overlapDistinctRows(left.sketch(), right.sketch());
+		if (overlap.isPresent()) {
+			double overlapRows = clampRows(overlap.getAsDouble(), 0.0d,
+					Math.min(left.distinctRows(), right.distinctRows()));
+			distinctRows = Math.max(Math.max(left.distinctRows(), right.distinctRows()),
+					left.distinctRows() + right.distinctRows() - overlapRows);
+		}
+		DistributionSketch sketch = null;
+		if (left.boundRows() == 0.0d) {
+			sketch = right.sketch();
+		} else if (right.boundRows() == 0.0d || left.sketch() == right.sketch()) {
+			sketch = left.sketch();
+		}
+		return new VariableEstimate(distinctRows, boundRows, nullableRows, sketch);
+	}
+
+	private static OptionalDouble singleVariableInnerProduct(BagEstimate left, BagEstimate right,
+			Set<String> joinVars) {
+		if (joinVars.size() != 1) {
+			return OptionalDouble.empty();
+		}
+		String variable = joinVars.iterator().next();
+		return innerProduct(left.variable(variable).sketch(), right.variable(variable).sketch());
+	}
+
+	private static OptionalDouble singleVariableOverlapDistinct(BagEstimate left, BagEstimate right,
+			Set<String> joinVars) {
+		if (joinVars.size() != 1) {
+			return OptionalDouble.empty();
+		}
+		String variable = joinVars.iterator().next();
+		return overlapDistinctRows(left.variable(variable).sketch(), right.variable(variable).sketch());
+	}
+
+	private static OptionalDouble innerProduct(DistributionSketch left, DistributionSketch right) {
+		if (left == null || right == null) {
+			return OptionalDouble.empty();
+		}
+		return finiteNonNegative(left.innerProduct(right));
+	}
+
+	private static OptionalDouble overlapDistinctRows(DistributionSketch left, DistributionSketch right) {
+		if (left == null || right == null) {
+			return OptionalDouble.empty();
+		}
+		return finiteNonNegative(left.overlapDistinctRows(right));
+	}
+
+	private static OptionalDouble finiteNonNegative(OptionalDouble value) {
+		if (value.isEmpty() || !Double.isFinite(value.getAsDouble()) || value.getAsDouble() < 0.0d) {
+			return OptionalDouble.empty();
+		}
+		return value;
+	}
+
+	private static double clampRows(double value, double min, double max) {
+		if (!Double.isFinite(value)) {
+			return max;
+		}
+		return Math.max(min, Math.min(max, value));
+	}
+
+	private static double multiplyRows(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) && product >= 0.0d ? product : Double.MAX_VALUE;
 	}
 
 	private static double estimatedCoveredDistinct(double rows, double domainDistinct) {

@@ -596,12 +596,7 @@ public interface CascadesCostModel {
 			double scale = bag.rows() > 0.0d ? rows / bag.rows() : 0.0d;
 			Map<String, VariableEstimate> variables = new LinkedHashMap<>();
 			for (Map.Entry<String, VariableEstimate> entry : bag.variables().entrySet()) {
-				VariableEstimate variable = entry.getValue();
-				double boundRows = variable.boundRows() * scale;
-				double nullableRows = variable.nullableRows() * scale;
-				double distinctRows = Math.min(variable.distinctRows(), Math.max(1.0d, boundRows));
-				variables.put(entry.getKey(), new VariableEstimate(distinctRows, boundRows, nullableRows,
-						variable.sketch()));
+				variables.put(entry.getKey(), entry.getValue().scale(scale));
 			}
 			Map<VariableSetKey, FiniteRelationEstimate> relations = Math.abs(scale - 1.0d) < 0.000001d
 					? bag.finiteRelations()
@@ -822,7 +817,8 @@ public interface CascadesCostModel {
 		private double unboundEndpointPathWork(double stepWorkRows, double rows, double directRows) {
 			double safeRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 			double safeDirectRows = Double.isFinite(directRows) && directRows >= 0.0d ? directRows : safeRows;
-			double safeStepWorkRows = Double.isFinite(stepWorkRows) && stepWorkRows >= 0.0d ? stepWorkRows : safeDirectRows;
+			double safeStepWorkRows = Double.isFinite(stepWorkRows) && stepWorkRows >= 0.0d ? stepWorkRows
+					: safeDirectRows;
 			double frontierPenalty = Math.sqrt(Math.max(1.0d, safeDirectRows));
 			return safeStepWorkRows + safeRows * Math.max(4.0d, frontierPenalty);
 		}

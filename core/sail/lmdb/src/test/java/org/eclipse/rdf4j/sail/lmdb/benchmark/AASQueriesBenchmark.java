@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -55,6 +58,19 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class AASQueriesBenchmark {
 
 	static final String PREPARE_SKETCHES_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.prepareSketches";
+	static final String PRINT_EXPLAIN_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printExplain";
+	static final String PRINT_FULL_EXPLAIN_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printFullExplain";
+	static final String PRINT_CONNECTED_TRACE_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printConnectedTrace";
+	static final String PRINT_PATH_ALTERNATIVES_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printPathAlternatives";
+	static final String ENABLE_CONNECTED_TRACE_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.enableConnectedTrace";
+	static final String CONNECTED_TRACE_LINE_LIMIT_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.connectedTraceLineLimit";
+	static final String CONNECTED_TRACE_CHAR_LIMIT_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.connectedTraceCharLimit";
+	static final String EXPLANATION_LEVEL_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.explanationLevel";
+
+	private static final String CASCADES_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.trace";
+	private static final String CASCADES_CONNECTED_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.trace";
+	private static final String CASCADES_CONNECTED_TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.traceLimit";
+	private static final String CASCADES_CONNECTED_TRACE_METRIC = "optimizer.connectedJoinTrace";
 
 	private static final String QUERY_1 = """
 			PREFIX aas: <https://admin-shell.io/aas/3/>
@@ -121,9 +137,9 @@ public class AASQueriesBenchmark {
 	String useCascades;
 
 	@Param({
-//			"query1PropertyProjection",
+			"query1PropertyProjection",
 			"query2ThresholdCount",
-//			"query3LineAggregates"
+			"query3LineAggregates"
 	})
 	private String query;
 
@@ -133,8 +149,11 @@ public class AASQueriesBenchmark {
 	private QuerySpec querySpec;
 
 	static void main(String[] args) throws RunnerException {
+		enableFullExplanationAndTraceOutput();
 		Options options = new OptionsBuilder()
 				.include("AASQueriesBenchmark\\.query")
+				.param("query", System.getProperty("rdf4j.lmdb.aasQueriesBenchmark.query",
+						"query2ThresholdCount"))
 				.forks(0)
 				.build();
 		new Runner(options).run();
@@ -142,6 +161,7 @@ public class AASQueriesBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		enableFullExplanationAndTraceOutput();
 		querySpec = querySpec(query);
 		repository = createRepository();
 		repository.init();
@@ -153,21 +173,14 @@ public class AASQueriesBenchmark {
 		}
 		prepareSketchesIfEnabled();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long before = System.currentTimeMillis();
-			System.out.println();
-			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Telemetry));
-			System.out.println();
-		}
+		printExplanation("setup");
 
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			System.out.println();
-			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Telemetry));
-			System.out.println();
+		try {
+			printExplanation("teardown");
 		} finally {
 			try {
 				repository.shutDown();
@@ -180,6 +193,154 @@ public class AASQueriesBenchmark {
 			}
 		}
 
+	}
+
+	private static void enableFullExplanationAndTraceOutput() {
+		enableDefault(PRINT_EXPLAIN_PROPERTY, "true");
+		enableDefault(PRINT_FULL_EXPLAIN_PROPERTY, "true");
+		enableDefault(PRINT_CONNECTED_TRACE_PROPERTY, "true");
+		enableDefault(PRINT_PATH_ALTERNATIVES_PROPERTY, "true");
+		enableDefault(ENABLE_CONNECTED_TRACE_PROPERTY, "true");
+		enableDefault(EXPLANATION_LEVEL_PROPERTY, Explanation.Level.Telemetry.name());
+	}
+
+	private static void enableDefault(String property, String value) {
+		if (System.getProperty(property) == null) {
+			System.setProperty(property, value);
+		}
+	}
+
+	private void printExplanation(String phase) throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(PRINT_EXPLAIN_PROPERTY, "true"))) {
+			return;
+		}
+		Map<String, String> previousProperties = enableTracePropertiesForExplain();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try {
+				String explanation = connection.prepareTupleQuery(querySpec.query())
+						.explain(explanationLevel())
+						.toString();
+				System.out.println();
+				System.out.println("AAS benchmark explanation [" + phase + "]"
+						+ " query=" + query
+						+ ", useCascades=" + useCascades
+						+ ", level=" + explanationLevel());
+				if (Boolean.parseBoolean(System.getProperty(PRINT_FULL_EXPLAIN_PROPERTY, "true"))) {
+					System.out.println(explanation);
+				}
+				printConnectedTrace(explanation, Boolean.parseBoolean(useCascades));
+				System.out.println();
+			} finally {
+				restore(previousProperties);
+			}
+		}
+	}
+
+	Map<String, String> enableTracePropertiesForExplain() {
+		Map<String, String> previous = new LinkedHashMap<>();
+		if (!Boolean.parseBoolean(useCascades)
+				|| !Boolean.parseBoolean(System.getProperty(ENABLE_CONNECTED_TRACE_PROPERTY, "true"))) {
+			return previous;
+		}
+		set(previous, CASCADES_TRACE_PROPERTY, "true");
+		set(previous, CASCADES_CONNECTED_TRACE_PROPERTY, "true");
+		set(previous, CASCADES_CONNECTED_TRACE_LIMIT_PROPERTY,
+				System.getProperty(CONNECTED_TRACE_CHAR_LIMIT_PROPERTY, "196608"));
+		return previous;
+	}
+
+	private static void printConnectedTrace(String explanation, boolean cascades) {
+		String trace = connectedPlannerTrace(explanation);
+		boolean printPathAlternatives = Boolean
+				.parseBoolean(System.getProperty(PRINT_PATH_ALTERNATIVES_PROPERTY, "true"));
+		boolean printFullTrace = Boolean.parseBoolean(System.getProperty(PRINT_CONNECTED_TRACE_PROPERTY, "true"));
+		if ("<missing>".equals(trace)) {
+			if (cascades && (printPathAlternatives || printFullTrace)) {
+				System.out.println("Connected join trace: <missing>");
+				System.out.println("  Enable " + CASCADES_TRACE_PROPERTY + " and "
+						+ CASCADES_CONNECTED_TRACE_PROPERTY
+						+ " before query preparation; this benchmark now does that around explain().");
+			}
+			return;
+		}
+		if (printPathAlternatives) {
+			String pathAlternatives = pathAlternativeSummary(trace);
+			System.out.println("Connected join path-direction alternatives:");
+			if (!"<missing>".equals(pathAlternatives)) {
+				System.out.print(pathAlternatives);
+			} else {
+				System.out.println("  <missing: no path alternatives lines in connected trace>");
+			}
+		}
+		if (printFullTrace) {
+			System.out.println("Connected join trace:");
+			for (String line : trace.split(" \\| ")) {
+				System.out.println("  " + line);
+			}
+		}
+	}
+
+	static String connectedPlannerTrace(String explanation) {
+		String prefix = CASCADES_CONNECTED_TRACE_METRIC + "=";
+		int index = explanation.indexOf(prefix);
+		if (index < 0) {
+			return "<missing>";
+		}
+		int start = index + prefix.length();
+		int end = explanation.indexOf(", optimizer.", start);
+		if (end < 0) {
+			end = explanation.indexOf(')', start);
+		}
+		if (end < 0) {
+			end = explanation.length();
+		}
+		return explanation.substring(start, end);
+	}
+
+	private static String pathAlternativeSummary(String trace) {
+		if (trace == null || "<missing>".equals(trace)) {
+			return "<missing>";
+		}
+		StringBuilder builder = new StringBuilder();
+		for (String line : trace.split(" \\| ")) {
+			if (line.startsWith("path alternatives")) {
+				builder.append("  ").append(line).append('\n');
+			}
+		}
+		return builder.length() == 0 ? "<missing>" : builder.toString();
+	}
+
+	private static Explanation.Level explanationLevel() {
+		String configured = System.getProperty(EXPLANATION_LEVEL_PROPERTY, "Telemetry").trim();
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (level.name().equalsIgnoreCase(configured)) {
+				return level;
+			}
+		}
+		try {
+			return Explanation.Level.valueOf(configured.toUpperCase(Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			return Explanation.Level.Telemetry;
+		}
+	}
+
+	private static void set(Map<String, String> previous, String property, String value) {
+		previous.put(property, System.getProperty(property));
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
+	}
+
+	private static void restore(Map<String, String> previous) {
+		for (Map.Entry<String, String> entry : previous.entrySet()) {
+			if (entry.getValue() == null) {
+				System.clearProperty(entry.getKey());
+			} else {
+				System.setProperty(entry.getKey(), entry.getValue());
+			}
+		}
 	}
 
 	private SailRepository createRepository() throws IOException {

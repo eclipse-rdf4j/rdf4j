@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -128,6 +130,75 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void filterScalesFiniteTupleFrequenciesBeforeLaterJoins() {
+		BagEstimate input = finite("input", List.of("code"),
+				List.of(row("A"), row("B"), row("C"), row("D")));
+		BagEstimate right = finite("right", List.of("code"),
+				List.of(row("A"), row("B"), row("C"), row("D")));
+
+		BagEstimate joined = EstimateMath.innerJoin(EstimateMath.filter(input, 0.25d, "test-filter"), right,
+				Set.of("code"));
+
+		assertEquals(1.0d, joined.rows(), 0.0d,
+				"A filtered finite domain must not keep stale pre-filter tuple frequencies for downstream joins");
+	}
+
+	@Test
+	void filterDropsStaleFrequencySketchesWhenNoRebuiltSketchExists() {
+		BagEstimate left = sketched("left", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, 1_000.0d, OptionalDouble.empty()));
+		BagEstimate right = sketched("right", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, 1_000.0d, OptionalDouble.empty()));
+
+		BagEstimate filtered = EstimateMath.filter(left, 0.01d, "test-filter");
+		BagEstimate joined = EstimateMath.innerJoin(filtered, right, Set.of("code"));
+
+		assertNull(filtered.variable("code").sketch(),
+				"A generic filter cannot keep a frequency sketch unless the filtered distribution is rebuilt");
+		assertEquals(100.0d, joined.rows(), 0.0d,
+				"After dropping the stale sketch, the join should fall back to the scaled NDV formula");
+	}
+
+	@Test
+	void innerJoinUsesSingleVariableFrequencySketchInnerProduct() {
+		BagEstimate left = sketched("left", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, 250.0d, OptionalDouble.empty()));
+		BagEstimate right = sketched("right", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, 250.0d, OptionalDouble.empty()));
+
+		BagEstimate joined = EstimateMath.innerJoin(left, right, Set.of("code"));
+
+		assertEquals(250.0d, joined.rows(), 0.0d,
+				"Frequency-vector sketches should override the much coarser HLL/NDV fallback for single-variable joins");
+	}
+
+	@Test
+	void leftJoinUsesOverlapSketchForCoverageAndFrequencySketchForMultiplicity() {
+		BagEstimate left = sketched("left", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, 120.0d, OptionalDouble.of(30.0d)));
+		BagEstimate right = sketched("right", 500.0d, "code", 80.0d,
+				new TestSketch(80.0d, 120.0d, OptionalDouble.of(30.0d)));
+
+		BagEstimate joined = EstimateMath.leftJoin(left, right, Set.of("code"));
+
+		assertEquals(820.0d, joined.rows(), 0.0d,
+				"OPTIONAL rows should be inner join rows plus only the left rows whose key was not covered by RHS");
+	}
+
+	@Test
+	void differenceUsesOverlapSketchAsEliminationProbability() {
+		BagEstimate left = sketched("left", 1_000.0d, "code", 100.0d,
+				new TestSketch(100.0d, OptionalDouble.empty(), OptionalDouble.of(25.0d)));
+		BagEstimate right = sketched("right", 400.0d, "code", 80.0d,
+				new TestSketch(80.0d, OptionalDouble.empty(), OptionalDouble.of(25.0d)));
+
+		BagEstimate difference = EstimateMath.difference(left, right, Set.of("code"));
+
+		assertEquals(750.0d, difference.rows(), 0.0d,
+				"Anti joins eliminate only the estimated covered fraction of left bindings, never a global RHS count");
+	}
+
+	@Test
 	void groupUsesFiniteTupleDistinctCount() {
 		BagEstimate input = finite("input", List.of("enc", "code"),
 				List.of(row("e1", "A"), row("e1", "A"), row("e2", "A"), row("e2", "B")));
@@ -159,6 +230,61 @@ class BagEstimateMathTest {
 
 		assertEquals(5.0d, union.rows(), 0.0d);
 		assertEquals(5.0d, union.variable("code").boundRows(), 0.0d);
+	}
+
+	@Test
+	void unionMarksBranchLocalVariablesNullable() {
+		BagEstimate left = finite("left", List.of("leftOnly"), List.of(row("A"), row("B")));
+		BagEstimate right = finite("right", List.of("rightOnly"), List.of(row("C"), row("D"), row("E")));
+
+		BagEstimate union = EstimateMath.union(left, right);
+
+		assertEquals(2.0d, union.variable("leftOnly").boundRows(), 0.0d);
+		assertEquals(3.0d, union.variable("leftOnly").nullableRows(), 0.0d,
+				"Rows from the branch that does not bind ?leftOnly must remain nullable in the profile");
+		assertEquals(3.0d, union.variable("rightOnly").boundRows(), 0.0d);
+		assertEquals(2.0d, union.variable("rightOnly").nullableRows(), 0.0d,
+				"Rows from the branch that does not bind ?rightOnly must remain nullable in the profile");
+	}
+
+	@Test
+	void unionMergesCompatibleFiniteRelationFrequencies() {
+		BagEstimate left = finite("left", List.of("code"), List.of(row("A"), row("B"), row("B")));
+		BagEstimate right = finite("right", List.of("code"), List.of(row("B"), row("C")));
+
+		BagEstimate union = EstimateMath.union(left, right);
+
+		FiniteRelationEstimate relation = union.finiteRelation(Set.of("code"))
+				.orElseThrow(() -> new AssertionError("UNION should keep exact compatible finite anchors"));
+		assertEquals(5.0d, relation.rows(), 0.0d);
+		assertEquals(3.0d, relation.frequencyBy(Set.of("code")).get(row("B")), 0.0d,
+				"Bag UNION must add finite tuple frequencies instead of de-duplicating them");
+	}
+
+	@Test
+	void unionPreservesFiniteRelationWhenOtherBranchDoesNotBindThoseVariables() {
+		BagEstimate left = finite("left", List.of("code"), List.of(row("A"), row("B")));
+		BagEstimate right = finite("right", List.of("label"), List.of(row("x"), row("y"), row("z")));
+
+		BagEstimate union = EstimateMath.union(left, right);
+
+		FiniteRelationEstimate relation = union.finiteRelation(Set.of("code"))
+				.orElseThrow(() -> new AssertionError("The code anchor remains exact for bound ?code rows"));
+		assertEquals(2.0d, relation.rows(), 0.0d);
+	}
+
+	@Test
+	void unionUsesSketchOverlapForVariableDistinctRows() {
+		BagEstimate left = sketched("left", 10.0d, "code", 7.0d,
+				new TestSketch(7.0d, OptionalDouble.empty(), OptionalDouble.of(3.0d)));
+		BagEstimate right = sketched("right", 20.0d, "code", 11.0d,
+				new TestSketch(11.0d, OptionalDouble.empty(), OptionalDouble.of(3.0d)));
+
+		BagEstimate union = EstimateMath.union(left, right);
+
+		assertEquals(30.0d, union.rows(), 0.0d);
+		assertEquals(15.0d, union.variable("code").distinctRows(), 0.0d,
+				"Bag UNION adds rows, but value-domain distinctness should subtract estimated sketch overlap");
 	}
 
 	@Test
@@ -216,6 +342,12 @@ class BagEstimateMathTest {
 				.withFiniteRelation(FiniteRelationEstimate.fromRows(variables, rows, source));
 	}
 
+	private static BagEstimate sketched(String source, double rows, String variable, double distinctRows,
+			DistributionSketch sketch) {
+		return BagEstimate.exact(rows, source)
+				.withVariable(variable, new VariableEstimate(distinctRows, rows, 0.0d, sketch));
+	}
+
 	private static List<Value> row(String... values) {
 		return java.util.Arrays.stream(values)
 				.map(BagEstimateMathTest::literal)
@@ -237,6 +369,24 @@ class BagEstimateMathTest {
 		@Override
 		public int hashCode() {
 			throw new AssertionError("Store-backed values must not be hashed by finite relation estimates");
+		}
+	}
+
+	private record TestSketch(double distinctRows, OptionalDouble innerProduct,
+			OptionalDouble overlapDistinctRows) implements DistributionSketch {
+
+		private TestSketch(double distinctRows, double innerProduct, OptionalDouble overlapDistinctRows) {
+			this(distinctRows, OptionalDouble.of(innerProduct), overlapDistinctRows);
+		}
+
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return innerProduct;
+		}
+
+		@Override
+		public OptionalDouble overlapDistinctRows(DistributionSketch other) {
+			return overlapDistinctRows;
 		}
 	}
 }

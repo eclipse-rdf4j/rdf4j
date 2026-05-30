@@ -57,7 +57,7 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 4;
+	private static final int PERSIST_VERSION = 5;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -699,6 +699,7 @@ final class LmdbOperatorFeedbackStats {
 		private double plannedRowsSum;
 		private double plannedWorkRowsSum;
 		private double actualRowsSum;
+		private double actualWorkRowsSum;
 		private double leftRowsSum;
 		private double rightRowsSum;
 		private double leftRowsWithMatchSum;
@@ -718,6 +719,7 @@ final class LmdbOperatorFeedbackStats {
 			plannedRowsSum += nonNegative(observation.plannedRows());
 			plannedWorkRowsSum += nonNegative(observation.plannedWorkRows());
 			actualRowsSum += nonNegative(observation.actualRows());
+			actualWorkRowsSum += nonNegative(observation.actualWorkRows());
 			leftRowsSum += nonNegative(observation.leftRows());
 			rightRowsSum += nonNegative(observation.rightRows());
 			leftRowsWithMatchSum += nonNegative(observation.leftRowsWithMatch());
@@ -864,7 +866,7 @@ final class LmdbOperatorFeedbackStats {
 
 		private double estimateByWorkRatio(double baseWorkRows) {
 			if (plannedWorkRowsSum > 0.0d && isFiniteNonNegative(baseWorkRows)) {
-				double correction = clampCorrection(Math.max(actualRowsSum, rightRowsSum) / plannedWorkRowsSum);
+				double correction = clampCorrection(actualWorkRowsSum / plannedWorkRowsSum);
 				if (Double.isFinite(correction)) {
 					return baseWorkRows * correction;
 				}
@@ -877,6 +879,7 @@ final class LmdbOperatorFeedbackStats {
 			out.writeDouble(plannedRowsSum);
 			out.writeDouble(plannedWorkRowsSum);
 			out.writeDouble(actualRowsSum);
+			out.writeDouble(actualWorkRowsSum);
 			out.writeDouble(leftRowsSum);
 			out.writeDouble(rightRowsSum);
 			out.writeDouble(leftRowsWithMatchSum);
@@ -898,6 +901,7 @@ final class LmdbOperatorFeedbackStats {
 			counts.plannedRowsSum = in.readDouble();
 			counts.plannedWorkRowsSum = in.readDouble();
 			counts.actualRowsSum = in.readDouble();
+			counts.actualWorkRowsSum = in.readDouble();
 			counts.leftRowsSum = in.readDouble();
 			counts.rightRowsSum = in.readDouble();
 			counts.leftRowsWithMatchSum = in.readDouble();

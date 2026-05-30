@@ -222,6 +222,21 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void learnedWorkRatioUsesActualConsumedWorkRows(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Difference observed = new Difference(sp("s", P1, "o"), sp("s", P2, "reject"));
+		completeBinary(observed, 25, 90, 100, 100, 75);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
+				new Difference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 90, 100);
+		assertNotNull(estimate);
+		assertTrue(estimate.workRows() > 120.0d,
+				"LEO work feedback must scale by observed work rows, not by output rows or the RHS row proxy");
+	}
+
+	@Test
 	void clampLimitsOneBadRun(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
