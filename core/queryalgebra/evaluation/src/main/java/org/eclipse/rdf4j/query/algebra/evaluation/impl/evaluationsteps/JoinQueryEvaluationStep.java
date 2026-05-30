@@ -46,10 +46,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
 		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
+		boolean metricsTrackingActive = runtimeTelemetryTrackingActive || costFeedbackTrackingActive(join);
 		QueryEvaluationStep leftPrepared = JoinMetricsTracking
-				.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive);
+				.wrapLeftInput(leftRaw, join, join.getLeftArg(), metricsTrackingActive);
 		QueryEvaluationStep rightPrepared = JoinMetricsTracking
-				.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive);
+				.wrapRightInput(rightRaw, join, join.getRightArg(), metricsTrackingActive);
 		BoundStatementPatternGuardJoinIteration.GuardCounter leftGuardCounter = getGuardCounter(join.getLeftArg(),
 				leftRaw);
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
@@ -118,6 +119,12 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		return eval.apply(bindings);
+	}
+
+	private static boolean costFeedbackTrackingActive(Join join) {
+		return join != null && (join.isCostFeedbackTrackingEnabled()
+				|| join.getLeftArg().isCostFeedbackTrackingEnabled()
+				|| join.getRightArg().isCostFeedbackTrackingEnabled());
 	}
 
 	private static boolean isHashJoinHint(Join join) {

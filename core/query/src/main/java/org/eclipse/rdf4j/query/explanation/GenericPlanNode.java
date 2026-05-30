@@ -698,7 +698,7 @@ public class GenericPlanNode {
 			String end;
 
 			if (prettyBoxDrawingType % 2 == 0) {
-				start = "1╠";
+				start = "╠";
 				horizontal = "══";
 				vertical = "║";
 				end = "╚";

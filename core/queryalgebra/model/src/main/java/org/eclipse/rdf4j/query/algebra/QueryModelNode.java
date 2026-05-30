@@ -132,6 +132,121 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op for backwards compatibility
 	}
 
+	/**
+	 * Enables a lightweight runtime feedback path for learned optimizer feedback. Unlike full runtime telemetry, this
+	 * path only counts output rows and low-cost operator work counters needed to decide whether an operator should report
+	 * an estimate/cost miss.
+	 */
+	@Experimental
+	default boolean isCostFeedbackTrackingEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setCostFeedbackTrackingEnabled(boolean costFeedbackTrackingEnabled) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackExpectedRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackExpectedRows(double rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackExpectedWorkRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackExpectedWorkRows(double workRows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackActualRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackActualRows(long rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackActualWorkRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackActualWorkRows(double workRows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackReportQErrorThreshold() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackReportQErrorThreshold(double qErrorThreshold) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default boolean isCostFeedbackCompletedActual() {
+		return false;
+	}
+
+	@Experimental
+	default void setCostFeedbackCompletedActual(boolean completed) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackCloseCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackCloseCountActual(long closeCount) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackLeftRowsWithMatchActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackLeftRowsWithMatchActual(long rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackEmptyRightProbeCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackEmptyRightProbeCountActual(long probeCount) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackMaxRightRowsPerLeftActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackMaxRightRowsPerLeftActual(long rows) {
+		// no-op for backwards compatibility
+	}
+
 	@Experimental
 	default long getTotalTimeNanosActual() {
 		return -1;

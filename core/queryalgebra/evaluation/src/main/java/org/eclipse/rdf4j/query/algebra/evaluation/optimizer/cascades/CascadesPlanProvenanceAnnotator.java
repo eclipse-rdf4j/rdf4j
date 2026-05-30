@@ -147,6 +147,7 @@ public final class CascadesPlanProvenanceAnnotator {
 		node.setStringMetricPlanned(CASCADES_REJECTIONS, rejectionSummary(provenance.rejectedAlternatives()));
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
 		node.setResultSizeEstimate(plannedRows);
+		node.setCostEstimate(plannedWorkRows);
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
@@ -217,6 +218,9 @@ public final class CascadesPlanProvenanceAnnotator {
 				replaceFallbackMetrics);
 		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows(),
 				replaceFallbackMetrics);
+		if (missingCostEstimate(node) || replaceFallbackMetrics) {
+			node.setCostEstimate(cost.workRows());
+		}
 		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows(),
 				replaceFallbackMetrics);
 		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore(),
@@ -250,6 +254,11 @@ public final class CascadesPlanProvenanceAnnotator {
 				|| missingDoubleMetric(node, PLANNED_COST_ROW_Q_ERROR_MAX)
 				|| missingDoubleMetric(node, PLANNED_COST_WORK_Q_ERROR_MAX)
 				|| missingDoubleMetric(node, "plannedCascadesEvidenceCount");
+	}
+
+	private static boolean missingCostEstimate(QueryModelNode node) {
+		double value = node.getCostEstimate();
+		return !Double.isFinite(value) || value < 0.0d;
 	}
 
 	private static boolean missingDoubleMetric(QueryModelNode node, String metricName) {

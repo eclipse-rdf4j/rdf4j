@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -43,6 +44,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	private static final CostVector FALLBACK_COST = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d,
 			4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
+	private final EvaluationStatistics statistics;
 	private final CascadesCostModel costModel;
 	private final boolean fallbackAnnotationsEnabled;
 
@@ -51,6 +53,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	LmdbCascadesExplainFinalizer(EvaluationStatistics statistics, boolean fallbackAnnotationsEnabled) {
+		this.statistics = statistics;
 		this.costModel = statistics == null ? null : CascadesCostModel.from(statistics);
 		this.fallbackAnnotationsEnabled = fallbackAnnotationsEnabled;
 	}
@@ -63,6 +66,89 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			annotateDisconnectedCartesianFallback(tupleExpr);
 		}
 		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
+		annotateCostFeedback(tupleExpr);
+	}
+
+	private void annotateCostFeedback(TupleExpr tupleExpr) {
+		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics) || tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					annotateCostFeedbackNode(lmdbStatistics, tuple);
+				}
+				node.visitChildren(this);
+			}
+		});
+	}
+
+	private void annotateCostFeedbackNode(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
+		if (!lmdbStatistics.supportsOperatorFeedbackTracking(tupleExpr) || protectedCostFeedbackSource(tupleExpr)) {
+			tupleExpr.setCostFeedbackTrackingEnabled(false);
+			return;
+		}
+		double rows = plannedRowsOrNaN(tupleExpr);
+		double workRows = plannedWorkRowsOrNaN(tupleExpr);
+		if (!isFiniteNonNegative(workRows)) {
+			workRows = rows;
+		}
+		if (!isFiniteNonNegative(rows)) {
+			rows = workRows;
+		}
+		if (!isFiniteNonNegative(rows) || !isFiniteNonNegative(workRows)) {
+			tupleExpr.setCostFeedbackTrackingEnabled(false);
+			return;
+		}
+		tupleExpr.setCostFeedbackExpectedRows(rows);
+		tupleExpr.setCostFeedbackExpectedWorkRows(workRows);
+		tupleExpr.setCostFeedbackReportQErrorThreshold(isLearnedSource(tupleExpr)
+				? LmdbOperatorFeedbackStats.LEARNED_REPORT_Q_ERROR_THRESHOLD
+				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+		tupleExpr.setCostFeedbackTrackingEnabled(true);
+	}
+
+	private static boolean protectedCostFeedbackSource(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return true;
+		}
+		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (source != null && (source.startsWith("exact") || source.contains("finite"))) {
+			return true;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			if (protectedCostFeedbackSource(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isLearnedSource(TupleExpr tupleExpr) {
+		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return LmdbOperatorFeedbackStats.LEARNED_OPERATOR.equals(source)
+				|| LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE.equals(source);
+	}
+
+	private static double plannedRowsOrNaN(TupleExpr tupleExpr) {
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isFiniteNonNegative(rows)) {
+			return rows;
+		}
+		return tupleExpr.getResultSizeEstimate();
+	}
+
+	private static double plannedWorkRowsOrNaN(TupleExpr tupleExpr) {
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
+		if (isFiniteNonNegative(rows)) {
+			return rows;
+		}
+		return tupleExpr.getCostEstimate();
+	}
+
+	private static boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	private CostVector fallbackCost(TupleExpr tupleExpr) {

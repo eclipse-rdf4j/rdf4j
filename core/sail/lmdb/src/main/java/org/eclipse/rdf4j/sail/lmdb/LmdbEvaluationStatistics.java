@@ -7706,6 +7706,26 @@ class LmdbEvaluationStatistics
 	}
 
 	@Override
+	public boolean shouldTrackCostFeedback(QueryModelNode node) {
+		return operatorFeedbackStats != null
+				&& node instanceof TupleExpr tupleExpr
+				&& tupleExpr.isCostFeedbackTrackingEnabled()
+				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr);
+	}
+
+	@Override
+	public boolean shouldReportCostFeedback(QueryModelNode node) {
+		return operatorFeedbackStats != null
+				&& node instanceof TupleExpr tupleExpr
+				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr)
+				&& super.shouldReportCostFeedback(node);
+	}
+
+	boolean supportsOperatorFeedbackTracking(TupleExpr node) {
+		return operatorFeedbackStats != null && LmdbOperatorFeedbackStats.supportsOperatorFeedback(node);
+	}
+
+	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
 		if (operatorFeedbackStats == null || !(node instanceof TupleExpr tupleExpr)) {
 			return;

@@ -18,6 +18,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -79,6 +80,52 @@ public class EvaluationStatisticsTest {
 		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);
 		Assertions.assertTrue(tupleExpr.isCardinalitySet());
 		Assertions.assertEquals(cardinality, tupleExpr.getCardinality());
+	}
+
+	@Test
+	public void costFeedbackReportsOnlyAfterCompletionAndThresholdMiss() {
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		StatementPattern node = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		node.setCostFeedbackTrackingEnabled(true);
+		node.setCostFeedbackExpectedRows(100);
+		node.setCostFeedbackExpectedWorkRows(100);
+		node.setCostFeedbackReportQErrorThreshold(4);
+		node.setCostFeedbackActualRows(401);
+		node.setCostFeedbackActualWorkRows(100);
+
+		Assertions.assertFalse(statistics.shouldReportCostFeedback(node),
+				"An unfinished node must not report learned-cost feedback");
+
+		node.setCostFeedbackCompletedActual(true);
+		Assertions.assertTrue(statistics.shouldReportCostFeedback(node),
+				"A completed node should report when row q-error crosses the threshold");
+
+		node.setCostFeedbackActualRows(399);
+		Assertions.assertFalse(statistics.shouldReportCostFeedback(node),
+				"Small estimate misses should stay quiet on the lightweight path");
+
+		node.setCostFeedbackActualRows(100);
+		node.setCostFeedbackActualWorkRows(401);
+		Assertions.assertTrue(statistics.shouldReportCostFeedback(node),
+				"A completed node should report when work q-error crosses the threshold");
+	}
+
+	@Test
+	public void costFeedbackActualWorkRowsUsesCheapCounters() {
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		Join join = new Join(new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("o")));
+		join.setCostFeedbackTrackingEnabled(true);
+		join.setCostFeedbackActualRows(10);
+		join.setJoinLeftBindingsConsumedActual(120);
+		join.setJoinRightBindingsConsumedActual(30);
+
+		Assertions.assertEquals(150.0d, statistics.costFeedbackActualWorkRows(join), 0.0d,
+				"Join work should be the cheap consumed-side row count, not just output rows");
+
+		join.setCostFeedbackActualWorkRows(777);
+		Assertions.assertEquals(777.0d, statistics.costFeedbackActualWorkRows(join), 0.0d,
+				"A store-specific actual work value should override the generic proxy");
 	}
 
 	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {

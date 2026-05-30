@@ -1620,9 +1620,45 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (node.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID) == null) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, PLANNER_ID);
 		}
-		if (overwriteSource || node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE) == null) {
+		String selectedSource = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (overwriteSource || selectedSource == null) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
+			selectedSource = source;
 		}
+		stampCostFeedback(node, rows, workRows, selectedSource);
+	}
+
+	private void stampCostFeedback(TupleExpr node, double rows, double workRows, String source) {
+		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)
+				|| !lmdbStatistics.supportsOperatorFeedbackTracking(node)
+				|| !canTrackOperatorFeedback(node, source)) {
+			node.setCostFeedbackTrackingEnabled(false);
+			return;
+		}
+		node.setCostFeedbackExpectedRows(rows);
+		node.setCostFeedbackExpectedWorkRows(workRows);
+		node.setCostFeedbackReportQErrorThreshold(isLearnedOperatorSource(source)
+				? LmdbOperatorFeedbackStats.LEARNED_REPORT_Q_ERROR_THRESHOLD
+				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+		node.setCostFeedbackTrackingEnabled(true);
+	}
+
+	private boolean canTrackOperatorFeedback(TupleExpr node, String source) {
+		if (source != null) {
+			if (source.startsWith("exact") || source.contains("finite")) {
+				return false;
+			}
+			if (LMDB_LEFT_JOIN_SURFACE.equals(source)) {
+				return node instanceof LeftJoin;
+			}
+		}
+		return !containsEstimateSource(node, LMDB_FINITE_BINDING_LOOKUP)
+				&& !containsEstimateSource(node, LMDB_FINITE_DERIVED_SURFACE)
+				&& !containsEstimateSource(node, LMDB_LEFT_JOIN_SURFACE);
+	}
+
+	private static boolean isLearnedOperatorSource(String source) {
+		return LEARNED_OPERATOR.equals(source) || LEARNED_LEFT_JOIN_SURFACE.equals(source);
 	}
 
 	private boolean stampFusedCostEstimate(TupleExpr node, Set<String> boundVars, double outerPrefixRows,

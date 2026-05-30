@@ -237,6 +237,104 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void lmdbStatisticsTracksCostFeedbackOnlyForStampedSupportedOperators(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
+				feedbackStats, null);
+		Join join = join("s", "x", "o");
+		assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join));
+
+		StatementPattern unsupported = sp("s", P1, "o");
+		unsupported.setCostFeedbackTrackingEnabled(true);
+		assertTrue(!evaluationStatistics.shouldTrackCostFeedback(unsupported),
+				"Unsupported nodes should not get the low-overhead LEO wrapper");
+
+		assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
+				"Supported operators should be wrapped only after planner stamping enables feedback tracking");
+		join.setCostFeedbackTrackingEnabled(true);
+		assertTrue(evaluationStatistics.shouldTrackCostFeedback(join));
+	}
+
+	@Test
+	void costFeedbackRecordsWithoutFullRuntimeTelemetry(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
+				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
+		assertNotNull(estimate, "Lightweight cost feedback should not require runtime telemetry counters");
+		assertTrue(estimate.rows() > 100.0d, "Feedback should correct a large row estimate miss");
+	}
+
+	@Test
+	void costFeedbackBelowThresholdDoesNotRecord(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeCostFeedback(observed, 125, 100, 100, 125);
+		observed.setCostFeedbackReportQErrorThreshold(2.0d);
+
+		stats.recordOperatorOutcome(observed);
+
+		assertNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400,
+				100, 100), "Close estimates should not churn the learned-operator sidecar");
+	}
+
+	@Test
+	void costFeedbackWaitsForPlannedRepeatedInvocations(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
+		observed.setDoubleMetricPlanned("plannedRepeatedInvocations", 2.0d);
+
+		stats.recordOperatorOutcome(observed);
+
+		assertNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400,
+				10, 100), "A repeated subplan should report only after the planned invocation count completes");
+
+		observed.setCostFeedbackCloseCountActual(2L);
+		stats.recordOperatorOutcome(observed);
+		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+				400, 10, 100));
+	}
+
+	@Test
+	void costFeedbackWorkThresholdUsesActualWorkRows(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Difference observed = new Difference(sp("s", P1, "o"), sp("s", P2, "reject"));
+		completeCostFeedback(observed, 100, 100, 10, 1_000);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
+				new Difference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 100, 10);
+		assertNotNull(estimate, "A large work miss should report even when row count is correct");
+		assertTrue(estimate.workRows() > 500.0d,
+				"Work correction must use the feedback actual-work counter, not actual output rows");
+	}
+
+	@Test
+	void costFeedbackLeftJoinUsesPrimitiveMatchCounters(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		LeftJoin observed = new LeftJoin(join("s", "x", "o"), sp("o", P3, "review"));
+		completeCostFeedback(observed, 380, 10_000, 10_000, 400);
+		observed.setJoinLeftBindingsConsumedActual(100);
+		observed.setJoinRightBindingsConsumedActual(300);
+		observed.setCostFeedbackLeftRowsWithMatchActual(20);
+		observed.setCostFeedbackEmptyRightProbeCountActual(80);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
+				new LeftJoin(join("s", "x", "o"), sp("o", P3, "review")), 100, 300, 10_000, 10_000);
+		assertNotNull(estimate);
+		assertTrue(estimate.rows() >= 100.0d, "Primitive feedback counters must preserve the optional floor");
+		assertTrue(estimate.rows() < 5_000.0d, "Primitive feedback counters should correct saturated OPTIONAL plans");
+	}
+
+	@Test
 	void clampLimitsOneBadRun(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
@@ -300,6 +398,21 @@ class LmdbOperatorFeedbackStatsTest {
 		complete(node, actualRows, plannedRows, plannedWorkRows);
 		node.setHasNextCallCountActual(actualRows);
 		node.setHasNextTrueCountActual(actualRows);
+	}
+
+	private static void completeCostFeedback(TupleExpr node, long actualRows, double plannedRows,
+			double plannedWorkRows, double actualWorkRows) {
+		node.setCostFeedbackTrackingEnabled(true);
+		node.setCostFeedbackExpectedRows(plannedRows);
+		node.setCostFeedbackExpectedWorkRows(plannedWorkRows);
+		node.setCostFeedbackReportQErrorThreshold(LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+		node.setResultSizeEstimate(plannedRows);
+		node.setCostEstimate(plannedWorkRows);
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
+		node.setCostFeedbackActualRows(actualRows);
+		node.setCostFeedbackActualWorkRows(actualWorkRows);
+		node.setCostFeedbackCloseCountActual(1L);
+		node.setCostFeedbackCompletedActual(true);
 	}
 
 	private static double metric(LmdbOperatorFeedbackStats.OperatorEstimate estimate, String accessorName) {

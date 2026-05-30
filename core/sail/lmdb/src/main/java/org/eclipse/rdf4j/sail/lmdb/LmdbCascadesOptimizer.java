@@ -775,6 +775,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				origin == null ? "unknown" : origin);
 		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cost.rows());
 		tupleExpr.setResultSizeEstimate(cost.rows());
+		tupleExpr.setCostEstimate(cost.workRows());
 		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows());
 		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
 		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());

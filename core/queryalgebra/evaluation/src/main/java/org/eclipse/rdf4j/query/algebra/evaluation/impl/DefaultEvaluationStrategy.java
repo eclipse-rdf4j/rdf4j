@@ -417,10 +417,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				result = new TimedIterator(result, expr);
 			}
 
-			if (trackResultSize) {
-				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-				result = new ResultSizeCountingIterator(result, expr, evaluationStatistics);
+			boolean costFeedbackTracking = shouldTrackCostFeedback(expr);
+			if (trackResultSize || costFeedbackTracking) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't produce anything
+				initializeResultAndCostFeedbackCounters(expr, costFeedbackTracking);
+				result = new ResultSizeCountingIterator(result, expr, evaluationStatistics, costFeedbackTracking);
 			}
 			return result;
 		} catch (Throwable t) {
@@ -477,8 +478,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (trackTime) {
 				ret = trackTime(expr, ret);
 			}
-			if (trackResultSize) {
-				ret = trackResultSize(expr, ret);
+			boolean costFeedbackTracking = shouldTrackCostFeedback(expr);
+			if (trackResultSize || costFeedbackTracking) {
+				ret = trackResultSize(expr, ret, costFeedbackTracking);
 			}
 			return ret;
 		} else {
@@ -486,14 +488,46 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
-	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
+	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes, boolean costFeedbackTracking) {
 		return bindings -> {
-			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+			initializeResultAndCostFeedbackCounters(expr, costFeedbackTracking);
 			if (expr.isRuntimeTelemetryEnabled()) {
 				initializeRuntimeTelemetry(expr);
 			}
-			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr, evaluationStatistics);
+			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr, evaluationStatistics,
+					costFeedbackTracking);
 		};
+	}
+
+	private boolean shouldTrackCostFeedback(QueryModelNode node) {
+		return evaluationStatistics != null && evaluationStatistics.shouldTrackCostFeedback(node);
+	}
+
+	private static void initializeResultAndCostFeedbackCounters(QueryModelNode queryModelNode,
+			boolean costFeedbackTracking) {
+		queryModelNode.setResultSizeActual(Math.max(0, queryModelNode.getResultSizeActual()));
+		if (!costFeedbackTracking) {
+			return;
+		}
+		queryModelNode.setCostFeedbackActualRows(0L);
+		queryModelNode.setCostFeedbackActualWorkRows(-1.0d);
+		queryModelNode.setCostFeedbackCompletedActual(false);
+		queryModelNode.setCostFeedbackCloseCountActual(Math.max(0L, queryModelNode.getCostFeedbackCloseCountActual()));
+		queryModelNode.setCostFeedbackLeftRowsWithMatchActual(
+				Math.max(0L, queryModelNode.getCostFeedbackLeftRowsWithMatchActual()));
+		queryModelNode.setCostFeedbackEmptyRightProbeCountActual(
+				Math.max(0L, queryModelNode.getCostFeedbackEmptyRightProbeCountActual()));
+		queryModelNode.setCostFeedbackMaxRightRowsPerLeftActual(
+				Math.max(0L, queryModelNode.getCostFeedbackMaxRightRowsPerLeftActual()));
+		queryModelNode
+				.setJoinRightIteratorsCreatedActual(Math.max(0, queryModelNode.getJoinRightIteratorsCreatedActual()));
+		queryModelNode
+				.setJoinLeftBindingsConsumedActual(Math.max(0, queryModelNode.getJoinLeftBindingsConsumedActual()));
+		queryModelNode
+				.setJoinRightBindingsConsumedActual(Math.max(0, queryModelNode.getJoinRightBindingsConsumedActual()));
+		queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+		queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+		queryModelNode.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
@@ -1598,17 +1632,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryModelNode queryModelNode;
 		EvaluationStatistics evaluationStatistics;
 		boolean telemetryEnabled;
+		boolean costFeedbackTracking;
+		boolean exhausted;
 		long openedAtNanos;
 		boolean firstRowSeen;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
-				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics) {
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				boolean costFeedbackTracking) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
 			this.evaluationStatistics = evaluationStatistics;
 			this.telemetryEnabled = telemetryActive(queryModelNode);
-			this.openedAtNanos = System.nanoTime();
+			this.costFeedbackTracking = costFeedbackTracking;
+			this.openedAtNanos = telemetryEnabled ? System.nanoTime() : 0L;
 			if (telemetryEnabled) {
 				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
 			}
@@ -1617,9 +1655,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			boolean hasNext = false;
-			long started = System.nanoTime();
+			long started = telemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				hasNext = iterator.hasNext();
+				if (!hasNext && costFeedbackTracking) {
+					exhausted = true;
+				}
 				return hasNext;
 			} finally {
 				if (telemetryEnabled) {
@@ -1635,10 +1676,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			long started = System.nanoTime();
-			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
+			long started = telemetryEnabled ? System.nanoTime() : 0L;
 			try {
-				return iterator.next();
+				BindingSet next = iterator.next();
+				queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
+				return next;
 			} finally {
 				if (telemetryEnabled) {
 					long elapsed = System.nanoTime() - started;
@@ -1658,7 +1700,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				if (telemetryEnabled && iterator instanceof IndexReportingIterator sourceMetrics) {
+				if ((telemetryEnabled || costFeedbackTracking)
+						&& iterator instanceof IndexReportingIterator sourceMetrics) {
 					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
 					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
 					queryModelNode
@@ -1681,12 +1724,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					}
 					recordIndexSpecificActualMetrics(queryModelNode, sourceMetrics);
 				}
+				boolean recordedOperatorOutcome = false;
+				if (costFeedbackTracking) {
+					queryModelNode.setCostFeedbackCloseCountActual(
+							Math.max(0L, queryModelNode.getCostFeedbackCloseCountActual()) + 1L);
+					queryModelNode.setCostFeedbackActualRows(Math.max(0L, queryModelNode.getResultSizeActual()));
+					queryModelNode.setCostFeedbackCompletedActual(exhausted);
+					double actualWorkRows = evaluationStatistics.costFeedbackActualWorkRows(queryModelNode);
+					if (Double.isFinite(actualWorkRows) && actualWorkRows >= 0.0d) {
+						queryModelNode.setCostFeedbackActualWorkRows(actualWorkRows);
+					}
+					if (evaluationStatistics.shouldReportCostFeedback(queryModelNode)) {
+						evaluationStatistics.recordOperatorOutcome(queryModelNode);
+						recordedOperatorOutcome = true;
+					}
+				}
 				if (telemetryEnabled) {
 					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
 							Math.max(0L, System.nanoTime() - openedAtNanos));
 					QueryRuntimeTelemetryRegistry.record(queryModelNode);
-					evaluationStatistics.recordOperatorOutcome(queryModelNode);
+					if (!recordedOperatorOutcome) {
+						evaluationStatistics.recordOperatorOutcome(queryModelNode);
+					}
 				}
 			} finally {
 				super.handleClose();

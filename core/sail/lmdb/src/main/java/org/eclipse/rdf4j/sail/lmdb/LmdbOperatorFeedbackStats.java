@@ -61,6 +61,9 @@ final class LmdbOperatorFeedbackStats {
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
+	static final double DEFAULT_REPORT_Q_ERROR_THRESHOLD = 4.0d;
+	static final double LEARNED_REPORT_Q_ERROR_THRESHOLD = 2.0d;
+
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 
@@ -120,7 +123,11 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private synchronized void recordOperatorOutcome(TupleExpr node, boolean completedRoot) {
-		if (!isSupportedOperator(node) || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
+		if (!supportsOperatorFeedback(node) || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
+			return;
+		}
+		if (node.isCostFeedbackTrackingEnabled() && node.isCostFeedbackCompletedActual()
+				&& !shouldReportCostFeedback(node)) {
 			return;
 		}
 		OperatorKey key = keyFor(node);
@@ -240,22 +247,27 @@ final class LmdbOperatorFeedbackStats {
 		if (!isFiniteNonNegative(actualRows)) {
 			return null;
 		}
-		double plannedRows = finiteOr(node.getResultSizeEstimate(), actualRows);
-		double plannedWorkRows = finiteOr(node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
-				node.getCostEstimate());
+		double plannedRows = finiteOr(node.getCostFeedbackExpectedRows(),
+				finiteOr(node.getResultSizeEstimate(), actualRows));
+		double plannedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(),
+				finiteOr(node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS), node.getCostEstimate()));
 		if (!isFiniteNonNegative(plannedWorkRows)) {
 			plannedWorkRows = plannedRows;
 		}
 		double leftRows = leftRows(node);
 		double rightRows = rightRows(node);
-		double leftRowsWithMatch = longMetric(node, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
-		double emptyProbeCount = longMetric(node, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
-		double maxRightRowsPerLeft = longMetric(node, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL);
+		double leftRowsWithMatch = finiteOr(node.getCostFeedbackLeftRowsWithMatchActual(),
+				longMetric(node, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL));
+		double emptyProbeCount = finiteOr(node.getCostFeedbackEmptyRightProbeCountActual(),
+				longMetric(node, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL));
+		double maxRightRowsPerLeft = finiteOr(node.getCostFeedbackMaxRightRowsPerLeftActual(),
+				longMetric(node, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL));
 		double leftBranchRows = node instanceof BinaryTupleOperator binary ? actualRows(binary.getLeftArg())
 				: Double.NaN;
 		double rightBranchRows = node instanceof BinaryTupleOperator binary ? actualRows(binary.getRightArg())
 				: Double.NaN;
-		double actualWorkRows = actualWorkRows(node, actualRows, leftRows, rightRows, leftBranchRows, rightBranchRows);
+		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(),
+				actualWorkRows(node, actualRows, leftRows, rightRows, leftBranchRows, rightBranchRows));
 		return new OperatorObservation(plannedRows, plannedWorkRows, actualRows, leftRows, rightRows,
 				actualWorkRows, leftRowsWithMatch, emptyProbeCount, maxRightRowsPerLeft, leftBranchRows,
 				rightBranchRows);
@@ -339,11 +351,19 @@ final class LmdbOperatorFeedbackStats {
 		if (node == null) {
 			return Double.NaN;
 		}
-		double rows = node.getResultSizeActual();
+		double rows = node.getCostFeedbackActualRows();
+		if (isFiniteNonNegative(rows)) {
+			return rows;
+		}
+		rows = node.getResultSizeActual();
 		if (isFiniteNonNegative(rows)) {
 			return rows;
 		}
 		return longMetric(node, TelemetryMetricNames.OUTPUT_ROWS_ACTUAL);
+	}
+
+	static boolean supportsOperatorFeedback(TupleExpr node) {
+		return isSupportedOperator(node);
 	}
 
 	private static boolean isSupportedOperator(TupleExpr node) {
@@ -358,6 +378,12 @@ final class LmdbOperatorFeedbackStats {
 	private static boolean isCompleted(TupleExpr node) {
 		if (node == null) {
 			return false;
+		}
+		if (node.isCostFeedbackCompletedActual() && isFiniteNonNegative(actualRows(node))) {
+			double plannedRepeatedInvocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
+			return !isFiniteNonNegative(plannedRepeatedInvocations)
+					|| plannedRepeatedInvocations <= 1.0d
+					|| node.getCostFeedbackCloseCountActual() >= Math.max(1L, Math.round(plannedRepeatedInvocations));
 		}
 		long closeCount = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 		if (closeCount <= 0L) {
@@ -391,6 +417,19 @@ final class LmdbOperatorFeedbackStats {
 				|| plannedRepeatedInvocations <= 1.0d
 				|| closeCount <= 0L
 				|| closeCount >= Math.max(1L, Math.round(plannedRepeatedInvocations));
+	}
+
+	private static boolean shouldReportCostFeedback(TupleExpr node) {
+		double threshold = node.getCostFeedbackReportQErrorThreshold();
+		if (!Double.isFinite(threshold) || threshold < 1.0d) {
+			threshold = DEFAULT_REPORT_Q_ERROR_THRESHOLD;
+		}
+		double actualRows = actualRows(node);
+		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());
+		double actualWorkRows = node.getCostFeedbackActualWorkRows();
+		double expectedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(),
+				finiteOr(node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS), node.getCostEstimate()));
+		return qError(actualRows, expectedRows) >= threshold || qError(actualWorkRows, expectedWorkRows) >= threshold;
 	}
 
 	private static boolean containsSlice(TupleExpr node) {
