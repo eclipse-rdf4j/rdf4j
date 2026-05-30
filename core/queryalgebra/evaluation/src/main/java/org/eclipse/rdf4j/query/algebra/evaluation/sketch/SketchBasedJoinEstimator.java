@@ -7338,7 +7338,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double endpointFallbackRows = Math.max(directRows, predicateRows);
 		double distinctSubjects = positiveFiniteOr(subjectStats.distinct(), endpointFallbackRows);
 		double distinctObjects = positiveFiniteOr(objectStats.distinct(), endpointFallbackRows);
-		double averageFanout = averagePathFanout(predicateRows, distinctSubjects);
+		double forwardFanout = averagePathFanout(predicateRows, distinctSubjects);
+		double reverseFanout = averagePathFanout(predicateRows, distinctObjects);
+		double averageFanout = forwardFanout;
 
 		double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength(), averageFanout, predicateRows);
 		double unboundRows = rows;
@@ -7378,8 +7380,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			rows = normalizeRows(rows);
 		}
-		double workRows = estimatePropertyPathWorkRows(rows, predicateRows, unboundRows, unboundDistinctSubjects,
-				unboundDistinctObjects, path.getMinLength(), subjectBound, objectBound);
+		double selectedEndpointFanout = selectedEndpointFanout(subjectBound, objectBound, forwardFanout,
+				reverseFanout);
+		double workRows = estimatePropertyPathWorkRows(rows, unboundRows, unboundDistinctSubjects,
+				unboundDistinctObjects, subjectBound, objectBound, selectedEndpointFanout);
 		return Optional.of(new PropertyPathEstimate(rows, workRows, distinctSubjects, distinctObjects, averageFanout,
 				method));
 	}
@@ -7421,14 +7425,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			fanout = Math.min(forwardFanout, reverseFanout);
 		}
 
-		double rows = estimateConditionedArbitraryLengthPathRows(directRows, prefixRows, path.getMinLength(), fanout);
+		double rows = estimateConditionedArbitraryLengthPathRows(directRows, prefixRows, path.getMinLength(), fanout,
+				predicateRows);
 		rows = Math.min(rows, unboundRows);
 		rows = normalizeRows(rows);
 		double distinctSubjectEstimate = prefixHasSubject ? endpointDistinct(path.getSubjectVar(), prefix, rows)
 				: Math.min(distinctSubjects, rows);
 		double distinctObjectEstimate = prefixHasObject ? endpointDistinct(path.getObjectVar(), prefix, rows)
 				: Math.min(distinctObjects, rows);
-		double workRows = normalizeRows(Math.max(rows, directRows + Math.max(0.0d, prefixRows)));
+		double boundedDirectRows = conditionedDirectRows(directRows, prefixRows, fanout, predicateRows);
+		double workRows = normalizeRows(Math.max(rows, Math.max(0.0d, prefixRows) + boundedDirectRows));
 		String method = "sketch-single-predicate-path-prefix-sketch-"
 				+ (prefixHasSubject && prefixHasObject ? "between" : prefixHasSubject ? "fromStart" : "toEnd");
 		return new PropertyPathEstimate(rows, workRows, distinctSubjectEstimate, distinctObjectEstimate, fanout,
@@ -7475,10 +7481,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private double estimateConditionedArbitraryLengthPathRows(double directRows, double prefixRows, long minLength,
-			double fanout) {
-		double rows = minLength <= 0 ? Math.max(0.0d, prefixRows) : 0.0d;
-		double next = Math.max(0.0d, directRows);
-		double cappedFanout = Math.min(Math.max(fanout, 0.0d), 4.0d);
+			double fanout, double predicateRows) {
+		double safePrefixRows = Math.max(0.0d, finiteOr(prefixRows, 0.0d));
+		double rows = minLength <= 0 ? safePrefixRows : 0.0d;
+		double boundedDirectRows = conditionedDirectRows(directRows, safePrefixRows, fanout, predicateRows);
+		double next = boundedDirectRows;
+		double cappedFanout = boundedEndpointTraversalFanout(fanout);
 		for (int depth = 1; depth <= 4; depth++) {
 			if (!Double.isFinite(next) || next <= 0.0d) {
 				break;
@@ -7486,8 +7494,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			rows += next;
 			next *= cappedFanout;
 		}
-		double capBase = Math.max(Math.max(prefixRows, directRows), 1.0d);
-		return normalizeRows(Math.min(rows, capBase * 4.0d));
+		double capBase = Math.max(Math.max(safePrefixRows, boundedDirectRows), 1.0d);
+		return normalizeRows(Math.min(rows, capBase * 16.0d));
+	}
+
+	private double conditionedDirectRows(double directRows, double prefixRows, double fanout, double predicateRows) {
+		double safePrefixRows = Math.max(0.0d, finiteOr(prefixRows, 0.0d));
+		double safeDirectRows = Math.max(0.0d, finiteOr(directRows, safePrefixRows));
+		double maxRowsFromPrefix = Math.max(1.0d, safePrefixRows) * Math.max(1.0d,
+				boundedEndpointTraversalFanout(fanout));
+		double boundedRows = Math.min(safeDirectRows, maxRowsFromPrefix);
+		if (Double.isFinite(predicateRows) && predicateRows >= 0.0d) {
+			boundedRows = Math.min(boundedRows, predicateRows);
+		}
+		return normalizeRows(boundedRows);
+	}
+
+	private double boundedEndpointTraversalFanout(double fanout) {
+		if (!Double.isFinite(fanout) || fanout < 0.0d) {
+			return 0.0d;
+		}
+		return Math.min(fanout, 2.0d);
 	}
 
 	private double averagePathFanout(double predicateRows, double distinctEndpoints) {
@@ -7498,47 +7525,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return averageFanout;
 	}
 
-	private double estimatePropertyPathWorkRows(double rows, double predicateRows, double unboundRows,
-			double unboundDistinctSubjects, double unboundDistinctObjects, long minLength, boolean subjectBound,
-			boolean objectBound) {
+	private double selectedEndpointFanout(boolean subjectBound, boolean objectBound, double forwardFanout,
+			double reverseFanout) {
+		if (subjectBound && !objectBound) {
+			return forwardFanout;
+		}
+		if (objectBound && !subjectBound) {
+			return reverseFanout;
+		}
+		if (subjectBound && objectBound) {
+			return Math.min(forwardFanout, reverseFanout);
+		}
+		return 0.0d;
+	}
+
+	private double estimatePropertyPathWorkRows(double rows, double unboundRows, double unboundDistinctSubjects,
+			double unboundDistinctObjects, boolean subjectBound, boolean objectBound, double directionalFanout) {
+		if (subjectBound && objectBound) {
+			return normalizeRows(rows);
+		}
 		if (subjectBound || objectBound) {
-			double forwardWork = endpointPropertyPathWorkRows(rows, predicateRows, unboundDistinctSubjects,
-					averagePathFanout(predicateRows, unboundDistinctSubjects), minLength, unboundRows);
-			double reverseWork = endpointPropertyPathWorkRows(rows, predicateRows, unboundDistinctObjects,
-					averagePathFanout(predicateRows, unboundDistinctObjects), minLength, unboundRows);
-			double work = subjectBound ? forwardWork : reverseWork;
-			if (subjectBound && objectBound) {
-				work = Math.min(forwardWork, reverseWork);
-			}
-			return normalizeRows(Math.max(rows, work));
+			double safeRows = Math.max(0.0d, finiteOr(rows, 0.0d));
+			double endpointWork = 1.0d + safeRows * Math.max(1.0d, boundedEndpointTraversalFanout(directionalFanout));
+			return normalizeRows(Math.max(safeRows, endpointWork));
 		}
 		double sketchDomainWork = unboundRows + unboundDistinctSubjects + unboundDistinctObjects;
 		if (!Double.isFinite(sketchDomainWork) || sketchDomainWork < 0.0d) {
 			sketchDomainWork = rows;
 		}
 		return normalizeRows(Math.max(rows, sketchDomainWork));
-	}
-
-	private double endpointPropertyPathWorkRows(double rows, double predicateRows, double endpointDistinct,
-			double averageFanout, long minLength, double unboundRows) {
-		double directRowsPerEndpoint = endpointDistinct > 0.0d ? predicateRows / endpointDistinct : rows;
-		if (!Double.isFinite(directRowsPerEndpoint) || directRowsPerEndpoint < 0.0d) {
-			directRowsPerEndpoint = rows;
-		}
-		double workRows = minLength <= 0 ? 1.0d : 0.0d;
-		double next = Math.max(0.0d, directRowsPerEndpoint);
-		double cappedFanout = Math.min(Math.max(averageFanout, 0.0d), 8.0d);
-		for (int depth = 1; depth <= 4; depth++) {
-			if (!Double.isFinite(next) || next <= 0.0d) {
-				break;
-			}
-			workRows += next;
-			next *= cappedFanout;
-		}
-		if (Double.isFinite(unboundRows) && unboundRows > 0.0d) {
-			workRows = Math.min(workRows, unboundRows);
-		}
-		return normalizeRows(Math.max(rows, workRows));
 	}
 
 	private static boolean isBoundEndpoint(Var var, Set<String> boundVars) {

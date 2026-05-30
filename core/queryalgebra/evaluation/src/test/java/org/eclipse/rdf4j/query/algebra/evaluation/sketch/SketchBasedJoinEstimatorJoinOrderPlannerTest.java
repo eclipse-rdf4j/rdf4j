@@ -870,6 +870,48 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void prefixBoundArbitraryLengthPathDoesNotExplodeOnGlobalObjectSkew() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI value = VF.createIRI("https://admin-shell.io/aas/3/value");
+		IRI idShort = VF.createIRI("https://admin-shell.io/aas/3/idShort");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		Value ratedPower = VF.createLiteral("ratedPower");
+
+		for (int i = 0; i < 4_000; i++) {
+			Resource element = VF.createIRI("urn:element:" + i);
+			Resource property = VF.createIRI("urn:property:" + i);
+			store.add(VF.createStatement(VF.createIRI("urn:submodel:" + (i / 4)), submodelElement, element));
+			store.add(VF.createStatement(element, value, property));
+			store.add(VF.createStatement(property, value, VF.createLiteral(i % 3)));
+			if (i < 200) {
+				store.add(VF.createStatement(property, idShort, ratedPower));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern ratedPowerBinder = new StatementPattern(Var.of("p1"), Var.of("idShort", idShort),
+				Var.of("ratedPower", ratedPower));
+		StatementPattern broadStartBinder = pattern("submodel", submodelElement, "element");
+		ArbitraryLengthPath valuePath = new ArbitraryLengthPath(new Var("element"),
+				new StatementPattern(new Var("pathS"), new Var("valueStep", value), new Var("pathO")),
+				new Var("p1"), 0L);
+
+		PropertyPathEstimate toEnd = estimator.estimate(valuePath, Set.of("p1"), List.of(ratedPowerBinder))
+				.orElseThrow();
+		PropertyPathEstimate fromStart = estimator.estimate(valuePath, Set.of("element"), List.of(broadStartBinder))
+				.orElseThrow();
+
+		assertTrue(toEnd.rows() < fromStart.rows(),
+				() -> "The smaller end-bound domain should be cheaper despite global value-object skew, toEnd="
+						+ toEnd + ", fromStart=" + fromStart);
+		assertTrue(toEnd.rows() < 20_000.0d,
+				() -> "Endpoint-conditioned ALP rows should be bounded by prefix work, not by the global path "
+						+ "object distinct count: " + toEnd);
+	}
+
+	@Test
 	void dynamicProgrammingKeepsAasThresholdPathPrefixConnected() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");

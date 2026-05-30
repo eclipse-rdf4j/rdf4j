@@ -188,6 +188,19 @@ final class LmdbCascadesConnectedJoinPlanner {
 					}
 					continue;
 				}
+				PathAlternative cheaperEndpoint = cheaperKnownEndpointPathAlternative(factors, factorIndex, state, step,
+						best, costModel, fallbackStatistics);
+				if (cheaperEndpoint != null) {
+					if (trace.enabled()) {
+						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+								+ " reason=path-dominated-by-cheaper-endpoint-alternative "
+								+ cheaperEndpoint.mode() + " prefix=" + cheaperEndpoint.prefix().order()
+								+ " totalWork=" + compactDouble(cheaperEndpoint.totalWorkRows())
+								+ " currentWork=" + compactDouble(state.workRows() + step.workRows())
+								+ " factor=" + factorSummary(factors.get(factorIndex)));
+					}
+					continue;
+				}
 				State next = state.append(mask | bit, factorIndex, step,
 						union(state.boundVars(), factorVars.get(factorIndex)));
 				State incumbent = best[next.mask()];
@@ -442,6 +455,54 @@ final class LmdbCascadesConnectedJoinPlanner {
 				doubleMetrics, factorEstimate.getEstimateVector().rowQErrorMax(),
 				factorEstimate.getEstimateVector().workQErrorMax(), factorEstimate.getEstimateVector().confidence(),
 				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
+	}
+
+	private static PathAlternative cheaperKnownEndpointPathAlternative(List<TupleExpr> factors, int factorIndex,
+			State currentPrefix, Step currentStep, State[] best, JoinFactorCostModel costModel,
+			EvaluationStatistics fallbackStatistics) {
+		if (factors == null || factorIndex < 0 || factorIndex >= factors.size() || currentPrefix == null
+				|| currentStep == null || best == null) {
+			return null;
+		}
+		TupleExpr factor = factors.get(factorIndex);
+		if (!path(factor)) {
+			return null;
+		}
+		String currentMode = pathEndpointMode(factor, currentPrefix.boundVars());
+		if (!"fromStart".equals(currentMode) && !"toEnd".equals(currentMode)) {
+			return null;
+		}
+		double currentTotalWorkRows = currentPrefix.workRows() + currentStep.workRows();
+		if (!Double.isFinite(currentTotalWorkRows) || currentTotalWorkRows <= 0.0d) {
+			return null;
+		}
+		int factorBit = 1 << factorIndex;
+		PathAlternative bestAlternative = null;
+		for (State alternativePrefix : best) {
+			if (alternativePrefix == null || alternativePrefix == currentPrefix
+					|| (alternativePrefix.mask() & factorBit) != 0
+					|| !pathHasBoundEndpoint(factor, alternativePrefix.boundVars())) {
+				continue;
+			}
+			String alternativeMode = pathEndpointMode(factor, alternativePrefix.boundVars());
+			if (currentMode.equals(alternativeMode) || "fullScan".equals(alternativeMode)) {
+				continue;
+			}
+			Step alternativeStep = estimateStep(factors, factorIndex, alternativePrefix.boundVars(),
+					alternativePrefix.rows(), true, alternativePrefix.prefixFactors(factors), costModel,
+					fallbackStatistics);
+			if (alternativeStep == null) {
+				continue;
+			}
+			PathAlternative alternative = new PathAlternative(alternativeMode, alternativePrefix, alternativeStep,
+					alternativePrefix.workRows() + alternativeStep.workRows(),
+					Math.max(alternativePrefix.maxRows(), alternativeStep.outputRows()));
+			bestAlternative = better(bestAlternative, alternative);
+		}
+		if (bestAlternative == null || !Double.isFinite(bestAlternative.totalWorkRows())) {
+			return null;
+		}
+		return bestAlternative.totalWorkRows() * 1.10d < currentTotalWorkRows ? bestAlternative : null;
 	}
 
 	private static void tracePathAlternatives(List<TupleExpr> factors, State[] best, List<Set<String>> factorVars,

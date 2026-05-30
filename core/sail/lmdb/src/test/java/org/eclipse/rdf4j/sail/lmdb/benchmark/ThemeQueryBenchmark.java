@@ -122,8 +122,8 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
 			"LIBRARY",
 			// "ENGINEERING",
 			// "HIGHLY_CONNECTED",
