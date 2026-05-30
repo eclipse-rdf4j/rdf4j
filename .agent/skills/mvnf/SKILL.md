@@ -23,9 +23,9 @@ Run Maven tests with repeatable commands and useful failure pointers.
 2. `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick install`
 3. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify` (optionally with `-DskipITs -Dtest=...` for unit tests or `-PskipUnitTests -Dit.test=...` for Failsafe ITs)
 
-Root install output is stored in `maven-build.log`. Verify logs use `logs/mvnf/*-verify.log` when retained or when tests fail. By default, successful Maven phases do not print their output tail; `mvnf` prints compact Surefire/Failsafe report totals and report paths instead. Failed phases still print the retained Maven tail plus compact report failure details.
+Root install output is stored in `maven-build.log`. On success, `mvnf` prints one root-install summary line with `BUILD SUCCESS` and the log path. Verify logs use `logs/mvnf/*-verify.log` when retained or when tests fail. By default, successful Maven phases do not print their output tail; `mvnf` prints compact Surefire/Failsafe report totals and report paths instead. Failed phases still print the retained Maven tail plus compact report failure details.
 
-For manual root clean installs, use the same install flags and log filter:
+For manual root clean installs, keep full output in `maven-build.log` and print only errors plus the reactor summary:
 
 ```bash
 mvn -B -ntp \
@@ -43,7 +43,7 @@ mvn -B -ntp \
 
 For install without clean, replace `clean install` with `install`. For a module install, add `-pl <module> -am` before `-Pquick`. Keep the `2>&1 | tee maven-build.log | awk ...` tail on every install variant.
 
-If the test run fails, it prints the list of Surefire/Failsafe report files under the module's `target/*-reports/` directories.
+If the test run fails, it prints the list of Surefire/Failsafe report files under the module's `target/*-reports/` directories. For a handoff-ready block from retained reports, run `python3 scripts/agent-evidence.py <module>/target/surefire-reports <module>/target/failsafe-reports`.
 
 ## Options
 

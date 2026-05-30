@@ -230,6 +230,19 @@ def _run(
     return returncode, tail
 
 
+def _print_install_success(repo_root: Path, log_path: Path) -> None:
+    elapsed = ""
+    try:
+        for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+            if "Total time:" in line:
+                elapsed = " " + line.split("Total time:", 1)[1].strip()
+                break
+    except OSError:
+        pass
+
+    print(f"\n[mvnf] Root install passed: BUILD SUCCESS{elapsed} ({log_path.relative_to(repo_root).as_posix()})")
+
+
 def _delete_logs(log_paths: list[Path]) -> None:
     for log_path in log_paths:
         try:
@@ -509,6 +522,7 @@ def main() -> int:
     if rc != 0:
         print("\n[mvnf] Root install failed.")
         return rc
+    _print_install_success(repo_root, log_paths[0])
 
     rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream, tail_on_success=args.tail_on_success)
     if rc == 0:

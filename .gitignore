@@ -14,6 +14,15 @@
 target/
 */target/
 **/.cache
+**/__pycache__/
+/logs/
+/maven-build.log
+/initial-evidence.txt
+/.verify.log
+/.initial-verify.log
+/*.verify.log
+/tmp/
+/*.trace
 pom.xml.versionsBackup
 dependency-reduced-pom.xml
 

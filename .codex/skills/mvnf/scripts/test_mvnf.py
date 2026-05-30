@@ -126,6 +126,8 @@ class MvnfStreamTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertNotIn("INSTALL NOISE should be hidden", result.stdout)
             self.assertNotIn("VERIFY NOISE should be hidden", result.stdout)
+            self.assertIn("[mvnf] Root install passed: BUILD SUCCESS", result.stdout)
+            self.assertIn("maven-build.log", result.stdout)
             self.assertIn("Tests passed", result.stdout)
             self.assertIn("Reports:", result.stdout)
             self.assertIn("TEST-ExampleTest.xml", result.stdout)

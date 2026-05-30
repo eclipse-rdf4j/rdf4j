@@ -225,19 +225,20 @@ To avoid losing the first test evidence when later runs overwrite `target/*-repo
 
 • On a fully green verify run:
 
-- Capture and store the last 200 lines of the verify output.
+- Capture compact evidence; keep full logs/reports on disk.
 - Example (mvnf):
-    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs | tee initial-evidence.txt`
+    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs`
+    - `python3 scripts/agent-evidence.py --command "python3 .codex/skills/mvnf/scripts/mvnf.py <module>" --log logs/mvnf/<verify-log> <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
     - Keep `logs/mvnf/*-verify.log` for the full Maven output; use `--stream` only for hangs/no-progress debugging.
 - Example (manual Maven):
-    - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .initial-verify.log`
-    - Copy the compact relevant summary/report excerpts into `initial-evidence.txt`; keep `.initial-verify.log` for full output.
+    - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
+    - `python3 scripts/agent-evidence.py --command "mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify" --log <full-log> <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
 
 • On any failing verify run (unit or IT failures):
 
-- Concatenate the Surefire and/or Failsafe report text files into `initial-evidence.txt`.
+- Write compact report evidence into `initial-evidence.txt`; keep Surefire/Failsafe reports untouched.
 - Example (repo‑root):
-    - `find . -type f \( -path "*/target/surefire-reports/*.txt" -o -path "*/target/failsafe-reports/*.txt" \) -print0 | xargs -0 cat > initial-evidence.txt`
+    - `python3 scripts/agent-evidence.py --command "<failed command>" <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
 
 Notes
 
@@ -354,7 +355,8 @@ If you need manual control or a skill does not fit, use the Maven commands below
 
 1. **Discover**
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
-    * Search fast with ripgrep: `rg -n "<symbol or string>"`
+    * Search fast with ripgrep: start with `rg -l "<pattern>" <path>`, then inspect hits with `rg -n -m 20 "<pattern>" <narrowed/path>`.
+      Avoid broad `rg -n` over large test trees for common tokens.
 2. **Build sanity (fast, skip tests)**
     * Use the root clean-install template.
 3. **Format (Java, imports, XML)**
@@ -367,9 +369,8 @@ If you need manual control or a skill does not fit, use the Maven commands below
     * Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method`
     * Extra Maven flags/profiles: append after `--`, e.g. `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method -- -Pjacoco`
     * Optional Maven fallback:
-      * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .verify.log`
-      * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify | tee .verify.log`
-      * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tee .verify.log`
+      * Prefer mvnf passthrough: `python3 .codex/skills/mvnf/scripts/mvnf.py <module> -- <extra Maven args>`
+      * Raw Maven only when mvnf does not fit; then summarize reports with `python3 scripts/agent-evidence.py ...`.
 5. **Inspect failures**
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
@@ -472,6 +473,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Working Loop
 
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
+* **Status:** routine checks use `git status --short --untracked-files=no`; use full untracked status only for pre-stage/final audit.
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
 * **Compile (fast):** use the module clean-install template with `-pl <module> -am`.
@@ -503,7 +505,8 @@ Always keep untracked artifacts!
 
 ### Optional: Redirect test stdout/stderr to files (manual Maven)
 ```bash
-mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tee .verify.log
+mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify
+python3 scripts/agent-evidence.py --command "<manual Maven command>" --log <full-log> <module>/target/surefire-reports
 ````
 
 Logs under:
@@ -693,18 +696,18 @@ Immediately after creating any new Java source file, add the signature comment (
 
 **Manual Maven fallback (profiles/extra flags/full repo)**
 
-* By module: `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl verify | tee .verify.log`
+* By module: prefer `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/shacl`
 * Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (long; only when appropriate)
 * Slow tests (entire repo):
-  `mvn -o -Dmaven.repo.local=.m2_repo verify -PslowTestsOnly,-skipSlowTests | tee .verify.log`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PslowTestsOnly,-skipSlowTests`
 * Slow tests (by module):
-  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PslowTestsOnly,-skipSlowTests | tee .verify.log`
+  `python3 .codex/skills/mvnf/scripts/mvnf.py <module> -- -PslowTestsOnly,-skipSlowTests`
 * Slow tests (specific test):
     * `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method --module core/sail/shacl -- -PslowTestsOnly,-skipSlowTests`
 * Integration tests (entire repo):
-  `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests | tee .verify.log`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests`
 * Integration tests (by module):
-  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PskipUnitTests | tee .verify.log`
+  `python3 .codex/skills/mvnf/scripts/mvnf.py --it ITClass#method --module <module>`
 * Useful flags:
 
     * `-Dtest=ClassName`
