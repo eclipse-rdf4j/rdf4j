@@ -19,9 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -31,6 +33,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -149,6 +156,89 @@ class CascadesMemoModelTest {
 		assertTrue(memo.addWinner(key, second, 8, true));
 
 		assertEquals(2, memo.winners(key).size());
+	}
+
+	@Test
+	void bindingProfileDifferencePreventsWinnerDominance() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int groupId = memo.intern(pattern("s", "p", "o"));
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		WinnerKey key = OptimizationGoal.root().key(groupId);
+		PhysicalProperties firstProfile = PhysicalProperties.builder()
+				.accessPath("prefixScan")
+				.bindingProfile(finiteProfile("o", iri("urn:test:first")))
+				.build();
+		PhysicalProperties secondProfile = PhysicalProperties.builder()
+				.accessPath("prefixScan")
+				.bindingProfile(finiteProfile("o", iri("urn:test:second")))
+				.build();
+
+		Winner first = new Winner(expression, expression.tupleExpr(), firstProfile,
+				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(), false, "");
+		Winner second = new Winner(expression, expression.tupleExpr(), secondProfile,
+				new CostVector(2, 2, 0, 0, 0, 1, 1), List.of(), false, "");
+
+		assertTrue(memo.addWinner(key, first, 8, true));
+		assertTrue(memo.addWinner(key, second, 8, true));
+		assertEquals(2, memo.winners(key).size(),
+				"A locally cheaper winner must not dominate an alternative with a different finite anchor profile");
+	}
+
+	@Test
+	void bindingProfileCapturesJointNdvsSketchesOverlapEvidenceAndEndpointMode() {
+		StatementPattern pattern = pattern("s", "p", "o");
+		pattern.setStringMetricPlanned("plannedPropertyPathEndpointMode", "fromStart");
+		FiniteRelationEstimate finite = FiniteRelationEstimate.fromRows(List.of("s", "o"),
+				List.of(List.of(iri("urn:test:s1"), iri("urn:test:o1")),
+						List.of(iri("urn:test:s1"), iri("urn:test:o2"))),
+				"test-finite");
+		BagEstimate bag = new BagEstimate(2.0d, 2.0d, 0.0d, 1.0d, "test", Map.of("o",
+				new VariableEstimate(2.0d, 2.0d, 0.0d, new TestSketch(2.0d))),
+				Map.of(finite.variableSetKey(), finite), Map.of("optimizer.joinOverlapRows", 2.0d));
+
+		BindingProfile profile = BindingProfile.fromBag(pattern, bag, Map.of("optimizer.coverageRows", 1.0d));
+
+		assertEquals("fromStart", profile.endpointMode());
+		assertTrue(profile.sketchVars().contains("o"));
+		assertEquals(2.0d, profile.jointDistinctRows().get(VariableSetKey.of(List.of("s", "o"))), 0.0d);
+		assertEquals(2.0d, profile.overlapEvidence().get("optimizer.joinOverlapRows"), 0.0d);
+		assertEquals(1.0d, profile.overlapEvidence().get("optimizer.coverageRows"), 0.0d);
+		assertTrue(profile.toBagEstimate(2.0d, 2.0d, 0.0d, 1.0d, "roundtrip", Map.of())
+				.variable("o")
+				.sketch() instanceof TestSketch);
+	}
+
+	@Test
+	void bindingProfileEndpointModeCanBeRequiredAsPhysicalProperty() {
+		BindingProfile requiredEndpoint = new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				"toEnd");
+		BindingProfile deliveredEndpoint = new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				"fromStart");
+		PhysicalProperties required = PhysicalProperties.builder().bindingProfile(requiredEndpoint).build();
+		PhysicalProperties delivered = PhysicalProperties.builder().bindingProfile(deliveredEndpoint).build();
+
+		assertFalse(delivered.satisfies(required));
+		assertEquals(List.of("bindingProfile"), delivered.missingRequirements(required));
+	}
+
+	@Test
+	void endpointModeIsPartOfPhysicalAlternativeIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int groupId = memo.intern(pattern("s", "p", "o"));
+		StatementPattern fromStart = pattern("s", "p", "o");
+		fromStart.setStringMetricPlanned("plannedPropertyPathEndpointMode", "fromStart");
+		StatementPattern toEnd = pattern("s", "p", "o");
+		toEnd.setStringMetricPlanned("plannedPropertyPathEndpointMode", "toEnd");
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.accessPath("propertyPath")
+				.build();
+
+		assertTrue(memo.addPhysicalAlternative(groupId, fromStart, delivered, "same-metadata", RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of()).isPresent());
+		assertTrue(memo.addPhysicalAlternative(groupId, toEnd, delivered, "same-metadata", RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of()).isPresent());
+		assertEquals(3, memo.group(groupId).expressions().size(),
+				"Endpoint mode must prevent physical alternatives from being deduplicated before costing");
 	}
 
 	@Test
@@ -311,8 +401,23 @@ class CascadesMemoModelTest {
 		return new Filter(pattern("s", "p", "o"), new SameTerm(new Var("p"), new ValueConstant(iri(predicate))));
 	}
 
+	private static BindingProfile finiteProfile(String variable, Value value) {
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of(variable), List.of(List.of(value)),
+				"test-finite-anchor");
+		BagEstimate bag = BagEstimate.exact(1.0d, "test-finite-anchor")
+				.withFiniteRelation(relation);
+		return BindingProfile.fromBag(null, bag, Map.of());
+	}
+
 	private static IRI iri(String value) {
 		return SimpleValueFactory.getInstance().createIRI(value);
+	}
+
+	private record TestSketch(double distinctRows) implements DistributionSketch {
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return OptionalDouble.empty();
+		}
 	}
 
 	private record PropertyImplementationRule(String id, PhysicalProperties delivered, double rows)

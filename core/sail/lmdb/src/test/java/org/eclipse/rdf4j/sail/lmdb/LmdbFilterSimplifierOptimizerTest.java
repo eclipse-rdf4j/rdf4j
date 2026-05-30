@@ -24,6 +24,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -31,9 +32,11 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -44,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -70,6 +74,23 @@ class LmdbFilterSimplifierOptimizerTest {
 		Join mergedJoin = assertInstanceOf(Join.class, merged.getArg());
 		assertFalse(containsFilter(mergedJoin.getLeftArg()));
 		assertFalse(containsFilter(mergedJoin.getRightArg()));
+	}
+
+	@Test
+	void rewritesMinusRhsDuplicatePatternFilterToNegatedLeftFilter() {
+		StatementPattern branchName = statementPattern("branch", "name", "branchName");
+		StatementPattern locatedAt = statementPattern("copy", "locatedAt", "branch");
+		FunctionCall branchZeroFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("branch")),
+				new ValueConstant(VF.createLiteral("branch/0")));
+		QueryRoot root = new QueryRoot(new Difference(new Join(branchName, locatedAt),
+				new Filter(locatedAt.clone(), branchZeroFilter)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter replacement = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Not.class, replacement.getCondition());
+		assertFalse(containsDifference(replacement),
+				"Redundant RHS pattern+filter should become a left-side negated filter before Cascades");
 	}
 
 	@Test
@@ -665,6 +686,25 @@ class LmdbFilterSimplifierOptimizerTest {
 		}
 		if (tupleExpr instanceof Join join) {
 			return containsFilter(join.getLeftArg()) || containsFilter(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsDifference(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Difference) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return containsDifference(filter.getArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsDifference(leftJoin.getLeftArg()) || containsDifference(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsDifference(join.getLeftArg()) || containsDifference(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
 		}
 		return false;
 	}

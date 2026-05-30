@@ -265,6 +265,7 @@ public interface CascadesCostModel {
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
 			PhysicalProperties delivered = expression.deliveredProperties();
+			BindingProfile declaredBindingProfile = delivered.bindingProfile();
 			TupleExpr tupleExpr = expression.tupleExpr();
 			Set<String> inputBoundVars = new LinkedHashSet<>(delivered.inputBoundVars());
 			if (inputWinners != null && !inputWinners.isEmpty()) {
@@ -282,7 +283,25 @@ public interface CascadesCostModel {
 				delivered = delivered.withDistinctVars(tupleExpr.getBindingNames())
 						.withDuplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES);
 			}
-			return delivered.withInputBoundVars(inputBoundVars);
+			BindingProfile outputProfile = outputBindingProfile(expression, goal, inputWinners)
+					.mergedWith(declaredBindingProfile);
+			return delivered.withInputBoundVars(inputBoundVars)
+					.withBindingProfile(outputProfile);
+		}
+
+		private BindingProfile outputBindingProfile(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			TupleExpr tupleExpr = expression == null ? null : expression.tupleExpr();
+			if (tupleExpr == null) {
+				return BindingProfile.ANY;
+			}
+			try {
+				StatisticsEstimate estimate = estimateForLocalCost(expression, tupleExpr, boundVars(goal),
+						inputWinners);
+				return BindingProfile.fromEstimate(tupleExpr, estimate);
+			} catch (RuntimeException e) {
+				return BindingProfile.endpointOnly(tupleExpr);
+			}
 		}
 
 		private Set<String> externallyRequiredInputBoundVars(TupleExpr tupleExpr, int inputIndex,
@@ -584,7 +603,34 @@ public interface CascadesCostModel {
 			StatisticsEstimate logical = estimate(plan, boundVars);
 			BagEstimate bag = physicalInputBag(plan, logical, winner.cost().rows(), winner.cost().workRows(),
 					source + "-physical-input");
+			BindingProfile profile = winner.deliveredProperties() == null ? BindingProfile.ANY
+					: winner.deliveredProperties().bindingProfile();
+			if (profile != null && !profile.isAny()) {
+				Map<String, Double> metrics = winner.provenance() == null || winner.provenance().estimate() == null
+						? Map.of()
+						: winner.provenance().estimate().doubleMetrics();
+				bag = overlayBindingProfile(bag, profile, source + "-binding-profile-input", metrics);
+				return StatisticsEstimate.fromBag(bag, source + "-binding-profile-input");
+			}
 			return StatisticsEstimate.fromBag(bag, source + "-physical-input");
+		}
+
+		private BagEstimate overlayBindingProfile(BagEstimate base, BindingProfile profile, String source,
+				Map<String, Double> metrics) {
+			if (base == null || profile == null || profile.isAny()) {
+				return base;
+			}
+			Map<String, VariableEstimate> variables = new LinkedHashMap<>(base.variables());
+			variables.putAll(profile.variables());
+			Map<VariableSetKey, FiniteRelationEstimate> relations = new LinkedHashMap<>(base.finiteRelations());
+			relations.putAll(profile.finiteRelations());
+			Map<String, Double> mergedMetrics = new LinkedHashMap<>(base.metrics());
+			if (metrics != null) {
+				mergedMetrics.putAll(metrics);
+			}
+			mergedMetrics.putAll(profile.overlapEvidence());
+			return new BagEstimate(base.rows(), base.workRows(), base.memoryRows(), base.confidence(), source,
+					variables, relations, mergedMetrics);
 		}
 
 		private BagEstimate physicalInputBag(TupleExpr plan, StatisticsEstimate logical, double rows, double workRows,

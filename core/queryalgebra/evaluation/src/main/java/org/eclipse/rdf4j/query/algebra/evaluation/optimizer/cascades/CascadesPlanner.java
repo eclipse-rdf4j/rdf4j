@@ -141,11 +141,11 @@ public final class CascadesPlanner {
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.build();
-				String ruleId = markApproximate ? "existing-algebra-emergency-fallback" : "baseline-existing-algebra";
-				RuleProof proof = new RuleProof(ruleId, RuleKind.IMPLEMENTATION, goal.semanticScope(),
-						Set.of(markApproximate ? "emergencyFallback" : "pricedBaselinePhysicalWinner"), reason);
-				Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
-						ruleId, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
+			String ruleId = markApproximate ? "existing-algebra-emergency-fallback" : "baseline-existing-algebra";
+			RuleProof proof = new RuleProof(ruleId, RuleKind.IMPLEMENTATION, goal.semanticScope(),
+					Set.of(markApproximate ? "emergencyFallback" : "pricedBaselinePhysicalWinner"), reason);
+			Optional<MemoExpr> added = memo.addPhysicalAlternative(groupId, tupleExpr.clone(), delivered,
+					ruleId, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(proof), null, true);
 			if (added.isPresent()) {
 				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false, false);
 				if (winner.isPresent()) {
@@ -215,7 +215,7 @@ public final class CascadesPlanner {
 			if (application.kind() == RuleKind.TRANSFORMATION) {
 				memo.addLogicalAlternative(application.targetGroupId(), application.alternative());
 			} else {
-					Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
+				Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
 						application.alternative(), application.deliveredProperties(), application.metadata(),
 						application.kind(), application.localCost(),
 						application.proofs(), application.estimate(), application.opaque());

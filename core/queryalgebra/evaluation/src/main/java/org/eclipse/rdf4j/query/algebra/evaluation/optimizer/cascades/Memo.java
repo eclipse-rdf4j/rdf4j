@@ -127,12 +127,22 @@ public final class Memo {
 		RuleKind normalizedKind = kind == null || kind == RuleKind.TRANSFORMATION ? RuleKind.IMPLEMENTATION : kind;
 		MemoGroup group = group(groupId);
 		List<Integer> inputs = opaque ? List.of() : internInputs(alternative);
-		MemoExpr expression = MemoExpr.physical(nextExpressionId++, groupId, alternative, inputs, metadata, delivered,
-				normalizedKind, ruleCost, proofs, estimate);
+		PhysicalProperties enrichedDelivered = enrichDeliveredBindingProfile(alternative, delivered);
+		MemoExpr expression = MemoExpr.physical(nextExpressionId++, groupId, alternative, inputs, metadata,
+				enrichedDelivered, normalizedKind, ruleCost, proofs, estimate);
 		if (!group.addExpression(expression)) {
 			return Optional.empty();
 		}
 		return Optional.of(expression);
+	}
+
+	private PhysicalProperties enrichDeliveredBindingProfile(TupleExpr tupleExpr, PhysicalProperties delivered) {
+		PhysicalProperties safeDelivered = delivered == null ? PhysicalProperties.ANY : delivered;
+		BindingProfile endpointProfile = BindingProfile.endpointOnly(tupleExpr);
+		if (endpointProfile.isAny()) {
+			return safeDelivered;
+		}
+		return safeDelivered.withBindingProfile(safeDelivered.bindingProfile().mergedWith(endpointProfile));
 	}
 
 	public boolean addWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {

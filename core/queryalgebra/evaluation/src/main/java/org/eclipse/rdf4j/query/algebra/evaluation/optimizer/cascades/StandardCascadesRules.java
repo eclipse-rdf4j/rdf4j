@@ -18,18 +18,26 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -400,7 +408,12 @@ public final class StandardCascadesRules {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Difference difference = (Difference) expression.tupleExpr();
-			List<RuleApplication> applications = new ArrayList<>(3);
+			List<RuleApplication> applications = new ArrayList<>(4);
+			RuleApplication redundantPatternFilter = redundantPatternMinusFilterAlternative(expression, difference,
+					goal);
+			if (redundantPatternFilter != null) {
+				applications.add(redundantPatternFilter);
+			}
 			if (difference.getLeftArg()instanceof Union union && !union.isVariableScopeChange()) {
 				RuleProof proof = proof(semanticScope(goal), Set.of("leftUnionBranchesCompatible", "rhsScopeSafe"),
 						"MINUS distributes over a safe left UNION as a costed alternative");
@@ -422,6 +435,28 @@ public final class StandardCascadesRules {
 						proof));
 			}
 			return applications;
+		}
+
+		private RuleApplication redundantPatternMinusFilterAlternative(MemoExpr expression, Difference difference,
+				OptimizationGoal goal) {
+			if (!(difference.getRightArg()instanceof Filter rightFilter)
+					|| !(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
+				return null;
+			}
+
+			Set<String> conditionVars = plannerNames(VarNameCollector.process(rightFilter.getCondition()));
+			if (!rightPattern.getBindingNames().containsAll(conditionVars)
+					|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
+					|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+					|| !containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
+				return null;
+			}
+
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter"),
+					"MINUS over an already-required RHS pattern plus total local filter is a negated left filter");
+			return RuleApplication.transformation(expression.groupId(),
+					new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone())), proof);
 		}
 	}
 
@@ -544,6 +579,70 @@ public final class StandardCascadesRules {
 			combined = new And(combined, conjuncts.get(i).clone());
 		}
 		return combined;
+	}
+
+	private static boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			return sameStatementPattern(statementPattern, expectedPattern);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
+					|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsEquivalentRequiredPattern(leftJoin.getLeftArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof Difference difference) {
+			return containsEquivalentRequiredPattern(difference.getLeftArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			return containsEquivalentRequiredPattern(unaryTupleOperator.getArg(), expectedPattern);
+		}
+		return false;
+	}
+
+	private static boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
+		return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+				&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
+				&& samePatternVar(left.getObjectVar(), right.getObjectVar())
+				&& samePatternVar(left.getContextVar(), right.getContextVar());
+	}
+
+	private static boolean samePatternVar(Var left, Var right) {
+		if (left == null || right == null) {
+			return left == right;
+		}
+		if (left.hasValue() || right.hasValue()) {
+			return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
+		}
+		return left.getName() != null && left.getName().equals(right.getName());
+	}
+
+	private static boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+		if (condition instanceof And and) {
+			return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+					&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+		}
+		if (condition instanceof FunctionCall functionCall) {
+			return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+					&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
+					&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
+		}
+		return false;
+	}
+
+	private static boolean isSafeStringExpression(ValueExpr expression, Set<String> assuredConditionVars) {
+		if (expression instanceof Str str) {
+			ValueExpr arg = str.getArg();
+			return arg instanceof Var var && assuredConditionVars.contains(var.getName());
+		}
+		if (expression instanceof ValueConstant valueConstant) {
+			Value value = valueConstant.getValue();
+			return value instanceof Literal literal
+					&& literal.getLanguage().isEmpty()
+					&& literal.getCoreDatatype() == CoreDatatype.XSD.STRING;
+		}
+		return false;
 	}
 
 	private static String semanticScope(OptimizationGoal goal) {

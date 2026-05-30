@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -36,10 +37,12 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
@@ -53,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -128,6 +132,16 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Difference difference) {
+			super.meet(difference);
+			TupleExpr replacement = rewriteRedundantPatternMinusFilter(difference);
+			if (replacement != null) {
+				difference.replaceWith(replacement);
+				replacement.visit(this);
+			}
+		}
+
+		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
 			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
@@ -138,6 +152,56 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				annotateFilter(filter);
 			}
 		}
+	}
+
+	private static TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
+		if (!(difference.getRightArg()instanceof Filter rightFilter)
+				|| !(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
+			return null;
+		}
+
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(rightFilter.getCondition());
+		if (!rightPattern.getBindingNames().containsAll(conditionVars)
+				|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
+				|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+				|| !LmdbJoinPlanSupport.containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
+			return null;
+		}
+
+		Filter replacement = new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone()));
+		replacement.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_REDUNDANT_PATTERN_FILTER,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter"),
+						"minus-rhs-required-pattern-filter-is-left-negated-filter").metricFragment());
+		return replacement;
+	}
+
+	private static boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+		if (condition instanceof And and) {
+			return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+					&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+		}
+		if (condition instanceof FunctionCall functionCall) {
+			return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+					&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
+					&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
+		}
+		return false;
+	}
+
+	private static boolean isSafeStringExpression(ValueExpr expression, Set<String> assuredConditionVars) {
+		if (expression instanceof Str str) {
+			ValueExpr arg = str.getArg();
+			return arg instanceof Var var && assuredConditionVars.contains(var.getName());
+		}
+		if (expression instanceof ValueConstant valueConstant) {
+			Value value = valueConstant.getValue();
+			return value instanceof Literal literal
+					&& literal.getLanguage().isEmpty()
+					&& literal.getCoreDatatype() == CoreDatatype.XSD.STRING;
+		}
+		return false;
 	}
 
 	private static boolean canMerge(Filter parent, Filter child) {

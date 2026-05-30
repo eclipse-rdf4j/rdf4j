@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public record PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
 		Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
-		DuplicateBehavior duplicateBehavior) {
+		DuplicateBehavior duplicateBehavior, BindingProfile bindingProfile) {
 
 	public static final String ANY_ACCESS_PATH = "*";
 	public static final String ANY_GRAPH_CONTEXT = "*";
@@ -40,6 +40,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		materialization = materialization == null ? Materialization.ANY : materialization;
 		graphContext = graphContext == null || graphContext.isBlank() ? ANY_GRAPH_CONTEXT : graphContext;
 		duplicateBehavior = duplicateBehavior == null ? DuplicateBehavior.ANY : duplicateBehavior;
+		bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
 	}
 
 	public static Builder builder() {
@@ -54,7 +55,8 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& inputBoundVars.isEmpty()
 				&& materialization == Materialization.ANY
 				&& ANY_GRAPH_CONTEXT.equals(graphContext)
-				&& duplicateBehavior == DuplicateBehavior.ANY;
+				&& duplicateBehavior == DuplicateBehavior.ANY
+				&& bindingProfile.isAny();
 	}
 
 	public boolean satisfies(PhysicalProperties required) {
@@ -68,14 +70,15 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& required.boundVars.containsAll(inputBoundVars)
 				&& satisfiesMaterialization(required.materialization)
 				&& satisfiesGraphContext(required.graphContext)
-				&& satisfiesDuplicateBehavior(required.duplicateBehavior);
+				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
+				&& bindingProfile.satisfies(required.bindingProfile);
 	}
 
 	public List<String> missingRequirements(PhysicalProperties required) {
 		if (required == null) {
 			required = ANY;
 		}
-		List<String> missing = new ArrayList<>(8);
+		List<String> missing = new ArrayList<>(9);
 		if (!satisfiesOrdering(required.ordering)) {
 			missing.add("ordering");
 		}
@@ -100,6 +103,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (!satisfiesDuplicateBehavior(required.duplicateBehavior)) {
 			missing.add("duplicateBehavior");
 		}
+		if (!bindingProfile.satisfies(required.bindingProfile)) {
+			missing.add("bindingProfile");
+		}
 		return missing.isEmpty() ? List.of() : List.copyOf(missing);
 	}
 
@@ -123,6 +129,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		builder.graphContext(ANY_GRAPH_CONTEXT.equals(graphContext) ? other.graphContext : graphContext);
 		builder.duplicateBehavior(
 				duplicateBehavior == DuplicateBehavior.ANY ? other.duplicateBehavior : duplicateBehavior);
+		builder.bindingProfile(bindingProfile.mergedWith(other.bindingProfile));
 		return builder.build();
 	}
 
@@ -148,6 +155,10 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 
 	public PhysicalProperties withDuplicateBehavior(DuplicateBehavior duplicateBehavior) {
 		return builderFrom(this).duplicateBehavior(duplicateBehavior).build();
+	}
+
+	public PhysicalProperties withBindingProfile(BindingProfile bindingProfile) {
+		return builderFrom(this).bindingProfile(bindingProfile).build();
 	}
 
 	private boolean satisfiesOrdering(List<String> requiredOrdering) {
@@ -196,7 +207,8 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				.inputBoundVars(properties.inputBoundVars)
 				.materialization(properties.materialization)
 				.graphContext(properties.graphContext)
-				.duplicateBehavior(properties.duplicateBehavior);
+				.duplicateBehavior(properties.duplicateBehavior)
+				.bindingProfile(properties.bindingProfile);
 	}
 
 	private static List<String> immutableOrderedNames(List<String> names) {
@@ -247,6 +259,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		private Materialization materialization = Materialization.ANY;
 		private String graphContext = ANY_GRAPH_CONTEXT;
 		private DuplicateBehavior duplicateBehavior = DuplicateBehavior.ANY;
+		private BindingProfile bindingProfile = BindingProfile.ANY;
 
 		private Builder() {
 		}
@@ -291,9 +304,14 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			return this;
 		}
 
+		public Builder bindingProfile(BindingProfile bindingProfile) {
+			this.bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
+			return this;
+		}
+
 		public PhysicalProperties build() {
 			return new PhysicalProperties(ordering, distinctVars, accessPath, boundVars, inputBoundVars,
-					materialization, graphContext, duplicateBehavior);
+					materialization, graphContext, duplicateBehavior, bindingProfile);
 		}
 	}
 }

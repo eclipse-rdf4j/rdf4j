@@ -3421,8 +3421,9 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static boolean statementPatternComponentLine(String line) {
-		return line.contains("s: Var") || line.contains("p: Var") || line.contains("o: Var")
-				|| line.contains("LmdbValueVar");
+		String stripped = line.replaceFirst("^[\\s│║╠╚├└─═]*", "");
+		return stripped.startsWith("s: Var") || stripped.startsWith("p: Var") || stripped.startsWith("o: Var")
+				|| stripped.startsWith("LmdbValueVar");
 	}
 
 	private static String firstStatementPatternForPredicateAndVar(String plan, String predicateIri, String role,

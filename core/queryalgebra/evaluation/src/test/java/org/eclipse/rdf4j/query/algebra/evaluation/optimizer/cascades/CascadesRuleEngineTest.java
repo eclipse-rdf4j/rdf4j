@@ -20,10 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -31,13 +34,17 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.junit.jupiter.api.Test;
 
 class CascadesRuleEngineTest {
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
 	void ruleDuplicateApplicationIsSuppressed() {
@@ -187,6 +194,26 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void minusRedundantPatternFilterCanBecomeLeftNegatedFilterAlternative() {
+		StatementPattern branchName = pattern("branch", "name", "branchName");
+		StatementPattern locatedAt = pattern("copy", "locatedAt", "branch");
+		FunctionCall branchZeroFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("branch")),
+				new ValueConstant(VF.createLiteral("branch/0")));
+		Difference minus = new Difference(new Join(branchName, locatedAt),
+				new Filter(locatedAt.clone(), branchZeroFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter filter
+						&& filter.getCondition()instanceof Not not
+						&& not.getArg() instanceof FunctionCall
+						&& filter.getArg() instanceof Join
+						&& !containsDifference(filter.getArg())),
+				"Expected a left-side negated filter alternative for redundant RHS pattern+filter: " + applications);
+	}
+
+	@Test
 	void winnerProvenanceCapturesProofsAndRejectedAlternatives() {
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new TestImplementationRule("cheap-rule", 10.0d))
@@ -253,6 +280,22 @@ class CascadesRuleEngineTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static boolean containsDifference(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Difference) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return containsDifference(filter.getArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsDifference(join.getLeftArg()) || containsDifference(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
+		}
+		return false;
 	}
 
 	private record TestImplementationRule(String id, double rows) implements CascadesRule {

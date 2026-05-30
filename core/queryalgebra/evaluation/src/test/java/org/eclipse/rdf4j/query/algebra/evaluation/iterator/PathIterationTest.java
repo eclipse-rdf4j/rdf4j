@@ -190,7 +190,8 @@ public class PathIterationTest {
 		Var startVar = Var.of("subClass");
 		Var endVar = Var.of("superClass");
 		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
-		ArbitraryLengthPath pathNode = new ArbitraryLengthPath(startVar.clone(), pathExpression.clone(), endVar.clone(), 1);
+		ArbitraryLengthPath pathNode = new ArbitraryLengthPath(startVar.clone(), pathExpression.clone(), endVar.clone(),
+				1);
 		pathNode.setRuntimeTelemetryEnabled(true);
 		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
 				pathExpression, endVar, null, 1, new QueryBindingSet(), pathNode)) {

@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -34,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.junit.jupiter.api.Test;
 
 class CascadesCostModelTest {
@@ -74,6 +78,24 @@ class CascadesCostModelTest {
 		assertEquals(1, provider.multiPatternCalls);
 		assertTrue(properties.estimatedRows() > 0.0d,
 				"Weak sketch/provider zero must not overwrite positive algebraic join evidence");
+	}
+
+	@Test
+	void physicalJoinCostUsesDeliveredChildBindingProfiles() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr physicalJoin = new MemoExpr(10, 0, "Join", List.of(1, 2), "test", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "join-test");
+		Winner left = profileWinner(1, join.getLeftArg(), finiteProfile("o", iri("urn:test:o1")));
+		Winner matchingRight = profileWinner(2, join.getRightArg(), finiteProfile("o", iri("urn:test:o1")));
+		Winner disjointRight = profileWinner(3, join.getRightArg(), finiteProfile("o", iri("urn:test:o2")));
+
+		CostVector matching = model.localCost(physicalJoin, OptimizationGoal.root(), List.of(left, matchingRight));
+		CostVector disjoint = model.localCost(physicalJoin, OptimizationGoal.root(), List.of(left, disjointRight));
+
+		assertEquals(1.0d, matching.rows(), 0.0d);
+		assertEquals(0.0d, disjoint.rows(), 0.0d,
+				"Parent costing must use child finite anchors retained in delivered binding profiles");
 	}
 
 	@Test
@@ -291,6 +313,26 @@ class CascadesCostModelTest {
 
 	private static CascadesCostModel model(RdfStatisticsProvider provider) {
 		return new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null, provider);
+	}
+
+	private static Winner profileWinner(int id, TupleExpr tupleExpr, BindingProfile profile) {
+		MemoExpr expression = new MemoExpr(id, id, tupleExpr.getClass().getSimpleName(), List.of(), "test", tupleExpr,
+				PhysicalProperties.builder().bindingProfile(profile).build(), RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(), "winner-" + id);
+		return new Winner(expression, tupleExpr, PhysicalProperties.builder().bindingProfile(profile).build(),
+				new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), List.of(), false, "");
+	}
+
+	private static BindingProfile finiteProfile(String variable, Value value) {
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of(variable), List.of(List.of(value)),
+				"test-finite-anchor");
+		BagEstimate bag = BagEstimate.exact(1.0d, "test-finite-anchor")
+				.withFiniteRelation(relation);
+		return BindingProfile.fromBag(null, bag, Map.of());
+	}
+
+	private static Value iri(String value) {
+		return SimpleValueFactory.getInstance().createIRI(value);
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
