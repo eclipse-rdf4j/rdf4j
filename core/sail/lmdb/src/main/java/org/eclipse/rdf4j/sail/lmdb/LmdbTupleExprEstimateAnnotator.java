@@ -76,6 +76,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private static final String LEARNED_OPERATOR = LmdbOperatorFeedbackStats.LEARNED_OPERATOR;
 	private static final String LEARNED_LEFT_JOIN_SURFACE = LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE;
 	private static final String LEARNED_PROPERTY_PATH = LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH;
+	private static final String PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
 	private static final String GROUP_DISTINCT = "lmdb-sketch-var-stats";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
@@ -1680,7 +1681,19 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 			selectedSource = source;
 		}
+		stampStatisticMissingFallback(node, selectedSource);
 		stampCostFeedback(node, rows, workRows, selectedSource);
+	}
+
+	private void stampStatisticMissingFallback(TupleExpr node, String source) {
+		if (node == null || source == null) {
+			return;
+		}
+		String normalized = source.toLowerCase(java.util.Locale.ROOT);
+		if (normalized.contains("fallback") || normalized.contains("missing")) {
+			node.setDoubleMetricPlanned("optimizer.statisticMissing", 1.0d);
+			node.setDoubleMetricPlanned("optimizer.statisticMissingFallback", 1.0d);
+		}
 	}
 
 	private void stampCostFeedback(TupleExpr node, double rows, double workRows, String source) {
@@ -1692,9 +1705,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 		node.setCostFeedbackExpectedRows(rows);
 		node.setCostFeedbackExpectedWorkRows(workRows);
-		node.setCostFeedbackReportQErrorThreshold(isLearnedOperatorSource(source)
+		double baseThreshold = isLearnedOperatorSource(source)
 				? LmdbOperatorFeedbackStats.LEARNED_REPORT_Q_ERROR_THRESHOLD
-				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD;
+		node.setCostFeedbackReportQErrorThreshold(reportQErrorThreshold(node, baseThreshold));
 		node.setCostFeedbackTrackingEnabled(true);
 	}
 
@@ -1710,6 +1724,16 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		return !containsEstimateSource(node, LMDB_FINITE_BINDING_LOOKUP)
 				&& !containsEstimateSource(node, LMDB_FINITE_DERIVED_SURFACE)
 				&& !containsEstimateSource(node, LMDB_LEFT_JOIN_SURFACE);
+	}
+
+	private static double reportQErrorThreshold(TupleExpr node, double baseThreshold) {
+		double planChangingThreshold = node == null
+				? Double.NaN
+				: node.getDoubleMetricPlanned(PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD);
+		if (Double.isFinite(planChangingThreshold) && planChangingThreshold >= 1.0d) {
+			return Math.min(baseThreshold, planChangingThreshold);
+		}
+		return baseThreshold;
 	}
 
 	private static boolean isLearnedOperatorSource(String source) {

@@ -271,6 +271,21 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void planChangingCostFeedbackThresholdRecordsModerateWinnerChangingMiss(@TempDir Path tempDir)
+			throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeCostFeedback(observed, 260, 100, 100, 260);
+		observed.setDoubleMetricPlanned("plannedPlanChangingFeedbackQErrorThreshold", 1.5d);
+
+		stats.recordOperatorOutcome(observed);
+
+		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+				400, 100, 100),
+				"Plan-changing estimates should be able to report below the default anti-noise threshold");
+	}
+
+	@Test
 	void costFeedbackBelowThresholdDoesNotRecord(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));

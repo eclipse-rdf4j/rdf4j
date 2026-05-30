@@ -109,8 +109,36 @@ public interface RdfStatisticsProvider {
 		return Optional.empty();
 	}
 
+	default Optional<StatisticsEstimate> refineForDecision(EstimationDecision decision) {
+		return Optional.empty();
+	}
+
 	default Optional<FeedbackCorrection> feedbackCorrection(TupleExpr tupleExpr, StatisticsEstimate baseEstimate) {
 		return Optional.empty();
+	}
+
+	record EstimationDecision(TupleExpr tupleExpr, Set<String> boundVars, StatisticsEstimate baseEstimate,
+			CostVector candidateCost, CostVector incumbentCost, String reason) {
+
+		public EstimationDecision {
+			boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+			reason = reason == null || reason.isBlank() ? "decision-sensitive" : reason;
+		}
+
+		public boolean canChangeWinner() {
+			if (candidateCost == null || incumbentCost == null || CostVector.INFINITE.equals(incumbentCost)) {
+				return false;
+			}
+			if (candidateCost.compareTo(incumbentCost) <= 0) {
+				return true;
+			}
+			double incumbentObjective = incumbentCost.objectiveScore();
+			if (!Double.isFinite(incumbentObjective) || incumbentObjective <= 0.0d) {
+				return true;
+			}
+			double optimisticCandidate = candidateCost.optimisticObjectiveScore();
+			return optimisticCandidate <= incumbentObjective * 1.10d;
+		}
 	}
 
 	static RdfStatisticsProvider from(EvaluationStatistics statistics) {

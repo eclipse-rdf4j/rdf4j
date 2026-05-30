@@ -35,10 +35,15 @@ public interface JoinFactorCostModel {
 	enum EstimationTier {
 		CHEAP,
 		STANDARD,
-		EXACT;
+		EXACT,
+		DECISION_EXACT;
 
 		public boolean allowsExactEstimates() {
-			return this == EXACT;
+			return this == EXACT || this == DECISION_EXACT;
+		}
+
+		public boolean isDecisionDriven() {
+			return this == DECISION_EXACT;
 		}
 	}
 

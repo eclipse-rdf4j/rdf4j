@@ -28,7 +28,11 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -169,6 +173,72 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void outputGoalDiscountsStreamingLimitWork() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern pattern = pattern("s", "p1", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		CostVector fullCost = CostVector.ofRowsAndWork(1_000.0d, 10_000.0d,
+				QErrorInterval.heuristic(1_000.0d, 4.0d, "test"));
+
+		CostVector limited = model.applyOutputGoal(expression, OptimizationGoal.root().withResultRowLimit(10, true),
+				PhysicalProperties.ANY, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d);
+		assertTrue(limited.workRows() < fullCost.workRows(),
+				"Streaming LIMIT/ASK-style goals should cost only the demanded prefix work");
+	}
+
+	@Test
+	void fallbackEstimatesCarryStatisticMissingDiagnostics() {
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null,
+				RdfStatisticsProvider.EMPTY);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of());
+
+		assertEquals(1.0d, pattern.getDoubleMetricPlanned("optimizer.statisticMissing"), 0.0d);
+		assertEquals(1.0d, pattern.getDoubleMetricPlanned("optimizer.statisticMissingFallback"), 0.0d);
+		assertTrue(cost.rowQErrorMax() >= 16.0d);
+	}
+
+	@Test
+	void rootGoalCapturesOrderLimitAndExistenceForMemoKeys() {
+		StatementPattern pattern = pattern("s", "p1", "o");
+		Order order = new Order(pattern);
+		order.addElement(new OrderElem(new Var("o"), true));
+		OptimizationGoal limitGoal = OptimizationGoal.root(new Slice(order, 5L, 10L), PhysicalProperties.ANY);
+
+		assertEquals(new OptimizationGoal.RowGoal(5L, 10L, true, false), limitGoal.rowGoal());
+		assertEquals(List.of("o:asc"), limitGoal.requiredProperties().ordering());
+
+		OptimizationGoal askGoal = OptimizationGoal.root(new QueryRoot(new Slice(new SingletonSet(), 0L, 1L)),
+				PhysicalProperties.ANY);
+
+		assertEquals(OptimizationGoal.EXISTENCE_SEMANTICS, askGoal.semanticScope());
+		assertTrue(askGoal.rowGoal().existenceOnly());
+	}
+
+	@Test
+	void decisionRefinementUsesDecisionExactEstimatorTier() {
+		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel(3.0d);
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, RdfStatisticsProvider.EMPTY);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "", pattern, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		model.refineCostForDecision(expression,
+				OptimizationGoal.root().withEstimationTier(EstimationTier.DECISION_EXACT), List.of(),
+				CostVector.ofRowsAndWork(10.0d, 10.0d, QErrorInterval.exact(10.0d, "test")),
+				CostVector.ofRowsAndWork(11.0d, 11.0d, QErrorInterval.exact(11.0d, "test")));
+
+		assertEquals(List.of(EstimationTier.DECISION_EXACT), factorCostModel.estimationTiers);
+	}
+
+	@Test
 	void localCostUsesStandardOptimizationEstimatorTier() {
 		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel();
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
@@ -190,7 +260,8 @@ class CascadesCostModelTest {
 		MemoExpr expression = new MemoExpr(1, 7, "Group", List.of(2), "", group, PhysicalProperties.ANY,
 				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
 
-		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, group.getArg())));
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(),
+				List.of(winner(2, group.getArg(), 1.0d)));
 
 		assertEquals(1.0d, cost.rows(), 0.0d);
 		assertTrue(factorCostModel.estimationTiers.isEmpty(),

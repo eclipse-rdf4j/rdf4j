@@ -63,7 +63,7 @@ import org.junit.jupiter.api.Test;
 class LmdbCascadesOptimizerTest {
 
 	@Test
-	void budgetedCascadesUsesStandardOptimizationEstimatorTier() {
+	void budgetedCascadesUsesStandardAndDecisionExactEstimatorTiers() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
 		try {
 			RecordingStatistics statistics = new RecordingStatistics();
@@ -72,7 +72,12 @@ class LmdbCascadesOptimizerTest {
 			new LmdbCascadesOptimizer(statistics, false).optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 
 			assertFalse(statistics.estimationTiers.isEmpty());
-			assertTrue(statistics.estimationTiers.stream().allMatch(EstimationTier.STANDARD::equals),
+			assertTrue(statistics.estimationTiers.contains(EstimationTier.STANDARD),
+					statistics.estimationTiers.toString());
+			assertTrue(statistics.estimationTiers.contains(EstimationTier.DECISION_EXACT),
+					statistics.estimationTiers.toString());
+			assertTrue(statistics.estimationTiers.stream()
+					.allMatch(tier -> tier == EstimationTier.STANDARD || tier == EstimationTier.DECISION_EXACT),
 					statistics.estimationTiers.toString());
 			assertEquals("budgeted", tupleExpr.getStringMetricPlanned("optimizer.cascadesMode"));
 		} finally {

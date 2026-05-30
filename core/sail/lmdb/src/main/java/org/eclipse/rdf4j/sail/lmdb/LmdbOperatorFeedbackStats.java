@@ -67,6 +67,7 @@ final class LmdbOperatorFeedbackStats {
 
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
+	private static final String PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
 	private static final String PATH_MODE_FULL_SCAN = "fullScan";
@@ -444,6 +445,11 @@ final class LmdbOperatorFeedbackStats {
 		double threshold = node.getCostFeedbackReportQErrorThreshold();
 		if (!Double.isFinite(threshold) || threshold < 1.0d) {
 			threshold = DEFAULT_REPORT_Q_ERROR_THRESHOLD;
+		}
+		double planChangingThreshold = node.getDoubleMetricPlanned(
+				PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD);
+		if (Double.isFinite(planChangingThreshold) && planChangingThreshold >= 1.0d) {
+			threshold = Math.min(threshold, planChangingThreshold);
 		}
 		double actualRows = actualRows(node);
 		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());

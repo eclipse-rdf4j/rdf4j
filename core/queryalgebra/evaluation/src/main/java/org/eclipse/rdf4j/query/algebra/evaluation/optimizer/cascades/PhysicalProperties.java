@@ -133,6 +133,10 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return builder.build();
 	}
 
+	public PhysicalProperties withOrdering(List<String> ordering) {
+		return builderFrom(this).ordering(ordering).build();
+	}
+
 	public PhysicalProperties withAccessPath(String accessPath) {
 		return builderFrom(this).accessPath(accessPath).build();
 	}

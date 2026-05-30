@@ -300,6 +300,37 @@ class LmdbEvaluationStatistics
 	}
 
 	@Override
+	public Optional<StatisticsEstimate> refineForDecision(RdfStatisticsProvider.EstimationDecision decision) {
+		if (decision == null || decision.tupleExpr() == null || !decision.canChangeWinner()) {
+			return Optional.empty();
+		}
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(
+				decision.boundVars(), Double.NaN, Double.NaN, false, true, Map.of(), List.of())
+				.withEstimationTier(JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		Optional<FactorCostEstimate> refined = estimateFactorCost(decision.tupleExpr(), context);
+		if (refined.isEmpty()) {
+			return Optional.empty();
+		}
+		FactorCostEstimate factor = refined.get();
+		Map<String, Double> metrics = new HashMap<>(factor.getDoubleMetrics());
+		metrics.put("optimizer.decisionDrivenEstimate", 1.0d);
+		metrics.put("optimizer.decisionCanChangeWinner", 1.0d);
+		String source = factor.getStringMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-decision-driven-estimate");
+		double rows = factor.getOutputRows();
+		double workRows = factor.getWorkRows();
+		if (!isFiniteNonNegative(rows)) {
+			rows = decision.baseEstimate() == null ? 1.0d : decision.baseEstimate().rows();
+		}
+		if (!isFiniteNonNegative(workRows)) {
+			workRows = Math.max(1.0d, rows);
+		}
+		return Optional.of(new StatisticsEstimate(rows,
+				QErrorInterval.heuristic(rows, factor.getEstimateVector().rowQErrorMax(), source), workRows, source,
+				metrics));
+	}
+
+	@Override
 	public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
 		if (pattern == null) {
 			return Optional.empty();
@@ -3242,7 +3273,7 @@ class LmdbEvaluationStatistics
 		double exactGateRows = exactEstimateConfidenceRows(comparableBaseWorkRows, comparableBaseOutputRows,
 				metric(baseEstimate.getDoubleMetrics(), TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
 				Double.NaN);
-		if (!isPositiveFinite(exactGateRows) || exactGateRows < EXACT_ESTIMATE_MIN_ROWS) {
+		if (!passesExactEstimateGate(context, exactGateRows, Double.NaN)) {
 			traceExactEstimateSkip("connected-join-reject", factor, context, null,
 					maxFinite(comparableBaseWorkRows, comparableBaseOutputRows,
 							metric(baseEstimate.getDoubleMetrics(), TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
@@ -3254,7 +3285,7 @@ class LmdbEvaluationStatistics
 		branchFactors.addAll(context.getPrefixFactors());
 		branchFactors.add(factor);
 		ConnectedBranchEstimate connectedEstimate = estimateConnectedFiniteBranchEstimate(branchFactors, exactGateRows,
-				allowExact);
+				allowExact, context.getEstimationTier().isDecisionDriven());
 		if (connectedEstimate == null) {
 			return Optional.empty();
 		}
@@ -3832,38 +3863,42 @@ class LmdbEvaluationStatistics
 
 	private ConnectedBranchEstimate estimateConnectedFiniteBranchEstimate(List<TupleExpr> branchFactors,
 			double exactGateRows, boolean allowExact) {
+		return estimateConnectedFiniteBranchEstimate(branchFactors, exactGateRows, allowExact, false);
+	}
+
+	private ConnectedBranchEstimate estimateConnectedFiniteBranchEstimate(List<TupleExpr> branchFactors,
+			double exactGateRows, boolean allowExact, boolean decisionDriven) {
 		if (sketchBasedJoinEstimator == null || branchFactors == null || branchFactors.size() < 2) {
 			return null;
 		}
 		if (!allowExact) {
 			return null;
 		}
-		if (!isPositiveFinite(exactGateRows) || exactGateRows < EXACT_ESTIMATE_MIN_ROWS) {
+		if (!passesExactEstimateGate(decisionDriven, exactGateRows, Double.NaN)) {
 			return null;
 		}
 		OptimizationCostScope scope = optimizationCostScope.get();
 		if (scope == null) {
-			return estimateConnectedFiniteBranchEstimateUncached(branchFactors, exactGateRows, true);
+			return estimateConnectedFiniteBranchEstimateUncached(branchFactors, exactGateRows, true, decisionDriven);
 		}
-		FiniteBranchRowsCacheKey cacheKey = FiniteBranchRowsCacheKey.of(branchFactors);
+		FiniteBranchRowsCacheKey cacheKey = FiniteBranchRowsCacheKey.of(branchFactors, decisionDriven);
 		Optional<ConnectedBranchEstimate> cachedEstimate = scope.connectedFiniteBranchEstimateCache.get(cacheKey);
 		if (cachedEstimate != null) {
 			return cachedEstimate.orElse(null);
 		}
 		ConnectedBranchEstimate estimate = estimateConnectedFiniteBranchEstimateUncached(branchFactors, exactGateRows,
-				true);
+				true, decisionDriven);
 		scope.connectedFiniteBranchEstimateCache.put(cacheKey, Optional.ofNullable(estimate));
 		return estimate;
 	}
 
 	private ConnectedBranchEstimate estimateConnectedFiniteBranchEstimateUncached(List<TupleExpr> branchFactors,
-			double exactGateRows, boolean allowExact) {
+			double exactGateRows, boolean allowExact, boolean decisionDriven) {
 		if (!allowExact) {
 			return null;
 		}
 		double cheapRows = sketchBasedJoinEstimator.orderedCardinality(branchFactors);
-		if (!isPositiveFinite(exactGateRows) || exactGateRows < EXACT_ESTIMATE_MIN_ROWS
-				|| !isPositiveFinite(cheapRows) || cheapRows < EXACT_ESTIMATE_MIN_ROWS) {
+		if (!passesExactEstimateGate(decisionDriven, exactGateRows, cheapRows) || !isPositiveFinite(cheapRows)) {
 			traceExactEstimateSkip("connected-branch-rows-skip-exact", branchFactors.getFirst(), null, null,
 					maxFinite(exactGateRows, cheapRows, Double.NaN, Double.NaN));
 			return null;
@@ -5413,6 +5448,20 @@ class LmdbEvaluationStatistics
 
 	private double maxFinite(double first, double second, double third, double fourth, double fifth) {
 		return maxFinite(maxFinite(first, second, third, fourth), fifth, Double.NaN, Double.NaN);
+	}
+
+	private boolean passesExactEstimateGate(JoinFactorCostModel.CostContext context, double exactGateRows,
+			double cheapRows) {
+		return passesExactEstimateGate(context != null && context.getEstimationTier().isDecisionDriven(),
+				exactGateRows, cheapRows);
+	}
+
+	private boolean passesExactEstimateGate(boolean decisionDriven, double exactGateRows, double cheapRows) {
+		if (decisionDriven) {
+			return isPositiveFinite(exactGateRows) || isPositiveFinite(cheapRows);
+		}
+		double confidenceRows = exactEstimateConfidenceRows(exactGateRows, cheapRows, Double.NaN, Double.NaN);
+		return confidenceRows >= EXACT_ESTIMATE_MIN_ROWS;
 	}
 
 	private boolean shouldRunExactEstimate(double first, double second) {
@@ -7385,17 +7434,21 @@ class LmdbEvaluationStatistics
 		}
 	}
 
-	private record FiniteBranchRowsCacheKey(List<Object> factors) {
+	private record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
 
 		private static FiniteBranchRowsCacheKey of(List<TupleExpr> factors) {
+			return of(factors, false);
+		}
+
+		private static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven) {
 			if (factors == null || factors.isEmpty()) {
-				return new FiniteBranchRowsCacheKey(List.of());
+				return new FiniteBranchRowsCacheKey(List.of(), decisionDriven);
 			}
 			List<Object> fingerprints = new ArrayList<>(factors.size());
 			for (TupleExpr factor : factors) {
 				fingerprints.add(FactorCostCacheKey.factorFingerprint(factor));
 			}
-			return new FiniteBranchRowsCacheKey(List.copyOf(fingerprints));
+			return new FiniteBranchRowsCacheKey(List.copyOf(fingerprints), decisionDriven);
 		}
 	}
 

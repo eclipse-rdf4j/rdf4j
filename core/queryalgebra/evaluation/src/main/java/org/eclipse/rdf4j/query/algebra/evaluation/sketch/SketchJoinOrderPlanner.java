@@ -4637,7 +4637,7 @@ final class SketchJoinOrderPlanner {
 			return estimate.orElse(null);
 		}
 		int stateIndex = stateMemoIndex(mask);
-		if (stateIndex >= 0 && normalizedEstimationTier(estimationTier) == JoinFactorCostModel.EstimationTier.EXACT) {
+		if (stateIndex >= 0 && normalizedEstimationTier(estimationTier).allowsExactEstimates()) {
 			JoinFactorCostModel.FactorCostEstimate[] estimates = factorCostByState[stateIndex];
 			boolean[] loaded = factorCostLoadedByState[stateIndex];
 			if (estimates == null) {

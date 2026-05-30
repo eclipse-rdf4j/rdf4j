@@ -76,6 +76,23 @@ public interface CascadesCostModel {
 
 	CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners);
 
+	/**
+	 * Gives a store cost model a chance to spend more expensive estimation effort for a decision-sensitive memo
+	 * comparison. The generic implementation is a no-op; LMDB-backed factor models can use the goal's exact estimation
+	 * tier to run page-walking, sampling or exact connected-surface probes only when the planner has an incumbent that
+	 * the candidate can plausibly beat.
+	 */
+	default CostVector refineCostForDecision(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners,
+			CostVector currentCost, CostVector incumbentCost) {
+		return currentCost;
+	}
+
+	/** Applies root output requirements such as LIMIT/ASK early-stop to a fully composed physical cost. */
+	default CostVector applyOutputGoal(MemoExpr expression, OptimizationGoal goal, PhysicalProperties delivered,
+			CostVector cost) {
+		return cost;
+	}
+
 	PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners);
 
 	default TupleExpr buildPlan(MemoExpr expression, List<Winner> inputWinners) {
@@ -89,6 +106,9 @@ public interface CascadesCostModel {
 
 	final class DefaultCascadesCostModel implements CascadesCostModel {
 		private static final double FEEDBACK_CONFIDENCE_THRESHOLD = 0.55d;
+		private static final String STATISTIC_MISSING = "optimizer.statisticMissing";
+		private static final String STATISTIC_MISSING_FALLBACK = "optimizer.statisticMissingFallback";
+		private static final String STATISTIC_MISSING_REASON_PREFIX = "optimizer.statisticMissing.";
 
 		private final EvaluationStatistics statistics;
 		private final JoinFactorCostModel factorCostModel;
@@ -262,6 +282,74 @@ public interface CascadesCostModel {
 		}
 
 		@Override
+		public CostVector refineCostForDecision(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners,
+				CostVector currentCost, CostVector incumbentCost) {
+			if (expression == null || expression.tupleExpr() == null || goal == null
+					|| !goal.estimationTier().allowsExactEstimates()) {
+				return currentCost;
+			}
+			Set<String> boundVars = boundVars(goal);
+			StatisticsEstimate baseEstimate = estimateForLocalCost(expression, expression.tupleExpr(), boundVars,
+					inputWinners);
+			Optional<StatisticsEstimate> providerRefined = rdfStatisticsProvider.refineForDecision(
+					new RdfStatisticsProvider.EstimationDecision(expression.tupleExpr(), boundVars, baseEstimate,
+							currentCost, incumbentCost, "cascades-winner-comparison"));
+			if (providerRefined.isPresent()) {
+				StatisticsEstimate refinedEstimate = providerRefined.get();
+				stampStatisticsEstimate(expression.tupleExpr(), refinedEstimate);
+				return applyPolicy(
+						composeOperatorCost(inputCost(inputWinners), refinedEstimate.vector().toCostVector()),
+						goal);
+			}
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression.tupleExpr(), boundVars,
+					goal);
+			if (estimate.isEmpty()) {
+				return currentCost;
+			}
+			JoinFactorCostModel.FactorCostEstimate factor = estimate.get();
+			stampFactorMetrics(expression.tupleExpr(), factor);
+			CostVector refined = composeOperatorCost(inputCost(inputWinners), factorCostVector(factor));
+			return applyPolicy(refined, goal);
+		}
+
+		@Override
+		public CostVector applyOutputGoal(MemoExpr expression, OptimizationGoal goal, PhysicalProperties delivered,
+				CostVector cost) {
+			if (cost == null || goal == null || goal.rowGoal() == null || goal.rowGoal().isAll()) {
+				return cost;
+			}
+			OptimizationGoal.RowGoal rowGoal = goal.rowGoal();
+			if (!rowGoal.hasFiniteLimit()) {
+				return cost;
+			}
+			double requiredRows = rowGoal.requiredRowsBeforeStop() == Long.MAX_VALUE
+					? cost.rows()
+					: rowGoal.requiredRowsBeforeStop();
+			double availableRows = Math.max(0.0d, cost.rows() - rowGoal.offset());
+			double outputRows = Math.min(availableRows, Math.max(0.0d, rowGoal.limit()));
+			boolean streamingEarlyStop = rowGoal.earlyStopAllowed()
+					&& supportsStreamingEarlyStop(expression, goal, delivered);
+			if (!streamingEarlyStop || cost.rows() <= 0.0d || requiredRows >= cost.rows()) {
+				return cost.withRows(outputRows);
+			}
+			double fraction = Math.max(0.0d, Math.min(1.0d, requiredRows / Math.max(1.0d, cost.rows())));
+			double stoppedWork = Math.max(outputRows, Math.min(cost.workRows(), cost.workRows() * fraction));
+			return cost.withRows(outputRows).withWorkRows(stoppedWork);
+		}
+
+		private boolean supportsStreamingEarlyStop(MemoExpr expression, OptimizationGoal goal,
+				PhysicalProperties delivered) {
+			TupleExpr tupleExpr = expression == null ? null : expression.tupleExpr();
+			if (tupleExpr instanceof Group || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
+				return false;
+			}
+			if (tupleExpr instanceof Order) {
+				return false;
+			}
+			return delivered == null || delivered.materialization() != PhysicalProperties.Materialization.MATERIALIZED;
+		}
+
+		@Override
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
 			PhysicalProperties delivered = expression.deliveredProperties();
@@ -282,6 +370,12 @@ public interface CascadesCostModel {
 			if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 				delivered = delivered.withDistinctVars(tupleExpr.getBindingNames())
 						.withDuplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES);
+			}
+			if (tupleExpr instanceof Order order) {
+				List<String> ordering = OptimizationGoal.ordering(order);
+				if (!ordering.isEmpty()) {
+					delivered = delivered.withOrdering(ordering);
+				}
 			}
 			BindingProfile outputProfile = outputBindingProfile(expression, goal, inputWinners)
 					.mergedWith(declaredBindingProfile);
@@ -388,7 +482,9 @@ public interface CascadesCostModel {
 				return Optional.empty();
 			}
 			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(boundVars,
-					Double.NaN, Double.NaN, false, true, Map.of(), List.of());
+					Double.NaN, Double.NaN, false, true, Map.of(), List.of())
+					.withEstimationTier(goal == null ? JoinFactorCostModel.EstimationTier.STANDARD
+							: goal.estimationTier());
 			return factorCostModel.estimateFactorCost(tupleExpr, context);
 		}
 
@@ -460,7 +556,7 @@ public interface CascadesCostModel {
 			} else if (tupleExpr instanceof ZeroLengthPath path) {
 				estimate = estimateZeroLengthPath(path);
 			} else {
-				estimate = fallbackEstimate(tupleExpr);
+				estimate = fallbackEstimate(tupleExpr, "operator-" + tupleExpr.getClass().getSimpleName());
 			}
 			return applyFeedback(tupleExpr, estimate);
 		}
@@ -508,7 +604,7 @@ public interface CascadesCostModel {
 		private StatisticsEstimate estimateStatementPattern(StatementPattern pattern, Set<String> boundVars) {
 			return rdfStatisticsProvider.statementPattern(pattern, boundVars)
 					.map(estimate -> withBindingStats(pattern, estimate))
-					.orElseGet(() -> fallbackEstimate(pattern));
+					.orElseGet(() -> fallbackEstimate(pattern, "statement-pattern"));
 		}
 
 		private StatisticsEstimate estimateFilter(Filter filter, Set<String> boundVars) {
@@ -528,8 +624,12 @@ public interface CascadesCostModel {
 					passEstimate.getUpper95PassRatio(), passEstimate.getConfidenceScore(),
 					"filter-" + passEstimate.getSource().name().toLowerCase(java.util.Locale.ROOT));
 			BagEstimate bag = EstimateMath.filter(input.bag(), passRatio, "filter");
-			return StatisticsEstimate.fromVector(input.vector().filter(passRatio, passInterval, "filter"), "filter")
+			StatisticsEstimate estimate = StatisticsEstimate
+					.fromVector(input.vector().filter(passRatio, passInterval, "filter"), "filter")
 					.withBag(bag);
+			return passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
+					? withMissingStatisticDiagnostics(estimate, "filter-selectivity")
+					: estimate;
 		}
 
 		private StatisticsEstimate estimateJoin(Join join, Set<String> boundVars) {
@@ -540,7 +640,7 @@ public interface CascadesCostModel {
 					sharedVars), "join");
 			Optional<StatisticsEstimate> provider = providerEstimate(join, boundVars);
 			if (provider.isEmpty()) {
-				return formula;
+				return withMissingStatisticDiagnostics(formula, "join-provider");
 			}
 			if (weakZeroContradictsPositiveJoin(provider.get(), formula)) {
 				return formula;
@@ -579,7 +679,10 @@ public interface CascadesCostModel {
 				return estimateSlice(slice, input);
 			}
 			if (unary instanceof Order order) {
-				return estimateOrder(order, input);
+				PhysicalProperties inputProperties = inputWinners == null || inputWinners.isEmpty()
+						? PhysicalProperties.ANY
+						: inputWinners.getFirst().deliveredProperties();
+				return estimateOrder(order, input, inputProperties);
 			}
 			if (unary instanceof Distinct || unary instanceof Reduced) {
 				return estimateDistinct(unary, input);
@@ -600,8 +703,7 @@ public interface CascadesCostModel {
 			String source = winner.provenance() == null || winner.provenance().estimate() == null
 					? "physical-input"
 					: winner.provenance().estimate().source();
-			StatisticsEstimate logical = estimate(plan, boundVars);
-			BagEstimate bag = physicalInputBag(plan, logical, winner.cost().rows(), winner.cost().workRows(),
+			BagEstimate bag = bagWithBindings(plan, winner.cost().rows(), winner.cost().workRows(),
 					source + "-physical-input");
 			BindingProfile profile = winner.deliveredProperties() == null ? BindingProfile.ANY
 					: winner.deliveredProperties().bindingProfile();
@@ -631,24 +733,6 @@ public interface CascadesCostModel {
 			mergedMetrics.putAll(profile.overlapEvidence());
 			return new BagEstimate(base.rows(), base.workRows(), base.memoryRows(), base.confidence(), source,
 					variables, relations, mergedMetrics);
-		}
-
-		private BagEstimate physicalInputBag(TupleExpr plan, StatisticsEstimate logical, double rows, double workRows,
-				String source) {
-			if (logical == null || logical.bag().variables().isEmpty()) {
-				return bagWithBindings(plan, rows, workRows, source);
-			}
-			BagEstimate bag = logical.bag();
-			double scale = bag.rows() > 0.0d ? rows / bag.rows() : 0.0d;
-			Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-			for (Map.Entry<String, VariableEstimate> entry : bag.variables().entrySet()) {
-				variables.put(entry.getKey(), entry.getValue().scale(scale));
-			}
-			Map<VariableSetKey, FiniteRelationEstimate> relations = Math.abs(scale - 1.0d) < 0.000001d
-					? bag.finiteRelations()
-					: Map.of();
-			return new BagEstimate(rows, Math.max(rows, workRows), bag.memoryRows(), bag.confidence(), source,
-					variables, relations, bag.metrics());
 		}
 
 		private boolean weakZeroContradictsPositiveJoin(StatisticsEstimate provider, StatisticsEstimate formula) {
@@ -789,7 +873,35 @@ public interface CascadesCostModel {
 		}
 
 		private StatisticsEstimate estimateOrder(Order order, StatisticsEstimate input) {
-			return StatisticsEstimate.fromBag(EstimateMath.order(input.bag()), "order");
+			BagEstimate ordered = EstimateMath.order(input.bag());
+			double rows = Math.max(0.0d, ordered.rows());
+			double sortWork = rows <= 1.0d ? rows : rows * (Math.log(Math.max(2.0d, rows)) / Math.log(2.0d));
+			double workRows = input.workRows() + sortWork;
+			Map<String, Double> metrics = new LinkedHashMap<>(ordered.metrics());
+			metrics.put("plannedOrderBlockingRows", rows);
+			metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			BagEstimate bag = ordered.withWorkRows(workRows, "order-blocking-sort")
+					.withMemoryRows(Math.max(ordered.memoryRows(), rows), "order-blocking-sort")
+					.withMetrics(metrics);
+			return StatisticsEstimate.fromBag(bag, "order-blocking-sort");
+		}
+
+		private StatisticsEstimate estimateOrder(Order order, StatisticsEstimate input,
+				PhysicalProperties inputProperties) {
+			List<String> ordering = OptimizationGoal.ordering(order);
+			if (!ordering.isEmpty() && inputProperties != null
+					&& inputProperties.satisfies(PhysicalProperties.builder().ordering(ordering).build())) {
+				double rows = Math.max(0.0d, input.rows());
+				double workRows = input.workRows() + Math.max(1.0d, rows * 0.01d);
+				Map<String, Double> metrics = new LinkedHashMap<>(input.metrics());
+				metrics.put("plannedOrderSatisfiedRows", rows);
+				metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+				BagEstimate bag = input.bag()
+						.withWorkRows(workRows, "order-satisfied")
+						.withMetrics(metrics);
+				return StatisticsEstimate.fromBag(bag, "order-satisfied");
+			}
+			return estimateOrder(order, input);
 		}
 
 		private StatisticsEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
@@ -848,8 +960,9 @@ public interface CascadesCostModel {
 			}
 			BagEstimate bag = bagWithBindings(path, rows, workRows,
 					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback");
-			return StatisticsEstimate.fromBag(bag,
-					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback");
+			return withMissingStatisticDiagnostics(StatisticsEstimate.fromBag(bag,
+					subjectBound || objectBound ? "property-path-bound-endpoint-fallback" : "property-path-fallback"),
+					"property-path-node-pairs");
 		}
 
 		private double endpointBoundPathWork(double stepWorkRows, double rows) {
@@ -891,8 +1004,9 @@ public interface CascadesCostModel {
 			} else {
 				rows = fallbackPathRows(path, 1.0d);
 			}
-			return StatisticsEstimate.fromBag(bagWithBindings(path, rows, rows, "zero-length-path-fallback"),
-					"zero-length-path-fallback");
+			return withMissingStatisticDiagnostics(StatisticsEstimate.fromBag(
+					bagWithBindings(path, rows, rows, "zero-length-path-fallback"), "zero-length-path-fallback"),
+					"zero-length-path");
 		}
 
 		private double estimateArbitraryLengthPathRows(double directRows, long minLength) {
@@ -969,13 +1083,41 @@ public interface CascadesCostModel {
 					estimate.method(), variables, relations, estimate.metrics());
 		}
 
-		private StatisticsEstimate fallbackEstimate(TupleExpr tupleExpr) {
+		private StatisticsEstimate fallbackEstimate(TupleExpr tupleExpr, String reason) {
 			double rows = statistics.getCardinality(tupleExpr);
 			if (!Double.isFinite(rows) || rows < 0.0d) {
 				rows = 1.0d;
 			}
-			return new StatisticsEstimate(rows, qErrorInterval(tupleExpr, rows), rows, "evaluation-statistics",
-					Map.of(), bagWithBindings(tupleExpr, rows, rows, "evaluation-statistics"));
+			StatisticsEstimate estimate = new StatisticsEstimate(rows, qErrorInterval(tupleExpr, rows, true), rows,
+					"evaluation-statistics", Map.of(), bagWithBindings(tupleExpr, rows, rows, "evaluation-statistics"));
+			return withMissingStatisticDiagnostics(estimate, reason);
+		}
+
+		private StatisticsEstimate withMissingStatisticDiagnostics(StatisticsEstimate estimate, String reason) {
+			if (estimate == null) {
+				return estimate;
+			}
+			Map<String, Double> metrics = new LinkedHashMap<>(estimate.metrics());
+			metrics.put(STATISTIC_MISSING, 1.0d);
+			metrics.put(STATISTIC_MISSING_FALLBACK, 1.0d);
+			if (reason != null && !reason.isBlank()) {
+				metrics.put(STATISTIC_MISSING_REASON_PREFIX + sanitizeMetricSuffix(reason), 1.0d);
+			}
+			metrics.putIfAbsent("plannedCardinalityQError", Math.max(estimate.qErrorInterval().qError(), 16.0d));
+			BagEstimate bag = estimate.bag().withMetrics(metrics);
+			QErrorInterval interval = QErrorInterval.heuristic(estimate.rows(),
+					Math.max(estimate.qErrorInterval().qError(), 16.0d), "statistic-missing");
+			return new StatisticsEstimate(estimate.rows(), interval, estimate.workRows(),
+					estimate.method() + "+statistic-missing", metrics, bag);
+		}
+
+		private static String sanitizeMetricSuffix(String reason) {
+			StringBuilder builder = new StringBuilder(reason.length());
+			for (int i = 0; i < reason.length(); i++) {
+				char ch = reason.charAt(i);
+				builder.append(Character.isLetterOrDigit(ch) ? ch : '_');
+			}
+			return builder.length() == 0 ? "unknown" : builder.toString();
 		}
 
 		private StatisticsEstimate applyFeedback(TupleExpr tupleExpr, StatisticsEstimate base) {
@@ -998,12 +1140,17 @@ public interface CascadesCostModel {
 		}
 
 		private QErrorInterval qErrorInterval(TupleExpr tupleExpr, double rows) {
+			return qErrorInterval(tupleExpr, rows, false);
+		}
+
+		private QErrorInterval qErrorInterval(TupleExpr tupleExpr, double rows, boolean statisticMissing) {
 			double lower = tupleExpr == null ? rows : tupleExpr.getDoubleMetricPlanned("plannedCardinalityLower");
 			double upper = tupleExpr == null ? rows : tupleExpr.getDoubleMetricPlanned("plannedCardinalityUpper");
 			if (Double.isFinite(lower) && lower >= 0.0d && Double.isFinite(upper) && upper >= lower) {
 				return QErrorInterval.fromBounds(lower, rows, upper, 0.5d, "planned-metrics");
 			}
-			return QErrorInterval.heuristic(rows, 4.0d, "evaluation-statistics");
+			return QErrorInterval.heuristic(rows, statisticMissing ? 16.0d : 4.0d,
+					statisticMissing ? "statistic-missing" : "evaluation-statistics");
 		}
 
 		private CostVector factorCostVector(JoinFactorCostModel.FactorCostEstimate estimate) {

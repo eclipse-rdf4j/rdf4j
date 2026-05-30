@@ -58,6 +58,20 @@ public record EstimateSnapshot(String plannerId, String source, String usage, do
 				stringMetrics, doubleMetrics);
 	}
 
+	public EstimateSnapshot withDoubleMetrics(Map<String, Double> metrics) {
+		if (metrics == null || metrics.isEmpty()) {
+			return this;
+		}
+		java.util.LinkedHashMap<String, Double> merged = new java.util.LinkedHashMap<>(doubleMetrics);
+		for (Map.Entry<String, Double> entry : metrics.entrySet()) {
+			if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null
+					&& Double.isFinite(entry.getValue())) {
+				merged.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return new EstimateSnapshot(plannerId, source, usage, rows, workRows, cost, stringMetrics, merged);
+	}
+
 	public double objectiveScore() {
 		return cost.objectiveScore();
 	}

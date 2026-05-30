@@ -38,6 +38,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	static final String FALLBACK_ANNOTATIONS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.explainFallbackAnnotations";
 	static final LmdbCascadesExplainFinalizer INSTANCE = new LmdbCascadesExplainFinalizer(null, true);
 	static final String PLANNER_ID = "lmdb-cascades";
+	private static final String PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
 
 	private static final String FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String FALLBACK_USAGE = "fallback_no_winner";
@@ -103,9 +104,10 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		}
 		tupleExpr.setCostFeedbackExpectedRows(rows);
 		tupleExpr.setCostFeedbackExpectedWorkRows(workRows);
-		tupleExpr.setCostFeedbackReportQErrorThreshold(isLearnedSource(tupleExpr)
+		double baseThreshold = isLearnedSource(tupleExpr)
 				? LmdbOperatorFeedbackStats.LEARNED_REPORT_Q_ERROR_THRESHOLD
-				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD;
+		tupleExpr.setCostFeedbackReportQErrorThreshold(reportQErrorThreshold(tupleExpr, baseThreshold));
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
 	}
 
@@ -128,7 +130,18 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	private static boolean isLearnedSource(TupleExpr tupleExpr) {
 		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		return LmdbOperatorFeedbackStats.LEARNED_OPERATOR.equals(source)
-				|| LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE.equals(source);
+				|| LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE.equals(source)
+				|| LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH.equals(source);
+	}
+
+	private static double reportQErrorThreshold(TupleExpr tupleExpr, double baseThreshold) {
+		double planChangingThreshold = tupleExpr == null
+				? Double.NaN
+				: tupleExpr.getDoubleMetricPlanned(PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD);
+		if (Double.isFinite(planChangingThreshold) && planChangingThreshold >= 1.0d) {
+			return Math.min(baseThreshold, planChangingThreshold);
+		}
+		return baseThreshold;
 	}
 
 	private static double plannedRowsOrNaN(TupleExpr tupleExpr) {

@@ -208,6 +208,8 @@ public final class CascadesPlanProvenanceAnnotator {
 				isBlank(usage) ? "fallback_no_winner" : usage);
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
+		setDoubleIfMissingOrFallback(node, "optimizer.statisticMissing", 1.0d, replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, "optimizer.statisticMissingFallback", 1.0d, replaceFallbackMetrics);
 		if (COVERED_BY_PARENT_WINNER.equals(
 				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
 				|| !fallbackCostRequired(node, replaceFallbackMetrics)) {

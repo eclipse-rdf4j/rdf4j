@@ -130,14 +130,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			int nodeCount = countNodes(tupleExpr);
 			boolean budgetedSearch = usesBudgetedSearch(mode, nodeCount);
 			PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
-			OptimizationGoal goal = OptimizationGoal.exact(required);
+			OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required);
 			if (budgetedSearch) {
 				goal = goal.asBudgeted(Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS)),
 						intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
 			} else if (mode == Mode.SHADOW) {
-				goal = new OptimizationGoal(required, OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.CostPolicy.EXACT,
+				goal = new OptimizationGoal(goal.requiredProperties(), goal.semanticScope(), goal.costPolicy(),
 						CostVector.INFINITE, Set.of(), OptimizationGoal.SearchMode.SHADOW, Long.MAX_VALUE,
-						Integer.MAX_VALUE);
+						Integer.MAX_VALUE, goal.rowGoal(), goal.estimationTier());
 			}
 
 			annotateDistinctPhysicalRequirements(tupleExpr);
@@ -316,14 +316,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		Set<String> boundVars = contextualBoundVars(contextualBoundVars, subtreeBindings);
 		if (goal == null || goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
 			OptimizationGoal subtreeGoal = goal == null ? OptimizationGoal.root() : goal;
-			return subtreeGoal.withRequiredProperties(requiredBoundProperties(boundVars));
+			return subtreeGoal.withRequiredProperties(requiredBoundProperties(boundVars)).withoutRowGoal();
 		}
 		long timeoutNanos = Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS))
 				.toNanos();
 		long now = System.nanoTime();
 		long deadline = Long.MAX_VALUE - now < timeoutNanos ? Long.MAX_VALUE : now + timeoutNanos;
 		return new OptimizationGoal(requiredBoundProperties(boundVars), goal.semanticScope(), goal.costPolicy(),
-				goal.costBound(), goal.excludedProperties(), goal.searchMode(), deadline, goal.taskBudget());
+				goal.costBound(), goal.excludedProperties(), goal.searchMode(), deadline, goal.taskBudget(),
+				OptimizationGoal.RowGoal.ALL, goal.estimationTier());
 	}
 
 	private static PhysicalProperties requiredBoundProperties(Set<String> boundVars) {

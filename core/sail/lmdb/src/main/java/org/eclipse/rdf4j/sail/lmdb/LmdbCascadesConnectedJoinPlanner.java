@@ -64,6 +64,12 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	static Optional<Plan> plan(TupleExpr joinIsland, Set<String> initialBoundVars, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics) {
+		return plan(joinIsland, initialBoundVars, costModel, fallbackStatistics, EstimationTier.STANDARD);
+	}
+
+	static Optional<Plan> plan(TupleExpr joinIsland, Set<String> initialBoundVars, JoinFactorCostModel costModel,
+			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
+		EstimationTier tier = estimationTier == null ? EstimationTier.STANDARD : estimationTier;
 		Trace trace = Trace.create();
 		if (joinIsland == null || costModel == null
 				|| !LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(joinIsland)) {
@@ -88,7 +94,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
 		PlanCacheKey cacheKey = scopedPlanCacheAvailable(scopedStatistics)
 				? new PlanCacheKey(factorFingerprints(factors, scopedStatistics), plannerNames(initialBoundVars),
-						greedy)
+						greedy, tier)
 				: null;
 		Optional<PlanTemplate> cachedTemplate = trace.enabled() ? null : cachedPlanTemplate(scopedStatistics, cacheKey);
 		if (cachedTemplate != null) {
@@ -96,8 +102,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		Optional<PlanTemplate> template = greedy
-				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace)
-				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace);
+				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace, tier)
+				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace, tier);
 		if (!trace.enabled()) {
 			cachePlanTemplate(scopedStatistics, cacheKey, template);
 		}
@@ -105,7 +111,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static Optional<PlanTemplate> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
+			EstimationTier estimationTier) {
 		int factorCount = factors.size();
 		List<Set<String>> factorVars = factorVars(factors);
 		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
@@ -137,7 +144,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 				continue;
 			}
 			Step step = estimateStep(factors, factorIndex, initial, 0.0d, false, List.of(), costModel,
-					fallbackStatistics);
+					fallbackStatistics, estimationTier);
 			if (step == null) {
 				if (trace.enabled()) {
 					trace.add("seed reject f" + factorIndex + " reason=no-estimate factor="
@@ -180,7 +187,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
-						prefixFactors, costModel, fallbackStatistics);
+						prefixFactors, costModel, fallbackStatistics, estimationTier);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
@@ -189,7 +196,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				PathAlternative cheaperEndpoint = cheaperKnownEndpointPathAlternative(factors, factorIndex, state, step,
-						best, costModel, fallbackStatistics);
+						best, costModel, fallbackStatistics, estimationTier);
 				if (cheaperEndpoint != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
@@ -214,14 +221,15 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		if (trace.enabled()) {
-			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace);
+			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace, estimationTier);
 		}
 		State full = best[fullMask];
 		if (full == null) {
 			trace.add("reject no-full-connected-state");
 			return Optional.empty();
 		}
-		State complete = appendZeroVarFactors(full, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
+		State complete = appendZeroVarFactors(full, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
+				estimationTier);
 		if (complete == null) {
 			trace.add("reject zero-var-append-failed order=" + full.order());
 			return Optional.empty();
@@ -232,7 +240,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static Optional<PlanTemplate> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
+			EstimationTier estimationTier) {
 		List<Set<String>> factorVars = factorVars(factors);
 		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
@@ -278,7 +287,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
-						prefixFactors, costModel, fallbackStatistics);
+						prefixFactors, costModel, fallbackStatistics, estimationTier);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("greedy reject order=" + order + " f" + factorIndex
@@ -312,7 +321,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		State state = new State(maskFor(order), List.copyOf(order), List.copyOf(steps),
 				boundVars, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps), confidence(steps),
 				evidence(steps));
-		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics);
+		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
+				estimationTier);
 		if (complete == null) {
 			trace.add("greedy reject zero-var-append-failed order=" + order);
 			return Optional.empty();
@@ -424,18 +434,18 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
 			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
-			EvaluationStatistics fallbackStatistics) {
+			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		return estimateStep(factors, factorIndex, boundVars, prefixRows, nested, prefixFactors, costModel,
-				fallbackStatistics, false);
+				fallbackStatistics, estimationTier, false);
 	}
 
 	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
 			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
-			EvaluationStatistics fallbackStatistics, boolean disconnected) {
+			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier, boolean disconnected) {
 		TupleExpr factor = factors.get(factorIndex);
 		CostContext context = CostContext.forOptimization(boundVars, prefixRows,
 				Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows : Double.NaN, nested, true, Map.of(),
-				prefixFactors).withEstimationTier(EstimationTier.STANDARD);
+				prefixFactors).withEstimationTier(estimationTier == null ? EstimationTier.STANDARD : estimationTier);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(factor, context);
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate
 				.orElseGet(() -> fallbackEstimate(factor, fallbackStatistics));
@@ -459,7 +469,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static PathAlternative cheaperKnownEndpointPathAlternative(List<TupleExpr> factors, int factorIndex,
 			State currentPrefix, Step currentStep, State[] best, JoinFactorCostModel costModel,
-			EvaluationStatistics fallbackStatistics) {
+			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		if (factors == null || factorIndex < 0 || factorIndex >= factors.size() || currentPrefix == null
 				|| currentStep == null || best == null) {
 			return null;
@@ -490,7 +500,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 			Step alternativeStep = estimateStep(factors, factorIndex, alternativePrefix.boundVars(),
 					alternativePrefix.rows(), true, alternativePrefix.prefixFactors(factors), costModel,
-					fallbackStatistics);
+					fallbackStatistics, estimationTier);
 			if (alternativeStep == null) {
 				continue;
 			}
@@ -506,7 +516,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static void tracePathAlternatives(List<TupleExpr> factors, State[] best, List<Set<String>> factorVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
+			EstimationTier estimationTier) {
 		if (factors == null || best == null || factorVars == null || trace == null || !trace.enabled()) {
 			return;
 		}
@@ -529,7 +540,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, prefix.boundVars(), prefix.rows(), true,
-						prefix.prefixFactors(factors), costModel, fallbackStatistics);
+						prefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
 				if (step == null) {
 					continue;
 				}
@@ -640,11 +651,11 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static State appendZeroVarFactors(State state, List<TupleExpr> factors, List<Integer> zeroVarFactorIndices,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		State current = state;
 		for (int factorIndex : zeroVarFactorIndices) {
 			Step step = estimateStep(factors, factorIndex, current.boundVars(), current.rows(), true,
-					current.prefixFactors(factors), costModel, fallbackStatistics, true);
+					current.prefixFactors(factors), costModel, fallbackStatistics, estimationTier, true);
 			if (step == null) {
 				return null;
 			}
@@ -1068,7 +1079,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private record PlanCacheKey(List<Object> factors, Set<String> initialBoundVars, boolean greedy) {
+	private record PlanCacheKey(List<Object> factors, Set<String> initialBoundVars, boolean greedy,
+			EstimationTier estimationTier) {
 		private PlanCacheKey {
 			factors = factors == null || factors.isEmpty() ? List.of() : List.copyOf(factors);
 			initialBoundVars = initialBoundVars == null || initialBoundVars.isEmpty() ? Set.of()

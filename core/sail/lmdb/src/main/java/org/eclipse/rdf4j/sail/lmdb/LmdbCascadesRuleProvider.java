@@ -307,7 +307,8 @@ final class LmdbCascadesRuleProvider {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Set<String> initialBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
 			Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(
-					expression.tupleExpr(), initialBoundVars, costModel, statistics);
+					expression.tupleExpr(), initialBoundVars, costModel, statistics,
+					goal == null ? JoinFactorCostModel.EstimationTier.STANDARD : goal.estimationTier());
 			if (plan.isEmpty()) {
 				return List.of();
 			}
@@ -724,7 +725,7 @@ final class LmdbCascadesRuleProvider {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof Filter filter
+					&& expression.tupleExpr()instanceof Filter filter
 					&& LmdbNullRejectingOptionalSupport.matches(filter);
 		}
 

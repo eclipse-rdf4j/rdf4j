@@ -93,6 +93,30 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
 	}
 
+	public CostVector withMemoryRows(double newMemoryRows) {
+		return new CostVector(rows, workRows, newMemoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
+				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
+	}
+
+	public CostVector forEarlyStop(long rowsBeforeStop) {
+		if (rowsBeforeStop <= 0L || rowsBeforeStop == Long.MAX_VALUE || rows <= rowsBeforeStop) {
+			return this;
+		}
+		double demandedRows = Math.max(1.0d, rowsBeforeStop);
+		double scale = rows > 0.0d ? Math.max(0.000001d, demandedRows / rows) : 1.0d;
+		double stoppedWorkRows = Math.min(workRows, Math.max(demandedRows, workRows * scale));
+		double stoppedUncertainty = Math.min(uncertaintyRows, uncertaintyRows * scale);
+		return new CostVector(demandedRows, stoppedWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean,
+				rowQErrorMax, workQErrorMean, workQErrorMax, stoppedUncertainty, confidence, evidenceCount);
+	}
+
+	public double optimisticObjectiveScore() {
+		double optimisticWork = workRows / Math.max(1.0d, workQErrorMax);
+		double optimisticIo = seeks * 0.10d + pageWalkRows * 0.01d + memoryRows * 0.002d;
+		double score = optimisticWork + optimisticIo;
+		return Double.isFinite(score) && score >= 0.0d ? score : Double.MAX_VALUE;
+	}
+
 	public double qError() {
 		return Math.max(rowQErrorMax, workQErrorMax);
 	}

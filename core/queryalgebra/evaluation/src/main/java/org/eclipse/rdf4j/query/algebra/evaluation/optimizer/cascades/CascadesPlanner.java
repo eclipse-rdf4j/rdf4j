@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +25,14 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -37,6 +43,16 @@ public final class CascadesPlanner {
 	private static final int DEFAULT_FRONTIER_LIMIT = 16;
 	private static final int MINOR_TASK_BUDGET_GRANULARITY = 32;
 	private static final int DEADLINE_CHECK_GRANULARITY = 64;
+	private static final double DECISION_REFINEMENT_CLOSE_RATIO = 4.0d;
+	private static final double PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD = 1.5d;
+	static final String PLANNED_DECISION_SENSITIVE = "plannedCascadesDecisionSensitive";
+	static final String PLANNED_DECISION_EXACT_REFINEMENT = "plannedCascadesDecisionExactRefinement";
+	static final String PLANNED_WINNER_OBJECTIVE_GAP_RATIO = "plannedCascadesWinnerObjectiveGapRatio";
+	static final String PLANNED_PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
+	static final String PLANNED_OUTPUT_LIMIT_ROWS = "plannedOutputLimitRows";
+	static final String PLANNED_OUTPUT_OFFSET_ROWS = "plannedOutputOffsetRows";
+	static final String PLANNED_EARLY_STOP_ROWS = "plannedEarlyStopRows";
+	static final String PLANNED_EXISTENCE_GOAL = "plannedExistenceGoal";
 
 	private final CascadesCostModel costModel;
 	private final RuleRegistry ruleRegistry;
@@ -56,7 +72,7 @@ public final class CascadesPlanner {
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal) {
-		OptimizationGoal normalizedGoal = goal == null ? OptimizationGoal.root() : goal;
+		OptimizationGoal normalizedGoal = goal == null ? OptimizationGoal.root(root, PhysicalProperties.ANY) : goal;
 		Memo memo = new Memo(costModel);
 		int rootGroup = memo.intern(root);
 		SearchState state = new SearchState(normalizedGoal.taskBudget(), normalizedGoal.searchMode());
@@ -319,9 +335,30 @@ public final class CascadesPlanner {
 					CostVector.ZERO, expression.tupleExpr());
 			return Optional.empty();
 		}
+		WinnerKey winnerKey = goal.key(expression.groupId());
+		Optional<Winner> incumbent = memo.bestWinner(winnerKey);
 		CostVector cost = composePhysicalCost(costModel.localCost(expression, goal, inputWinners),
 				expression.ruleCost());
-		EstimateSnapshot estimate = costedEstimate(expression, cost);
+		boolean decisionSensitive = decisionSensitive(incumbent.orElse(null), cost);
+		if (decisionSensitive) {
+			markPlanChangingFeedbackThreshold(incumbent.orElse(null));
+		}
+		boolean exactRefined = false;
+		if (decisionSensitive && !goal.estimationTier().allowsExactEstimates()) {
+			CostVector refined = costModel.refineCostForDecision(expression,
+					goal.withEstimationTier(JoinFactorCostModel.EstimationTier.DECISION_EXACT), inputWinners, cost,
+					incumbent.map(Winner::cost).orElse(CostVector.INFINITE));
+			if (refined != null && !CostVector.INFINITE.equals(refined) && refined.compareTo(cost) != 0) {
+				cost = refined;
+				exactRefined = true;
+			}
+		}
+		cost = costModel.applyOutputGoal(expression, goal, delivered, cost);
+		Map<String, Double> decisionMetrics = decisionMetrics(goal, incumbent.orElse(null), cost, decisionSensitive,
+				exactRefined);
+		stampDoubleMetrics(expression.tupleExpr(), decisionMetrics);
+		EstimateSnapshot estimate = costedEstimate(expression, cost)
+				.withDoubleMetrics(decisionMetrics);
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
 		if (enforceCostBound && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
@@ -331,6 +368,7 @@ public final class CascadesPlanner {
 			return Optional.empty();
 		}
 		TupleExpr plan = costModel.buildPlan(expression, inputWinners);
+		stampDoubleMetrics(plan, decisionMetrics);
 		List<RuleProof> proofs = new ArrayList<>(expression.proofs());
 		for (Winner inputWinner : inputWinners) {
 			proofs.addAll(inputWinner.proofs());
@@ -345,7 +383,6 @@ public final class CascadesPlanner {
 				state.rejectionsFor(expression.groupId()), proofs, state.approximate, state.approximateReason);
 		Winner winner = new Winner(expression, plan, delivered, cost, proofs, state.approximate,
 				state.approximateReason, provenance);
-		WinnerKey winnerKey = goal.key(expression.groupId());
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
 				&& memo.winners(winnerKey).size() >= boundedFrontierLimit) {
 			state.markApproximate("bounded winner frontier reached for group " + expression.groupId());
@@ -359,6 +396,93 @@ public final class CascadesPlanner {
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
+	}
+
+	private boolean decisionSensitive(Winner incumbent, CostVector candidate) {
+		if (incumbent == null || candidate == null || CostVector.INFINITE.equals(candidate)) {
+			return false;
+		}
+		double incumbentScore = incumbent.cost().objectiveScore();
+		double candidateScore = candidate.objectiveScore();
+		if (!finitePositive(incumbentScore) || !finitePositive(candidateScore)) {
+			return false;
+		}
+		double gapRatio = Math.max(incumbentScore, candidateScore)
+				/ Math.max(1.0d, Math.min(incumbentScore, candidateScore));
+		double candidateRisk = Math.max(candidate.rowQErrorMax(), candidate.workQErrorMax());
+		double incumbentRisk = Math.max(incumbent.cost().rowQErrorMax(), incumbent.cost().workQErrorMax());
+		double risk = Math.max(candidateRisk, incumbentRisk);
+		return gapRatio <= Math.max(DECISION_REFINEMENT_CLOSE_RATIO, risk)
+				&& candidateScore <= incumbentScore * Math.max(DECISION_REFINEMENT_CLOSE_RATIO, risk);
+	}
+
+	private void markPlanChangingFeedbackThreshold(Winner winner) {
+		if (winner == null) {
+			return;
+		}
+		TupleExpr plan = winner.plan();
+		if (plan != null) {
+			plan.setDoubleMetricPlanned(PLANNED_DECISION_SENSITIVE, 1.0d);
+			plan.setDoubleMetricPlanned(PLANNED_PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD,
+					PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD);
+		}
+		MemoExpr expression = winner.expression();
+		if (expression != null && expression.tupleExpr() != null && expression.tupleExpr() != plan) {
+			expression.tupleExpr().setDoubleMetricPlanned(PLANNED_DECISION_SENSITIVE, 1.0d);
+			expression.tupleExpr()
+					.setDoubleMetricPlanned(PLANNED_PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD,
+							PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD);
+		}
+	}
+
+	private Map<String, Double> decisionMetrics(OptimizationGoal goal, Winner incumbent, CostVector cost,
+			boolean decisionSensitive, boolean exactRefined) {
+		Map<String, Double> metrics = new LinkedHashMap<>();
+		if (goal != null && goal.rowGoal() != null && !goal.rowGoal().isAll()) {
+			OptimizationGoal.RowGoal rowGoal = goal.rowGoal();
+			metrics.put(PLANNED_OUTPUT_OFFSET_ROWS, (double) rowGoal.offset());
+			if (rowGoal.hasFiniteLimit()) {
+				metrics.put(PLANNED_OUTPUT_LIMIT_ROWS, (double) rowGoal.limit());
+			}
+			long earlyStopRows = rowGoal.requiredRowsBeforeStop();
+			if (earlyStopRows != Long.MAX_VALUE) {
+				metrics.put(PLANNED_EARLY_STOP_ROWS, (double) earlyStopRows);
+			}
+			if (rowGoal.existenceOnly()) {
+				metrics.put(PLANNED_EXISTENCE_GOAL, 1.0d);
+			}
+		}
+		if (incumbent != null && cost != null) {
+			double incumbentScore = incumbent.cost().objectiveScore();
+			double candidateScore = cost.objectiveScore();
+			if (finitePositive(incumbentScore) && finitePositive(candidateScore)) {
+				double gapRatio = Math.max(incumbentScore, candidateScore)
+						/ Math.max(1.0d, Math.min(incumbentScore, candidateScore));
+				metrics.put(PLANNED_WINNER_OBJECTIVE_GAP_RATIO, gapRatio);
+				if (decisionSensitive || gapRatio < DECISION_REFINEMENT_CLOSE_RATIO) {
+					metrics.put(PLANNED_DECISION_SENSITIVE, 1.0d);
+					metrics.put(PLANNED_PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD,
+							PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD);
+				}
+			}
+		}
+		if (exactRefined) {
+			metrics.put(PLANNED_DECISION_EXACT_REFINEMENT, 1.0d);
+		}
+		return metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
+	}
+
+	private void stampDoubleMetrics(TupleExpr tupleExpr, Map<String, Double> metrics) {
+		if (tupleExpr == null || metrics == null || metrics.isEmpty()) {
+			return;
+		}
+		for (Map.Entry<String, Double> entry : metrics.entrySet()) {
+			tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+		}
+	}
+
+	private boolean finitePositive(double value) {
+		return Double.isFinite(value) && value > 0.0d && value < Double.MAX_VALUE;
 	}
 
 	private CostVector composePhysicalCost(CostVector inputAndLocalCost, CostVector ruleCost) {
@@ -451,37 +575,59 @@ public final class CascadesPlanner {
 		int inputCount = expression.inputGroupIds().size();
 		TupleExpr tupleExpr = expression.tupleExpr();
 		if (inputCount == 1 && tupleExpr instanceof UnaryTupleOperator unary) {
-			return List.of(inputGoal(goal, unary.getArg(), Set.of()));
+			return List.of(inputGoal(goal, unary.getArg(), Set.of(), tupleExpr, 0));
 		}
 		if (inputCount == 2 && tupleExpr instanceof LeftJoin leftJoin) {
-			return List.of(inputGoal(goal, leftJoin.getLeftArg(), Set.of()),
-					inputGoal(goal, leftJoin.getRightArg(), leftJoin.getLeftArg().getAssuredBindingNames()));
+			return List.of(inputGoal(goal, leftJoin.getLeftArg(), Set.of(), tupleExpr, 0),
+					inputGoal(goal, leftJoin.getRightArg(), leftJoin.getLeftArg().getAssuredBindingNames(), tupleExpr,
+							1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Join join) {
-			return List.of(inputGoal(goal, join.getLeftArg(), Set.of()),
-					inputGoal(goal, join.getRightArg(), join.getLeftArg().getAssuredBindingNames()));
+			return List.of(inputGoal(goal, join.getLeftArg(), Set.of(), tupleExpr, 0),
+					inputGoal(goal, join.getRightArg(), join.getLeftArg().getAssuredBindingNames(), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Difference difference) {
-			return List.of(inputGoal(goal, difference.getLeftArg(), Set.of()),
-					inputGoal(goal, difference.getRightArg(), difference.getLeftArg().getAssuredBindingNames()));
+			return List.of(inputGoal(goal, difference.getLeftArg(), Set.of(), tupleExpr, 0),
+					inputGoal(goal, difference.getRightArg(), difference.getLeftArg().getAssuredBindingNames(),
+							tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Union union) {
-			return List.of(inputGoal(goal, union.getLeftArg(), Set.of()),
-					inputGoal(goal, union.getRightArg(), Set.of()));
+			return List.of(inputGoal(goal, union.getLeftArg(), Set.of(), tupleExpr, 0),
+					inputGoal(goal, union.getRightArg(), Set.of(), tupleExpr, 1));
 		}
 		List<OptimizationGoal> goals = new ArrayList<>(inputCount);
 		for (int i = 0; i < inputCount; i++) {
-			goals.add(goal.withRequiredProperties(PhysicalProperties.ANY));
+			goals.add(goal.withRequiredProperties(PhysicalProperties.ANY).withoutRowGoal());
 		}
 		return goals;
 	}
 
-	private OptimizationGoal inputGoal(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars) {
-		Set<String> boundVars = childBoundVars(goal, input, contextualBoundVars);
+	private OptimizationGoal inputGoal(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars,
+			TupleExpr parent, int inputIndex) {
+		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
+		Set<String> boundVars = childBoundVars(safeGoal, input, contextualBoundVars);
 		PhysicalProperties required = boundVars.isEmpty()
 				? PhysicalProperties.ANY
 				: PhysicalProperties.builder().boundVars(boundVars).build();
-		return goal.withRequiredProperties(required);
+		OptimizationGoal.RowGoal rowGoal = childRowGoal(safeGoal, parent, inputIndex);
+		return safeGoal.withRequiredProperties(required).withRowGoal(rowGoal);
+	}
+
+	private OptimizationGoal.RowGoal childRowGoal(OptimizationGoal goal, TupleExpr parent, int inputIndex) {
+		if (goal == null || goal.rowGoal() == null || goal.rowGoal().isAll()) {
+			return OptimizationGoal.RowGoal.ALL;
+		}
+		OptimizationGoal.RowGoal rowGoal = goal.rowGoal();
+		if (parent instanceof QueryRoot || parent instanceof Projection || parent instanceof Slice) {
+			return rowGoal;
+		}
+		if (parent instanceof Join || parent instanceof LeftJoin || parent instanceof Difference) {
+			return inputIndex == 0 ? rowGoal : OptimizationGoal.RowGoal.ALL;
+		}
+		if (parent instanceof Union) {
+			return rowGoal;
+		}
+		return OptimizationGoal.RowGoal.ALL;
 	}
 
 	private Set<String> childBoundVars(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars) {
