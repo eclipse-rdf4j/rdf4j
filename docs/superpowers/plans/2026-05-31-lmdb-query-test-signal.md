@@ -11,7 +11,7 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 - [x] (2026-05-31 00:23+02:00) Confirmed branch and worktree: `GH-0000-lmdb-predicate-guarantees`, tracked files clean, only pre-existing untracked artifacts.
 - [ ] Capture current failing/pass matrix for `core/queryalgebra/evaluation`.
 - [ ] Capture current failing/pass matrix for `core/sail/lmdb`.
-- [ ] Add global test timeout protection for the two modules, then broaden if the parent build already supports it cleanly.
+- [x] (2026-05-31 00:27+02:00) Added parent Surefire/Failsafe fork timeout and JUnit Jupiter default timeout; verified one query-evaluation class and one LMDB class.
 - [ ] Classify planner/estimator/optimizer tests into signal categories and disable brittle tests with explicit reasons.
 - [ ] Add generator-style estimator tests that create data distributions and assert monotonicity, upper-bound, and selectivity invariants.
 - [ ] Add rewrite tests that assert safe performance invariants for pattern classes rather than exact query-plan strings.
@@ -22,6 +22,9 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 
 - Observation: Current tracked tree is clean even though previous patch work exists in branch history.
   Evidence: `git status -sb` reported only untracked artifacts and `ahead 29`.
+
+- Observation: Parent Surefire/Failsafe configuration is inherited by both target modules, and focused tests still start and pass with the timeout properties active.
+  Evidence: `CascadesCostModelTest` passed 21/21; `LmdbCascadesOptimizerTest` passed 21/21.
 
 ## Decision Log
 
@@ -101,4 +104,3 @@ Current branch state before edits:
 ## Interfaces and Dependencies
 
 Use JUnit 5 `@Timeout` or JUnit platform timeout properties where available. Use Maven Surefire/Failsafe fork timeouts when a module can contain JUnit 4, JUnit 5, or mixed tests. Avoid new dependencies.
-

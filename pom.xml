@@ -1028,6 +1028,12 @@
 					<configuration>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+						<systemPropertyVariables>
+							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
+						</systemPropertyVariables>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1039,6 +1045,12 @@
 						<reuseForks>true</reuseForks>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+						<systemPropertyVariables>
+							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
+						</systemPropertyVariables>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
