@@ -81,12 +81,15 @@ class LmdbAASPropertyProjectionPlanningTest {
 						() -> "AAS query1 should start from the constant shell lookup:\n" + plan);
 				assertEquals(AAS_SUBMODEL, firstPattern.getPredicateVar().getValue(),
 						() -> "AAS query1 should first bind submodels from the constant shell:\n" + plan);
-				assertFalse(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject"),
-						() -> "AAS query1 should not expand the property path from the AAS side before the ?prop "
-								+ "side has been considered:\n" + plan);
-				assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
-						() -> "AAS query1 should execute the property path from the bound ?prop endpoint side:\n"
-								+ plan);
+				assertFalse(plan.contains("path-waits-for-selective-endpoint-binder"),
+						() -> "AAS query1 should compare path endpoint alternatives by cost instead of hard-waiting "
+								+ "for ?prop:\n" + plan);
+				assertTrue(plan.contains("optimizer.pathEndpointMode=fromStart")
+						|| plan.contains(
+								"plannedPropertyPathMethod=sketch-single-predicate-path-prefix-sketch-fromStart")
+						|| plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject"),
+						() -> "AAS query1 should execute the property path from the cheaper submodelElement side "
+								+ "when fromStart is cheaper than waiting for ?prop:\n" + plan);
 				assertFalse(plan.contains("optimizer.connectedEnumeration=phase2_disconnected_components"),
 						() -> "Connected AAS query1 required island should not use disconnected fallback:\n" + plan);
 			}

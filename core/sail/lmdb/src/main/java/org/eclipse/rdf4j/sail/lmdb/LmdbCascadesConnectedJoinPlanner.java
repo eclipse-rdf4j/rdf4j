@@ -21,9 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -118,7 +116,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
-		List<Set<String>> delayedPathEndpointBinders = delayedPathEndpointBinders(factors, factorVars);
 		if (trace.enabled()) {
 			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
 					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
@@ -173,7 +170,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				String extensionRejection = connectedExtensionRejection(factors.get(factorIndex), state.boundVars(),
-						factorVars.get(factorIndex), mask, factorIndex, delayedPathEndpointBinders);
+						factorVars.get(factorIndex));
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
@@ -231,7 +228,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return Optional.empty();
 		}
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
-		List<Set<String>> delayedPathEndpointBinders = delayedPathEndpointBinders(factors, factorVars);
 		if (trace.enabled()) {
 			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
 					+ " zeroVar=" + zeroVarFactorIndices);
@@ -258,8 +254,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				String extensionRejection = hasPrefix
-						? connectedExtensionRejection(factor, boundVars, factorVars.get(factorIndex), maskFor(order),
-								factorIndex, delayedPathEndpointBinders)
+						? connectedExtensionRejection(factor, boundVars, factorVars.get(factorIndex))
 						: null;
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
@@ -528,68 +523,23 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static String connectedExtensionRejection(TupleExpr candidate, Set<String> prefixVars,
-			Set<String> candidateVars, int currentMask, int candidateIndex,
-			List<Set<String>> delayedPathEndpointBinders) {
+			Set<String> candidateVars) {
 		if (path(candidate)) {
 			if (!pathHasBoundEndpoint(candidate, prefixVars)) {
 				return "path-endpoint-not-bound";
 			}
-			Set<String> delayedEndpoints = delayedEndpointBinders(candidateIndex, delayedPathEndpointBinders);
-			if (!delayedEndpoints.isEmpty()) {
-				Set<String> unplannedDelayedEndpoints = unplannedDelayedEndpointBinders(delayedEndpoints, currentMask,
-						prefixVars, candidateIndex, delayedPathEndpointBinders);
-				if (!unplannedDelayedEndpoints.isEmpty()) {
-					return "path-waits-for-selective-endpoint-binder " + unplannedDelayedEndpoints;
-				}
-			}
+			/*
+			 * Do not hard-delay a path merely because another endpoint has a later selective binder. The connected
+			 * DP/greedy planner already costs fromStart, toEnd and between alternatives with the current prefix. A hard
+			 * wait predicate makes those costs irrelevant and can force the expensive endpoint, as seen in AAS query1
+			 * where fromStart is orders of magnitude cheaper than waiting for ?prop and running toEnd.
+			 */
 			return null;
 		}
 		if (candidateVars == null || candidateVars.isEmpty()) {
 			return "zero-runtime-vars";
 		}
 		return intersects(prefixVars, candidateVars) ? null : "no-shared-vars";
-	}
-
-	private static Set<String> delayedEndpointBinders(int candidateIndex,
-			List<Set<String>> delayedPathEndpointBinders) {
-		if (delayedPathEndpointBinders == null || candidateIndex < 0
-				|| candidateIndex >= delayedPathEndpointBinders.size()) {
-			return Set.of();
-		}
-		Set<String> delayedEndpoints = delayedPathEndpointBinders.get(candidateIndex);
-		return delayedEndpoints == null ? Set.of() : delayedEndpoints;
-	}
-
-	private static Set<String> unplannedDelayedEndpointBinders(Set<String> delayedEndpoints, int currentMask,
-			Set<String> prefixVars, int candidateIndex, List<Set<String>> delayedPathEndpointBinders) {
-		if (delayedEndpoints == null || delayedEndpoints.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> unplanned = new LinkedHashSet<>();
-		for (String endpoint : delayedEndpoints) {
-			if (endpoint == null) {
-				continue;
-			}
-			if (prefixVars == null || !prefixVars.contains(endpoint)) {
-				unplanned.add(endpoint);
-				continue;
-			}
-			boolean hasUnplannedBinder = false;
-			for (int factorIndex = 0; factorIndex < delayedPathEndpointBinders.size(); factorIndex++) {
-				if (factorIndex == candidateIndex || (currentMask & (1 << factorIndex)) != 0) {
-					continue;
-				}
-				Set<String> endpoints = delayedPathEndpointBinders.get(factorIndex);
-				if (endpoints != null && endpoints.contains(endpoint)) {
-					hasUnplannedBinder = true;
-					break;
-				}
-			}
-			if (hasUnplannedBinder) {
-				unplanned.add(endpoint);
-			}
-		}
-		return unplanned.isEmpty() ? Set.of() : Set.copyOf(unplanned);
 	}
 
 	private static String pathEndpointMode(TupleExpr tupleExpr, Set<String> boundVars) {
@@ -686,102 +636,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 		return result;
-	}
-
-	private static List<Set<String>> delayedPathEndpointBinders(List<TupleExpr> factors,
-			List<Set<String>> factorVars) {
-		if (factors == null || factors.isEmpty()) {
-			return List.of();
-		}
-		List<Set<String>> delayedBindersByFactor = new ArrayList<>(factors.size());
-		for (int i = 0; i < factors.size(); i++) {
-			delayedBindersByFactor.add(Set.of());
-		}
-		for (int pathIndex = 0; pathIndex < factors.size(); pathIndex++) {
-			TupleExpr path = factors.get(pathIndex);
-			if (!path(path)) {
-				continue;
-			}
-			Set<String> delayedEndpoints = new LinkedHashSet<>();
-			for (String endpoint : pathEndpointNames(path)) {
-				if (hasSelectiveEndpointBinder(endpoint, pathIndex, factors, factorVars)) {
-					delayedEndpoints.add(endpoint);
-				}
-			}
-			if (!delayedEndpoints.isEmpty()) {
-				delayedBindersByFactor.set(pathIndex, Set.copyOf(delayedEndpoints));
-			}
-		}
-		for (int pathIndex = 0; pathIndex < factors.size(); pathIndex++) {
-			Set<String> delayedEndpoints = delayedBindersByFactor.get(pathIndex);
-			if (delayedEndpoints.isEmpty()) {
-				continue;
-			}
-			for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
-				if (factorIndex == pathIndex) {
-					continue;
-				}
-				Set<String> factorBindingNames = factorVars.get(factorIndex);
-				if (!intersects(delayedEndpoints, factorBindingNames)) {
-					continue;
-				}
-				Set<String> current = delayedBindersByFactor.get(factorIndex);
-				Set<String> merged = new LinkedHashSet<>(current);
-				for (String endpoint : delayedEndpoints) {
-					if (factorBindingNames.contains(endpoint)) {
-						merged.add(endpoint);
-					}
-				}
-				delayedBindersByFactor.set(factorIndex, Set.copyOf(merged));
-			}
-		}
-		return List.copyOf(delayedBindersByFactor);
-	}
-
-	private static boolean hasSelectiveEndpointBinder(String endpoint, int pathIndex, List<TupleExpr> factors,
-			List<Set<String>> factorVars) {
-		if (endpoint == null || factors == null || factorVars == null) {
-			return false;
-		}
-		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
-			if (factorIndex == pathIndex) {
-				continue;
-			}
-			Set<String> names = factorVars.get(factorIndex);
-			if (names == null || !names.contains(endpoint)) {
-				continue;
-			}
-			if (selectiveEndpointBinder(factors.get(factorIndex), endpoint)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean selectiveEndpointBinder(TupleExpr factor, String endpoint) {
-		if (factor instanceof Filter filter) {
-			return LmdbJoinPlanSupport.runtimeBindingNames(filter).contains(endpoint);
-		}
-		StatementPattern pattern = factor instanceof StatementPattern statementPattern ? statementPattern : null;
-		if (pattern == null) {
-			return false;
-		}
-		boolean containsEndpoint = false;
-		int boundOtherComponents = 0;
-		for (Var var : pattern.getVarList()) {
-			if (var == null) {
-				continue;
-			}
-			String name = var.getName();
-			if (!var.hasValue() && endpoint.equals(name)) {
-				containsEndpoint = true;
-				continue;
-			}
-			if (var.hasValue() || var.isConstant()) {
-				boundOtherComponents++;
-			}
-		}
-		return containsEndpoint && boundOtherComponents >= 2;
 	}
 
 	private static List<Set<String>> factorVars(List<TupleExpr> factors) {

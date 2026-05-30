@@ -90,6 +90,14 @@ public final class BenchmarkJoinEstimatorSupport {
 		if (!estimator.isReadyNonBlocking()) {
 			estimator.rebuild();
 		}
+		while (!estimator.isReadyNonBlocking()) {
+			try {
+				Thread.sleep(100);
+				System.out.println(".");
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+		}
 		if (!estimator.isReadyNonBlocking()) {
 			throw new IOException("LMDB sketch-based join estimator is not ready after stable benchmark preparation");
 		}

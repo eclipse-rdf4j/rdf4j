@@ -159,6 +159,31 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		assertTrue(LmdbJoinPlanSupport.runtimeBindingNames(orderedFactors.getLast()).isEmpty());
 	}
 
+	@Test
+	void connectedPlannerDoesNotHardWaitForMoreExpensivePathEndpoint() {
+		IRI root = VF.createIRI("urn:root");
+		IRI startPredicate = VF.createIRI("urn:start");
+		IRI propType = VF.createIRI("urn:propType");
+		IRI propClass = VF.createIRI("urn:Prop");
+		StatementPattern startBinder = new StatementPattern(new Var("root", root),
+				new Var("startPredicate", startPredicate), new Var("start"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("start"),
+				new StatementPattern(new Var("stepS"), new Var("pathPredicate", P1), new Var("stepO")),
+				new Var("prop"), 0L);
+		StatementPattern propBinder = new StatementPattern(new Var("prop"), new Var("propType", propType),
+				new Var("propClass", propClass));
+		TupleExpr island = new Join(new Join(startBinder, path), propBinder);
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(island, Set.of(),
+				new PathFocusStatistics(), new PathFocusStatistics());
+
+		assertTrue(plan.isPresent());
+		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
+		assertTrue(orderedFactors.get(1) instanceof ArbitraryLengthPath,
+				() -> "The planner should use the cheap already-bound start endpoint instead of hard-waiting "
+						+ "for a later expensive ?prop endpoint: " + orderedFactors);
+	}
+
 	private static void restoreLegacyOpaqueJoinProviderProperty(String previous) {
 		if (previous == null) {
 			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
@@ -177,6 +202,38 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				.stream()
 				.map(CascadesRule::id)
 				.toList();
+	}
+
+	private static final class PathFocusStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return estimateRows(expr, Set.of());
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			double rows = estimateRows(factor, currentlyBoundVars);
+			double work = rows;
+			if (factor instanceof ArbitraryLengthPath) {
+				work = currentlyBoundVars != null && currentlyBoundVars.contains("start") ? 10.0d : 1_000_000.0d;
+				rows = work;
+			}
+			return Optional.of(new FactorCostEstimate(rows, work));
+		}
+
+		private static double estimateRows(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (factor instanceof ArbitraryLengthPath) {
+				return currentlyBoundVars != null && currentlyBoundVars.contains("start") ? 10.0d : 1_000_000.0d;
+			}
+			Set<String> names = LmdbJoinPlanSupport.runtimeBindingNames(factor);
+			if (names.contains("start")) {
+				return 1.0d;
+			}
+			if (names.contains("prop")) {
+				return 1_000.0d;
+			}
+			return 10.0d;
+		}
 	}
 
 	private static final class RuleSelectionStatistics extends EvaluationStatistics
