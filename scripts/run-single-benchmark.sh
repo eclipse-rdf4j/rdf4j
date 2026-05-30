@@ -432,8 +432,10 @@ run_benchmark_command() {
         fi
 
         local guard_script="${REPO_ROOT}/scripts/query-plan-risk-guard.py"
+        local benchmark_log="${module_dir}/target/benchmark-output.log"
+        mkdir -p "$(dirname "${benchmark_log}")"
         set +e
-        "${java_cmd[@]}" 2>&1 | python3 "${guard_script}"
+        "${java_cmd[@]}" 2>&1 | python3 "${guard_script}" --compact --log "${benchmark_log}"
         local java_status=${PIPESTATUS[0]}
         local guard_status=${PIPESTATUS[1]}
         set -e
@@ -442,6 +444,27 @@ run_benchmark_command() {
                 return "${guard_status}"
         fi
         return "${java_status}"
+}
+
+run_maven_packaging_command() {
+        local append_mode="$1"
+        shift
+        local log_path="${REPO_ROOT}/maven-build.log"
+        local tee_args=()
+        if [[ "${append_mode}" == "append" ]]; then
+                tee_args=(-a)
+        fi
+
+        set +e
+        "$@" 2>&1 | tee "${tee_args[@]}" "${log_path}" | awk '
+                /\[WARNING\]/ { next }
+                /\[ERROR\]/ { print; next }
+                /Reactor Summary/ { summary=1 }
+                summary { print }
+        '
+        local status=${PIPESTATUS[0]}
+        set -e
+        return "${status}"
 }
 
 if ${dry_run}; then
@@ -471,9 +494,9 @@ if ${no_build}; then
 else
         (
                 cd "${REPO_ROOT}"
-                if ! "${mvn_cmd_parallel[@]}"; then
+                if ! run_maven_packaging_command truncate "${mvn_cmd_parallel[@]}"; then
                         echo "Parallel install failed. Retrying single-threaded install..." >&2
-                        "${mvn_cmd_single_threaded[@]}"
+                        run_maven_packaging_command append "${mvn_cmd_single_threaded[@]}"
                 fi
         )
 fi

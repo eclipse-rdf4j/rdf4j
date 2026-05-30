@@ -9,7 +9,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -194,6 +196,7 @@ def _run(
     log_path: Path,
     stream: bool,
     stream_filter: Callable[[str], bool] | None = None,
+    tail_on_success: bool = False,
 ) -> tuple[int, list[str]]:
     print(f"\n$ {_quote_cmd(cmd)}")
     print(f"[mvnf] Log: {log_path.relative_to(cwd).as_posix()}")
@@ -201,6 +204,7 @@ def _run(
 
     output_tail: deque[str] = deque(maxlen=tail_lines)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    returncode = 0
     with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
         with subprocess.Popen(
             cmd,
@@ -216,13 +220,14 @@ def _run(
                 output_tail.append(line.rstrip("\n"))
                 if stream and (stream_filter is None or stream_filter(line)):
                     print(line, end="")
+            returncode = proc.wait()
 
     tail = list(output_tail)
-    if not stream and tail:
+    if not stream and tail and (tail_on_success or returncode != 0):
         print("[mvnf] Output tail:")
         print("\n".join(tail))
 
-    return proc.returncode, tail
+    return returncode, tail
 
 
 def _delete_logs(log_paths: list[Path]) -> None:
@@ -281,7 +286,141 @@ def _list_report_files(repo_root: Path, module: str) -> list[Path]:
     return unique
 
 
+@dataclass
+class _ReportSummary:
+    tests: int = 0
+    failures: int = 0
+    errors: int = 0
+    skipped: int = 0
+    time: float = 0.0
+    parsed_reports: list[Path] = field(default_factory=list)
+    parse_warnings: list[str] = field(default_factory=list)
+    problem_lines: list[str] = field(default_factory=list)
+
+
+def _int_attr(element: ET.Element, name: str) -> int:
+    value = element.attrib.get(name)
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except ValueError:
+        return 0
+
+
+def _float_attr(element: ET.Element, name: str) -> float:
+    value = element.attrib.get(name)
+    if value is None:
+        return 0.0
+    try:
+        return float(value)
+    except ValueError:
+        return 0.0
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _clip(value: str, limit: int = 220) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _test_suites(root: ET.Element) -> list[ET.Element]:
+    if _local_name(root.tag) == "testsuite":
+        return [root]
+    return [element for element in root.iter() if _local_name(element.tag) == "testsuite"]
+
+
+def _parse_xml_report(report: Path, summary: _ReportSummary) -> bool:
+    try:
+        root = ET.parse(report).getroot()
+    except (ET.ParseError, OSError) as exc:
+        summary.parse_warnings.append(f"{report.name}: could not parse XML report ({exc})")
+        return False
+
+    suites = _test_suites(root)
+    if not suites:
+        summary.parse_warnings.append(f"{report.name}: no testsuite elements found")
+        return False
+
+    summary.parsed_reports.append(report)
+    for suite in suites:
+        summary.tests += _int_attr(suite, "tests")
+        summary.failures += _int_attr(suite, "failures")
+        summary.errors += _int_attr(suite, "errors")
+        summary.skipped += _int_attr(suite, "skipped")
+        summary.time += _float_attr(suite, "time")
+
+        for testcase in suite.iter():
+            if _local_name(testcase.tag) != "testcase":
+                continue
+            classname = testcase.attrib.get("classname") or suite.attrib.get("name") or "<unknown>"
+            name = testcase.attrib.get("name") or "<unknown>"
+            for child in testcase:
+                child_name = _local_name(child.tag)
+                if child_name not in {"failure", "error"}:
+                    continue
+                message = child.attrib.get("message") or child.text or ""
+                summary.problem_lines.append(
+                    f"{classname}.{name}: {child_name}: {_clip(message)} [{report.name}]"
+                )
+
+    return True
+
+
+def _summarize_reports(repo_root: Path, module: str) -> _ReportSummary:
+    summary = _ReportSummary()
+    for report in _list_report_files(repo_root, module):
+        if report.suffix == ".xml":
+            _parse_xml_report(report, summary)
+        elif report.suffix == ".txt":
+            summary.parsed_reports.append(report)
+    return summary
+
+
+def _format_report_totals(summary: _ReportSummary) -> str:
+    return (
+        f"tests={summary.tests}, failures={summary.failures}, errors={summary.errors}, "
+        f"skipped={summary.skipped}, time={summary.time:.3f}s"
+    )
+
+
+def _print_report_summary(repo_root: Path, module: str, include_failures: bool) -> None:
+    reports = _list_report_files(repo_root, module)
+    if not reports:
+        print("\n[mvnf] No surefire/failsafe reports found for this module.")
+        return
+
+    summary = _summarize_reports(repo_root, module)
+    print("\n[mvnf] Reports:")
+    if summary.tests or summary.parsed_reports:
+        print(f"[mvnf] Summary: {_format_report_totals(summary)}")
+    for report in reports:
+        print(f"- {report.relative_to(repo_root).as_posix()}")
+
+    if include_failures and summary.problem_lines:
+        print("\n[mvnf] Top failures/errors:")
+        for line in summary.problem_lines[:10]:
+            print(f"- {line}")
+
+    if summary.parse_warnings:
+        print("\n[mvnf] Report parse warnings:")
+        for warning in summary.parse_warnings[:5]:
+            print(f"- {warning}")
+
+
 def main() -> int:
+    argv = sys.argv[1:]
+    passthrough_args: list[str] = []
+    if "--" in argv:
+        separator = argv.index("--")
+        passthrough_args = argv[separator + 1 :]
+        argv = argv[:separator]
+
     parser = argparse.ArgumentParser(
         prog="mvnf",
         description="Delete stale module test artifacts, install everything (quick), then run module verify or a single test.",
@@ -298,13 +437,18 @@ def main() -> int:
     parser.add_argument("--no-offline", action="store_true", help="Disable Maven offline mode (-o).")
     parser.add_argument("--stream", action="store_true", help="Stream full Maven output to stdout (can be very long).")
     parser.add_argument(
+        "--tail-on-success",
+        action="store_true",
+        help="Print retained Maven output tails even when a phase succeeds (old verbose behavior).",
+    )
+    parser.add_argument(
         "--retain-logs",
         action="store_true",
         help="Keep install/verify logs even when tests pass.",
     )
     parser.add_argument("--tail", type=int, default=200, help="Keep the last N Maven output lines for failures.")
     parser.add_argument("--mvn", help="Override the Maven command (default: mvn or ./mvnw).")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     repo_root = _find_repo_root()
     mvn_cmd = shlex.split(args.mvn) if args.mvn else _default_maven_cmd(repo_root)
@@ -338,6 +482,7 @@ def main() -> int:
             verify_cmd.extend(["-PskipUnitTests", f"-Dit.test={test_selector}"])
         else:
             verify_cmd.extend(["-DskipITs", f"-Dtest={test_selector}"])
+    verify_cmd.extend(passthrough_args)
     verify_cmd.append("verify")
 
     run_id = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
@@ -352,27 +497,29 @@ def main() -> int:
     else:
         print("\n[mvnf] No stale module test artifacts found.")
 
-    rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[0], args.stream, _maven_build_stream_filter())
+    rc, _ = _run(
+        install_cmd,
+        repo_root,
+        args.tail,
+        log_paths[0],
+        args.stream,
+        _maven_build_stream_filter(),
+        args.tail_on_success,
+    )
     if rc != 0:
         print("\n[mvnf] Root install failed.")
         return rc
 
-    rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream)
+    rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream, tail_on_success=args.tail_on_success)
     if rc == 0:
         print("\n[mvnf] Tests passed.")
+        _print_report_summary(repo_root, module, include_failures=False)
         if not args.retain_logs:
             _delete_logs([log_paths[1]])
         return 0
 
     print("\n[mvnf] Tests failed.")
-
-    reports = _list_report_files(repo_root, module)
-    if reports:
-        print("\n[mvnf] Reports:")
-        for report in reports:
-            print(f"- {report.relative_to(repo_root).as_posix()}")
-    else:
-        print("\n[mvnf] No surefire/failsafe reports found for this module.")
+    _print_report_summary(repo_root, module, include_failures=True)
 
     return rc
 

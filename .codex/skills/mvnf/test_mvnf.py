@@ -73,6 +73,39 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
             self.assertIn("-PskipUnitTests", verify_args)
             self.assertNotIn("-Dtest=ExampleIT#runs", verify_args)
 
+    def test_passthrough_maven_args_are_appended_to_verify_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._write_minimal_repo(Path(tmp))
+            calls = repo / "calls.txt"
+            fake_mvn = self._write_fake_mvn(repo, calls)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "ExampleTest#runs",
+                    "--mvn",
+                    str(fake_mvn),
+                    "--retain-logs",
+                    "--",
+                    "-Pjacoco",
+                    "-Dfoo=bar",
+                ],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            install_args, verify_args = self._all_args(calls)
+            self.assertNotIn("-Pjacoco", install_args)
+            self.assertNotIn("-Dfoo=bar", install_args)
+            self.assertIn("-Dtest=ExampleTest#runs", verify_args)
+            self.assertIn("-Pjacoco", verify_args)
+            self.assertIn("-Dfoo=bar", verify_args)
+
     def _write_minimal_repo(self, repo: Path, class_name: str = "ExampleTest") -> Path:
         (repo / ".git").mkdir()
         (repo / "pom.xml").write_text("<project />\n", encoding="utf-8")
@@ -104,9 +137,12 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
         return fake_mvn
 
     def _verify_args(self, calls: Path) -> list[str]:
+        return self._all_args(calls)[1]
+
+    def _all_args(self, calls: Path) -> tuple[list[str], list[str]]:
         lines = calls.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 2, lines)
-        return lines[1].split("\0")
+        return lines[0].split("\0"), lines[1].split("\0")
 
 
 if __name__ == "__main__":
