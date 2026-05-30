@@ -211,6 +211,25 @@ class CascadesRuleEngineTest {
 						&& "dominated-or-trimmed".equals(alternative.reason())));
 	}
 
+	@Test
+	void parentExpressionCostsEveryRetainedChildWinnerCombination() {
+		Filter root = new Filter(pattern("s", "p", "o"), new Bound(new Var("o")));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new FrontierImplementationRule())
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(new FrontierAwareCostModel(), registry,
+				CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root());
+
+		Winner winner = plan.winner().orElseThrow();
+		assertEquals(101.0d, winner.cost().workRows(), 0.0d);
+		assertTrue(winner.proofs()
+				.stream()
+				.anyMatch(proof -> "downstream-anchor".equals(proof.ruleId())),
+				"The parent should choose the locally-more-expensive child winner because it makes the parent cheap");
+	}
+
 	private static CascadesPlanner planner() {
 		return new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
 				RuleRegistry.standardLogicalRules(),
@@ -269,6 +288,93 @@ class CascadesRuleEngineTest {
 			return new RuleProof(id, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS, Set.of("test"),
 					"test alternative");
 		}
+	}
+
+	private static final class FrontierImplementationRule implements CascadesRule {
+		@Override
+		public String id() {
+			return "frontier-implementation";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& (expression.tupleExpr() instanceof StatementPattern
+							|| expression.tupleExpr() instanceof Filter);
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			TupleExpr tupleExpr = expression.tupleExpr();
+			if (tupleExpr instanceof StatementPattern) {
+				return List.of(
+						leafAlternative(expression, "locally-cheap", "locallyCheap", 1.0d),
+						leafAlternative(expression, "downstream-anchor", "downstreamAnchor", 100.0d));
+			}
+			RuleProof proof = new RuleProof("frontier-parent", RuleKind.IMPLEMENTATION,
+					OptimizationGoal.BAG_SEMANTICS, Set.of("test"), "parent implementation");
+			return List.of(RuleApplication.physical(expression.groupId(), tupleExpr.clone(), PhysicalProperties.ANY,
+					CostVector.ZERO, proof, "frontier-parent", EstimateSnapshot.cascades(CostVector.ZERO)));
+		}
+
+		private RuleApplication leafAlternative(MemoExpr expression, String ruleId, String accessPath,
+				double workRows) {
+			CostVector cost = exactCost(workRows);
+			RuleProof proof = new RuleProof(ruleId, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS,
+					Set.of("test"), "leaf implementation");
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.accessPath(accessPath)
+					.boundVars(expression.tupleExpr().getBindingNames())
+					.build();
+			return RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered, cost,
+					proof, ruleId, EstimateSnapshot.fromCost("test-planner", ruleId, cost));
+		}
+	}
+
+	private static final class FrontierAwareCostModel implements CascadesCostModel {
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return LogicalProperties.from(tupleExpr, 1.0d, QErrorInterval.exact(1.0d, "test"));
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return tupleExpr == null ? "<null>" : tupleExpr.getClass().getName() + ':' + tupleExpr.getSignature();
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (expression.tupleExpr() instanceof Filter && !inputWinners.isEmpty()) {
+				Winner input = inputWinners.getFirst();
+				double parentWork = "downstreamAnchor".equals(input.deliveredProperties().accessPath())
+						? 1.0d
+						: 10_000.0d;
+				return input.cost().plus(exactCost(parentWork));
+			}
+			return CostVector.ZERO;
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return expression.tupleExpr() instanceof Filter ? PhysicalProperties.ANY
+					: expression.deliveredProperties();
+		}
+	}
+
+	private static CostVector exactCost(double rowsAndWork) {
+		return new CostVector(rowsAndWork, rowsAndWork, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
+				0.0d, 1.0d, 1.0d);
 	}
 
 	private static final class RecordingImplementationRule implements CascadesRule {

@@ -249,13 +249,61 @@ public final class CascadesPlanner {
 			return Optional.empty();
 		}
 		String ruleId = primaryRuleId(expression);
-		List<Winner> inputWinners = optimizeInputs(memo, expression, goal, state);
-		if (inputWinners.size() != expression.inputGroupIds().size()) {
+		List<List<Winner>> inputWinnerFrontiers = optimizeInputFrontiers(memo, expression, goal, state);
+		if (inputWinnerFrontiers.size() != expression.inputGroupIds().size()) {
 			state.recordRejected(expression.groupId(), ruleId, "missing-input-winner", CostVector.INFINITE);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "missing-input-winner",
 					CostVector.INFINITE, expression.tupleExpr());
 			return Optional.empty();
 		}
+		if (inputWinnerFrontiers.isEmpty()) {
+			return optimizeExpressionWithInputs(memo, expression, goal, state, enforceCostBound, List.of());
+		}
+
+		CombinationResult result = new CombinationResult();
+		enumerateInputWinnerCombinations(memo, expression, goal, state, chargeBudget, enforceCostBound,
+				inputWinnerFrontiers, 0, new ArrayList<>(inputWinnerFrontiers.size()), result);
+		return result.bestAccepted();
+	}
+
+	private void enumerateInputWinnerCombinations(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state, boolean chargeBudget, boolean enforceCostBound, List<List<Winner>> frontiers, int depth,
+			List<Winner> current, CombinationResult result) {
+		if (result.stop()) {
+			return;
+		}
+		if (state.expired(goal)) {
+			state.markApproximate("timeout while enumerating input winner combinations for expression "
+					+ expression.id());
+			result.stop(true);
+			return;
+		}
+		if (depth == frontiers.size()) {
+			if (chargeBudget && !state.consumeMinor("inputWinnerCombination:" + expression.id())) {
+				state.markApproximate("budget while enumerating input winner combinations for expression "
+						+ expression.id());
+				result.stop(true);
+				return;
+			}
+			Optional<Winner> accepted = optimizeExpressionWithInputs(memo, expression, goal, state, enforceCostBound,
+					List.copyOf(current));
+			accepted.ifPresent(result::recordAccepted);
+			return;
+		}
+		for (Winner winner : frontiers.get(depth)) {
+			current.add(winner);
+			enumerateInputWinnerCombinations(memo, expression, goal, state, chargeBudget, enforceCostBound,
+					frontiers, depth + 1, current, result);
+			current.remove(current.size() - 1);
+			if (result.stop()) {
+				return;
+			}
+		}
+	}
+
+	private Optional<Winner> optimizeExpressionWithInputs(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state, boolean enforceCostBound, List<Winner> inputWinners) {
+		String ruleId = primaryRuleId(expression);
 		PhysicalProperties delivered = costModel.deliveredProperties(expression, goal, inputWinners);
 		if (!delivered.satisfies(goal.requiredProperties())) {
 			state.recordRejected(expression.groupId(), ruleId, "missing-physical-property", CostVector.ZERO,
@@ -353,11 +401,12 @@ public final class CascadesPlanner {
 				&& !"lmdb-cascades-fallback".equals(source);
 	}
 
-	private List<Winner> optimizeInputs(Memo memo, MemoExpr expression, OptimizationGoal goal, SearchState state) {
+	private List<List<Winner>> optimizeInputFrontiers(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state) {
 		if (expression.inputGroupIds().isEmpty()) {
 			return List.of();
 		}
-		List<Winner> winners = new ArrayList<>(expression.inputGroupIds().size());
+		List<List<Winner>> frontiers = new ArrayList<>(expression.inputGroupIds().size());
 		List<OptimizationGoal> inputGoals = inputGoals(expression, goal);
 		for (int i = 0; i < expression.inputGroupIds().size(); i++) {
 			Integer inputGroupId = expression.inputGroupIds().get(i);
@@ -366,9 +415,36 @@ public final class CascadesPlanner {
 			if (inputWinner.isEmpty()) {
 				return List.of();
 			}
-			winners.add(inputWinner.get());
+			List<Winner> frontier = memo.winners(inputGoal.key(inputGroupId));
+			if (frontier.isEmpty()) {
+				frontier = List.of(inputWinner.get());
+			}
+			frontiers.add(frontier);
 		}
-		return winners;
+		return frontiers;
+	}
+
+	private static final class CombinationResult {
+		private Winner bestAccepted;
+		private boolean stop;
+
+		void recordAccepted(Winner winner) {
+			if (winner != null && (bestAccepted == null || winner.cost().compareTo(bestAccepted.cost()) < 0)) {
+				bestAccepted = winner;
+			}
+		}
+
+		Optional<Winner> bestAccepted() {
+			return Optional.ofNullable(bestAccepted);
+		}
+
+		boolean stop() {
+			return stop;
+		}
+
+		void stop(boolean stop) {
+			this.stop = stop;
+		}
 	}
 
 	private List<OptimizationGoal> inputGoals(MemoExpr expression, OptimizationGoal goal) {
