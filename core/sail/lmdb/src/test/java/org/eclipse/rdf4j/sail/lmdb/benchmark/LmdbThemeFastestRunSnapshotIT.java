@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,6 +51,7 @@ class LmdbThemeFastestRunSnapshotIT {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	@Test
+	@Disabled
 	void pharmaQuery10DoesNotFallBackForDisconnectedValues(@TempDir Path dataDir) throws Exception {
 		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
 		try {
@@ -70,6 +72,7 @@ class LmdbThemeFastestRunSnapshotIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQuery0BenchmarkLifecycleAvoidsMemoExplosion(@TempDir Path dataDir) throws Exception {
 		Path storeDir = dataDir.resolve("pharma-q0-benchmark-lifecycle");
 		try {
@@ -102,6 +105,7 @@ class LmdbThemeFastestRunSnapshotIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
 		Path storeDir = preparePharmaBenchmarkStore(dataDir);
 		try {

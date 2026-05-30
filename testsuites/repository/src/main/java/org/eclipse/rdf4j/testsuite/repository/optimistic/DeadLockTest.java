@@ -27,6 +27,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class DeadLockTest {
 
@@ -81,6 +82,7 @@ public class DeadLockTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test() throws Exception {
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch end = new CountDownLatch(2);

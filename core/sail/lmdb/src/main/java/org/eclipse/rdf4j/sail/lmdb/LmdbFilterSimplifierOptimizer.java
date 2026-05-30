@@ -148,6 +148,12 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
 			}
+			TupleExpr nullRejectingOptionalRewrite = LmdbNullRejectingOptionalSupport.rewrite(filter);
+			if (nullRejectingOptionalRewrite != null) {
+				filter.replaceWith(nullRejectingOptionalRewrite);
+				nullRejectingOptionalRewrite.visit(this);
+				return;
+			}
 			if (!rewriteSmallLiteralFilterAnchors(filter)) {
 				annotateFilter(filter);
 			}

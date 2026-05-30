@@ -86,6 +86,7 @@ final class LmdbCascadesRuleProvider {
 				.add(new StandardCascadesRules.FilterPushdownRule())
 				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
 				.add(new StandardCascadesRules.FilterUnionDistributionRule())
+				.add(new LmdbNullRejectingOptionalJoinRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
@@ -94,10 +95,10 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
 		if (legacyOpaqueJoinProviders) {
 			builder.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
-					.add(new LmdbGuaranteeOptionImplementationRule(statistics))
 					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
 		}
-		builder.add(new LmdbStarMultiPredicateScanRule(statistics))
+		builder.add(new LmdbGuaranteeOptionImplementationRule(statistics))
+				.add(new LmdbStarMultiPredicateScanRule(statistics))
 				.add(new LmdbPropertyPathImplementationRule(statistics))
 				.add(new LmdbAccessPathImplementationRule(statistics))
 				.add(new LmdbDistinctCursorSkipRule(statistics))
@@ -712,6 +713,32 @@ final class LmdbCascadesRuleProvider {
 				comparison = String.valueOf(signature).compareTo(String.valueOf(other.signature));
 				return comparison != 0 ? comparison : Integer.compare(index, other.index);
 			}
+		}
+	}
+
+	private static final class LmdbNullRejectingOptionalJoinRule extends LmdbRule {
+		LmdbNullRejectingOptionalJoinRule() {
+			super("lmdb-null-rejecting-optional-join", RuleKind.TRANSFORMATION, 96, null);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr() instanceof Filter filter
+					&& LmdbNullRejectingOptionalSupport.matches(filter);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			TupleExpr alternative = LmdbNullRejectingOptionalSupport.rewrite(filter);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal), Set.of("rhsOnlyBinding", "nullRejectingFilter",
+					"optionalToInnerJoin"),
+					"OPTIONAL guarded by a null-rejecting RHS filter is equivalent to an inner join");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
 

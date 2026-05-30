@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbSketchAwareFilterPlacementIT {
@@ -334,6 +335,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@Test
+	@Timeout(30)
 	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow", attemptDir -> {
