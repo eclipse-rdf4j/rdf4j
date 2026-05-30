@@ -126,6 +126,12 @@ class LmdbEvaluationStatistics
 	private static final String PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS = "plannedOperatorFeedbackRobustWorkRows";
 	private static final String PLANNED_BRIDGE_CORRECTION_SOURCE = "plannedBridgeCorrectionSource";
 	private static final String PLANNED_BRIDGE_CORRECTION_JOIN_VAR = "plannedBridgeCorrectionJoinVar";
+	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
+	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
+	private static final String PATH_MODE_FULL_SCAN = "fullScan";
+	private static final String PATH_MODE_FROM_START = "fromStart";
+	private static final String PATH_MODE_TO_END = "toEnd";
+	private static final String PATH_MODE_BETWEEN = "between";
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 	private static final AtomicLong ESTIMATE_TRACE_SEQUENCE = new AtomicLong();
 	private static final String FINITE_DERIVED_SURFACE_CACHE_HITS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
@@ -530,12 +536,41 @@ class LmdbEvaluationStatistics
 		}
 		return estimate.map(value -> {
 			PropertyPathEstimate adjusted = adjustPropertyPathEstimate(path, effectiveBoundVars, value);
-			return new StatisticsEstimate(adjusted.rows(),
-					QErrorInterval.heuristic(adjusted.rows(), 3.0d, adjusted.method()), adjusted.workRows(),
-					adjusted.method(),
-					Map.of("distinctSubjects", adjusted.distinctSubjects(), "distinctObjects",
-							adjusted.distinctObjects(), "averagePathFanout", adjusted.averagePathFanout(),
-							"workRows", adjusted.workRows()));
+			String endpointMode = propertyPathEndpointMode(path, effectiveBoundVars);
+			double rows = adjusted.rows();
+			double workRows = adjusted.workRows();
+			String source = adjusted.method();
+			double qErrorMax = 3.0d;
+			Map<String, Double> metrics = new HashMap<>();
+			metrics.put("distinctSubjects", adjusted.distinctSubjects());
+			metrics.put("distinctObjects", adjusted.distinctObjects());
+			metrics.put("averagePathFanout", adjusted.averagePathFanout());
+			metrics.put("workRows", adjusted.workRows());
+
+			LmdbOperatorFeedbackStats.OperatorEstimate feedback = estimateOperatorFeedback(path, Double.NaN,
+					Double.NaN, rows, workRows, endpointMode);
+			if (feedback != null) {
+				rows = feedback.rows();
+				workRows = robustFeedbackWorkRows(feedback);
+				source = feedback.source();
+				qErrorMax = Math.max(feedback.rowQErrorMax(), feedback.workQErrorMax());
+				metrics.put("plannedBaseRows", adjusted.rows());
+				metrics.put("plannedBaseWorkRows", adjusted.workRows());
+				metrics.put("plannedOperatorFeedbackRows", feedback.rows());
+				metrics.put("plannedOperatorFeedbackWorkRows", feedback.workRows());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS, workRows);
+				metrics.put("plannedOperatorFeedbackEvidence", (double) feedback.evidenceCount());
+				metrics.put("plannedOperatorFeedbackConfidence", feedback.confidence());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MEAN, feedback.rowQErrorMean());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MAX, feedback.rowQErrorMax());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MEAN, feedback.workQErrorMean());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MAX, feedback.workQErrorMax());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_UNCERTAINTY_ROWS, feedback.uncertaintyRows());
+			}
+
+			workRows = Math.max(rows, workRows);
+			return new StatisticsEstimate(rows, QErrorInterval.heuristic(rows, qErrorMax, source), workRows, source,
+					metrics);
 		});
 	}
 
@@ -560,6 +595,14 @@ class LmdbEvaluationStatistics
 		}
 		double rows = estimate.rows();
 		double workRows = estimate.workRows();
+		if (path instanceof ArbitraryLengthPath) {
+			if (!isFiniteNonNegative(workRows)) {
+				workRows = rows;
+			}
+			String endpointMode = propertyPathEndpointMode(path, boundVars);
+			return new PropertyPathEstimate(rows, Math.max(rows, workRows), estimate.distinctSubjects(),
+					estimate.distinctObjects(), estimate.averagePathFanout(), estimate.method() + "-" + endpointMode);
+		}
 		if (subjectBound && isPositiveFinite(estimate.distinctSubjects())) {
 			rows = Math.min(rows, Math.max(1.0d, estimate.rows() / estimate.distinctSubjects()));
 		}
@@ -569,15 +612,12 @@ class LmdbEvaluationStatistics
 		if (subjectBound && objectBound) {
 			rows = Math.min(rows, Math.max(1.0d, estimate.averagePathFanout()));
 		}
-		if (isFiniteNonNegative(rows)) {
-			workRows = Math.min(workRows, Math.max(rows, estimate.averagePathFanout() + rows));
-		}
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = rows;
 		}
+		String endpointMode = propertyPathEndpointMode(path, boundVars);
 		return new PropertyPathEstimate(rows, Math.max(rows, workRows), estimate.distinctSubjects(),
-				estimate.distinctObjects(), estimate.averagePathFanout(),
-				estimate.method() + (subjectBound && objectBound ? "-both-endpoints-bound" : "-endpoint-bound"));
+				estimate.distinctObjects(), estimate.averagePathFanout(), estimate.method() + "-" + endpointMode);
 	}
 
 	private boolean pathEndpointBound(Var var, Set<String> boundVars) {
@@ -591,14 +631,50 @@ class LmdbEvaluationStatistics
 		return name != null && !name.startsWith("_const_") && boundVars != null && boundVars.contains(name);
 	}
 
+	private String propertyPathEndpointMode(TupleExpr path, Set<String> boundVars) {
+		Var subjectVar = null;
+		Var objectVar = null;
+		if (path instanceof ArbitraryLengthPath arbitraryLengthPath) {
+			subjectVar = arbitraryLengthPath.getSubjectVar();
+			objectVar = arbitraryLengthPath.getObjectVar();
+		} else if (path instanceof ZeroLengthPath zeroLengthPath) {
+			subjectVar = zeroLengthPath.getSubjectVar();
+			objectVar = zeroLengthPath.getObjectVar();
+		}
+		boolean subjectBound = pathEndpointBound(subjectVar, boundVars);
+		boolean objectBound = pathEndpointBound(objectVar, boundVars);
+		if (subjectBound && objectBound) {
+			return PATH_MODE_BETWEEN;
+		}
+		if (subjectBound) {
+			return PATH_MODE_FROM_START;
+		}
+		if (objectBound) {
+			return PATH_MODE_TO_END;
+		}
+		return PATH_MODE_FULL_SCAN;
+	}
+
+	private String operatorFeedbackExecutionMode(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (factor instanceof ArbitraryLengthPath || factor instanceof ZeroLengthPath) {
+			Set<String> boundVars = context == null ? Set.of() : context.getCurrentlyBoundVars();
+			return propertyPathEndpointMode(factor, boundVars);
+		}
+		return null;
+	}
+
 	@Override
 	public Optional<FeedbackCorrection> feedbackCorrection(TupleExpr tupleExpr, StatisticsEstimate baseEstimate) {
 		if (tupleExpr == null || baseEstimate == null) {
 			return Optional.empty();
 		}
+		String executionMode = tupleExpr.getStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE);
+		if (executionMode == null) {
+			executionMode = tupleExpr.getStringMetricPlanned(OPTIMIZER_PATH_ENDPOINT_MODE);
+		}
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = estimateOperatorFeedback(tupleExpr, Double.NaN,
 				Double.NaN,
-				baseEstimate.rows(), baseEstimate.workRows());
+				baseEstimate.rows(), baseEstimate.workRows(), executionMode);
 		if (estimate == null) {
 			return Optional.empty();
 		}
@@ -1275,8 +1351,9 @@ class LmdbEvaluationStatistics
 		}
 		double leftRows = feedbackLeftRows(factor, context);
 		double rightRows = feedbackRightRows(factor, context);
+		String executionMode = operatorFeedbackExecutionMode(factor, context);
 		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackStats.estimate(factor, leftRows,
-				rightRows, baseRows, baseWorkRows);
+				rightRows, baseRows, baseWorkRows, executionMode);
 		if (feedback == null) {
 			return Optional.of(baseEstimate);
 		}
@@ -2197,9 +2274,12 @@ class LmdbEvaluationStatistics
 		Map<String, String> stringMetrics = Map.of();
 		Map<String, Double> doubleMetrics = Map.of();
 		if (collectMetrics) {
+			String endpointMode = propertyPathEndpointMode(factor, effectiveBoundVars);
 			Map<String, String> mutableStringMetrics = new HashMap<>();
 			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path");
 			mutableStringMetrics.put("plannedPropertyPathMethod", pathEstimate.method());
+			mutableStringMetrics.put(PLANNED_PROPERTY_PATH_ENDPOINT_MODE, endpointMode);
+			mutableStringMetrics.put(OPTIMIZER_PATH_ENDPOINT_MODE, endpointMode);
 			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "propertyPath");
 
 			Map<String, Double> mutableDoubleMetrics = new HashMap<>();
@@ -7739,10 +7819,15 @@ class LmdbEvaluationStatistics
 
 	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows) {
+		return estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows, null);
+	}
+
+	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
+			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
 		if (operatorFeedbackStats == null) {
 			return null;
 		}
-		return operatorFeedbackStats.estimate(node, leftRows, rightRows, baseRows, baseWorkRows);
+		return operatorFeedbackStats.estimate(node, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
 	}
 
 	private StatementPattern basePatternForFilter(Filter filter) {

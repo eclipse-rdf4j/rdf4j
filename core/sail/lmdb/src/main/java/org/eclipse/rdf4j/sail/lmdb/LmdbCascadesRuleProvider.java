@@ -2545,13 +2545,20 @@ final class LmdbCascadesRuleProvider {
 			TupleExpr alternative = expression.tupleExpr().clone();
 			alternative.setStringMetricPlanned(LmdbJoinIslandConnectivity.OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON,
 					LmdbJoinIslandConnectivity.PROPERTY_PATH_OWNER_REASON);
+			alternative.setStringMetricPlanned("plannedPropertyPathEndpointMode", endpointMode.accessPathSuffix());
 			alternative.setStringMetricPlanned("optimizer.pathEndpointMode", endpointMode.accessPathSuffix());
+			String source = LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH.equals(estimate.get().method())
+					? LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH
+					: "lmdb-property-path";
 			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
-					cost, proof, "lmdb-property-path", snapshot(estimate.get(), cost, "lmdb-property-path")));
+					cost, proof, source, snapshot(estimate.get(), cost, source)));
 		}
 
 		private CostVector pathCost(StatisticsEstimate estimate, EndpointBindingMode endpointMode) {
 			CostVector base = CostVector.ofRowsAndWork(estimate.rows(), estimate.workRows(), estimate.qErrorInterval());
+			if (LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH.equals(estimate.method())) {
+				return base;
+			}
 			if (endpointMode == EndpointBindingMode.UNBOUND) {
 				double workRows = Math.max(base.workRows(), base.workRows() * 8.0d + base.rows());
 				return new CostVector(base.rows(), workRows, base.memoryRows() + Math.max(1.0d, base.rows()),

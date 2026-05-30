@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -126,6 +128,18 @@ public class EvaluationStatisticsTest {
 		join.setCostFeedbackActualWorkRows(777);
 		Assertions.assertEquals(777.0d, statistics.costFeedbackActualWorkRows(join), 0.0d,
 				"A store-specific actual work value should override the generic proxy");
+	}
+
+	@Test
+	public void costFeedbackActualWorkRowsUsesPathCandidateCounters() {
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), Var.of("o"), 1);
+		path.setCostFeedbackActualRows(10);
+		path.setLongMetricActual(PathIteration.PATH_CANDIDATE_ROWS_ACTUAL, 900);
+
+		Assertions.assertEquals(900.0d, statistics.costFeedbackActualWorkRows(path), 0.0d,
+				"ALP learned-cost feedback should use candidate rows as the low-overhead actual-work proxy");
 	}
 
 	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {

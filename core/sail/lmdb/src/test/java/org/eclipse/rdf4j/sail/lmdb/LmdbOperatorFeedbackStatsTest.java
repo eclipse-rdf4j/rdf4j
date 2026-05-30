@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -335,6 +336,38 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void arbitraryLengthPathFeedbackIsDirectionSpecific(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		ArbitraryLengthPath observed = alp("s", "o");
+		completePathCostFeedback(observed, "fromStart", 10_000, 100, 100, 10_000);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate fromStart = stats.estimate(alp("s", "o"), Double.NaN,
+				Double.NaN, 100, 100, "fromStart");
+		assertNotNull(fromStart, "ALP feedback should be reused for the same endpoint direction");
+		assertEquals(LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH, fromStart.source());
+		assertNull(stats.estimate(alp("s", "o"), Double.NaN, Double.NaN, 100, 100, "toEnd"),
+				"A start-focused ALP observation must not repair an end-focused access path");
+	}
+
+	@Test
+	void arbitraryLengthPathFeedbackUsesCandidateRowsAsActualWork(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		ArbitraryLengthPath observed = alp("s", "o");
+		completePathCostFeedback(observed, "toEnd", 100, 100, 10, 1_000);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(alp("s", "o"), Double.NaN,
+				Double.NaN, 100, 10, "toEnd");
+		assertNotNull(estimate, "A large ALP work miss should report even when output rows are correct");
+		assertEquals(LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH, estimate.source());
+		assertTrue(estimate.workRows() > 500.0d,
+				"ALP LEO work correction must use path candidate rows rather than output rows");
+	}
+
+	@Test
 	void clampLimitsOneBadRun(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
@@ -366,6 +399,10 @@ class LmdbOperatorFeedbackStatsTest {
 
 	private static Join rightDeepThreeWayPath() {
 		return new Join(sp("s", P1, "x"), new Join(sp("x", P2, "y"), sp("y", P3, "o")));
+	}
+
+	private static ArbitraryLengthPath alp(String subjectName, String objectName) {
+		return new ArbitraryLengthPath(Var.of(subjectName), sp(subjectName, P1, objectName), Var.of(objectName), 1);
 	}
 
 	private static StatementPattern sp(String subjectName, IRI predicate, String objectName) {
@@ -411,6 +448,23 @@ class LmdbOperatorFeedbackStatsTest {
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
 		node.setCostFeedbackActualRows(actualRows);
 		node.setCostFeedbackActualWorkRows(actualWorkRows);
+		node.setCostFeedbackCloseCountActual(1L);
+		node.setCostFeedbackCompletedActual(true);
+	}
+
+	private static void completePathCostFeedback(ArbitraryLengthPath node, String endpointMode, long actualRows,
+			double plannedRows, double plannedWorkRows, long candidateRows) {
+		node.setStringMetricPlanned("plannedPropertyPathEndpointMode", endpointMode);
+		node.setStringMetricPlanned("optimizer.pathEndpointMode", endpointMode);
+		node.setCostFeedbackTrackingEnabled(true);
+		node.setCostFeedbackExpectedRows(plannedRows);
+		node.setCostFeedbackExpectedWorkRows(plannedWorkRows);
+		node.setCostFeedbackReportQErrorThreshold(LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD);
+		node.setResultSizeEstimate(plannedRows);
+		node.setCostEstimate(plannedWorkRows);
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
+		node.setCostFeedbackActualRows(actualRows);
+		node.setLongMetricActual("optimizer.pathCandidateRowsActual", candidateRows);
 		node.setCostFeedbackCloseCountActual(1L);
 		node.setCostFeedbackCompletedActual(true);
 	}

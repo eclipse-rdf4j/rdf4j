@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
@@ -137,7 +139,27 @@ public class EvaluationStatistics {
 				node.getJoinRightBindingsConsumedActual());
 		double sourceWork = maxFinite(node.getSourceRowsScannedActual(), node.getSourceRowsMatchedActual(),
 				node.getSourceRowsFilteredActual());
-		return maxFinite(rows, joinWork, sourceWork);
+		double pathWork = pathActualWorkRows(node, rows);
+		return maxFinite(rows, joinWork, sourceWork, pathWork);
+	}
+
+	private static double pathActualWorkRows(QueryModelNode node, double rows) {
+		if (node instanceof ArbitraryLengthPath) {
+			return maxFinite(rows,
+					longMetricActual(node, PathIteration.PATH_CANDIDATE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_RETURNED_ROWS_ACTUAL));
+		}
+		if (node instanceof ZeroLengthPath) {
+			return maxFinite(rows, longMetricActual(node, ZeroLengthPathIteration.ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL));
+		}
+		return Double.NaN;
+	}
+
+	private static double longMetricActual(QueryModelNode node, String metricName) {
+		long value = node == null ? -1L : node.getLongMetricActual(metricName);
+		return value >= 0L ? value : Double.NaN;
 	}
 
 	/**

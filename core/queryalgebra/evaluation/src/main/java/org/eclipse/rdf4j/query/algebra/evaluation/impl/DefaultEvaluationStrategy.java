@@ -1699,6 +1699,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
+			QueryEvaluationException closeFailure = null;
+			try {
+				super.handleClose();
+			} catch (QueryEvaluationException e) {
+				closeFailure = e;
+			}
 			try {
 				if ((telemetryEnabled || costFeedbackTracking)
 						&& iterator instanceof IndexReportingIterator sourceMetrics) {
@@ -1749,7 +1755,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					}
 				}
 			} finally {
-				super.handleClose();
+				if (closeFailure != null) {
+					throw closeFailure;
+				}
 			}
 		}
 

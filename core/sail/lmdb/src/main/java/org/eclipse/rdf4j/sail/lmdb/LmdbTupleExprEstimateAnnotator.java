@@ -75,6 +75,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private static final String LMDB_BOUND_LOOKUP_SUBTREE = "lmdb-bound-lookup-subtree";
 	private static final String LEARNED_OPERATOR = LmdbOperatorFeedbackStats.LEARNED_OPERATOR;
 	private static final String LEARNED_LEFT_JOIN_SURFACE = LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE;
+	private static final String LEARNED_PROPERTY_PATH = LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH;
 	private static final String GROUP_DISTINCT = "lmdb-sketch-var-stats";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
@@ -83,6 +84,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final String BOUND_LOOKUP_FINAL_ACCESS_BLEND = "bound_lookup_final_access_geometric_mean";
 	private static final double OPTIONAL_BRIDGE_BLEND_MIN_RATIO = 2.0d;
+	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
+	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
+	private static final String PATH_MODE_FULL_SCAN = "fullScan";
+	private static final String PATH_MODE_FROM_START = "fromStart";
+	private static final String PATH_MODE_TO_END = "toEnd";
+	private static final String PATH_MODE_BETWEEN = "between";
 
 	private static final Set<Class<? extends TupleExpr>> ANNOTATION_POLICY_TYPES = Set.of(
 			StatementPattern.class,
@@ -615,19 +622,26 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
 			return false;
 		}
-		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, externalBoundVars(node));
-		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate)).isPresent();
+		Set<String> boundVars = externalBoundVars(node);
+		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, boundVars);
+		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate, boundVars)).isPresent();
 	}
 
 	private boolean stampPropertyPathEstimate(ZeroLengthPath node) {
 		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
 			return false;
 		}
-		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, externalBoundVars(node));
-		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate)).isPresent();
+		Set<String> boundVars = externalBoundVars(node);
+		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, boundVars);
+		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate, boundVars)).isPresent();
 	}
 
-	private boolean stampPropertyPathEstimate(TupleExpr node, PropertyPathEstimate estimate) {
+	private boolean stampPropertyPathEstimate(TupleExpr node, PropertyPathEstimate estimate, Set<String> boundVars) {
+		String endpointMode = propertyPathEndpointMode(node, boundVars);
+		stampPropertyPathEndpointMode(node, endpointMode);
+		if (stampFusedCostEstimate(node, boundVars, externalPrefixRows(node), isNestedInvocation(node))) {
+			return true;
+		}
 		stampPlannerDecisionMetrics(node, estimate.rows(), estimate.workRows());
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
@@ -640,9 +654,50 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.setStringMetricPlanned("optimizer.rewriteProof",
 				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.PROPERTY_PATH_COST_ANNOTATION,
 						LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
-						Set.of("pathEstimateMethod=" + estimate.method(), "source=lmdb-property-path"),
+						Set.of("pathEstimateMethod=" + estimate.method(), "endpointMode=" + endpointMode,
+								"source=lmdb-property-path"),
 						"property-path-cardinality-annotation").metricFragment());
 		return true;
+	}
+
+	private void stampPropertyPathEndpointMode(TupleExpr node, String endpointMode) {
+		node.setStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE, endpointMode);
+		node.setStringMetricPlanned(OPTIMIZER_PATH_ENDPOINT_MODE, endpointMode);
+	}
+
+	private String propertyPathEndpointMode(TupleExpr node, Set<String> boundVars) {
+		Var subjectVar = null;
+		Var objectVar = null;
+		if (node instanceof ArbitraryLengthPath path) {
+			subjectVar = path.getSubjectVar();
+			objectVar = path.getObjectVar();
+		} else if (node instanceof ZeroLengthPath path) {
+			subjectVar = path.getSubjectVar();
+			objectVar = path.getObjectVar();
+		}
+		boolean subjectBound = propertyPathEndpointBound(subjectVar, boundVars);
+		boolean objectBound = propertyPathEndpointBound(objectVar, boundVars);
+		if (subjectBound && objectBound) {
+			return PATH_MODE_BETWEEN;
+		}
+		if (subjectBound) {
+			return PATH_MODE_FROM_START;
+		}
+		if (objectBound) {
+			return PATH_MODE_TO_END;
+		}
+		return PATH_MODE_FULL_SCAN;
+	}
+
+	private boolean propertyPathEndpointBound(Var var, Set<String> boundVars) {
+		if (var == null) {
+			return false;
+		}
+		if (var.hasValue()) {
+			return true;
+		}
+		String name = var.getName();
+		return name != null && !name.startsWith("_const_") && boundVars != null && boundVars.contains(name);
 	}
 
 	private CharacteristicSetEstimate characteristicSetEstimate(Join node) {
@@ -1658,7 +1713,9 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private static boolean isLearnedOperatorSource(String source) {
-		return LEARNED_OPERATOR.equals(source) || LEARNED_LEFT_JOIN_SURFACE.equals(source);
+		return LEARNED_OPERATOR.equals(source)
+				|| LEARNED_LEFT_JOIN_SURFACE.equals(source)
+				|| LEARNED_PROPERTY_PATH.equals(source);
 	}
 
 	private boolean stampFusedCostEstimate(TupleExpr node, Set<String> boundVars, double outerPrefixRows,
@@ -1882,14 +1939,21 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				|| !canApplyOperatorFeedback(node, source)) {
 			return null;
 		}
-		return lmdbStatistics.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows);
+		String executionMode = null;
+		if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
+			executionMode = node.getStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE);
+		}
+		return lmdbStatistics.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows,
+				executionMode);
 	}
 
 	private boolean canApplyOperatorFeedback(TupleExpr node, String source) {
 		if (source == null) {
 			return true;
 		}
-		if (LEARNED_OPERATOR.equals(source) || LEARNED_LEFT_JOIN_SURFACE.equals(source)) {
+		if (LEARNED_OPERATOR.equals(source)
+				|| LEARNED_LEFT_JOIN_SURFACE.equals(source)
+				|| LEARNED_PROPERTY_PATH.equals(source)) {
 			return false;
 		}
 		if (source.startsWith("exact")

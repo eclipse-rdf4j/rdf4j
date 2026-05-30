@@ -55,9 +55,10 @@ final class LmdbOperatorFeedbackStats {
 
 	static final String LEARNED_OPERATOR = "learned_operator";
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
+	static final String LEARNED_PROPERTY_PATH = "learned_property_path";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 5;
+	private static final int PERSIST_VERSION = 6;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -66,6 +67,18 @@ final class LmdbOperatorFeedbackStats {
 
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
+	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
+	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
+	private static final String PATH_MODE_FULL_SCAN = "fullScan";
+	private static final String PATH_MODE_FROM_START = "fromStart";
+	private static final String PATH_MODE_TO_END = "toEnd";
+	private static final String PATH_MODE_BETWEEN = "between";
+	private static final String PATH_MODE_UNKNOWN = "unknown";
+	private static final String PATH_CANDIDATE_ROWS_ACTUAL = "optimizer.pathCandidateRowsActual";
+	private static final String PATH_QUEUE_ENQUEUE_ROWS_ACTUAL = "optimizer.pathQueueEnqueueRowsActual";
+	private static final String PATH_EXPANSION_ITERATIONS_ACTUAL = "optimizer.pathExpansionIterationsActual";
+	private static final String PATH_RETURNED_ROWS_ACTUAL = "optimizer.pathReturnedRowsActual";
+	private static final String ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL = "optimizer.zeroLengthPathCandidateRowsActual";
 
 	private final Path estimatorPath;
 	private final Path sidecarPath;
@@ -130,7 +143,7 @@ final class LmdbOperatorFeedbackStats {
 				&& !shouldReportCostFeedback(node)) {
 			return;
 		}
-		OperatorKey key = keyFor(node);
+		OperatorKey key = keyFor(node, null);
 		if (key == null) {
 			return;
 		}
@@ -145,7 +158,12 @@ final class LmdbOperatorFeedbackStats {
 
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
 			double baseWorkRows) {
-		OperatorKey key = keyFor(node);
+		return estimate(node, leftRows, rightRows, baseRows, baseWorkRows, null);
+	}
+
+	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
+			double baseWorkRows, String executionMode) {
+		OperatorKey key = keyFor(node, executionMode);
 		if (key == null) {
 			return null;
 		}
@@ -266,8 +284,11 @@ final class LmdbOperatorFeedbackStats {
 				: Double.NaN;
 		double rightBranchRows = node instanceof BinaryTupleOperator binary ? actualRows(binary.getRightArg())
 				: Double.NaN;
-		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(),
-				actualWorkRows(node, actualRows, leftRows, rightRows, leftBranchRows, rightBranchRows));
+		double derivedActualWorkRows = actualWorkRows(node, actualRows, leftRows, rightRows, leftBranchRows,
+				rightBranchRows);
+		double actualWorkRows = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+				? maxFinite(derivedActualWorkRows, node.getCostFeedbackActualWorkRows())
+				: finiteOr(node.getCostFeedbackActualWorkRows(), derivedActualWorkRows);
 		return new OperatorObservation(plannedRows, plannedWorkRows, actualRows, leftRows, rightRows,
 				actualWorkRows, leftRowsWithMatch, emptyProbeCount, maxRightRowsPerLeft, leftBranchRows,
 				rightBranchRows);
@@ -276,13 +297,13 @@ final class LmdbOperatorFeedbackStats {
 	private double actualWorkRows(TupleExpr node, double actualRows, double leftRows, double rightRows,
 			double leftBranchRows, double rightBranchRows) {
 		if (node instanceof ArbitraryLengthPath) {
-			double candidates = longMetric(node, "optimizer.pathCandidateRowsActual");
-			if (isFiniteNonNegative(candidates)) {
-				return Math.max(actualRows, candidates);
+			double pathWork = pathWorkRows(node, actualRows);
+			if (isFiniteNonNegative(pathWork)) {
+				return pathWork;
 			}
 		}
 		if (node instanceof ZeroLengthPath) {
-			double candidates = longMetric(node, "optimizer.zeroLengthPathCandidateRowsActual");
+			double candidates = longMetric(node, ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL);
 			if (isFiniteNonNegative(candidates)) {
 				return Math.max(actualRows, candidates);
 			}
@@ -426,10 +447,29 @@ final class LmdbOperatorFeedbackStats {
 		}
 		double actualRows = actualRows(node);
 		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());
-		double actualWorkRows = node.getCostFeedbackActualWorkRows();
+		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(), pathActualWorkRows(node, actualRows));
 		double expectedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(),
 				finiteOr(node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS), node.getCostEstimate()));
 		return qError(actualRows, expectedRows) >= threshold || qError(actualWorkRows, expectedWorkRows) >= threshold;
+	}
+
+	private static double pathActualWorkRows(TupleExpr node, double actualRows) {
+		if (node instanceof ArbitraryLengthPath) {
+			return pathWorkRows(node, actualRows);
+		}
+		if (node instanceof ZeroLengthPath) {
+			double candidates = longMetric(node, ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL);
+			return isFiniteNonNegative(candidates) ? Math.max(actualRows, candidates) : Double.NaN;
+		}
+		return Double.NaN;
+	}
+
+	private static double pathWorkRows(TupleExpr node, double actualRows) {
+		return maxFinite(actualRows,
+				longMetric(node, PATH_CANDIDATE_ROWS_ACTUAL),
+				longMetric(node, PATH_QUEUE_ENQUEUE_ROWS_ACTUAL),
+				longMetric(node, PATH_EXPANSION_ITERATIONS_ACTUAL),
+				longMetric(node, PATH_RETURNED_ROWS_ACTUAL));
 	}
 
 	private static boolean containsSlice(TupleExpr node) {
@@ -457,6 +497,10 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private OperatorKey keyFor(TupleExpr node) {
+		return keyFor(node, null);
+	}
+
+	private OperatorKey keyFor(TupleExpr node, String executionMode) {
 		if (node == null || !isSupportedOperator(node)) {
 			return null;
 		}
@@ -464,6 +508,10 @@ final class LmdbOperatorFeedbackStats {
 		String fingerprint = tupleExprKey(node);
 		if (fingerprint == null) {
 			return null;
+		}
+		if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
+			return new OperatorKey(operatorType, fingerprint, pathEndpointMode(node, executionMode), "",
+					sortedBindings(plannerBindingNames(node.getBindingNames())));
 		}
 		if (node instanceof BinaryTupleOperator binary) {
 			Set<String> leftBindings = plannerBindingNames(binary.getLeftArg().getBindingNames());
@@ -488,6 +536,71 @@ final class LmdbOperatorFeedbackStats {
 		return new OperatorKey(operatorType, fingerprint, "", "", "");
 	}
 
+	private String pathEndpointMode(TupleExpr node, String executionMode) {
+		String mode = normalizePathEndpointMode(executionMode);
+		if (mode != null) {
+			return mode;
+		}
+		mode = normalizePathEndpointMode(node.getStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE));
+		if (mode != null) {
+			return mode;
+		}
+		mode = normalizePathEndpointMode(node.getStringMetricPlanned(OPTIMIZER_PATH_ENDPOINT_MODE));
+		if (mode != null) {
+			return mode;
+		}
+		mode = constantEndpointMode(node);
+		return mode == null ? PATH_MODE_UNKNOWN : mode;
+	}
+
+	private String constantEndpointMode(TupleExpr node) {
+		Var subjectVar = null;
+		Var objectVar = null;
+		if (node instanceof ArbitraryLengthPath path) {
+			subjectVar = path.getSubjectVar();
+			objectVar = path.getObjectVar();
+		} else if (node instanceof ZeroLengthPath path) {
+			subjectVar = path.getSubjectVar();
+			objectVar = path.getObjectVar();
+		}
+		boolean subjectBound = subjectVar != null && subjectVar.hasValue();
+		boolean objectBound = objectVar != null && objectVar.hasValue();
+		if (subjectBound && objectBound) {
+			return PATH_MODE_BETWEEN;
+		}
+		if (subjectBound) {
+			return PATH_MODE_FROM_START;
+		}
+		if (objectBound) {
+			return PATH_MODE_TO_END;
+		}
+		return null;
+	}
+
+	private static String normalizePathEndpointMode(String mode) {
+		if (mode == null || mode.isBlank()) {
+			return null;
+		}
+		String normalized = mode.trim();
+		String normalizedLower = normalized.toLowerCase(java.util.Locale.ROOT);
+		if (PATH_MODE_FULL_SCAN.equals(normalized) || "unbound".equals(normalizedLower)) {
+			return PATH_MODE_FULL_SCAN;
+		}
+		if (PATH_MODE_FROM_START.equals(normalized) || "start".equals(normalizedLower)
+				|| "subject".equals(normalizedLower) || normalizedLower.contains("bound-subject")) {
+			return PATH_MODE_FROM_START;
+		}
+		if (PATH_MODE_TO_END.equals(normalized) || "end".equals(normalizedLower)
+				|| "object".equals(normalizedLower) || normalizedLower.contains("bound-object")) {
+			return PATH_MODE_TO_END;
+		}
+		if (PATH_MODE_BETWEEN.equals(normalized) || "both".equals(normalizedLower)
+				|| normalizedLower.contains("bound-pair") || normalizedLower.contains("both-endpoints")) {
+			return PATH_MODE_BETWEEN;
+		}
+		return normalized;
+	}
+
 	private String tupleExprKey(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return "<null>";
@@ -499,6 +612,22 @@ final class LmdbOperatorFeedbackStats {
 					+ "|p=" + varKey(statementPattern.getPredicateVar())
 					+ "|o=" + varKey(statementPattern.getObjectVar())
 					+ "|c=" + varKey(statementPattern.getContextVar());
+		}
+		if (tupleExpr instanceof ArbitraryLengthPath path) {
+			return "ALP" + scope
+					+ "|pathScope=" + path.getScope()
+					+ "|min=" + path.getMinLength()
+					+ "|s=" + varKey(path.getSubjectVar())
+					+ "|path=" + tupleExprKey(path.getPathExpression())
+					+ "|o=" + varKey(path.getObjectVar())
+					+ "|c=" + varKey(path.getContextVar());
+		}
+		if (tupleExpr instanceof ZeroLengthPath path) {
+			return "ZLP" + scope
+					+ "|pathScope=" + path.getScope()
+					+ "|s=" + varKey(path.getSubjectVar())
+					+ "|o=" + varKey(path.getObjectVar())
+					+ "|c=" + varKey(path.getContextVar());
 		}
 		if (tupleExpr instanceof BindingSetAssignment assignment) {
 			return "BSA" + scope + "|names=" + sortedBindings(plannerBindingNames(assignment.getBindingNames()))
@@ -629,6 +758,16 @@ final class LmdbOperatorFeedbackStats {
 
 	private static double longMetric(QueryModelNode node, String metricName) {
 		return node == null ? Double.NaN : node.getLongMetricActual(metricName);
+	}
+
+	private static double maxFinite(double... values) {
+		double max = Double.NaN;
+		for (double value : values) {
+			if (isFiniteNonNegative(value)) {
+				max = Double.isNaN(max) ? value : Math.max(max, value);
+			}
+		}
+		return max;
 	}
 
 	private static double finiteOr(double preferred, double fallback) {
@@ -804,6 +943,9 @@ final class LmdbOperatorFeedbackStats {
 			} else if (node instanceof Difference) {
 				learnedRows = estimateDifferenceRows(leftRows, baseRows);
 				learnedWorkRows = estimateByWorkRatio(baseWorkRows);
+			} else if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
+				learnedRows = estimateByOperatorRatio(baseRows);
+				learnedWorkRows = estimateByWorkRatio(baseWorkRows);
 			} else {
 				return null;
 			}
@@ -820,7 +962,11 @@ final class LmdbOperatorFeedbackStats {
 			double rowQErrorMean = qErrorMean(rowQErrorSum, rowQErrorSampleCount);
 			double workQErrorMean = qErrorMean(workQErrorSum, workQErrorSampleCount);
 			double uncertaintyRows = uncertaintyRows(rows, workRows, rowQErrorMax, workQErrorMax, confidence);
-			String source = node instanceof LeftJoin ? LEARNED_LEFT_JOIN_SURFACE : LEARNED_OPERATOR;
+			String source = node instanceof LeftJoin
+					? LEARNED_LEFT_JOIN_SURFACE
+					: node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+							? LEARNED_PROPERTY_PATH
+							: LEARNED_OPERATOR;
 			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence,
 					feedbackKey, rowQErrorMean, finiteQErrorMax(rowQErrorMax), workQErrorMean,
 					finiteQErrorMax(workQErrorMax), uncertaintyRows);
