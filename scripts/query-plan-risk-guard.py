@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 
@@ -106,15 +107,36 @@ def scan_lines(lines: Iterable[str], max_cartesian_work_rows: float) -> list[Pla
 	return risks
 
 
-def stream_stdin(max_cartesian_work_rows: float) -> int:
+def compact_evidence_line(line: str) -> bool:
+	stripped = line.strip()
+	if not stripped:
+		return False
+	if stripped.startswith("#") or stripped.startswith("Result"):
+		return True
+	if "Benchmark" in stripped:
+		return True
+	return any(unit in stripped for unit in (" ops/", " ns/op", " us/op", " ms/op", " s/op", " B/op"))
+
+
+def stream_stdin(max_cartesian_work_rows: float, compact: bool, log_path: str | None) -> int:
 	detector = PlanRiskDetector(max_cartesian_work_rows)
-	for line in sys.stdin:
-		sys.stdout.write(line)
-		sys.stdout.flush()
-		risks = detector.feed(line)
-		if risks:
-			report_risks(risks)
-			return EXIT_PLAN_RISK
+	if log_path:
+		Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+	log_file = open(log_path, "w", encoding="utf-8", errors="replace") if log_path else None
+	try:
+		for line in sys.stdin:
+			if log_file is not None:
+				log_file.write(line)
+			if not compact or compact_evidence_line(line):
+				sys.stdout.write(line)
+				sys.stdout.flush()
+			risks = detector.feed(line)
+			if risks:
+				report_risks(risks)
+				return EXIT_PLAN_RISK
+	finally:
+		if log_file is not None:
+			log_file.close()
 	return 0
 
 
@@ -166,10 +188,12 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument("--self-test", action="store_true")
+	parser.add_argument("--compact", action="store_true", help="Print only JMH evidence and risk lines to stdout.")
+	parser.add_argument("--log", help="Write the full benchmark stream to this file.")
 	args = parser.parse_args(argv)
 	if args.self_test:
 		return self_test()
-	return stream_stdin(max_cartesian_from_env())
+	return stream_stdin(max_cartesian_from_env(), args.compact, args.log)
 
 
 if __name__ == "__main__":

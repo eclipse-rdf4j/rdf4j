@@ -23,7 +23,7 @@ Run Maven tests with repeatable commands and useful failure pointers.
 2. `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick install`
 3. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify` (optionally with `-DskipITs -Dtest=...` for unit tests or `-PskipUnitTests -Dit.test=...` for Failsafe ITs)
 
-Root install output is stored in `maven-build.log`. Verify logs use `logs/mvnf/*-verify.log` when retained or when tests fail.
+Root install output is stored in `maven-build.log`. Verify logs use `logs/mvnf/*-verify.log` when retained or when tests fail. By default, successful Maven phases do not print their output tail; `mvnf` prints compact Surefire/Failsafe report totals and report paths instead. Failed phases still print the retained Maven tail plus compact report failure details.
 
 For manual root clean installs, use the same install flags and log filter:
 
@@ -50,7 +50,10 @@ If the test run fails, it prints the list of Surefire/Failsafe report files unde
 - `--module <path>`: Force the module when the test class name exists in multiple modules.
 - `--it`: Treat the selector as an integration test and pass it via `-Dit.test=...`.
 - `--no-offline`: Run Maven commands without `-o` (useful if offline resolution fails).
-- `--stream`: Stream verify output live; install output is filtered to errors plus the reactor summary while the full install log is kept in `maven-build.log`.
+- `--stream`: Stream verify output live for hang/no-progress debugging; install output is filtered to errors plus the reactor summary while the full install log is kept in `maven-build.log`.
+- `--tail-on-success`: Print Maven output tails on successful phases too (old verbose behavior).
+- `--retain-logs`: Keep verify logs on success.
+- `-- <maven args>`: Append extra Maven flags/profiles to the verify command while preserving selector behavior.
 
 ## LMDB regression speedup note
 
@@ -59,6 +62,6 @@ For LMDB theme regression/snapshot tests, enable persistent prepared stores to s
 - `-Drdf4j.lmdb.themeRegression.persistentStore.enabled=true`
 - Optional root override: `-Drdf4j.lmdb.themeRegression.persistentStore.root=persistent-lmdb-theme-store`
 
-`mvnf.py` does not forward arbitrary `-D` flags today, so use direct Maven for this mode, for example:
+Pass extra Maven flags after `--`, for example:
 
-- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbThemeQueryRegressionTest#socialMediaFiveCycleInterleavesValuesWithFollowsEdges -Drdf4j.lmdb.themeRegression.persistentStore.enabled=true test`
+- `python3 .codex/skills/mvnf/scripts/mvnf.py LmdbThemeQueryRegressionTest#socialMediaFiveCycleInterleavesValuesWithFollowsEdges --module core/sail/lmdb -- -Drdf4j.lmdb.themeRegression.persistentStore.enabled=true`
