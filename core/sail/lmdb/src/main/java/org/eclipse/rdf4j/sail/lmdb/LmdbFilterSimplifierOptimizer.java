@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -80,6 +81,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN = "optimizer.guaranteeAnchorPredicateDomain";
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN = "optimizer.guaranteeAnchorDomain";
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_ROLE = "optimizer.guaranteeAnchorRole";
+	private static final int FINITE_FILTER_RELATION_ROW_LIMIT = 256;
 	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
 			CoreDatatype.XSD.INTEGER,
 			CoreDatatype.XSD.LONG,
@@ -251,6 +253,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		for (ValueExpr condition : conditions) {
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition,
 					LmdbFilterSimplifierOptimizer::isPotentialSmallLiteralAnchorValue);
+			BindingSetAssignment materializedAnchor = null;
+			if (anchor == null) {
+				materializedAnchor = materializedValuesVariableFilterAnchor(filter, condition, assignmentValues,
+						assuredBindings);
+			}
 			if (shouldDropMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
 					removableMandatoryOptionalAnchorBindings)) {
 				continue;
@@ -264,8 +271,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 				continue;
 			}
-			BindingSetAssignment materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor,
-					assuredBindings);
+			if (materializedAnchor == null) {
+				materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings);
+			}
 			if (materializedAnchor != null) {
 				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
 					anchors.add(materializedAnchor);
@@ -538,75 +546,227 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		valuesByBinding.computeIfAbsent(bindingName, ignored -> new LinkedHashSet<>()).addAll(values);
 	}
 
-	private static BindingSetAssignment valuesVariableFilterAnchor(ValueExpr condition,
-			Map<String, LinkedHashSet<Value>> assignmentValues) {
-		if (assignmentValues.isEmpty()) {
+	private static BindingSetAssignment materializedValuesVariableFilterAnchor(Filter filter, ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues, Set<String> assuredBindings) {
+		BindingSetAssignment relation = finiteFilterRelation(condition, assignmentValues);
+		if (relation == null) {
 			return null;
 		}
-
-		ValuesVariableAnchorCollector collector = new ValuesVariableAnchorCollector(assignmentValues);
-		if (!collectValuesVariableAnchor(condition, collector) || collector.bindingName == null
-				|| collector.values.isEmpty() || assignmentValues.containsKey(collector.bindingName)) {
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (!relation.getBindingNames().containsAll(conditionVars)) {
 			return null;
 		}
-		return LmdbJoinPlanSupport.smallLiteralFilterAnchor(collector.bindingName, collector.values);
+		Set<String> extensionNames = extensionElementNames(filter.getArg());
+		for (String bindingName : relation.getBindingNames()) {
+			if (!assuredBindings.contains(bindingName)
+					|| extensionNames.contains(bindingName)
+					|| containsVariableScopeChangeBinding(filter.getArg(), bindingName)
+					|| LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)) {
+				return null;
+			}
+		}
+		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION, "finite-filter-relation");
+		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=1, selected=finite-filter-relation");
+		return relation;
 	}
 
-	private static boolean collectValuesVariableAnchor(ValueExpr condition,
-			ValuesVariableAnchorCollector collector) {
-		if (condition instanceof Or or) {
-			return collectValuesVariableAnchor(or.getLeftArg(), collector)
-					&& collectValuesVariableAnchor(or.getRightArg(), collector);
+	private static BindingSetAssignment finiteFilterRelation(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (conditionVars.size() < 2 || assignmentValues.isEmpty()) {
+			return null;
 		}
-		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			return collectValuesVariableAnchorValue(compare.getLeftArg(), compare.getRightArg(), collector);
+		LinkedHashMap<String, LinkedHashSet<Value>> domains = new LinkedHashMap<>();
+		boolean hasFiniteInput = false;
+		for (String bindingName : conditionVars) {
+			LinkedHashSet<Value> values = assignmentValues.get(bindingName);
+			if (values != null && !values.isEmpty()) {
+				domains.put(bindingName, new LinkedHashSet<>(values));
+				hasFiniteInput = true;
+			} else {
+				domains.put(bindingName, new LinkedHashSet<>());
+			}
+		}
+		if (!hasFiniteInput || !collectFiniteConditionDomains(condition, domains)) {
+			return null;
+		}
+		for (LinkedHashSet<Value> values : domains.values()) {
+			if (values.isEmpty()) {
+				return null;
+			}
+		}
+		List<String> bindingNames = new ArrayList<>(domains.keySet());
+		List<BindingSet> rows = new ArrayList<>();
+		enumerateFiniteFilterRows(condition, domains, bindingNames, 0, new LinkedHashMap<>(), rows);
+		if (rows.isEmpty() || rows.size() > FINITE_FILTER_RELATION_ROW_LIMIT) {
+			return null;
+		}
+		BindingSetAssignment relation = new BindingSetAssignment();
+		relation.setBindingNames(new LinkedHashSet<>(bindingNames));
+		relation.setBindingSets(rows);
+		return relation;
+	}
+
+	private static boolean collectFiniteConditionDomains(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> domains) {
+		if (condition instanceof Or or) {
+			return collectFiniteConditionDomains(or.getLeftArg(), domains)
+					&& collectFiniteConditionDomains(or.getRightArg(), domains);
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			return collectFiniteEqualityDomains(compare.getLeftArg(), compare.getRightArg(), domains);
 		}
 		if (condition instanceof SameTerm sameTerm) {
-			return collectValuesVariableAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
+			return collectFiniteEqualityDomains(sameTerm.getLeftArg(), sameTerm.getRightArg(), domains);
 		}
 		if (condition instanceof ListMemberOperator list) {
-			return collectValuesVariableAnchorValues(list, collector);
+			return collectFiniteListMemberDomains(list, domains);
 		}
 		return false;
 	}
 
-	private static boolean collectValuesVariableAnchorValues(ListMemberOperator list,
-			ValuesVariableAnchorCollector collector) {
+	private static boolean collectFiniteListMemberDomains(ListMemberOperator list,
+			Map<String, LinkedHashSet<Value>> domains) {
 		List<ValueExpr> arguments = list.getArguments();
-		if (arguments.size() < 2 || !(arguments.get(0)instanceof Var filterVar)) {
+		if (arguments.size() < 2 || !(arguments.getFirst()instanceof Var filterVar)) {
+			return false;
+		}
+		String filterName = unboundName(filterVar);
+		LinkedHashSet<Value> filterDomain = domains.get(filterName);
+		if (filterName == null || filterDomain == null) {
 			return false;
 		}
 		for (int i = 1; i < arguments.size(); i++) {
 			ValueExpr argument = arguments.get(i);
 			if (argument instanceof ValueConstant valueConstant) {
-				if (!collector.addLiteral(filterVar, valueConstant.getValue())) {
+				if (!addFiniteDomainValue(filterDomain, valueConstant.getValue())) {
 					return false;
 				}
-				continue;
-			}
-			if (argument instanceof Var memberVar) {
-				if (!collector.addMemberValues(filterVar, memberVar)) {
+			} else if (argument instanceof Var memberVar) {
+				LinkedHashSet<Value> memberDomain = finiteDomain(memberVar, domains);
+				if (memberDomain == null || memberDomain.isEmpty()) {
 					return false;
 				}
-				continue;
+				filterDomain.addAll(memberDomain);
+			} else {
+				return false;
 			}
-			return false;
 		}
 		return true;
 	}
 
-	private static boolean collectValuesVariableAnchorValue(ValueExpr leftArg, ValueExpr rightArg,
-			ValuesVariableAnchorCollector collector) {
-		if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
-			return collector.addLiteral((Var) leftArg, ((ValueConstant) rightArg).getValue());
+	private static boolean collectFiniteEqualityDomains(ValueExpr leftArg, ValueExpr rightArg,
+			Map<String, LinkedHashSet<Value>> domains) {
+		if (leftArg instanceof Var leftVar && rightArg instanceof ValueConstant valueConstant) {
+			return addFiniteDomainValue(finiteDomain(leftVar, domains), valueConstant.getValue());
 		}
-		if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
-			return collector.addLiteral((Var) rightArg, ((ValueConstant) leftArg).getValue());
+		if (rightArg instanceof Var rightVar && leftArg instanceof ValueConstant valueConstant) {
+			return addFiniteDomainValue(finiteDomain(rightVar, domains), valueConstant.getValue());
 		}
-		if (leftArg instanceof Var && rightArg instanceof Var) {
-			return collector.addVariableEquality((Var) leftArg, (Var) rightArg);
+		if (leftArg instanceof Var leftVar && rightArg instanceof Var rightVar) {
+			LinkedHashSet<Value> leftDomain = finiteDomain(leftVar, domains);
+			LinkedHashSet<Value> rightDomain = finiteDomain(rightVar, domains);
+			if (leftDomain == null || rightDomain == null) {
+				return false;
+			}
+			if (leftDomain.isEmpty() && rightDomain.isEmpty()) {
+				return false;
+			}
+			if (leftDomain.isEmpty()) {
+				leftDomain.addAll(rightDomain);
+			} else if (rightDomain.isEmpty()) {
+				rightDomain.addAll(leftDomain);
+			}
+			return true;
 		}
 		return false;
+	}
+
+	private static LinkedHashSet<Value> finiteDomain(Var var, Map<String, LinkedHashSet<Value>> domains) {
+		String bindingName = unboundName(var);
+		return bindingName == null ? null : domains.get(bindingName);
+	}
+
+	private static boolean addFiniteDomainValue(LinkedHashSet<Value> domain, Value value) {
+		if (domain == null || !LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
+			return false;
+		}
+		domain.add(value);
+		return true;
+	}
+
+	private static void enumerateFiniteFilterRows(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> domains, List<String> bindingNames, int index,
+			Map<String, Value> current, List<BindingSet> rows) {
+		if (rows.size() > FINITE_FILTER_RELATION_ROW_LIMIT) {
+			return;
+		}
+		if (index == bindingNames.size()) {
+			if (finiteConditionMatches(condition, current)) {
+				MapBindingSet row = new MapBindingSet(bindingNames.size());
+				for (String bindingName : bindingNames) {
+					row.addBinding(bindingName, current.get(bindingName));
+				}
+				rows.add(row);
+			}
+			return;
+		}
+		String bindingName = bindingNames.get(index);
+		for (Value value : domains.get(bindingName)) {
+			current.put(bindingName, value);
+			enumerateFiniteFilterRows(condition, domains, bindingNames, index + 1, current, rows);
+			current.remove(bindingName);
+		}
+	}
+
+	private static boolean finiteConditionMatches(ValueExpr condition, Map<String, Value> row) {
+		if (condition instanceof Or or) {
+			return finiteConditionMatches(or.getLeftArg(), row) || finiteConditionMatches(or.getRightArg(), row);
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			return sameFiniteValue(compare.getLeftArg(), compare.getRightArg(), row);
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return sameFiniteValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), row);
+		}
+		if (condition instanceof ListMemberOperator list) {
+			return finiteListMemberMatches(list, row);
+		}
+		return false;
+	}
+
+	private static boolean finiteListMemberMatches(ListMemberOperator list, Map<String, Value> row) {
+		List<ValueExpr> arguments = list.getArguments();
+		if (arguments.size() < 2) {
+			return false;
+		}
+		Value filterValue = finiteValue(arguments.getFirst(), row);
+		if (filterValue == null) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			Value memberValue = finiteValue(arguments.get(i), row);
+			if (filterValue.equals(memberValue)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean sameFiniteValue(ValueExpr leftArg, ValueExpr rightArg, Map<String, Value> row) {
+		Value leftValue = finiteValue(leftArg, row);
+		Value rightValue = finiteValue(rightArg, row);
+		return leftValue != null && leftValue.equals(rightValue);
+	}
+
+	private static Value finiteValue(ValueExpr expression, Map<String, Value> row) {
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		if (expression instanceof Var var) {
+			return row.get(unboundName(var));
+		}
+		return null;
 	}
 
 	private BindingSetAssignment materializedSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
@@ -1207,77 +1367,4 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private record IdKindCandidate(String bindingName, LmdbValueIdFilter.Kind kind) {
 	}
 
-	private static final class ValuesVariableAnchorCollector {
-		private final Map<String, LinkedHashSet<Value>> assignmentValues;
-		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
-		private String bindingName;
-
-		private ValuesVariableAnchorCollector(Map<String, LinkedHashSet<Value>> assignmentValues) {
-			this.assignmentValues = assignmentValues;
-		}
-
-		private boolean addLiteral(Var filterVar, Value value) {
-			String nextBindingName = unboundName(filterVar);
-			if (nextBindingName == null || !LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
-				return false;
-			}
-			if (!setBindingName(nextBindingName)) {
-				return false;
-			}
-			values.add(value);
-			return true;
-		}
-
-		private boolean addMemberValues(Var filterVar, Var memberVar) {
-			String bindingName = unboundName(filterVar);
-			String memberName = unboundName(memberVar);
-			if (bindingName == null || memberName == null) {
-				return false;
-			}
-			return addValues(bindingName, assignmentValues.get(memberName));
-		}
-
-		private boolean addVariableEquality(Var left, Var right) {
-			String leftName = unboundName(left);
-			String rightName = unboundName(right);
-			LinkedHashSet<Value> leftValues = assignmentValues.get(leftName);
-			LinkedHashSet<Value> rightValues = assignmentValues.get(rightName);
-			if (leftValues != null && rightValues == null) {
-				return addValues(rightName, leftValues);
-			}
-			if (rightValues != null && leftValues == null) {
-				return addValues(leftName, rightValues);
-			}
-			return false;
-		}
-
-		private boolean addValues(String nextBindingName, LinkedHashSet<Value> nextValues) {
-			if (nextBindingName == null || nextValues == null || nextValues.isEmpty()
-					|| !setBindingName(nextBindingName)) {
-				return false;
-			}
-			for (Value value : nextValues) {
-				if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
-					return false;
-				}
-			}
-			values.addAll(nextValues);
-			return true;
-		}
-
-		private boolean setBindingName(String nextBindingName) {
-			if (bindingName == null) {
-				bindingName = nextBindingName;
-				return true;
-			}
-			return bindingName.equals(nextBindingName);
-		}
-
-		private static String unboundName(Var var) {
-			if (var == null || var.hasValue()) {
-				return null;
-			}
-			return var.getName();
-		}
-	}
 }

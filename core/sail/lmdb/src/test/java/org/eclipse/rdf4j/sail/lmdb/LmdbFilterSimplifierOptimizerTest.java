@@ -14,11 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -57,7 +57,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(30)
 class LmdbFilterSimplifierOptimizerTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
@@ -148,7 +150,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void keepsFilterEqualToValuesVariableWithoutPlannerAnchor() {
+	void precomputesValuesVariableEqualityDisjunctionAsFiniteAnchor() {
 		BindingSetAssignment targetValues = values("target", "Author 1", "Author 2");
 		StatementPattern authorName = statementPatternWithPredicate("author", "http://example.com/theme/library/name",
 				"authorName");
@@ -161,16 +163,17 @@ class LmdbFilterSimplifierOptimizerTest {
 						RdfTermDomain.classify(VF.createLiteral("Author 1"))))
 								.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
-		BindingSetAssignment retainedTargetValues = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
-		assertIterableEquals(Set.of("target"), retainedTargetValues.getBindingNames());
-		assertFalse(containsBindingSetAssignmentFor(retainedFilter.getArg(), "authorName"));
-		assertInstanceOf(Or.class, retainedFilter.getCondition());
+		BindingSetAssignment precomputedFilter = findBindingSetAssignmentFor(root.getArg(), "authorName", "target")
+				.orElseThrow(() -> new AssertionError("Expected precomputed authorName/target filter relation: "
+						+ root.getArg()));
+		assertEquals(4, countBindingSets(precomputedFilter),
+				"The rewritten filter should keep both target-specific equality rows and literal fallback rows");
+		assertFalse(containsFilter(root.getArg()),
+				"Fully precomputed finite disjunction should remove the runtime filter before planning");
 	}
 
 	@Test
-	void keepsFilterInValuesVariableWithoutPlannerAnchor() {
+	void precomputesValuesVariableInFilterAsFiniteAnchor() {
 		BindingSetAssignment targetValues = values("target", "Author 1", "Author 2");
 		StatementPattern authorName = statementPatternWithPredicate("author", "http://example.com/theme/library/name",
 				"authorName");
@@ -183,16 +186,17 @@ class LmdbFilterSimplifierOptimizerTest {
 						RdfTermDomain.classify(VF.createLiteral("Author 1"))))
 								.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
-		BindingSetAssignment retainedTargetValues = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
-		assertIterableEquals(Set.of("target"), retainedTargetValues.getBindingNames());
-		assertFalse(containsBindingSetAssignmentFor(retainedFilter.getArg(), "authorName"));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		BindingSetAssignment precomputedFilter = findBindingSetAssignmentFor(root.getArg(), "authorName", "target")
+				.orElseThrow(() -> new AssertionError("Expected precomputed authorName/target IN relation: "
+						+ root.getArg()));
+		assertEquals(4, countBindingSets(precomputedFilter),
+				"The rewritten IN filter should keep both target-specific rows and literal fallback rows");
+		assertFalse(containsFilter(root.getArg()),
+				"Fully precomputed finite IN filter should remove the runtime filter before planning");
 	}
 
 	@Test
-	void keepsUnknownValuesVariableFilterAsFilterOnly() {
+	void precomputesValuesVariableDisjunctionWithoutPredicateGuarantee() {
 		BindingSetAssignment targetValues = values("target", "Substation 1", "Substation 2");
 		StatementPattern name = statementPatternWithPredicate("entity", "http://example.com/theme/grid/name",
 				"name");
@@ -202,11 +206,12 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
-		BindingSetAssignment retainedTargetValues = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
-		assertIterableEquals(Set.of("target"), retainedTargetValues.getBindingNames());
-		assertFalse(containsBindingSetAssignmentFor(retainedFilter.getArg(), "name"));
+		BindingSetAssignment precomputedFilter = findBindingSetAssignmentFor(root.getArg(), "name", "target")
+				.orElseThrow(() -> new AssertionError("Expected precomputed name/target filter relation: "
+						+ root.getArg()));
+		assertEquals(4, countBindingSets(precomputedFilter),
+				"Finite target/literal equality filters are safe to materialize without predicate guarantees");
+		assertFalse(containsFilter(root.getArg()));
 	}
 
 	@Test
@@ -774,6 +779,34 @@ class LmdbFilterSimplifierOptimizerTest {
 					|| containsBindingSetAssignmentFor(join.getRightArg(), bindingName);
 		}
 		return false;
+	}
+
+	private static Optional<BindingSetAssignment> findBindingSetAssignmentFor(TupleExpr tupleExpr,
+			String... bindingNames) {
+		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.getBindingNames().containsAll(Set.of(bindingNames))) {
+			return Optional.of(assignment);
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return findBindingSetAssignmentFor(filter.getArg(), bindingNames);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			Optional<BindingSetAssignment> left = findBindingSetAssignmentFor(leftJoin.getLeftArg(), bindingNames);
+			return left.isPresent() ? left : findBindingSetAssignmentFor(leftJoin.getRightArg(), bindingNames);
+		}
+		if (tupleExpr instanceof Join join) {
+			Optional<BindingSetAssignment> left = findBindingSetAssignmentFor(join.getLeftArg(), bindingNames);
+			return left.isPresent() ? left : findBindingSetAssignmentFor(join.getRightArg(), bindingNames);
+		}
+		return Optional.empty();
+	}
+
+	private static int countBindingSets(BindingSetAssignment assignment) {
+		int count = 0;
+		for (BindingSet ignored : assignment.getBindingSets()) {
+			count++;
+		}
+		return count;
 	}
 
 	private static boolean containsLeftJoin(TupleExpr tupleExpr) {

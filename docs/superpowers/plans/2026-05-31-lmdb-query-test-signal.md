@@ -20,6 +20,7 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 - [x] (2026-05-31 05:51+02:00) Committed and pushed the green curation increment.
 - [x] (2026-05-31 06:40+02:00) Added generated rare-literal/filter-rewrite invariants and curated the runaway AAS q2 exact-plan test.
 - [x] (2026-05-31 06:49+02:00) Added finite BindingSet estimator edge cases for duplicate equality and overlapping disjunction filters.
+- [x] (2026-05-31 07:46+02:00) Fixed finite values-variable filter precomputation and enabled the matching LMDB query invariant.
 
 ## Surprises & Discoveries
 
@@ -58,6 +59,12 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 
 - Observation: Query-evaluation finite relation estimator tests now cover duplicate-preserving equality and OR overlap counting without touching LMDB or exact plan text.
   Evidence: `SketchBasedJoinEstimatorFiniteRelationTest` passed 3/3 focused tests, and the full `core/queryalgebra/evaluation` module passed 894/894.
+
+- Observation: The LMDB filter simplifier could recognize small literal anchors, but values-variable equality/list filters were left as runtime filters even when a bounded finite relation could represent them exactly.
+  Evidence: the new `precomputesValuesVariableEqualityDisjunctionAsFiniteAnchor` test first failed with root type `Filter`; after the fix, `LmdbFilterSimplifierOptimizerTest` passed 33/33 with 10 intentionally skipped tests.
+
+- Observation: The disabled `valuesVariableObjectFilterChoosesFiniteAnchorOption` query-level test is now a high-signal invariant, not a full-plan snapshot.
+  Evidence: enabling it produced a green `LmdbIndexAwareJoinOrderPlanningTest` class run with 24 tests, 0 failures, 11 skipped.
 
 ## Decision Log
 
@@ -111,6 +118,10 @@ Validation:
   - `tests=3, failures=0, errors=0, skipped=0, time=0.136s`
 - `python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/evaluation --retain-logs`
   - `tests=894, failures=0, errors=0, skipped=0, time=13.812s`
+- `python3 .codex/skills/mvnf/scripts/mvnf.py LmdbFilterSimplifierOptimizerTest --module core/sail/lmdb --retain-logs`
+  - `tests=33, failures=0, errors=0, skipped=10, time=0.073s`
+- `python3 .codex/skills/mvnf/scripts/mvnf.py LmdbIndexAwareJoinOrderPlanningTest --module core/sail/lmdb --retain-logs`
+  - `tests=24, failures=0, errors=0, skipped=11, time=19.557s`
 
 ## Context and Orientation
 

@@ -61,8 +61,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+@Timeout(120)
 class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -780,7 +782,6 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
 	void valuesVariableObjectFilterChoosesFiniteAnchorOption(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
