@@ -19,6 +19,7 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 - [x] (2026-05-31 05:34+02:00) Verified green selected suites: LMDB `1524/0/0/154`, query-evaluation `892/0/0/0`.
 - [x] (2026-05-31 05:51+02:00) Committed and pushed the green curation increment.
 - [x] (2026-05-31 06:40+02:00) Added generated rare-literal/filter-rewrite invariants and curated the runaway AAS q2 exact-plan test.
+- [x] (2026-05-31 06:49+02:00) Added finite BindingSet estimator edge cases for duplicate equality and overlapping disjunction filters.
 
 ## Surprises & Discoveries
 
@@ -54,6 +55,9 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 
 - Observation: The finite-values synthetic engineering fixture can cover estimator and rewrite invariants without exact plan snapshots.
   Evidence: `generatedRareLiteralEstimateNeverExceedsPredicateScan` asserts fixed-object estimates never exceed predicate scans, and `generatedNameFilterRewritePreservesRowsAndUsesBoundObjectLookup` asserts FILTER/VALUES result equality plus bounded `[P, O]` direct lookup.
+
+- Observation: Query-evaluation finite relation estimator tests now cover duplicate-preserving equality and OR overlap counting without touching LMDB or exact plan text.
+  Evidence: `SketchBasedJoinEstimatorFiniteRelationTest` passed 3/3 focused tests, and the full `core/queryalgebra/evaluation` module passed 894/894.
 
 ## Decision Log
 
@@ -103,6 +107,10 @@ Validation:
   - exited 0
 - `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -DskipITs -Dtest=LmdbFiniteValuesJoinSurfacePlanningTest,LmdbAASQuery2CascadesHypergraphPlanningTest,LmdbAASPropertyProjectionPlanningTest verify`
   - `tests=8, failures=0, errors=0, skipped=1`
+- `python3 .codex/skills/mvnf/scripts/mvnf.py SketchBasedJoinEstimatorFiniteRelationTest --module core/queryalgebra/evaluation --retain-logs`
+  - `tests=3, failures=0, errors=0, skipped=0, time=0.136s`
+- `python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/evaluation --retain-logs`
+  - `tests=894, failures=0, errors=0, skipped=0, time=13.812s`
 
 ## Context and Orientation
 

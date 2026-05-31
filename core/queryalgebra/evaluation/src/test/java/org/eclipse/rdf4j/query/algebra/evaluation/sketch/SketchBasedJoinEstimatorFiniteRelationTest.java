@@ -24,10 +24,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(30)
 class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -50,16 +53,58 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 				"Finite BindingSetAssignment inequality filters should be counted exactly");
 	}
 
+	@Test
+	void finiteBindingSetEqualityFilterCountsDuplicateMatchingRows() {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+				SketchBasedJoinEstimator.Config.defaults());
+		BindingSetAssignment assignment = finiteDomainRows(
+				row("a", "urn:user:1", "b", "urn:user:1"),
+				row("a", "urn:user:1", "b", "urn:user:1"),
+				row("a", "urn:user:1", "b", "urn:user:2"),
+				row("a", "urn:user:2", "b", "urn:user:2"),
+				row("a", "urn:user:3", "b", "urn:user:4"));
+		Filter filter = new Filter(assignment, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.EQ));
+
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(filter, Set.of());
+
+		assertEquals(3.0d, estimate.outputRows(), 0.0d,
+				"Finite BindingSetAssignment equality filters should preserve duplicate matching rows");
+	}
+
+	@Test
+	void finiteBindingSetDisjunctionCountsRowsOnceWhenConditionsOverlap() {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+				SketchBasedJoinEstimator.Config.defaults());
+		BindingSetAssignment assignment = finiteDomainRows(
+				row("a", "urn:user:1", "b", "urn:user:1", "c", "urn:user:1"),
+				row("a", "urn:user:2", "b", "urn:user:2", "c", "urn:user:3"),
+				row("a", "urn:user:4", "b", "urn:user:5", "c", "urn:user:5"),
+				row("a", "urn:user:6", "b", "urn:user:7", "c", "urn:user:8"));
+		Filter filter = new Filter(assignment,
+				new Or(
+						new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.EQ),
+						new Compare(Var.of("b"), Var.of("c"), Compare.CompareOp.EQ)));
+
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(filter, Set.of());
+
+		assertEquals(3.0d, estimate.outputRows(), 0.0d,
+				"Overlapping finite disjunction filters should count matching rows once, not once per matching branch");
+	}
+
 	private static BindingSetAssignment finiteDomainRows(BindingSet... rows) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(rows));
 		return assignment;
 	}
 
-	private static QueryBindingSet row(String leftName, String leftIri, String rightName, String rightIri) {
+	private static QueryBindingSet row(String... nameValuePairs) {
+		if (nameValuePairs.length % 2 != 0) {
+			throw new IllegalArgumentException("Rows must be specified as name/value pairs");
+		}
 		QueryBindingSet row = new QueryBindingSet();
-		row.addBinding(leftName, iri(leftIri));
-		row.addBinding(rightName, iri(rightIri));
+		for (int i = 0; i < nameValuePairs.length; i += 2) {
+			row.addBinding(nameValuePairs[i], iri(nameValuePairs[i + 1]));
+		}
 		return row;
 	}
 
