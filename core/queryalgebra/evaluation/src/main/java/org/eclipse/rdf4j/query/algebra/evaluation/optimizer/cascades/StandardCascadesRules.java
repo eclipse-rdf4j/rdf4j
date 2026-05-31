@@ -158,13 +158,13 @@ public final class StandardCascadesRules {
 			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
 			RuleProof proof = proof(semanticScope(goal), Set.of("conditionVarsVisible", "noScopeChange"),
 					"filter condition can be evaluated at one join input");
-			if (join.getLeftArg().getBindingNames().containsAll(conditionNames)) {
+			if (join.getLeftArg().getAssuredBindingNames().containsAll(conditionNames)) {
 				return List.of(RuleApplication.transformation(expression.groupId(),
 						new Join(new Filter(join.getLeftArg().clone(), filter.getCondition().clone()),
 								join.getRightArg().clone()),
 						proof));
 			}
-			if (join.getRightArg().getBindingNames().containsAll(conditionNames)) {
+			if (join.getRightArg().getAssuredBindingNames().containsAll(conditionNames)) {
 				return List.of(RuleApplication.transformation(expression.groupId(),
 						new Join(join.getLeftArg().clone(), new Filter(join.getRightArg().clone(),
 								filter.getCondition().clone())),
@@ -197,9 +197,9 @@ public final class StandardCascadesRules {
 			List<ValueExpr> residualConjuncts = new ArrayList<>();
 			for (ValueExpr conjunct : splitConjuncts(filter.getCondition())) {
 				Set<String> names = plannerNames(VarNameCollector.process(conjunct));
-				if (join.getLeftArg().getBindingNames().containsAll(names)) {
+				if (join.getLeftArg().getAssuredBindingNames().containsAll(names)) {
 					leftConjuncts.add(conjunct);
-				} else if (join.getRightArg().getBindingNames().containsAll(names)) {
+				} else if (join.getRightArg().getAssuredBindingNames().containsAll(names)) {
 					rightConjuncts.add(conjunct);
 				} else {
 					residualConjuncts.add(conjunct);
@@ -230,6 +230,36 @@ public final class StandardCascadesRules {
 		}
 	}
 
+	public static final class FilterDifferencePushdownRule extends AbstractRule {
+		public FilterDifferencePushdownRule() {
+			super("filter-minus-pushdown", RuleKind.TRANSFORMATION, 87);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& filter.getArg() instanceof Difference
+					&& !TupleExprs.isVariableScopeChange(filter);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			Difference difference = (Difference) filter.getArg();
+			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
+			if (!difference.getLeftArg().getAssuredBindingNames().containsAll(conditionNames)) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal), Set.of("conditionVarsLeftSafe", "minusSelectionPushdown"),
+					"FILTER depending only on assured MINUS-left variables can be evaluated before MINUS");
+			return List.of(RuleApplication.transformation(expression.groupId(),
+					new Difference(new Filter(difference.getLeftArg().clone(), filter.getCondition().clone()),
+							difference.getRightArg().clone()),
+					proof));
+		}
+	}
+
 	public static final class FilterUnionDistributionRule extends AbstractRule {
 		public FilterUnionDistributionRule() {
 			super("filter-union-distribution", RuleKind.TRANSFORMATION, 78);
@@ -248,15 +278,10 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter filter = (Filter) expression.tupleExpr();
 			Union union = (Union) filter.getArg();
-			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
-			if (!union.getLeftArg().getBindingNames().containsAll(conditionNames)
-					|| !union.getRightArg().getBindingNames().containsAll(conditionNames)) {
-				return List.of();
-			}
 			Union alternative = new Union(new Filter(union.getLeftArg().clone(), filter.getCondition().clone()),
 					new Filter(union.getRightArg().clone(), filter.getCondition().clone()));
-			RuleProof proof = proof(semanticScope(goal), Set.of("filterVisibleInBothBranches", "bagUnion"),
-					"filter distributes over a non-scope-changing UNION as a costed alternative");
+			RuleProof proof = proof(semanticScope(goal), Set.of("filterBranchLocal", "bagUnion"),
+					"filter distributes over UNION; each branch evaluates the condition with the same branch-local unbound variables it would expose after UNION");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
@@ -313,16 +338,11 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Projection projection = (Projection) expression.tupleExpr();
 			Union union = (Union) projection.getArg();
-			Set<String> projected = plannerNames(projection.getBindingNames());
-			if (!union.getLeftArg().getBindingNames().containsAll(projected)
-					|| !union.getRightArg().getBindingNames().containsAll(projected)) {
-				return List.of();
-			}
 			Union alternative = new Union(
 					new Projection(union.getLeftArg().clone(), projection.getProjectionElemList().clone()),
 					new Projection(union.getRightArg().clone(), projection.getProjectionElemList().clone()));
-			RuleProof proof = proof(semanticScope(goal), Set.of("projectionVisibleInBothBranches", "bagUnion"),
-					"projection distributes over a non-scope-changing UNION as a costed alternative");
+			RuleProof proof = proof(semanticScope(goal), Set.of("projectionBranchLocal", "bagUnion"),
+					"projection distributes over UNION; variables missing from one branch remain unbound in that branch");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}

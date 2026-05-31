@@ -85,6 +85,7 @@ final class LmdbCascadesRuleProvider {
 				.add(new StandardCascadesRules.JoinAssociativityRule())
 				.add(new StandardCascadesRules.FilterPushdownRule())
 				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
+				.add(new StandardCascadesRules.FilterDifferencePushdownRule())
 				.add(new StandardCascadesRules.FilterUnionDistributionRule())
 				.add(new LmdbNullRejectingOptionalJoinRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())

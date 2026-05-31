@@ -35,6 +35,7 @@ public final class RuleRegistry {
 				.add(new StandardCascadesRules.JoinAssociativityRule())
 				.add(new StandardCascadesRules.FilterPushdownRule())
 				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
+				.add(new StandardCascadesRules.FilterDifferencePushdownRule())
 				.add(new StandardCascadesRules.FilterUnionDistributionRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())

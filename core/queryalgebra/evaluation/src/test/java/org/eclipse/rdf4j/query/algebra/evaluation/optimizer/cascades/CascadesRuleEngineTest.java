@@ -41,7 +41,9 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(30)
 class CascadesRuleEngineTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
@@ -157,27 +159,55 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
-	void filterUnionDistributionRequiresConditionInBothBranches() {
+	void filterUnionDistributionAllowsBranchLocalUnboundConditionVars() {
 		Union safeUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "o"));
-		Union unsafeUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "other"));
+		Union branchLocalUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "other"));
 
 		assertTrue(apply(new StandardCascadesRules.FilterUnionDistributionRule(),
 				new Filter(safeUnion, new Bound(new Var("o")))).stream()
 						.anyMatch(application -> application.alternative() instanceof Union));
 		assertTrue(apply(new StandardCascadesRules.FilterUnionDistributionRule(),
-				new Filter(unsafeUnion, new Bound(new Var("o")))).isEmpty());
+				new Filter(branchLocalUnion, new Bound(new Var("o")))).stream()
+						.anyMatch(application -> application.alternative() instanceof Union),
+				"Filtering each UNION branch is safe even when a branch leaves the condition variable unbound");
 	}
 
 	@Test
-	void projectionUnionDistributionRequiresProjectedVarsInBothBranches() {
+	void projectionUnionDistributionAllowsBranchLocalUnboundProjectedVars() {
 		Union safeUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "o"));
-		Union unsafeUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "other"));
+		Union branchLocalUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "other"));
 
 		assertTrue(apply(new StandardCascadesRules.ProjectionUnionDistributionRule(),
 				new Projection(safeUnion, projection("o"))).stream()
 						.anyMatch(application -> application.alternative() instanceof Union));
 		assertTrue(apply(new StandardCascadesRules.ProjectionUnionDistributionRule(),
-				new Projection(unsafeUnion, projection("o"))).isEmpty());
+				new Projection(branchLocalUnion, projection("o"))).stream()
+						.anyMatch(application -> application.alternative() instanceof Union),
+				"Projection over UNION remains safe when a branch leaves the projected variable unbound");
+	}
+
+	@Test
+	void filterJoinPushdownDoesNotUseNullableUnionBindings() {
+		Union nullableLeft = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "x"));
+		Join join = new Join(nullableLeft, pattern("o", "p3", "z"));
+		Filter filter = new Filter(join, new Bound(new Var("o")));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.FilterPushdownRule(), filter);
+
+		assertFalse(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Join alternative
+						&& alternative.getLeftArg() instanceof Filter),
+				"A filter cannot be pushed to a join input that only maybe binds the filter variable");
+	}
+
+	@Test
+	void filterDifferencePushdownUsesOnlyAssuredLeftVariables() {
+		Difference difference = new Difference(pattern("s", "p1", "o"), pattern("s", "p2", "x"));
+		Filter filter = new Filter(difference, new Bound(new Var("o")));
+
+		assertTrue(apply(new StandardCascadesRules.FilterDifferencePushdownRule(), filter).stream()
+				.anyMatch(application -> application.alternative()instanceof Difference alternative
+						&& alternative.getLeftArg() instanceof Filter));
 	}
 
 	@Test
