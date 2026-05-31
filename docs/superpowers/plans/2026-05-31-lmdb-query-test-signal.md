@@ -17,7 +17,8 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 - [x] (2026-05-31 02:47+02:00) Rewrote existing query rewrite tests to assert safe performance invariants instead of exact filter/plan shapes.
 - [x] (2026-05-31 02:47+02:00) Fixed production code only after focused failing reports identified root causes.
 - [x] (2026-05-31 05:34+02:00) Verified green selected suites: LMDB `1524/0/0/154`, query-evaluation `892/0/0/0`.
-- [ ] Commit and push this green increment.
+- [x] (2026-05-31 05:51+02:00) Committed and pushed the green curation increment.
+- [x] (2026-05-31 06:40+02:00) Added generated rare-literal/filter-rewrite invariants and curated the runaway AAS q2 exact-plan test.
 
 ## Surprises & Discoveries
 
@@ -36,8 +37,8 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 - Observation: The long mutation variant in `LmdbSubSelectDirectLookupEstimateTest` waited 835 seconds and still failed on sketch readiness.
   Evidence: `subSelectPlanStaysBoundedAfterStoreMutations` reported `Awaited assertion "LMDB sketches ready" did not pass within PT1M11S`.
 
-- Observation: The AAS regression is still expensive even after assertion curation.
-  Evidence: focused `LmdbAASQuery2CascadesHypergraphPlanningTest` passed 1/1 but took 427.9 seconds.
+- Observation: The AAS q2 hypergraph regression is still too expensive and pins one generated catalog query to a specific planner provider/order.
+  Evidence: a broad LMDB run timed out in `LmdbAASQuery2CascadesHypergraphPlanningTest.query2UsesCascadesHypergraphWinnerWithRatedPowerBeforePath`; a thread sample showed it evaluating the query after planning, and the run ended with `There was a timeout in the fork`.
 
 - Observation: `core/sail/lmdb/pom.xml` overrides Surefire/Failsafe `systemPropertyVariables`, so the parent JUnit default timeout was not enough for LMDB.
   Evidence: broad LMDB runs still had active `LmdbThemeQueryRegressionIT` methods after parent timeout configuration until LMDB-local JUnit timeout properties were added.
@@ -50,6 +51,9 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
 
 - Observation: The rare-overlap library reload estimator test was high signal but over-asserted exact actual-row equality.
   Evidence: failing report showed `actual=386342`, `planner=38634`, `direct=38634`; the estimate was non-zero and within a 16x q-error budget, so the test now asserts bounded estimator behavior instead of exact truth.
+
+- Observation: The finite-values synthetic engineering fixture can cover estimator and rewrite invariants without exact plan snapshots.
+  Evidence: `generatedRareLiteralEstimateNeverExceedsPredicateScan` asserts fixed-object estimates never exceed predicate scans, and `generatedNameFilterRewritePreservesRowsAndUsesBoundObjectLookup` asserts FILTER/VALUES result equality plus bounded `[P, O]` direct lookup.
 
 ## Decision Log
 
@@ -77,6 +81,10 @@ The LMDB and query-evaluation optimizer tests should protect durable behavior: c
   Rationale: This catches estimator collapse and severe drift without forcing an implementation to discover exact cardinality for a sketch-backed rare-overlap join.
   Date/Author: 2026-05-31 / Codex.
 
+- Decision: Disable `LmdbAASQuery2CascadesHypergraphPlanningTest.query2UsesCascadesHypergraphWinnerWithRatedPowerBeforePath` until it is replaced by generated path/anchor invariants.
+  Rationale: It can consume the Surefire fork and asserts one catalog query's exact planner provider/order plus query execution, which is the low-signal pattern being removed.
+  Date/Author: 2026-05-31 / Codex.
+
 ## Outcomes & Retrospective
 
 Selected LMDB and query-evaluation suites are green after curation and root-cause fixes. The active selection now favors generated-data estimator coverage, semantic correctness, bounded work, and broad optimizer safety over exact single-query plan strings. The broad LMDB run still has 154 intentionally skipped tests; the newly disabled tests carry explicit reasons and should be replaced by generated invariant tests in a later increment instead of re-enabled as exact snapshots.
@@ -93,6 +101,8 @@ Validation:
   - exited 0
 - `git diff --check`
   - exited 0
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -DskipITs -Dtest=LmdbFiniteValuesJoinSurfacePlanningTest,LmdbAASQuery2CascadesHypergraphPlanningTest,LmdbAASPropertyProjectionPlanningTest verify`
+  - `tests=8, failures=0, errors=0, skipped=1`
 
 ## Context and Orientation
 

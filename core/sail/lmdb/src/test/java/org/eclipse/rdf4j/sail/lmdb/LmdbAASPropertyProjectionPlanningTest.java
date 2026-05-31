@@ -34,8 +34,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+@Timeout(60)
 class LmdbAASPropertyProjectionPlanningTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();

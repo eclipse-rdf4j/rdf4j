@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -38,15 +39,20 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+@Timeout(60)
 class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -104,6 +110,90 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 							+ "expectedSurfaceRows="
 							+ expectedSurfaceRows + ", metrics=" + partOfStep.getStringMetrics()
 							+ partOfStep.getDoubleMetrics() + ", stepWork=" + partOfStep.getStepWorkRows());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void generatedRareLiteralEstimateNeverExceedsPredicateScan(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticEngineeringAssemblies(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			StatementPattern predicateScan = new StatementPattern(Var.of("assembly"),
+					Var.of("namePredicate", ENG_NAME), Var.of("assemblyName"));
+			StatementPattern rareLiteralLookup = new StatementPattern(Var.of("assembly"),
+					Var.of("namePredicate", ENG_NAME), Var.of("assemblyName", VF.createLiteral("Assembly 1")));
+
+			double scanRows = statistics.getCardinality(predicateScan);
+			double literalRows = statistics.getCardinality(rareLiteralLookup);
+			assertTrue(Double.isFinite(scanRows) && scanRows >= ASSEMBLY_COUNT,
+					"The generated name predicate scan should expose a finite base surface. scanRows=" + scanRows
+							+ ", literalRows=" + literalRows);
+			assertTrue(Double.isFinite(literalRows) && literalRows > 0.0d,
+					"The generated rare literal lookup should have positive finite evidence. scanRows=" + scanRows
+							+ ", literalRows=" + literalRows);
+			assertTrue(literalRows <= scanRows,
+					"A fixed object literal must never estimate more rows than scanning the same predicate. scanRows="
+							+ scanRows + ", literalRows=" + literalRows);
+			assertTrue(literalRows <= ASSEMBLY_COUNT * 2.0d,
+					"The rare generated literal should stay near its observed singleton surface. scanRows=" + scanRows
+							+ ", literalRows=" + literalRows);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void generatedNameFilterRewritePreservesRowsAndUsesBoundObjectLookup(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticEngineeringAssemblies(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String filterQuery = engineeringAssemblyNameFilterQuery();
+				String valuesQuery = engineeringAssemblyNameValuesQuery();
+				long filterRows = countRows(connection, filterQuery);
+				long valuesRows = countRows(connection, valuesQuery);
+				assertEquals(ASSEMBLY_COUNT, filterRows,
+						"The generated FILTER query should return the selected assemblies");
+				assertEquals(valuesRows, filterRows,
+						"The finite FILTER rewrite must preserve the rows produced by the equivalent VALUES query");
+
+				Explanation explanation = connection.prepareTupleQuery(filterQuery)
+						.explain(Explanation.Level.Optimized);
+				StatementPattern namePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), ENG_NAME,
+						"assemblyName");
+				assertTrue(namePattern != null,
+						"Expected the optimized FILTER query to retain the generated name lookup. plan="
+								+ explanation);
+
+				double plannedAccessRows = namePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+				assertEquals("directLookup",
+						namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+						"A finite generated literal domain should use direct index lookup instead of a predicate scan. "
+								+ "metrics=" + namePattern);
+				assertEquals("[P, O]",
+						namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+						"A finite generated literal domain should bind predicate and object for the name lookup. "
+								+ "metrics=" + namePattern);
+				assertTrue(Double.isFinite(plannedAccessRows) && plannedAccessRows > 0.0d
+						&& plannedAccessRows <= ASSEMBLY_COUNT * 2.0d,
+						"The generated FILTER rewrite should keep planned access near the selected object literals. "
+								+ "plannedAccessRows=" + plannedAccessRows + ", metrics=" + namePattern);
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -367,6 +457,49 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static String engineeringAssemblyNameFilterQuery() {
+		return "SELECT ?assembly WHERE {\n"
+				+ "  ?assembly <" + ENG_NAME.stringValue() + "> ?assemblyName .\n"
+				+ "  FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))\n"
+				+ "}";
+	}
+
+	private static String engineeringAssemblyNameValuesQuery() {
+		return "SELECT ?assembly WHERE {\n"
+				+ "  VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }\n"
+				+ "  ?assembly <" + ENG_NAME.stringValue() + "> ?assemblyName .\n"
+				+ "}";
+	}
+
+	private static long countRows(SailRepositoryConnection connection, String query) {
+		try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			long count = 0L;
+			while (result.hasNext()) {
+				result.next();
+				count++;
+			}
+			return count;
+		}
+	}
+
+	private static StatementPattern findStatementPattern(TupleExpr optimized, IRI predicate, String objectBindingName) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty()
+						&& node.getPredicateVar() != null
+						&& predicate.equals(node.getPredicateVar().getValue())
+						&& node.getObjectVar() != null
+						&& objectBindingName.equals(node.getObjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
