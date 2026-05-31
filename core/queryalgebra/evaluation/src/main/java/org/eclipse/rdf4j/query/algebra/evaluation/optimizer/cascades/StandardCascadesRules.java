@@ -373,6 +373,9 @@ public final class StandardCascadesRules {
 					Set.of("innerJoin", "bagUnion", "scopePreserved", "finiteBindingsDisjointFromBranchBinds"),
 					"finite bindings distribute into a scope-changing UNION when they do not overlap branch-local "
 							+ "BIND/VALUES outputs");
+			RuleProof nestedScopedFiniteProof = proof(semanticScope(goal),
+					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedFiniteBindingsDisjointFromBranchBinds"),
+					"nested finite bindings distribute into a scope-changing UNION while residual joins remain outside");
 			if (join.getLeftArg()instanceof Union union) {
 				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getRightArg(),
 						union)) {
@@ -380,6 +383,12 @@ public final class StandardCascadesRules {
 							unionLike(union, new Join(union.getLeftArg().clone(), join.getRightArg().clone()),
 									new Join(union.getRightArg().clone(), join.getRightArg().clone())),
 							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
+				} else if (union.isVariableScopeChange()) {
+					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getRightArg(), false);
+					if (alternative != null) {
+						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
+								nestedScopedFiniteProof));
+					}
 				}
 			}
 			if (join.getRightArg()instanceof Union union) {
@@ -389,6 +398,52 @@ public final class StandardCascadesRules {
 							unionLike(union, new Join(join.getLeftArg().clone(), union.getLeftArg().clone()),
 									new Join(join.getLeftArg().clone(), union.getRightArg().clone())),
 							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
+				} else if (union.isVariableScopeChange()) {
+					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getLeftArg(), true);
+					if (alternative != null) {
+						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
+								nestedScopedFiniteProof));
+					}
+				}
+			}
+			return applications;
+		}
+	}
+
+	public static final class FiniteBindingsExtensionPushdownRule extends AbstractRule {
+		public FiniteBindingsExtensionPushdownRule() {
+			super("finite-bindings-extension-pushdown", RuleKind.TRANSFORMATION, 59);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical() || !(expression.tupleExpr()instanceof Join join) || barrier(join)) {
+				return false;
+			}
+			return join.getLeftArg() instanceof BindingSetAssignment && join.getRightArg() instanceof Extension
+					|| join.getLeftArg() instanceof Extension && join.getRightArg() instanceof BindingSetAssignment;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Join join = (Join) expression.tupleExpr();
+			List<RuleApplication> applications = new ArrayList<>(2);
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("scopePreserved", "finiteBindingsDisjointFromExtensionBinds", "extensionArgBindsValues"),
+					"finite bindings can move into a scope-changing Extension when they constrain variables already "
+							+ "bound by the Extension argument and do not overlap BIND outputs");
+			if (join.getLeftArg()instanceof BindingSetAssignment assignment
+					&& join.getRightArg()instanceof Extension extension) {
+				TupleExpr alternative = finiteBindingsExtensionAlternative(assignment, extension);
+				if (alternative != null) {
+					applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+				}
+			}
+			if (join.getLeftArg()instanceof Extension extension
+					&& join.getRightArg()instanceof BindingSetAssignment assignment) {
+				TupleExpr alternative = finiteBindingsExtensionAlternative(assignment, extension);
+				if (alternative != null) {
+					applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
 				}
 			}
 			return applications;
@@ -602,6 +657,124 @@ public final class StandardCascadesRules {
 			}
 		}
 		return true;
+	}
+
+	private static TupleExpr nestedFiniteScopedUnionAlternative(Union union, TupleExpr pushedSide,
+			boolean pushedSideIsLeft) {
+		ExtractedFiniteBinding extracted = extractFiniteBindingForScopedUnion(pushedSide, union);
+		if (extracted == null || extracted.residual == null) {
+			return null;
+		}
+		BindingSetAssignment finite = extracted.finite;
+		Union distributed = pushedSideIsLeft
+				? unionLike(union, new Join(finite.clone(), union.getLeftArg().clone()),
+						new Join(finite.clone(), union.getRightArg().clone()))
+				: unionLike(union, new Join(union.getLeftArg().clone(), finite.clone()),
+						new Join(union.getRightArg().clone(), finite.clone()));
+		return pushedSideIsLeft ? new Join(extracted.residual, distributed) : new Join(distributed, extracted.residual);
+	}
+
+	private static ExtractedFiniteBinding extractFiniteBindingForScopedUnion(TupleExpr tupleExpr, Union union) {
+		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& canExtractFiniteBindingsIntoScopedUnion(assignment, union)) {
+			return new ExtractedFiniteBinding(assignment.clone(), null);
+		}
+		if (!(tupleExpr instanceof Join join)
+				|| barrier(join)
+				|| barrier(join.getLeftArg())
+				|| barrier(join.getRightArg())) {
+			return null;
+		}
+		ExtractedFiniteBinding left = extractFiniteBindingForScopedUnion(join.getLeftArg(), union);
+		if (left != null) {
+			return new ExtractedFiniteBinding(left.finite, joinOrSingle(left.residual, join.getRightArg().clone()));
+		}
+		ExtractedFiniteBinding right = extractFiniteBindingForScopedUnion(join.getRightArg(), union);
+		if (right != null) {
+			return new ExtractedFiniteBinding(right.finite, joinOrSingle(join.getLeftArg().clone(), right.residual));
+		}
+		return null;
+	}
+
+	private static boolean canExtractFiniteBindingsIntoScopedUnion(BindingSetAssignment assignment, Union union) {
+		if (!canPushFiniteBindingsIntoScopedUnion(assignment, union)) {
+			return false;
+		}
+		Set<String> pushedNames = plannerNames(assignment.getBindingNames());
+		Set<String> unionNames = plannerNames(union.getBindingNames());
+		for (String name : pushedNames) {
+			if (unionNames.contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static TupleExpr joinOrSingle(TupleExpr left, TupleExpr right) {
+		if (left == null) {
+			return right;
+		}
+		if (right == null) {
+			return left;
+		}
+		return new Join(left, right);
+	}
+
+	private static TupleExpr finiteBindingsExtensionAlternative(BindingSetAssignment finite, Extension extension) {
+		if (!canPushFiniteBindingsIntoScopeChangingExtension(finite, extension)) {
+			return null;
+		}
+		Extension alternative = new Extension(new Join(finite.clone(), extension.getArg().clone()),
+				extension.getElements()
+						.stream()
+						.map(element -> element.clone())
+						.toList());
+		alternative.setVariableScopeChange(extension.isVariableScopeChange());
+		return alternative;
+	}
+
+	private static boolean canPushFiniteBindingsIntoScopeChangingExtension(BindingSetAssignment finite,
+			Extension extension) {
+		if (finite == null || extension == null || !extension.isVariableScopeChange() || extension.getArg() == null) {
+			return false;
+		}
+		Set<String> finiteNames = plannerNames(finite.getBindingNames());
+		if (finiteNames.isEmpty()) {
+			return false;
+		}
+		if (!plannerNames(extension.getArg().getBindingNames()).containsAll(finiteNames)) {
+			return false;
+		}
+		for (String finiteName : finiteNames) {
+			if (extensionBindNames(extension).contains(finiteName)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Set<String> extensionBindNames(Extension extension) {
+		Set<String> names = new HashSet<>();
+		if (extension == null) {
+			return names;
+		}
+		for (var element : extension.getElements()) {
+			String name = element.getName();
+			if (name != null && !name.startsWith("_const_")) {
+				names.add(name);
+			}
+		}
+		return names;
+	}
+
+	private static final class ExtractedFiniteBinding {
+		private final BindingSetAssignment finite;
+		private final TupleExpr residual;
+
+		private ExtractedFiniteBinding(BindingSetAssignment finite, TupleExpr residual) {
+			this.finite = finite;
+			this.residual = residual;
+		}
 	}
 
 	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {

@@ -23,7 +23,9 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -46,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisti
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbCascadesConnectedRuleAdmissibilityTest {
@@ -184,6 +187,27 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 						+ "for a later expensive ?prop endpoint: " + orderedFactors);
 	}
 
+	@Test
+	void connectedPlannerBuildsIndependentFiniteAnchorsBeforeBridgeLookup() {
+		BindingSetAssignment users = values("u", VF.createIRI("urn:user:7"), VF.createIRI("urn:user:8"));
+		BindingSetAssignment names = values("optName", VF.createLiteral("user7"), VF.createLiteral("user8"));
+		StatementPattern nameLookup = new StatementPattern(new Var("u"), new Var("name", P1), new Var("optName"));
+		TupleExpr island = new Join(new Join(users, nameLookup), names);
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(island, Set.of(),
+				new FiniteAnchorBridgeStatistics(), new FiniteAnchorBridgeStatistics());
+
+		assertTrue(plan.isPresent());
+		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
+		int userAnchorIndex = factorIndex(orderedFactors, "u");
+		int nameAnchorIndex = factorIndex(orderedFactors, "optName");
+		int nameLookupIndex = statementPatternIndex(orderedFactors, "u", "optName");
+		assertTrue(userAnchorIndex >= 0 && nameAnchorIndex >= 0 && nameLookupIndex >= 0,
+				() -> "Expected both finite anchors and the bridge lookup in the plan: " + orderedFactors);
+		assertTrue(userAnchorIndex < nameLookupIndex && nameAnchorIndex < nameLookupIndex,
+				() -> "The bridge lookup should see both finite anchors before it is costed: " + orderedFactors);
+	}
+
 	private static void restoreLegacyOpaqueJoinProviderProperty(String previous) {
 		if (previous == null) {
 			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
@@ -236,6 +260,37 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		}
 	}
 
+	private static final class FiniteAnchorBridgeStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return estimateRows(expr, Set.of());
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			double rows = estimateRows(factor, currentlyBoundVars);
+			return Optional.of(new FactorCostEstimate(rows, rows));
+		}
+
+		private static double estimateRows(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (factor instanceof BindingSetAssignment) {
+				return 2.0d;
+			}
+			Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
+			if (factor instanceof StatementPattern pattern && "optName".equals(pattern.getObjectVar().getName())) {
+				if (boundVars.contains("u") && boundVars.contains("optName")) {
+					return 1.0d;
+				}
+				if (boundVars.contains("u") || boundVars.contains("optName")) {
+					return 100.0d;
+				}
+				return 10_000.0d;
+			}
+			return 10.0d;
+		}
+	}
+
 	private static final class RuleSelectionStatistics extends EvaluationStatistics
 			implements JoinOrderPlanner, JoinFactorCostModel, RdfStatisticsProvider {
 
@@ -278,6 +333,41 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 			projectionElemList.addElement(new ProjectionElem(name));
 		}
 		return new Projection(arg, projectionElemList);
+	}
+
+	private static BindingSetAssignment values(String bindingName, org.eclipse.rdf4j.model.Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (org.eclipse.rdf4j.model.Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static int factorIndex(List<TupleExpr> orderedFactors, String bindingName) {
+		for (int i = 0; i < orderedFactors.size(); i++) {
+			TupleExpr factor = orderedFactors.get(i);
+			if (factor instanceof BindingSetAssignment assignment
+					&& assignment.getAssuredBindingNames().contains(bindingName)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int statementPatternIndex(List<TupleExpr> orderedFactors, String subjectName, String objectName) {
+		for (int i = 0; i < orderedFactors.size(); i++) {
+			TupleExpr factor = orderedFactors.get(i);
+			if (factor instanceof StatementPattern pattern
+					&& subjectName.equals(pattern.getSubjectVar().getName())
+					&& objectName.equals(pattern.getObjectVar().getName())) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static TupleExpr constantSubjectRuntimeIslandWithGroundType() {

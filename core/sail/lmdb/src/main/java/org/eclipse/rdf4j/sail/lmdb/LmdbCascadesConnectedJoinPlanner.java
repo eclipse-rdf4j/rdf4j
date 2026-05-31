@@ -20,7 +20,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -58,6 +60,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final String CONNECTED_JOIN_TRACE_METRIC = "optimizer.connectedJoinTrace";
 	private static final int EXACT_DP_FACTOR_LIMIT = 20;
 	private static final int DEFAULT_TRACE_LIMIT = 24_000;
+	private static final int MAX_DISCONNECTED_FINITE_ANCHOR_ROWS = 64;
 
 	private LmdbCascadesConnectedJoinPlanner() {
 	}
@@ -176,8 +179,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 				if ((mask & bit) != 0) {
 					continue;
 				}
-				String extensionRejection = connectedExtensionRejection(factors.get(factorIndex), state.boundVars(),
-						factorVars.get(factorIndex));
+				boolean disconnected = !intersects(state.boundVars(), factorVars.get(factorIndex));
+				String extensionRejection = connectedExtensionRejection(factors, mask, factorIndex, state.boundVars(),
+						factorVars);
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
@@ -187,7 +191,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
-						prefixFactors, costModel, fallbackStatistics, estimationTier);
+						prefixFactors, costModel, fallbackStatistics, estimationTier, disconnected);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
@@ -275,8 +279,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 					}
 					continue;
 				}
+				boolean disconnected = hasPrefix && !intersects(boundVars, factorVars.get(factorIndex));
 				String extensionRejection = hasPrefix
-						? connectedExtensionRejection(factor, boundVars, factorVars.get(factorIndex))
+						? connectedExtensionRejection(factors, maskFor(order), factorIndex, boundVars, factorVars)
 						: null;
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
@@ -287,7 +292,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
-						prefixFactors, costModel, fallbackStatistics, estimationTier);
+						prefixFactors, costModel, fallbackStatistics, estimationTier, disconnected);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("greedy reject order=" + order + " f" + factorIndex
@@ -594,8 +599,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return pathHasBoundEndpoint(factor, initialBoundVars) || !pathHasEndpointBinder;
 	}
 
-	private static String connectedExtensionRejection(TupleExpr candidate, Set<String> prefixVars,
-			Set<String> candidateVars) {
+	private static String connectedExtensionRejection(List<TupleExpr> factors, int prefixMask, int candidateIndex,
+			Set<String> prefixVars, List<Set<String>> factorVars) {
+		TupleExpr candidate = factors.get(candidateIndex);
+		Set<String> candidateVars = factorVars.get(candidateIndex);
 		if (path(candidate)) {
 			if (!pathHasBoundEndpoint(candidate, prefixVars)) {
 				return "path-endpoint-not-bound";
@@ -611,7 +618,45 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (candidateVars == null || candidateVars.isEmpty()) {
 			return "zero-runtime-vars";
 		}
-		return intersects(prefixVars, candidateVars) ? null : "no-shared-vars";
+		if (intersects(prefixVars, candidateVars)) {
+			return null;
+		}
+		return disconnectedFiniteAnchorEnablesBridge(factors, prefixMask, candidateIndex, prefixVars, factorVars)
+				? null
+				: "no-shared-vars";
+	}
+
+	private static boolean disconnectedFiniteAnchorEnablesBridge(List<TupleExpr> factors, int prefixMask,
+			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars) {
+		TupleExpr candidate = factors.get(candidateIndex);
+		if (!(candidate instanceof BindingSetAssignment assignment) || !smallFiniteAssignment(assignment)) {
+			return false;
+		}
+		Set<String> candidateVars = factorVars.get(candidateIndex);
+		for (int i = 0; i < factors.size(); i++) {
+			if (i == candidateIndex || (prefixMask & (1 << i)) != 0) {
+				continue;
+			}
+			Set<String> bridgeVars = factorVars.get(i);
+			if (intersects(prefixVars, bridgeVars) && intersects(candidateVars, bridgeVars)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean smallFiniteAssignment(BindingSetAssignment assignment) {
+		if (assignment == null || assignment.getBindingSets() == null) {
+			return false;
+		}
+		int count = 0;
+		for (BindingSet ignored : assignment.getBindingSets()) {
+			count++;
+			if (count > MAX_DISCONNECTED_FINITE_ANCHOR_ROWS) {
+				return false;
+			}
+		}
+		return count > 0;
 	}
 
 	private static String pathEndpointMode(TupleExpr tupleExpr, Set<String> boundVars) {
@@ -1216,7 +1261,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
 			strings.put(TelemetryMetricNames.PLANNER_ALGORITHM, "CONNECTED_HYPERGRAPH_DP");
-			strings.put("optimizer.connectedEnumeration", zeroVarFactorCount == 0
+			strings.put("optimizer.connectedEnumeration", zeroVarFactorCount == 0 && cartesianWorkRows == 0.0d
 					? CONNECTED_ENUMERATION
 					: RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION);
 			strings.put("optimizer.hypergraphPlanner", algorithm);

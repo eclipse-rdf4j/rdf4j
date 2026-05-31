@@ -136,6 +136,7 @@ class CascadesMemoModelTest {
 		assertTrue(memo.addWinner(key, lowWork, 1, true));
 
 		assertEquals(2, memo.winners(key).size());
+		assertEquals(lowWork, memo.bestWinner(key).orElseThrow());
 	}
 
 	@Test

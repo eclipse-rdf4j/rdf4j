@@ -126,7 +126,7 @@ public final class MemoGroup {
 		private int trimmedCount;
 
 		boolean add(Winner winner, int frontierLimit, boolean exactMode) {
-			int insertionPoint = entries.size();
+			int insertionPoint = 0;
 			for (int i = 0; i < entries.size(); i++) {
 				Winner existing = entries.get(i);
 				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())

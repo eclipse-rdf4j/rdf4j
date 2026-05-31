@@ -436,8 +436,9 @@ run_benchmark_command() {
         mkdir -p "$(dirname "${benchmark_log}")"
         set +e
         "${java_cmd[@]}" 2>&1 | python3 "${guard_script}" --compact --log "${benchmark_log}"
-        local java_status=${PIPESTATUS[0]}
-        local guard_status=${PIPESTATUS[1]}
+        local pipeline_status=("${PIPESTATUS[@]}")
+        local java_status=${pipeline_status[0]:-1}
+        local guard_status=${pipeline_status[1]:-1}
         set -e
 
         if [[ ${guard_status} -ne 0 ]]; then

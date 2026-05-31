@@ -164,6 +164,43 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
+	void scopeChangingUnionBranchJoinIslandsDoNotReceiveOuterBindings() {
+		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
+				"true");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			Join branchA = new Join(
+					new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
+					new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
+			Join branchB = new Join(
+					new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
+					new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
+			Union union = new Union(branchA, branchB);
+			union.setVariableScopeChange(true);
+			OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+					.boundVars(Set.of("line"))
+					.build());
+
+			CascadesCostModel costModel = CascadesCostModel.from(statistics);
+			new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+					.optimize(union, goal);
+
+			assertTrue(statistics.calls.stream()
+					.anyMatch(call -> call.initiallyBoundVars().isEmpty()
+							&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
+					"Scope-changing UNION left branch should be planned without the outer variable: "
+							+ statistics.calls);
+			assertTrue(statistics.calls.stream()
+					.anyMatch(call -> call.initiallyBoundVars().isEmpty()
+							&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
+					"Scope-changing UNION right branch should be planned without the outer variable: "
+							+ statistics.calls);
+		} finally {
+			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
+		}
+	}
+
+	@Test
 	void endpointBoundPathPlanDoesNotSpeculativelyReplanConnectedComplements() {
 		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
 				"true");

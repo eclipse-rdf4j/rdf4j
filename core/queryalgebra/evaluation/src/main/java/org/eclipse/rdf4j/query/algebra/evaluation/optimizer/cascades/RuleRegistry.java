@@ -39,6 +39,7 @@ public final class RuleRegistry {
 				.add(new StandardCascadesRules.FilterUnionDistributionRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
+				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
 				.add(new StandardCascadesRules.MinusAlternativeRule())

@@ -90,6 +90,7 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbNullRejectingOptionalJoinRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
+				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
 				.add(new StandardCascadesRules.MinusAlternativeRule())
@@ -322,19 +323,27 @@ final class LmdbCascadesRuleProvider {
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 					.build();
+			boolean hasBoundedCartesian = connectedPlan.estimate()
+					.doubleMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d) > 0.0d;
+			boolean runtimeConnected = connectedPlan.zeroVarFactorCount() > 0 || hasBoundedCartesian;
 			Set<String> facts = new LinkedHashSet<>();
 			facts.add("cascadesNative");
 			facts.add("hypergraph");
-			facts.add(connectedPlan.zeroVarFactorCount() == 0 ? "connectedOnly" : "runtimeConnected");
+			facts.add(runtimeConnected ? "runtimeConnected" : "connectedOnly");
 			facts.add("legacySketchPlanner=false");
 			facts.add("algorithm=" + connectedPlan.algorithm());
 			facts.add("factors=" + connectedPlan.factorCount());
 			if (connectedPlan.zeroVarFactorCount() > 0) {
 				facts.add("zeroVarFactors=" + connectedPlan.zeroVarFactorCount());
 			}
+			if (hasBoundedCartesian && connectedPlan.zeroVarFactorCount() == 0) {
+				facts.add("finiteAnchorBridgeCartesian");
+			}
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"Cascades implements the runtime-variable component with connected-prefix hypergraph enumeration "
-							+ "and treats zero-variable factors as explicit Cartesian/ground filters; "
+							+ "and treats zero-variable factors and small finite bridge anchors as bounded Cartesian "
+							+ "filters; "
 							+ "it does not delegate to JoinOrderPlanner");
 			return List
 					.of(RuleApplication.opaquePhysical(expression.groupId(), ordered, delivered, connectedPlan.cost(),

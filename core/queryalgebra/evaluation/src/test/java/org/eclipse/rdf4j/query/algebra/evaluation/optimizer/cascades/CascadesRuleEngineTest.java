@@ -260,6 +260,33 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void joinUnionDistributionPushesNestedFiniteBindingsIntoScopedUnion() {
+		BindingSetAssignment users = values("u");
+		TupleExpr nameLookup = new Join(values("optName"), pattern("u", "name", "optName"));
+		TupleExpr left = new Join(users, nameLookup);
+		Union scopedUnion = new Union(
+				new Extension(new Join(pattern("u", "follows", "v"), pattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(pattern("post", "authored", "u"), new ExtensionElem(new Var("post"), "activity")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+
+		Optional<Union> maybeDistributed = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join).stream()
+				.map(RuleApplication::alternative)
+				.map(CascadesRuleEngineTest::findScopedUnion)
+				.flatMap(Optional::stream)
+				.findFirst();
+
+		assertTrue(maybeDistributed.isPresent(),
+				"Expected nested finite VALUES to distribute into a scope-changing UNION as a costed alternative");
+		Union distributed = maybeDistributed.get();
+		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "u"));
+		assertFalse(containsBindingSetAssignment(distributed, "optName"),
+				"Residual finite name bindings should remain outside the scoped UNION");
+	}
+
+	@Test
 	void joinUnionDistributionDoesNotPushFiniteBindingsOverScopedBranchBindOverlap() {
 		BindingSetAssignment activities = values("activity");
 		Union scopedUnion = new Union(
@@ -272,6 +299,43 @@ class CascadesRuleEngineTest {
 
 		assertFalse(applications.stream().anyMatch(application -> application.alternative() instanceof Union),
 				"Do not push a finite binding across a scope-changing UNION branch that locally BINDs the same name");
+	}
+
+	@Test
+	void finiteBindingsPushIntoScopeChangingExtensionWhenBindNamesAreDisjoint() {
+		BindingSetAssignment users = values("u");
+		Extension scopedExtension = new Extension(pattern("post", "authored", "u"),
+				new ExtensionElem(new Var("post"), "activity"));
+		scopedExtension.setVariableScopeChange(true);
+		Join join = new Join(users, scopedExtension);
+
+		List<RuleApplication> applications = applyStandardRules(join);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Extension extension
+						&& extension.isVariableScopeChange()
+						&& containsBindingSetAssignment(extension.getArg(), "u")),
+				"Expected finite VALUES to move into a scope-changing Extension when the Extension does not BIND "
+						+ "the same variable");
+	}
+
+	@Test
+	void finiteBindingsDoNotPushIntoScopeChangingExtensionBindOverlap() {
+		BindingSetAssignment activities = values("activity");
+		Extension scopedExtension = new Extension(pattern("post", "authored", "u"),
+				new ExtensionElem(new Var("post"), "activity"));
+		scopedExtension.setVariableScopeChange(true);
+		Join join = new Join(activities, scopedExtension);
+
+		List<RuleApplication> applications = applyStandardRules(join);
+
+		assertFalse(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Extension extension
+						&& extension.isVariableScopeChange()
+						&& containsBindingSetAssignment(extension.getArg(), "activity")),
+				"Do not push finite VALUES into a scope-changing Extension that BINDs the same variable");
 	}
 
 	@Test
@@ -351,6 +415,19 @@ class CascadesRuleEngineTest {
 		return rule.apply(expression, null, new RuleContext(memo, null, CascadesTelemetry.NO_OP, null));
 	}
 
+	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr) {
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(tupleExpr);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		RuleContext context = new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null);
+		return RuleRegistry.standardLogicalRules()
+				.applicableRules(expression, OptimizationGoal.root(), memo)
+				.stream()
+				.flatMap(rule -> rule.apply(expression, OptimizationGoal.root(), context).stream())
+				.toList();
+	}
+
 	private static ProjectionElemList projection(String... names) {
 		ProjectionElemList list = new ProjectionElemList();
 		for (String name : names) {
@@ -386,6 +463,20 @@ class CascadesRuleEngineTest {
 			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
 		}
 		return false;
+	}
+
+	private static Optional<Union> findScopedUnion(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Union union && union.isVariableScopeChange()) {
+			return Optional.of(union);
+		}
+		if (tupleExpr instanceof Join join) {
+			Optional<Union> left = findScopedUnion(join.getLeftArg());
+			return left.isPresent() ? left : findScopedUnion(join.getRightArg());
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return findScopedUnion(extension.getArg());
+		}
+		return Optional.empty();
 	}
 
 	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr, String bindingName) {

@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -606,12 +607,19 @@ public final class CascadesPlanner {
 	private OptimizationGoal inputGoal(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars,
 			TupleExpr parent, int inputIndex) {
 		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
-		Set<String> boundVars = childBoundVars(safeGoal, input, contextualBoundVars);
+		Set<String> boundVars = externalBindingsVisible(parent, input)
+				? childBoundVars(safeGoal, input, contextualBoundVars)
+				: Set.of();
 		PhysicalProperties required = boundVars.isEmpty()
 				? PhysicalProperties.ANY
 				: PhysicalProperties.builder().boundVars(boundVars).build();
 		OptimizationGoal.RowGoal rowGoal = childRowGoal(safeGoal, parent, inputIndex);
 		return safeGoal.withRequiredProperties(required).withRowGoal(rowGoal);
+	}
+
+	private static boolean externalBindingsVisible(TupleExpr parent, TupleExpr input) {
+		return (parent == null || !TupleExprs.isVariableScopeChange(parent))
+				&& (input == null || !TupleExprs.isVariableScopeChange(input));
 	}
 
 	private OptimizationGoal.RowGoal childRowGoal(OptimizationGoal goal, TupleExpr parent, int inputIndex) {
