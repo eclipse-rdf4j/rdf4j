@@ -19,6 +19,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -136,6 +138,9 @@ public class ThemeQueryBenchmark {
 
 	@Param({ "true" })
 	public boolean sketchEstimatorEnabled;
+
+	@Param({ "Timed" })
+	public String queryExplanationLevel;
 
 	private SailRepository repository;
 	private LmdbStore store;
@@ -242,6 +247,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	public long executeQuery(int maxExecutionTimeSeconds) {
+		long benchmarkResult;
 		try (var connection = repository.getConnection()) {
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
@@ -250,8 +256,13 @@ public class ThemeQueryBenchmark {
 			QueryResultSummary result = evaluateQuery(tupleQuery, expectedCountBindingValue.isPresent());
 			assertExpectedResult(result, expectedCountBindingValue);
 
-			return benchmarkResult(result, expectedCountBindingValue);
+			benchmarkResult = benchmarkResult(result, expectedCountBindingValue);
+		} catch (RuntimeException | Error e) {
+			printBenchmarkExplanation(maxExecutionTimeSeconds, isQueryInterrupted(e), e);
+			throw e;
 		}
+		printBenchmarkExplanation(maxExecutionTimeSeconds, false, null);
+		return benchmarkResult;
 	}
 
 	long executeCountQuery(String queryString, long expectedCountBindingValue, int maxExecutionTimeSeconds) {
@@ -336,6 +347,66 @@ public class ThemeQueryBenchmark {
 			return result.countBindingValue;
 		}
 		return result.rowCount;
+	}
+
+	private void printBenchmarkExplanation(int maxExecutionTimeSeconds, boolean timedOut, Throwable originalFailure) {
+		try {
+			Explanation.Level level = benchmarkExplanationLevel(timedOut);
+			try (var connection = repository.getConnection()) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
+				Explanation explain = tupleQuery.explain(level);
+				System.out.println();
+				System.out.println("### Query Explanation After Benchmark"
+						+ " theme=" + themeName
+						+ " queryIndex=" + z_queryIndex
+						+ " timedOut=" + timedOut
+						+ " level=" + level + " ###");
+				System.out.println(explain);
+				System.out.println();
+			}
+		} catch (RuntimeException | Error e) {
+			if (originalFailure != null) {
+				originalFailure.addSuppressed(e);
+			} else {
+				throw e;
+			}
+		}
+	}
+
+	Explanation.Level benchmarkExplanationLevel(boolean timedOut) {
+		if (timedOut) {
+			return Explanation.Level.Optimized;
+		}
+		return explanationLevel(queryExplanationLevel);
+	}
+
+	static Explanation.Level explanationLevel(String configured) {
+		if (configured == null || configured.isBlank()) {
+			return Explanation.Level.Timed;
+		}
+		String trimmed = configured.trim();
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (level.name().equalsIgnoreCase(trimmed)) {
+				return level;
+			}
+		}
+		try {
+			return Explanation.Level.valueOf(trimmed.toUpperCase(Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			return Explanation.Level.Timed;
+		}
+	}
+
+	private static boolean isQueryInterrupted(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof QueryInterruptedException) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
 	}
 
 	private String queryDescription() {
