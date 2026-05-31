@@ -284,7 +284,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 				new StatementPattern(Var.of("branch"), Var.of("hasName", hasName), Var.of("branchName")));
 	}
 
-	private static org.eclipse.rdf4j.model.Statement st(Resource subject, IRI predicate, Value object) {
+	private static Statement st(Resource subject, IRI predicate, Value object) {
 		return VF.createStatement(subject, predicate, object);
 	}
 

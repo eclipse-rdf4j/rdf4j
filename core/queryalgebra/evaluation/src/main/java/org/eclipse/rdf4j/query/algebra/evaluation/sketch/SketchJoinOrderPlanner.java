@@ -24,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -4009,7 +4010,7 @@ final class SketchJoinOrderPlanner {
 				@Override
 				public String next() {
 					if (remaining == 0L) {
-						throw new java.util.NoSuchElementException();
+						throw new NoSuchElementException();
 					}
 					int bit = Long.numberOfTrailingZeros(remaining);
 					remaining &= remaining - 1L;

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -429,7 +430,7 @@ class CascadesCostModelTest {
 	private static final class TrackingProvider implements RdfStatisticsProvider {
 		private int filterCalls;
 		private int multiPatternCalls;
-		private final List<Set<String>> rightPatternBoundVars = new java.util.ArrayList<>();
+		private final List<Set<String>> rightPatternBoundVars = new ArrayList<>();
 		private final boolean provideMultiPattern;
 		private final double multiPatternRows;
 
@@ -477,7 +478,7 @@ class CascadesCostModelTest {
 	}
 
 	private static final class RecordingFactorCostModel implements JoinFactorCostModel {
-		private final List<EstimationTier> estimationTiers = new java.util.ArrayList<>();
+		private final List<EstimationTier> estimationTiers = new ArrayList<>();
 		private final double outputRows;
 
 		private RecordingFactorCostModel() {

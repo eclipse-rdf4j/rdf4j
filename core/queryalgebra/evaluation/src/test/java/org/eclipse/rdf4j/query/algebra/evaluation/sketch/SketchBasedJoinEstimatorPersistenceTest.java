@@ -35,6 +35,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,6 +56,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import org.apache.datasketches.common.ResizeFactor;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketchBuilder;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -67,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class SketchBasedJoinEstimatorPersistenceTest {
@@ -97,7 +100,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	private static void writeMetadataString(DataOutputStream out, String value) throws Exception {
-		byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
 		out.writeInt(bytes.length);
 		out.write(bytes);
 	}
@@ -1461,7 +1464,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	private static SketchEstimatorPersistenceStore openStoreForTesting(Path directory, int mappedFileLimit,
 			long mappedFileChunkBytes) throws Exception {
 		Method method = SketchEstimatorPersistenceStore.class.getDeclaredMethod("open", Path.class,
-				org.slf4j.Logger.class, int.class, long.class);
+				Logger.class, int.class, long.class);
 		method.setAccessible(true);
 		return (SketchEstimatorPersistenceStore) method.invoke(null, directory,
 				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class), mappedFileLimit,
@@ -1560,9 +1563,9 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		}
 
 		@Override
-		public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends Statement> getStatements(
+		public CloseableIteration<? extends Statement> getStatements(
 				Resource subj, IRI pred, Value obj, Resource... contexts) {
-			return new org.eclipse.rdf4j.common.iteration.CloseableIteration<Statement>() {
+			return new CloseableIteration<Statement>() {
 				private boolean emitted;
 
 				@Override

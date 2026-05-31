@@ -12,18 +12,23 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactFiniteJoinSurfaceRequest;
@@ -138,16 +143,83 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		}
 	}
 
+	private static final long UNBOUND_ID = Long.MIN_VALUE;
+
+// If Long.MIN_VALUE can be a real stored id in your triple store, use a boolean[] bound mask instead.
+
 	private double estimateFiniteJoinSurface(Txn txn, ExactFiniteJoinSurfaceRequest request) throws IOException {
-		List<Map<String, Long>> rows = finiteRowsToIds(request.rows());
+
+		List<Map<String, Value>> inputRows = request.rows();
+		VarSlots slots = buildVarSlots(request, inputRows);
+		List<long[]> converted = new ArrayList<>(inputRows.size());
+		for (Map<String, Value> inputRow : inputRows) {
+			long[] row = newEmptyRow(slots.size());
+			boolean missing = false;
+			for (Map.Entry<String, Value> entry : inputRow.entrySet()) {
+				long id = storedId(entry.getValue());
+				if (id == MISSING_ID) {
+					missing = true;
+					break;
+				}
+				int slot = slots.index(entry.getKey());
+				if (slot >= 0) {
+					row[slot] = id;
+				}
+			}
+			if (!missing) {
+				converted.add(row);
+			}
+		}
+		List<long[]> rows = converted;
 		if (rows.isEmpty()) {
-			trace("finite-empty-values", request, "inputRows=" + request.rows()
-					.size());
+			trace("finite-empty-values", request, "inputRows=" + request.rows().size());
 			return 0.0d;
 		}
-		long rowBudget = request.rowBudget() <= 0L ? CONNECTED_JOIN_MAX_ENUMERATED_ROWS : request.rowBudget();
+		long rowBudget = request.rowBudget() <= 0L
+				? CONNECTED_JOIN_MAX_ENUMERATED_ROWS
+				: request.rowBudget();
+		RowMapView rowView = new RowMapView(slots);
 		for (StatementPattern pattern : request.patterns()) {
-			rows = expandFiniteRows(txn, rows, pattern, rowBudget);
+			List<long[]> result = null;
+			boolean finished = false;
+			List<long[]> output = new ArrayList<>();
+			for (long[] row : rows) {
+				PatternIds ids = patternIds(pattern, rowView.wrap(row));
+				if (ids == null) {
+					finished = true;
+					break;
+				}
+				if (ids.zeroRows()) {
+					continue;
+				}
+				try (RecordIterator records = tripleStore.getTriples(
+						txn,
+						ids.subjectId(),
+						ids.predicateId(),
+						ids.objectId(),
+						ids.contextId(),
+						true)) {
+					long[] quad;
+					while ((quad = records.next()) != null) {
+						long[] merged = merge(row, slots, pattern, quad);
+						if (merged == null) {
+							continue;
+						}
+						output.add(merged);
+						if (output.size() > rowBudget) {
+							finished = true;
+							break;
+						}
+					}
+				}
+				if (finished) {
+					break;
+				}
+			}
+			if (!finished) {
+				result = output;
+			}
+			rows = result;
 			if (rows == null) {
 				trace("finite-budget-exceeded", request, "pattern=" + pattern + ", budget=" + rowBudget);
 				return NO_EXACT_ESTIMATE;
@@ -157,62 +229,234 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 				return 0.0d;
 			}
 		}
-		for (Map<String, Long> row : rows) {
-			if (row.containsKey(request.surfaceVarName())) {
-				return rows.size();
+		int surfaceSlot = slots.index(request.surfaceVarName());
+		if (surfaceSlot >= 0) {
+			for (long[] row : rows) {
+				if (row[surfaceSlot] != UNBOUND_ID) {
+					return rows.size();
+				}
 			}
 		}
 		trace("finite-unsupported", request, "reason=surface-unbound");
 		return UNSUPPORTED;
+
 	}
 
-	private List<Map<String, Long>> finiteRowsToIds(List<Map<String, Value>> rows) throws IOException {
-		List<Map<String, Long>> converted = new ArrayList<>(rows.size());
-		for (Map<String, Value> row : rows) {
-			Map<String, Long> ids = new HashMap<>();
-			boolean missing = false;
-			for (Map.Entry<String, Value> entry : row.entrySet()) {
-				long id = storedId(entry.getValue());
-				if (id == MISSING_ID) {
-					missing = true;
-					break;
-				}
-				ids.put(entry.getKey(), id);
-			}
-			if (!missing) {
-				converted.add(ids);
+	private static long[] newEmptyRow(int size) {
+
+		long[] row = new long[size];
+		Arrays.fill(row, UNBOUND_ID);
+		return row;
+
+	}
+
+	private long[] merge(long[] row, VarSlots slots, StatementPattern pattern, long[] quad) {
+
+		long[] merged = row;
+		merged = addBinding(merged, row, slots, pattern.getSubjectVar(), quad[TripleStore.SUBJ_IDX]);
+		if (merged == null) {
+			return null;
+		}
+		merged = addBinding(merged, row, slots, pattern.getPredicateVar(), quad[TripleStore.PRED_IDX]);
+		if (merged == null) {
+			return null;
+		}
+		merged = addBinding(merged, row, slots, pattern.getObjectVar(), quad[TripleStore.OBJ_IDX]);
+		if (merged == null) {
+			return null;
+		}
+		merged = addBinding(merged, row, slots, pattern.getContextVar(), quad[TripleStore.CONTEXT_IDX]);
+		return merged;
+
+	}
+
+	private long[] addBinding(
+
+			long[] current,
+			long[] original,
+			VarSlots slots,
+			Var var,
+			long id) {
+		if (var == null || var.hasValue()) {
+			return current;
+		}
+		int slot = slots.index(var.getName());
+		if (slot < 0) {
+			return current;
+		}
+		long existing = current[slot];
+		if (existing != UNBOUND_ID) {
+			return existing == id ? current : null;
+		}
+		if (current == original) {
+			current = Arrays.copyOf(original, original.length);
+		}
+		current[slot] = id;
+		return current;
+
+	}
+
+	private static VarSlots buildVarSlots(
+
+			ExactFiniteJoinSurfaceRequest request,
+			List<Map<String, Value>> inputRows) {
+		VarSlots slots = new VarSlots();
+		for (Map<String, Value> row : inputRows) {
+			for (String name : row.keySet()) {
+				slots.add(name);
 			}
 		}
-		return converted;
+		for (StatementPattern pattern : request.patterns()) {
+			addPatternVar(slots, pattern.getSubjectVar());
+			addPatternVar(slots, pattern.getPredicateVar());
+			addPatternVar(slots, pattern.getObjectVar());
+			addPatternVar(slots, pattern.getContextVar());
+		}
+		slots.add(request.surfaceVarName());
+		return slots;
+
 	}
 
-	private List<Map<String, Long>> expandFiniteRows(Txn txn, List<Map<String, Long>> input,
-			StatementPattern pattern, long rowBudget) throws IOException {
-		List<Map<String, Long>> output = new ArrayList<>();
-		for (Map<String, Long> row : input) {
-			PatternIds ids = patternIds(pattern, row);
-			if (ids == null) {
+	private static void addPatternVar(VarSlots slots, Var var) {
+
+		if (var != null && !var.hasValue()) {
+			slots.add(var.getName());
+		}
+
+	}
+
+	private static final class VarSlots {
+
+		private final Map<String, Integer> indexes = new HashMap<>();
+		private final List<String> names = new ArrayList<>();
+
+		int add(String name) {
+			if (name == null) {
+				return -1;
+			}
+			Integer existing = indexes.get(name);
+			if (existing != null) {
+				return existing;
+			}
+			int index = names.size();
+			names.add(name);
+			indexes.put(name, index);
+			return index;
+		}
+
+		int index(String name) {
+			Integer index = indexes.get(name);
+			return index == null ? -1 : index;
+		}
+
+		String name(int index) {
+			return names.get(index);
+		}
+
+		int size() {
+			return names.size();
+		}
+
+	}
+
+	/**
+	 *
+	 * Read-only Map facade over the current long[] row.
+	 *
+	 *
+	 *
+	 * This lets the existing patternIds(pattern, Map<String, Long>) method stay unchanged,
+	 *
+	 * while avoiding one HashMap allocation per intermediate row.
+	 *
+	 */
+
+	private static final class RowMapView extends AbstractMap<String, Long> {
+
+		private final VarSlots slots;
+		private long[] row;
+
+		RowMapView(VarSlots slots) {
+			this.slots = slots;
+		}
+
+		Map<String, Long> wrap(long[] row) {
+			this.row = row;
+			return this;
+		}
+
+		@Override
+		public Long get(Object key) {
+			if (!(key instanceof String) || row == null) {
 				return null;
 			}
-			if (ids.zeroRows()) {
-				continue;
+			int slot = slots.index((String) key);
+			if (slot < 0) {
+				return null;
 			}
-			try (RecordIterator records = tripleStore.getTriples(txn, ids.subjectId(), ids.predicateId(),
-					ids.objectId(), ids.contextId(), true)) {
-				long[] quad;
-				while ((quad = records.next()) != null) {
-					Map<String, Long> merged = mergeBindings(pattern, quad, row);
-					if (merged == null) {
-						continue;
-					}
-					output.add(merged);
-					if (output.size() > rowBudget) {
-						return null;
-					}
-				}
-			}
+			long value = row[slot];
+			return value == UNBOUND_ID ? null : value;
 		}
-		return output;
+
+		@Override
+		public boolean containsKey(Object key) {
+			if (!(key instanceof String) || row == null) {
+				return false;
+			}
+			int slot = slots.index((String) key);
+			return slot >= 0 && row[slot] != UNBOUND_ID;
+		}
+
+		@Override
+		public Set<Map.Entry<String, Long>> entrySet() {
+			final long[] snapshot = row;
+			return new AbstractSet<>() {
+				@Override
+				public Iterator<Map.Entry<String, Long>> iterator() {
+					return new Iterator<>() {
+						private int next = findNext(0);
+
+						@Override
+						public boolean hasNext() {
+							return next < snapshot.length;
+						}
+
+						@Override
+						public Map.Entry<String, Long> next() {
+							if (!hasNext()) {
+								throw new NoSuchElementException();
+							}
+							int current = next;
+							next = findNext(current + 1);
+							return new AbstractMap.SimpleImmutableEntry<>(
+									slots.name(current),
+									snapshot[current]);
+						}
+
+						private int findNext(int start) {
+							for (int i = start; i < snapshot.length; i++) {
+								if (snapshot[i] != UNBOUND_ID) {
+									return i;
+								}
+							}
+							return snapshot.length;
+						}
+					};
+				}
+
+				@Override
+				public int size() {
+					int count = 0;
+					for (long value : snapshot) {
+						if (value != UNBOUND_ID) {
+							count++;
+						}
+					}
+					return count;
+				}
+			};
+		}
+
 	}
 
 	private ConnectedJoinEstimate estimateConnectedJoin(Txn txn, ExactJoinRequest request) throws IOException {

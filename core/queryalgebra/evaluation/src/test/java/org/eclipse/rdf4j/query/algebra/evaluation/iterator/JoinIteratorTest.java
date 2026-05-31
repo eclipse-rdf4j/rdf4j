@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -383,10 +384,10 @@ public class JoinIteratorTest {
 						|| !candidate.getObject().equals(obj)) {
 					continue;
 				}
-				return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+				return new CloseableIteratorIteration<>(
 						List.of(candidate).iterator());
 			}
-			return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+			return new CloseableIteratorIteration<>(
 					List.<Statement>of().iterator());
 		}
 

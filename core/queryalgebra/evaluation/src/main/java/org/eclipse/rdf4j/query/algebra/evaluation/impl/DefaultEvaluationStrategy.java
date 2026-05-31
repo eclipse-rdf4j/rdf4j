@@ -158,6 +158,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -284,7 +285,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+		this.pipeline = new StandardQueryOptimizerPipeline(this,
 				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
@@ -1607,10 +1608,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
 		// Naive implementation that walks over all statements matching (x rdf:type rdf:Statement)
 		// and filter those that do not match the bindings for subject, predicate and object vars (if bound)
-		final org.eclipse.rdf4j.query.algebra.Var subjVar = ref.getSubjectVar();
-		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();
-		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();
-		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();
+		final Var subjVar = ref.getSubjectVar();
+		final Var predVar = ref.getPredicateVar();
+		final Var objVar = ref.getObjectVar();
+		final Var extVar = ref.getExprVar();
 		// whether the TripleSouce support access to RDF star
 		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
 		if (sourceSupportsRdfStar) {

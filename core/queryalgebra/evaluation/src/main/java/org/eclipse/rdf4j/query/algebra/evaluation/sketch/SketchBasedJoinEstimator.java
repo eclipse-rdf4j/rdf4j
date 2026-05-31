@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -475,7 +476,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private final int zeroIntersectionSampleSize;
 	private final SketchStrategy sketchStrategy;
 	private final ChurnSampler churnSampler;
-	private final java.util.concurrent.atomic.AtomicLong approxStoreSize = new java.util.concurrent.atomic.AtomicLong();
+	private final AtomicLong approxStoreSize = new AtomicLong();
 
 	/** Two interchangeable buffers; one of them is always the current snapshot. */
 	private final State bufA, bufB;
@@ -8763,7 +8764,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		boolean samplingEnabled = zeroIntersectionSampleSize > 0;
 		List<Value> sampledRows = samplingEnabled ? new ArrayList<>(zeroIntersectionSampleSize)
 				: Collections.emptyList();
-		java.util.Random sampleRandom = new java.util.Random(mix64(valueFingerprint(sharedVarName)
+		Random sampleRandom = new Random(mix64(valueFingerprint(sharedVarName)
 				^ Double.doubleToLongBits(Math.max(1.0d, zeroIntersectionSkewRatio))
 				^ zeroIntersectionRowBudget));
 		long scannedRows = 0L;
@@ -9114,7 +9115,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		StatementPattern flat = flatInput.pattern;
 
-		java.util.Set<String> nestedBindingNames = nested.getBindingNames();
+		Set<String> nestedBindingNames = nested.getBindingNames();
 		for (Var var : flat.getVarList()) {
 			if (var == null || var.hasValue() || var.getName() == null || !nestedBindingNames.contains(var.getName())) {
 				continue;

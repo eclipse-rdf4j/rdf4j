@@ -4198,13 +4198,13 @@ class LmdbEvaluationStatistics
 
 	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimateUncached(List<TupleExpr> factors,
 			String joinVarName, boolean allowExact) {
-		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(factors, joinVarName);
-		if (isFiniteNonNegative(finiteRows)) {
-			traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
-					Double.NaN, Double.NaN, finiteRows);
-			return new FiniteBranchSurfaceEstimate(finiteRows, true);
-		}
-		countSketchJoinSurfaceCall();
+//		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(factors, joinVarName);
+//		if (isFiniteNonNegative(finiteRows)) {
+//			traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
+//					Double.NaN, Double.NaN, finiteRows);
+//			return new FiniteBranchSurfaceEstimate(finiteRows, true);
+//		}
+//		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
 
 		countFallbackJoinSurfaceCall();
@@ -4274,13 +4274,13 @@ class LmdbEvaluationStatistics
 	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimateUncached(List<TupleExpr> prefixFactors,
 			TupleExpr factor,
 			String joinVarName, boolean allowExact) {
-		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, factor,
-				joinVarName);
-		if (isFiniteNonNegative(finiteRows)) {
-			traceJoinSurfaceSelection("surface-prefix-factor-finite", factor, joinVarName, Double.NaN, finiteRows,
-					Double.NaN, Double.NaN, finiteRows);
-			return new FiniteBranchSurfaceEstimate(finiteRows, true);
-		}
+//		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, factor,
+//				joinVarName);
+//		if (isFiniteNonNegative(finiteRows)) {
+//			traceJoinSurfaceSelection("surface-prefix-factor-finite", factor, joinVarName, Double.NaN, finiteRows,
+//					Double.NaN, Double.NaN, finiteRows);
+//			return new FiniteBranchSurfaceEstimate(finiteRows, true);
+//		}
 		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
 

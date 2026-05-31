@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 public final class Memo {
 	private final CascadesCostModel costModel;
 	private final List<MemoGroup> groups = new ArrayList<>();
-	private final Map<String, Integer> groupByLogicalExpression = new java.util.HashMap<>();
+	private final Map<String, Integer> groupByLogicalExpression = new HashMap<>();
 	private final IdentityHashMap<TupleExpr, Integer> groupByNodeIdentity = new IdentityHashMap<>();
 	private int nextExpressionId;
 

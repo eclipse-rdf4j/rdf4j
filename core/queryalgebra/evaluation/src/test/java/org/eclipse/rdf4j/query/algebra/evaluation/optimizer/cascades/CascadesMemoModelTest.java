@@ -444,7 +444,7 @@ class CascadesMemoModelTest {
 			RuleProof proof = new RuleProof(id, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS,
 					Set.of("test"), "test physical alternative");
 			EstimateSnapshot estimate = new EstimateSnapshot("test-planner", id, "alternative_ranking", rows, rows,
-					cost, java.util.Map.of(), java.util.Map.of());
+					cost, Map.of(), Map.of());
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
 					cost, proof, id, estimate));
 		}

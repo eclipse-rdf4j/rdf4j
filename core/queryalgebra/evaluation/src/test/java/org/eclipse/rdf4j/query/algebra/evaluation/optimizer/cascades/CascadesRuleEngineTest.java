@@ -17,14 +17,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -40,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -53,7 +61,7 @@ class CascadesRuleEngineTest {
 		Join join = new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2"));
 		CascadesPlan plan = planner().optimize(join,
 				OptimizationGoal.root()
-						.asBudgeted(java.time.Duration.ofMillis(100),
+						.asBudgeted(Duration.ofMillis(100),
 								256));
 
 		assertTrue(plan.winner().isPresent());
@@ -85,7 +93,7 @@ class CascadesRuleEngineTest {
 				pattern("o2", "p3", "o3"));
 
 		CascadesPlan plan = planner().optimize(join, OptimizationGoal.root()
-				.asBudgeted(java.time.Duration.ofMillis(1),
+				.asBudgeted(Duration.ofMillis(1),
 						1));
 
 		assertTrue(plan.approximate());
@@ -224,6 +232,49 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void joinUnionDistributionPushesFiniteBindingsIntoScopedUnionWhenBranchBindsAreDisjoint() {
+		BindingSetAssignment users = values("u");
+		Union scopedUnion = new Union(
+				new Extension(new Join(pattern("u", "follows", "v"), pattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(pattern("post", "authored", "u"), new ExtensionElem(new Var("post"), "activity")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(users, scopedUnion);
+
+		Optional<Union> maybeDistributed = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join).stream()
+				.map(RuleApplication::alternative)
+				.filter(Union.class::isInstance)
+				.map(Union.class::cast)
+				.findFirst();
+
+		assertTrue(maybeDistributed.isPresent(),
+				"Expected finite VALUES to distribute into a scope-changing UNION when branch-local BIND names are disjoint");
+		Union distributed = maybeDistributed.get();
+		assertTrue(distributed.isVariableScopeChange());
+		assertTrue(distributed.getAssuredBindingNames().contains("u"),
+				"Pushed VALUES should make the scoped UNION assure the finite binding for downstream anchors");
+		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "u"));
+		assertFalse(containsBindingSetAssignment(distributed, "activity"),
+				"Branch-local BIND output must not be replaced by the pushed finite binding");
+	}
+
+	@Test
+	void joinUnionDistributionDoesNotPushFiniteBindingsOverScopedBranchBindOverlap() {
+		BindingSetAssignment activities = values("activity");
+		Union scopedUnion = new Union(
+				new Extension(pattern("u", "follows", "v"), new ExtensionElem(new Var("v"), "activity")),
+				pattern("post", "authored", "u"));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(activities, scopedUnion);
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join);
+
+		assertFalse(applications.stream().anyMatch(application -> application.alternative() instanceof Union),
+				"Do not push a finite binding across a scope-changing UNION branch that locally BINDs the same name");
+	}
+
+	@Test
 	void minusRedundantPatternFilterCanBecomeLeftNegatedFilterAlternative() {
 		StatementPattern branchName = pattern("branch", "name", "branchName");
 		StatementPattern locatedAt = pattern("copy", "locatedAt", "branch");
@@ -312,6 +363,15 @@ class CascadesRuleEngineTest {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
 	}
 
+	private static BindingSetAssignment values(String name) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(name, VF.createLiteral(name + "-value"));
+		assignment.setBindingSets(List.of(bindingSet));
+		return assignment;
+	}
+
 	private static boolean containsDifference(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Difference) {
 			return true;
@@ -324,6 +384,24 @@ class CascadesRuleEngineTest {
 		}
 		if (tupleExpr instanceof Union union) {
 			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			return assignment.getBindingNames().contains(bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsBindingSetAssignment(join.getLeftArg(), bindingName)
+					|| containsBindingSetAssignment(join.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return containsBindingSetAssignment(extension.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsBindingSetAssignment(union.getLeftArg(), bindingName)
+					|| containsBindingSetAssignment(union.getRightArg(), bindingName);
 		}
 		return false;
 	}
@@ -350,7 +428,7 @@ class CascadesRuleEngineTest {
 			CostVector cost = new CostVector(rows, rows, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
 					0.0d, 1.0d, 1.0d);
 			EstimateSnapshot estimate = new EstimateSnapshot("test-planner", "test-source", "alternative_ranking",
-					rows, rows, cost, java.util.Map.of(), java.util.Map.of());
+					rows, rows, cost, Map.of(), Map.of());
 			RuleProof proof = proof(expression, goal, context);
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					PhysicalProperties.ANY, cost, proof, id, estimate));
@@ -452,7 +530,7 @@ class CascadesRuleEngineTest {
 
 	private static final class RecordingImplementationRule implements CascadesRule {
 		private final String predicateName;
-		private final List<Set<String>> observedBoundVars = new java.util.ArrayList<>();
+		private final List<Set<String>> observedBoundVars = new ArrayList<>();
 
 		private RecordingImplementationRule(String predicateName) {
 			this.predicateName = predicateName;
@@ -488,7 +566,7 @@ class CascadesRuleEngineTest {
 			CostVector cost = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
 					0.0d, 1.0d, 1.0d);
 			EstimateSnapshot estimate = new EstimateSnapshot("test-planner", "recording-implementation",
-					"alternative_ranking", 1.0d, 1.0d, cost, java.util.Map.of(), java.util.Map.of());
+					"alternative_ranking", 1.0d, 1.0d, cost, Map.of(), Map.of());
 			RuleProof proof = proof(expression, goal, context);
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(tupleExpr == null ? Set.of() : tupleExpr.getBindingNames())

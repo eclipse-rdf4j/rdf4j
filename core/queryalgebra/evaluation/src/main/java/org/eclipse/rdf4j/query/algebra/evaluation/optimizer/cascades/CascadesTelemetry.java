@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -180,7 +181,7 @@ public interface CascadesTelemetry {
 			if (!Double.isFinite(rows)) {
 				return Double.toString(rows);
 			}
-			return String.format(java.util.Locale.ROOT, "%.3f", rows);
+			return String.format(Locale.ROOT, "%.3f", rows);
 		}
 
 		private String plan(QueryModelNode node) {

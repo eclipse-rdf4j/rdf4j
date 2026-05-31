@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.function.BooleanSupplier;
 
 import org.apache.datasketches.common.ResizeFactor;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
@@ -432,7 +433,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	@Test
 	void lowMemorySupplierApiRemoved() {
 		assertThrows(NoSuchMethodException.class, () -> SketchBasedJoinEstimator.class
-				.getMethod("setLowMemorySupplier", java.util.function.BooleanSupplier.class));
+				.getMethod("setLowMemorySupplier", BooleanSupplier.class));
 	}
 
 	@Test

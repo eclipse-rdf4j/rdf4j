@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -102,7 +103,7 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 				.withRefreshSleepMillis(5);
 	}
 
-	private static org.eclipse.rdf4j.model.Statement st(Resource s, IRI p, Value o) {
+	private static Statement st(Resource s, IRI p, Value o) {
 		return VF.createStatement(s, p, o);
 	}
 }

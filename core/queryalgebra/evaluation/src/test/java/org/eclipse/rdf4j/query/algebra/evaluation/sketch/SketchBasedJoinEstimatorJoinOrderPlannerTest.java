@@ -1319,7 +1319,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI follows = VF.createIRI("urn:follows");
 		IRI name = VF.createIRI("urn:name");
 		List<Resource> users = new ArrayList<>();
-		List<org.eclipse.rdf4j.model.Value> userNames = new ArrayList<>();
+		List<Value> userNames = new ArrayList<>();
 		for (int i = 7; i <= 11; i++) {
 			Resource user = VF.createIRI("urn:user:" + i);
 			users.add(user);
@@ -1672,7 +1672,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI y = VF.createIRI("urn:y");
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 
 		for (int i = 0; i < 512; i++) {
 			Resource s = VF.createIRI("urn:s" + i);
@@ -1972,7 +1972,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		QueryBindingSet matching = new QueryBindingSet();
 		matching.addBinding("s", VF.createIRI("urn:s0"));
 		bindingSets.add(matching);
@@ -3104,7 +3104,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		QueryBindingSet matching = new QueryBindingSet();
 		matching.addBinding("s", VF.createIRI("urn:s0"));
 		bindingSets.add(matching);
@@ -3136,7 +3136,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int i = 0; i < 100; i++) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding("s", VF.createIRI("urn:s" + i));
@@ -3200,7 +3200,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int i = 0; i < 50; i++) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding("s", VF.createIRI("urn:s" + i));
@@ -3386,7 +3386,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	@Test
 	void planJoinOrderReturnsEmptyWhenDynamicProgrammingRequestExceedsSupportedSize() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
-		List<TupleExpr> args = new java.util.ArrayList<>();
+		List<TupleExpr> args = new ArrayList<>();
 		for (int i = 0; i < 21; i++) {
 			IRI predicate = VF.createIRI("urn:p" + i);
 			store.add(VF.createStatement(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
@@ -3754,10 +3754,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	private static BindingSetAssignment singleVariableValues(String name,
-			List<? extends org.eclipse.rdf4j.model.Value> values) {
+			List<? extends Value> values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> rows = new ArrayList<>();
-		for (org.eclipse.rdf4j.model.Value value : values) {
+		for (Value value : values) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding(name, value);
 			rows.add(row);
@@ -3878,8 +3878,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return mask;
 	}
 
-	private static QueryBindingSet row(String name1, org.eclipse.rdf4j.model.Value value1, String name2,
-			org.eclipse.rdf4j.model.Value value2) {
+	private static QueryBindingSet row(String name1, Value value1, String name2,
+			Value value2) {
 		QueryBindingSet row = new QueryBindingSet();
 		row.addBinding(name1, value1);
 		row.addBinding(name2, value2);

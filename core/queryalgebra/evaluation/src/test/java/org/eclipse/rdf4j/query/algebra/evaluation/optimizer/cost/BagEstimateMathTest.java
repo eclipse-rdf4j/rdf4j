@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -349,7 +350,7 @@ class BagEstimateMathTest {
 	}
 
 	private static List<Value> row(String... values) {
-		return java.util.Arrays.stream(values)
+		return Arrays.stream(values)
 				.map(BagEstimateMathTest::literal)
 				.map(Value.class::cast)
 				.toList();

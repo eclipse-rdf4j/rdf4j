@@ -23,9 +23,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -364,19 +367,29 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Join join = (Join) expression.tupleExpr();
 			List<RuleApplication> applications = new ArrayList<>(2);
-			RuleProof proof = proof(semanticScope(goal), Set.of("innerJoin", "bagUnion", "scopeSafe"),
+			RuleProof nonScopedProof = proof(semanticScope(goal), Set.of("innerJoin", "bagUnion", "scopeSafe"),
 					"inner join distributes over non-scope-changing UNION as a costed alternative");
-			if (join.getLeftArg()instanceof Union union && !union.isVariableScopeChange()) {
-				applications.add(RuleApplication.transformation(expression.groupId(),
-						new Union(new Join(union.getLeftArg().clone(), join.getRightArg().clone()),
-								new Join(union.getRightArg().clone(), join.getRightArg().clone())),
-						proof));
+			RuleProof scopedFiniteProof = proof(semanticScope(goal),
+					Set.of("innerJoin", "bagUnion", "scopePreserved", "finiteBindingsDisjointFromBranchBinds"),
+					"finite bindings distribute into a scope-changing UNION when they do not overlap branch-local "
+							+ "BIND/VALUES outputs");
+			if (join.getLeftArg()instanceof Union union) {
+				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getRightArg(),
+						union)) {
+					applications.add(RuleApplication.transformation(expression.groupId(),
+							unionLike(union, new Join(union.getLeftArg().clone(), join.getRightArg().clone()),
+									new Join(union.getRightArg().clone(), join.getRightArg().clone())),
+							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
+				}
 			}
-			if (join.getRightArg()instanceof Union union && !union.isVariableScopeChange()) {
-				applications.add(RuleApplication.transformation(expression.groupId(),
-						new Union(new Join(join.getLeftArg().clone(), union.getLeftArg().clone()),
-								new Join(join.getLeftArg().clone(), union.getRightArg().clone())),
-						proof));
+			if (join.getRightArg()instanceof Union union) {
+				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getLeftArg(),
+						union)) {
+					applications.add(RuleApplication.transformation(expression.groupId(),
+							unionLike(union, new Join(join.getLeftArg().clone(), union.getLeftArg().clone()),
+									new Join(join.getLeftArg().clone(), union.getRightArg().clone())),
+							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
+				}
 			}
 			return applications;
 		}
@@ -565,6 +578,67 @@ public final class StandardCascadesRules {
 
 	private static boolean barrier(TupleExpr tupleExpr) {
 		return TupleExprs.isVariableScopeChange(tupleExpr);
+	}
+
+	private static Union unionLike(Union original, TupleExpr left, TupleExpr right) {
+		Union union = new Union(left, right);
+		union.setVariableScopeChange(original != null && original.isVariableScopeChange());
+		return union;
+	}
+
+	private static boolean canPushFiniteBindingsIntoScopedUnion(TupleExpr pushed, Union union) {
+		if (!(pushed instanceof BindingSetAssignment assignment) || union == null || !union.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> pushedNames = plannerNames(assignment.getBindingNames());
+		if (pushedNames.isEmpty()) {
+			return false;
+		}
+		Set<String> branchLocalNames = branchLocalBindOrValuesNames(union.getLeftArg());
+		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
+		for (String name : pushedNames) {
+			if (branchLocalNames.contains(name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {
+		Set<String> names = new HashSet<>();
+		if (tupleExpr == null) {
+			return names;
+		}
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				for (var element : extension.getElements()) {
+					String name = element.getName();
+					if (name != null && !name.startsWith("_const_")) {
+						names.add(name);
+					}
+				}
+				super.meet(extension);
+			}
+
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				names.addAll(plannerNames(assignment.getBindingNames()));
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				// Sub-select internals are scoped behind the projection boundary.
+			}
+
+			@Override
+			public void meet(Union union) {
+				if (!union.isVariableScopeChange()) {
+					super.meet(union);
+				}
+			}
+		});
+		return names;
 	}
 
 	private static Set<String> plannerNames(Set<String> names) {

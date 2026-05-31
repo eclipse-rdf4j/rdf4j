@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -622,7 +623,7 @@ public interface CascadesCostModel {
 			double passRatio = passEstimate.getPlanningPassRatio();
 			QErrorInterval passInterval = QErrorInterval.fromBounds(passEstimate.getLower95PassRatio(), passRatio,
 					passEstimate.getUpper95PassRatio(), passEstimate.getConfidenceScore(),
-					"filter-" + passEstimate.getSource().name().toLowerCase(java.util.Locale.ROOT));
+					"filter-" + passEstimate.getSource().name().toLowerCase(Locale.ROOT));
 			BagEstimate bag = EstimateMath.filter(input.bag(), passRatio, "filter");
 			StatisticsEstimate estimate = StatisticsEstimate
 					.fromVector(input.vector().filter(passRatio, passInterval, "filter"), "filter")
