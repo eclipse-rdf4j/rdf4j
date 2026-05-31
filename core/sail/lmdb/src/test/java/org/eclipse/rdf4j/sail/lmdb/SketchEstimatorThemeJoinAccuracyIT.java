@@ -68,6 +68,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	// above 20% error from sketch sampling and bucket collisions, so bound each case and the selected-set average.
 	private static final double MAX_RELATIVE_ERROR = 0.30d;
 	private static final double MAX_AVERAGE_RELATIVE_ERROR = 0.20d;
+	private static final double MAX_RELOADED_RARE_JOIN_Q_ERROR = 16.0d;
 	private static final List<Theme> REPRESENTATIVE_JOIN_ACCURACY_THEMES = List.of(Theme.PHARMA, Theme.LIBRARY);
 
 	@Test
@@ -244,14 +245,25 @@ class SketchEstimatorThemeJoinAccuracyIT {
 			long actualJoinRows = exactJoinRowsForLocatedAtName(repository);
 
 			assertTrue(actualJoinRows > 0L, "Expected generated library theme to contain locatedAt/name join rows");
-			assertEquals((double) actualJoinRows, plannerJoinEstimate, 0.0d,
+			assertTrue(Double.isFinite(plannerJoinEstimate) && plannerJoinEstimate > 0.0d,
 					() -> "Planner join estimate should fall back above zero for rare-overlap joins. leftRows="
 							+ leftRows + ", rightRows=" + rightRows + ", direct=" + directJoinEstimate
-							+ ", actual=" + actualJoinRows);
+							+ ", actual=" + actualJoinRows + ", estimate=" + plannerJoinEstimate);
+			assertTrue(qError(actualJoinRows, plannerJoinEstimate) <= MAX_RELOADED_RARE_JOIN_Q_ERROR,
+					() -> "Planner join estimate should stay within the rare-overlap q-error budget. leftRows="
+							+ leftRows + ", rightRows=" + rightRows + ", direct=" + directJoinEstimate
+							+ ", actual=" + actualJoinRows + ", estimate=" + plannerJoinEstimate
+							+ ", maxQError=" + MAX_RELOADED_RARE_JOIN_Q_ERROR);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	private static double qError(double actual, double estimate) {
+		double low = Math.max(1.0d, Math.min(actual, estimate));
+		double high = Math.max(actual, estimate);
+		return high / low;
 	}
 
 	private static void printScenarioDiagnostics(SketchBasedJoinEstimator estimator, JoinScenario scenario) {

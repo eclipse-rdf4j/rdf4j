@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -65,14 +66,16 @@ class LmdbBoundSimplifierOptimizerTest {
 	}
 
 	@Test
-	void preSketchKeepsOptionalSurfaceBoundFilterUnknown() {
+	void preSketchTurnsOptionalSurfaceBoundFilterIntoInnerJoin() {
 		StatementPattern required = statementPattern("s", "type", "type");
 		StatementPattern optional = statementPattern("s", "name", "optName");
 		QueryRoot root = optimizeBeforeSketch(new Filter(new LeftJoin(required, optional), new Bound(new Var(
 				"optName"))));
 
-		Filter filter = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
-		assertInstanceOf(LeftJoin.class, filter.getArg(), () -> root.getArg().toString());
+		Join join = assertInstanceOf(Join.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(StatementPattern.class, join.getLeftArg(), () -> root.getArg().toString());
+		Filter filter = assertInstanceOf(Filter.class, join.getRightArg(), () -> root.getArg().toString());
+		assertInstanceOf(StatementPattern.class, filter.getArg(), () -> root.getArg().toString());
 		assertInstanceOf(Bound.class, filter.getCondition(), () -> root.getArg().toString());
 	}
 

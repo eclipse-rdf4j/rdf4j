@@ -127,12 +127,12 @@ public class ThemeQueryBenchmark {
 //			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 			"LIBRARY",
+			"SPARSE",
 			// "ENGINEERING",
 			// "HIGHLY_CONNECTED",
 			// "TRAIN",
 			// "ELECTRICAL_GRID",
-			// "PHARMA",
-			// "SPARSE"
+			// "PHARMA"
 	})
 	public String themeName;
 

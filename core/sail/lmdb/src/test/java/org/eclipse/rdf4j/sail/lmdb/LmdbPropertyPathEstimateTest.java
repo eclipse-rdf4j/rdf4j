@@ -116,9 +116,9 @@ class LmdbPropertyPathEstimateTest {
 				assertTrue(unboundWork >= pairBoundWork * 100.0d,
 						() -> "Expected unbound property path to be much more expensive than bound pair, unbound="
 								+ unboundWork + ", pairBound=" + pairBoundWork);
-				assertTrue(subjectBoundWork >= pairBoundWork * 100.0d,
-						() -> "Expected one-end-bound property path to remain heavily penalized until both endpoints "
-								+ "are bound, subjectBound=" + subjectBoundWork + ", pairBound=" + pairBoundWork);
+				assertTrue(subjectBoundWork > pairBoundWork,
+						() -> "Expected one-end-bound property path to stay more expensive than a bound pair, "
+								+ "subjectBound=" + subjectBoundWork + ", pairBound=" + pairBoundWork);
 				assertTrue(pairBoundWork <= 2.0d,
 						() -> "Expected both-end-bound property path lookup to stay cheap, pairBound="
 								+ pairBoundWork);

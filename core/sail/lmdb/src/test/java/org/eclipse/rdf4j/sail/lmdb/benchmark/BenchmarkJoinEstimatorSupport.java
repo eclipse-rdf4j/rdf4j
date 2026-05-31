@@ -107,6 +107,7 @@ public final class BenchmarkJoinEstimatorSupport {
 	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator != null) {
+			estimator.stop();
 			estimator.unload();
 		}
 	}

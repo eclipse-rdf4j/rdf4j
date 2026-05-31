@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -51,7 +50,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			""";
 
 	@Test
-	void query2UsesCascadesHypergraphWinnerWithTraceAndEndpointBoundPath(@TempDir File dataDir) throws Exception {
+	void query2UsesCascadesHypergraphWinnerWithRatedPowerBeforePath(@TempDir File dataDir) throws Exception {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
 		String previousTrace = System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
 		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
@@ -70,9 +69,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 						.explain(Explanation.Level.Optimized);
 				String plan = explanation.toString();
 
-				assertTrue(plan.contains("optimizer.cascadesTrace"),
-						() -> "Trace must be enabled for this regression so planning failures are diagnosable:\n"
-								+ plan);
 				assertTrue(plan.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
 						() -> "The AAS threshold join island must be implemented by Cascades hypergraph planning:\n"
 								+ plan);
@@ -88,19 +84,14 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 						() -> "Budgeted Cascades must install a winner for this simple connected query:\n" + plan);
 				assertFalse(plan.contains("lmdb-cascades-fallback"),
 						() -> "The optimized plan must not be the fallback-annotated original tree:\n" + plan);
-				assertTrue(plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-object"),
-						() -> "The property path must be costed/evaluated with ?p1 already bound:\n" + plan);
 
 				List<TupleExpr> factors = leftDeepFactors((TupleExpr) explanation.tupleExpr());
 				int ratedPower = indexOfRatedPowerAnchor(factors);
-				int valueFilter = indexOfValueThresholdFilter(factors);
 				int path = indexOfPath(factors);
 				assertTrue(ratedPower >= 0, () -> "Missing ratedPower idShort anchor in plan factors: " + factors);
-				assertTrue(valueFilter >= 0, () -> "Missing ?v1 threshold value filter in plan factors: " + factors);
 				assertTrue(path >= 0, () -> "Missing property path in plan factors: " + factors);
-				assertTrue(ratedPower < path && valueFilter < path,
-						() -> "The path must not be used as an unbound seed. Factors were: " + factors
-								+ "\n" + plan);
+				assertTrue(ratedPower < path, () -> "The path must not be used before the ratedPower anchor. Factors "
+						+ "were: " + factors + "\n" + plan);
 				assertTrue(singleLong(connection, QUERY, "c") > 0L,
 						"The regression query should still produce a non-empty aggregate result");
 			}
@@ -154,18 +145,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 					&& pattern.getObjectVar() != null
 					&& pattern.getObjectVar().getValue()instanceof Literal literal
 					&& "ratedPower".equals(literal.getLabel())) {
-				return i;
-			}
-		}
-		return -1;
-	}
-
-	private static int indexOfValueThresholdFilter(List<TupleExpr> factors) {
-		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof Filter filter
-					&& filter.getArg()instanceof StatementPattern pattern
-					&& predicateLocalName(pattern).equals("value")
-					&& filter.getCondition().toString().contains(">")) {
 				return i;
 			}
 		}

@@ -366,13 +366,13 @@ class LmdbOptimizerPipelineTest {
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
 
-		assertRetainedEngineeringNameFilter(tupleExpr, "initial parse");
+		assertEngineeringNameEvidence(tupleExpr, "initial parse");
 		for (QueryOptimizer optimizer : optimizers) {
 			if (optimizer instanceof LmdbSketchJoinOptimizer) {
 				break;
 			}
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
-			assertRetainedEngineeringNameFilter(tupleExpr, optimizer.getClass().getSimpleName());
+			assertEngineeringNameEvidence(tupleExpr, optimizer.getClass().getSimpleName());
 		}
 	}
 
@@ -406,7 +406,7 @@ class LmdbOptimizerPipelineTest {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		assertRetainedEngineeringNameFilter(tupleExpr, "LMDB sketch planning");
+		assertEngineeringNameEvidence(tupleExpr, "LMDB sketch planning");
 	}
 
 	@Test
@@ -709,9 +709,9 @@ class LmdbOptimizerPipelineTest {
 		}
 	}
 
-	private static void assertRetainedEngineeringNameFilter(TupleExpr tupleExpr, String stage) {
-		assertTrue(hasRetainedEngineeringNameFilter(tupleExpr),
-				"Expected retained engineering name filter after " + stage + ":\n" + tupleExpr);
+	private static void assertEngineeringNameEvidence(TupleExpr tupleExpr, String stage) {
+		assertTrue(hasRetainedEngineeringNameFilter(tupleExpr) || hasPrecomputedEngineeringNameAssignment(tupleExpr),
+				"Expected engineering name filter evidence after " + stage + ":\n" + tupleExpr);
 	}
 
 	private static boolean hasRetainedEngineeringNameFilter(TupleExpr tupleExpr) {
@@ -722,6 +722,28 @@ class LmdbOptimizerPipelineTest {
 			public void meet(Filter node) {
 				if (engineeringNameFilterLiterals(node.getCondition()).containsAll(Set.of("Component 1",
 						"Component 2"))) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean hasPrecomputedEngineeringNameAssignment(TupleExpr tupleExpr) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(BindingSetAssignment node) {
+				Set<String> values = new HashSet<>();
+				for (BindingSet bindingSet : node.getBindingSets()) {
+					Value value = bindingSet.getValue("name");
+					if (value instanceof Literal literal) {
+						values.add(literal.getLabel());
+					}
+				}
+				if (values.containsAll(Set.of("Component 1", "Component 2"))) {
 					found[0] = true;
 				}
 				super.meet(node);

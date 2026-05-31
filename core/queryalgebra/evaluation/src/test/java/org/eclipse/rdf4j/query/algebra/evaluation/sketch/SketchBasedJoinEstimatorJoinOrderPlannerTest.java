@@ -2644,8 +2644,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(orderedArgs.containsAll(args), "Expected every pharma-shaped factor in the selected plan");
 		assertTrue(orderedArgs.indexOf(markerValues) >= 0,
 				"Small VALUES anchors should remain in the memo search space: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValueFilter),
-				"Weak local scalar filters should not cut the latest-var path before the result-to-arm bridge: "
+		assertEquals(0.0d, plannedCartesianWorkRows(plan.get()), 0.0001d,
+				"Connected pharma-shaped VALUES bridge should not be planned through a Cartesian prefix: "
 						+ orderedArgs);
 		assertParetoMemoExploration(plan.get());
 		assertPlanWorkMatchesStepSum(plan.get());

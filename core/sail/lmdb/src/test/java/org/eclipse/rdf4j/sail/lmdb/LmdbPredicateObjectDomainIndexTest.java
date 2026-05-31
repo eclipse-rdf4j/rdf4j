@@ -519,8 +519,12 @@ class LmdbPredicateObjectDomainIndexTest {
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 					+ "LITERAL_WITHOUT_LANGUAGE, BOOLEAN]"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("selected=original"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("finite-anchor:o[valid"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"),
+					snapshot.plan);
+			assertTrue(snapshot.plan.contains("\"1\"^^<http://www.w3.org/2001/XMLSchema#boolean>"),
+					snapshot.plan);
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();

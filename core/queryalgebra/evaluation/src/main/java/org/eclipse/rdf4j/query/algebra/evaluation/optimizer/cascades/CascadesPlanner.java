@@ -147,7 +147,8 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> seedExistingPlanWinner(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
 			String reason, boolean markApproximate) {
-		for (MemoExpr expression : memo.group(groupId).mutableExpressionsView()) {
+		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
+		for (MemoExpr expression : snapshot) {
 			if (!expression.logical() || expression.tupleExpr() == null) {
 				continue;
 			}

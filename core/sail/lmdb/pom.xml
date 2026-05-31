@@ -256,6 +256,8 @@
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
+						<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
@@ -269,6 +271,8 @@
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
+						<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

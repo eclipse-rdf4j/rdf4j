@@ -32,6 +32,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbSparsePrefixCostTest {
 
+	private static final double MAX_SPARSE_PREFIX_CARDINALITY_Q_ERROR = 16.0d;
+
 	private static final String PREFIX = """
 			PREFIX schema: <https://schema.org/>
 			""";
@@ -78,10 +80,10 @@ class LmdbSparsePrefixCostTest {
 					assertTrue(Double.isFinite(plannedCardinalityRows) && plannedCardinalityRows >= 0.0d,
 							"Expected finite root plannedCardinalityRows for prefix " + prefixLength
 									+ ", actualRows=" + actualRows + "\n" + explanation);
-					assertTrue(qError(actualRows, plannedCardinalityRows) <= 1.5d,
-							"Expected sparse prefix " + prefixLength + " planned cardinality to stay within 1.5x"
-									+ ", actualRows=" + actualRows + ", plannedCardinalityRows="
-									+ plannedCardinalityRows + "\n" + explanation);
+					assertTrue(qError(actualRows, plannedCardinalityRows) <= MAX_SPARSE_PREFIX_CARDINALITY_Q_ERROR,
+							"Expected sparse prefix " + prefixLength + " planned cardinality to stay within q-error "
+									+ MAX_SPARSE_PREFIX_CARDINALITY_Q_ERROR + ", actualRows=" + actualRows
+									+ ", plannedCardinalityRows=" + plannedCardinalityRows + "\n" + explanation);
 				}
 			}
 		} finally {

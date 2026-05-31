@@ -28,8 +28,11 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -7229,7 +7232,27 @@ class LmdbEvaluationStatistics
 		}
 
 		private static String valueFingerprint(Value value) {
-			return value == null ? "" : value.getType().name() + ':' + value;
+			return value == null ? "" : valueTypeName(value) + ':' + value;
+		}
+
+		private static String valueTypeName(Value value) {
+			try {
+				return value.getType().name();
+			} catch (IllegalStateException e) {
+				if (value instanceof IRI) {
+					return Value.Type.IRI.name();
+				}
+				if (value instanceof BNode) {
+					return Value.Type.BNode.name();
+				}
+				if (value instanceof Literal) {
+					return Value.Type.Literal.name();
+				}
+				if (value instanceof Triple) {
+					return Value.Type.Triple.name();
+				}
+				return value.getClass().getName();
+			}
 		}
 
 		private static int nullableHash(Object value) {

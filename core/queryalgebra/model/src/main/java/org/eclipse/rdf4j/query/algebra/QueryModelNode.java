@@ -134,8 +134,8 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	/**
 	 * Enables a lightweight runtime feedback path for learned optimizer feedback. Unlike full runtime telemetry, this
-	 * path only counts output rows and low-cost operator work counters needed to decide whether an operator should report
-	 * an estimate/cost miss.
+	 * path only counts output rows and low-cost operator work counters needed to decide whether an operator should
+	 * report an estimate/cost miss.
 	 */
 	@Experimental
 	default boolean isCostFeedbackTrackingEnabled() {
