@@ -68,7 +68,6 @@ import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelGetStatementsTask;
-import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedAlgebraUnionTask;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedUnionTask;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
@@ -1318,18 +1317,6 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				((FederatedDescribeOperator) operator).getQueryInfo());
 	}
 
-	protected CloseableIteration<BindingSet> evaluateAtStatementSources(Object preparedQuery,
-			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
-		if (preparedQuery instanceof String) {
-			return evaluateAtStatementSources((String) preparedQuery, statementSources, queryInfo);
-		}
-		if (preparedQuery instanceof TupleExpr) {
-			return evaluateAtStatementSources((TupleExpr) preparedQuery, statementSources, queryInfo);
-		}
-		throw new RuntimeException(
-				"Unsupported type for prepared query: " + preparedQuery.getClass().getCanonicalName());
-	}
-
 	protected CloseableIteration<BindingSet> evaluateAtStatementSources(String preparedQuery,
 			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
 
@@ -1348,43 +1335,6 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				for (StatementSource source : statementSources) {
 					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint,
-							EmptyBindingSet.getInstance(), null, queryInfo));
-				}
-
-				union.run();
-				result = union;
-
-				// TODO we should add some DISTINCT here to have SET semantics
-			}
-
-			return result;
-
-		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			throw new QueryEvaluationException(e);
-		}
-	}
-
-	protected CloseableIteration<BindingSet> evaluateAtStatementSources(
-			TupleExpr preparedQuery, List<StatementSource> statementSources, QueryInfo queryInfo)
-			throws QueryEvaluationException {
-
-		try {
-			CloseableIteration<BindingSet> result;
-
-			if (statementSources.size() == 1) {
-				Endpoint ownedEndpoint = federationContext.getEndpointManager()
-						.getEndpoint(statementSources.get(0).getEndpointID());
-				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
-				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
-			} else {
-				WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
-
-				for (StatementSource source : statementSources) {
-					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
-					union.addTask(new ParallelPreparedAlgebraUnionTask(union, preparedQuery, ownedEndpoint,
 							EmptyBindingSet.getInstance(), null, queryInfo));
 				}
 

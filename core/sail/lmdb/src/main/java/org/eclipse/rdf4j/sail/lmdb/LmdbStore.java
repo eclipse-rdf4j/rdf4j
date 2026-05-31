@@ -149,6 +149,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 		config.getDefaultQueryEvaluationMode().ifPresent(this::setDefaultQueryEvaluationMode);
+		setSlowQueryLogThresholdSeconds(config.getSlowQueryLogThresholdSeconds());
+		setSlowQueryLogFirstResultThresholdSeconds(config.getSlowQueryLogFirstResultThresholdSeconds());
+		setSlowQueryLogFile(config.getSlowQueryLogFile());
 		if (config.getIterationCacheSyncThreshold() > 0) {
 			setIterationCacheSyncThreshold(config.getIterationCacheSyncThreshold());
 		}

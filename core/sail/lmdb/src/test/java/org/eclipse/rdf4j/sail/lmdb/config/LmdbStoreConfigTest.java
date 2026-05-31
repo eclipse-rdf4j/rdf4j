@@ -482,6 +482,20 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
+	void setSlowQueryLoggingConfigurationShouldApplyToCreatedStore() {
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setSlowQueryLogThresholdSeconds(13L);
+		config.setSlowQueryLogFirstResultThresholdSeconds(7L);
+		config.setSlowQueryLogFile("lmdb-slow.log");
+
+		final LmdbStore store = new LmdbStore(config);
+
+		assertThat(store.getSlowQueryLogThresholdSeconds()).isEqualTo(13L);
+		assertThat(store.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(7L);
+		assertThat(store.getSlowQueryLogFile()).isEqualTo("lmdb-slow.log");
+	}
+
+	@Test
 	void legacyAppendModePropertyShouldBeIgnored() {
 		final BNode implNode = bnode();
 		final Literal appendMode = Values.literal(true);
