@@ -107,15 +107,15 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
 			"7",
-//			"8",
+			"8",
 			"9",
 //			"10",
 //			"11",
@@ -124,10 +124,10 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"SPARSE",
+//			"LIBRARY",
+			// "SPARSE",
 			// "ENGINEERING",
 			// "HIGHLY_CONNECTED",
 			// "TRAIN",
@@ -194,15 +194,6 @@ public class ThemeQueryBenchmark {
 				System.out.println();
 			}
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("\n### Timed Query - Before running the query ###");
-				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-				tupleQuery.setMaxExecutionTime(360);
-				Explanation explain = tupleQuery.explain(Explanation.Level.Timed);
-				System.out.println(explain);
-
-				System.out.println();
-			}
 		}
 
 	}
@@ -216,21 +207,21 @@ public class ThemeQueryBenchmark {
 
 		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Optimized Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println("### Timed Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
 				System.out.println(explain);
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
 				System.out.println();
 			}
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Telemetry Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-				System.out.println(explain);
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-			}
+			// try (SailRepositoryConnection connection = repository.getConnection()) {
+			// System.out.println("### Telemetry Query ###");
+			// Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+			// System.out.println(explain);
+			// TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+//				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+			// System.out.println();
+			// }
 		}
 		if (repository != null) {
 			repository.shutDown();
@@ -261,7 +252,7 @@ public class ThemeQueryBenchmark {
 			printBenchmarkExplanation(maxExecutionTimeSeconds, isQueryInterrupted(e), e);
 			throw e;
 		}
-		printBenchmarkExplanation(maxExecutionTimeSeconds, false, null);
+		// printBenchmarkExplanation(maxExecutionTimeSeconds, false, null);
 		return benchmarkResult;
 	}
 
