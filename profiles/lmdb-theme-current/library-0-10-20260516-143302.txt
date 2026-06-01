@@ -1,0 +1,702 @@
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 0)
+
+# Run progress: 0.00% complete, ETA 00:02:34
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/library
+### Original Query ###
+PREFIX lib: <http://example.com/theme/library/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
+  ?book a lib:Book .
+  OPTIONAL {
+    ?book lib:hasCopy ?copy .
+    ?copy lib:locatedAt ?branch .
+    BIND(?branch AS ?optBranch)
+  }
+  FILTER(?optBranch != ?book)
+  OPTIONAL { ?book lib:writtenBy ?author . }
+}
+
+14:33:03,069 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.26
+14:33:03,070 |-INFO in ch.qos.logback.classic.util.ContextInitializer@467171cc - No custom configurators were discovered as a service.
+14:33:03,070 |-INFO in ch.qos.logback.classic.util.ContextInitializer@467171cc - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+14:33:03,070 |-INFO in ch.qos.logback.classic.util.ContextInitializer@467171cc - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+14:33:03,070 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+14:33:03,072 |-INFO in ch.qos.logback.core.joran.spi.ConfigurationWatchList@772fdc9f - URL [jar:file:/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml] is not of type file
+14:33:03,092 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+14:33:03,092 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+14:33:03,105 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Main configuration file URL: jar:file:/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml
+14:33:03,105 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - FileWatchList= {}
+14:33:03,106 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - URLWatchList= {}
+14:33:03,107 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+14:33:03,107 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+14:33:03,109 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+14:33:03,124 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+14:33:03,124 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+14:33:03,124 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+14:33:03,124 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+14:33:03,124 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+14:33:03,124 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@3fb06e31 - End of configuration.
+14:33:03,124 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6e8e6cf7 - Registering current configuration as safe fallback point
+14:33:03,125 |-INFO in ch.qos.logback.classic.util.ContextInitializer@467171cc - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 55 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+542.198 ms/op
+Iteration   1: 459.855 ms/op
+Iteration   2: ### Optimized Query ###
+Projection (costEstimate=1.9M, resultSizeEstimate=1.00, plannedWorkRows=1.9M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (costEstimate=1.9M, resultSizeEstimate=1.00, plannedWorkRows=1.9M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   ├── Group () (costEstimate=1.9M, resultSizeEstimate=1.00, plannedWorkRows=1.9M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-sketch-var-stats)
+   │  ╠══ LeftJoin (costEstimate=1.2M, resultSizeEstimate=723.3K, plannedWorkRows=1.2M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   │  ║  ├── Filter (costEstimate=492.0K, resultSizeEstimate=363.2K, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=492.0K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic) [left]
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optBranch) (bindingState=bound)
+   │  ║  │  ║     Var (name=book) (bindingState=bound)
+   │  ║  │  ╚══ LeftJoin (costEstimate=128.9K, resultSizeEstimate=363.2K, plannedWorkRows=128.9K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   │  ║  │     ├── StatementPattern (costEstimate=128.9K, resultSizeEstimate=128.9K, plannedAccessRows=128.9K, plannedAccessWorkRows=128.9K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=128.9K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P, O], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path) [left]
+   │  ║  │     │     s: Var (name=book) (bindingState=unbound)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
+   │  ║  │     └── Extension (costEstimate=17, resultSizeEstimate=4.00, plannedWorkRows=17, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (costEstimate=13, resultSizeEstimate=4.00, plannedUncertaintyRows=0, plannedWorkRows=13, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}])
+   │  ║  │        ║  ├── StatementPattern (costEstimate=6.00, resultSizeEstimate=3.00, plannedUncertaintyRows=0, plannedAccessWorkRows=3.00, plannedAccessRows=3.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=6.00, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannedBoundVars=book, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[book]) [left]
+   │  ║  │        ║  │     s: Var (name=book) (bindingState=bound)
+   │  ║  │        ║  │     p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║  │        ║  │     o: Var (name=copy) (bindingState=unbound)
+   │  ║  │        ║  └── StatementPattern (costEstimate=7.00, resultSizeEstimate=1.00, plannedUncertaintyRows=0, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=7.00, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P], plannedBoundVars=book,copy, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[copy]) [right]
+   │  ║  │        ║        s: Var (name=copy) (bindingState=bound)
+   │  ║  │        ║        p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║  │        ║        o: Var (name=branch) (bindingState=unbound)
+   │  ║  │        ╚══ ExtensionElem (optBranch)
+   │  ║  │              Var (name=branch) (bindingState=bound)
+   │  ║  └── StatementPattern (costEstimate=726.3K, resultSizeEstimate=2.00, plannedAccessRows=2.00, plannedAccessWorkRows=2.00, plannedRepeatedInvocations=363.2K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=128.9K, plannedWorkRows=726.3K, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path) [right]
+   │  ║        s: Var (name=book) (bindingState=bound)
+   │  ║        p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
+   │  ║        o: Var (name=author) (bindingState=unbound)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=book) (bindingState=bound)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=book) (bindingState=unbound)
+
+SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
+  ?book a <http://example.com/theme/library/Book> .
+  OPTIONAL {
+    ?book <http://example.com/theme/library/hasCopy> ?copy .
+    ?copy <http://example.com/theme/library/locatedAt> ?branch .
+    BIND(?branch AS ?optBranch)
+  }
+  FILTER (?optBranch != ?book)
+  OPTIONAL {
+    ?book <http://example.com/theme/library/writtenBy> ?author .
+  }
+}
+
+### Telemetry Query ###
+Projection (costEstimate=1.9M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=14.2K, nextCallCountActual=1, nextTimeNanosActual=10.2K, plannedWorkRows=1.9M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, firstRowTimeNanosActual=28.0K, openCountActual=1, lastRowTimeNanosActual=57.9K, closeCountActual=1, sampleCountActual=1, varianceActual=0, stddevActual=0, confidenceScoreActual=0.50, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=7.1K, avgNextNanosActual=10.3K)
+╠══ ProjectionElemList (hasNextFalseCountActual=0)
+║     ProjectionElem "count" (hasNextFalseCountActual=0)
+╚══ Extension (costEstimate=1.9M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=10.2K, nextCallCountActual=1, nextTimeNanosActual=5.0K, plannedWorkRows=1.9M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, firstRowTimeNanosActual=48.8K, openCountActual=1, lastRowTimeNanosActual=68.2K, closeCountActual=1, sampleCountActual=1, varianceActual=0, stddevActual=0, confidenceScoreActual=0.50, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=5.1K, avgNextNanosActual=5.1K)
+   ├── Group () (costEstimate=1.9M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=291, nextCallCountActual=1, nextTimeNanosActual=167, plannedWorkRows=1.9M, plannerId=lmdb-sketch, lmdbIdPharmaQ8FallbackReason=shape, plannedEstimateSource=lmdb-sketch-var-stats, lmdbIdPharmaQ10FallbackReason=shape, lmdbIdAggregateAlgorithm=LmdbIdDistinctCount, aggregateEvalCountActual=386.3K, firstRowTimeNanosActual=49.1K, groupsCreatedActual=1, openCountActual=1, lastRowTimeNanosActual=65.1K, closeCountActual=1, inputRowsActual=386.3K, varsAddedActual=1, varsDroppedActual=10, metricOrigin.varsAddedActual=derived, metricOrigin.varsDroppedActual=derived, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=146, avgNextNanosActual=167)
+   │  ╠══ LeftJoin (costEstimate=1.2M, resultSizeEstimate=723.3K, plannedWorkRows=1.2M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  ├── Filter (costEstimate=492.0K, resultSizeEstimate=363.2K, sourceRowsFilteredActual=0, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=492.0K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic, hasNextFalseCountActual=0) [left]
+   │  ║  │  ╠══ Compare (!=) (hasNextFalseCountActual=0)
+   │  ║  │  ║     Var (name=optBranch) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │  ║     Var (name=book) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │  ╚══ LeftJoin (costEstimate=128.9K, resultSizeEstimate=363.2K, plannedWorkRows=128.9K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  │     ├── StatementPattern (costEstimate=128.9K, resultSizeEstimate=128.9K, plannedAccessRows=128.9K, plannedAccessWorkRows=128.9K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=128.9K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P, O], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path, varsAddedActual=3, lmdbIdConstantMembershipPreparedActual=true, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [left]
+   │  ║  │     │     s: Var (name=book) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │     │     o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │     └── Extension (costEstimate=17, resultSizeEstimate=4.00, plannedWorkRows=17, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, varsAddedActual=1, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║  │        ╠══ Join (LmdbIdJoinIterator) (costEstimate=13, resultSizeEstimate=4.00, plannedUncertaintyRows=0, plannedWorkRows=13, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=6.00, resultSizeEstimate=3.00, plannedUncertaintyRows=0, plannedAccessWorkRows=3.00, plannedAccessRows=3.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=6.00, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannedBoundVars=book, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[book], varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [left]
+   │  ║  │        ║  │     s: Var (name=book) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │        ║  │     p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │        ║  │     o: Var (name=copy) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │        ║  └── StatementPattern (costEstimate=7.00, resultSizeEstimate=1.00, plannedUncertaintyRows=0, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=7.00, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P], plannedBoundVars=book,copy, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=13.0, finalRows=4.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?book http://example.com/theme/library/hasCopy ?copy), 1:SP(?copy http://example.com/theme/library/locatedAt ?branch)], vector=JoinCostVector{totalWorkRows=13.0, finalRows=4.0, maxIntermediateRows=4.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[copy], varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║  │        ║        s: Var (name=copy) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │        ║        p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │        ║        o: Var (name=branch) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │        ╚══ ExtensionElem (optBranch) (hasNextFalseCountActual=0)
+   │  ║  │              Var (name=branch) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  └── StatementPattern (costEstimate=726.3K, resultSizeEstimate=2.00, plannedAccessRows=2.00, plannedAccessWorkRows=2.00, plannedRepeatedInvocations=363.2K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=128.9K, plannedWorkRows=726.3K, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path, varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║        s: Var (name=book) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║        p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous) (hasNextFalseCountActual=0)
+   │  ║        o: Var (name=author) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ╚══ GroupElem (count) (hasNextFalseCountActual=0)
+   │        Count (Distinct) (hasNextFalseCountActual=0)
+   │           Var (name=book) (bindingState=bound, hasNextFalseCountActual=0)
+   └── ExtensionElem (count) (hasNextFalseCountActual=0)
+         Count (Distinct) (hasNextFalseCountActual=0)
+            Var (name=book) (bindingState=unbound, hasNextFalseCountActual=0)
+
+SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
+  ?book a <http://example.com/theme/library/Book> .
+  OPTIONAL {
+    ?book <http://example.com/theme/library/hasCopy> ?copy .
+    ?copy <http://example.com/theme/library/locatedAt> ?branch .
+    BIND(?branch AS ?optBranch)
+  }
+  FILTER (?optBranch != ?book)
+  OPTIONAL {
+    ?book <http://example.com/theme/library/writtenBy> ?author .
+  }
+}
+
+459.971 ms/op
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  459.913 ms/op
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 1)
+
+# Run progress: 9.09% complete, ETA 00:02:40
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/library
+### Original Query ###
+PREFIX lib: <http://example.com/theme/library/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+  VALUES ?target { "Member 1" "Member 2" }
+  { ?entity a lib:Member ; lib:name ?name . }
+  UNION
+  { ?entity a lib:Book ; lib:title ?name . }
+  FILTER(?name = ?target || ?name = "Member 3")
+  OPTIONAL { ?entity lib:hasCopy ?copy . }
+}
+
+170.545 ms/op
+Iteration   1: 161.261 ms/op
+Iteration   2: ### Optimized Query ###
+Projection (costEstimate=3.1M, resultSizeEstimate=1.00, plannedWorkRows=3.1M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (costEstimate=3.1M, resultSizeEstimate=1.00, plannedWorkRows=3.1M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   ├── Group () (costEstimate=3.1M, resultSizeEstimate=1.00, plannedWorkRows=3.1M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-sketch-var-stats)
+   │  ╠══ LeftJoin (costEstimate=1.7M, resultSizeEstimate=1.4M, plannedWorkRows=1.7M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   │  ║  ├── Union (costEstimate=133.2K, resultSizeEstimate=266.4K, plannedWorkRows=133.2K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic) [left]
+   │  ║  │  ╠══ Join (JoinIterator) (costEstimate=4.3K, resultSizeEstimate=8.7K, plannedWorkRows=4.3K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   │  ║  │  ║  ├── Join (new scope) (JoinIterator) (costEstimate=19.7K, resultSizeEstimate=4.3K, plannedUncertaintyRows=0, plannedWorkRows=19.7K, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}]) [left]
+   │  ║  │  ║  │  ╠══ StatementPattern (costEstimate=10.2K, resultSizeEstimate=5.1K, plannedUncertaintyRows=0, plannedAccessWorkRows=5.1K, plannedAccessRows=5.1K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=10.2K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P, O], plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}]) [left]
+   │  ║  │  ║  │  ║     s: Var (name=entity) (bindingState=unbound)
+   │  ║  │  ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║  │  ║     o: Var (name=_const_f5728978_uri, value=http://example.com/theme/library/Member, anonymous)
+   │  ║  │  ║  │  ╚══ StatementPattern (costEstimate=9.5K, resultSizeEstimate=1.00, plannedUncertaintyRows=0, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=9.5K, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P], plannedBoundVars=entity, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[entity]) [right]
+   │  ║  │  ║  │        s: Var (name=entity) (bindingState=bound)
+   │  ║  │  ║  │        p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║  │  ║  │        o: Var (name=name) (bindingState=unbound)
+   │  ║  │  ║  └── Filter (costEstimate=2.00, resultSizeEstimate=1.00, plannedFilterEvidenceCount=8, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioRaw=0.63, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=2.00, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic, optimizer.strategy=lmdb-sketch-filter-bindingPrefix, deferredFilterScope=bindingPrefix) [right]
+   │  ║  │  ║     ╠══ Or
+   │  ║  │  ║     ║  ├── Compare (=)
+   │  ║  │  ║     ║  │     Var (name=name) (bindingState=bound)
+   │  ║  │  ║     ║  │     Var (name=target) (bindingState=bound)
+   │  ║  │  ║     ║  └── Compare (=)
+   │  ║  │  ║     ║        Var (name=name) (bindingState=bound)
+   │  ║  │  ║     ║        ValueConstant (value="Member 3")
+   │  ║  │  ║     ╚══ BindingSetAssignment ([[target="Member 1"], [target="Member 2"]]) (costEstimate=1.00, resultSizeEstimate=1.00, plannedWorkRows=1.00, plannerId=lmdb-sketch, plannedEstimateSource=generic-statistics)
+   │  ║  │  ╚══ Join (JoinIterator) (costEstimate=128.9K, resultSizeEstimate=257.7K, plannedWorkRows=128.9K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic)
+   │  ║  │     ├── Join (new scope) (JoinIterator) (costEstimate=515.4K, resultSizeEstimate=128.9K, plannedUncertaintyRows=128.9K, plannedWorkRows=515.4K, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}]) [left]
+   │  ║  │     │  ╠══ StatementPattern (costEstimate=386.6K, resultSizeEstimate=128.9K, plannedUncertaintyRows=128.9K, plannedAccessRows=128.9K, plannedAccessWorkRows=128.9K, plannedIndexPrefixLength=1.00, plannedAccessPathCandidates=4.00, plannedWorkRows=386.6K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P], plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}]) [left]
+   │  ║  │     │  ║     s: Var (name=entity) (bindingState=unbound)
+   │  ║  │     │  ║     p: Var (name=_const_335cbfda_uri, value=http://example.com/theme/library/title, anonymous)
+   │  ║  │     │  ║     o: Var (name=name) (bindingState=unbound)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=128.9K, resultSizeEstimate=1.00, plannedUncertaintyRows=128.9K, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=3.00, plannedAccessPathCandidates=4.00, plannedWorkRows=128.9K, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O], plannedBoundVars=entity,name, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[entity]) [right]
+   │  ║  │     │        s: Var (name=entity) (bindingState=bound)
+   │  ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │        o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
+   │  ║  │     └── Filter (costEstimate=2.00, resultSizeEstimate=1.00, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=2.00, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic, optimizer.strategy=lmdb-sketch-filter-bindingPrefix, deferredFilterScope=bindingPrefix) [right]
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=name) (bindingState=bound)
+   │  ║  │        ║  │     Var (name=target) (bindingState=bound)
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=name) (bindingState=bound)
+   │  ║  │        ║        ValueConstant (value="Member 3")
+   │  ║  │        ╚══ BindingSetAssignment ([[target="Member 1"], [target="Member 2"]]) (costEstimate=1.00, resultSizeEstimate=1.00, plannedWorkRows=1.00, plannerId=lmdb-sketch, plannedEstimateSource=generic-statistics)
+   │  ║  └── StatementPattern (costEstimate=1.5M, resultSizeEstimate=3.00, plannedAccessRows=3.00, plannedAccessWorkRows=3.00, plannedRepeatedInvocations=515.4K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=133.9K, plannedWorkRows=1.5M, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path) [right]
+   │  ║        s: Var (name=entity) (bindingState=bound)
+   │  ║        p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║        o: Var (name=copy) (bindingState=unbound)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity) (bindingState=bound)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity) (bindingState=unbound)
+
+SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+  {
+    ?entity a <http://example.com/theme/library/Member> .
+    ?entity <http://example.com/theme/library/name> ?name .
+    VALUES ?target { "Member 1" "Member 2" }
+    FILTER ((?name = ?target) || (?name = "Member 3"))
+  }
+  UNION
+  {
+    ?entity <http://example.com/theme/library/title> ?name .
+    ?entity a <http://example.com/theme/library/Book> .
+    VALUES ?target { "Member 1" "Member 2" }
+    FILTER ((?name = ?target) || (?name = "Member 3"))
+  }
+  OPTIONAL {
+    ?entity <http://example.com/theme/library/hasCopy> ?copy .
+  }
+}
+
+### Telemetry Query ###
+Projection (costEstimate=3.1M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=52.2K, nextCallCountActual=1, nextTimeNanosActual=3.0K, plannedWorkRows=3.1M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, firstRowTimeNanosActual=20.7K, openCountActual=1, lastRowTimeNanosActual=89.2K, closeCountActual=1, sampleCountActual=1, varianceActual=0, stddevActual=0, confidenceScoreActual=0.50, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=26.1K, avgNextNanosActual=3.0K)
+╠══ ProjectionElemList (hasNextFalseCountActual=0)
+║     ProjectionElem "count" (hasNextFalseCountActual=0)
+╚══ Extension (costEstimate=3.1M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=32.5K, nextCallCountActual=1, nextTimeNanosActual=333, plannedWorkRows=3.1M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, firstRowTimeNanosActual=47.2K, openCountActual=1, lastRowTimeNanosActual=84.3K, closeCountActual=1, sampleCountActual=1, varianceActual=0, stddevActual=0, confidenceScoreActual=0.50, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=16.3K, avgNextNanosActual=333)
+   ├── Group () (costEstimate=3.1M, resultSizeEstimate=1.00, resultSizeActual=1, hasNextCallCountActual=2, hasNextTrueCountActual=1, hasNextTimeNanosActual=166, nextCallCountActual=1, nextTimeNanosActual=125, plannedWorkRows=3.1M, plannerId=lmdb-sketch, lmdbIdPharmaQ8FallbackReason=shape, plannedEstimateSource=lmdb-sketch-var-stats, lmdbIdPharmaQ10FallbackReason=shape, lmdbIdAggregateAlgorithm=LmdbIdDistinctCount, firstRowTimeNanosActual=57.7K, groupsCreatedActual=1, openCountActual=1, lastRowTimeNanosActual=65.4K, closeCountActual=1, varsAddedActual=1, varsDroppedActual=10, metricOrigin.varsAddedActual=derived, metricOrigin.varsDroppedActual=derived, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=83, avgNextNanosActual=125)
+   │  ╠══ LeftJoin (costEstimate=1.7M, resultSizeEstimate=1.4M, plannedWorkRows=1.7M, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  ├── Union (costEstimate=133.2K, resultSizeEstimate=266.4K, plannedWorkRows=133.2K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0) [left]
+   │  ║  │  ╠══ Join (JoinIterator) (costEstimate=4.3K, resultSizeEstimate=8.7K, plannedWorkRows=4.3K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  │  ║  ├── Join (new scope) (LmdbIdJoinIterator) (costEstimate=19.7K, resultSizeEstimate=4.3K, plannedUncertaintyRows=0, plannedWorkRows=19.7K, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0) [left]
+   │  ║  │  ║  │  ╠══ StatementPattern (costEstimate=10.2K, resultSizeEstimate=5.1K, plannedUncertaintyRows=0, plannedAccessWorkRows=5.1K, plannedAccessRows=5.1K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=10.2K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P, O], plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], varsAddedActual=3, lmdbIdConstantMembershipPreparedActual=true, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [left]
+   │  ║  │  ║  │  ║     s: Var (name=entity) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │  ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │  ║  │  ║     o: Var (name=_const_f5728978_uri, value=http://example.com/theme/library/Member, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │  ║  │  ╚══ StatementPattern (costEstimate=9.5K, resultSizeEstimate=1.00, plannedUncertaintyRows=0, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=9.5K, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P], plannedBoundVars=entity, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=19672.30623519458, finalRows=4343.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=3, rejectedAlternatives=1, dominated=1, trimmed=0, maxFrontierWidth=1, finalFrontierWidth=1, finalVector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Member), 1:SP(?entity http://example.com/theme/library/name ?name)], vector=JoinCostVector{totalWorkRows=19672.30623519458, finalRows=4343.0, maxIntermediateRows=5081.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[entity], varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║  │  ║  │        s: Var (name=entity) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │  ║  │        p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │  ║  │        o: Var (name=name) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │  ║  └── Filter (costEstimate=2.00, resultSizeEstimate=1.00, sourceRowsFilteredActual=0, plannedFilterEvidenceCount=8, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioRaw=0.63, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=2.00, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic, optimizer.strategy=lmdb-sketch-filter-bindingPrefix, deferredFilterScope=bindingPrefix, hasNextFalseCountActual=0) [right]
+   │  ║  │  ║     ╠══ Or (hasNextFalseCountActual=0)
+   │  ║  │  ║     ║  ├── Compare (=) (hasNextFalseCountActual=0)
+   │  ║  │  ║     ║  │     Var (name=name) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │  ║     ║  │     Var (name=target) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │  ║     ║  └── Compare (=) (hasNextFalseCountActual=0)
+   │  ║  │  ║     ║        Var (name=name) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │  ║     ║        ValueConstant (value="Member 3") (exprEvalCountActual=4, exprTrueCountActual=4, exprEvalTimeNanosActual=39.3K, hasNextFalseCountActual=0)
+   │  ║  │  ║     ╚══ BindingSetAssignment ([[target="Member 1"], [target="Member 2"]]) (costEstimate=1.00, resultSizeEstimate=1.00, plannedWorkRows=1.00, plannerId=lmdb-sketch, plannedEstimateSource=generic-statistics, varsAddedActual=1, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0)
+   │  ║  │  ╚══ Join (JoinIterator) (costEstimate=128.9K, resultSizeEstimate=257.7K, plannedWorkRows=128.9K, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0)
+   │  ║  │     ├── Join (new scope) (LmdbIdJoinIterator) (costEstimate=515.4K, resultSizeEstimate=128.9K, plannedUncertaintyRows=128.9K, plannedWorkRows=515.4K, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-join-plan, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], hasNextFalseCountActual=0, leftRowsProbedActual=0, rightRowsScannedActual=0) [left]
+   │  ║  │     │  ╠══ StatementPattern (costEstimate=386.6K, resultSizeEstimate=128.9K, plannedUncertaintyRows=128.9K, plannedAccessRows=128.9K, plannedAccessWorkRows=128.9K, plannedIndexPrefixLength=1.00, plannedAccessPathCandidates=4.00, plannedWorkRows=386.6K, plannedIndexName=posc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P], plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.runtimeFeedback=filterFeedback=none, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [left]
+   │  ║  │     │  ║     s: Var (name=entity) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │     │  ║     p: Var (name=_const_335cbfda_uri, value=http://example.com/theme/library/title, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │     │  ║     o: Var (name=name) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=128.9K, resultSizeEstimate=1.00, plannedUncertaintyRows=128.9K, plannedAccessWorkRows=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=3.00, plannedAccessPathCandidates=4.00, plannedWorkRows=128.9K, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O], plannedBoundVars=entity,name, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.decisionTrace=pareto-memo selected (workRows=515412.0, finalRows=128853.0, path=ROBUST_USED), plannedEstimateSource=lmdb-access-path, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.runtimeHints=runtimeCorrection=none, optimizer.runtimeFeedback=filterFeedback=none, optimizer.logicalExploration=mode=pareto-memo, frontierLimit=8, beamWidth=8, candidates=4, accepted=4, rejectedAlternatives=0, dominated=0, trimmed=0, maxFrontierWidth=2, finalFrontierWidth=2, finalVector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}, finalFrontier=[{order=[1:SP(?entity http://example.com/theme/library/title ?name), 0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book)], vector=JoinCostVector{totalWorkRows=515412.0, finalRows=128853.0, maxIntermediateRows=128853.0, uncertaintyRows=128853.0, cartesianWorkRows=0.0}}, {order=[0:SP(?entity http://www.w3.org/1999/02/22-rdf-syntax-ns#type http://example.com/theme/library/Book), 1:SP(?entity http://example.com/theme/library/title ?name)], vector=JoinCostVector{totalWorkRows=592917.5171559314, finalRows=214157.0, maxIntermediateRows=214157.0, uncertaintyRows=0.0, cartesianWorkRows=0.0}}], sharedJoinVars=[entity], varsAddedActual=3, lmdbIdConstantMembershipPreparedActual=true, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║  │     │        s: Var (name=entity) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │     │        o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous) (hasNextFalseCountActual=0)
+   │  ║  │     └── Filter (costEstimate=2.00, resultSizeEstimate=1.00, sourceRowsFilteredActual=0, plannedFilterPassRatioLower=0, plannedFilterPassRatio=1.00, plannedFilterPassRatioUpper=1.00, plannedFilterConfidence=0, plannedWorkRows=2.00, plannerId=lmdb-sketch, plannedEstimateSource=lmdb-synthetic, filterSelectivitySource=lmdb-synthetic, optimizer.strategy=lmdb-sketch-filter-bindingPrefix, deferredFilterScope=bindingPrefix, hasNextFalseCountActual=0) [right]
+   │  ║  │        ╠══ Or (hasNextFalseCountActual=0)
+   │  ║  │        ║  ├── Compare (=) (hasNextFalseCountActual=0)
+   │  ║  │        ║  │     Var (name=name) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │        ║  │     Var (name=target) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │        ║  └── Compare (=) (hasNextFalseCountActual=0)
+   │  ║  │        ║        Var (name=name) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║  │        ║        ValueConstant (value="Member 3") (exprEvalCountActual=4, exprTrueCountActual=4, exprEvalTimeNanosActual=4.8K, hasNextFalseCountActual=0)
+   │  ║  │        ╚══ BindingSetAssignment ([[target="Member 1"], [target="Member 2"]]) (costEstimate=1.00, resultSizeEstimate=1.00, plannedWorkRows=1.00, plannerId=lmdb-sketch, plannedEstimateSource=generic-statistics, varsAddedActual=1, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0)
+   │  ║  └── StatementPattern (costEstimate=1.5M, resultSizeEstimate=3.00, plannedAccessRows=3.00, plannedAccessWorkRows=3.00, plannedRepeatedInvocations=515.4K, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=133.9K, plannedWorkRows=1.5M, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path, varsAddedActual=3, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=0) [right]
+   │  ║        s: Var (name=entity) (bindingState=bound, hasNextFalseCountActual=0)
+   │  ║        p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous) (hasNextFalseCountActual=0)
+   │  ║        o: Var (name=copy) (bindingState=unbound, hasNextFalseCountActual=0)
+   │  ╚══ GroupElem (count) (hasNextFalseCountActual=0)
+   │        Count (Distinct) (hasNextFalseCountActual=0)
+   │           Var (name=entity) (bindingState=bound, hasNextFalseCountActual=0)
+   └── ExtensionElem (count) (hasNextFalseCountActual=0)
+         Count (Distinct) (hasNextFalseCountActual=0)
+            Var (name=entity) (bindingState=unbound, hasNextFalseCountActual=0)
+
+SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+  {
+    ?entity a <http://example.com/theme/library/Member> .
+    ?entity <http://example.com/theme/library/name> ?name .
+    VALUES ?target { "Member 1" "Member 2" }
+    FILTER ((?name = ?target) || (?name = "Member 3"))
+  }
+  UNION
+  {
+    ?entity <http://example.com/theme/library/title> ?name .
+    ?entity a <http://example.com/theme/library/Book> .
+    VALUES ?target { "Member 1" "Member 2" }
+    FILTER ((?name = ?target) || (?name = "Member 3"))
+  }
+  OPTIONAL {
+    ?entity <http://example.com/theme/library/hasCopy> ?copy .
+  }
+}
+
+166.595 ms/op
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  163.928 ms/op
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 2)
+
+# Run progress: 18.18% complete, ETA 00:02:19
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/library
+### Original Query ###
+PREFIX lib: <http://example.com/theme/library/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?author (COUNT(DISTINCT ?book) AS ?bookCount) WHERE {
+  ?author a lib:Author ; lib:name ?authorName .
+  FILTER(?authorName IN ("Author 1", "Author 2", "Author 3"))
+  OPTIONAL { ?book lib:writtenBy ?author . }
+}
+GROUP BY ?author
+HAVING(COUNT(?book) > 0)
+
+<failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 3)
+
+# Run progress: 27.27% complete, ETA 00:01:23
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 4)
+
+# Run progress: 36.36% complete, ETA 00:00:54
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 5)
+
+# Run progress: 45.45% complete, ETA 00:00:37
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 6)
+
+# Run progress: 54.55% complete, ETA 00:00:25
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 7)
+
+# Run progress: 63.64% complete, ETA 00:00:17
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 8)
+
+# Run progress: 72.73% complete, ETA 00:00:11
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 9)
+
+# Run progress: 81.82% complete, ETA 00:00:06
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 10 s each
+# Measurement: 2 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = LIBRARY, z_queryIndex = 10)
+
+# Run progress: 90.91% complete, ETA 00:00:03
+# Fork: N/A, test runs in the host VM
+# *** WARNING: Non-forked runs may silently omit JVM options, mess up profilers, disable compiler hints, etc. ***
+# *** WARNING: Use non-forked runs only for debugging purposes, not for actual performance runs. ***
+# Warmup Iteration   1: <failure>
+
+java.lang.IllegalStateException: Unexpected count: expected 3 but got 0
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery(ThemeQueryBenchmark.java:198)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_avgt_jmhStub(ThemeQueryBenchmark_executeQuery_jmhTest.java:238)
+	at org.eclipse.rdf4j.sail.lmdb.benchmark.jmh_generated.ThemeQueryBenchmark_executeQuery_jmhTest.executeQuery_AverageTime(ThemeQueryBenchmark_executeQuery_jmhTest.java:177)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:527)
+	at org.openjdk.jmh.runner.BenchmarkHandler$BenchmarkTask.call(BenchmarkHandler.java:504)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1516)
+
+
+# Run complete. Total time: 00:00:31
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                         (themeName)  (z_queryIndex)  Mode  Cnt    Score   Error  Units
+ThemeQueryBenchmark.executeQuery      LIBRARY               0  avgt    2  459.913          ms/op
+ThemeQueryBenchmark.executeQuery      LIBRARY               1  avgt    2  163.928          ms/op
