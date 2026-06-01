@@ -131,10 +131,12 @@ public class QueryBenchmarkTest {
 			dataDir = tempDir.newFolder();
 
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-			repository = new SailRepository(new LmdbStore(dataDir, config));
+			LmdbStore store = new LmdbStore(dataDir, config);
+			store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+			repository = new SailRepository(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
 				connection.commit();
 			}

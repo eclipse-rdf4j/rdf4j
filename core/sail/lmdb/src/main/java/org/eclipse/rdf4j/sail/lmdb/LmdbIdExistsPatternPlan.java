@@ -34,11 +34,16 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 final class LmdbIdExistsPatternPlan {
 
 	private static final String MAX_MEMBERSHIP_ROWS_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows";
+	private static final String BATCH_MAX_MEMBERSHIP_ROWS_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.exists.batchMembership.maxRows";
+	private static final String BATCH_MEMBERSHIP_ROWS_PER_PROBE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.exists.batchMembership.rowsPerProbe";
 	private static final int DEFAULT_MAX_MEMBERSHIP_ROWS = 4096;
+	private static final int DEFAULT_BATCH_MAX_MEMBERSHIP_ROWS = 65_536;
+	private static final int DEFAULT_BATCH_MEMBERSHIP_ROWS_PER_PROBE = 4;
 
 	private final long[] patternIds;
 	private final String[] variables;
 	private final int[] positionMasks;
+	private final int maxMembershipRows;
 	final int slotCount;
 	final boolean valid;
 	final int subjIndex;
@@ -50,11 +55,13 @@ final class LmdbIdExistsPatternPlan {
 	private final boolean[] indexMaskResolved;
 	private volatile SubjectPredicateMembership subjectPredicateMembership;
 
-	private LmdbIdExistsPatternPlan(long[] patternIds, String[] variables, int[] positionMasks, int slotCount,
-			int subjIndex, int predIndex, int objIndex, int ctxIndex, boolean requiresRecordCheck, boolean valid) {
+	private LmdbIdExistsPatternPlan(long[] patternIds, String[] variables, int[] positionMasks, int maxMembershipRows,
+			int slotCount, int subjIndex, int predIndex, int objIndex, int ctxIndex, boolean requiresRecordCheck,
+			boolean valid) {
 		this.patternIds = patternIds;
 		this.variables = variables;
 		this.positionMasks = positionMasks;
+		this.maxMembershipRows = maxMembershipRows;
 		this.slotCount = slotCount;
 		this.subjIndex = subjIndex;
 		this.predIndex = predIndex;
@@ -67,6 +74,20 @@ final class LmdbIdExistsPatternPlan {
 	}
 
 	static LmdbIdExistsPatternPlan create(StatementPattern pattern, ValueStore valueStore) {
+		return create(pattern, valueStore, configuredMaxMembershipRows());
+	}
+
+	static LmdbIdExistsPatternPlan createForBatchExists(StatementPattern pattern, ValueStore valueStore) {
+		return createForBatchExists(pattern, valueStore, Integer.MAX_VALUE);
+	}
+
+	static LmdbIdExistsPatternPlan createForBatchExists(StatementPattern pattern, ValueStore valueStore,
+			int probeCount) {
+		return create(pattern, valueStore, configuredBatchMaxMembershipRows(probeCount));
+	}
+
+	private static LmdbIdExistsPatternPlan create(StatementPattern pattern, ValueStore valueStore,
+			int maxMembershipRows) {
 		long[] ids = new long[4];
 		Arrays.fill(ids, LmdbValue.UNKNOWN_ID);
 
@@ -81,7 +102,7 @@ final class LmdbIdExistsPatternPlan {
 						indexByVar)
 				|| !register(pattern.getContextVar(), TripleStore.CONTEXT_IDX, true, false, valueStore, ids, masks,
 						slots, indexByVar)) {
-			return invalid();
+			return invalid(maxMembershipRows);
 		}
 
 		String[] variables = new String[indexByVar.size()];
@@ -94,7 +115,7 @@ final class LmdbIdExistsPatternPlan {
 			positionMasks[slot] = mask;
 			requiresRecordCheck |= Integer.bitCount(mask) > 1;
 		}
-		return new LmdbIdExistsPatternPlan(ids, variables, positionMasks, indexByVar.size(),
+		return new LmdbIdExistsPatternPlan(ids, variables, positionMasks, maxMembershipRows, indexByVar.size(),
 				index(pattern.getSubjectVar(), slots), index(pattern.getPredicateVar(), slots),
 				index(pattern.getObjectVar(), slots), index(pattern.getContextVar(), slots), requiresRecordCheck, true);
 	}
@@ -173,6 +194,10 @@ final class LmdbIdExistsPatternPlan {
 				&& !requiresRecordCheck;
 	}
 
+	long subjectPredicateId() {
+		return patternIds[TripleStore.PRED_IDX];
+	}
+
 	boolean canUseSubjectPredicateMembershipBatch() {
 		return valid && subjIndex >= 0 && patternIds[TripleStore.PRED_IDX] != LmdbValue.UNKNOWN_ID
 				&& patternIds[TripleStore.OBJ_IDX] == LmdbValue.UNKNOWN_ID
@@ -203,9 +228,26 @@ final class LmdbIdExistsPatternPlan {
 		return false;
 	}
 
-	private static LmdbIdExistsPatternPlan invalid() {
-		return new LmdbIdExistsPatternPlan(new long[4], new String[0], new int[0], 0, -1, -1, -1, -1, false,
-				false);
+	Boolean anyMatching(LmdbEvaluationDataset dataset, String indexFieldSequence, long subj, long pred, long obj,
+			long ctx, Scratch scratch) throws QueryEvaluationException {
+		if (requiresRecordCheck) {
+			return null;
+		}
+		scratch.componentScanFound = false;
+		long rows = dataset.scanIndexComponents(indexFieldSequence, subj, pred, obj, ctx, TripleStore.SUBJ_IDX, -1,
+				scratch.keyRangeBuffers, (ignored, ignored2) -> {
+					scratch.componentScanFound = true;
+					return false;
+				});
+		if (rows < 0) {
+			return null;
+		}
+		return scratch.componentScanFound;
+	}
+
+	private static LmdbIdExistsPatternPlan invalid(int maxMembershipRows) {
+		return new LmdbIdExistsPatternPlan(new long[4], new String[0], new int[0], maxMembershipRows, 0, -1, -1, -1,
+				-1, false, false);
 	}
 
 	private static boolean register(Var var, int component, boolean requireResource, boolean requireIri,
@@ -263,13 +305,33 @@ final class LmdbIdExistsPatternPlan {
 		if (indexFieldSequence == null) {
 			return SubjectPredicateMembership.EMPTY;
 		}
-		PrimitiveLongSet subjects = new PrimitiveLongSet();
+		int maxRows = maxMembershipRows;
+		LmdbIdSet componentScanSubjects = LmdbIdSets.create();
+		long[] componentScanRows = new long[1];
+		boolean[] componentScanOversized = new boolean[1];
+		long componentScanResult = dataset.scanIndexComponentsBatch(indexFieldSequence, LmdbValue.UNKNOWN_ID, pred,
+				LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, TripleStore.SUBJ_IDX, -1, scratch.keyRangeBuffers,
+				LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE, (subjects, ignored, count) -> {
+					for (int i = 0; i < count; i++) {
+						componentScanRows[0]++;
+						if (componentScanRows[0] > maxRows) {
+							componentScanOversized[0] = true;
+							return false;
+						}
+						componentScanSubjects.add(subjects[i]);
+					}
+					return true;
+				});
+		if (componentScanResult >= 0) {
+			return componentScanOversized[0] ? SubjectPredicateMembership.OVERSIZED
+					: new SubjectPredicateMembership(componentScanSubjects);
+		}
+		LmdbIdSet subjects = LmdbIdSets.create();
 		RecordIterator iterator = dataset.getRecordIterator(indexFieldSequence, LmdbValue.UNKNOWN_ID, pred,
 				LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, scratch.keyRangeBuffers, scratch.quad, null);
 		if (iterator == null) {
 			return SubjectPredicateMembership.EMPTY;
 		}
-		int maxRows = configuredMaxMembershipRows();
 		long rows = 0;
 		try {
 			long[] record;
@@ -288,6 +350,21 @@ final class LmdbIdExistsPatternPlan {
 
 	private static int configuredMaxMembershipRows() {
 		return Math.max(1, Integer.getInteger(MAX_MEMBERSHIP_ROWS_PROPERTY, DEFAULT_MAX_MEMBERSHIP_ROWS));
+	}
+
+	private static int configuredBatchMaxMembershipRows() {
+		return configuredBatchMaxMembershipRows(Integer.MAX_VALUE);
+	}
+
+	static int configuredBatchMaxMembershipRows(int probeCount) {
+		int fallback = Integer.getInteger(MAX_MEMBERSHIP_ROWS_PROPERTY, DEFAULT_BATCH_MAX_MEMBERSHIP_ROWS);
+		int configuredMax = Math.max(1, Integer.getInteger(BATCH_MAX_MEMBERSHIP_ROWS_PROPERTY, fallback));
+		int rowsPerProbe = Math.max(1, Integer.getInteger(BATCH_MEMBERSHIP_ROWS_PER_PROBE_PROPERTY,
+				DEFAULT_BATCH_MEMBERSHIP_ROWS_PER_PROBE));
+		long probeBound = (long) Math.max(1, probeCount) * rowsPerProbe;
+		int adaptiveMax = probeBound >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) probeBound;
+		adaptiveMax = Math.max(DEFAULT_MAX_MEMBERSHIP_ROWS, adaptiveMax);
+		return Math.min(configuredMax, adaptiveMax);
 	}
 
 	private static int boundMask(long subj, long pred, long obj, long ctx) {
@@ -362,19 +439,19 @@ final class LmdbIdExistsPatternPlan {
 	}
 
 	static final class SubjectPredicateMembership implements LmdbIdMembership {
-		private static final SubjectPredicateMembership EMPTY = new SubjectPredicateMembership(new PrimitiveLongSet());
+		private static final SubjectPredicateMembership EMPTY = new SubjectPredicateMembership(LmdbIdSets.create());
 		private static final SubjectPredicateMembership OVERSIZED = new SubjectPredicateMembership(
-				new PrimitiveLongSet(),
+				LmdbIdSets.create(),
 				true);
 
-		private final PrimitiveLongSet subjects;
+		private final LmdbIdSet subjects;
 		private final boolean oversized;
 
-		private SubjectPredicateMembership(PrimitiveLongSet subjects) {
+		private SubjectPredicateMembership(LmdbIdSet subjects) {
 			this(subjects, false);
 		}
 
-		private SubjectPredicateMembership(PrimitiveLongSet subjects, boolean oversized) {
+		private SubjectPredicateMembership(LmdbIdSet subjects, boolean oversized) {
 			this.subjects = subjects;
 			this.oversized = oversized;
 		}
@@ -389,69 +466,6 @@ final class LmdbIdExistsPatternPlan {
 		}
 	}
 
-	private static final class PrimitiveLongSet {
-		private static final float MAX_LOAD = 0.6f;
-
-		private long[] keys = new long[16];
-		private boolean[] used = new boolean[16];
-		private int size;
-		private int resizeAt = (int) (keys.length * MAX_LOAD);
-
-		private boolean add(long key) {
-			if (size >= resizeAt) {
-				rehash(keys.length << 1);
-			}
-			int slot = slot(key, keys.length);
-			while (used[slot]) {
-				if (keys[slot] == key) {
-					return false;
-				}
-				slot = (slot + 1) & (keys.length - 1);
-			}
-			used[slot] = true;
-			keys[slot] = key;
-			size++;
-			return true;
-		}
-
-		private boolean contains(long key) {
-			int slot = slot(key, keys.length);
-			while (used[slot]) {
-				if (keys[slot] == key) {
-					return true;
-				}
-				slot = (slot + 1) & (keys.length - 1);
-			}
-			return false;
-		}
-
-		private int size() {
-			return size;
-		}
-
-		private void rehash(int capacity) {
-			long[] oldKeys = keys;
-			boolean[] oldUsed = used;
-			keys = new long[capacity];
-			used = new boolean[capacity];
-			resizeAt = (int) (capacity * MAX_LOAD);
-			size = 0;
-			for (int i = 0; i < oldKeys.length; i++) {
-				if (oldUsed[i]) {
-					add(oldKeys[i]);
-				}
-			}
-			Arrays.fill(oldKeys, 0L);
-		}
-
-		private static int slot(long value, int capacity) {
-			long h = value ^ (value >>> 33);
-			h *= 0xff51afd7ed558ccdL;
-			h ^= h >>> 33;
-			return (int) h & (capacity - 1);
-		}
-	}
-
 	static final class Scratch {
 		final KeyRangeBuffers keyRangeBuffers = KeyRangeBuffers.acquire();
 		final long[] quad = new long[4];
@@ -463,6 +477,7 @@ final class LmdbIdExistsPatternPlan {
 		int[] rowOrderScratch = new int[0];
 		int[] radixCounts = new int[LmdbIdBatchProbeKeySorter.RADIX_BUCKETS];
 		int[] radixOffsets = new int[LmdbIdBatchProbeKeySorter.RADIX_BUCKETS];
+		boolean componentScanFound;
 
 		void ensureBatchCapacity(int rowCount, int slotCount) {
 			int requiredBindings = rowCount * slotCount;

@@ -12,11 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb.join;
 
 import java.util.Arrays;
+import java.util.function.LongConsumer;
+
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
 
 /**
  * Tiny primitive set for per-query LMDB ID aggregation.
  */
-public final class LmdbLongHashSet {
+public final class LmdbLongHashSet implements LmdbIdSet {
 
 	private static final float MAX_LOAD = 0.6f;
 
@@ -38,6 +41,7 @@ public final class LmdbLongHashSet {
 		resizeAt = (int) (capacity * MAX_LOAD);
 	}
 
+	@Override
 	public boolean add(long key) {
 		if (key == 0) {
 			if (containsZero) {
@@ -63,6 +67,7 @@ public final class LmdbLongHashSet {
 		return true;
 	}
 
+	@Override
 	public boolean contains(long key) {
 		if (key == 0) {
 			return containsZero;
@@ -77,10 +82,12 @@ public final class LmdbLongHashSet {
 		return false;
 	}
 
+	@Override
 	public int size() {
 		return size;
 	}
 
+	@Override
 	public void clear() {
 		for (int i = 0; i < touchedCount; i++) {
 			keys[touchedSlots[i]] = 0L;
@@ -88,6 +95,24 @@ public final class LmdbLongHashSet {
 		touchedCount = 0;
 		size = 0;
 		containsZero = false;
+	}
+
+	@Override
+	public void forEach(LongConsumer consumer) {
+		if (containsZero) {
+			consumer.accept(0L);
+		}
+		for (int i = 0; i < touchedCount; i++) {
+			long key = keys[touchedSlots[i]];
+			if (key != 0L) {
+				consumer.accept(key);
+			}
+		}
+	}
+
+	@Override
+	public String implementationName() {
+		return "hash";
 	}
 
 	private void rehash(int capacity) {

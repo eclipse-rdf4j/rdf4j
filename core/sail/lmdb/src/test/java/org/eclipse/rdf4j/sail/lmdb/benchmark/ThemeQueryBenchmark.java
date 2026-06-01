@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,10 +72,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -93,7 +94,7 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String STORE_COMPATIBILITY_KEY_FILE_PROPERTY = "store.compatibility.key";
 	private static final String STORE_REUSE_CONFIRMED_FILE_PROPERTY = "store.reuse.confirmed";
-	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String PRINT_PLANS_PROPERTY = "rdf4j.benchmark.printPlans";
 	private static final String CODEGEN_EXPLAIN_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.codegen.explain";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
@@ -118,9 +119,9 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
+			"SOCIAL_MEDIA",
+			"LIBRARY",
+			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
@@ -164,7 +165,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
 		storeConfig = ConfigUtil.createConfig();
-		store = new LmdbStore(storeDirectory, storeConfig);
+		store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
 		waitForSketchesIfEnabled();
@@ -282,7 +283,7 @@ public class ThemeQueryBenchmark {
 
 		storeConfig = ConfigUtil.createConfig();
 		storeConfig.setIterationCacheSyncThreshold(0);
-		store = new LmdbStore(storeDirectory, storeConfig);
+		store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 //		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
@@ -294,7 +295,7 @@ public class ThemeQueryBenchmark {
 
 		System.gc();
 
-		store = new LmdbStore(storeDirectory, storeConfig);
+		store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 	}
 
@@ -453,6 +454,7 @@ public class ThemeQueryBenchmark {
 		var featureFlags = new FeatureFlagCollector()
 				.addValue("themeBenchmark.themeName", () -> themeName)
 				.addValue("themeBenchmark.queryIndex", () -> z_queryIndex)
+				.addReflectiveGetter("lmdbStore.defaultIsolationLevel", store, "getDefaultIsolationLevel")
 				.addReflectiveGetter("lmdbStore.writable", store, "isWritable")
 				.addReflectiveGetter("lmdbConfig.tripleIndexes", storeConfig, "getTripleIndexes")
 				.addReflectiveGetter("lmdbConfig.forceSync", storeConfig, "getForceSync")
@@ -531,7 +533,7 @@ public class ThemeQueryBenchmark {
 //		}
 
 		printCodegenExplain();
-		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+		if (Boolean.getBoolean(PRINT_PLANS_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				System.out.println("### Optimized Query ###");
 				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
@@ -605,6 +607,7 @@ public class ThemeQueryBenchmark {
 		String source = Files.readString(new File(
 				"src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/ThemeQueryBenchmark.java").toPath(),
 				StandardCharsets.UTF_8);
+		String implementationSource = source.substring(0, source.indexOf("\n\t@Test"));
 		int methodStart = source.indexOf("private long timeToFirstRows(int rowLimit)");
 		int methodEnd = source.indexOf("\n\tprivate void ensureDataLoadedAndValidated()", methodStart);
 
@@ -613,6 +616,12 @@ public class ThemeQueryBenchmark {
 		assertTrue(
 				source.substring(methodStart, methodEnd).contains("connection.begin(IsolationLevels.READ_COMMITTED)"),
 				"time-to-first benchmark methods must use READ_COMMITTED so ID-based joins and Janino paths are eligible");
+		assertTrue(source.contains("ConfigUtil.createStore(storeDirectory, storeConfig)"),
+				"theme benchmark LMDB stores must default to READ_COMMITTED so explain and capture use the same isolation");
+		assertTrue(implementationSource.contains("rdf4j.benchmark.printPlans"),
+				"theme benchmark optimized and telemetry plan output must be explicitly opt-in");
+		assertFalse(implementationSource.contains("!Boolean.getBoolean(PROFILING_PROPERTY)"),
+				"theme benchmark must not print full plans by default during timed JMH trials");
 		try {
 			assertTrue(ThemeQueryBenchmark.class.getDeclaredMethod("printCodegenExplain").canAccess(this),
 					"theme benchmark must expose codegen-explain diagnostics when the explain flag is enabled");

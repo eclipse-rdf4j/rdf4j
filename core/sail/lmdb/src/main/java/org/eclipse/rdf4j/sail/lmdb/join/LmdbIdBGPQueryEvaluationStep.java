@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
@@ -54,6 +55,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbIdMembership;
 import org.eclipse.rdf4j.sail.lmdb.LmdbIdPredicatePlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSets;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPlanDerivedCodegenShape;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
@@ -95,6 +98,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 	private String lastEarlyDistinctFallback;
 	private int lastDistinctMembershipFilters;
 	private long lastDistinctMembershipFilterRows;
+	private int lastDistinctMembershipComponentScans;
+	private String lastDistinctComponentScanFallback;
 	private boolean lastCollectedMembershipCacheHit;
 	private boolean lastCollectedMembershipOversized;
 	private long lastCollectedMembershipRowsScanned;
@@ -257,9 +262,14 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 				return new EmptyIteration<>();
 			}
 
+			boolean[] boundSlots = boundSlots(initialBinding);
 			RecordIterator iter = stages.get(0).createInitialIterator(dataset, initialBinding, valueStore);
+			markStageOutput(stages.get(0), boundSlots);
 			for (int i = 1; i < stages.size(); i++) {
-				iter = stages.get(i).joinWith(iter, dataset, valueStore);
+				Stage stage = stages.get(i);
+				iter = prefilterJoinWithComponentMembership(iter, stage, boundSlots, dataset);
+				iter = stage.joinWith(iter, dataset, valueStore);
+				markStageOutput(stage, boundSlots);
 			}
 
 			return createResultIteration(iter, bindings, valueStore);
@@ -411,6 +421,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		lastEarlyDistinctFallback = null;
 		lastDistinctMembershipFilters = 0;
 		lastDistinctMembershipFilterRows = 0;
+		lastDistinctMembershipComponentScans = 0;
+		lastDistinctComponentScanFallback = null;
 		if (fallbackStep != null && LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
 			return filterVariable == null ? countDistinctIdsFallback(bindings, variable) : -1;
 		}
@@ -448,6 +460,19 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 				return 0;
 			}
 
+			long componentScanCount = countDistinctIdsWithComponentScanMemberships(dataset, initialBinding, stages,
+					variable, filterVariable, filter);
+			if (componentScanCount >= 0) {
+				return componentScanCount;
+			}
+
+			long mergeComponentScanCount = countDistinctIdsWithSingleMergeComponentScans(dataset, initialBinding,
+					stages,
+					variable, filterVariable, filter);
+			if (mergeComponentScanCount >= 0) {
+				return mergeComponentScanCount;
+			}
+
 			long exactIdCount = countDistinctIdsWithFirstStageExactIds(dataset, valueStore, initialBinding, stages,
 					variable, filterVariable, filter);
 			if (exactIdCount >= 0) {
@@ -461,7 +486,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 			RecordIterator iter = stages.get(0).createInitialIterator(dataset, initialBinding, valueStore);
 			markStageOutput(stages.get(0), boundSlots);
 			iter = deduplicateDistinctIfSafe(iter, stages, 0, slot, filterSlot, filter, boundSlots);
-			LmdbLongHashSet distinct = new LmdbLongHashSet();
+			LmdbIdSet distinct = LmdbIdSets.create();
 			long membershipRows = collectDistinctWithMembershipFiltersIfSafe(iter, stages, 1, slot, filterSlot, filter,
 					boundSlots, dataset, mask, distinct);
 			if (membershipRows >= 0) {
@@ -503,6 +528,139 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		}
 	}
 
+	private long countDistinctIdsWithComponentScanMemberships(LmdbEvaluationDataset dataset, long[] initialBinding,
+			List<Stage> stages, String variable, String filterVariable, LongPredicate filter)
+			throws QueryEvaluationException {
+		if (filterVariable != null || filter != null || stages.isEmpty()) {
+			return -1;
+		}
+		int distinctSlot = finalInfo.getIndex(variable);
+		if (distinctSlot < 0 || distinctSlot >= initialBinding.length
+				|| initialBinding[distinctSlot] != LmdbValue.UNKNOWN_ID) {
+			return rejectDistinctComponentScan("component-scan-distinct-slot-bound-or-missing");
+		}
+		if (((finalInfo.getPositionsMask(variable) >> TripleStore.CONTEXT_IDX) & 1) == 1) {
+			return rejectDistinctComponentScan("component-scan-context-distinct");
+		}
+		if (hasOtherBoundSlots(initialBinding, distinctSlot)) {
+			return rejectDistinctComponentScan("component-scan-other-bound-slots");
+		}
+
+		LmdbIdSet current = null;
+		long rowsScanned = 0;
+		int scans = 0;
+		for (Stage stage : stages) {
+			if (!(stage instanceof PatternStage)) {
+				return -1;
+			}
+			PatternPlan plan = ((PatternStage) stage).plan;
+			int distinctComponent = distinctComponent(plan, distinctSlot);
+			if (!canUseDistinctComponentScan(plan, distinctSlot, distinctComponent)) {
+				return rejectDistinctComponentScan("component-scan-plan-not-scannable");
+			}
+			if (current == null) {
+				DistinctMembershipFilter membership = scanDistinctMembershipComponent(plan, distinctComponent,
+						dataset);
+				if (membership == null) {
+					return rejectDistinctComponentScan("component-scan-first-unavailable");
+				}
+				current = membership.ids;
+				rowsScanned += membership.rowsScanned;
+			} else {
+				LmdbIdSet next = LmdbIdSets.create();
+				long rows = scanIntersectingDistinctComponent(plan, distinctComponent, dataset, current, next);
+				if (rows < 0) {
+					return rejectDistinctComponentScan("component-scan-intersection-unavailable");
+				}
+				current = next;
+				rowsScanned += rows;
+			}
+			scans++;
+			if (current.size() == 0) {
+				break;
+			}
+		}
+		recordDistinctMembershipComponentScans(scans);
+		root.setStringMetricActual("lmdbIdDistinctComponentScanCountActual", "true");
+		lastDistinctCountInputRows = rowsScanned;
+		return current == null ? 0 : current.size();
+	}
+
+	private long countDistinctIdsWithSingleMergeComponentScans(LmdbEvaluationDataset dataset, long[] initialBinding,
+			List<Stage> stages, String variable, String filterVariable, LongPredicate filter)
+			throws QueryEvaluationException {
+		if (filterVariable != null || filter != null || stages.size() != 1 || !(stages.get(0) instanceof MergeStage)) {
+			return -1;
+		}
+		int distinctSlot = finalInfo.getIndex(variable);
+		if (distinctSlot < 0 || distinctSlot >= initialBinding.length
+				|| initialBinding[distinctSlot] != LmdbValue.UNKNOWN_ID
+				|| hasOtherBoundSlots(initialBinding, distinctSlot)) {
+			return rejectDistinctComponentScan("merge-distinct-slot-bound-or-missing");
+		}
+		if (((finalInfo.getPositionsMask(variable) >> TripleStore.CONTEXT_IDX) & 1) == 1) {
+			return rejectDistinctComponentScan("merge-context-distinct");
+		}
+		MergeStage mergeStage = (MergeStage) stages.get(0);
+		int leftComponent = distinctComponent(mergeStage.leftPlan, distinctSlot);
+		int rightComponent = distinctComponent(mergeStage.rightPlan, distinctSlot);
+		if (!canUseDistinctComponentScan(mergeStage.leftPlan, distinctSlot, leftComponent)
+				|| !canUseDistinctComponentScan(mergeStage.rightPlan, distinctSlot, rightComponent)) {
+			return rejectDistinctComponentScan("merge-plan-not-component-scannable");
+		}
+		DistinctMembershipFilter left = scanDistinctMembershipComponent(mergeStage.leftPlan, leftComponent, dataset);
+		if (left == null) {
+			return rejectDistinctComponentScan("merge-left-component-scan-unavailable");
+		}
+		LmdbIdSet distinct = LmdbIdSets.create();
+		long rightRows = scanIntersectingDistinctComponent(mergeStage.rightPlan, rightComponent, dataset, left.ids,
+				distinct);
+		if (rightRows < 0) {
+			return rejectDistinctComponentScan("merge-right-component-scan-unavailable");
+		}
+		recordDistinctMembershipComponentScans(2);
+		root.setStringMetricActual("lmdbIdDistinctMergeComponentScanActual", "true");
+		lastDistinctCountInputRows = left.rowsScanned + rightRows;
+		return distinct.size();
+	}
+
+	private long rejectDistinctComponentScan(String reason) {
+		lastDistinctComponentScanFallback = reason;
+		root.setStringMetricActual("lmdbIdDistinctComponentScanFallbackActual", reason);
+		return -1;
+	}
+
+	private static boolean hasOtherBoundSlots(long[] binding, int distinctSlot) {
+		for (int i = 0; i < binding.length; i++) {
+			if (i != distinctSlot && binding[i] != LmdbValue.UNKNOWN_ID) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean canUseDistinctComponentScan(PatternPlan plan, int distinctSlot, int distinctComponent) {
+		return distinctComponent >= 0
+				&& plan.coldCondition == null
+				&& !plan.unsupportedFilter
+				&& !repeatedNonDistinctSlot(plan, distinctSlot)
+				&& canApplyPredicateWithComponentScan(plan, distinctSlot, distinctComponent);
+	}
+
+	private static boolean canApplyPredicateWithComponentScan(PatternPlan plan, int distinctSlot,
+			int distinctComponent) {
+		if (plan.predicatePlan == null) {
+			return true;
+		}
+		int exactSlot = plan.predicatePlan.exactIdSetSlot();
+		long[] exactIds = plan.predicatePlan.exactIdSetIds();
+		if (exactSlot < 0 || exactIds == null || exactIds.length == 0 || exactSlot == distinctSlot) {
+			return false;
+		}
+		int exactComponent = distinctComponent(plan, exactSlot);
+		return exactComponent >= 0 && exactComponent != distinctComponent;
+	}
+
 	private RecordIterator deduplicateDistinctIfSafe(RecordIterator iter, List<Stage> stages, int stageIndex,
 			int distinctSlot, int filterSlot, LongPredicate filter, boolean[] boundSlots) {
 		if (distinctSlot < 0) {
@@ -527,7 +685,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 
 	private long collectDistinctWithMembershipFiltersIfSafe(RecordIterator iter, List<Stage> stages, int startIndex,
 			int distinctSlot, int filterSlot, LongPredicate filter, boolean[] currentBoundSlots,
-			LmdbEvaluationDataset dataset, int mask, LmdbLongHashSet distinct) throws QueryEvaluationException {
+			LmdbEvaluationDataset dataset, int mask, LmdbIdSet distinct) throws QueryEvaluationException {
 		if (startIndex >= stages.size()) {
 			return -1;
 		}
@@ -587,12 +745,29 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 
 	private DistinctMembershipFilter buildDistinctMembershipFilter(PatternPlan plan, int distinctSlot,
 			boolean[] boundSlots, LmdbEvaluationDataset dataset) throws QueryEvaluationException {
-		if (plan.coldCondition != null || plan.unsupportedFilter || repeatedNonDistinctSlot(plan, distinctSlot)) {
+		if (plan.coldCondition != null) {
+			lastDistinctComponentScanFallback = "membership-cold-filter";
+			return null;
+		}
+		if (plan.unsupportedFilter) {
+			lastDistinctComponentScanFallback = "membership-unsupported-filter";
+			return null;
+		}
+		if (repeatedNonDistinctSlot(plan, distinctSlot)) {
+			lastDistinctComponentScanFallback = "membership-repeated-non-distinct-slot";
 			return null;
 		}
 		int distinctComponent = distinctComponent(plan, distinctSlot);
 		if (distinctComponent < 0) {
+			lastDistinctComponentScanFallback = "membership-missing-distinct-component";
 			return null;
+		}
+		if (canUseDistinctComponentScan(plan, distinctSlot, distinctComponent)) {
+			DistinctMembershipFilter componentScan = buildDistinctMembershipFilterWithComponentScan(plan,
+					distinctComponent, dataset);
+			if (componentScan != null) {
+				return componentScan;
+			}
 		}
 		long[] binding = new long[boundSlots.length];
 		Arrays.fill(binding, LmdbValue.UNKNOWN_ID);
@@ -604,7 +779,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		if (iterator == null) {
 			return null;
 		}
-		LmdbLongHashSet ids = new LmdbLongHashSet();
+		LmdbIdSet ids = LmdbIdSets.create();
 		long rows = 0;
 		try {
 			long[] row;
@@ -619,6 +794,48 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 			iterator.close();
 		}
 		return new DistinctMembershipFilter(ids, rows);
+	}
+
+	private DistinctMembershipFilter buildDistinctMembershipFilterWithComponentScan(PatternPlan plan,
+			int distinctComponent, LmdbEvaluationDataset dataset) throws QueryEvaluationException {
+		DistinctMembershipFilter filter = scanDistinctMembershipComponent(plan, distinctComponent, dataset);
+		if (filter != null) {
+			recordDistinctMembershipComponentScans(1);
+		}
+		return filter;
+	}
+
+	private DistinctMembershipFilter scanDistinctMembershipComponent(PatternPlan plan, int distinctComponent,
+			LmdbEvaluationDataset dataset) throws QueryEvaluationException {
+		LmdbIdSet ids = LmdbIdSets.create();
+		long rows = scanPatternComponent(plan, distinctComponent, dataset, (id, ignored) -> {
+			if (id != LmdbValue.UNKNOWN_ID) {
+				ids.add(id);
+			}
+			return true;
+		});
+		if (rows < 0) {
+			lastDistinctComponentScanFallback = "component-scan-unsupported";
+			return null;
+		}
+		return new DistinctMembershipFilter(ids, rows);
+	}
+
+	private long scanIntersectingDistinctComponent(PatternPlan plan, int distinctComponent,
+			LmdbEvaluationDataset dataset,
+			LmdbIdSet requiredIds, LmdbIdSet distinct) throws QueryEvaluationException {
+		return scanPatternComponent(plan, distinctComponent, dataset, (id, ignored) -> {
+			if (id != LmdbValue.UNKNOWN_ID && requiredIds.contains(id)) {
+				distinct.add(id);
+			}
+			return true;
+		});
+	}
+
+	private void recordDistinctMembershipComponentScans(int scans) {
+		lastDistinctMembershipComponentScans += scans;
+		root.setLongMetricActual("lmdbIdDistinctMembershipComponentScansActual",
+				lastDistinctMembershipComponentScans);
 	}
 
 	private static int distinctComponent(PatternPlan plan, int distinctSlot) {
@@ -713,6 +930,135 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		}
 	}
 
+	private RecordIterator prefilterJoinWithComponentMembership(RecordIterator left, Stage stage, boolean[] boundSlots,
+			LmdbEvaluationDataset dataset) throws QueryEvaluationException {
+		if (!(stage instanceof PatternStage)) {
+			return left;
+		}
+		PatternPlan plan = ((PatternStage) stage).plan;
+		int membershipSlot = singleBoundInputSlot(plan, boundSlots);
+		if (membershipSlot < 0) {
+			return left;
+		}
+		DistinctMembershipFilter membership = buildJoinMembershipFilter(plan, membershipSlot, dataset);
+		if (membership == null) {
+			return left;
+		}
+		root.setStringMetricActual("lmdbIdBGPJoinMembershipComponentScanActual", "true");
+		root.setLongMetricActual("lmdbIdBGPJoinMembershipRowsActual", membership.rowsScanned);
+		return new MembershipSlotRecordIterator(left, membershipSlot, membership.ids);
+	}
+
+	private DistinctMembershipFilter buildJoinMembershipFilter(PatternPlan plan, int membershipSlot,
+			LmdbEvaluationDataset dataset) throws QueryEvaluationException {
+		int component = distinctComponent(plan, membershipSlot);
+		if (!canUseDistinctComponentScan(plan, membershipSlot, component)) {
+			return null;
+		}
+		return scanMembershipComponent(plan, component, dataset, configuredMaxMembershipRows());
+	}
+
+	private DistinctMembershipFilter scanMembershipComponent(PatternPlan plan, int component,
+			LmdbEvaluationDataset dataset, int maxRows) throws QueryEvaluationException {
+		LmdbIdSet ids = LmdbIdSets.create();
+		long[] rows = new long[1];
+		boolean[] oversized = new boolean[1];
+		long scanRows = scanPatternComponent(plan, component, dataset, (id, ignored) -> {
+			rows[0]++;
+			if (rows[0] > maxRows) {
+				oversized[0] = true;
+				return false;
+			}
+			if (id != LmdbValue.UNKNOWN_ID) {
+				ids.add(id);
+			}
+			return true;
+		});
+		if (scanRows < 0 || oversized[0]) {
+			return null;
+		}
+		return new DistinctMembershipFilter(ids, rows[0]);
+	}
+
+	private long scanPatternComponent(PatternPlan plan, int component, LmdbEvaluationDataset dataset,
+			LmdbEvaluationDataset.RawIdPairConsumer consumer) throws QueryEvaluationException {
+		ExactPredicateComponentScan exactPredicate = exactPredicateComponentScan(plan, component);
+		if (exactPredicate == null) {
+			return scanPatternComponent(plan, plan.patternIds, component, dataset, consumer);
+		}
+		long rows = 0;
+		for (long exactId : exactPredicate.ids) {
+			long[] patternIds = plan.patternIds.clone();
+			patternIds[exactPredicate.component] = exactId;
+			long scanned = scanPatternComponent(plan, patternIds, component, dataset, consumer);
+			if (scanned < 0) {
+				return -1;
+			}
+			rows += scanned;
+		}
+		return rows;
+	}
+
+	private long scanPatternComponent(PatternPlan plan, long[] patternIds, int component,
+			LmdbEvaluationDataset dataset, LmdbEvaluationDataset.RawIdPairConsumer consumer)
+			throws QueryEvaluationException {
+		long subj = patternIds[TripleStore.SUBJ_IDX];
+		long pred = patternIds[TripleStore.PRED_IDX];
+		long obj = patternIds[TripleStore.OBJ_IDX];
+		long ctx = patternIds[TripleStore.CONTEXT_IDX];
+		String indexFieldSequence = dataset.selectBestIndex(subj, pred, obj, ctx);
+		if (indexFieldSequence == null) {
+			return -1;
+		}
+		return dataset.scanIndexComponentsBatch(indexFieldSequence, subj, pred, obj, ctx, component, -1,
+				keyBuffersFor(plan.pattern), LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE,
+				(firstIds, secondIds, count) -> {
+					for (int i = 0; i < count; i++) {
+						if (!consumer.accept(firstIds[i], secondIds[i])) {
+							return false;
+						}
+					}
+					return true;
+				});
+	}
+
+	private static ExactPredicateComponentScan exactPredicateComponentScan(PatternPlan plan, int scannedComponent) {
+		if (plan.predicatePlan == null) {
+			return null;
+		}
+		int exactSlot = plan.predicatePlan.exactIdSetSlot();
+		long[] exactIds = plan.predicatePlan.exactIdSetIds();
+		if (exactSlot < 0 || exactIds == null || exactIds.length == 0) {
+			return null;
+		}
+		int exactComponent = distinctComponent(plan, exactSlot);
+		if (exactComponent < 0 || exactComponent == scannedComponent) {
+			return null;
+		}
+		return new ExactPredicateComponentScan(exactComponent, exactIds);
+	}
+
+	private static int singleBoundInputSlot(PatternPlan plan, boolean[] boundSlots) {
+		int slot = -1;
+		slot = singleBoundInputSlot(slot, plan.subjIndex, boundSlots);
+		slot = singleBoundInputSlot(slot, plan.predIndex, boundSlots);
+		slot = singleBoundInputSlot(slot, plan.objIndex, boundSlots);
+		return singleBoundInputSlot(slot, plan.ctxIndex, boundSlots);
+	}
+
+	private static int singleBoundInputSlot(int current, int slot, boolean[] boundSlots) {
+		if (current == -2) {
+			return current;
+		}
+		if (slot < 0 || slot >= boundSlots.length || !boundSlots[slot]) {
+			return current;
+		}
+		if (current >= 0 && current != slot) {
+			return -2;
+		}
+		return slot;
+	}
+
 	private long countDistinctIdsWithFirstStageExactIds(LmdbEvaluationDataset dataset, ValueStore valueStore,
 			long[] initialBinding, List<Stage> stages, String variable, String filterVariable, LongPredicate filter)
 			throws QueryEvaluationException {
@@ -732,7 +1078,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		int slot = finalInfo.getIndex(variable);
 		int filterSlot = filterVariable == null ? -1 : finalInfo.getIndex(filterVariable);
 		int mask = finalInfo.getPositionsMask(variable);
-		LmdbLongHashSet distinct = new LmdbLongHashSet();
+		LmdbIdSet distinct = LmdbIdSets.create();
 		long inputRows = 0;
 		long[] exactBinding = Arrays.copyOf(initialBinding, initialBinding.length);
 		for (long exactId : exactIds) {
@@ -812,6 +1158,14 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 
 	public long getLastDistinctMembershipFilterRows() {
 		return lastDistinctMembershipFilterRows;
+	}
+
+	public int getLastDistinctMembershipComponentScans() {
+		return lastDistinctMembershipComponentScans;
+	}
+
+	public String getLastDistinctComponentScanFallback() {
+		return lastDistinctComponentScanFallback;
 	}
 
 	private long countDistinctIdsFallback(BindingSet bindings, String variable) {
@@ -901,6 +1255,10 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 	}
 
 	public IdMembership collectExistingIds(BindingSet bindings, String variable) {
+		return collectExistingIds(bindings, variable, configuredMaxMembershipRows());
+	}
+
+	public IdMembership collectExistingIds(BindingSet bindings, String variable, int maxRows) {
 		lastCollectedMembershipCacheHit = false;
 		lastCollectedMembershipOversized = false;
 		lastCollectedMembershipRowsScanned = 0;
@@ -912,8 +1270,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 			if (!dataset.hasTransactionChanges()) {
 				dataset.refreshSnapshot();
 			}
-			if ((fallbackStep != null && dataset.hasTransactionChanges()) || hasUnsupportedFilter || hasInvalidPattern
-					|| hasColdFilters) {
+			if ((fallbackStep != null && dataset.hasTransactionChanges()) || hasUnsupportedFilter
+					|| hasInvalidPattern) {
 				return null;
 			}
 			if (!dataset.hasTransactionChanges() && createdDynamicIds && fallbackStep != null
@@ -930,7 +1288,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 				return IdMembership.empty();
 			}
 			initialBinding[slot] = LmdbValue.UNKNOWN_ID;
-			BindingKey key = BindingKey.copyOf(initialBinding);
+			BindingKey key = BindingKey.copyOf(initialBinding, maxRows);
 			IdMembership cached = membershipCache.get(key);
 			if (cached != null) {
 				lastCollectedMembershipCacheHit = true;
@@ -949,39 +1307,104 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 			for (int i = 1; i < stages.size(); i++) {
 				iter = stages.get(i).joinWith(iter, dataset, valueStore);
 			}
-			LmdbLongHashSet ids = new LmdbLongHashSet();
-			long rows = 0;
-			int maxRows = configuredMaxMembershipRows();
-			try {
-				long[] row;
-				while ((row = iter.next()) != null) {
-					rows++;
-					if (rows > maxRows) {
-						IdMembership oversized = IdMembership.oversized(rows);
-						membershipCache.put(key, oversized);
-						lastCollectedMembershipOversized = true;
-						lastCollectedMembershipRowsScanned = rows;
-						root.setStringMetricActual("lmdbIdBGPExistsMembershipOversizedActual", "true");
-						root.setLongMetricActual("lmdbIdBGPExistsMembershipRowsActual", rows);
-						return null;
-					}
-					long id = row[slot];
-					if (id != LmdbValue.UNKNOWN_ID) {
-						ids.add(id);
-					}
-				}
-			} finally {
-				iter.close();
+			IdMembership membership;
+			if (hasColdFilters) {
+				membership = collectFilteredExistingIds(iter, withoutBinding(bindings, variable), variable,
+						valueStore, maxRows);
+			} else {
+				membership = collectRawExistingIds(iter, slot, maxRows);
 			}
-			IdMembership membership = new IdMembership(ids, rows);
+			if (membership.oversized()) {
+				membershipCache.put(key, membership);
+				lastCollectedMembershipOversized = true;
+				lastCollectedMembershipRowsScanned = membership.rowsScanned();
+				root.setStringMetricActual("lmdbIdBGPExistsMembershipOversizedActual", "true");
+				root.setLongMetricActual("lmdbIdBGPExistsMembershipRowsActual", membership.rowsScanned());
+				return null;
+			}
 			membershipCache.put(key, membership);
-			lastCollectedMembershipRowsScanned = rows;
+			lastCollectedMembershipRowsScanned = membership.rowsScanned();
 			root.setStringMetricActual("lmdbIdBGPExistsMembershipSetActual", "true");
 			root.setLongMetricActual("lmdbIdBGPExistsMembershipSetSizeActual", membership.size());
-			root.setLongMetricActual("lmdbIdBGPExistsMembershipRowsActual", rows);
+			root.setLongMetricActual("lmdbIdBGPExistsMembershipRowsActual", membership.rowsScanned());
 			return membership;
 		} catch (QueryEvaluationException e) {
 			throw e;
+		}
+	}
+
+	private IdMembership collectRawExistingIds(RecordIterator iter, int slot, int maxRows)
+			throws QueryEvaluationException {
+		LmdbIdSet ids = LmdbIdSets.create();
+		long rows = 0;
+		try {
+			long[] row;
+			while ((row = iter.next()) != null) {
+				rows++;
+				if (rows > maxRows) {
+					return IdMembership.oversized(rows);
+				}
+				long id = row[slot];
+				if (id != LmdbValue.UNKNOWN_ID) {
+					ids.add(id);
+				}
+			}
+		} finally {
+			iter.close();
+		}
+		return new IdMembership(ids, rows);
+	}
+
+	private IdMembership collectFilteredExistingIds(RecordIterator iter, BindingSet bindings, String variable,
+			ValueStore valueStore, int maxRows) throws QueryEvaluationException {
+		LmdbIdSet ids = LmdbIdSets.create();
+		long rows = 0;
+		try (CloseableIteration<BindingSet> result = createResultIteration(iter, bindings, valueStore)) {
+			while (result.hasNext()) {
+				BindingSet row = result.next();
+				rows++;
+				if (rows > maxRows) {
+					return IdMembership.oversized(rows);
+				}
+				long id = internalId(row.getValue(variable), valueStore);
+				if (id != LmdbValue.UNKNOWN_ID) {
+					ids.add(id);
+				}
+			}
+		}
+		return new IdMembership(ids, rows);
+	}
+
+	private static BindingSet withoutBinding(BindingSet bindings, String variable) {
+		if (!bindings.hasBinding(variable)) {
+			return bindings;
+		}
+		MapBindingSet copy = new MapBindingSet(Math.max(0, bindings.size() - 1));
+		for (String name : bindings.getBindingNames()) {
+			if (!variable.equals(name) && bindings.getValue(name) != null) {
+				copy.addBinding(name, bindings.getValue(name));
+			}
+		}
+		return copy.isEmpty() ? EmptyBindingSet.getInstance() : copy;
+	}
+
+	private static long internalId(Value value, ValueStore valueStore) throws QueryEvaluationException {
+		if (value instanceof LmdbValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
+				long id = lmdbValue.getInternalID();
+				if (id != LmdbValue.UNKNOWN_ID) {
+					return id;
+				}
+			}
+		}
+		if (value == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		try {
+			return valueStore.getId(value);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
 		}
 	}
 
@@ -2044,28 +2467,28 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 	}
 
 	private static final class DistinctMembershipFilter {
-		private final LmdbLongHashSet ids;
+		private final LmdbIdSet ids;
 		private final long rowsScanned;
 
-		private DistinctMembershipFilter(LmdbLongHashSet ids, long rowsScanned) {
+		private DistinctMembershipFilter(LmdbIdSet ids, long rowsScanned) {
 			this.ids = ids;
 			this.rowsScanned = rowsScanned;
 		}
 	}
 
 	public static final class IdMembership implements LmdbIdMembership {
-		private static final IdMembership EMPTY = new IdMembership(new LmdbLongHashSet(), 0);
-		private static final IdMembership OVERSIZED = new IdMembership(new LmdbLongHashSet(), 0, true);
+		private static final IdMembership EMPTY = new IdMembership(LmdbIdSets.create(), 0);
+		private static final IdMembership OVERSIZED = new IdMembership(LmdbIdSets.create(), 0, true);
 
-		private final LmdbLongHashSet ids;
+		private final LmdbIdSet ids;
 		private final long rowsScanned;
 		private final boolean oversized;
 
-		private IdMembership(LmdbLongHashSet ids, long rowsScanned) {
+		private IdMembership(LmdbIdSet ids, long rowsScanned) {
 			this(ids, rowsScanned, false);
 		}
 
-		private IdMembership(LmdbLongHashSet ids, long rowsScanned, boolean oversized) {
+		private IdMembership(LmdbIdSet ids, long rowsScanned, boolean oversized) {
 			this.ids = ids;
 			this.rowsScanned = rowsScanned;
 			this.oversized = oversized;
@@ -2076,7 +2499,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		private static IdMembership oversized(long rowsScanned) {
-			return rowsScanned == 0 ? OVERSIZED : new IdMembership(new LmdbLongHashSet(), rowsScanned, true);
+			return rowsScanned == 0 ? OVERSIZED : new IdMembership(LmdbIdSets.create(), rowsScanned, true);
 		}
 
 		@Override
@@ -2099,15 +2522,21 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 
 	private static final class BindingKey {
 		private final long[] ids;
+		private final int variant;
 		private final int hash;
 
-		private BindingKey(long[] ids) {
+		private BindingKey(long[] ids, int variant) {
 			this.ids = ids;
-			this.hash = Arrays.hashCode(ids);
+			this.variant = variant;
+			this.hash = 31 * Arrays.hashCode(ids) + variant;
 		}
 
 		private static BindingKey copyOf(long[] ids) {
-			return new BindingKey(Arrays.copyOf(ids, ids.length));
+			return new BindingKey(Arrays.copyOf(ids, ids.length), 0);
+		}
+
+		private static BindingKey copyOf(long[] ids, int variant) {
+			return new BindingKey(Arrays.copyOf(ids, ids.length), variant);
 		}
 
 		@Override
@@ -2118,7 +2547,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 			if (!(other instanceof BindingKey)) {
 				return false;
 			}
-			return Arrays.equals(ids, ((BindingKey) other).ids);
+			BindingKey that = (BindingKey) other;
+			return variant == that.variant && Arrays.equals(ids, that.ids);
 		}
 
 		@Override
@@ -2131,7 +2561,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		private final RecordIterator input;
 		private final int slot;
 		private final LongPredicate filter;
-		private final LmdbLongHashSet seen = new LmdbLongHashSet();
+		private final LmdbIdSet seen = LmdbIdSets.create();
 
 		private DistinctSlotRecordIterator(RecordIterator input, int slot, LongPredicate filter) {
 			this.input = input;
@@ -2156,6 +2586,43 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep, 
 		public void close() {
 			input.close();
 		}
+	}
+
+	private static final class MembershipSlotRecordIterator implements RecordIterator {
+		private final RecordIterator input;
+		private final int slot;
+		private final LmdbIdSet membership;
+
+		private MembershipSlotRecordIterator(RecordIterator input, int slot, LmdbIdSet membership) {
+			this.input = input;
+			this.slot = slot;
+			this.membership = membership;
+		}
+
+		@Override
+		public long[] next() throws QueryEvaluationException {
+			long[] row;
+			while ((row = input.next()) != null) {
+				long id = row[slot];
+				if (id != LmdbValue.UNKNOWN_ID && membership.contains(id)) {
+					return row;
+				}
+			}
+			return null;
+		}
+
+		@Override
+		public void close() {
+			input.close();
+		}
+
+		@Override
+		public int getSortedByBindingSlot() {
+			return input.getSortedByBindingSlot();
+		}
+	}
+
+	private record ExactPredicateComponentScan(int component, long[] ids) {
 	}
 
 	private static final class RawPattern {

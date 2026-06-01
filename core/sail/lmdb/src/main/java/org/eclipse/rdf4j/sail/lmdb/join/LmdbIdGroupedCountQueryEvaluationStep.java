@@ -26,6 +26,9 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvalDpContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSets;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -43,6 +46,7 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 	private final ValueFactory valueFactory;
 	private final String groupVariable;
 	private final Counter[] counters;
+	private final LmdbEvalDpContext evalDpContext;
 
 	private LmdbIdGroupedCountQueryEvaluationStep(Group group, QueryEvaluationStep arg, QueryEvaluationStep fallback,
 			QueryEvaluationContext context, ValueFactory valueFactory, String groupVariable, Counter[] counters) {
@@ -53,7 +57,9 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 		this.valueFactory = valueFactory;
 		this.groupVariable = groupVariable;
 		this.counters = counters;
+		this.evalDpContext = LmdbEvalDpContext.forAggregate("grouped-count", group);
 		group.setStringMetricPlanned(METRIC, ALGORITHM);
+		evalDpContext.recordPlanned(group);
 	}
 
 	public static QueryEvaluationStep tryCreate(Group group, QueryEvaluationStep arg, QueryEvaluationStep fallback,
@@ -90,6 +96,8 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 				Value groupValue = row.getValue(groupVariable);
 				long groupId = internalId(groupValue);
 				if (groupId == LmdbValue.UNKNOWN_ID) {
+					evalDpContext.recordAggregateFallback();
+					evalDpContext.recordRuntimeFallback(group, "runtime-unsafe");
 					return fallback.evaluate(bindings);
 				}
 				int groupIndex = table.groupIndex(groupId, groupValue);
@@ -100,6 +108,8 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 					}
 					long countId = internalId(countValue);
 					if (countId == LmdbValue.UNKNOWN_ID) {
+						evalDpContext.recordAggregateFallback();
+						evalDpContext.recordRuntimeFallback(group, "runtime-unsafe");
 						return fallback.evaluate(bindings);
 					}
 					table.add(groupIndex, i, countId, counters[i].distinct);
@@ -111,6 +121,8 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 		group.setLongMetricActual("inputRowsActual", inputRows);
 		group.setLongMetricActual("groupsCreatedActual", table.size);
 		group.setLongMetricActual("aggregateEvalCountActual", inputRows * counters.length);
+		evalDpContext.recordAggregate(inputRows, table.size, inputRows * counters.length, table.distinctStateCount());
+		evalDpContext.recordActual(group);
 		return new CloseableIteratorIteration<>(new ResultIterator(bindings, table));
 	}
 
@@ -174,12 +186,12 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 		private long[] groupIds = new long[16];
 		private Value[] groupValues = new Value[16];
 		private long[][] counts;
-		private LmdbLongHashSet[][] distinct;
+		private LmdbIdSet[][] distinct;
 		private int size;
 
 		GroupTable(int counterCount) {
 			counts = new long[counterCount][16];
-			distinct = new LmdbLongHashSet[counterCount][16];
+			distinct = new LmdbIdSet[counterCount][16];
 		}
 
 		int groupIndex(long groupId, Value groupValue) {
@@ -208,17 +220,29 @@ public final class LmdbIdGroupedCountQueryEvaluationStep implements QueryEvaluat
 				counts[counterIndex][groupIndex]++;
 				return;
 			}
-			LmdbLongHashSet set = distinct[counterIndex][groupIndex];
+			LmdbIdSet set = distinct[counterIndex][groupIndex];
 			if (set == null) {
-				set = new LmdbLongHashSet();
+				set = LmdbIdSets.create();
 				distinct[counterIndex][groupIndex] = set;
 			}
 			set.add(valueId);
 		}
 
 		long distinctCounts(int counterIndex, int groupIndex) {
-			LmdbLongHashSet set = distinct[counterIndex][groupIndex];
+			LmdbIdSet set = distinct[counterIndex][groupIndex];
 			return set == null ? 0 : set.size();
+		}
+
+		long distinctStateCount() {
+			long count = 0;
+			for (LmdbIdSet[] sets : distinct) {
+				for (int i = 0; i < size; i++) {
+					if (sets[i] != null) {
+						count++;
+					}
+				}
+			}
+			return count;
 		}
 
 		private void ensureGroupCapacity(int target) {

@@ -14,10 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvalDpContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbGeneratedBatchJoinMerger;
 import org.eclipse.rdf4j.sail.lmdb.LmdbIdPredicatePlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSets;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -29,7 +32,13 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 
 	static final String BATCH_SIZE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.idjoin.batch.size";
 	static final String BATCH_ENABLED_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.idjoin.batch.enabled";
+	static final String JOIN_GROUP_MAX_ENTRIES_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.evaldp.joinGroup.maxEntries";
+	static final String JOIN_GROUP_MAX_ROWS_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.evaldp.joinGroup.maxRows";
+	static final String JOIN_GROUP_MAX_TOTAL_ROWS_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.evaldp.joinGroup.maxTotalRows";
 	private static final int DEFAULT_BATCH_SIZE = 1024;
+	private static final int DEFAULT_JOIN_GROUP_MAX_ENTRIES = 4096;
+	private static final int DEFAULT_JOIN_GROUP_MAX_ROWS = 4096;
+	private static final int DEFAULT_JOIN_GROUP_MAX_TOTAL_ROWS = 65536;
 
 	private final RecordIterator left;
 	private final LmdbEvaluationDataset dataset;
@@ -44,6 +53,10 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	private final int preSortedProbeSlot;
 	private final int outputSortedByBindingSlot;
 	private final int singleProbeComponent;
+	private final boolean joinGroupDpEnabled;
+	private final int joinGroupMaxEntries;
+	private final int joinGroupMaxRows;
+	private final int joinGroupMaxTotalRows;
 
 	private long[] leftBatch;
 	private int[] rowOrder;
@@ -58,15 +71,19 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	private long[] rightRowSnapshot;
 	private long[] previousRightRowSnapshot;
 	private long[] seenRightRows;
-	private LmdbLongHashSet seenRightSingleSlotIds;
+	private LmdbIdSet seenRightSingleSlotIds;
 	private long[] outputScratch;
 	private LmdbGeneratedBatchJoinMerger generatedMerger;
 	private RecordIterator currentRight;
+	private LmdbIdJoinGroupMemo joinGroupMemo;
+	private LmdbIdJoinGroupMemo.Build joinGroupBuild;
+	private LmdbIdJoinGroupMemo.CachedRows cachedRightRows;
 	private int bindingWidth;
 	private int rowCount;
 	private int groupStart;
 	private int groupEnd;
 	private int groupRowCursor;
+	private int cachedRightRowCursor;
 	private int seenRightRowCount;
 	private boolean batchReady;
 	private boolean leftExhausted;
@@ -80,6 +97,13 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	private long rowsSortedActual;
 	private long singleKeyRowsSortedActual;
 	private long seenRightPatternLinearChecksActual;
+	private long joinGroupLookupsActual;
+	private long joinGroupBuildsActual;
+	private long joinGroupCacheHitsActual;
+	private long joinGroupRowsCachedActual;
+	private long joinGroupRowsReplayedActual;
+	private long joinGroupOversizedActual;
+	private long joinGroupEvictionsActual;
 
 	LmdbIdBatchJoinIterator(RecordIterator left, LmdbEvaluationDataset dataset, int subjIndex, int predIndex,
 			int objIndex, int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers,
@@ -103,6 +127,13 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		this.preSortedProbeSlot = preSortedProbeSlot;
 		this.outputSortedByBindingSlot = singleProbeBindingIndex(subjIndex, predIndex, objIndex, ctxIndex, patternIds);
 		this.singleProbeComponent = singleProbeComponent(subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		this.joinGroupDpEnabled = LmdbEvalDpContext.isEnabled();
+		this.joinGroupMaxEntries = Math.max(1,
+				Integer.getInteger(JOIN_GROUP_MAX_ENTRIES_PROPERTY, DEFAULT_JOIN_GROUP_MAX_ENTRIES));
+		this.joinGroupMaxRows = Math.max(0,
+				Integer.getInteger(JOIN_GROUP_MAX_ROWS_PROPERTY, DEFAULT_JOIN_GROUP_MAX_ROWS));
+		this.joinGroupMaxTotalRows = Math.max(0,
+				Integer.getInteger(JOIN_GROUP_MAX_TOTAL_ROWS_PROPERTY, DEFAULT_JOIN_GROUP_MAX_TOTAL_ROWS));
 	}
 
 	static int configuredBatchSize() {
@@ -163,6 +194,15 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	}
 
 	private long[] nextRightRow() throws QueryEvaluationException {
+		if (cachedRightRows != null) {
+			if (cachedRightRowCursor < cachedRightRows.rowCount) {
+				cachedRightRows.copyRow(cachedRightRowCursor++, rightScratch, bindingWidth);
+				return rightScratch;
+			}
+			cachedRightRows = null;
+			cachedRightRowCursor = 0;
+			return null;
+		}
 		if (currentRight == null) {
 			return null;
 		}
@@ -188,6 +228,7 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		if (completed != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
 			completed.close();
 		}
+		finishJoinGroupBuild();
 		return null;
 	}
 
@@ -197,6 +238,7 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		}
 		if (generatedMerger != null) {
 			generatedMerger.copyRightPattern(rightRowSnapshot, right, bindingWidth);
+			rememberJoinGroupRow();
 			groupRowCursor = groupStart;
 			return;
 		}
@@ -205,7 +247,18 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		copyRightPatternSlot(rightRowSnapshot, right, predIndex);
 		copyRightPatternSlot(rightRowSnapshot, right, objIndex);
 		copyRightPatternSlot(rightRowSnapshot, right, ctxIndex);
+		rememberJoinGroupRow();
 		groupRowCursor = groupStart;
+	}
+
+	private void rememberJoinGroupRow() {
+		if (joinGroupBuild == null) {
+			return;
+		}
+		if (!joinGroupBuild.add(rightRowSnapshot, bindingWidth)) {
+			joinGroupBuild = null;
+			joinGroupOversizedActual++;
+		}
 	}
 
 	private void copyRightPatternSlot(long[] target, long[] right, int index) {
@@ -308,8 +361,6 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		setProbeBinding(predIndex, patternIds[TripleStore.PRED_IDX], probeKeys[keyOffset + TripleStore.PRED_IDX]);
 		setProbeBinding(objIndex, patternIds[TripleStore.OBJ_IDX], probeKeys[keyOffset + TripleStore.OBJ_IDX]);
 		setProbeBinding(ctxIndex, patternIds[TripleStore.CONTEXT_IDX], probeKeys[keyOffset + TripleStore.CONTEXT_IDX]);
-		currentRight = dataset.getRecordIterator(probeBinding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
-				keyBuffers, rightScratch, quadScratch, null, predicatePlan);
 		previousRightRowSnapshot = null;
 		seenRightRowCount = 0;
 		rightDedupeSlot = singleVaryingRightPatternSlot(keyOffset);
@@ -317,10 +368,54 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 			seenRightSingleSlotIds.clear();
 		}
 		rightRowsScannedInBatch = 0;
+		cachedRightRows = null;
+		cachedRightRowCursor = 0;
+		joinGroupBuild = null;
+		if (joinGroupDpEnabled && bindingWidth > 0 && joinGroupMaxRows >= 0 && joinGroupMaxTotalRows >= 0) {
+			LmdbIdJoinGroupMemo.ProbeKey key = null;
+			if (joinGroupMemo != null) {
+				joinGroupLookupsActual++;
+				key = LmdbIdJoinGroupMemo.copyKey(probeKeys, keyOffset);
+				LmdbIdJoinGroupMemo.CachedRows cached = joinGroupMemo.get(key);
+				if (cached != null) {
+					joinGroupCacheHitsActual++;
+					joinGroupRowsReplayedActual += cached.rowCount;
+					cachedRightRows = cached;
+					return;
+				}
+			}
+			if (shouldBuildJoinGroupMemo()) {
+				if (key == null) {
+					key = LmdbIdJoinGroupMemo.copyKey(probeKeys, keyOffset);
+				}
+				joinGroupBuild = new LmdbIdJoinGroupMemo.Build(key, bindingWidth, joinGroupMaxRows);
+			}
+		}
+		currentRight = dataset.getRecordIterator(probeBinding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
+				keyBuffers, rightScratch, quadScratch, null, predicatePlan);
 		cursorProbesActual++;
 		if (currentRight == null) {
 			currentRight = LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR;
 		}
+	}
+
+	private boolean shouldBuildJoinGroupMemo() {
+		return rowCount == batchSize && groupEnd == rowCount;
+	}
+
+	private void finishJoinGroupBuild() {
+		if (joinGroupBuild == null || joinGroupBuild.oversized) {
+			joinGroupBuild = null;
+			return;
+		}
+		LmdbIdJoinGroupMemo.CachedRows cached = joinGroupBuild.toCached();
+		if (joinGroupMemo == null) {
+			joinGroupMemo = new LmdbIdJoinGroupMemo(joinGroupMaxEntries, joinGroupMaxTotalRows);
+		}
+		joinGroupBuildsActual++;
+		joinGroupRowsCachedActual += cached.rowCount;
+		joinGroupEvictionsActual += joinGroupMemo.put(joinGroupBuild.key, cached);
+		joinGroupBuild = null;
 	}
 
 	private int singleVaryingRightPatternSlot(int keyOffset) {
@@ -418,7 +513,7 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		if (rightDedupeSlot != -2) {
 			if (rightDedupeSlot >= 0) {
 				if (seenRightSingleSlotIds == null) {
-					seenRightSingleSlotIds = new LmdbLongHashSet(batchSize);
+					seenRightSingleSlotIds = LmdbIdSets.create(batchSize);
 				}
 				seenRightSingleSlotIds.add(right[rightDedupeSlot]);
 			}
@@ -659,6 +754,57 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 
 	long getCursorProbesActual() {
 		return cursorProbesActual;
+	}
+
+	long getJoinGroupCacheHitsActual() {
+		return joinGroupCacheHitsActual;
+	}
+
+	long getJoinGroupBuildsActual() {
+		return joinGroupBuildsActual;
+	}
+
+	long getJoinGroupRowsCachedActual() {
+		return joinGroupRowsCachedActual;
+	}
+
+	long getJoinGroupRowsReplayedActual() {
+		return joinGroupRowsReplayedActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupLookupsActual() {
+		return joinGroupLookupsActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupBuildsActual() {
+		return joinGroupBuildsActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupCacheHitsActual() {
+		return joinGroupCacheHitsActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupRowsCachedActual() {
+		return joinGroupRowsCachedActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupRowsReplayedActual() {
+		return joinGroupRowsReplayedActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupOversizedActual() {
+		return joinGroupOversizedActual;
+	}
+
+	@Override
+	public long getEvalDpJoinGroupEvictionsActual() {
+		return joinGroupEvictionsActual;
 	}
 
 	long getBatchesLoadedActual() {

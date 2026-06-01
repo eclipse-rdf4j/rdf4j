@@ -84,6 +84,7 @@ final class QueryPlanSnapshotStoreSupport {
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());
 		LmdbStore lmdbStore = new LmdbStore(dataDirectory.toFile(), config);
+		lmdbStore.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(lmdbStore);
 		return new StoreRuntime(repository, null, lmdbStore, config, dataDirectory, deleteDataDirectory);
 	}

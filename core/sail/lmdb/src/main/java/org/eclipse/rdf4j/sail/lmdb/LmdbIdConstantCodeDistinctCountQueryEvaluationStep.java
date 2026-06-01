@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.sail.lmdb.join.LmdbLongHashSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -59,6 +58,7 @@ final class LmdbIdConstantCodeDistinctCountQueryEvaluationStep implements QueryE
 	private final ValueFactory valueFactory;
 	private final long rdfTypeId;
 	private final ArmPlan[] arms;
+	private final LmdbEvalDpContext evalDpContext;
 
 	private LmdbIdConstantCodeDistinctCountQueryEvaluationStep(Group group, String countBindingName,
 			QueryEvaluationStep fallback, QueryEvaluationContext evaluationContext, ValueFactory valueFactory,
@@ -70,7 +70,9 @@ final class LmdbIdConstantCodeDistinctCountQueryEvaluationStep implements QueryE
 		this.valueFactory = valueFactory;
 		this.rdfTypeId = rdfTypeId;
 		this.arms = arms;
+		this.evalDpContext = LmdbEvalDpContext.forAggregate("constant-code-distinct-count", group);
 		group.setStringMetricPlanned(METRIC, ALGORITHM);
+		evalDpContext.recordPlanned(group);
 	}
 
 	static QueryEvaluationStep tryCreate(Group group, TupleExpr tupleExpr, String distinctVariable,
@@ -139,58 +141,56 @@ final class LmdbIdConstantCodeDistinctCountQueryEvaluationStep implements QueryE
 		LmdbEvaluationDataset dataset = LmdbEvaluationStrategy.getCurrentDataset().orElse(null);
 		if (dataset == null || dataset.hasTransactionChanges() || LmdbEvaluationStrategy.hasActiveConnectionChanges()
 				|| !LmdbEvaluationStrategy.idJoinsAllowedForIsolation(dataset.getIsolationLevel())) {
+			evalDpContext.recordAggregateFallback();
+			evalDpContext.recordRuntimeFallback(group, "runtime-unsafe");
 			return fallback.evaluate(bindings);
 		}
 		dataset.refreshSnapshot();
 		long scanned = 0;
 		long typeRows = 0;
-		LmdbLongHashSet distinct = new LmdbLongHashSet();
+		LmdbIdSet distinct = LmdbIdSets.create();
 		LmdbEvaluationDataset.KeyRangeBuffers keyBuffers = LmdbEvaluationDataset.KeyRangeBuffers.acquire();
-		long[] quadScratch = new long[4];
-		RecordIterator codeIterator = null;
-		RecordIterator typeIterator = null;
-		try {
-			for (ArmPlan arm : arms) {
-				LmdbLongHashSet codeCandidates = new LmdbLongHashSet(arm.codeIds.length * 4);
-				for (long codeId : arm.codeIds) {
-					codeIterator = dataset.getRecordIterator("posc", LmdbValue.UNKNOWN_ID, arm.codePredicateId,
-							codeId, LmdbValue.UNKNOWN_ID, keyBuffers, quadScratch, codeIterator);
-					if (codeIterator == null) {
-						return fallback.evaluate(bindings);
-					}
-					long[] codeRow;
-					while ((codeRow = codeIterator.next()) != null) {
-						scanned++;
-						long entityId = codeRow[TripleStore.SUBJ_IDX];
-						if (entityId != LmdbValue.UNKNOWN_ID) {
-							codeCandidates.add(entityId);
-						}
-					}
-				}
-				if (codeCandidates.size() == 0) {
-					continue;
-				}
-				typeIterator = dataset.getRecordIterator("posc", LmdbValue.UNKNOWN_ID, rdfTypeId, arm.typeId,
-						LmdbValue.UNKNOWN_ID, keyBuffers, quadScratch, typeIterator);
-				if (typeIterator == null) {
+		for (ArmPlan arm : arms) {
+			LmdbIdSet codeCandidates = LmdbIdSets.create(arm.codeIds.length * 4);
+			for (long codeId : arm.codeIds) {
+				long codeRows = dataset.scanIndexComponentsBatch("posc", LmdbValue.UNKNOWN_ID, arm.codePredicateId,
+						codeId, LmdbValue.UNKNOWN_ID, TripleStore.SUBJ_IDX, -1, keyBuffers,
+						LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE, (firstIds, ignored, count) -> {
+							for (int i = 0; i < count; i++) {
+								long entityId = firstIds[i];
+								if (entityId != LmdbValue.UNKNOWN_ID) {
+									codeCandidates.add(entityId);
+								}
+							}
+							return true;
+						});
+				if (codeRows < 0) {
+					evalDpContext.recordAggregateFallback();
+					evalDpContext.recordRuntimeFallback(group, "runtime-unsafe");
 					return fallback.evaluate(bindings);
 				}
-				long[] typeRow;
-				while ((typeRow = typeIterator.next()) != null) {
-					typeRows++;
-					long entityId = typeRow[TripleStore.SUBJ_IDX];
-					if (codeCandidates.contains(entityId)) {
-						distinct.add(entityId);
-					}
-				}
+				scanned += codeRows;
 			}
-		} finally {
-			if (codeIterator != null) {
-				codeIterator.close();
+			if (codeCandidates.size() == 0) {
+				continue;
 			}
-			if (typeIterator != null) {
-				typeIterator.close();
+			long rows = dataset.scanIndexComponentsBatch("posc", LmdbValue.UNKNOWN_ID, rdfTypeId, arm.typeId,
+					LmdbValue.UNKNOWN_ID, TripleStore.SUBJ_IDX, -1, keyBuffers,
+					LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE, (firstIds, ignored, count) -> {
+						for (int i = 0; i < count; i++) {
+							long entityId = firstIds[i];
+							if (codeCandidates.contains(entityId)) {
+								distinct.add(entityId);
+							}
+						}
+						return true;
+					});
+			if (rows < 0) {
+				evalDpContext.recordAggregateFallback();
+				evalDpContext.recordRuntimeFallback(group, "runtime-unsafe");
+				return fallback.evaluate(bindings);
 			}
+			typeRows += rows;
 		}
 		MutableBindingSet result = evaluationContext.createBindingSet(bindings);
 		result.setBinding(countBindingName, valueFactory.createLiteral(distinct.size()));
@@ -205,6 +205,8 @@ final class LmdbIdConstantCodeDistinctCountQueryEvaluationStep implements QueryE
 		group.setLongMetricActual("groupsCreatedActual", 1);
 		group.setLongMetricActual("aggregateEvalCountActual", scanned);
 		group.setLongMetricActual("inputRowsActual", scanned + typeRows);
+		evalDpContext.recordAggregate(scanned + typeRows, 1, scanned, 1);
+		evalDpContext.recordActual(group);
 		return new SingletonIteration<>(result);
 	}
 

@@ -580,13 +580,24 @@ public final class LmdbIdPredicatePlan {
 
 	private static final class ExactIdSetPredicate implements IdPredicate {
 
+		private static final int ID_SET_THRESHOLD = 16;
+
 		private final int slot;
 		private final long[] ids;
+		private final LmdbIdSet idSet;
 
 		private ExactIdSetPredicate(int slot, long[] ids) {
 			this.slot = slot;
 			this.ids = ids.clone();
 			Arrays.sort(this.ids);
+			if (this.ids.length >= ID_SET_THRESHOLD) {
+				idSet = LmdbIdSets.create(this.ids.length);
+				for (long id : this.ids) {
+					idSet.add(id);
+				}
+			} else {
+				idSet = null;
+			}
 		}
 
 		@Override
@@ -594,6 +605,9 @@ public final class LmdbIdPredicatePlan {
 			long actual = slot < row.length ? row[slot] : LmdbValue.UNKNOWN_ID;
 			if (actual == LmdbValue.UNKNOWN_ID) {
 				return Result.UNKNOWN;
+			}
+			if (idSet != null) {
+				return idSet.contains(actual) ? Result.TRUE : Result.FALSE;
 			}
 			return Arrays.binarySearch(ids, actual) >= 0 ? Result.TRUE : Result.FALSE;
 		}

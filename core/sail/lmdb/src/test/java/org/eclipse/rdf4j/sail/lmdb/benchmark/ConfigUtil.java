@@ -11,6 +11,10 @@
 
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
+import java.io.File;
+
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -30,6 +34,12 @@ final class ConfigUtil {
 
 	static LmdbStoreConfig createAllIndexesConfig() {
 		return createConfig(ALL_TRIPLE_INDEXES);
+	}
+
+	static LmdbStore createStore(File dataDir, LmdbStoreConfig config) {
+		LmdbStore store = new LmdbStore(dataDir, config);
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		return store;
 	}
 
 	private static LmdbStoreConfig createConfig(String tripleIndexes) {

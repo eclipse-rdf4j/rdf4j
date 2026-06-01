@@ -17,6 +17,8 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -26,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
-import org.eclipse.rdf4j.sail.lmdb.join.LmdbLongHashSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -117,7 +118,7 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return new EmptyIteration<>();
 		}
-		Membership set = membership(dataset);
+		Membership set = membership(dataset, valueStore);
 		if (set.ids.contains(id)) {
 			pattern.setStringMetricActual("lmdbIdConstantMembershipJoinActual", "true");
 			pattern.setLongMetricActual("lmdbIdConstantMembershipSetSizeActual", set.ids.size());
@@ -146,7 +147,7 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 		return null;
 	}
 
-	private Membership membership(LmdbEvaluationDataset dataset) {
+	private Membership membership(LmdbEvaluationDataset dataset, ValueStore valueStore) {
 		Membership current = membership;
 		if (current != null) {
 			return current;
@@ -154,7 +155,7 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 		synchronized (this) {
 			current = membership;
 			if (current == null) {
-				current = buildMembership(dataset);
+				current = buildMembership(dataset, valueStore);
 				membership = current;
 			}
 			return current;
@@ -166,13 +167,18 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 				.orElseGet(() -> LmdbEvaluationStrategy.getCurrentDataset().orElse(null));
 	}
 
-	private Membership buildMembership(LmdbEvaluationDataset dataset) {
+	private Membership buildMembership(LmdbEvaluationDataset dataset, ValueStore valueStore) {
+		Membership componentScan = buildMembershipWithComponentScan(dataset, valueStore);
+		if (componentScan != null) {
+			pattern.setStringMetricActual("lmdbIdConstantMembershipComponentScanActual", "true");
+			return componentScan;
+		}
 		RecordIterator iterator = dataset.getRecordIterator(pattern, EmptyBindingSet.getInstance(),
 				KeyRangeBuffers.acquire(), null);
 		if (iterator == null) {
-			return new Membership(new LmdbLongHashSet(), 0);
+			return new Membership(LmdbIdSets.create(), 0);
 		}
-		LmdbLongHashSet ids = new LmdbLongHashSet();
+		LmdbIdSet ids = LmdbIdSets.create();
 		long rows = 0;
 		try {
 			long[] record;
@@ -187,6 +193,56 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 			iterator.close();
 		}
 		return new Membership(ids, rows);
+	}
+
+	private Membership buildMembershipWithComponentScan(LmdbEvaluationDataset dataset, ValueStore valueStore) {
+		long subj = constantId(pattern.getSubjectVar(), valueStore, true, false);
+		long pred = constantId(pattern.getPredicateVar(), valueStore, false, true);
+		long obj = constantId(pattern.getObjectVar(), valueStore, false, false);
+		long ctx = constantId(pattern.getContextVar(), valueStore, true, false);
+		if (subj == INVALID_CONSTANT || pred == INVALID_CONSTANT || obj == INVALID_CONSTANT
+				|| ctx == INVALID_CONSTANT) {
+			return new Membership(LmdbIdSets.create(), 0);
+		}
+		String indexFieldSequence = dataset.selectBestIndex(subj, pred, obj, ctx);
+		if (indexFieldSequence == null) {
+			return null;
+		}
+		LmdbIdSet ids = LmdbIdSets.create();
+		long rows = dataset.scanIndexComponentsBatch(indexFieldSequence, subj, pred, obj, ctx, variablePosition, -1,
+				KeyRangeBuffers.acquire(), LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE,
+				(firstIds, ignored, count) -> {
+					for (int i = 0; i < count; i++) {
+						long id = firstIds[i];
+						if (id != LmdbValue.UNKNOWN_ID && (variablePosition != TripleStore.CONTEXT_IDX || id != 0L)) {
+							ids.add(id);
+						}
+					}
+					return true;
+				});
+		if (rows < 0) {
+			return null;
+		}
+		return new Membership(ids, rows);
+	}
+
+	private static final long INVALID_CONSTANT = Long.MIN_VALUE;
+
+	private static long constantId(Var var, ValueStore valueStore, boolean requireResource, boolean requireIri) {
+		if (var == null || !var.hasValue()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		Value value = var.getValue();
+		if (requireResource && !(value instanceof Resource)) {
+			return INVALID_CONSTANT;
+		}
+		if (requireIri && !(value instanceof IRI)) {
+			return INVALID_CONSTANT;
+		}
+		if (value instanceof Resource && ((Resource) value).isTriple()) {
+			return INVALID_CONSTANT;
+		}
+		return resolveId(valueStore, value);
 	}
 
 	private static long resolveId(ValueStore valueStore, Value value) {
@@ -204,10 +260,10 @@ final class LmdbIdConstantMembershipStatementPatternQueryEvaluationStep implemen
 	}
 
 	private static final class Membership {
-		final LmdbLongHashSet ids;
+		final LmdbIdSet ids;
 		final long rowsScanned;
 
-		Membership(LmdbLongHashSet ids, long rowsScanned) {
+		Membership(LmdbIdSet ids, long rowsScanned) {
 			this.ids = ids;
 			this.rowsScanned = rowsScanned;
 		}

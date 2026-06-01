@@ -18,12 +18,17 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvalDpContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSets;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -33,6 +38,7 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 
 	public static final String ALGORITHM = "LmdbIdDistinctCount";
 	private static final String METRIC = "lmdbIdAggregateAlgorithm";
+	private static final String RUNTIME_UNSAFE = "runtime-unsafe";
 
 	private final Group group;
 	private final String countBindingName;
@@ -42,10 +48,13 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 	private final QueryEvaluationStep fallback;
 	private final QueryEvaluationContext context;
 	private final ValueFactory valueFactory;
+	private final LmdbEvalDpContext evalDpContext;
+	private final String rowSourceActual;
+	private final String rowModeActual;
 
 	private LmdbIdDistinctCountQueryEvaluationStep(Group group, String countBindingName, String distinctVariable,
 			LmdbIdBGPQueryEvaluationStep idArg, QueryEvaluationStep rowArg, QueryEvaluationStep fallback,
-			QueryEvaluationContext context, ValueFactory valueFactory) {
+			QueryEvaluationContext context, ValueFactory valueFactory, String rowSourceActual, String rowModeActual) {
 		this.group = group;
 		this.countBindingName = countBindingName;
 		this.distinctVariable = distinctVariable;
@@ -54,7 +63,14 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 		this.fallback = fallback;
 		this.context = context;
 		this.valueFactory = valueFactory;
+		this.evalDpContext = LmdbEvalDpContext.forAggregate("id-distinct-count", group);
+		this.rowSourceActual = rowSourceActual;
+		this.rowModeActual = rowModeActual;
 		group.setStringMetricPlanned(METRIC, ALGORITHM);
+		if (rowModeActual != null) {
+			group.setStringMetricPlanned("lmdbEvalDpMode", rowModeActual);
+		}
+		evalDpContext.recordPlanned(group);
 	}
 
 	public static QueryEvaluationStep tryCreate(Group group, QueryEvaluationStep argStep, QueryEvaluationStep fallback,
@@ -78,7 +94,7 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 			return null;
 		}
 		return new LmdbIdDistinctCountQueryEvaluationStep(group, element.getName(), variable, bgp, null, fallback,
-				context, valueFactory);
+				context, valueFactory, null, null);
 	}
 
 	public static QueryEvaluationStep tryCreateStreaming(Group group, QueryEvaluationStep argStep,
@@ -96,7 +112,36 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 			return null;
 		}
 		return new LmdbIdDistinctCountQueryEvaluationStep(group, element.getName(), ((Var) countArg).getName(), null,
-				argStep, fallback, context, valueFactory);
+				argStep, fallback, context, valueFactory, "streaming", null);
+	}
+
+	public static QueryEvaluationStep tryCreateMinusStreaming(Group group, TupleExpr argExpr,
+			QueryEvaluationStep argStep, QueryEvaluationStep fallback, QueryEvaluationContext context,
+			ValueFactory valueFactory) {
+		return tryCreateMinusStreaming(group, argExpr, argStep, fallback, context, valueFactory, "id-minus");
+	}
+
+	public static QueryEvaluationStep tryCreateMinusStreaming(Group group, TupleExpr argExpr,
+			QueryEvaluationStep argStep, QueryEvaluationStep fallback, QueryEvaluationContext context,
+			ValueFactory valueFactory, String rowSourceActual) {
+		if (!(argExpr instanceof Difference)
+				|| !"true".equals(argExpr.getStringMetricPlanned("lmdbEvalDpAntiJoin"))) {
+			return null;
+		}
+		if (!group.getGroupBindingNames().isEmpty() || group.getGroupElements().size() != 1) {
+			return null;
+		}
+		GroupElem element = group.getGroupElements().get(0);
+		if (!(element.getOperator() instanceof Count)) {
+			return null;
+		}
+		Count count = (Count) element.getOperator();
+		ValueExpr countArg = count.getArg();
+		if (!count.isDistinct() || !(countArg instanceof Var)) {
+			return null;
+		}
+		return new LmdbIdDistinctCountQueryEvaluationStep(group, element.getName(), ((Var) countArg).getName(), null,
+				argStep, fallback, context, valueFactory, rowSourceActual, "id-minus-distinct-count");
 	}
 
 	@Override
@@ -105,20 +150,34 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 			return evaluateStreaming(bindings);
 		}
 		if (!idArg.canCountDistinctIds(distinctVariable)) {
+			evalDpContext.recordAggregateFallback();
+			evalDpContext.recordRuntimeFallback(group, RUNTIME_UNSAFE);
 			return fallback.evaluate(bindings);
 		}
 		long count = idArg.countDistinctIds(bindings, distinctVariable);
 		MutableBindingSet result = context.createBindingSet(bindings);
 		result.setBinding(countBindingName, valueFactory.createLiteral(count));
 		group.setStringMetricActual(METRIC, ALGORITHM);
+		group.setStringMetricActual("lmdbIdDistinctCountSourceActual", "id-bgp");
 		group.setLongMetricActual("inputRowsActual", idArg.getLastDistinctCountInputRows());
 		group.setLongMetricActual("groupsCreatedActual", 1);
 		group.setLongMetricActual("aggregateEvalCountActual", idArg.getLastDistinctCountInputRows());
+		if (idArg.getLastDistinctMembershipComponentScans() > 0) {
+			group.setLongMetricActual("lmdbIdDistinctMembershipComponentScansActual",
+					idArg.getLastDistinctMembershipComponentScans());
+		}
+		if (idArg.getLastDistinctComponentScanFallback() != null) {
+			group.setStringMetricActual("lmdbIdDistinctComponentScanFallbackActual",
+					idArg.getLastDistinctComponentScanFallback());
+		}
+		evalDpContext.recordAggregate(idArg.getLastDistinctCountInputRows(), 1,
+				idArg.getLastDistinctCountInputRows(), 1);
+		evalDpContext.recordActual(group);
 		return new SingletonIteration<>(result);
 	}
 
 	private CloseableIteration<BindingSet> evaluateStreaming(BindingSet bindings) {
-		LmdbLongHashSet distinct = new LmdbLongHashSet();
+		LmdbIdSet distinct = LmdbIdSets.create();
 		long inputRows = 0;
 		try (CloseableIteration<BindingSet> source = rowArg.evaluate(bindings)) {
 			while (source.hasNext()) {
@@ -130,6 +189,8 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 				}
 				long id = internalId(value);
 				if (id == LmdbValue.UNKNOWN_ID) {
+					evalDpContext.recordAggregateFallback();
+					evalDpContext.recordRuntimeFallback(group, RUNTIME_UNSAFE);
 					return fallback.evaluate(bindings);
 				}
 				distinct.add(id);
@@ -138,9 +199,15 @@ public final class LmdbIdDistinctCountQueryEvaluationStep implements QueryEvalua
 		MutableBindingSet result = context.createBindingSet(bindings);
 		result.setBinding(countBindingName, valueFactory.createLiteral(distinct.size()));
 		group.setStringMetricActual(METRIC, ALGORITHM);
+		group.setStringMetricActual("lmdbIdDistinctCountSourceActual", rowSourceActual);
 		group.setLongMetricActual("inputRowsActual", inputRows);
 		group.setLongMetricActual("groupsCreatedActual", 1);
 		group.setLongMetricActual("aggregateEvalCountActual", inputRows);
+		evalDpContext.recordAggregate(inputRows, 1, inputRows, 1);
+		evalDpContext.recordActual(group);
+		if (rowModeActual != null) {
+			group.setStringMetricActual("lmdbEvalDpModeActual", rowModeActual);
+		}
 		return new SingletonIteration<>(result);
 	}
 

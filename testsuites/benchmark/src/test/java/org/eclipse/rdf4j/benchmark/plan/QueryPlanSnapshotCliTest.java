@@ -440,6 +440,7 @@ class QueryPlanSnapshotCliTest {
 
 			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
 			assertEquals("true", snapshot.getFeatureFlags().get("lmdbConfig.pageCardinalityEstimator"));
+			assertEquals("READ_COMMITTED", snapshot.getFeatureFlags().get("lmdbStore.defaultIsolationLevel"));
 		} finally {
 			deleteDir(lmdbDataDirectory);
 			deleteDir(outputDirectory);

@@ -1950,6 +1950,8 @@ public final class QueryPlanSnapshotCli {
 
 		if (storeRuntime.lmdbStore != null) {
 			featureFlags.addReflectiveGetter("lmdbStore.writable", storeRuntime.lmdbStore, "isWritable")
+					.addReflectiveGetter("lmdbStore.defaultIsolationLevel", storeRuntime.lmdbStore,
+							"getDefaultIsolationLevel")
 					.addReflectiveGetter("lmdbConfig.tripleIndexes", storeRuntime.lmdbStoreConfig, "getTripleIndexes")
 					.addReflectiveGetter("lmdbConfig.forceSync", storeRuntime.lmdbStoreConfig, "getForceSync")
 					.addReflectiveGetter("lmdbConfig.pageCardinalityEstimator", storeRuntime.lmdbStoreConfig,

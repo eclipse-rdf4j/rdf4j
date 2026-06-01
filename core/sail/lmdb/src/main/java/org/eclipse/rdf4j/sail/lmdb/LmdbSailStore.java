@@ -2401,6 +2401,21 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public long scanIndexBatch(String indexFieldSequence, long subj, long pred, long obj, long context,
+				KeyRangeBuffers keyBuffers, int batchSize, RawQuadBatchConsumer consumer)
+				throws QueryEvaluationException {
+			try {
+				boolean useKeyBuffers = hasBoundComponent(subj, pred, obj, context);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				return tripleStore.scanTriplesUsingIndexBatch(txn, indexFieldSequence, subj, pred, obj, context,
+						explicit, minKeyBuf, maxKeyBuf, batchSize, consumer);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to batch scan LMDB index", e);
+			}
+		}
+
+		@Override
 		public long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
 				int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
 				throws QueryEvaluationException {
@@ -2412,6 +2427,23 @@ class LmdbSailStore implements SailStore {
 						explicit, firstComponent, secondComponent, minKeyBuf, maxKeyBuf, consumer);
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to scan selected LMDB index components", e);
+			}
+		}
+
+		@Override
+		public long scanIndexComponentsBatch(String indexFieldSequence, long subj, long pred, long obj, long context,
+				int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, int batchSize,
+				RawIdPairBatchConsumer consumer)
+				throws QueryEvaluationException {
+			try {
+				boolean useKeyBuffers = hasBoundComponent(subj, pred, obj, context);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				return tripleStore.scanTriplesUsingIndexComponentsBatch(txn, indexFieldSequence, subj, pred, obj,
+						context, explicit, firstComponent, secondComponent, minKeyBuf, maxKeyBuf, batchSize,
+						consumer);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to batch scan selected LMDB index components", e);
 			}
 		}
 

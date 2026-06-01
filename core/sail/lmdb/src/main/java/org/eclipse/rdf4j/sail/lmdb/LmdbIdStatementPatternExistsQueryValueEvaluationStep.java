@@ -48,8 +48,18 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 					return size() > MAX_EXISTS_CACHE_ENTRIES;
 				}
 			});
+	private final Map<Integer, LmdbIdExistsPatternPlan> batchResolved = Collections.synchronizedMap(
+			new LinkedHashMap<Integer, LmdbIdExistsPatternPlan>(4, 0.75f, true) {
+				private static final long serialVersionUID = 5036299855943906269L;
+
+				@Override
+				protected boolean removeEldestEntry(Map.Entry<Integer, LmdbIdExistsPatternPlan> eldest) {
+					return size() > 4;
+				}
+			});
 	private volatile LmdbIdExistsPatternPlan resolved;
 	private final LmdbPlanDerivedCodegenShape.Descriptor batchExistsCodegenShape;
+	private final LmdbEvalDpContext evalDpContext;
 	private volatile LmdbGeneratedBatchExistsMatcher generatedMembershipMatcher;
 	private volatile boolean generatedMembershipMatcherInitialized;
 
@@ -59,6 +69,8 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 		this.fallback = new ExistsQueryValueEvaluationStep(fallbackSubquery);
 		this.pattern = pattern;
 		this.batchExistsCodegenShape = LmdbPlanDerivedCodegenShape.describe("batch-exists", pattern);
+		this.evalDpContext = LmdbEvalDpContext.forProbe("statement-pattern-exists", pattern);
+		evalDpContext.recordPlanned(pattern);
 	}
 
 	@Override
@@ -72,6 +84,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 		if (dataset == null || valueStore == null || dataset.hasTransactionChanges()
 				|| LmdbEvaluationStrategy.hasActiveConnectionChanges()
 				|| !LmdbEvaluationStrategy.idJoinsAllowedForIsolation(dataset.getIsolationLevel())) {
+			evalDpContext.recordRuntimeFallback(pattern, LmdbEvalDpClassifier.FALLBACK_RUNTIME_UNSAFE);
 			return BooleanLiteral.TRUE.equals(fallback.evaluate(bindings));
 		}
 
@@ -84,17 +97,22 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 			resolved = localResolved;
 		}
 		if (!localResolved.valid) {
+			evalDpContext.recordActual(pattern);
 			return false;
 		}
 
 		LmdbIdExistsPatternPlan.Scratch local = scratch.get();
 		long[] initialBinding = localResolved.createInitialBinding(bindings, valueStore, local);
 		if (initialBinding == null) {
+			evalDpContext.recordActual(pattern);
 			return false;
 		}
 		ExistsKey cacheKey = ExistsKey.copyOf(initialBinding, localResolved.slotCount);
+		evalDpContext.recordProbeLookup();
 		Boolean cached = existsCache.get(cacheKey);
 		if (cached != null) {
+			evalDpContext.recordProbeCacheHit();
+			evalDpContext.recordActual(pattern);
 			return cached;
 		}
 
@@ -106,27 +124,43 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 				dataset, subj, pred, obj, ctx, local);
 		if (membership != null) {
 			boolean exists = membership.contains(subj);
+			evalDpContext.recordProbeExecution();
 			recordMembershipSetActual(membership);
 			existsCache.put(cacheKey, exists);
+			evalDpContext.recordActual(pattern);
 			return exists;
 		}
 		String indexFieldSequence = localResolved.selectBestIndex(dataset, subj, pred, obj, ctx);
 		if (indexFieldSequence == null) {
+			evalDpContext.recordProbeFallback();
+			evalDpContext.recordActual(pattern);
 			return BooleanLiteral.TRUE.equals(fallback.evaluate(bindings));
 		}
 		recordActualIndex(indexFieldSequence);
 
+		Boolean componentScanExists = localResolved.anyMatching(dataset, indexFieldSequence, subj, pred, obj, ctx,
+				local);
+		if (componentScanExists != null) {
+			evalDpContext.recordProbeExecution();
+			existsCache.put(cacheKey, componentScanExists);
+			evalDpContext.recordActual(pattern);
+			return componentScanExists;
+		}
 		RecordIterator iterator = dataset.getRecordIterator(indexFieldSequence, subj, pred, obj, ctx,
 				local.keyRangeBuffers, local.quad, null);
 		if (iterator == null) {
+			evalDpContext.recordProbeFallback();
+			evalDpContext.recordActual(pattern);
 			return BooleanLiteral.TRUE.equals(fallback.evaluate(bindings));
 		}
 		try {
 			boolean exists = localResolved.anyMatching(iterator, initialBinding);
+			evalDpContext.recordProbeExecution();
 			existsCache.put(cacheKey, exists);
 			return exists;
 		} finally {
 			iterator.close();
+			evalDpContext.recordActual(pattern);
 		}
 	}
 
@@ -143,6 +177,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 		if (dataset == null || valueStore == null || dataset.hasTransactionChanges()
 				|| LmdbEvaluationStrategy.hasActiveConnectionChanges()
 				|| !LmdbEvaluationStrategy.idJoinsAllowedForIsolation(dataset.getIsolationLevel())) {
+			evalDpContext.recordRuntimeFallback(pattern, LmdbEvalDpClassifier.FALLBACK_RUNTIME_UNSAFE);
 			for (int i = 0; i < size; i++) {
 				result[i] = BooleanLiteral.TRUE.equals(fallback.evaluate(bindings.get(i)));
 			}
@@ -152,18 +187,18 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 		if (!dataset.hasTransactionChanges()) {
 			dataset.refreshSnapshot();
 		}
-		LmdbIdExistsPatternPlan localResolved = resolved;
-		if (localResolved == null) {
-			localResolved = LmdbIdExistsPatternPlan.create(pattern, valueStore);
-			resolved = localResolved;
-		}
+		int maxMembershipRows = LmdbIdExistsPatternPlan.configuredBatchMaxMembershipRows(size);
+		LmdbIdExistsPatternPlan localResolved = batchResolved.computeIfAbsent(maxMembershipRows,
+				ignored -> LmdbIdExistsPatternPlan.createForBatchExists(pattern, valueStore, size));
 		if (!localResolved.valid) {
+			evalDpContext.recordActual(pattern);
 			return result;
 		}
 
 		LmdbIdExistsPatternPlan.Scratch local = scratch.get();
 		if (localResolved.canUseSubjectPredicateMembershipBatch()) {
 			if (evaluateSubjectPredicateMembershipBatch(bindings, result, valueStore, dataset, localResolved, local)) {
+				evalDpContext.recordActual(pattern);
 				return result;
 			}
 			Arrays.fill(result, 0, size, false);
@@ -178,8 +213,10 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 					continue;
 				}
 				ExistsKey cacheKey = ExistsKey.copyOf(initialBinding, localResolved.slotCount);
+				evalDpContext.recordProbeLookup();
 				Boolean cached = existsCache.get(cacheKey);
 				if (cached != null) {
+					evalDpContext.recordProbeCacheHit();
 					result[i] = cached;
 					continue;
 				}
@@ -192,6 +229,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 						.subjectPredicateMembership(dataset, subj, pred, obj, ctx, local);
 				if (membership != null) {
 					boolean exists = membership.contains(subj);
+					evalDpContext.recordProbeExecution();
 					existsCache.put(cacheKey, exists);
 					result[i] = exists;
 					recordMembershipSetActual(membership);
@@ -216,6 +254,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 				int probeIndex = local.rowOrder[sortedIndex];
 				int originalRow = local.originalRows[probeIndex];
 				if (previousProbeIndex >= 0 && sameProbeKey(local.probeKeys, probeIndex, previousProbeIndex)) {
+					evalDpContext.recordProbeDeduped();
 					result[originalRow] = previousExists;
 					continue;
 				}
@@ -226,6 +265,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 				long ctx = local.probeKeys[keyOffset + TripleStore.CONTEXT_IDX];
 				String indexFieldSequence = localResolved.selectBestIndex(dataset, subj, pred, obj, ctx);
 				if (indexFieldSequence == null) {
+					evalDpContext.recordProbeFallback();
 					previousExists = BooleanLiteral.TRUE.equals(fallback.evaluate(bindings.get(originalRow)));
 					previousProbeIndex = probeIndex;
 					result[originalRow] = previousExists;
@@ -233,17 +273,30 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 				}
 				recordActualIndex(indexFieldSequence);
 
+				int bindingOffset = probeIndex * localResolved.slotCount;
+				Boolean componentScanExists = localResolved.anyMatching(dataset, indexFieldSequence, subj, pred, obj,
+						ctx, local);
+				if (componentScanExists != null) {
+					evalDpContext.recordProbeExecution();
+					existsCache.put(ExistsKey.copyOf(local.batchBindings, bindingOffset, localResolved.slotCount),
+							componentScanExists);
+					result[originalRow] = componentScanExists;
+					previousExists = componentScanExists;
+					previousProbeIndex = probeIndex;
+					continue;
+				}
 				RecordIterator iterator = dataset.getRecordIterator(indexFieldSequence, subj, pred, obj, ctx,
 						local.keyRangeBuffers, local.quad, iteratorReuse);
 				if (iterator == null) {
+					evalDpContext.recordProbeFallback();
 					previousExists = BooleanLiteral.TRUE.equals(fallback.evaluate(bindings.get(originalRow)));
 					previousProbeIndex = probeIndex;
 					result[originalRow] = previousExists;
 					continue;
 				}
 				iteratorReuse = iterator;
-				int bindingOffset = probeIndex * localResolved.slotCount;
 				boolean exists = localResolved.anyMatching(iterator, local.batchBindings, bindingOffset);
+				evalDpContext.recordProbeExecution();
 				existsCache.put(ExistsKey.copyOf(local.batchBindings, bindingOffset, localResolved.slotCount), exists);
 				result[originalRow] = exists;
 				previousExists = exists;
@@ -254,6 +307,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 			if (iteratorReuse != null) {
 				iteratorReuse.close();
 			}
+			evalDpContext.recordActual(pattern);
 		}
 	}
 
@@ -270,8 +324,10 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 				continue;
 			}
 			ExistsKey cacheKey = ExistsKey.copyOf(initialBinding, plan.slotCount);
+			evalDpContext.recordProbeLookup();
 			Boolean cached = existsCache.get(cacheKey);
 			if (cached != null) {
+				evalDpContext.recordProbeCacheHit();
 				result[i] = cached;
 				continue;
 			}
@@ -296,6 +352,7 @@ final class LmdbIdStatementPatternExistsQueryValueEvaluationStep implements Quer
 			return true;
 		}
 		recordMembershipSetActual(membership);
+		evalDpContext.recordProbeExecution();
 		LmdbGeneratedBatchExistsMatcher matcher = generatedMembershipMatcher();
 		if (matcher != null) {
 			matcher.match(local.probeKeys, local.originalRows, membership, result, probeCount);

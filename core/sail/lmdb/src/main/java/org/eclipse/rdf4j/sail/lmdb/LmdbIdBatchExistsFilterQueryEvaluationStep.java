@@ -46,28 +46,44 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 	private final QueryEvaluationStep sourceStep;
 	private final QueryValueEvaluationStep precondition;
 	private final BatchExistsEvaluator existsStep;
+	private final boolean negated;
 	private final int batchSize;
 
 	LmdbIdBatchExistsFilterQueryEvaluationStep(Filter filter, QueryEvaluationStep sourceStep,
 			QueryValueEvaluationStep precondition,
 			LmdbIdStatementPatternExistsQueryValueEvaluationStep existsStep) {
-		this(filter, sourceStep, precondition, new StatementPatternExistsEvaluator(existsStep));
+		this(filter, sourceStep, precondition, existsStep, false);
+	}
+
+	LmdbIdBatchExistsFilterQueryEvaluationStep(Filter filter, QueryEvaluationStep sourceStep,
+			QueryValueEvaluationStep precondition,
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep existsStep, boolean negated) {
+		this(filter, sourceStep, precondition, new StatementPatternExistsEvaluator(existsStep), negated);
 	}
 
 	LmdbIdBatchExistsFilterQueryEvaluationStep(Filter filter, QueryEvaluationStep sourceStep,
 			QueryValueEvaluationStep precondition, LmdbIdBGPQueryEvaluationStep existsStep) {
-		this(filter, sourceStep, precondition, new BgpExistsEvaluator(filter, existsStep));
+		this(filter, sourceStep, precondition, existsStep, false);
+	}
+
+	LmdbIdBatchExistsFilterQueryEvaluationStep(Filter filter, QueryEvaluationStep sourceStep,
+			QueryValueEvaluationStep precondition, LmdbIdBGPQueryEvaluationStep existsStep, boolean negated) {
+		this(filter, sourceStep, precondition, new BgpExistsEvaluator(filter, existsStep), negated);
 	}
 
 	private LmdbIdBatchExistsFilterQueryEvaluationStep(Filter filter, QueryEvaluationStep sourceStep,
-			QueryValueEvaluationStep precondition, BatchExistsEvaluator existsStep) {
+			QueryValueEvaluationStep precondition, BatchExistsEvaluator existsStep, boolean negated) {
 		this.filter = filter;
 		this.sourceStep = sourceStep;
 		this.precondition = precondition;
 		this.existsStep = existsStep;
+		this.negated = negated;
 		this.batchSize = Math.max(1, Integer.getInteger(BATCH_SIZE_PROPERTY, DEFAULT_BATCH_SIZE));
 		filter.setStringMetricPlanned("batchExistsAlgorithm", ALGORITHM);
 		filter.setLongMetricPlanned("batchSize", batchSize);
+		if (negated) {
+			filter.setStringMetricPlanned("lmdbEvalDpAntiJoin", "true");
+		}
 	}
 
 	@Override
@@ -76,7 +92,7 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 		if (source == EMPTY_ITERATION) {
 			return source;
 		}
-		return new BatchExistsFilterIterator(filter, source, precondition, existsStep, batchSize);
+		return new BatchExistsFilterIterator(filter, source, precondition, existsStep, negated, batchSize);
 	}
 
 	private static final class BatchExistsFilterIterator extends LookAheadIteration<BindingSet> {
@@ -85,6 +101,7 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 		private final CloseableIteration<BindingSet> source;
 		private final QueryValueEvaluationStep precondition;
 		private final BatchExistsEvaluator existsStep;
+		private final boolean negated;
 		private final int batchSize;
 		private final List<BindingSet> batch;
 		private boolean[] exists;
@@ -103,11 +120,12 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 
 		private BatchExistsFilterIterator(Filter filter, CloseableIteration<BindingSet> source,
 				QueryValueEvaluationStep precondition, BatchExistsEvaluator existsStep,
-				int batchSize) {
+				boolean negated, int batchSize) {
 			this.filter = filter;
 			this.source = source;
 			this.precondition = precondition;
 			this.existsStep = existsStep;
+			this.negated = negated;
 			this.batchSize = batchSize;
 			this.batch = new ArrayList<>(batchSize);
 		}
@@ -117,7 +135,7 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 			while (true) {
 				if (outputIndex < outputSize) {
 					BindingSet next = batch.get(outputIndex);
-					if (exists[outputIndex++]) {
+					if (exists[outputIndex++] != negated) {
 						rowsMatched++;
 						return next;
 					}
@@ -188,6 +206,9 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 			filter.setLongMetricActual("exprEvalCountActual", rowsScanned);
 			filter.setLongMetricActual("exprTrueCountActual", rowsMatched);
 			filter.setLongMetricActual("exprFalseCountActual", rowsFiltered);
+			if (negated) {
+				filter.setStringMetricActual("lmdbEvalDpAntiJoinActual", "true");
+			}
 			boolean hasBgpExistsMetrics = membershipLookups > 0 || membershipRows > 0 || membershipBuilds > 0
 					|| membershipCacheHits > 0 || membershipOversized > 0 || directProbes > 0;
 			if (membershipLookups > 0) {
@@ -201,6 +222,8 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 				filter.setLongMetricActual("lmdbIdBGPExistsMembershipOversizedActual", membershipOversized);
 				filter.setLongMetricActual("lmdbIdBGPExistsDirectProbesActual", directProbes);
 			}
+			existsStep.recordEvalDpMetrics(filter, membershipLookups, membershipRows, membershipBuilds,
+					membershipCacheHits, membershipOversized, directProbes);
 		}
 	}
 
@@ -230,6 +253,10 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 		default long lastDirectProbes() {
 			return 0;
 		}
+
+		default void recordEvalDpMetrics(Filter filter, long membershipLookups, long membershipRows,
+				long membershipBuilds, long membershipCacheHits, long membershipOversized, long directProbes) {
+		}
 	}
 
 	private static final class StatementPatternExistsEvaluator implements BatchExistsEvaluator {
@@ -249,6 +276,7 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 		private final Filter filter;
 		private final LmdbIdBGPQueryEvaluationStep delegate;
 		private final List<String> variables;
+		private final LmdbEvalDpContext evalDpContext;
 		private final LmdbGeneratedBatchExistsMatcher generatedMatcher;
 		private long lastMembershipLookups;
 		private long lastMembershipRows;
@@ -261,6 +289,8 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 			this.filter = filter;
 			this.delegate = delegate;
 			this.variables = new ArrayList<>(delegate.idBindingNames());
+			this.evalDpContext = LmdbEvalDpContext.forMembership("batch-exists", filter);
+			evalDpContext.recordPlanned(filter);
 			LmdbPlanDerivedCodegenShape.Descriptor codegenShape = LmdbPlanDerivedCodegenShape.describe("batch-exists",
 					filter);
 			this.generatedMatcher = LmdbGeneratedRecordIteratorFactory.tryCreateBatchExistsMatcher(codegenShape);
@@ -302,7 +332,8 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 				ComplementKey key = ComplementKey.of(bindingsForRow, variables, variable);
 				BatchMembershipGroup group = groups.get(key);
 				if (group == null) {
-					IdMembership membership = delegate.collectExistingIds(bindingsForRow, variable);
+					IdMembership membership = delegate.collectExistingIds(bindingsForRow, variable,
+							configuredMaxMembershipRows());
 					group = new BatchMembershipGroup(membership, bindings.size());
 					groups.put(key, group);
 					if (delegate.wasLastCollectedMembershipOversized()) {
@@ -386,6 +417,14 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 			return lastDirectProbes;
 		}
 
+		@Override
+		public void recordEvalDpMetrics(Filter filter, long membershipLookups, long membershipRows,
+				long membershipBuilds, long membershipCacheHits, long membershipOversized, long directProbes) {
+			evalDpContext.recordMembership(membershipLookups, membershipRows, membershipBuilds, membershipCacheHits,
+					membershipOversized, directProbes);
+			evalDpContext.recordActual(filter);
+		}
+
 		private String chooseMembershipVariable(List<BindingSet> bindings) {
 			String best = null;
 			int bestKeys = Integer.MAX_VALUE;
@@ -424,6 +463,10 @@ final class LmdbIdBatchExistsFilterQueryEvaluationStep implements QueryEvaluatio
 			}
 			return keys.size();
 		}
+	}
+
+	private static int configuredMaxMembershipRows() {
+		return LmdbIdExistsPatternPlan.configuredBatchMaxMembershipRows(Integer.MAX_VALUE);
 	}
 
 	private static final class BatchMembershipGroup {

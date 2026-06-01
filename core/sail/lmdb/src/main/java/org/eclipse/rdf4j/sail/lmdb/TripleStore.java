@@ -782,6 +782,18 @@ public class TripleStore implements Closeable {
 				consumer, index);
 	}
 
+	long scanTriplesUsingIndexBatch(Txn txnRef, String fieldSeq, long subj, long pred, long obj, long context,
+			boolean explicit, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, int batchSize,
+			LmdbEvaluationDataset.RawQuadBatchConsumer consumer)
+			throws IOException {
+		TripleIndex index = getIndex(fieldSeq);
+		if (index == null) {
+			return -1;
+		}
+		return scanTriplesUsingIndexBatch(txnRef, subj, pred, obj, context, explicit, minKeyBuf, maxKeyBuf,
+				batchSize, consumer, index);
+	}
+
 	long scanTriplesUsingIndexComponents(Txn txnRef, String fieldSeq, long subj, long pred, long obj, long context,
 			boolean explicit, int firstComponent, int secondComponent, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf,
 			LmdbEvaluationDataset.RawIdPairConsumer consumer)
@@ -792,6 +804,215 @@ public class TripleStore implements Closeable {
 		}
 		return scanTriplesUsingIndexComponents(txnRef, subj, pred, obj, context, explicit, firstComponent,
 				secondComponent, minKeyBuf, maxKeyBuf, consumer, index);
+	}
+
+	long scanTriplesUsingIndexComponentsBatch(Txn txnRef, String fieldSeq, long subj, long pred, long obj,
+			long context,
+			boolean explicit, int firstComponent, int secondComponent, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf,
+			int batchSize, LmdbEvaluationDataset.RawIdPairBatchConsumer consumer)
+			throws IOException {
+		TripleIndex index = getIndex(fieldSeq);
+		if (index == null) {
+			return -1;
+		}
+		return scanTriplesUsingIndexComponentsBatch(txnRef, subj, pred, obj, context, explicit, firstComponent,
+				secondComponent, minKeyBuf, maxKeyBuf, batchSize, consumer, index);
+	}
+
+	private long scanTriplesUsingIndex(Txn txnRef, String fieldSeq, long subj, long pred, long obj, long context,
+			boolean explicit, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, long[] quadReuse,
+			LmdbEvaluationDataset.RawQuadConsumer consumer, ScanCompletion completion)
+			throws IOException {
+		long rows = scanTriplesUsingIndex(txnRef, fieldSeq, subj, pred, obj, context, explicit, minKeyBuf, maxKeyBuf,
+				quadReuse, consumer);
+		completion.accept(rows);
+		return rows;
+	}
+
+	private long scanTriplesUsingIndexComponents(Txn txnRef, String fieldSeq, long subj, long pred, long obj,
+			long context, boolean explicit, int firstComponent, int secondComponent, ByteBuffer minKeyBuf,
+			ByteBuffer maxKeyBuf, LmdbEvaluationDataset.RawIdPairConsumer consumer, ScanCompletion completion)
+			throws IOException {
+		long rows = scanTriplesUsingIndexComponents(txnRef, fieldSeq, subj, pred, obj, context, explicit,
+				firstComponent, secondComponent, minKeyBuf, maxKeyBuf, consumer);
+		completion.accept(rows);
+		return rows;
+	}
+
+	@FunctionalInterface
+	private interface ScanCompletion {
+		void accept(long rows) throws IOException;
+	}
+
+	private static int normalizedScanBatchSize(int batchSize) {
+		return batchSize > 0 ? batchSize : LmdbEvaluationDataset.DEFAULT_VECTOR_SCAN_BATCH_SIZE;
+	}
+
+	private static final class RawQuadBatchSink {
+		private final long[] quads;
+		private final LmdbEvaluationDataset.RawQuadBatchConsumer consumer;
+		private int rows;
+
+		private RawQuadBatchSink(int capacity, LmdbEvaluationDataset.RawQuadBatchConsumer consumer) {
+			this.quads = new long[capacity * 4];
+			this.consumer = consumer;
+		}
+
+		private boolean accept(long subj, long pred, long obj, long context) {
+			int offset = rows * 4;
+			quads[offset] = subj;
+			quads[offset + 1] = pred;
+			quads[offset + 2] = obj;
+			quads[offset + 3] = context;
+			rows++;
+			if (rows == quads.length / 4) {
+				boolean keepGoing = consumer.accept(quads, rows);
+				rows = 0;
+				return keepGoing;
+			}
+			return true;
+		}
+
+		private void flush() {
+			if (rows > 0) {
+				consumer.accept(quads, rows);
+				rows = 0;
+			}
+		}
+	}
+
+	private static final class RawIdPairBatchSink {
+		private final long[] first;
+		private final long[] second;
+		private final LmdbEvaluationDataset.RawIdPairBatchConsumer consumer;
+		private int rows;
+
+		private RawIdPairBatchSink(int capacity, LmdbEvaluationDataset.RawIdPairBatchConsumer consumer) {
+			this.first = new long[capacity];
+			this.second = new long[capacity];
+			this.consumer = consumer;
+		}
+
+		private boolean accept(long firstId, long secondId) {
+			first[rows] = firstId;
+			second[rows] = secondId;
+			rows++;
+			if (rows == first.length) {
+				boolean keepGoing = consumer.accept(first, second, rows);
+				rows = 0;
+				return keepGoing;
+			}
+			return true;
+		}
+
+		private void flush() {
+			if (rows > 0) {
+				consumer.accept(first, second, rows);
+				rows = 0;
+			}
+		}
+	}
+
+	private long scanTriplesUsingIndexBatch(Txn txnRef, long subj, long pred, long obj, long context,
+			boolean explicit, ByteBuffer minKeyBufParam, ByteBuffer maxKeyBufParam, int batchSize,
+			LmdbEvaluationDataset.RawQuadBatchConsumer consumer, TripleIndex index)
+			throws IOException {
+		Pool pool = Pool.get();
+		MDBVal keyData = pool.getVal();
+		MDBVal valueData = pool.getVal();
+		MDBVal maxKey = null;
+		ByteBuffer minKeyBuf = minKeyBufParam;
+		ByteBuffer maxKeyBuf = maxKeyBufParam;
+		boolean externalMinKeyBuf = minKeyBuf != null;
+		boolean externalMaxKeyBuf = maxKeyBuf != null;
+		long[] quad = new long[4];
+		RawQuadBatchSink sink = new RawQuadBatchSink(normalizedScanBatchSize(batchSize), consumer);
+		boolean rangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		int dbi = index.getDB(explicit);
+		long cursor = 0L;
+		long matched = 0;
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try {
+			long txn = txnRef.get();
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+			}
+
+			if (rangeSearch) {
+				if (minKeyBuf == null) {
+					minKeyBuf = pool.getKeyBuffer();
+				}
+				minKeyBuf.clear();
+				index.getMinKey(minKeyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+						NO_PREVIOUS_ID);
+				minKeyBuf.flip();
+
+				if (maxKeyBuf == null) {
+					maxKeyBuf = pool.getKeyBuffer();
+				}
+				maxKeyBuf.clear();
+				index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
+				maxKeyBuf.flip();
+				maxKey = pool.getVal();
+				maxKey.mv_data(maxKeyBuf);
+
+				keyData.mv_data(minKeyBuf);
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS) {
+					if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+						break;
+					}
+					long keyAddress = MemoryUtil.memGetAddress(keyData.address() + MDBVal.MV_DATA);
+					index.keyToQuad(keyAddress, quad);
+					if (matches(subj, pred, obj, context, quad)) {
+						matched++;
+						if (!sink.accept(quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX])) {
+							break;
+						}
+					}
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				}
+			} else {
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				while (rc == MDB_SUCCESS) {
+					long keyAddress = MemoryUtil.memGetAddress(keyData.address() + MDBVal.MV_DATA);
+					index.keyToQuad(keyAddress, quad);
+					if (matches(subj, pred, obj, context, quad)) {
+						matched++;
+						if (!sink.accept(quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX])) {
+							break;
+						}
+					}
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				}
+			}
+			sink.flush();
+			return matched;
+		} finally {
+			if (cursor != 0L) {
+				mdb_cursor_close(cursor);
+			}
+			pool.free(keyData);
+			pool.free(valueData);
+			if (maxKey != null) {
+				pool.free(maxKey);
+			}
+			if (minKeyBuf != null && !externalMinKeyBuf) {
+				pool.free(minKeyBuf);
+			}
+			if (maxKeyBuf != null && !externalMaxKeyBuf) {
+				pool.free(maxKeyBuf);
+			}
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	private long scanTriplesUsingIndex(Txn txnRef, long subj, long pred, long obj, long context,
@@ -874,6 +1095,113 @@ public class TripleStore implements Closeable {
 					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				}
 			}
+			return matched;
+		} finally {
+			if (cursor != 0L) {
+				mdb_cursor_close(cursor);
+			}
+			pool.free(keyData);
+			pool.free(valueData);
+			if (maxKey != null) {
+				pool.free(maxKey);
+			}
+			if (minKeyBuf != null && !externalMinKeyBuf) {
+				pool.free(minKeyBuf);
+			}
+			if (maxKeyBuf != null && !externalMaxKeyBuf) {
+				pool.free(maxKeyBuf);
+			}
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	private long scanTriplesUsingIndexComponentsBatch(Txn txnRef, long subj, long pred, long obj, long context,
+			boolean explicit, int firstComponent, int secondComponent, ByteBuffer minKeyBufParam,
+			ByteBuffer maxKeyBufParam, int batchSize, LmdbEvaluationDataset.RawIdPairBatchConsumer consumer,
+			TripleIndex index)
+			throws IOException {
+		Pool pool = Pool.get();
+		MDBVal keyData = pool.getVal();
+		MDBVal valueData = pool.getVal();
+		MDBVal maxKey = null;
+		ByteBuffer minKeyBuf = minKeyBufParam;
+		ByteBuffer maxKeyBuf = maxKeyBufParam;
+		boolean externalMinKeyBuf = minKeyBuf != null;
+		boolean externalMaxKeyBuf = maxKeyBuf != null;
+		boolean rangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		int guaranteedPrefixFields = rangeSearch ? guaranteedPrefixFields(index.indexMap, subj, pred, obj, context) : 0;
+		int selectedScanMode = selectedScanMode(index.indexMap, subj, pred, obj, context, firstComponent,
+				secondComponent, guaranteedPrefixFields);
+		RawIdPairBatchSink sink = new RawIdPairBatchSink(normalizedScanBatchSize(batchSize), consumer);
+		int dbi = index.getDB(explicit);
+		long cursor = 0L;
+		long matched = 0;
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try {
+			long txn = txnRef.get();
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+			}
+
+			if (rangeSearch) {
+				if (minKeyBuf == null) {
+					minKeyBuf = pool.getKeyBuffer();
+				}
+				minKeyBuf.clear();
+				index.getMinKey(minKeyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+						NO_PREVIOUS_ID);
+				minKeyBuf.flip();
+
+				if (maxKeyBuf == null) {
+					maxKeyBuf = pool.getKeyBuffer();
+				}
+				maxKeyBuf.clear();
+				index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
+				maxKeyBuf.flip();
+				maxKey = pool.getVal();
+				maxKey.mv_data(maxKeyBuf);
+
+				keyData.mv_data(minKeyBuf);
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				boolean selectedPrefixStop = selectedScanMode > 0;
+				while (rc == MDB_SUCCESS) {
+					if (!selectedPrefixStop && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+						break;
+					}
+					long keyAddress = MemoryUtil.memGetAddress(keyData.address() + MDBVal.MV_DATA);
+					long accepted = scanSelectedKeyIntoBatch(index.indexMap, keyAddress, subj, pred, obj, context,
+							firstComponent, secondComponent, guaranteedPrefixFields, selectedScanMode, sink);
+					if (accepted == SELECTED_SCAN_OUT_OF_RANGE) {
+						break;
+					}
+					if (accepted < 0) {
+						break;
+					}
+					matched += accepted;
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				}
+			} else {
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				while (rc == MDB_SUCCESS) {
+					long keyAddress = MemoryUtil.memGetAddress(keyData.address() + MDBVal.MV_DATA);
+					long accepted = scanSelectedKeyIntoBatch(index.indexMap, keyAddress, subj, pred, obj, context,
+							firstComponent, secondComponent, 0, selectedScanMode, sink);
+					if (accepted < 0) {
+						break;
+					}
+					matched += accepted;
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				}
+			}
+			sink.flush();
 			return matched;
 		} finally {
 			if (cursor != 0L) {
@@ -1051,6 +1379,61 @@ public class TripleStore implements Closeable {
 			offset += Varint.calcLengthUnsignedAt(keyAddress + offset);
 		}
 		return consumer.accept(first, second) ? 1 : -1;
+	}
+
+	private static long scanSelectedKeyIntoBatch(int[] indexMap, long keyAddress, long subj, long pred, long obj,
+			long context, int firstComponent, int secondComponent, int guaranteedPrefixFields, int selectedScanMode,
+			RawIdPairBatchSink sink) {
+		if (selectedScanMode == 1) {
+			long firstPrefix = Varint.readUnsigned(keyAddress);
+			if (firstPrefix != pred) {
+				return SELECTED_SCAN_OUT_OF_RANGE;
+			}
+			long offset = Varint.calcLengthUnsignedAt(keyAddress);
+			long secondPrefix = Varint.readUnsigned(keyAddress + offset);
+			if (secondPrefix != obj) {
+				return SELECTED_SCAN_OUT_OF_RANGE;
+			}
+			offset += Varint.calcLengthUnsignedAt(keyAddress + offset);
+			long first = Varint.readUnsigned(keyAddress + offset);
+			return sink.accept(first, 0) ? 1 : -1;
+		}
+		if (selectedScanMode == 2) {
+			long prefix = Varint.readUnsigned(keyAddress);
+			if (prefix != obj) {
+				return SELECTED_SCAN_OUT_OF_RANGE;
+			}
+			long offset = Varint.calcLengthUnsignedAt(keyAddress);
+			long first = Varint.readUnsigned(keyAddress + offset);
+			offset += Varint.calcLengthUnsignedAt(keyAddress + offset);
+			long second = Varint.readUnsigned(keyAddress + offset);
+			if (second != pred) {
+				return 0;
+			}
+			return sink.accept(first, second) ? 1 : -1;
+		}
+		long offset = 0;
+		long first = 0;
+		long second = 0;
+		for (int i = 0; i < indexMap.length; i++) {
+			int component = indexMap[i];
+			boolean selected = component == firstComponent || component == secondComponent;
+			boolean mustCheck = i >= guaranteedPrefixFields && componentBound(component, subj, pred, obj, context);
+			if (selected || mustCheck) {
+				long value = Varint.readUnsigned(keyAddress + offset);
+				if (mustCheck && value != componentValue(component, subj, pred, obj, context)) {
+					return 0;
+				}
+				if (component == firstComponent) {
+					first = value;
+				}
+				if (component == secondComponent) {
+					second = value;
+				}
+			}
+			offset += Varint.calcLengthUnsignedAt(keyAddress + offset);
+		}
+		return sink.accept(first, second) ? 1 : -1;
 	}
 
 	private static int selectedScanMode(int[] indexMap, long subj, long pred, long obj, long context,

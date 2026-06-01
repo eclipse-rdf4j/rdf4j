@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  */
 public interface LmdbEvaluationDataset {
 
+	int DEFAULT_VECTOR_SCAN_BATCH_SIZE = 1024;
+
 	@InternalUseOnly
 	final class KeyRangeBuffers {
 		private final ByteBuffer minKey;
@@ -57,8 +59,20 @@ public interface LmdbEvaluationDataset {
 
 	@InternalUseOnly
 	@FunctionalInterface
+	interface RawQuadBatchConsumer {
+		boolean accept(long[] quads, int count) throws QueryEvaluationException;
+	}
+
+	@InternalUseOnly
+	@FunctionalInterface
 	interface RawIdPairConsumer {
 		boolean accept(long first, long second) throws QueryEvaluationException;
+	}
+
+	@InternalUseOnly
+	@FunctionalInterface
+	interface RawIdPairBatchConsumer {
+		boolean accept(long[] first, long[] second, int count) throws QueryEvaluationException;
 	}
 
 	/**
@@ -272,10 +286,74 @@ public interface LmdbEvaluationDataset {
 	}
 
 	@InternalUseOnly
+	default long scanIndexBatch(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, int batchSize, RawQuadBatchConsumer consumer)
+			throws QueryEvaluationException {
+		int capacity = normalizedBatchSize(batchSize);
+		long[] quads = new long[capacity * 4];
+		int[] pending = new int[1];
+		long rows = scanIndex(indexFieldSequence, subj, pred, obj, context, keyBuffers, null, (s, p, o, c) -> {
+			int offset = pending[0] * 4;
+			quads[offset] = s;
+			quads[offset + 1] = p;
+			quads[offset + 2] = o;
+			quads[offset + 3] = c;
+			pending[0]++;
+			if (pending[0] == capacity) {
+				boolean keepGoing = consumer.accept(quads, pending[0]);
+				pending[0] = 0;
+				return keepGoing;
+			}
+			return true;
+		});
+		if (rows < 0) {
+			return rows;
+		}
+		if (pending[0] > 0) {
+			consumer.accept(quads, pending[0]);
+		}
+		return rows;
+	}
+
+	@InternalUseOnly
 	default long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
 			int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
 			throws QueryEvaluationException {
 		return -1;
+	}
+
+	@InternalUseOnly
+	default long scanIndexComponentsBatch(String indexFieldSequence, long subj, long pred, long obj, long context,
+			int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, int batchSize,
+			RawIdPairBatchConsumer consumer)
+			throws QueryEvaluationException {
+		int capacity = normalizedBatchSize(batchSize);
+		long[] first = new long[capacity];
+		long[] second = new long[capacity];
+		int[] pending = new int[1];
+		long rows = scanIndexComponents(indexFieldSequence, subj, pred, obj, context, firstComponent, secondComponent,
+				keyBuffers, (firstId, secondId) -> {
+					first[pending[0]] = firstId;
+					second[pending[0]] = secondId;
+					pending[0]++;
+					if (pending[0] == capacity) {
+						boolean keepGoing = consumer.accept(first, second, pending[0]);
+						pending[0] = 0;
+						return keepGoing;
+					}
+					return true;
+				});
+		if (rows < 0) {
+			return rows;
+		}
+		if (pending[0] > 0) {
+			consumer.accept(first, second, pending[0]);
+		}
+		return rows;
+	}
+
+	private static int normalizedBatchSize(int batchSize) {
+		return batchSize > 0 ? batchSize : DEFAULT_VECTOR_SCAN_BATCH_SIZE;
 	}
 
 	/**

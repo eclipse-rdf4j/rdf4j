@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -56,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -72,6 +74,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -121,7 +124,8 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(LmdbEvaluationStrategy.class, createReadCommittedLmdbEvaluationStrategy(factory, store));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -129,7 +133,8 @@ class LmdbOptimizerPipelineTest {
 			estimator.rebuild();
 
 			assertTrue(estimator.isReadyNonBlocking());
-			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(LmdbEvaluationStrategy.class, createReadCommittedLmdbEvaluationStrategy(factory, store));
 		} finally {
 			store.shutDown();
 		}
@@ -336,6 +341,16 @@ class LmdbOptimizerPipelineTest {
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
 		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
+	}
+
+	private static EvaluationStrategy createReadCommittedLmdbEvaluationStrategy(EvaluationStrategyFactory factory,
+			LmdbStore store) {
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.READ_COMMITTED)) {
+			TripleSource tripleSource = new LmdbSailDatasetTripleSource(SimpleValueFactory.getInstance(), dataset);
+			return factory.createEvaluationStrategy((Dataset) null, tripleSource, new EvaluationStatistics());
+		}
 	}
 
 	public static final class LowHeapSketchGateProbe {

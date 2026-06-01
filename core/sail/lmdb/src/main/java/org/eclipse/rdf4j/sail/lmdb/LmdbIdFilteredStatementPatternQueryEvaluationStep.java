@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinSettings;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -141,6 +142,7 @@ final class LmdbIdFilteredStatementPatternQueryEvaluationStep implements QueryEv
 				MutableBindingSet result = context.createBindingSet(initial);
 				if (info.applyRecord(record, result, valueStore)
 						&& (coldCondition == null || strategy.isTrue(coldCondition, result))) {
+					LmdbIdJoinSettings.materializeBindingSet(result);
 					return result;
 				}
 			}

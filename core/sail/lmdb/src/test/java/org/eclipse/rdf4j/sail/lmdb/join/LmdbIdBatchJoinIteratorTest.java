@@ -108,7 +108,40 @@ class LmdbIdBatchJoinIteratorTest {
 			}
 
 			assertThat(people).containsExactlyInAnyOrderElementsOf(range(1, 1100));
-			assertThat(dataset.probeCount).isEqualTo(69);
+			assertThat(dataset.probeCount).isEqualTo(1);
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
+	@Test
+	void memoizesRepeatedProbeKeysAcrossBatches() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "16");
+		RecordingDataset dataset = new RecordingDataset();
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID
+		};
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows(1100, 100)),
+				dataset, 1, -1, 2, -1, patternIds, null, null)) {
+			int count = 0;
+			long[] row;
+			while ((row = iterator.next()) != null) {
+				count++;
+				assertThat(row[1]).isEqualTo(100);
+				assertThat(row[2]).isEqualTo(200);
+			}
+
+			assertThat(count).isEqualTo(1100);
+			assertThat(dataset.probeCount).isEqualTo(1);
 		} finally {
 			if (previousBatchSize == null) {
 				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
@@ -141,7 +174,8 @@ class LmdbIdBatchJoinIteratorTest {
 			}
 
 			assertThat(people).containsExactlyInAnyOrderElementsOf(range(1, 32));
-			assertThat(dataset.probeCount).isEqualTo(2);
+			assertThat(dataset.probeCount).isEqualTo(1);
+			assertThat(iterator.getEvalDpJoinGroupCacheHitsActual()).isEqualTo(1);
 		} finally {
 			if (previousBatchSize == null) {
 				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
@@ -172,7 +206,8 @@ class LmdbIdBatchJoinIteratorTest {
 
 			assertThat(count).isEqualTo(20);
 			assertThat(iterator.next()).isNull();
-			assertThat(dataset.probeCount).isEqualTo(2);
+			assertThat(dataset.probeCount).isEqualTo(1);
+			assertThat(iterator.getEvalDpJoinGroupCacheHitsActual()).isEqualTo(1);
 		} finally {
 			if (previousBatchSize == null) {
 				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
@@ -280,6 +315,8 @@ class LmdbIdBatchJoinIteratorTest {
 			assertThat(rows).hasSize(100);
 			assertThat(rows).contains("1:300:1300", "2:100:1100", "3:200:1200", "4:100:1100", "5:300:1300");
 			assertThat(dataset.probeKeys).containsExactly(100L, 200L, 300L);
+			assertThat(iterator.getEvalDpJoinGroupBuildsActual()).isZero();
+			assertThat(iterator.getEvalDpJoinGroupRowsCachedActual()).isZero();
 		} finally {
 			if (previousBatchSize == null) {
 				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);

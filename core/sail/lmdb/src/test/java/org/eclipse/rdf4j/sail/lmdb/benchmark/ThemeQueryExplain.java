@@ -67,7 +67,7 @@ public class ThemeQueryExplain {
 		File storeDirectory = storeDirectory();
 
 		var storeConfig = ConfigUtil.createConfig();
-		var store = new LmdbStore(storeDirectory, storeConfig);
+		var store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		try {
 			ensureDataLoadedAndValidated();
@@ -184,7 +184,7 @@ public class ThemeQueryExplain {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
-		store = new LmdbStore(storeDirectory, storeConfig);
+		store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
@@ -196,7 +196,7 @@ public class ThemeQueryExplain {
 
 		System.gc();
 
-		store = new LmdbStore(storeDirectory, storeConfig);
+		store = ConfigUtil.createStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 	}
 

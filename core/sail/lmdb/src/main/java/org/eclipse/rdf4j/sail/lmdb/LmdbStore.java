@@ -464,6 +464,33 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return factory;
 	}
 
+	private synchronized EvaluationStrategyFactory selectConnectionEvaluationStrategyFactory(
+			TripleSource tripleSource) {
+		if (explicitEvalStratFactory != null) {
+			return explicitEvalStratFactory;
+		}
+		if (canUseAutomaticLmdbEvaluationStrategy(tripleSource)) {
+			return getAutomaticLmdbEvaluationStrategyFactory();
+		}
+		return getAutomaticDefaultEvaluationStrategyFactory();
+	}
+
+	private boolean canUseAutomaticLmdbEvaluationStrategy(TripleSource tripleSource) {
+		if (LmdbEvaluationStrategy.hasActiveConnectionChanges() || backingStore == null) {
+			return false;
+		}
+		if (!(tripleSource instanceof LmdbSailDatasetTripleSource)) {
+			return false;
+		}
+		LmdbEvaluationDataset dataset = ((LmdbSailDatasetTripleSource) tripleSource).getEvaluationDataset();
+		if (dataset == null) {
+			dataset = LmdbEvaluationStrategy.getCurrentDataset().orElse(null);
+		}
+		return dataset != null
+				&& !dataset.hasTransactionChanges()
+				&& LmdbEvaluationStrategy.idJoinsAllowedForIsolation(dataset.getIsolationLevel());
+	}
+
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
 		return estimator != null && estimator.awaitReady(timeout, unit);
@@ -519,24 +546,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {
-		if (automaticOptimizerPipeline != null) {
-			return automaticOptimizerPipeline;
-		}
-		if (defaultEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = defaultEvalStratFactory.getOptimizerPipeline();
-			if (optimizerPipeline.isPresent()) {
-				automaticOptimizerPipeline = optimizerPipeline.get();
-				return automaticOptimizerPipeline;
-			}
-		}
-		if (lmdbEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = lmdbEvalStratFactory.getOptimizerPipeline();
-			if (optimizerPipeline.isPresent()) {
-				automaticOptimizerPipeline = optimizerPipeline.get();
-				return automaticOptimizerPipeline;
-			}
-		}
-		return null;
+		return automaticOptimizerPipeline;
 	}
 
 	private void configureEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
@@ -583,7 +593,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
-			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
+			EvaluationStrategyFactory factory = selectConnectionEvaluationStrategyFactory(tripleSource);
+			configureEvaluationStrategyFactory(factory);
+			return factory.createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
 		}
 
 		@Override

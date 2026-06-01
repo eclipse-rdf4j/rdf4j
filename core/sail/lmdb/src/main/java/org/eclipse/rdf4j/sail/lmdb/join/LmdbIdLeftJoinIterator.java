@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIdSets;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -357,11 +359,11 @@ public final class LmdbIdLeftJoinIterator extends LookAheadIteration<BindingSet>
 
 	private static final class SingleIdMatchedKeys implements MatchedKeys {
 		private final String name;
-		private final LmdbLongHashSet ids;
+		private final LmdbIdSet ids;
 
 		private SingleIdMatchedKeys(String name, int expectedRows) {
 			this.name = name;
-			this.ids = new LmdbLongHashSet(expectedRows);
+			this.ids = LmdbIdSets.create(expectedRows);
 		}
 
 		@Override

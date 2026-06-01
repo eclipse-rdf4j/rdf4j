@@ -25,10 +25,12 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -59,9 +62,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Ex
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBGPQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBatchExtensionQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBatchQueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdConditionalBatchQueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdDifferenceIterator;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdDistinctCountQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdGroupedCountQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
@@ -78,6 +84,8 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 	private static final ThreadLocal<LmdbEvaluationDataset> CURRENT_DATASET = new ThreadLocal<>();
 	private static final ThreadLocal<LmdbEvaluationDataset> FORCED_DATASET = new ThreadLocal<>();
 	private static final ThreadLocal<ConnectionChangeState> CONNECTION_CHANGES = new ThreadLocal<>();
+	private static final String EVAL_DP_MINUS_MAX_RIGHT_ROWS_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.evaldp.minus.maxRightRows";
+	private static final double DEFAULT_EVAL_DP_MINUS_MAX_RIGHT_ROWS = 65_536.0d;
 
 	LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncThreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
@@ -245,7 +253,6 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			throws QueryEvaluationException {
 		QueryEvaluationStep defaultStep = super.prepare(node, context);
 		if (Boolean.getBoolean("rdf4j.lmdb.disableIdJoins")
-				|| node.hasCondition()
 				|| !(context instanceof LmdbDatasetContext)) {
 			return defaultStep;
 		}
@@ -275,6 +282,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 		if (!(right instanceof LmdbIdBatchQueryEvaluationStep) && node.getRightArg() instanceof Extension) {
 			right = createBatchExtensionStep((Extension) node.getRightArg(), context, right);
 		}
+		if (node.hasCondition()) {
+			right = LmdbIdConditionalBatchQueryEvaluationStep.wrap(right, precompile(node.getCondition(), context),
+					node);
+		}
 		QueryEvaluationStep finalRight = right;
 		Set<String> optionalVars = VarNameCollector.process(node.getRightArg());
 		return bindings -> {
@@ -286,6 +297,125 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			node.setAlgorithm(LmdbIdLeftJoinIterator.class.getSimpleName());
 			return LmdbIdLeftJoinIterator.getInstance(left, bindings, finalRight);
 		};
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep defaultStep = super.prepare(node, context);
+		if (Boolean.getBoolean("rdf4j.lmdb.disableIdJoins")
+				|| !LmdbEvalDpContext.isEnabled()
+				|| !(context instanceof LmdbDatasetContext)) {
+			return defaultStep;
+		}
+		LmdbDatasetContext datasetContext = (LmdbDatasetContext) context;
+		LmdbEvaluationDataset ds = datasetContext.getLmdbDataset().orElse(null);
+		if (ds == null || ds.hasTransactionChanges() || connectionHasChanges()
+				|| !idJoinsAllowedForIsolation(ds.getIsolationLevel())) {
+			return defaultStep;
+		}
+
+		Set<String> sharedVariables = new HashSet<>(VarNameCollector.process(node.getLeftArg()));
+		sharedVariables.retainAll(VarNameCollector.process(node.getRightArg()));
+		if (sharedVariables.isEmpty()) {
+			return defaultStep;
+		}
+
+		List<StatementPattern> patterns = new ArrayList<>();
+		if (!LmdbIdBGPQueryEvaluationStep.flattenBGP(node.getRightArg(), patterns) || patterns.isEmpty()) {
+			return defaultStep;
+		}
+
+		double rightRowsEstimate = evalDpMinusRightRowsEstimate(node.getRightArg());
+		double maxRightRows = configuredEvalDpMinusMaxRightRows();
+		if (isFiniteNonNegative(rightRowsEstimate) && rightRowsEstimate > maxRightRows) {
+			recordEvalDpMinusFallback(node, "right-side-too-large", rightRowsEstimate, maxRightRows);
+			return defaultStep;
+		}
+
+		QueryEvaluationStep left = precompile(node.getLeftArg(), context);
+		QueryEvaluationStep right = precompile(node.getRightArg(), context);
+		if (!(right instanceof LmdbIdBatchQueryEvaluationStep)) {
+			LmdbIdBGPQueryEvaluationStep batchRight = new LmdbIdBGPQueryEvaluationStep(this, node.getRightArg(),
+					patterns, context, right);
+			if (batchRight.shouldUseFallbackImmediately()) {
+				return defaultStep;
+			}
+			right = batchRight;
+		}
+		if (!((LmdbIdBatchQueryEvaluationStep) right).batchResultIncludesAllInputBindings()) {
+			return defaultStep;
+		}
+
+		QueryEvaluationStep finalRight = right;
+		Set<String> finalSharedVariables = Collections.unmodifiableSet(new HashSet<>(sharedVariables));
+		int finalMaxMembershipRows = evalDpMinusMembershipMaxRows(maxRightRows);
+		node.setRuntimeTelemetryEnabled(true);
+		node.setStringMetricPlanned("lmdbEvalDpAntiJoin", "true");
+		node.setStringMetricPlanned("lmdbEvalDpMode", "membership-dp");
+		return bindings -> {
+			node.setAlgorithm(LmdbIdDifferenceIterator.class.getSimpleName());
+			return LmdbIdDifferenceIterator.getInstance(left, bindings, finalRight, finalSharedVariables, node,
+					finalMaxMembershipRows);
+		};
+	}
+
+	private static double configuredEvalDpMinusMaxRightRows() {
+		String configured = System.getProperty(EVAL_DP_MINUS_MAX_RIGHT_ROWS_PROPERTY);
+		if (configured == null || configured.isBlank()) {
+			return DEFAULT_EVAL_DP_MINUS_MAX_RIGHT_ROWS;
+		}
+		try {
+			double parsed = Double.parseDouble(configured);
+			return parsed < 0.0d ? 0.0d : parsed;
+		} catch (NumberFormatException ignored) {
+			return DEFAULT_EVAL_DP_MINUS_MAX_RIGHT_ROWS;
+		}
+	}
+
+	private static double evalDpMinusRightRowsEstimate(TupleExpr rightArg) {
+		double estimate = rightArg.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
+		if (isFiniteNonNegative(estimate)) {
+			return estimate;
+		}
+		estimate = rightArg.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
+		if (isFiniteNonNegative(estimate)) {
+			return estimate;
+		}
+		estimate = rightArg.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS_AFTER_FILTER);
+		if (isFiniteNonNegative(estimate)) {
+			return estimate;
+		}
+		estimate = rightArg.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		if (isFiniteNonNegative(estimate)) {
+			return estimate;
+		}
+		estimate = rightArg.getResultSizeEstimate();
+		return isFiniteNonNegative(estimate) ? estimate : -1.0d;
+	}
+
+	private static int evalDpMinusMembershipMaxRows(double maxRightRows) {
+		if (!Double.isFinite(maxRightRows) || maxRightRows >= Integer.MAX_VALUE) {
+			return Integer.MAX_VALUE;
+		}
+		if (maxRightRows <= 0.0d) {
+			return 0;
+		}
+		return (int) Math.ceil(maxRightRows);
+	}
+
+	private static void recordEvalDpMinusFallback(Difference node, String reason, double rightRowsEstimate,
+			double maxRightRows) {
+		node.setRuntimeTelemetryEnabled(true);
+		node.setStringMetricPlanned("lmdbEvalDpAntiJoin", "false");
+		node.setStringMetricPlanned("lmdbEvalDpMode", "membership-dp");
+		node.setStringMetricPlanned("lmdbEvalDpFallbackReason", reason);
+		node.setDoubleMetricPlanned("lmdbEvalDpAntiJoinRightRowsEstimate", rightRowsEstimate);
+		node.setDoubleMetricPlanned("lmdbEvalDpAntiJoinMaxRightRows", maxRightRows);
+	}
+
+	private static boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	@Override
@@ -323,7 +453,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 		if (idCountStep == null) {
 			TupleExpr prunedArg = deadOptionalDistinctCountArg(node);
 			if (prunedArg != null) {
-				if (context instanceof LmdbDatasetContext) {
+				QueryEvaluationStep prunedStep = precompile(prunedArg, context);
+				idCountStep = LmdbIdDistinctCountQueryEvaluationStep.tryCreateMinusStreaming(node, prunedArg,
+						prunedStep, defaultStep, context, tripleSource.getValueFactory(), "id-minus-pruned");
+				if (idCountStep == null && context instanceof LmdbDatasetContext) {
 					idCountStep = LmdbIdConstantCodeDistinctCountQueryEvaluationStep.tryCreate(node, prunedArg,
 							distinctVariable, countBindingName, (LmdbDatasetContext) context, defaultStep, context,
 							tripleSource.getValueFactory());
@@ -332,11 +465,14 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 					idCountStep = createRawExistsDistinctCountStep(node, prunedArg, context, defaultStep);
 				}
 				if (idCountStep == null) {
-					QueryEvaluationStep prunedStep = precompile(prunedArg, context);
 					idCountStep = LmdbIdDistinctCountQueryEvaluationStep.tryCreateStreaming(node, prunedStep,
 							defaultStep, context, tripleSource.getValueFactory());
 				}
 			}
+		}
+		if (idCountStep == null) {
+			idCountStep = LmdbIdDistinctCountQueryEvaluationStep.tryCreateMinusStreaming(node, node.getArg(), arg,
+					defaultStep, context, tripleSource.getValueFactory());
 		}
 		if (idCountStep == null) {
 			List<StatementPattern> patterns = new ArrayList<>();
@@ -383,8 +519,8 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			return null;
 		}
 		return new LmdbIdRawExistsDistinctCountQueryEvaluationStep(node, countBindingName, distinctVariable, source,
-				(StatementPattern) condition.existsSubquery, (LmdbDatasetContext) context, defaultStep, context,
-				tripleSource.getValueFactory());
+				(StatementPattern) condition.existsSubquery, condition.negated, (LmdbDatasetContext) context,
+				defaultStep, context, tripleSource.getValueFactory());
 	}
 
 	private TupleExpr deadOptionalDistinctCountArg(Group node) {
@@ -432,10 +568,41 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			if (Collections.disjoint(optionalBindings, liveVars)
 					&& leftJoin.getLeftArg().getBindingNames().containsAll(liveVars)) {
 				changed[0] = true;
-				return leftJoin.getLeftArg();
+				return pruneDeadOptionalForDistinctCount(leftJoin.getLeftArg(), liveVars, changed);
 			}
 			leftJoin.setLeftArg(pruneDeadOptionalForDistinctCount(leftJoin.getLeftArg(), liveVars, changed));
 			return leftJoin;
+		}
+		if (tupleExpr instanceof Difference) {
+			Difference difference = (Difference) tupleExpr;
+			Set<String> sharedVariables = new HashSet<>(difference.getLeftArg().getBindingNames());
+			sharedVariables.retainAll(difference.getRightArg().getBindingNames());
+			Set<String> leftLiveVars = new HashSet<>(liveVars);
+			leftLiveVars.addAll(sharedVariables);
+			Set<String> rightLiveVars = new HashSet<>(sharedVariables);
+			difference.setLeftArg(pruneDeadOptionalForDistinctCount(difference.getLeftArg(), leftLiveVars, changed));
+			difference.setRightArg(pruneDeadOptionalForDistinctCount(difference.getRightArg(), rightLiveVars, changed));
+			return difference;
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			if (isDroppableNonEmptyBindingSetAssignment(join.getLeftArg(), liveVars,
+					join.getRightArg().getBindingNames())) {
+				changed[0] = true;
+				return pruneDeadOptionalForDistinctCount(join.getRightArg(), liveVars, changed);
+			}
+			if (isDroppableNonEmptyBindingSetAssignment(join.getRightArg(), liveVars,
+					join.getLeftArg().getBindingNames())) {
+				changed[0] = true;
+				return pruneDeadOptionalForDistinctCount(join.getLeftArg(), liveVars, changed);
+			}
+			Set<String> sharedVariables = new HashSet<>(join.getLeftArg().getBindingNames());
+			sharedVariables.retainAll(join.getRightArg().getBindingNames());
+			Set<String> childLiveVars = new HashSet<>(liveVars);
+			childLiveVars.addAll(sharedVariables);
+			join.setLeftArg(pruneDeadOptionalForDistinctCount(join.getLeftArg(), childLiveVars, changed));
+			join.setRightArg(pruneDeadOptionalForDistinctCount(join.getRightArg(), childLiveVars, changed));
+			return join;
 		}
 		if (tupleExpr instanceof Filter) {
 			Filter filter = (Filter) tupleExpr;
@@ -452,6 +619,21 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			return unary;
 		}
 		return tupleExpr;
+	}
+
+	private static boolean isDroppableNonEmptyBindingSetAssignment(TupleExpr tupleExpr, Set<String> liveVars,
+			Set<String> otherBindingNames) {
+		if (!(tupleExpr instanceof BindingSetAssignment)) {
+			return false;
+		}
+		BindingSetAssignment assignment = (BindingSetAssignment) tupleExpr;
+		Set<String> bindingNames = assignment.getBindingNames();
+		if (!Collections.disjoint(bindingNames, liveVars)
+				|| !Collections.disjoint(bindingNames, otherBindingNames)) {
+			return false;
+		}
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		return bindingSets != null && bindingSets.iterator().hasNext();
 	}
 
 	private QueryEvaluationStep createBatchExtensionStep(Extension node, QueryEvaluationContext context,
@@ -545,18 +727,20 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			LmdbIdStatementPatternExistsQueryValueEvaluationStep existsStep = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
 					(StatementPattern) condition.existsSubquery,
 					(LmdbDatasetContext) context, existsSubquery);
-			return new LmdbIdBatchExistsFilterQueryEvaluationStep(node, source, precondition, existsStep);
+			return new LmdbIdBatchExistsFilterQueryEvaluationStep(node, source, precondition, existsStep,
+					condition.negated);
 		}
 		if (existsSubquery instanceof LmdbIdBGPQueryEvaluationStep) {
 			return new LmdbIdBatchExistsFilterQueryEvaluationStep(node, source, precondition,
-					(LmdbIdBGPQueryEvaluationStep) existsSubquery);
+					(LmdbIdBGPQueryEvaluationStep) existsSubquery, condition.negated);
 		}
 		List<StatementPattern> patterns = new ArrayList<>();
 		if (LmdbIdBGPQueryEvaluationStep.flattenBGP(condition.existsSubquery, patterns) && !patterns.isEmpty()) {
 			LmdbIdBGPQueryEvaluationStep bgp = new LmdbIdBGPQueryEvaluationStep(this, condition.existsSubquery,
 					patterns, context, existsSubquery);
 			if (!bgp.shouldUseFallbackImmediately()) {
-				return new LmdbIdBatchExistsFilterQueryEvaluationStep(node, source, precondition, bgp);
+				return new LmdbIdBatchExistsFilterQueryEvaluationStep(node, source, precondition, bgp,
+						condition.negated);
 			}
 		}
 		return defaultStep;
@@ -643,14 +827,18 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	static boolean currentDatasetAllowsIdJoins() {
+		if (hasActiveConnectionChanges()) {
+			return false;
+		}
 		return getCurrentDataset()
+				.filter(dataset -> !dataset.hasTransactionChanges())
 				.map(LmdbEvaluationDataset::getIsolationLevel)
 				.map(LmdbEvaluationStrategy::idJoinsAllowedForIsolation)
 				.orElse(false);
 	}
 
 	static boolean idJoinsAllowedForIsolation(IsolationLevel isolation) {
-		return isolation != null && IsolationLevels.READ_COMMITTED.isCompatibleWith(isolation);
+		return IsolationLevels.READ_COMMITTED.equals(isolation);
 	}
 
 	static void setCurrentDataset(LmdbEvaluationDataset dataset) {
@@ -716,17 +904,26 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 	private static final class BatchExistsCondition {
 		private final ValueExpr precondition;
 		private final TupleExpr existsSubquery;
+		private final boolean negated;
 
-		private BatchExistsCondition(ValueExpr precondition, TupleExpr existsSubquery) {
+		private BatchExistsCondition(ValueExpr precondition, TupleExpr existsSubquery, boolean negated) {
 			this.precondition = precondition;
 			this.existsSubquery = existsSubquery;
+			this.negated = negated;
 		}
 
 		private static BatchExistsCondition from(ValueExpr condition) {
 			if (condition instanceof Exists) {
 				TupleExpr subQuery = ((Exists) condition).getSubQuery();
 				if (isBatchableExistsSubquery(subQuery)) {
-					return new BatchExistsCondition(null, subQuery);
+					return new BatchExistsCondition(null, subQuery, false);
+				}
+				return null;
+			}
+			if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
+				TupleExpr subQuery = ((Exists) ((Not) condition).getArg()).getSubQuery();
+				if (isBatchableExistsSubquery(subQuery)) {
+					return new BatchExistsCondition(null, subQuery, true);
 				}
 				return null;
 			}
@@ -734,11 +931,11 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 				And and = (And) condition;
 				BatchExistsCondition left = from(and.getLeftArg());
 				if (left != null && left.precondition == null && !containsBatchableExists(and.getRightArg())) {
-					return new BatchExistsCondition(and.getRightArg(), left.existsSubquery);
+					return new BatchExistsCondition(and.getRightArg(), left.existsSubquery, left.negated);
 				}
 				BatchExistsCondition right = from(and.getRightArg());
 				if (right != null && right.precondition == null && !containsBatchableExists(and.getLeftArg())) {
-					return new BatchExistsCondition(and.getLeftArg(), right.existsSubquery);
+					return new BatchExistsCondition(and.getLeftArg(), right.existsSubquery, right.negated);
 				}
 			}
 			return null;
@@ -755,6 +952,9 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 		private static boolean containsBatchableExists(ValueExpr condition) {
 			if (condition instanceof Exists) {
 				return isBatchableExistsSubquery(((Exists) condition).getSubQuery());
+			}
+			if (condition instanceof Not) {
+				return containsBatchableExists(((Not) condition).getArg());
 			}
 			if (condition instanceof And) {
 				And and = (And) condition;
