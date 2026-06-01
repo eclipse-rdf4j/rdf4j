@@ -65,8 +65,8 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 
 	protected Value parseValue(String valueString) {
 		Value v = null;
-		if (valueString.startsWith("<<")) {
-			v = NTriplesUtil.parseTriple(valueString, valueFactory);
+		if (valueString.startsWith("<<(")) {
+			v = NTriplesUtil.parseTriple(valueString, valueFactory, this::parseNumberPatternMatch);
 		} else if (valueString.startsWith("_:")) {
 			v = valueFactory.createBNode(valueString.substring(2));
 		} else if (valueString.startsWith("<") && valueString.endsWith(">")) {

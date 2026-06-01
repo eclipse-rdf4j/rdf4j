@@ -120,5 +120,9 @@
 			<artifactId>junit-vintage-engine</artifactId>
 			<scope>compile</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
+		</dependency>
 	</dependencies>
 </project>

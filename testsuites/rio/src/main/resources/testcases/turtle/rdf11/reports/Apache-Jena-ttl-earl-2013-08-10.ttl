@@ -1,0 +1,3346 @@
+@prefix dc:      <http://purl.org/dc/elements/1.1/> .
+@prefix rdft:    <http://www.w3.org/ns/rdftest#> .
+@prefix earl:    <http://www.w3.org/ns/earl#> .
+@prefix foaf:    <http://xmlns.com/foaf/0.1/> .
+@prefix dct:     <http://purl.org/dc/terms/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix doap:    <http://usefulinc.com/ns/doap#> .
+
+<http://jena.apache.org/#riot>
+    a           doap:Project ;
+    <http://projects.apache.org/ns/asfext#implements>
+                [ a           <http://projects.apache.org/ns/asfext#Standard> ;
+                  <http://projects.apache.org/ns/asfext#body>
+                              "W3C" ;
+                  <http://projects.apache.org/ns/asfext#id>
+                              "" ;
+                  <http://projects.apache.org/ns/asfext#title>
+                              "SPARQL" ;
+                  <http://projects.apache.org/ns/asfext#url>
+                              <http://www.w3.org/TR/rdf-sparql-query/>
+                ] ;
+    <http://projects.apache.org/ns/asfext#implements>
+                [ a           <http://projects.apache.org/ns/asfext#Standard> ;
+                  <http://projects.apache.org/ns/asfext#body>
+                              "W3C" ;
+                  <http://projects.apache.org/ns/asfext#id>
+                              "" ;
+                  <http://projects.apache.org/ns/asfext#title>
+                              "Resource Description Framework" ;
+                  <http://projects.apache.org/ns/asfext#url>
+                              <http://www.w3.org/RDF/>
+                ] ;
+    <http://projects.apache.org/ns/asfext#pmc>
+                <http://jena.apache.org> ;
+    doap:bug-database
+                <https://issues.apache.org/jira/browse/JENA> ;
+    doap:category
+                <http://projects.apache.org/category/library> ;
+    doap:created
+                "2012-05-03" ;
+    doap:description
+                "Apache Jena provides a complete framework for building Semantic Web and Linked Data applications in Java, and provides: parsers for RDF/XML, Turtle and N-triples; a Java programming API; a complete implementation of the SPARQL query language; a rule-based inference engine for RDFS and OWL entailments; TDB (a non-SQL persistent triple store); SDB (a persistent triples store built on a relational store) and Fuseki, an RDF server using web protocols. Jena complies with all relevant recommendations for RDF and related technologies from the W3C." ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:rvesse@apache.org> ;
+                  foaf:name   "Rob Vesse"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:castagna@apache.org> ;
+                  foaf:name   "Paolo Castagna"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:chrisdollin@apache.org> ;
+                  foaf:name   "Chris Dollin"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:sallen@apache.org> ;
+                  foaf:name   "Stephen Allen"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:ijd@apache.org> ;
+                  foaf:name   "Ian Dickinson"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:damian@apache.org> ;
+                  foaf:name   "Damian Steer"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:andy@apache.org> ;
+                  foaf:name   "Andy Seaborne"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:claude@apache.org> ;
+                  foaf:name   "Claude Warren"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:der@apache.org> ;
+                  foaf:name   "Dave Reynolds"
+                ] ;
+    doap:download-page
+                <http://jena.apache.org/download/index.html> ;
+    doap:homepage
+                <http://jena.apache.org> ;
+    doap:license
+                <http://usefulinc.com/doap/licenses/asl20> ;
+    doap:mailing-list
+                <http://jena.apache.org/help_and_support/index.html> ;
+    doap:name   "Apache Jena"@en ;
+    doap:programming-language
+                "Java"@en ;
+    doap:release
+                [ a           doap:Version ;
+                  doap:created
+                              "2013-05-15"@en ;
+                  doap:name   "apache-jena-2.10.1"@en ;
+                  doap:revision
+                              "2.10.0"@en
+                ] ;
+    doap:repository
+                [ a           doap:SVNRepository ;
+                  doap:browse
+                              <http://svn.apache.org/viewvc/jena/> ;
+                  doap:location
+                              <http://svn.apache.org/repos/asf/jena/trunk/>
+                ] ;
+    doap:shortdesc
+                "A framework for developing Semantic Web and Linked Data applications in Java."@en .
+
+@prefix dc:    <http://purl.org/dc/elements/1.1/> .
+@prefix rdft:  <http://www.w3.org/ns/rdftest#> .
+@prefix earl:  <http://www.w3.org/ns/earl#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix turtletest: <http://www.w3.org/2013/TurtleTests/manifest.ttl#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL2_with_UTF8_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-kw-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-esc-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:double_lower_case_e
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-15
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:IRI_with_four_digit_numeric_escape
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:old_style_base
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-kw-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL1_all_controls
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:blankNodePropertyList_with_multiple_triples
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-base-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-ln-colons
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_escaped_CARRIAGE_RETURN
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-12
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-num-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:comment_following_PNAME_NS
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:HYPHEN_MINUS_in_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-kw-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-20
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_with_PN_CHARS_BASE_character_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-uri-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-ln-dash-start
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-11
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-24
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-12
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:anonymous_blank_node_object
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-ns-dot-end
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-struct-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-prefix-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-lists-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-bad-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-base-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:first
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-str-esc-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-file-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-ns-dots
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:nested_collection
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_CHARACTER_TABULATION
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:langtagged_non_LONG
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefixed_IRI_predicate
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-ln-escape
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-uri-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG1_with_2_squotes
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-lang-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:bareword_integer
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:last
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_REVERSE_SOLIDUS
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_leading_underscore
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:repeated_semis_at_end
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL1
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:default_namespace_IRI
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_escaped_CHARACTER_TABULATION
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-num-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:repeated_semis_not_at_end
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2_ascii_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefix_reassigned_and_used
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-lists-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-11
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-17
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-pname-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:positive_numeric
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:IRI_with_all_punctuation
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-uri-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_subject
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-kw-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-pname-esc-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-pname-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG1
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_numeric_escape4
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-file-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-struct-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2_with_REVERSE_SOLIDUS
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localname_with_COLON
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-kw-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-22
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_with_leading_digit
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-prefix-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_LINE_FEED
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-struct-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:lantag_with_subtag
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-prefix-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefix_only_IRI
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-13
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-26
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL2_ascii_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-kw-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-esc-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-14
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:bareword_double
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:blankNodePropertyList_as_subject
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:IRI_subject
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_non_leading_extras
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-lists-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:blankNodePropertyList_as_object
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-base-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-blank-label
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-11
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-bad-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-num-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-datatypes-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-19
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-uri-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-blank-label-dot-end
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:collection_subject
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-11
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:anonymous_blank_node_subject
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-lists-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-missing-ns-dot-start
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-05
+] .
+
+_:b0    a              foaf:Person ;
+        foaf:homepage  <http://people.apache.org/~andy> ;
+        foaf:name      "Andy Seaborne" .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-bad-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-base-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-str-esc-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL1_with_UTF8_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_escaped_LINE_FEED
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:langtagged_LONG_with_subtag
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:number_sign_following_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:percent_escaped_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-ln-dots
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2_with_2_squotes
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_false
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG1_with_UTF8_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:SPARQL_style_prefix
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:IRIREF_datatype
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-uri-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:two_LITERAL_LONG2s
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG1_with_1_squote
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-17
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefixed_name_datatype
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_FORM_FEED
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_nfc_PN_CHARS_BASE_character_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-struct-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:predicateObjectList_with_two_objectLists
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefix_with_non_leading_extras
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-prefix-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-15
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-16
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-esc-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:negative_numeric
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:IRI_with_eight_digit_numeric_escape
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-lists-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-base-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-07
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:SPARQL_style_base
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-kw-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-pname-esc-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL1_all_punctuation
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:nested_blankNodePropertyLists
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_escaped_FORM_FEED
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-13
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-num-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:number_sign_following_PNAME_NS
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:underscore_in_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-kw-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-21
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_with_leading_underscore
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-uri-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-ln-escape-start
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_BACKSPACE
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:langtagged_LONG
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefixed_IRI_object
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-12
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-25
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-07
+] .
+
+<http://jena.apache.org/#riot>
+        a                doap:Project , earl:Software ;
+        dc:creator       _:b0 ;
+        dc:title         "Apache Jena RIOT" ;
+        dct:hasVersion   "${project.version}" ;
+        dct:isPartOf     [ foaf:homepage  <http://jena.apache.org/> ] ;
+        doap:homepage    "http://jena.apache.org/" ;
+        doap:maintainer  _:b0 ;
+        doap:name        "Apache Jena RIOT" ;
+        doap:release     [ a             doap:Version ;
+                           doap:created  "2013-08-10+01:00"^^xsd:date ;
+                           doap:name     "RIOT"
+                         ] ;
+        foaf:homepage    <http://jena.apache.org/> .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-esc-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-13
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:sole_blankNodePropertyList
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-ns-dot-start
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-struct-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-base-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-number-dot-in-anon
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-bad-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-datatypes-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-uri-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-n3-extras-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-file-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_with_non_leading_extras
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-06
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-missing-ns-dot-end
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-uri-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL2
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-11
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:bareword_decimal
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-27
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-base-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_leading_digit
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-str-esc-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL1_ascii_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_escaped_BACKSPACE
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:collection_object
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bnode-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-num-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:comment_following_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2_with_UTF8_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:reserved_escaped_localName
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-18
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:numeric_with_leading_0
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:empty_collection
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:bareword_a_predicate
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG2_with_1_squote
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:labeled_blank_node_object
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-pname-esc-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-pname-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_true
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:LITERAL_LONG1_ascii_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:old_style_prefix
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-09
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_numeric_escape8
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-uri-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-eval-struct-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-LITERAL2_with_langtag_and_datatype
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:localName_with_assigned_nfc_bmp_PN_CHARS_BASE_character_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-04
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-string-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-23
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-16
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-struct-10
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-01
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:literal_with_CARRIAGE_RETURN
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-struct-02
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-string-05
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:objectList_with_two_objects
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:prefix_with_PN_CHARS_BASE_character_boundaries
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-bad-prefix-03
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-number-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-syntax-prefix-08
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:turtle-subm-14
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://jena.apache.org/#riot> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-10+01:00"^^xsd:date ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://jena.apache.org/#riot> ;
+  earl:test        turtletest:blankNodePropertyList_containing_collection
+] .

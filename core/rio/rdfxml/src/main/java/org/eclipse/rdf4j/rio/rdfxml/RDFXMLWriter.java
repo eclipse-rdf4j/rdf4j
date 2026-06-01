@@ -10,25 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
+import static org.eclipse.rdf4j.rio.rdfxml.RDFXMLParser.ITS_NAMESPACE;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -53,6 +47,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	protected Resource lastWrittenSubject = null;
 	protected char quote = '"';
 	protected boolean entityQuote = false;
+	private boolean itsNamespaceUsed = false;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -122,6 +117,11 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 			// This export format needs the RDF namespace to be defined, add a
 			// prefix for it if there isn't one yet.
 			setNamespace(RDF.PREFIX, RDF.NAMESPACE);
+			if (itsNamespaceUsed) {
+				writeNewLine();
+				writeIndent();
+				writeQuotedAttribute("xmlns:its", ITS_NAMESPACE);
+			}
 
 			WriterConfig writerConfig = getWriterConfig();
 			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? '\'' : '\"';
@@ -260,12 +260,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 				writeStartOfStartTag(RDF.NAMESPACE, "Description");
 				if (subj instanceof BNode) {
 					BNode bNode = (BNode) subj;
-					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+					writeAttribute("nodeID", getValidNodeId(bNode));
 				} else if (baseIRI != null) {
-					writeAttribute(RDF.NAMESPACE, "about", baseIRI.relativize(subj.stringValue()));
+					writeAttribute("about", baseIRI.relativize(subj.stringValue()));
 				} else {
 					IRI uri = (IRI) subj;
-					writeAttribute(RDF.NAMESPACE, "about", uri.toString());
+					writeAttribute("about", uri.toString());
 				}
 				writeEndOfStartTag();
 				writeNewLine();
@@ -278,17 +278,64 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 			writeStartOfStartTag(predNamespace, predLocalName);
 
 			// OBJECT
-			if (obj instanceof Resource) {
+			if (obj instanceof TripleTerm) {
+
+				TripleTerm t = (TripleTerm) obj;
+				writeAttribute("parseType", "Resource");
+				writeEndOfStartTag();
+				writeNewLine();
+				// rdf:subject
+				writeIndent();
+				writeIndent();
+				writeStartOfStartTag(RDF.NAMESPACE, "subject");
+				writeAttribute("resource", t.getSubject().stringValue());
+				writeEndOfEmptyTag();
+				writeNewLine();
+				// rdf:predicate
+				writeIndent();
+				writeIndent();
+				writeStartOfStartTag(RDF.NAMESPACE, "predicate");
+				writeAttribute("resource", t.getPredicate().stringValue());
+				writeEndOfEmptyTag();
+				writeNewLine();
+				// rdf:object
+				writeIndent();
+				writeIndent();
+				writeStartOfStartTag(RDF.NAMESPACE, "object");
+
+				Value innerObj = t.getObject();
+				if (innerObj instanceof IRI) {
+					writeAttribute("resource", innerObj.stringValue());
+					writeEndOfEmptyTag();
+				} else if (innerObj instanceof BNode) {
+					writeAttribute("nodeID", getValidNodeId((BNode) innerObj));
+					writeEndOfEmptyTag();
+				} else {
+					Literal lit = (Literal) innerObj;
+					if (lit.getLanguage().isPresent()) {
+						writeAttribute(lit.getLanguage().get());
+					} else if (lit.getCoreDatatype() != CoreDatatype.XSD.STRING) {
+						writeAttribute("datatype", lit.getDatatype().toString());
+					}
+					writeEndOfStartTag();
+					writeCharacterData(lit.getLabel());
+					writeEndTag(RDF.NAMESPACE, "object");
+				}
+
+				writeNewLine();
+				writeIndent();
+				writeEndTag(predNamespace, predLocalName);
+			} else if (obj instanceof Resource) {
 				Resource objRes = (Resource) obj;
 
 				if (objRes instanceof BNode) {
 					BNode bNode = (BNode) objRes;
-					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+					writeAttribute("nodeID", getValidNodeId(bNode));
 				} else if (baseIRI != null) {
-					writeAttribute(RDF.NAMESPACE, "resource", baseIRI.relativize(objRes.stringValue()));
+					writeAttribute("resource", baseIRI.relativize(objRes.stringValue()));
 				} else {
 					IRI uri = (IRI) objRes;
-					writeAttribute(RDF.NAMESPACE, "resource", uri.toString());
+					writeAttribute("resource", uri.toString());
 				}
 
 				writeEndOfEmptyTag();
@@ -297,19 +344,25 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 				// datatype attribute
 				boolean isXMLLiteral = false;
 
-				// language attribute
-				if (Literals.isLanguageLiteral(objLit)) {
-					writeAttribute("xml:lang", objLit.getLanguage().get());
-				} else {
-					CoreDatatype coreDatatype = objLit.getCoreDatatype();
+				if (objLit.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING) {
+					// DIRLANGSTRING is always a language literal
+					writeAttribute(objLit.getLanguage().get());
+					String dir = String.valueOf(objLit.getBaseDirection());
+					itsNamespaceUsed = true;
+					writeAttribute("its:dir", dir);
 
-					// Check if datatype is rdf:XMLLiteral
+				} else if (Literals.isLanguageLiteral(objLit)) {
+					writeAttribute(objLit.getLanguage().get());
+
+				} else {
+					// other datatypes
+					CoreDatatype coreDatatype = objLit.getCoreDatatype();
 					isXMLLiteral = coreDatatype == CoreDatatype.RDF.XMLLITERAL;
 
 					if (isXMLLiteral) {
-						writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
+						writeAttribute("parseType", "Literal");
 					} else if (coreDatatype != CoreDatatype.XSD.STRING) {
-						writeAttribute(RDF.NAMESPACE, "datatype", objLit.getDatatype().toString());
+						writeAttribute("datatype", objLit.getDatatype().toString());
 					}
 				}
 
@@ -386,18 +439,18 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 		}
 	}
 
-	protected void writeAttribute(String attName, String value) throws IOException {
-		writeQuotedAttribute(" " + attName, value);
+	protected void writeAttribute(String value) throws IOException {
+		writeQuotedAttribute(" " + "xml:lang", value);
 	}
 
-	protected void writeAttribute(String namespace, String attName, String value)
+	protected void writeAttribute(String attName, String value)
 			throws IOException, RDFHandlerException {
 		// Note: attribute cannot use the default namespace
-		String prefix = namespaceTable.get(namespace);
+		String prefix = namespaceTable.get(RDF.NAMESPACE);
 
 		if (prefix == null) {
 			throw new RDFHandlerException(
-					"No prefix has been declared for the namespace used in this attribute: " + namespace);
+					"No prefix has been declared for the namespace used in this attribute: " + RDF.NAMESPACE);
 		}
 
 		writeQuotedAttribute(" " + prefix + ":" + attName, value);
@@ -408,7 +461,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	 *
 	 * @param attName attribute name
 	 * @param value   string value
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeQuotedAttribute(String attName, String value) throws IOException {
 		String str = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value)
@@ -423,7 +476,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	/**
 	 * Write &gt;
 	 *
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeEndOfStartTag() throws IOException {
 		writer.write(">");
@@ -432,7 +485,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	/**
 	 * Write &gt; or /&gt;
 	 *
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeEndOfEmptyTag() throws IOException {
 		writer.write("/>");
@@ -459,7 +512,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	 * Replace special characters in text with entities.
 	 *
 	 * @param chars text
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeCharacterData(String chars) throws IOException {
 		String str;
@@ -475,7 +528,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	/**
 	 * Write tab
 	 *
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeIndent() throws IOException {
 		writer.write("\t");
@@ -484,7 +537,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	/**
 	 * Write newline character
 	 *
-	 * @throws IOException
+	 * @throws IOException ioException
 	 */
 	protected void writeNewLine() throws IOException {
 		writer.write("\n");

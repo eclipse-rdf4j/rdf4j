@@ -18,11 +18,11 @@ graph ex:rdfstar {
 
     <<<http://example.org/a>ex:b ex:c>>ex:valid "1999-08-16"^^xsd:date .
 
-    << # Start of triple
-        ex:bob # triple subject
-        foaf:birthday # triple predicate
-        "1908-03-18"^^xsd:date # triple object
-    >> # end of triple
+    << # Start of tripleTerm
+        ex:bob # tripleTerm subject
+        foaf:birthday # tripleTerm predicate
+        "1908-03-18"^^xsd:date # tripleTerm object
+    >> # end of tripleTerm
     dct:source ex:bobshomepage .
 
     << ex:book dct:title "Example book"@en >> dct:source  ex:bobshomepage .

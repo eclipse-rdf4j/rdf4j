@@ -21,15 +21,19 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -381,6 +386,32 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		unaryMeet("lang", theOp);
 	}
 
+	@Override
+	public void meet(LangDir theOp) throws Exception {
+		unaryMeet("LANGDIR", theOp);
+	}
+
+	@Override
+	public void meet(StrLangDir theOp) throws Exception {
+		mBuffer.append("strLangDir(");
+		theOp.getLexicalFormArg().visit(this);
+		mBuffer.append(", ");
+		theOp.getLangArg().visit(this);
+		mBuffer.append(", ");
+		theOp.getDirArg().visit(this);
+		mBuffer.append(")");
+	}
+
+	@Override
+	public void meet(HasLang theOp) throws Exception {
+		unaryMeet("hasLang", theOp);
+	}
+
+	@Override
+	public void meet(HasLangDir theOp) throws Exception {
+		unaryMeet("hasLangDir", theOp);
+	}
+
 	/**
 	 * {@inheritDoc}
 	 */
@@ -421,6 +452,11 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		unaryMeet("str", theOp);
 	}
 
+	@Override
+	public void meet(IsTriple theOp) throws Exception {
+		unaryMeet("isTriple", theOp);
+	}
+
 	private void binaryMeet(String theOpStr, BinaryValueOperator theOp) throws Exception {
 		mBuffer.append(" (");
 		theOp.getLeftArg().visit(this);
@@ -445,6 +481,9 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 
 		case "strlang":
 			return "strlang";
+
+		case "strlangdir":
+			return "strlangdir";
 
 		case "uuid":
 			return "uuid";

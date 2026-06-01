@@ -10,10 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.OBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.PREDICATE;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.SUBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE_STARDOG;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.OBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.PREDICATE;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.SUBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.TRIPLE_STARDOG;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,8 +25,9 @@ import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -78,6 +79,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	public static final String VALUE = "value";
 
 	public static final String XMLLANG = "xml:lang";
+
+	public static final String ITS_DIR = "its:dir";
 
 	public static final String DATATYPE = "datatype";
 
@@ -330,11 +333,12 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		}
 
 		String lang = null;
+		String dir = null;
 		String type = null;
 		String datatype = null;
 		String value = null;
 
-		Triple triple = null;
+		TripleTerm tripleTerm = null;
 
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
 			if (jp.currentToken() != JsonToken.PROPERTY_NAME) {
@@ -349,18 +353,20 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			if (TYPE.equals(fieldName)) {
 				type = jp.nextStringValue();
 				if (TRIPLE_STARDOG.equals(type)) {
-					// Stardog RDF-star serialization dialect does not wrap the triple in a value object
-					triple = parseStardogTripleValue(jp, type);
+					// Stardog RDF-star serialization dialect does not wrap the tripleTerm in a value object
+					tripleTerm = parseStardogTripleValue(jp, type);
 					// avoid reading away the next end-of-object token by jumping out of the loop.
 					break;
 				}
 			} else if (XMLLANG.equals(fieldName)) {
 				lang = jp.nextStringValue();
+			} else if (ITS_DIR.equals(fieldName)) {
+				dir = jp.nextStringValue();
 			} else if (DATATYPE.equals(fieldName)) {
 				datatype = jp.nextStringValue();
 			} else if (VALUE.equals(fieldName)) {
 				if (jp.nextToken() == JsonToken.START_OBJECT) {
-					triple = parseTripleValue(jp, fieldName);
+					tripleTerm = parseTripleTermValue(jp, fieldName);
 					if (jp.currentToken() != JsonToken.END_OBJECT) {
 						throw new QueryResultParseException("Unexpected token: " + jp.currentName(),
 								jp.currentLocation().getLineNr(),
@@ -376,14 +382,14 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 			}
 		}
-		if (triple != null && checkTripleType(jp, type)) {
-			return triple;
+		if (tripleTerm != null && checkTripleType(jp, type)) {
+			return tripleTerm;
 		}
 
-		return parseValue(type, value, lang, datatype);
+		return parseValue(type, value, lang, dir, datatype);
 	}
 
-	private Triple parseStardogTripleValue(JsonParser jp, String fieldName) throws IOException {
+	private TripleTerm parseStardogTripleValue(JsonParser jp, String fieldName) throws IOException {
 		Value subject = null, predicate = null, object = null;
 
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -428,7 +434,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		}
 
 		if (subject instanceof Resource && predicate instanceof IRI && object != null) {
-			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+			return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
 		} else {
 			throw new QueryResultParseException("Incomplete or invalid triple value",
 					jp.currentLocation().getLineNr(),
@@ -436,7 +442,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		}
 	}
 
-	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
+	protected TripleTerm parseTripleTermValue(JsonParser jp, String fieldName) throws IOException {
 		throw new QueryResultParseException("Unexpected object as value", jp.currentLocation().getLineNr(),
 				jp.currentLocation().getColumnNr());
 	}
@@ -454,17 +460,24 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	 * @param datatype datatype tag, if applicable
 	 * @return the value corresponding to the given parameters
 	 */
-	private Value parseValue(String type, String value, String language, String datatype) {
+	private Value parseValue(String type, String value, String language, String dir, String datatype) {
 		logger.trace("type: {}", type);
 		logger.trace("value: {}", value);
 		logger.trace("language: {}", language);
+		logger.trace("dir: {}", dir);
 		logger.trace("datatype: {}", datatype);
 
 		Value result = null;
 
 		if (type.equals(LITERAL) || type.equals(TYPED_LITERAL)) {
 			if (language != null) {
-				result = valueFactory.createLiteral(value, language);
+				if (dir != null && !dir.isEmpty()) {
+					// rdf:dirLangString with base direction
+					Literal.BaseDirection baseDir = Literal.BaseDirection.fromString(Literal.BASE_DIR_SEPARATOR + dir);
+					result = valueFactory.createLiteral(value, language, baseDir);
+				} else {
+					result = valueFactory.createLiteral(value, language);
+				}
 			} else if (datatype != null) {
 				IRI datatypeIri;
 				datatypeIri = valueFactory.createIRI(datatype);

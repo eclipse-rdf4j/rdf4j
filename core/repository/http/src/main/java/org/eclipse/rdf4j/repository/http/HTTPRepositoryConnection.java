@@ -462,7 +462,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			// default MIME-type.
 			return new RDFFormat(NTRIPLES.getName(), List.of("text/plain"), NTRIPLES.getCharset(),
 					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
-					NTRIPLES.supportsRDFStar());
+					NTRIPLES.supportsTripleTerms());
 		}
 
 		return format;

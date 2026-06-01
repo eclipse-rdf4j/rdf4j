@@ -100,7 +100,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTripleTerm;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
@@ -2229,13 +2229,13 @@ public class TupleExprToIrConverter {
 
 	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP(false);
-		private final Map<String, IrInlineTriple> inlineTriples;
+		private final Map<String, IrInlineTripleTerm> inlineTriples;
 
 		IRBuilder() {
 			this.inlineTriples = new LinkedHashMap<>();
 		}
 
-		IRBuilder(Map<String, IrInlineTriple> shared) {
+		IRBuilder(Map<String, IrInlineTripleTerm> shared) {
 			this.inlineTriples = shared;
 		}
 
@@ -2287,13 +2287,13 @@ public class TupleExprToIrConverter {
 			final IrStatementPattern node = new IrStatementPattern(sp.getSubjectVar(), sp.getPredicateVar(),
 					sp.getObjectVar(), false);
 			if (sp.getSubjectVar() != null) {
-				IrInlineTriple inline = inlineTriples.get(sp.getSubjectVar().getName());
+				IrInlineTripleTerm inline = inlineTriples.get(sp.getSubjectVar().getName());
 				if (inline != null) {
 					node.setSubjectOverride(inline);
 				}
 			}
 			if (sp.getObjectVar() != null) {
-				IrInlineTriple inline = inlineTriples.get(sp.getObjectVar().getName());
+				IrInlineTripleTerm inline = inlineTriples.get(sp.getObjectVar().getName());
 				if (inline != null) {
 					node.setObjectOverride(inline);
 				}
@@ -2312,7 +2312,7 @@ public class TupleExprToIrConverter {
 			Var exprVar = tr.getExprVar();
 			if (exprVar != null && exprVar.getName() != null) {
 				inlineTriples.put(exprVar.getName(),
-						new IrInlineTriple(tr.getSubjectVar(), tr.getPredicateVar(), tr.getObjectVar()));
+						new IrInlineTripleTerm(tr.getSubjectVar(), tr.getPredicateVar(), tr.getObjectVar()));
 			}
 			// Do not emit a line; TripleRef only defines an inline RDF-star triple term.
 		}

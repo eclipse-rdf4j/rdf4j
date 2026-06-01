@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -40,7 +40,7 @@ public class PatternFilter extends FilterPlanNode {
 	}
 
 	private static Literal str(Value argValue, ValueFactory valueFactory) {
-		if (argValue instanceof IRI || argValue instanceof Triple) {
+		if (argValue instanceof IRI || argValue instanceof TripleTerm) {
 			return valueFactory.createLiteral(argValue.toString());
 		} else if (argValue instanceof Literal) {
 			Literal literal = (Literal) argValue;

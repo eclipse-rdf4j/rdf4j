@@ -99,6 +99,7 @@ public class RDFParserHelper {
 		Literal result = null;
 		String workingLabel = label;
 		Optional<String> workingLang = Optional.ofNullable(lang);
+		Literal.BaseDirection workingBaseDirection = Literal.BaseDirection.NONE;
 		IRI workingDatatype = datatype;
 
 		// In RDF-1.1 we must do lang check first as language literals will all
@@ -106,31 +107,50 @@ public class RDFParserHelper {
 		// non-null lang
 		if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
 			boolean recognisedLanguage = false;
+
+			// Split workingLang into language tag and base direction so both can be separately verified
+			final int index = lang.indexOf(Literal.BASE_DIR_SEPARATOR);
+			if (index != -1) {
+				workingLang = Optional.of(lang.substring(0, index));
+				final String baseDirectionString = lang.substring(index);
+
+				try {
+					workingBaseDirection = Literal.BaseDirection.fromString(baseDirectionString);
+				} catch (IllegalArgumentException e) {
+					reportFatalError("'" + baseDirectionString + "' is not a valid base direction ", lineNo, columnNo,
+							errListener);
+				}
+			}
+
 			for (LanguageHandler nextHandler : parserConfig.get(BasicParserSettings.LANGUAGE_HANDLERS)) {
 				if (nextHandler.isRecognizedLanguage(workingLang.get())) {
 					recognisedLanguage = true;
 					if (parserConfig.get(BasicParserSettings.VERIFY_LANGUAGE_TAGS)) {
 						try {
 							if (!nextHandler.verifyLanguage(workingLabel, workingLang.get())) {
-								reportError("'" + lang + "' is not a valid language tag ", lineNo, columnNo,
+								reportError("'" + workingLang.get() + "' is not a valid language tag ", lineNo,
+										columnNo,
 										BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
 							}
 						} catch (LiteralUtilException e) {
 							reportError("'" + label
 									+ " could not be verified by a language handler that recognised it. language was "
-									+ lang, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig,
+									+ workingLang.get(), lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS,
+									parserConfig,
 									errListener);
 						}
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {
 						try {
-							result = nextHandler.normalizeLanguage(workingLabel, workingLang.get(), valueFactory);
+							result = nextHandler.normalizeLanguage(workingLabel, workingLang.get(),
+									workingBaseDirection, valueFactory);
 							workingLabel = result.getLabel();
 							workingLang = result.getLanguage();
 							workingDatatype = result.getDatatype();
 						} catch (LiteralUtilException e) {
 							reportError(
-									"'" + label + "' did not have a valid value for language " + lang + ": "
+									"'" + label + "' did not have a valid value for language " + workingLang.get()
+											+ ": "
 											+ e.getMessage() + " and could not be normalised",
 									lineNo, columnNo, BasicParserSettings.NORMALIZE_LANGUAGE_TAGS, parserConfig,
 									errListener);
@@ -141,7 +161,8 @@ public class RDFParserHelper {
 			if (!recognisedLanguage) {
 				reportError("'" + label
 						+ "' was not recognised as a language literal, and could not be verified, with language "
-						+ lang, lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, parserConfig,
+						+ workingLang.get(), lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES,
+						parserConfig,
 						errListener);
 			}
 		} else if (workingDatatype != null) {
@@ -189,15 +210,18 @@ public class RDFParserHelper {
 		if (result == null) {
 			try {
 				// Removes datatype for langString datatype with no language tag when VERIFY_DATATYPE_VALUES is False.
-				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))
+				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype)
+						|| RDF.DIRLANGSTRING.equals(workingDatatype))
 						&& (workingLang.isEmpty() || workingLang.get().isEmpty())
 						&& !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {
 					workingLang = Optional.ofNullable(null);
 					workingDatatype = null;
 				}
 				// Backup for unnormalised language literal creation
-				if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
-					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern());
+				if (workingLang.isPresent()
+						&& (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype)
+								|| RDF.DIRLANGSTRING.equals(workingDatatype))) {
+					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern(), workingBaseDirection);
 				}
 				// Backup for unnormalised datatype literal creation
 				else if (workingDatatype != null) {
