@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -84,7 +85,7 @@ public class TripleStoreRecoveryTest {
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
-			for (int i = 1; i <= branchFactor + 2; i++) {
+			for (int i = 1; i <= branchFactor; i++) {
 				tripleStore.storeTriple(i, i, i, i);
 			}
 			tripleStore.commit();
@@ -98,7 +99,8 @@ public class TripleStoreRecoveryTest {
 		tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
-			tripleStore.removeTriplesByContext(medianId, medianId, medianId, medianId, true);
+			assertEquals(Long.valueOf(1L),
+					tripleStore.removeTriplesByContext(medianId, medianId, medianId, medianId, true).get(medianId));
 		} finally {
 			tripleStore.close();
 		}
@@ -127,7 +129,7 @@ public class TripleStoreRecoveryTest {
 		try {
 			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
 				// store must be readable after recovery; exact content is best-effort
-				assertNotNull(iter);
+				assertNotNull(iter.next());
 			}
 		} finally {
 			tripleStore.close();
