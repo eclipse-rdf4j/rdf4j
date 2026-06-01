@@ -2864,6 +2864,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (candidatePlan.isEmpty() || !isValidPlannerOrder(segment, candidatePlan.get())) {
 				return Optional.empty();
 			}
+			if (!withinSelectiveLocalFilterPrefixBudget(selectedPlan, candidatePlan.get())) {
+				return Optional.empty();
+			}
 			return candidatePlan;
 		}
 

@@ -86,6 +86,25 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsPlannerOrderWhenLocalFilterPrefixCandidateIsMoreExpensive() {
+		StatementPattern cheapSeed = statementPattern("seed", "type", "seedType");
+		StatementPattern connector = new StatementPattern(new Var("entity"),
+				new Var("_connectorPredicate", VF.createIRI("urn:connectsTo")),
+				new Var("_connectorObject", VF.createIRI("urn:fixedEndpoint")));
+		StatementPattern filteredPattern = statementPattern("entity", "score", "score");
+		QueryRoot root = new QueryRoot(new Filter(new Join(cheapSeed, new Join(connector, filteredPattern)),
+				new Compare(new Var("score"), new ValueConstant(VF.createLiteral(5)), Compare.CompareOp.GT)));
+		PlanningStatistics statistics = PlanningStatistics
+				.withMoreExpensiveLocalFilterPrefixPlan(List.of(cheapSeed, connector, filteredPattern));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(cheapSeed, connector, filteredPattern), statementPatterns(root.getArg()),
+				"A valid local-filter-prefix candidate must not replace a cheaper planner-selected order");
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
 	void acceptedPlannerOrderSurvivesDeferredFilterPlacement() {
 		BindingSetAssignment boundB = values("b", "user-3", "user-4", "user-5", "user-6");
 		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
@@ -786,6 +805,7 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean repeatedFiniteAntiProbeMoreExpensive;
 		private boolean lowPassFilteredAntiProbeLacksWorkProof;
 		private boolean highPassFilteredAntiProbeCheaper;
+		private boolean moreExpensiveLocalFilterPrefixPlan;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -835,6 +855,12 @@ class LmdbSketchJoinOptimizerTest {
 			return statistics;
 		}
 
+		static PlanningStatistics withMoreExpensiveLocalFilterPrefixPlan(List<TupleExpr> plan) {
+			PlanningStatistics statistics = new PlanningStatistics(plan);
+			statistics.moreExpensiveLocalFilterPrefixPlan = true;
+			return statistics;
+		}
+
 		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
@@ -856,6 +882,23 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.empty();
 			}
 			return Optional.of(new JoinOrderPlan(plan, 1.0d, 1.0d));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+			if (moreExpensiveLocalFilterPrefixPlan) {
+				return Optional.of(new JoinOrderPlan(orderedArgs, 1.0d, 100.0d));
+			}
+			return Optional.empty();
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			if (moreExpensiveLocalFilterPrefixPlan) {
+				return new FilterPassEstimate(0.10d, FilterPassEstimate.Source.HEURISTIC, 1_000L);
+			}
+			return super.estimateFilterPass(filter);
 		}
 
 		@Override
