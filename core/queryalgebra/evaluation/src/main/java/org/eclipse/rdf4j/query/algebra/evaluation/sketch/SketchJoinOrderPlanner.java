@@ -1053,7 +1053,6 @@ final class SketchJoinOrderPlanner {
 		double physicalRowFlowRows = physicalRowFlowRows(candidate, mask, currentBoundVarMask, prefix.estimate(),
 				rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = applyUnlockedFilters(mask, nextMask, rowsEnteringEstimate);
-		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(candidate, mask, prefix.estimate());
 		double rowsProcessed = rowsProcessedByStep(candidate, mask, prefix.estimate(),
 				rowsEnteringEstimate.outputRows());
 		if (isFiniteNonNegative(physicalRowFlowRows) && physicalRowFlowRows > rowsProcessed) {
@@ -1106,8 +1105,7 @@ final class SketchJoinOrderPlanner {
 			stepWorkRows += forwardContinuationWorkRows;
 		}
 		SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate = rowsEnteringEstimate;
-		double cartesianStepWorkRows = cartesianWorkRows(mask, candidate, stepWorkRows,
-				rowsBeforeUnlockedFilters, endpointDomainPreparation);
+		double cartesianStepWorkRows = cartesianWorkRows(mask, candidate, stepWorkRows, rowsBeforeUnlockedFilters);
 		if (cartesianStepWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
 			stepWorkRows += cartesianStepWorkRows;
 		}
@@ -2086,20 +2084,12 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double cartesianWorkRows(long mask, int candidate, double stepWorkRows,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters,
-			boolean endpointDomainPreparation) {
+			SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters) {
 		if (mask == 0L || !isFiniteNonNegative(stepWorkRows)
 				|| hasConnection(mask, candidate)) {
 			return 0.0d;
 		}
 		if (isSingletonBindingSetAssignment(candidate) || containsOnlySingletonBindingSetAssignments(mask)) {
-			return 0.0d;
-		}
-		if (endpointDomainPreparation) {
-			double rows = rowsBeforeUnlockedFilters == null ? Double.NaN : rowsBeforeUnlockedFilters.outputRows();
-			return maxFinite(stepWorkRows, rows);
-		}
-		if (hasPotentialVariableInteraction(boundVariableMask(mask), bindingVarMasks[candidate])) {
 			return 0.0d;
 		}
 		double rows = rowsBeforeUnlockedFilters == null ? Double.NaN : rowsBeforeUnlockedFilters.outputRows();

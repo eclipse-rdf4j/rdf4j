@@ -256,6 +256,7 @@ class LmdbEvaluationStatistics
 				&& plan.getEstimatedTotalWork() <= BOUNDED_GREEDY_MAX_WORK_ROWS
 				&& isFiniteNonNegative(plan.getEstimatedFinalRows())
 				&& plan.getEstimatedFinalRows() <= BOUNDED_GREEDY_MAX_FINAL_ROWS
+				&& boundedPrefixRows(plan, BOUNDED_GREEDY_MAX_WORK_ROWS)
 				&& boundedUncertaintyRows(plan, BOUNDED_GREEDY_MAX_WORK_ROWS);
 	}
 
@@ -287,6 +288,19 @@ class LmdbEvaluationStatistics
 		}
 		return directLookupSteps >= BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS
 				&& maxPrefixRows <= BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS;
+	}
+
+	private boolean boundedPrefixRows(JoinOrderPlan plan, double maxPrefixRows) {
+		if (plan.getSteps().size() != plan.getOrderedArgs().size()) {
+			return false;
+		}
+		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+			double prefixOutputRows = step.getPrefixOutputRows();
+			if (!isFiniteNonNegative(prefixOutputRows) || prefixOutputRows > maxPrefixRows) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private boolean boundedUncertaintyRows(JoinOrderPlan plan, double maxUncertaintyRows) {
