@@ -105,6 +105,28 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsFiniteAnchorOrderWhenLocalFilterPrefixCandidateIsMoreExpensive() {
+		BindingSetAssignment boundObjects = values("knownObject", "DX-200", "DX-201");
+		StatementPattern lookup = statementPattern("entity", "hasKnownObject", "knownObject");
+		StatementPattern connector = new StatementPattern(new Var("entity"),
+				new Var("_connectorPredicate", VF.createIRI("urn:connectsTo")),
+				new Var("_connectorObject", VF.createIRI("urn:fixedEndpoint")));
+		StatementPattern filteredPattern = statementPattern("entity", "score", "score");
+		QueryRoot root = new QueryRoot(new Filter(
+				new Join(boundObjects, new Join(lookup, new Join(connector, filteredPattern))),
+				new Compare(new Var("score"), new ValueConstant(VF.createLiteral(5)), Compare.CompareOp.GT)));
+		PlanningStatistics statistics = PlanningStatistics.withMoreExpensiveLocalFilterPrefixPlanAndJoinEstimation(
+				List.of(connector, boundObjects, lookup, filteredPattern));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(lookup, connector, filteredPattern), statementPatterns(root.getArg()),
+				"Rejecting an expensive local-filter-prefix candidate must not suppress the finite-anchor order");
+		assertEquals(boundObjects, joinArgs(root.getArg()).getFirst());
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
 	void acceptedPlannerOrderSurvivesDeferredFilterPlacement() {
 		BindingSetAssignment boundB = values("b", "user-3", "user-4", "user-5", "user-6");
 		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
@@ -858,6 +880,12 @@ class LmdbSketchJoinOptimizerTest {
 		static PlanningStatistics withMoreExpensiveLocalFilterPrefixPlan(List<TupleExpr> plan) {
 			PlanningStatistics statistics = new PlanningStatistics(plan);
 			statistics.moreExpensiveLocalFilterPrefixPlan = true;
+			return statistics;
+		}
+
+		static PlanningStatistics withMoreExpensiveLocalFilterPrefixPlanAndJoinEstimation(List<TupleExpr> plan) {
+			PlanningStatistics statistics = withMoreExpensiveLocalFilterPrefixPlan(plan);
+			statistics.supportsJoinEstimation = true;
 			return statistics;
 		}
 

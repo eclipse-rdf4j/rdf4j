@@ -2537,17 +2537,15 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (segment.size() < 2 || !(statistics instanceof JoinOrderPlanner planner)) {
 				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
 			}
+			Optional<List<TupleExpr>> localFilterPrefixOrder = localFilterPrefixOrder(segment, boundBeforeSegment,
+					segmentFilters);
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation()
-					&& !hasLocalFilterPrefixCandidate(segment, boundBeforeSegment, segmentFilters);
+					&& localFilterPrefixOrder.isEmpty();
 			if (preferFiniteAnchorFastPath) {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
-					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
-					applyFiniteAnchorPlannerMetrics(orderedArgs);
-					FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-							orderedArgs, boundBeforeSegment);
-					return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
+					return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
 				}
 			}
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
@@ -2569,10 +2567,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 								: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 						return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
 					}
-					Optional<List<TupleExpr>> localPrefixOrder = localFilterPrefixOrder(segment, boundBeforeSegment,
-							segmentFilters);
-					if (localPrefixOrder.isPresent()) {
-						List<TupleExpr> orderedArgs = localPrefixOrder.get();
+					if (localFilterPrefixOrder.isPresent()) {
+						List<TupleExpr> orderedArgs = localFilterPrefixOrder.get();
 						applyLocalFilterPrefixFallbackMetrics(orderedArgs);
 						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 								orderedArgs, boundBeforeSegment);
@@ -2582,21 +2578,35 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 							boundBeforeSegment, plannerFilters);
 					if (canonicalFiniteAnchorOrder.isPresent()) {
-						List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
-						applyFiniteAnchorPlannerMetrics(orderedArgs);
-						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-								orderedArgs, boundBeforeSegment);
-						return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(),
-								true);
+						return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
 					}
 				}
 				return connectivityFallbackOrder(segment, boundBeforeSegment);
 			}
-			JoinOrderPlanner.JoinOrderPlan selectedPlan = localFilterPrefixPlan(segment, boundBeforeSegment,
-					plannerFilters, segmentFilters, plan.get(), algorithm, planner)
-							.orElseGet(() -> selectiveLocalFilterPrefixPlan(segment, boundBeforeSegment,
-									plannerFilters, segmentFilters, plan.get(), algorithm, planner)
-											.orElse(plan.get()));
+			Optional<JoinOrderPlanner.JoinOrderPlan> localPrefixPlan = localFilterPrefixPlan(segment,
+					boundBeforeSegment, plannerFilters, segmentFilters, plan.get(), algorithm, planner);
+			Optional<JoinOrderPlanner.JoinOrderPlan> selectivePrefixPlan = Optional.empty();
+			JoinOrderPlanner.JoinOrderPlan selectedPlan;
+			if (localPrefixPlan.isPresent()) {
+				selectedPlan = localPrefixPlan.get();
+			} else {
+				selectivePrefixPlan = selectiveLocalFilterPrefixPlan(segment, boundBeforeSegment, plannerFilters,
+						segmentFilters, plan.get(), algorithm, planner);
+				selectedPlan = selectivePrefixPlan.orElse(plan.get());
+			}
+			boolean selectedLocalFilterPrefix = localPrefixPlan.isPresent()
+					|| selectivePrefixPlan.isPresent()
+					|| (localFilterPrefixOrder.isPresent()
+							&& localFilterPrefixOrder.get().equals(selectedPlan.getOrderedArgs()));
+			if (statistics.supportsJoinEstimation()
+					&& localFilterPrefixOrder.isPresent()
+					&& !selectedLocalFilterPrefix) {
+				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
+						boundBeforeSegment, plannerFilters);
+				if (canonicalFiniteAnchorOrder.isPresent()) {
+					return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
+				}
+			}
 			selectedPlan = sampledZeroFanoutGuardPlan(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
@@ -2608,6 +2618,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					? Map.of()
 					: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+		}
+
+		private OrderedSegment finiteAnchorOrderedSegment(List<TupleExpr> orderedArgs, Set<String> boundBeforeSegment) {
+			applyFiniteAnchorPlannerMetrics(orderedArgs);
+			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(orderedArgs,
+					boundBeforeSegment);
+			return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
 		}
 
 		private FiniteAssignmentReorder deferFiniteAssignmentsAfterBoundExactLookups(List<TupleExpr> orderedArgs,
@@ -2909,11 +2926,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Optional.empty();
 			}
 			return candidateOrder;
-		}
-
-		private boolean hasLocalFilterPrefixCandidate(List<TupleExpr> segment, Set<String> boundBeforeSegment,
-				List<DeferredFilter> segmentFilters) {
-			return localFilterPrefixOrder(segment, boundBeforeSegment, segmentFilters).isPresent();
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> selectiveLocalFilterPrefixPlan(List<TupleExpr> segment,
