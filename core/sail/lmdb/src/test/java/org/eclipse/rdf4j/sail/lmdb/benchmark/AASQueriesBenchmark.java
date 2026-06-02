@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -59,6 +61,7 @@ public class AASQueriesBenchmark {
 
 	static final String PREPARE_SKETCHES_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.prepareSketches";
 	static final String PRINT_EXPLAIN_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printExplain";
+	static final String PRINT_OPTIMIZED_PLAN_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printOptimizedPlan";
 	static final String PRINT_FULL_EXPLAIN_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printFullExplain";
 	static final String PRINT_CONNECTED_TRACE_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printConnectedTrace";
 	static final String PRINT_PATH_ALTERNATIVES_PROPERTY = "rdf4j.lmdb.aasQueriesBenchmark.printPathAlternatives";
@@ -150,8 +153,9 @@ public class AASQueriesBenchmark {
 
 	static void main(String[] args) throws RunnerException {
 		enableFullExplanationAndTraceOutput();
+		String benchmarkMethod = System.getProperty("rdf4j.lmdb.aasQueriesBenchmark.method", "runQuery");
 		Options options = new OptionsBuilder()
-				.include("AASQueriesBenchmark\\.query")
+				.include("AASQueriesBenchmark\\." + benchmarkMethod)
 				.param("query", System.getProperty("rdf4j.lmdb.aasQueriesBenchmark.query",
 						"query2ThresholdCount"))
 				.forks(0)
@@ -370,13 +374,53 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(querySpec.query());
 			tupleQuery.setMaxExecutionTime(5);
-			try (TupleQueryResult result = tupleQuery.evaluate()) {
-				if (querySpec.singleLongBindingName() != null) {
-					return singleLong(result, querySpec.singleLongBindingName());
-				}
-				return count(result);
+			return evaluateQuery(tupleQuery);
+		}
+	}
+
+	@Benchmark
+	public long runQuery(PreparedQueryState state) {
+		return evaluatePlan(state.plan);
+	}
+
+	@State(Scope.Thread)
+	public static class PreparedQueryState {
+		private LmdbBenchmarkQueryPlan plan;
+
+		@Setup(Level.Iteration)
+		public void setup(AASQueriesBenchmark benchmark) throws IOException {
+			plan = benchmark.preparePlan();
+			benchmark.printOptimizedPlan("iteration setup", plan);
+		}
+
+		@TearDown(Level.Iteration)
+		public void tearDown() {
+			if (plan != null) {
+				plan.close();
+				plan = null;
 			}
 		}
+	}
+
+	private LmdbBenchmarkQueryPlan preparePlan() throws IOException {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return LmdbBenchmarkQueryPlan.prepare(lmdbStore, connection, querySpec.query(), 5);
+		}
+	}
+
+	private void printOptimizedPlan(String phase, LmdbBenchmarkQueryPlan plan) {
+		if (!Boolean.parseBoolean(System.getProperty(PRINT_OPTIMIZED_PLAN_PROPERTY, "false"))) {
+			return;
+		}
+		System.out.println();
+		System.out.println("AAS optimized plan [" + phase + "]"
+				+ " query=" + query
+				+ ", useCascades=" + useCascades);
+		System.out.println(plan.optimizedPlan());
+		if (!plan.optimizedDiagnostics().isBlank()) {
+			System.out.println(plan.optimizedDiagnostics());
+		}
+		System.out.println();
 	}
 
 	private static QuerySpec querySpec(String query) {
@@ -388,28 +432,42 @@ public class AASQueriesBenchmark {
 		};
 	}
 
-	private static long count(TupleQueryResult result) {
-		long count = 0;
-		try (TupleQueryResult tupleQueryResult = result) {
-			while (tupleQueryResult.hasNext()) {
-				tupleQueryResult.next();
-				count++;
+	private long evaluateQuery(TupleQuery tupleQuery) {
+		try (TupleQueryResult result = tupleQuery.evaluate()) {
+			if (querySpec.singleLongBindingName() != null) {
+				return singleLong(result, querySpec.singleLongBindingName());
 			}
+			return count(result);
+		}
+	}
+
+	private long evaluatePlan(LmdbBenchmarkQueryPlan plan) {
+		try (CloseableIteration<BindingSet> result = plan.evaluate()) {
+			if (querySpec.singleLongBindingName() != null) {
+				return singleLong(result, querySpec.singleLongBindingName());
+			}
+			return count(result);
+		}
+	}
+
+	private static long count(CloseableIteration<? extends BindingSet> result) {
+		long count = 0;
+		while (result.hasNext()) {
+			result.next();
+			count++;
 		}
 		return count;
 	}
 
-	private static long singleLong(TupleQueryResult result, String bindingName) {
-		try (TupleQueryResult tupleQueryResult = result) {
-			if (!tupleQueryResult.hasNext()) {
-				return 0L;
-			}
-			BindingSet bindingSet = tupleQueryResult.next();
-			if (!(bindingSet.getValue(bindingName) instanceof Literal)) {
-				return 0L;
-			}
-			return ((Literal) bindingSet.getValue(bindingName)).longValue();
+	private static long singleLong(CloseableIteration<? extends BindingSet> result, String bindingName) {
+		if (!result.hasNext()) {
+			return 0L;
 		}
+		BindingSet bindingSet = result.next();
+		if (!(bindingSet.getValue(bindingName) instanceof Literal)) {
+			return 0L;
+		}
+		return ((Literal) bindingSet.getValue(bindingName)).longValue();
 	}
 
 	private record QuerySpec(String query, String singleLongBindingName) {

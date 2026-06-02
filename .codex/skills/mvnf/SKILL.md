@@ -53,6 +53,7 @@ If the test run fails, it prints the list of Surefire/Failsafe report files unde
 - `--stream`: Stream verify output live for hang/no-progress debugging; install output is filtered to errors plus the reactor summary while the full install log is kept in `maven-build.log`.
 - `--tail-on-success`: Print Maven output tails on successful phases too (old verbose behavior).
 - `--retain-logs`: Keep verify logs on success.
+- `--allow-concurrent`: Override the same-repo mvnf concurrency guard after verifying the active-run warning is a false positive or safe to ignore.
 - `-- <maven args>`: Append extra Maven flags/profiles to the verify command while preserving selector behavior.
 
 ## LMDB regression speedup note

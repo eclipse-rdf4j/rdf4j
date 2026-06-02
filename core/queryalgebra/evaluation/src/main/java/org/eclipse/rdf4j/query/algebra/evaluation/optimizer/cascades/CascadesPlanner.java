@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -267,13 +268,15 @@ public final class CascadesPlanner {
 			return Optional.empty();
 		}
 		String ruleId = primaryRuleId(expression);
-		List<List<Winner>> inputWinnerFrontiers = optimizeInputFrontiers(memo, expression, goal, state);
-		if (inputWinnerFrontiers.size() != expression.inputGroupIds().size()) {
-			state.recordRejected(expression.groupId(), ruleId, "missing-input-winner", CostVector.INFINITE);
-			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "missing-input-winner",
+		InputFrontierResult inputFrontierResult = optimizeInputFrontiers(memo, expression, goal, state);
+		if (!inputFrontierResult.complete()) {
+			String reason = inputFrontierResult.missingReason();
+			state.recordRejected(expression.groupId(), ruleId, reason, CostVector.INFINITE);
+			telemetry.alternativeDiscarded(expression.groupId(), ruleId, reason,
 					CostVector.INFINITE, expression.tupleExpr());
 			return Optional.empty();
 		}
+		List<List<Winner>> inputWinnerFrontiers = inputFrontierResult.frontiers();
 		if (inputWinnerFrontiers.isEmpty()) {
 			return optimizeExpressionWithInputs(memo, expression, goal, state, enforceCostBound, List.of());
 		}
@@ -527,27 +530,132 @@ public final class CascadesPlanner {
 				&& !"lmdb-cascades-fallback".equals(source);
 	}
 
-	private List<List<Winner>> optimizeInputFrontiers(Memo memo, MemoExpr expression, OptimizationGoal goal,
+	private InputFrontierResult optimizeInputFrontiers(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state) {
 		if (expression.inputGroupIds().isEmpty()) {
-			return List.of();
+			return InputFrontierResult.complete(List.of());
 		}
-		List<List<Winner>> frontiers = new ArrayList<>(expression.inputGroupIds().size());
+		List<List<Winner>> frontiers = new ArrayList<>(Collections.nCopies(expression.inputGroupIds().size(), null));
 		List<OptimizationGoal> inputGoals = inputGoals(expression, goal);
-		for (int i = 0; i < expression.inputGroupIds().size(); i++) {
+		for (int i : inputOptimizationOrder(expression)) {
 			Integer inputGroupId = expression.inputGroupIds().get(i);
 			OptimizationGoal inputGoal = inputGoals.get(i);
 			Optional<Winner> inputWinner = optimizeGroup(memo, inputGroupId, inputGoal, state);
 			if (inputWinner.isEmpty()) {
-				return List.of();
+				String reason = missingInputWinnerReason(i, inputGroupId, inputGoal, state);
+				telemetry.plannerEvent("input-frontier expression=" + expression.id()
+						+ " group=" + expression.groupId()
+						+ " rule=" + primaryRuleId(expression)
+						+ " status=missing "
+						+ reason);
+				return InputFrontierResult.missing(reason);
 			}
 			List<Winner> frontier = memo.winners(inputGoal.key(inputGroupId));
 			if (frontier.isEmpty()) {
 				frontier = List.of(inputWinner.get());
 			}
-			frontiers.add(frontier);
+			telemetry.plannerEvent("input-frontier expression=" + expression.id()
+					+ " group=" + expression.groupId()
+					+ " rule=" + primaryRuleId(expression)
+					+ " inputIndex=" + i
+					+ " inputGroup=" + inputGroupId
+					+ " inputGoal=" + inputGoalSummary(inputGoal)
+					+ " frontierSize=" + frontier.size()
+					+ " bestCost=" + inputWinner.get().cost());
+			frontiers.set(i, frontier);
 		}
-		return frontiers;
+		for (int i = 0; i < frontiers.size(); i++) {
+			List<Winner> frontier = frontiers.get(i);
+			if (frontier == null) {
+				Integer inputGroupId = expression.inputGroupIds().get(i);
+				String reason = "missing-input-winner[inputIndex=" + i
+						+ ",inputGroup=" + inputGroupId
+						+ ",inputGoal=" + inputGoalSummary(inputGoals.get(i))
+						+ ",childRejections=not-optimized]";
+				telemetry.plannerEvent("input-frontier expression=" + expression.id()
+						+ " group=" + expression.groupId()
+						+ " rule=" + primaryRuleId(expression)
+						+ " status=missing "
+						+ reason);
+				return InputFrontierResult.missing(reason);
+			}
+		}
+		return InputFrontierResult.complete(List.copyOf(frontiers));
+	}
+
+	private String missingInputWinnerReason(int inputIndex, int inputGroupId, OptimizationGoal inputGoal,
+			SearchState state) {
+		return "missing-input-winner[inputIndex=" + inputIndex
+				+ ",inputGroup=" + inputGroupId
+				+ ",inputGoal=" + inputGoalSummary(inputGoal)
+				+ ",childRejections=" + childRejectionSummary(inputGroupId, state) + "]";
+	}
+
+	private String inputGoalSummary(OptimizationGoal inputGoal) {
+		if (inputGoal == null) {
+			return "<null>";
+		}
+		return "{required=" + inputGoal.requiredProperties()
+				+ ",rowGoal=" + inputGoal.rowGoal()
+				+ ",semanticScope=" + inputGoal.semanticScope()
+				+ ",costPolicy=" + inputGoal.costPolicy() + "}";
+	}
+
+	private String childRejectionSummary(int inputGroupId, SearchState state) {
+		if (state == null) {
+			return "unavailable";
+		}
+		List<RejectedAlternative> rejectedAlternatives = state.rejectionsFor(inputGroupId);
+		if (rejectedAlternatives.isEmpty()) {
+			return "none";
+		}
+		StringBuilder summary = new StringBuilder();
+		int limit = Math.min(3, rejectedAlternatives.size());
+		for (int i = 0; i < limit; i++) {
+			if (i > 0) {
+				summary.append('|');
+			}
+			RejectedAlternative rejected = rejectedAlternatives.get(i);
+			summary.append(rejected.ruleId()).append(':').append(rejected.reason());
+		}
+		if (rejectedAlternatives.size() > limit) {
+			summary.append("|+").append(rejectedAlternatives.size() - limit);
+		}
+		return summary.toString();
+	}
+
+	private List<Integer> inputOptimizationOrder(MemoExpr expression) {
+		int inputCount = expression.inputGroupIds().size();
+		if (inputCount <= 1) {
+			return List.of(0);
+		}
+		List<Integer> indexes = new ArrayList<>(inputCount);
+		for (int i = 0; i < inputCount; i++) {
+			indexes.add(i);
+		}
+		List<TupleExpr> children = TupleExprs.getChildren(expression.tupleExpr());
+		// Planning order only seeds child winners; physical input order remains the original algebra order.
+		indexes.sort((left, right) -> Integer.compare(inputPlanningComplexity(children, left),
+				inputPlanningComplexity(children, right)));
+		return indexes;
+	}
+
+	private int inputPlanningComplexity(List<TupleExpr> children, int index) {
+		if (children == null || index < 0 || index >= children.size()) {
+			return Integer.MAX_VALUE;
+		}
+		return countPlanningNodes(children.get(index));
+	}
+
+	private int countPlanningNodes(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return 0;
+		}
+		int count = 1;
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			count += countPlanningNodes(child);
+		}
+		return count;
 	}
 
 	private static final class CombinationResult {
@@ -570,6 +678,23 @@ public final class CascadesPlanner {
 
 		void stop(boolean stop) {
 			this.stop = stop;
+		}
+	}
+
+	private record InputFrontierResult(List<List<Winner>> frontiers, String missingReason) {
+
+		static InputFrontierResult complete(List<List<Winner>> frontiers) {
+			return new InputFrontierResult(frontiers == null ? List.of() : List.copyOf(frontiers), null);
+		}
+
+		static InputFrontierResult missing(String reason) {
+			return new InputFrontierResult(List.of(), reason == null || reason.isBlank()
+					? "missing-input-winner"
+					: reason);
+		}
+
+		boolean complete() {
+			return missingReason == null;
 		}
 	}
 
@@ -607,14 +732,29 @@ public final class CascadesPlanner {
 	private OptimizationGoal inputGoal(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars,
 			TupleExpr parent, int inputIndex) {
 		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
-		Set<String> boundVars = externalBindingsVisible(parent, input)
-				? childBoundVars(safeGoal, input, contextualBoundVars)
-				: Set.of();
+		Set<String> candidateBoundVars = childBoundVars(safeGoal, input, contextualBoundVars);
+		boolean bindingsVisible = externalBindingsVisible(parent, input);
+		if (!bindingsVisible && !candidateBoundVars.isEmpty()) {
+			telemetry.plannerEvent("input-goal-hidden-bindings parent=" + nodeSummary(parent)
+					+ " input=" + nodeSummary(input)
+					+ " inputIndex=" + inputIndex
+					+ " hidden=" + candidateBoundVars
+					+ " parentScopeChange=" + TupleExprs.isVariableScopeChange(parent)
+					+ " inputScopeChange=" + TupleExprs.isVariableScopeChange(input));
+		}
+		Set<String> boundVars = bindingsVisible ? candidateBoundVars : Set.of();
 		PhysicalProperties required = boundVars.isEmpty()
 				? PhysicalProperties.ANY
 				: PhysicalProperties.builder().boundVars(boundVars).build();
 		OptimizationGoal.RowGoal rowGoal = childRowGoal(safeGoal, parent, inputIndex);
 		return safeGoal.withRequiredProperties(required).withRowGoal(rowGoal);
+	}
+
+	private static String nodeSummary(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "<null>";
+		}
+		return tupleExpr.getClass().getSimpleName() + tupleExpr.getBindingNames();
 	}
 
 	private static boolean externalBindingsVisible(TupleExpr parent, TupleExpr input) {

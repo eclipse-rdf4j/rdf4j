@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,6 +79,56 @@ class AASQueriesBenchmarkTest {
 		}
 	}
 
+	@Test
+	void runQueryEvaluatesPrecompiledPlan() throws Exception {
+		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
+		configureBenchmark(benchmark);
+		setField(benchmark, "query", "query1PropertyProjection");
+		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
+
+		try {
+			benchmark.setup();
+			state.setup(benchmark);
+
+			assertEquals(3L, benchmark.runQuery(state),
+					"runQuery should evaluate the precompiled plan and consume the query result rows");
+		} finally {
+			state.tearDown();
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
+	void preparedStatePrintsOptimizedPlanWithoutTelemetryExplain() throws Exception {
+		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
+		configureBenchmark(benchmark);
+		setField(benchmark, "query", "query1PropertyProjection");
+		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
+		String previousPrintExplain = System.getProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY);
+		String previousPrintOptimizedPlan = System.getProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY);
+		PrintStream previousOut = System.out;
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+		try {
+			System.setProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, "false");
+			System.setProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, "true");
+			System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+			benchmark.setup();
+			state.setup(benchmark);
+
+			String output = out.toString(StandardCharsets.UTF_8);
+			assertTrue(output.contains("AAS optimized plan [iteration setup]"),
+					"prepared state should print the optimized plan before the benchmark method");
+			assertTrue(output.contains("query=query1PropertyProjection"), output);
+		} finally {
+			System.setOut(previousOut);
+			state.tearDown();
+			benchmark.tearDown();
+			restoreProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, previousPrintExplain);
+			restoreProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, previousPrintOptimizedPlan);
+		}
+	}
+
 	private static void configureBenchmark(AASQueriesBenchmark benchmark) throws ReflectiveOperationException {
 		setField(benchmark, "productionLineCount", 1);
 		setField(benchmark, "driveUnitCount", 1);
@@ -99,6 +152,14 @@ class AASQueriesBenchmarkTest {
 			} else {
 				System.setProperty(entry.getKey(), entry.getValue());
 			}
+		}
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
 		}
 	}
 

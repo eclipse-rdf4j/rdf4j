@@ -52,6 +52,102 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			}
 			""";
 
+	private static final String QUERY_3 = """
+			PREFIX aas: <https://admin-shell.io/aas/3/>
+			PREFIX aas-ext: <https://admin-shell.io/aas/3/extended/>
+			PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+			SELECT ?lineAAS (COUNT(DISTINCT ?compAAS) AS ?numDrives) (AVG(xsd:double(?val)) AS ?avgPower)
+			WHERE {
+			  ?lineAAS a aas:AssetAdministrationShell ;
+			           aas:submodel / aas:submodelElement ?rel .
+			  ?rel a aas:RelationshipElement ;
+			       aas:second / aas-ext:resolvesTo ?compAAS .
+			  ?compAAS aas:submodel / aas:submodelElement / (aas:value)* ?prop .
+			  ?prop aas:idShort "ratedPower" ;
+			        aas:value ?val .
+			}
+			GROUP BY ?lineAAS
+			""";
+
+	@Test
+	void query2KeepsRatedPowerAnchorBeforeThresholdFilterAndPath(@TempDir File dataDir) throws Exception {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
+		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
+		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QUERY)
+						.explain(Explanation.Level.Optimized);
+				String plan = explanation.toString();
+				List<TupleExpr> factors = leftDeepFactors((TupleExpr) explanation.tupleExpr());
+				int ratedPower = indexOfRatedPowerAnchor(factors);
+				int p1Value = indexOfP1ValueFilter(factors);
+				int path = indexOfPath(factors);
+
+				assertTrue(ratedPower >= 0, () -> "Missing ratedPower idShort anchor in plan factors: " + factors);
+				assertTrue(p1Value >= 0, () -> "Missing threshold value filter in plan factors: " + factors);
+				assertTrue(path >= 0, () -> "Missing property path in plan factors: " + factors);
+				assertTrue(ratedPower < p1Value,
+						() -> "Sampled threshold filter must not outrank the exact ratedPower anchor. Factors were: "
+								+ factors + "\n" + plan);
+				assertTrue(ratedPower < path, () -> "The path must not be used before the ratedPower anchor. Factors "
+						+ "were: " + factors + "\n" + plan);
+			}
+		} finally {
+			repository.shutDown();
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, previousBudget);
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
+		}
+	}
+
+	@Test
+	void query3KeepsDirectPropertyValueLookupBeforePath(@TempDir File dataDir) throws Exception {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
+		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
+		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QUERY_3)
+						.explain(Explanation.Level.Optimized);
+				String plan = explanation.toString();
+				List<TupleExpr> factors = leftDeepFactors((TupleExpr) explanation.tupleExpr());
+				int ratedPower = indexOfRatedPowerAnchor(factors);
+				int propValue = indexOfPropValueLookup(factors);
+				int path = indexOfPath(factors);
+
+				assertTrue(ratedPower >= 0, () -> "Missing ratedPower idShort anchor in plan factors: " + factors);
+				assertTrue(propValue >= 0, () -> "Missing direct prop value lookup in plan factors: " + factors);
+				assertTrue(path >= 0, () -> "Missing property path in plan factors: " + factors);
+				assertTrue(ratedPower < propValue,
+						() -> "ratedPower should bind ?prop before the property value lookup. Factors were: "
+								+ factors + "\n" + plan);
+				assertTrue(propValue < path,
+						() -> "Direct ?prop aas:value ?val lookup should be costed before the reverse value path. "
+								+ "Factors were: " + factors + "\n" + plan);
+			}
+		} finally {
+			repository.shutDown();
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, previousBudget);
+			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
+		}
+	}
+
 	@Test
 	@Disabled("Single generated AAS q2 plan-order assertion can consume the fork and pins one catalog query; replace "
 			+ "with generated path/anchor invariants")
@@ -150,6 +246,36 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 					&& pattern.getObjectVar() != null
 					&& pattern.getObjectVar().getValue()instanceof Literal literal
 					&& "ratedPower".equals(literal.getLabel())) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int indexOfP1ValueFilter(List<TupleExpr> factors) {
+		for (int i = 0; i < factors.size(); i++) {
+			TupleExpr factor = unwrapUnary(factors.get(i));
+			if (factor instanceof StatementPattern pattern
+					&& predicateLocalName(pattern).equals("value")
+					&& pattern.getSubjectVar() != null
+					&& "p1".equals(pattern.getSubjectVar().getName())
+					&& pattern.getObjectVar() != null
+					&& "v1".equals(pattern.getObjectVar().getName())) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int indexOfPropValueLookup(List<TupleExpr> factors) {
+		for (int i = 0; i < factors.size(); i++) {
+			TupleExpr factor = unwrapUnary(factors.get(i));
+			if (factor instanceof StatementPattern pattern
+					&& predicateLocalName(pattern).equals("value")
+					&& pattern.getSubjectVar() != null
+					&& "prop".equals(pattern.getSubjectVar().getName())
+					&& pattern.getObjectVar() != null
+					&& "val".equals(pattern.getObjectVar().getName())) {
 				return i;
 			}
 		}

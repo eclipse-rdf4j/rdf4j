@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -365,6 +368,118 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void genericPhysicalJoinPricesScopedUnionWildcardProbeWork() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = new Join(pattern("work", "about", "topic"),
+				pattern("topic", "mainEntityOfPage", "page"));
+		Union scopedUnion = new Union(pattern("work", "review", "review"), pattern("page", "event", "event"));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 8_000.0d),
+				winner(3, scopedUnion, 152_000.0d)));
+
+		assertTrue(cost.workRows() >= 8_000.0d * 152_000.0d,
+				"HashJoinIteration must price wildcard compatibility probes for scope-changing UNION branches");
+	}
+
+	@Test
+	void genericPhysicalJoinPricesScopedUnionBranchReferenceProbeWork() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		StatementPattern left = pattern("topic", "mainEntityOfPage", "page");
+		Union scopedUnion = new Union(pattern("work", "review", "review"), pattern("page", "event", "event"));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 8_000.0d),
+				winner(3, scopedUnion, 152_000.0d)));
+
+		assertTrue(cost.workRows() >= 8_000.0d * 152_000.0d,
+				"Scoped UNION branches that reference a sibling binding must price the generic JoinIterator as "
+						+ "wildcard compatibility work even when the scoped UNION does not assure that binding");
+	}
+
+	@Test
+	void genericPhysicalJoinDoesNotSatisfyParameterizedChildInputBindings() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = pattern("work", "about", "topic");
+		Extension right = new Extension(pattern("topic", "mainEntityOfPage", "page"),
+				new ExtensionElem(new Var("page"), "fanout"));
+		right.setVariableScopeChange(true);
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 8_000.0d), parameterizedWinner(3, right, 1.0d, Set.of("topic"))));
+
+		assertTrue(delivered.inputBoundVars().contains("topic"),
+				"A generic physical Join must not hide RHS input bindings when the RHS is scope-changing and "
+						+ "cannot see sibling bindings at runtime");
+	}
+
+	@Test
+	void genericPhysicalJoinSatisfiesInScopeParameterizedChildInputBindings() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = pattern("work", "about", "topic");
+		TupleExpr right = pattern("topic", "mainEntityOfPage", "page");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 8_000.0d), parameterizedWinner(3, right, 1.0d, Set.of("topic"))));
+
+		assertFalse(delivered.inputBoundVars().contains("topic"),
+				"A generic physical Join may satisfy RHS input bindings from the left sibling when the RHS remains "
+						+ "in the same variable scope");
+	}
+
+	@Test
+	void genericPhysicalLeftJoinLocalCostUsesInputWinnerRowsForNestedInputs() {
+		TrackingProvider provider = new TrackingProvider(true, 1.0d);
+		CascadesCostModel model = model(provider);
+		Join nestedLeft = new Join(pattern("a", "p1", "x"), pattern("a", "p2", "y"));
+		StatementPattern right = pattern("z", "p3", "w");
+		LeftJoin disconnectedOptional = new LeftJoin(nestedLeft, right);
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(2, 3), "generic", disconnectedOptional,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, nestedLeft, 30.0d),
+				winner(3, right, 5.0d)));
+
+		assertEquals(0, provider.multiPatternCalls,
+				"Generic physical LeftJoinIterator costing must use child winners, not re-estimate nested inputs");
+		assertEquals(180.0d, cost.rows(), 0.0d,
+				"Disconnected generic physical left joins must use concrete child winner row counts through the left join formula");
+	}
+
+	@Test
+	void genericPhysicalLeftJoinRepricesParameterizedRightInputAgainstLeftPrefix() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("org", "p1", "department");
+		StatementPattern right = pattern("org", "employee", "employee");
+		LeftJoin optional = new LeftJoin(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(2, 3), "generic", optional,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 30.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("org"))));
+
+		assertEquals(1, factorCostModel.nestedCalls,
+				"Parameterized physical RHS inputs must be re-costed against the concrete left prefix");
+		assertEquals(Set.of("org"), factorCostModel.lastContext.getCurrentlyBoundVars());
+		assertEquals(30.0d, factorCostModel.lastContext.getOuterPrefixRows(), 0.0d);
+		assertEquals(300.0d, cost.rows(), 0.0d,
+				"Nested RHS output rows must price the concrete optional iterator, not one standalone lookup");
+	}
+
+	@Test
 	void genericPhysicalJoinLocalCostPreservesZeroRowInputWinners() {
 		TrackingProvider provider = new TrackingProvider(true, 1.0d);
 		CascadesCostModel model = model(provider);
@@ -385,6 +500,10 @@ class CascadesCostModelTest {
 
 	private static CascadesCostModel model(RdfStatisticsProvider provider) {
 		return new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null, provider);
+	}
+
+	private static CascadesCostModel model(RdfStatisticsProvider provider, JoinFactorCostModel factorCostModel) {
+		return new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), factorCostModel, provider);
 	}
 
 	private static Winner profileWinner(int id, TupleExpr tupleExpr, BindingProfile profile) {
@@ -425,6 +544,42 @@ class CascadesCostModelTest {
 				? CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d, "test-winner"))
 				: CostVector.ZERO;
 		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private static Winner parameterizedWinner(int groupId, TupleExpr plan, double rows, Set<String> inputBoundVars) {
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), List.of(), "", plan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(plan.getBindingNames())
+				.inputBoundVars(inputBoundVars)
+				.build();
+		CostVector cost = rows > 0.0d
+				? CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d, "test-winner"))
+				: CostVector.ZERO;
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private static final class TrackingParameterizedFactorCostModel implements JoinFactorCostModel {
+		private int nestedCalls;
+		private CostContext lastContext;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			if (!(factor instanceof StatementPattern) || context == null || !context.isNestedIteratorInvocation()) {
+				return Optional.empty();
+			}
+			nestedCalls++;
+			lastContext = context;
+			return Optional.of(new FactorCostEstimate(330.0d, 300.0d,
+					Map.of("plannedEstimateSource", "test-nested-bound-lookup"),
+					Map.of("plannedRepeatedInvocations", 30.0d, "plannedLookupDomainAverageOutputRows", 300.0d),
+					true, true, 1, 0, 1.0d, true));
+		}
 	}
 
 	private static final class TrackingProvider implements RdfStatisticsProvider {

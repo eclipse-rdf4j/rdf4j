@@ -60,10 +60,15 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	private static final IRI ENG_ASSEMBLY = VF.createIRI("http://example.com/theme/engineering/Assembly");
 	private static final IRI ENG_NAME = VF.createIRI("http://example.com/theme/engineering/name");
 	private static final IRI ENG_PART_OF = VF.createIRI("http://example.com/theme/engineering/partOf");
+	private static final IRI LIB_COPY = VF.createIRI("http://example.com/theme/library/Copy");
+	private static final IRI LIB_LOCATED_AT = VF.createIRI("http://example.com/theme/library/locatedAt");
+	private static final IRI LIB_NAME = VF.createIRI("http://example.com/theme/library/name");
 	private static final IRI MED_VALUE = VF.createIRI("http://example.com/theme/medical/value");
 	private static final IRI MED_HAS_OBSERVATION = VF.createIRI("http://example.com/theme/medical/hasObservation");
 	private static final int ASSEMBLY_COUNT = 3;
 	private static final int COMPONENTS_PER_ASSEMBLY = 140;
+	private static final int COPIES_PER_SELECTED_LIBRARY_BRANCH = 100;
+	private static final int LIBRARY_NOISE_BRANCH_COUNT = 500;
 	private static final int OBSERVATIONS_PER_VALUE = 300;
 
 	@Test
@@ -146,6 +151,163 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertTrue(literalRows <= ASSEMBLY_COUNT * 2.0d,
 					"The rare generated literal should stay near its observed singleton surface. scanRows=" + scanRows
 							+ ", literalRows=" + literalRows);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void cascadesConnectedPlannerUsesFinitePrefixValuesForObjectLookup(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment branchNames = branchNameBindings();
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			TupleExpr join = new Join(branchNames, name);
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+			LmdbCascadesConnectedJoinPlanner.Plan plan = LmdbCascadesConnectedJoinPlanner
+					.plan(join, Set.of(), costModel, statistics, JoinFactorCostModel.EstimationTier.DECISION_EXACT)
+					.orElseThrow();
+			StatementPattern plannedName = findStatementPattern(plan.tupleExpr(), LIB_NAME, "branchName");
+			assertTrue(plannedName != null, "Expected planned library name lookup. plan=" + plan.tupleExpr());
+
+			double plannedRows = plannedName.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			assertTrue(plannedRows <= 2.0d,
+					"The connected Cascades planner should pass finite prefix values into object lookups instead of "
+							+ "costing the selected names by global predicate fanout. plannedRows=" + plannedRows
+							+ ", metrics=" + plannedName);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void cascadesConnectedPlannerUsesFiniteDerivedFanoutOverCheapBoundLookupAverage(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment branchNames = branchNameBindings();
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			TupleExpr join = new Join(new Join(branchNames, name), locatedAt);
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+			assertFiniteDerivedLibraryFanout(costModel, statistics, join, JoinFactorCostModel.EstimationTier.STANDARD);
+			assertFiniteDerivedLibraryFanout(costModel, statistics, join,
+					JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void cascadesConnectedPlannerKeepsFiniteBranchFanoutBeforeCopyTypeGuard(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment branchNames = branchNameBindings();
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("rdfType", RDF_TYPE),
+					Var.of("copyType", LIB_COPY));
+			TupleExpr join = new Join(new Join(new Join(branchNames, name), locatedAt), copyType);
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+			assertFiniteDerivedLibraryFanout(costModel, statistics, join, JoinFactorCostModel.EstimationTier.STANDARD);
+			assertFiniteDerivedLibraryFanout(costModel, statistics, join,
+					JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void boundFiniteAssignmentCostsPrefixMembershipWork(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			BindingSetAssignment branchNames = branchNameBindings();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore()
+					.getEvaluationStatistics();
+			double prefixRows = 386_300.0d;
+
+			JoinFactorCostModel.FactorCostEstimate estimate = costModel
+					.estimateFactorCost(branchNames, JoinFactorCostModel.CostContext.forOptimization(
+							Set.of("branchName"), prefixRows, prefixRows, true, true, Map.of(), List.of()))
+					.orElseThrow();
+
+			assertEquals("lmdb-binding-set-assignment-filter", estimate.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertTrue(estimate.getWorkRows() >= prefixRows,
+					"A finite assignment applied after its variable is bound must be costed as prefix membership "
+							+ "work, not as the raw VALUES row count. estimate=" + estimate.getStringMetrics()
+							+ estimate.getDoubleMetrics());
+			assertTrue(estimate.getOutputRows() >= prefixRows,
+					"A bound finite assignment can preserve many prefix rows that share the selected finite values. "
+							+ "estimate=" + estimate.getStringMetrics() + estimate.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void disconnectedFiniteAssignmentCostsPrefixCartesianBridgeWork(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			BindingSetAssignment branchNames = branchNameBindings();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore()
+					.getEvaluationStatistics();
+			double prefixRows = 120_000.0d;
+			double assignmentRows = 2.0d;
+
+			JoinFactorCostModel.FactorCostEstimate estimate = costModel
+					.estimateFactorCost(branchNames, JoinFactorCostModel.CostContext.forOptimization(
+							Set.of("rating"), prefixRows, prefixRows, true, true, Map.of(), List.of()))
+					.orElseThrow();
+
+			assertTrue(estimate.getOutputRows() >= prefixRows * assignmentRows,
+					"A disconnected finite assignment appended to an existing prefix is a Cartesian bridge and "
+							+ "must not collapse the prefix to raw VALUES rows. estimate="
+							+ estimate.getStringMetrics() + estimate.getDoubleMetrics());
+			assertTrue(estimate.getWorkRows() >= prefixRows * assignmentRows,
+					"Bridge work should account for the prefix/VALUES product until a later factor consumes the "
+							+ "finite binding. estimate=" + estimate.getStringMetrics()
+							+ estimate.getDoubleMetrics());
 		} finally {
 			repository.shutDown();
 		}
@@ -407,6 +569,29 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 	}
 
+	private static void loadSyntheticLibraryBranches(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			Resource branch0 = VF.createIRI("urn:test:library:branch:0");
+			Resource branch1 = VF.createIRI("urn:test:library:branch:1");
+			connection.add(branch0, LIB_NAME, VF.createLiteral("Branch 0"));
+			connection.add(branch1, LIB_NAME, VF.createLiteral("Branch 1"));
+			for (int i = 0; i < COPIES_PER_SELECTED_LIBRARY_BRANCH; i++) {
+				Resource branch0Copy = VF.createIRI("urn:test:library:copy:0:" + i);
+				Resource branch1Copy = VF.createIRI("urn:test:library:copy:1:" + i);
+				connection.add(branch0Copy, LIB_LOCATED_AT, branch0);
+				connection.add(branch0Copy, RDF_TYPE, LIB_COPY);
+				connection.add(branch1Copy, LIB_LOCATED_AT, branch1);
+				connection.add(branch1Copy, RDF_TYPE, LIB_COPY);
+			}
+			for (int i = 0; i < LIBRARY_NOISE_BRANCH_COUNT; i++) {
+				connection.add(VF.createIRI("urn:test:library:noise-branch:" + i), LIB_NAME,
+						VF.createLiteral("Common Branch"));
+			}
+			connection.commit();
+		}
+	}
+
 	private static Resource assembly(int index) {
 		return VF.createIRI("urn:test:engineering:assembly:" + index);
 	}
@@ -447,12 +632,40 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 						+ estimate.get().getStringMetrics() + estimate.get().getDoubleMetrics());
 	}
 
+	private static void assertFiniteDerivedLibraryFanout(JoinFactorCostModel costModel,
+			EvaluationStatistics statistics, TupleExpr join, JoinFactorCostModel.EstimationTier tier) {
+		LmdbCascadesConnectedJoinPlanner.Plan plan = LmdbCascadesConnectedJoinPlanner
+				.plan(join, Set.of(), costModel, statistics, tier)
+				.orElseThrow();
+		StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr(), LIB_LOCATED_AT, "branch");
+		assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
+
+		double expectedRows = 2.0d * COPIES_PER_SELECTED_LIBRARY_BRANCH;
+		double plannedRows = plannedLocatedAt.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		assertTrue(plannedRows >= expectedRows * 0.75d,
+				"The connected Cascades planner should keep the finite-derived fanout when finite names derive "
+						+ "high-fanout branches. tier=" + tier + ", plannedRows=" + plannedRows + ", expectedRows="
+						+ expectedRows + ", metrics=" + plannedLocatedAt);
+	}
+
 	private static BindingSetAssignment observationValueBindings() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int value : new int[] { 50, 60, 70 }) {
 			QueryBindingSet bindingSet = new QueryBindingSet();
 			bindingSet.addBinding("value", VF.createLiteral(String.valueOf(value), XSD.INTEGER));
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static BindingSetAssignment branchNameBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>();
+		for (String value : List.of("Branch 0", "Branch 1")) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding("branchName", VF.createLiteral(value));
 			bindingSets.add(bindingSet);
 		}
 		assignment.setBindingSets(bindingSets);

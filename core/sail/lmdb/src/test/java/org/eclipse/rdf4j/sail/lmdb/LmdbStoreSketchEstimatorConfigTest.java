@@ -110,6 +110,20 @@ class LmdbStoreSketchEstimatorConfigTest {
 		}
 	}
 
+	@Test
+	void sketchEstimatorEnablesPageWalkFallbackWithoutSampling(@TempDir File dataDir) throws Exception {
+		LmdbSailStore backingStore = new LmdbSailStore(dataDir, new StoreProperties(), new LmdbStoreConfig(), true);
+		try {
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+
+			assertThat(longField(estimator, "zeroIntersectionRowBudget")).isPositive();
+			assertThat(intField(estimator, "zeroIntersectionSampleSize")).isZero();
+			assertThat(intField(estimator, "zeroIntersectionExactDistinctLimit")).isZero();
+		} finally {
+			backingStore.close();
+		}
+	}
+
 	private static LmdbStoreConfig configWithSketchEstimatorEnabled(boolean enabled) {
 		return new LmdbStoreConfig().setSketchEstimatorEnabled(enabled);
 	}
@@ -128,6 +142,16 @@ class LmdbStoreSketchEstimatorConfigTest {
 			Field field = target.getClass().getDeclaredField(fieldName);
 			field.setAccessible(true);
 			return field.getLong(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing estimator field: " + fieldName, e);
+		}
+	}
+
+	private static int intField(Object target, String fieldName) {
+		try {
+			Field field = target.getClass().getDeclaredField(fieldName);
+			field.setAccessible(true);
+			return field.getInt(target);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing estimator field: " + fieldName, e);
 		}

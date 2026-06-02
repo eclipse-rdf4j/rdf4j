@@ -59,6 +59,9 @@ public interface CascadesTelemetry {
 		alternativeRejected(memoGroupId, ruleId, reason, cost);
 	}
 
+	default void plannerEvent(String event) {
+	}
+
 	default void executionActual(QueryModelNode node, long rows, long work) {
 	}
 
@@ -153,6 +156,11 @@ public interface CascadesTelemetry {
 					+ " reason=" + reason
 					+ " cost=" + cost
 					+ " plan=" + plan(plan));
+		}
+
+		@Override
+		public synchronized void plannerEvent(String event) {
+			append("planner " + safe(event));
 		}
 
 		@Override

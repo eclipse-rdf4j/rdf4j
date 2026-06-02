@@ -189,6 +189,108 @@ def _log_dir(repo_root: Path) -> Path:
     return log_dir
 
 
+@dataclass(frozen=True)
+class _ActiveMvnfRun:
+    pid: int
+    marker: Path
+    started_at: str
+
+
+def _run_registry_dir(repo_root: Path) -> Path:
+    return repo_root / "target" / "mvnf-runs"
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _cleanup_mvnf_run(marker: Path) -> None:
+    try:
+        shutil.rmtree(marker)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(f"[mvnf] Warning: could not remove run marker {marker}: {exc}")
+
+
+def _active_mvnf_runs(repo_root: Path, current_pid: int) -> list[_ActiveMvnfRun]:
+    registry_dir = _run_registry_dir(repo_root)
+    if not registry_dir.is_dir():
+        return []
+
+    active: list[_ActiveMvnfRun] = []
+    for marker in sorted(registry_dir.iterdir()):
+        if not marker.is_dir():
+            continue
+        try:
+            pid = int(marker.name)
+        except ValueError:
+            continue
+        if pid == current_pid:
+            continue
+        if not _pid_is_running(pid):
+            _cleanup_mvnf_run(marker)
+            continue
+        try:
+            started_at = (marker / "started-at").read_text(encoding="utf-8").strip()
+        except OSError:
+            started_at = "unknown"
+        active.append(_ActiveMvnfRun(pid=pid, marker=marker, started_at=started_at))
+    return active
+
+
+def _create_mvnf_run_marker(repo_root: Path) -> Path:
+    registry_dir = _run_registry_dir(repo_root)
+    registry_dir.mkdir(parents=True, exist_ok=True)
+    marker = registry_dir / str(os.getpid())
+    if marker.exists():
+        _cleanup_mvnf_run(marker)
+    marker.mkdir()
+    (marker / "started-at").write_text(datetime.datetime.now(datetime.UTC).isoformat(), encoding="utf-8")
+    (marker / "argv").write_text(_quote_cmd(sys.argv), encoding="utf-8")
+    return marker
+
+
+def _register_mvnf_run(repo_root: Path, allow_concurrent: bool) -> Path | None:
+    marker = _create_mvnf_run_marker(repo_root)
+    active_runs = _active_mvnf_runs(repo_root, os.getpid())
+    if not active_runs:
+        return marker
+
+    if allow_concurrent:
+        print("[mvnf] Warning: another mvnf.py process appears to be running in this repo.")
+        for active in active_runs:
+            print(
+                f"[mvnf] Active run: pid={active.pid}, started={active.started_at}, "
+                f"marker={active.marker.relative_to(repo_root).as_posix()}"
+            )
+        print("[mvnf] Continuing because --allow-concurrent was supplied.")
+        return marker
+
+    print("[mvnf] Error: another mvnf.py process appears to be running in this repo.")
+    for active in active_runs:
+        print(
+            f"[mvnf] Active run: pid={active.pid}, started={active.started_at}, "
+            f"marker={active.marker.relative_to(repo_root).as_posix()}"
+        )
+    print(
+        "[mvnf] This PID-based check can false-positive after PID reuse or an unclean exit; "
+        "re-run with --allow-concurrent after verifying it is safe."
+    )
+    _cleanup_mvnf_run(marker)
+    return None
+
+
 def _run(
     cmd: list[str],
     cwd: Path,
@@ -461,6 +563,11 @@ def main() -> int:
     )
     parser.add_argument("--tail", type=int, default=200, help="Keep the last N Maven output lines for failures.")
     parser.add_argument("--mvn", help="Override the Maven command (default: mvn or ./mvnw).")
+    parser.add_argument(
+        "--allow-concurrent",
+        action="store_true",
+        help="Allow this mvnf run even if another mvnf.py process appears active in the same repo.",
+    )
     args = parser.parse_args(argv)
 
     repo_root = _find_repo_root()
@@ -505,37 +612,44 @@ def main() -> int:
         log_dir / f"{run_id}-verify.log",
     ]
 
-    if _delete_module_test_artifacts(repo_root, module):
-        print("\n[mvnf] Deleted stale module test artifacts.")
-    else:
-        print("\n[mvnf] No stale module test artifacts found.")
+    run_marker = _register_mvnf_run(repo_root, args.allow_concurrent)
+    if run_marker is None:
+        return 2
 
-    rc, _ = _run(
-        install_cmd,
-        repo_root,
-        args.tail,
-        log_paths[0],
-        args.stream,
-        _maven_build_stream_filter(),
-        args.tail_on_success,
-    )
-    if rc != 0:
-        print("\n[mvnf] Root install failed.")
+    try:
+        if _delete_module_test_artifacts(repo_root, module):
+            print("\n[mvnf] Deleted stale module test artifacts.")
+        else:
+            print("\n[mvnf] No stale module test artifacts found.")
+
+        rc, _ = _run(
+            install_cmd,
+            repo_root,
+            args.tail,
+            log_paths[0],
+            args.stream,
+            _maven_build_stream_filter(),
+            args.tail_on_success,
+        )
+        if rc != 0:
+            print("\n[mvnf] Root install failed.")
+            return rc
+        _print_install_success(repo_root, log_paths[0])
+
+        rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream, tail_on_success=args.tail_on_success)
+        if rc == 0:
+            print("\n[mvnf] Tests passed.")
+            _print_report_summary(repo_root, module, include_failures=False)
+            if not args.retain_logs:
+                _delete_logs([log_paths[1]])
+            return 0
+
+        print("\n[mvnf] Tests failed.")
+        _print_report_summary(repo_root, module, include_failures=True)
+
         return rc
-    _print_install_success(repo_root, log_paths[0])
-
-    rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream, tail_on_success=args.tail_on_success)
-    if rc == 0:
-        print("\n[mvnf] Tests passed.")
-        _print_report_summary(repo_root, module, include_failures=False)
-        if not args.retain_logs:
-            _delete_logs([log_paths[1]])
-        return 0
-
-    print("\n[mvnf] Tests failed.")
-    _print_report_summary(repo_root, module, include_failures=True)
-
-    return rc
+    finally:
+        _cleanup_mvnf_run(run_marker)
 
 
 if __name__ == "__main__":

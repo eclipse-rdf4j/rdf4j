@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
@@ -23,6 +24,9 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -38,14 +42,19 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private final QueryEvaluationStep evaluationStep;
 	private final List<String> bindingNames;
 	private final int maxExecutionTimeSeconds;
+	private final String optimizedPlan;
+	private final String optimizedDiagnostics;
 
 	private LmdbBenchmarkQueryPlan(SailSource branch, SailDataset dataset, QueryEvaluationStep evaluationStep,
-			List<String> bindingNames, int maxExecutionTimeSeconds) {
+			List<String> bindingNames, int maxExecutionTimeSeconds, String optimizedPlan,
+			String optimizedDiagnostics) {
 		this.branch = branch;
 		this.dataset = dataset;
 		this.evaluationStep = evaluationStep;
 		this.bindingNames = bindingNames;
 		this.maxExecutionTimeSeconds = maxExecutionTimeSeconds;
+		this.optimizedPlan = optimizedPlan;
+		this.optimizedDiagnostics = optimizedDiagnostics == null ? "" : optimizedDiagnostics;
 	}
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query) {
@@ -75,8 +84,14 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			TupleExpr optimized = strategy.optimize(tupleExpr, sailStore.getEvaluationStatistics(),
 					tupleQuery.getBindings());
 			QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
+			String optimizedDiagnostics = optimizedDiagnostics(optimized);
+			String optimizedPlan = new QueryModelTreeToGenericPlanNode(optimized, tupleQuery.getBindings()
+					.getBindingNames(), Explanation.Level.Optimized)
+							.getGenericPlanNode()
+							.toString();
 			return new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
-					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds);
+					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds, optimizedPlan,
+					optimizedDiagnostics);
 		} catch (RuntimeException e) {
 			closeQuietly(dataset);
 			closeQuietly(branch);
@@ -94,6 +109,14 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	public int bindingCount() {
 		return bindingNames.size();
+	}
+
+	public String optimizedPlan() {
+		return optimizedPlan;
+	}
+
+	public String optimizedDiagnostics() {
+		return optimizedDiagnostics;
 	}
 
 	@Override
@@ -126,6 +149,96 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			closeable.close();
 		} catch (Exception ignored) {
 		}
+	}
+
+	private static String optimizedDiagnostics(TupleExpr optimized) {
+		if (optimized == null) {
+			return "";
+		}
+		StringBuilder diagnostics = new StringBuilder();
+		appendDiagnostics(diagnostics, "optimized-root", optimized);
+		if (optimized instanceof QueryRoot root) {
+			appendDiagnostics(diagnostics, "optimized-root-arg", root.getArg());
+		}
+		return diagnostics.toString();
+	}
+
+	private static void appendDiagnostics(StringBuilder diagnostics, String label, TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		StringBuilder node = new StringBuilder();
+		for (Map.Entry<String, String> entry : tupleExpr.getStringMetricsPlanned().entrySet()) {
+			if (diagnosticStringMetric(entry.getKey())) {
+				appendStringMetric(node, entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, Double> entry : tupleExpr.getDoubleMetricsPlanned().entrySet()) {
+			if (diagnosticDoubleMetric(entry.getKey())) {
+				node.append("  ")
+						.append(entry.getKey())
+						.append('=')
+						.append(entry.getValue())
+						.append('\n');
+			}
+		}
+		if (node.isEmpty()) {
+			return;
+		}
+		diagnostics.append("### ")
+				.append(label)
+				.append(" diagnostics ###\n")
+				.append(node)
+				.append('\n');
+	}
+
+	private static void appendStringMetric(StringBuilder node, String name, String value) {
+		if ("optimizer.cascadesTrace".equals(name)) {
+			node.append("  ")
+					.append(name)
+					.append(":\n");
+			for (String line : value.split("\\s*\\|\\|\\s*")) {
+				if (!line.isBlank()) {
+					node.append("    ")
+							.append(line)
+							.append('\n');
+				}
+			}
+			return;
+		}
+		if ("optimizer.cascadesCandidatePlan".equals(name)) {
+			node.append("  ")
+					.append(name)
+					.append(":\n");
+			for (String line : value.split("\\R")) {
+				node.append("    ")
+						.append(line)
+						.append('\n');
+			}
+			return;
+		}
+		node.append("  ")
+				.append(name)
+				.append('=')
+				.append(value)
+				.append('\n');
+	}
+
+	private static boolean diagnosticStringMetric(String name) {
+		return name != null
+				&& (name.startsWith("optimizer.cascades")
+						|| TelemetryMetricNames.PLANNER_ID.equals(name)
+						|| TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE.equals(name)
+						|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE.equals(name));
+	}
+
+	private static boolean diagnosticDoubleMetric(String name) {
+		return name != null
+				&& (name.startsWith("optimizer.cascades")
+						|| TelemetryMetricNames.PLANNED_CARDINALITY_ROWS.equals(name)
+						|| TelemetryMetricNames.PLANNED_WORK_ROWS.equals(name)
+						|| TelemetryMetricNames.PLANNED_COST_WORK_ROWS.equals(name)
+						|| TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE.equals(name));
 	}
 
 	private static final class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {

@@ -530,6 +530,26 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void rewritesNullRejectingOptionalCompareOnBindAliasToMandatoryJoin() {
+		StatementPattern result = statementPattern("result", "type", "resultType");
+		Extension optional = new Extension(statementPattern("result", "effectSize", "effect"),
+				new ExtensionElem(new Var("effect"), "optEffect"));
+		Filter filter = new Filter(new LeftJoin(result, optional),
+				new Compare(new Var("optEffect"), new ValueConstant(VF.createLiteral("0.3", XSD.DECIMAL)),
+						CompareOp.GT));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Join.class, retainedFilter.getArg());
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+		String rewriteMetric = retainedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric.contains("source=filter-simplifier"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("optEffect"), rewriteMetric);
+	}
+
+	@Test
 	void rewritesUnboundRejectingOptionalFilterToMandatoryLiteralAnchor() {
 		StatementPattern required = statementPattern("s", "type", "type");
 		StatementPattern optional = statementPatternWithPredicate("s", "http://example.com/theme/social/name",

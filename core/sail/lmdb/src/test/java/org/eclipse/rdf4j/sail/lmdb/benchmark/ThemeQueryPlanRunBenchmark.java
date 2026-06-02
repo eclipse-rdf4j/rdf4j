@@ -15,6 +15,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -28,8 +31,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -157,15 +158,6 @@ public class ThemeQueryPlanRunBenchmark {
 			ensureDataLoadedAndValidated();
 			waitForSketchesIfEnabled();
 			connection = repository.getConnection();
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explain = prepareQuery(connection).explain(Explanation.Level.Timed);
-				System.out.println();
-				System.out.println();
-				System.out.println(explain);
-				System.out.println();
-				System.out.println();
-			}
 		}
 
 		@TearDown(Level.Trial)
@@ -175,15 +167,6 @@ public class ThemeQueryPlanRunBenchmark {
 				connection = null;
 			}
 			if (repository != null) {
-				try (SailRepositoryConnection connection = repository.getConnection()) {
-					Explanation explain = prepareQuery(connection).explain(Explanation.Level.Timed);
-					System.out.println();
-					System.out.println();
-					System.out.println(explain);
-					System.out.println();
-					System.out.println();
-				}
-
 				repository.shutDown();
 				repository = null;
 			}
@@ -353,10 +336,51 @@ public class ThemeQueryPlanRunBenchmark {
 			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS);
 		}
 
-		private TupleQuery prepareQuery(SailRepositoryConnection connection) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			return tupleQuery;
+		protected void printOptimizedPlanBeforeRunQuery(LmdbBenchmarkQueryPlan plan) {
+			String renderedPlan = "\n### Optimized Query - Before runQuery benchmark method ###\n"
+					+ queryDescription() + "\n"
+					+ plan.optimizedPlan() + "\n";
+			writeOptimizedPlanBeforeRunQuery(renderedPlan);
+			writeOptimizedDiagnosticsBeforeRunQuery(plan.optimizedDiagnostics());
+			System.out.print(renderedPlan);
+			System.out.println("Optimized plan file: " + optimizedPlanFile().getAbsolutePath());
+			if (!plan.optimizedDiagnostics().isBlank()) {
+				System.out.println("Optimized diagnostics file: " + optimizedDiagnosticsFile().getAbsolutePath());
+			}
+			System.out.flush();
+		}
+
+		private void writeOptimizedPlanBeforeRunQuery(String renderedPlan) {
+			writeTextFile(optimizedPlanFile(), renderedPlan, "optimized plan");
+		}
+
+		private void writeOptimizedDiagnosticsBeforeRunQuery(String diagnostics) {
+			if (diagnostics == null || diagnostics.isBlank()) {
+				return;
+			}
+			writeTextFile(optimizedDiagnosticsFile(), diagnostics, "optimized diagnostics");
+		}
+
+		private void writeTextFile(File file, String text, String description) {
+			File parent = file.getParentFile();
+			if (!parent.exists() && !parent.mkdirs()) {
+				throw new UncheckedIOException(new IOException("Unable to create " + description + " directory: "
+						+ parent));
+			}
+			try {
+				Files.writeString(file.toPath(), text, StandardCharsets.UTF_8);
+			} catch (IOException e) {
+				throw new UncheckedIOException("Unable to write " + description + " before runQuery: " + file, e);
+			}
+		}
+
+		private File optimizedPlanFile() {
+			return new File(STORE_DIRECTORY, "plans/" + themeName + "-q" + z_queryIndex + "-runQuery-optimized.txt");
+		}
+
+		private File optimizedDiagnosticsFile() {
+			return new File(STORE_DIRECTORY,
+					"plans/" + themeName + "-q" + z_queryIndex + "-runQuery-diagnostics.txt");
 		}
 
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {
@@ -427,10 +451,15 @@ public class ThemeQueryPlanRunBenchmark {
 	public static class ExecutionState extends BaseState {
 
 		private LmdbBenchmarkQueryPlan plannedQuery;
+		private boolean printedOptimizedPlan;
 
 		@Setup(Level.Invocation)
 		public void prepareQuery() {
 			plannedQuery = preparePlan();
+			if (!printedOptimizedPlan) {
+				printOptimizedPlanBeforeRunQuery(plannedQuery);
+				printedOptimizedPlan = true;
+			}
 		}
 
 		@TearDown(Level.Invocation)

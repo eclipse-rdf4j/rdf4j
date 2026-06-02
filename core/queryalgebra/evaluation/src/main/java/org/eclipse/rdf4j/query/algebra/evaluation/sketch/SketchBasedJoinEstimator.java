@@ -6835,6 +6835,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
 		private final Map<BindingSetAssignmentEstimateCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentEstimateCache = new HashMap<>();
+		private final Map<FiniteAnchorPrefixCacheKey, Optional<TuplePlanEstimate>> finiteAnchorPrefixEstimateCache = new HashMap<>();
 		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
 	}
 
@@ -6908,6 +6909,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return false;
 			}
 			return bindingSets == that.bindingSets && bindingNames.equals(that.bindingNames);
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class FiniteAnchorPrefixCacheKey {
+		private final TupleExpr[] factors;
+		private final int hashCode;
+
+		private FiniteAnchorPrefixCacheKey(List<TupleExpr> factors) {
+			this.factors = factors.toArray(TupleExpr[]::new);
+			int hash = 1;
+			for (TupleExpr factor : this.factors) {
+				hash = 31 * hash + System.identityHashCode(factor);
+			}
+			this.hashCode = hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof FiniteAnchorPrefixCacheKey that) || factors.length != that.factors.length) {
+				return false;
+			}
+			for (int i = 0; i < factors.length; i++) {
+				if (factors[i] != that.factors[i]) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		@Override
@@ -8664,15 +8700,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		boolean hasDistinctEstimates = Double.isFinite(smallerDistinctEstimate) && smallerDistinctEstimate > 0.0d
 				&& Double.isFinite(largerDistinctEstimate) && largerDistinctEstimate > 0.0d;
-		boolean exactEligible = hasDistinctEstimates && smallerDistinctEstimate <= zeroIntersectionExactDistinctLimit;
+		boolean pageWalkEligible = smallerRowsEstimate <= zeroIntersectionRowBudget;
+		boolean exactEligible = pageWalkEligible
+				|| (hasDistinctEstimates && smallerDistinctEstimate <= zeroIntersectionExactDistinctLimit);
 		double skewRatio = hasDistinctEstimates
 				? largerDistinctEstimate / Math.max(1.0d, smallerDistinctEstimate)
 				: 0.0d;
 		boolean skewEligible = hasDistinctEstimates
 				&& zeroIntersectionSkewRatio > 0.0d
 				&& skewRatio >= zeroIntersectionSkewRatio;
-		boolean sampleEligible = zeroIntersectionSampleSize > 0;
 		boolean smallerExceedsBudget = smallerRowsEstimate > zeroIntersectionRowBudget;
+		boolean sampleEligible = zeroIntersectionSampleSize > 0 && smallerExceedsBudget;
 		if (smallerExceedsBudget && !sampleEligible) {
 			return null;
 		}
@@ -8686,9 +8724,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 
-		boolean scanLeft = exactEligible
-				? leftDistinctEstimate <= rightDistinctEstimate
-				: leftRowsEstimate <= rightRowsEstimate;
+		boolean scanLeft = pageWalkEligible || !hasDistinctEstimates
+				? leftRowsEstimate <= rightRowsEstimate
+				: leftDistinctEstimate <= rightDistinctEstimate;
 		StatementPattern scanPattern = scanLeft ? left : right;
 		StatementPattern probePattern = scanLeft ? right : left;
 		Component scanSharedComponent = scanLeft ? leftSharedComponent : rightSharedComponent;
@@ -8701,9 +8739,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		ExactJoinSurfaceProvider provider = exactJoinSurfaceProvider;
 		if (provider != null) {
+			int requestSampleSize = scanRowsEstimate > zeroIntersectionRowBudget ? zeroIntersectionSampleSize : 0;
 			double providerRows = provider.estimate(new ExactJoinSurfaceRequest(List.of(scanPattern, probePattern),
 					sharedVarName, scanPattern, scanSharedComponent, probePattern, probeSharedComponent,
-					zeroIntersectionRowBudget, zeroIntersectionExactDistinctLimit, zeroIntersectionSampleSize,
+					zeroIntersectionRowBudget, zeroIntersectionExactDistinctLimit, requestSampleSize,
 					disconnectedRows, true));
 			if (providerRows == ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE) {
 				return null;
@@ -8716,7 +8755,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (scanRowsEstimate > zeroIntersectionRowBudget) {
 			return null;
 		}
-		SharedVarScan smallerScan = scanSharedVarRows(scanPattern, scanSharedComponent, sharedVarName);
+		SharedVarScan smallerScan = scanSharedVarRows(scanPattern, scanSharedComponent, sharedVarName, false);
 		if (smallerScan == null || smallerScan.scannedRows == 0L) {
 			return smallerScan == null ? null : 0.0d;
 		}
@@ -8751,7 +8790,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return normalizeRows(Math.min(disconnectedRows, smallerScan.scannedRows * averageRows));
 	}
 
-	private SharedVarScan scanSharedVarRows(StatementPattern pattern, Component sharedComponent, String sharedVarName) {
+	private SharedVarScan scanSharedVarRows(StatementPattern pattern, Component sharedComponent, String sharedVarName,
+			boolean samplingEnabled) {
 		Resource subject = exactBoundResource(pattern.getSubjectVar());
 		IRI predicate = exactBoundIri(pattern.getPredicateVar());
 		Value object = exactBoundValue(pattern.getObjectVar());
@@ -8760,9 +8800,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 
-		Map<Value, Long> exactCounts = zeroIntersectionExactDistinctLimit > 0 ? new LinkedHashMap<>() : null;
-		boolean samplingEnabled = zeroIntersectionSampleSize > 0;
-		List<Value> sampledRows = samplingEnabled ? new ArrayList<>(zeroIntersectionSampleSize)
+		long exactDistinctLimit = samplingEnabled ? zeroIntersectionExactDistinctLimit : zeroIntersectionRowBudget;
+		Map<Value, Long> exactCounts = exactDistinctLimit > 0L ? new LinkedHashMap<>() : null;
+		boolean sampleRows = samplingEnabled && zeroIntersectionSampleSize > 0;
+		List<Value> sampledRows = sampleRows ? new ArrayList<>(zeroIntersectionSampleSize)
 				: Collections.emptyList();
 		Random sampleRandom = new Random(mix64(valueFingerprint(sharedVarName)
 				^ Double.doubleToLongBits(Math.max(1.0d, zeroIntersectionSkewRatio))
@@ -8781,7 +8822,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				}
 				Value sharedValue = statementValue(statement, sharedComponent);
 				if (sharedValue != null) {
-					if (samplingEnabled) {
+					if (sampleRows) {
 						if (sampledRows.size() < zeroIntersectionSampleSize) {
 							sampledRows.add(sharedValue);
 						} else {
@@ -8793,7 +8834,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					}
 					if (exactCounts != null) {
 						exactCounts.merge(sharedValue, 1L, Long::sum);
-						if (exactCounts.size() > zeroIntersectionExactDistinctLimit) {
+						if (exactCounts.size() > exactDistinctLimit) {
 							exactCounts = null;
 						}
 					}
@@ -9240,6 +9281,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
+		Double finiteAnchorSurfaceRows = finiteAnchorPrefixJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (finiteAnchorSurfaceRows != null) {
+			return normalizeRows(finiteAnchorSurfaceRows);
+		}
+
 		SummaryStats prefixStats = null;
 		TupleExpr singlePrefixJoinFactor = null;
 		int prefixJoinFactorCount = 0;
@@ -9380,6 +9426,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
+		Double finiteAnchorRows = finiteAnchorPrefixSurfaceRows(factors, joinVarName);
+		if (finiteAnchorRows != null) {
+			return normalizeRows(finiteAnchorRows);
+		}
+
 		SummaryStats prefixStats = null;
 		for (TupleExpr factor : factors) {
 			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
@@ -9405,6 +9456,251 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return exactSurfaceRows;
 		}
 		return surfaceRows;
+	}
+
+	private Double finiteAnchorPrefixJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		TuplePlanEstimate prefixEstimate = finiteAnchorPrefixEstimate(prefixFactors);
+		if (prefixEstimate == null) {
+			return null;
+		}
+		SummaryStats prefixStats = summaryStatsForJoinVar(prefixEstimate, joinVarName);
+		if (prefixStats == null) {
+			return null;
+		}
+		SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		if (factorStats == null) {
+			return null;
+		}
+		return mergeSummaryStats(prefixStats, factorStats).rows;
+	}
+
+	private Double finiteAnchorPrefixSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		TuplePlanEstimate estimate = finiteAnchorPrefixEstimate(factors);
+		if (estimate == null) {
+			return null;
+		}
+		SummaryStats stats = summaryStatsForJoinVar(estimate, joinVarName);
+		return stats == null ? null : stats.rows;
+	}
+
+	private TuplePlanEstimate finiteAnchorPrefixEstimate(List<TupleExpr> factors) {
+		if (factors == null || factors.isEmpty() || !containsFiniteAnchorFactor(factors)) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return finiteAnchorPrefixEstimateUncached(factors);
+		}
+		FiniteAnchorPrefixCacheKey key = new FiniteAnchorPrefixCacheKey(factors);
+		Optional<TuplePlanEstimate> cached = scope.finiteAnchorPrefixEstimateCache.get(key);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
+		TuplePlanEstimate estimate = finiteAnchorPrefixEstimateUncached(factors);
+		scope.finiteAnchorPrefixEstimateCache.put(key, Optional.ofNullable(estimate));
+		return estimate;
+	}
+
+	private boolean containsFiniteAnchorFactor(List<TupleExpr> factors) {
+		for (TupleExpr factor : factors) {
+			if (finiteAnchorFactor(factor)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean finiteAnchorFactor(TupleExpr factor) {
+		return factor instanceof BindingSetAssignment
+				|| factor instanceof Filter filter && filter.getArg() instanceof BindingSetAssignment;
+	}
+
+	private TuplePlanEstimate finiteAnchorPrefixEstimateUncached(List<TupleExpr> factors) {
+		List<Map<String, Value>> rows = new ArrayList<>();
+		rows.add(new LinkedHashMap<>());
+		boolean sawFiniteAnchor = false;
+		for (TupleExpr factor : factors) {
+			if (factor instanceof BindingSetAssignment assignment) {
+				rows = joinFiniteAssignmentRows(rows, assignment);
+				sawFiniteAnchor = true;
+			} else if (factor instanceof Filter filter && filter.getArg()instanceof BindingSetAssignment assignment) {
+				rows = joinFiniteFilterRows(rows, assignment, filter.getCondition());
+				sawFiniteAnchor = true;
+			} else if (factor instanceof StatementPattern pattern) {
+				rows = joinFiniteRowsWithPattern(rows, pattern);
+			} else {
+				return null;
+			}
+			if (rows == null) {
+				return null;
+			}
+			if (rows.isEmpty()) {
+				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+			}
+		}
+		return sawFiniteAnchor ? finiteRowsTuplePlanEstimate(rows) : null;
+	}
+
+	private List<Map<String, Value>> joinFiniteFilterRows(List<Map<String, Value>> input,
+			BindingSetAssignment assignment, ValueExpr condition) {
+		if (condition == null) {
+			return null;
+		}
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return null;
+		}
+		Set<String> bindingNames = assignment.getBindingNames();
+		if (!bindingNames.containsAll(VarNameCollector.process(condition))) {
+			return null;
+		}
+		List<Map<String, Value>> joined = new ArrayList<>();
+		long rowBudget = finiteRelationSurfaceRowBudget();
+		for (Map<String, Value> row : input) {
+			for (BindingSet bindingSet : bindingSets) {
+				Boolean result = evaluateFiniteFilter(condition, bindingSet);
+				if (result == null) {
+					return null;
+				}
+				if (!result) {
+					continue;
+				}
+				Map<String, Value> merged = mergeFiniteAssignmentRow(row, bindingSet, bindingNames);
+				if (merged != null) {
+					joined.add(merged);
+					if (joined.size() > rowBudget) {
+						return null;
+					}
+				}
+			}
+		}
+		return joined;
+	}
+
+	private List<Map<String, Value>> joinFiniteRowsWithPattern(List<Map<String, Value>> input,
+			StatementPattern pattern) {
+		if (input == null || pattern == null) {
+			return null;
+		}
+		List<Map<String, Value>> joined = new ArrayList<>();
+		long rowBudget = finiteRelationSurfaceRowBudget();
+		for (Map<String, Value> row : input) {
+			StatementPattern boundPattern = bindPatternRow(pattern, row);
+			if (boundComponentCount(boundPattern) == 0) {
+				return null;
+			}
+			Resource subject = exactBoundResource(boundPattern.getSubjectVar());
+			IRI predicate = exactBoundIri(boundPattern.getPredicateVar());
+			Value object = exactBoundValue(boundPattern.getObjectVar());
+			Resource[] contexts = exactBoundContexts(boundPattern.getContextVar());
+			if (hasIncompatibleBoundResource(boundPattern.getSubjectVar())
+					|| hasIncompatibleBoundPredicate(boundPattern.getPredicateVar())
+					|| hasIncompatibleBoundResource(boundPattern.getContextVar())
+					|| contexts == null) {
+				continue;
+			}
+			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(subject,
+					predicate, object, contexts)) {
+				while (statements.hasNext()) {
+					Statement statement = statements.next();
+					if (!statementMatchesPatternVariableEqualities(boundPattern, statement)) {
+						continue;
+					}
+					Map<String, Value> merged = mergeFinitePatternRow(row, boundPattern, statement);
+					if (merged != null) {
+						joined.add(merged);
+						if (joined.size() > rowBudget) {
+							return null;
+						}
+					}
+				}
+			} catch (SketchStatementSourceException e) {
+				logger.debug("Falling back from finite-anchor virtual sketch probe for {}", boundPattern, e);
+				return null;
+			}
+		}
+		return joined;
+	}
+
+	private StatementPattern bindPatternRow(StatementPattern pattern, Map<String, Value> row) {
+		StatementPattern boundPattern = pattern.clone();
+		boolean mutated = false;
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(boundPattern, component);
+			if (var == null || var.hasValue() || var.getName() == null) {
+				continue;
+			}
+			Value value = row.get(var.getName());
+			if (value != null) {
+				var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
+				mutated = true;
+			}
+		}
+		if (mutated) {
+			boundPattern.removeQueryModelMetadata(PATTERN_VARIABLE_EQUALITIES_METADATA_KEY);
+		}
+		return boundPattern;
+	}
+
+	private Map<String, Value> mergeFinitePatternRow(Map<String, Value> row, StatementPattern pattern,
+			Statement statement) {
+		Map<String, Value> merged = new LinkedHashMap<>(row);
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null) {
+				continue;
+			}
+			Value value = statementValue(statement, component);
+			if (value == null) {
+				continue;
+			}
+			Value previous = merged.get(var.getName());
+			if (previous != null && !FiniteRelationEstimate.sameValue(previous, value)) {
+				return null;
+			}
+			merged.put(var.getName(), value);
+		}
+		return merged;
+	}
+
+	private TuplePlanEstimate finiteRowsTuplePlanEstimate(List<Map<String, Value>> rows) {
+		double outputRows = normalizeRows(rows.size());
+		if (outputRows <= 0.0d) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		Map<String, Set<Value>> distinctValues = new LinkedHashMap<>();
+		Map<String, FastAgmsBindingSummary> sketches = new LinkedHashMap<>();
+		for (Map<String, Value> row : rows) {
+			for (Map.Entry<String, Value> entry : row.entrySet()) {
+				Value value = entry.getValue();
+				if (entry.getKey() == null || value == null) {
+					continue;
+				}
+				distinctValues.computeIfAbsent(entry.getKey(), ignored -> new HashSet<>()).add(value);
+				FastAgmsBindingSummary sketch = sketches.computeIfAbsent(entry.getKey(),
+						ignored -> newSk(bufA.k, sketchStrategy));
+				frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(str(value))), 1.0d);
+			}
+		}
+		Map<String, VarPlanStats> varStats = newVarStatsMap(distinctValues.size());
+		for (Map.Entry<String, Set<Value>> entry : distinctValues.entrySet()) {
+			FastAgmsBindingSummary sketch = sketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue().size(), outputRows),
+					sketch == null ? null : sketch.copy()));
+		}
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, varStats);
+	}
+
+	private SummaryStats summaryStatsForJoinVar(TuplePlanEstimate estimate, String joinVarName) {
+		if (estimate == null || joinVarName == null) {
+			return null;
+		}
+		VarPlanStats stats = estimate.varStats.get(joinVarName);
+		if (stats == null) {
+			return null;
+		}
+		return new SummaryStats(stats.sketch, stats.distinct, estimate.outputRows, false);
 	}
 
 	private ExactFiniteJoinSurfaceRequest exactFiniteJoinSurfaceRequest(List<TupleExpr> factors,
@@ -9530,7 +9826,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (provider != null) {
 			double providerRows = provider.estimate(new ExactJoinSurfaceRequest(List.copyOf(patterns), joinVarName,
 					scanPattern, scanComponent, null, null, zeroIntersectionRowBudget,
-					zeroIntersectionExactDistinctLimit, zeroIntersectionSampleSize, Double.POSITIVE_INFINITY, false));
+					zeroIntersectionExactDistinctLimit, 0, Double.POSITIVE_INFINITY, false));
 			if (providerRows == ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE) {
 				return null;
 			}
@@ -9539,7 +9835,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 		}
 
-		SharedVarScan scan = scanSharedVarRows(scanPattern, scanComponent, joinVarName);
+		SharedVarScan scan = scanSharedVarRows(scanPattern, scanComponent, joinVarName, false);
 		if (scan == null) {
 			return null;
 		}

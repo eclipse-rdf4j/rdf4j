@@ -4,8 +4,11 @@ set -euo pipefail
 usage() {
         cat <<USAGE
 Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodName> [options]
+       $0 --theme-plan-run --theme-query <THEME:INDEX> [options]
 
 Options:
+  --theme-plan-run                  Shortcut for ThemeQueryPlanRunBenchmark.runQuery
+  --theme-query <THEME:INDEX>       Add themeName/z_queryIndex params, e.g. SOCIAL_MEDIA:5
   --clean                           Force a clean rebuild before packaging
   --no-build, --skip-build          Skip Maven packaging and run an existing benchmark jar
   --dry-run                         Print the Maven and JMH commands without executing them
@@ -33,6 +36,8 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 module=""
 benchmark_class=""
 benchmark_method=""
+theme_plan_run=false
+theme_query=""
 clean_build=false
 no_build=false
 dry_run=false
@@ -58,6 +63,14 @@ mvn_threads="${RDF4J_BENCHMARK_MVN_THREADS:-2C}"
 
 while [[ $# -gt 0 ]]; do
         case "$1" in
+        --theme-plan-run)
+                theme_plan_run=true
+                shift
+                ;;
+        --theme-query)
+                theme_query="$2"
+                shift 2
+                ;;
         --clean)
                 clean_build=true
                 shift
@@ -147,6 +160,43 @@ while [[ $# -gt 0 ]]; do
                 ;;
         esac
 done
+
+if ${theme_plan_run}; then
+        if [[ -z "${module}" ]]; then
+                module="core/sail/lmdb"
+        fi
+        if [[ -z "${benchmark_class}" ]]; then
+                benchmark_class="org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryPlanRunBenchmark"
+        fi
+        if [[ -z "${benchmark_method}" ]]; then
+                benchmark_method="runQuery"
+        fi
+        if ! ${warmup_overridden}; then
+                warmup_iterations=2
+        fi
+        if ! ${measurement_overridden}; then
+                measurement_iterations=2
+        fi
+fi
+
+if [[ -n "${theme_query}" ]]; then
+        if [[ "${theme_query}" != *:* ]]; then
+                echo "Error: --theme-query expects THEME:INDEX." >&2
+                exit 1
+        fi
+        theme_query_theme="${theme_query%%:*}"
+        theme_query_index="${theme_query##*:}"
+        if [[ -z "${theme_query_theme}" || -z "${theme_query_index}" ]]; then
+                echo "Error: --theme-query expects THEME:INDEX." >&2
+                exit 1
+        fi
+        if ! [[ "${theme_query_index}" =~ ^[0-9]+$ ]]; then
+                echo "Error: --theme-query index must be numeric." >&2
+                exit 1
+        fi
+        benchmark_params+=("themeName=${theme_query_theme}")
+        benchmark_params+=("z_queryIndex=${theme_query_index}")
+fi
 
 if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
         echo "Error: --module, --class, and --method are required." >&2

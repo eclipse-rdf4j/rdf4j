@@ -84,6 +84,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
@@ -673,8 +676,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(spoc.prefixComponentMask()).thenReturn(subjectBit);
 		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
 
-		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
-				estimator);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		StatementPattern pattern = new StatementPattern(
 				Var.of("s"),
@@ -855,8 +862,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
 		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
 
-		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
-				estimator);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI valuePredicate = vf.createIRI("urn:test:value");
 		IRI hasObservation = vf.createIRI("urn:test:hasObservation");
@@ -963,15 +974,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(orgEmployee, context)
 				.orElseThrow();
 
-		assertEquals(10_666.666666666666d, estimate.getOutputRows(), 1.0e-9d);
-		assertEquals(10_666.666666666666d, estimate.getWorkRows(), 1.0e-9d);
-		assertEquals(8.88888888888889d, estimate.getAccessRowsBeforeFilter(), 1.0e-9d);
+		assertEquals(48_000.0d, estimate.getOutputRows(), 1.0e-9d);
+		assertEquals(48_000.0d, estimate.getWorkRows(), 1.0e-9d);
+		assertEquals(40.0d, estimate.getAccessRowsBeforeFilter(), 1.0e-9d);
 		assertEquals("lmdb-bound-join-product",
 				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-		assertEquals("tuple_sketch_page_walk_harmonic", estimate.getStringMetrics().get("plannedEstimateFusion"));
+		assertEquals("tuple_sketch_surface_product", estimate.getStringMetrics().get("plannedEstimateFusion"));
 		assertEquals(1_200.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
 		assertEquals(300.0d, estimate.getDoubleMetrics().get("plannedDistinctLookupBindings"), 0.0d);
-		assertEquals(48_000.0d, estimate.getDoubleMetrics().get("plannedBoundJoinProductRawRows"), 0.0d);
+		assertEquals(48_000.0d, estimate.getDoubleMetrics().get("plannedBoundJoinProductRows"), 0.0d);
 	}
 
 	@Test
@@ -1111,6 +1122,45 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertNotEquals("lmdb-connected-join-sample",
 				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 		verify(estimator, times(0)).estimateExactConnectedJoin(any());
+	}
+
+	@Test
+	void decisionRefinementUsesPageWalkForExternalBoundMultiFactorJoin() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, mock(TripleStore.class),
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern topicPage = new StatementPattern(
+				Var.of("topic"),
+				Var.of("p1", vf.createIRI("urn:test:mainEntityOfPage")),
+				Var.of("page"));
+		StatementPattern workReview = new StatementPattern(
+				Var.of("work"),
+				Var.of("p2", vf.createIRI("urn:test:review")),
+				Var.of("review"));
+		Join join = new Join(topicPage, workReview);
+		when(estimator.factorOutputRowsForJoinOrdering(join, Set.of())).thenReturn(1_000.0d);
+		when(estimator.estimateJoinOrder(any(List.class), any(Set.class), any(JoinOrderPlanner.Algorithm.class),
+				any(JoinFactorCostModel.class), any(List.class)))
+						.thenReturn(Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.of(topicPage, workReview), 1.0d,
+								19.0d)));
+
+		RdfStatisticsProvider.EstimationDecision decision = new RdfStatisticsProvider.EstimationDecision(join,
+				Set.of("topic", "work"), StatisticsEstimate.heuristic(1.0d, "base"),
+				new CostVector(1.0d, 19.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d),
+				new CostVector(1_000.0d, 1_000.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), "external-bound-join");
+
+		StatisticsEstimate estimate = statistics.refineForDecision(decision).orElseThrow();
+
+		assertEquals("lmdb-decision-page-walk", estimate.method());
+		assertEquals(1_000.0d, estimate.workRows());
 	}
 
 	@Test
@@ -1497,6 +1547,395 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void leftJoinFactorCostPricesAnchoredRightSideAsNestedPageWalk() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int subjectPredicateBits = subjectBit | predicateBit;
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(1);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit);
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectPredicateBits);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc, spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		LeftJoin optional = new LeftJoin(memberOf, employee);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(memberOf);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(100.0d);
+
+		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(rightShape.pattern()).thenReturn(employee);
+		when(rightShape.filterMultiplier()).thenReturn(1.0d);
+		when(rightShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(rightShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(500.0d);
+		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(5.0d);
+
+		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(10.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(100.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(5.0d);
+		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
+		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(optional,
+				JoinFactorCostModel.CostContext.of(Set.of(), Double.NaN, Double.NaN, false, true, Map.of(),
+						List.of()))
+				.orElseThrow();
+
+		assertEquals("lmdb-optional-bound-lookup",
+				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		assertEquals(100.0d, estimate.getDoubleMetrics().get("plannedOptionalLeftRows"), 0.0d);
+		assertEquals(500.0d, estimate.getDoubleMetrics().get("plannedOptionalRightRows"), 0.0d);
+		assertTrue(estimate.getOutputRows() >= 500.0d, estimate.toString());
+		assertTrue(estimate.getWorkRows() >= 600.0d, estimate.toString());
+	}
+
+	@Test
+	void leftJoinBoundLookupUsesPageWalkPrefixSurfaceForDuplicateFanout() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int subjectPredicateBits = subjectBit | predicateBit;
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(1);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit);
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectPredicateBits);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc, spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		LeftJoin optional = new LeftJoin(memberOf, employee);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(memberOf);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(160_000.0d);
+
+		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(rightShape.pattern()).thenReturn(employee);
+		when(rightShape.filterMultiplier()).thenReturn(1.0d);
+		when(rightShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(rightShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
+
+		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
+		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(200.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(200.0d);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(optional,
+				JoinFactorCostModel.CostContext.of(Set.of(), Double.NaN, Double.NaN, false, true, Map.of(),
+						List.of()))
+				.orElseThrow();
+
+		assertTrue(estimate.getOutputRows() >= 12_000_000.0d,
+				"OPTIONAL fanout should use the page-walk prefix surface, not the duplicate-heavy sketch surface: "
+						+ "rows=" + estimate.getOutputRows()
+						+ ", workRows=" + estimate.getWorkRows()
+						+ ", strings=" + estimate.getStringMetrics()
+						+ ", doubles=" + estimate.getDoubleMetrics());
+		assertEquals("lmdb-bound-join-product",
+				estimate.getStringMetrics().get("plannedOptionalRightBaseEstimateSource"));
+	}
+
+	@Test
+	void leftJoinBoundLookupCacheKeyKeepsStandardTierPrefixFactors() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int subjectPredicateBits = subjectBit | predicateBit;
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(1);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit);
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectPredicateBits);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc, spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		LeftJoin optional = new LeftJoin(memberOf, employee);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(memberOf);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(160_000.0d);
+
+		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(rightShape.pattern()).thenReturn(employee);
+		when(rightShape.filterMultiplier()).thenReturn(1.0d);
+		when(rightShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(rightShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
+
+		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
+		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(200.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(200.0d);
+
+		try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.FactorCostEstimate unprefixed = statistics.estimateFactorCost(employee,
+					JoinFactorCostModel.CostContext.forOptimization(Set.of("org"), 160_000.0d, Double.NaN,
+							true, true, Map.of(), List.of()))
+					.orElseThrow();
+			assertNotEquals("lmdb-bound-join-product",
+					unprefixed.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(optional,
+					JoinFactorCostModel.CostContext.of(Set.of(), Double.NaN, Double.NaN, false, true, Map.of(),
+							List.of()))
+					.orElseThrow();
+
+			assertTrue(estimate.getOutputRows() >= 12_000_000.0d,
+					"OPTIONAL fanout must not reuse the unprefixed statement-pattern estimate: "
+							+ "rows=" + estimate.getOutputRows()
+							+ ", workRows=" + estimate.getWorkRows()
+							+ ", strings=" + estimate.getStringMetrics()
+							+ ", doubles=" + estimate.getDoubleMetrics());
+			assertEquals("lmdb-bound-join-product",
+					estimate.getStringMetrics().get("plannedOptionalRightBaseEstimateSource"));
+		}
+	}
+
+	@Test
+	void leftJoinBoundLookupKeepsRightDisjointScopedUnionFanoutPrefix() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int subjectPredicateBits = subjectBit | predicateBit;
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(1);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit);
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectPredicateBits);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc, spoc));
+
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern review = new StatementPattern(
+				Var.of("work"),
+				Var.of("p2", vf.createIRI("urn:test:review")),
+				Var.of("fanout"));
+		StatementPattern event = new StatementPattern(
+				Var.of("page"),
+				Var.of("p3", vf.createIRI("urn:test:event")),
+				Var.of("fanout"));
+		Union scopedUnion = new Union(review, event);
+		scopedUnion.setVariableScopeChange(true);
+		Join left = new Join(memberOf, scopedUnion);
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p4", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		LeftJoin optional = new LeftJoin(left, employee);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(memberOf);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(160_000.0d);
+
+		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(rightShape.pattern()).thenReturn(employee);
+		when(rightShape.filterMultiplier()).thenReturn(1.0d);
+		when(rightShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(rightShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
+
+		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(960_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(left, Set.of())).thenReturn(960_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
+		when(estimator.accessShapeForJoinOrdering(left, Set.of())).thenReturn(null);
+		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(50.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(-1.0d);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(optional,
+				JoinFactorCostModel.CostContext.of(Set.of(), Double.NaN, Double.NaN, false, true, Map.of(),
+						List.of()))
+				.orElseThrow();
+
+		assertTrue(estimate.getOutputRows() >= 288_000_000.0d,
+				"OPTIONAL fanout should keep the key-bearing prefix across a scoped union that does not bind "
+						+ "the RHS lookup key: rows=" + estimate.getOutputRows()
+						+ ", workRows=" + estimate.getWorkRows()
+						+ ", strings=" + estimate.getStringMetrics()
+						+ ", doubles=" + estimate.getDoubleMetrics());
+		assertEquals("lmdb-bound-join-product",
+				estimate.getStringMetrics().get("plannedOptionalRightBaseEstimateSource"));
+	}
+
+	@Test
+	void optionalBridgeProductUsesPageWalkBridgeSurfaceForDuplicateFanout() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int subjectPredicateBits = subjectBit | predicateBit;
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(1);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit);
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectPredicateBits);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc, spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:department")),
+				Var.of("dept"));
+		StatementPattern departmentEmployee = new StatementPattern(
+				Var.of("dept"),
+				Var.of("p3", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		Join optionalRight = new Join(orgDepartment, departmentEmployee);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(memberOf);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(160_000.0d);
+
+		SketchBasedJoinEstimator.AccessShape bridgeShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(bridgeShape.pattern()).thenReturn(orgDepartment);
+		when(bridgeShape.filterMultiplier()).thenReturn(1.0d);
+		when(bridgeShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(bridgeShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(bridgeShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(bridgeShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
+
+		SketchBasedJoinEstimator.AccessShape continuationShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(continuationShape.pattern()).thenReturn(departmentEmployee);
+		when(continuationShape.filterMultiplier()).thenReturn(1.0d);
+		when(continuationShape.lookupBoundComponentMask()).thenReturn(subjectPredicateBits);
+		when(continuationShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(continuationShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(continuationShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
+
+		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(orgDepartment, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(departmentEmployee, Set.of("org", "dept")))
+				.thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
+		when(estimator.accessShapeForJoinOrdering(orgDepartment, Set.of("org"))).thenReturn(bridgeShape);
+		when(estimator.accessShapeForJoinOrdering(departmentEmployee, Set.of("org", "dept")))
+				.thenReturn(continuationShape);
+		when(estimator.cardinality(List.of(memberOf))).thenReturn(160_000.0d);
+		when(estimator.orderedCardinality(List.of(memberOf))).thenReturn(160_000.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(200.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(15_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(15_000.0d);
+
+		double productRows = statistics.estimateOptionalBridgeProductRows(memberOf, optionalRight);
+
+		assertTrue(productRows >= 12_000_000.0d,
+				"OPTIONAL bridge fanout should use the page-walk bridge surface, not left factor rows: "
+						+ productRows);
+	}
+
+	@Test
 	@Disabled("Exact direct-lookup multiplier assertion is too brittle for planner changes.")
 	void directLookupRepeatedOutputRowsUseLookupDomainAverage() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
@@ -1576,6 +2015,148 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertEquals(8_000.0d, estimate.getOutputRows(), 0.0d);
 		assertEquals(8_000.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
 		assertFalse(estimate.getDoubleMetrics().containsKey("plannedLookupDomainAverageOutputRows"));
+	}
+
+	@Test
+	void nonExactDirectLookupUsesLookupDomainAverageAboveSingletonProbe() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("org"),
+				Var.of("p", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(60_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("org"))).thenReturn(accessShape);
+		when(estimator.estimateJoinVarDistinctRows(pattern, "org")).thenReturn(4_000.0d);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("org"),
+				4_000.0d, 4_000.0d, true);
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(pattern, context)
+				.orElseThrow();
+
+		assertEquals(4_000.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(60_000.0d, estimate.getOutputRows(), 0.0d,
+				"Non-exact direct lookups must not cap lookup-domain fanout at one row per invocation");
+		assertEquals(60_000.0d, estimate.getDoubleMetrics().get("plannedLookupDomainAverageOutputRows"), 0.0d);
+		assertEquals(64_000.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+	}
+
+	@Test
+	void repeatedBoundProductDirectLookupUsesLookupDomainAverage() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern orgAnchor = new StatementPattern(
+				Var.of("org"),
+				Var.of("anchorPredicate", vf.createIRI("urn:test:hasOffer")),
+				Var.of("offer"));
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("employeePredicate", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(employee);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(60_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(accessShape);
+		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(4_000.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(orgAnchor), "org")).thenReturn(4_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(orgAnchor), "org")).thenReturn(4_000.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(List.of(orgAnchor), employee, "org")).thenReturn(4_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceRows(List.of(orgAnchor), employee, "org")).thenReturn(4_000.0d);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
+				.forOptimization(Set.of("org"), 4_000.0d, 4_000.0d, true, true, Map.of(), List.of(orgAnchor));
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(employee, context)
+				.orElseThrow();
+
+		assertEquals(4_000.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(60_000.0d, estimate.getOutputRows(), 0.0d,
+				"Repeated bound-product direct lookups must still use the lookup-domain fanout correction");
+		assertEquals(60_000.0d, estimate.getDoubleMetrics().get("plannedLookupDomainAverageOutputRows"), 0.0d);
+		assertEquals(64_000.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+	}
+
+	@Test
+	void missingLookupDomainDistinctUsesContextLookupCountForDirectLookupFanout() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern orgAnchor = new StatementPattern(
+				Var.of("org"),
+				Var.of("anchorPredicate", vf.createIRI("urn:test:hasOffer")),
+				Var.of("offer"));
+		StatementPattern employee = new StatementPattern(
+				Var.of("org"),
+				Var.of("employeePredicate", vf.createIRI("urn:test:employee")),
+				Var.of("employee"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(employee);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(accessShape);
+		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(0.0d);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
+				.forOptimization(Set.of("org"), 4_000.0d, 4_000.0d, true, true, Map.of(), List.of(orgAnchor));
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(employee, context)
+				.orElseThrow();
+
+		assertEquals(4_000.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(15_000.0d, estimate.getOutputRows(), 0.0d,
+				"Known distinct lookup bindings should use predicate-domain fanout even when join-var distinct "
+						+ "statistics are unavailable");
+		assertEquals(15_000.0d, estimate.getDoubleMetrics().get("plannedLookupDomainAverageOutputRows"), 0.0d);
+		assertEquals(19_000.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
 	}
 
 	@Test

@@ -179,7 +179,19 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 				? CONNECTED_JOIN_MAX_ENUMERATED_ROWS
 				: request.rowBudget();
 		RowMapView rowView = new RowMapView(slots);
-		for (StatementPattern pattern : request.patterns()) {
+		for (int patternIndex = 0; patternIndex < request.patterns()
+				.size(); patternIndex++) {
+			StatementPattern pattern = request.patterns()
+					.get(patternIndex);
+			if (patternIndex == request.patterns()
+					.size() - 1 && patternContainsVariable(pattern, request.surfaceVarName())
+					&& surfaceBoundInRows(rows, slots.index(request.surfaceVarName()))) {
+				double estimatedRows = estimateFinalPatternRows(request, rowView, rows, pattern);
+				if (Double.isFinite(estimatedRows) && estimatedRows >= 0.0d) {
+					trace("finite-final-page-walk", request, "pattern=" + pattern + ", rows=" + estimatedRows);
+					return estimatedRows;
+				}
+			}
 			List<long[]> result = null;
 			boolean finished = false;
 			List<long[]> output = new ArrayList<>();
@@ -240,6 +252,76 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		trace("finite-unsupported", request, "reason=surface-unbound");
 		return UNSUPPORTED;
 
+	}
+
+	private double estimateFinalPatternRows(ExactFiniteJoinSurfaceRequest request, RowMapView rowView,
+			List<long[]> rows, StatementPattern pattern) throws IOException {
+		double totalRows = 0.0d;
+		for (long[] row : rows) {
+			if (hasRepeatedUnboundVariable(pattern, rowView.slots(), row)) {
+				return NO_EXACT_ESTIMATE;
+			}
+			PatternIds ids = patternIds(pattern, rowView.wrap(row));
+			if (ids == null) {
+				return NO_EXACT_ESTIMATE;
+			}
+			if (ids.zeroRows()) {
+				continue;
+			}
+			double rowEstimate = cardinalitySource.estimateIds(ids.subjectId(), ids.predicateId(), ids.objectId(),
+					ids.contextId());
+			if (!Double.isFinite(rowEstimate) || rowEstimate < 0.0d) {
+				trace("finite-final-page-walk-unsupported", request, "pattern=" + pattern);
+				return NO_EXACT_ESTIMATE;
+			}
+			totalRows = saturatingAdd(totalRows, rowEstimate);
+		}
+		return totalRows;
+	}
+
+	private static boolean surfaceBoundInRows(List<long[]> rows, int surfaceSlot) {
+		if (surfaceSlot < 0) {
+			return false;
+		}
+		for (long[] row : rows) {
+			if (row[surfaceSlot] == UNBOUND_ID) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean patternContainsVariable(StatementPattern pattern, String variableName) {
+		return variableName != null
+				&& (varHasName(pattern.getSubjectVar(), variableName)
+						|| varHasName(pattern.getPredicateVar(), variableName)
+						|| varHasName(pattern.getObjectVar(), variableName)
+						|| varHasName(pattern.getContextVar(), variableName));
+	}
+
+	private static boolean varHasName(Var var, String variableName) {
+		return var != null && !var.hasValue() && variableName.equals(var.getName());
+	}
+
+	private static boolean hasRepeatedUnboundVariable(StatementPattern pattern, VarSlots slots, long[] row) {
+		return sameUnboundVariable(pattern.getSubjectVar(), pattern.getPredicateVar(), slots, row)
+				|| sameUnboundVariable(pattern.getSubjectVar(), pattern.getObjectVar(), slots, row)
+				|| sameUnboundVariable(pattern.getSubjectVar(), pattern.getContextVar(), slots, row)
+				|| sameUnboundVariable(pattern.getPredicateVar(), pattern.getObjectVar(), slots, row)
+				|| sameUnboundVariable(pattern.getPredicateVar(), pattern.getContextVar(), slots, row)
+				|| sameUnboundVariable(pattern.getObjectVar(), pattern.getContextVar(), slots, row);
+	}
+
+	private static boolean sameUnboundVariable(Var left, Var right, VarSlots slots, long[] row) {
+		if (left == null || right == null || left.hasValue() || right.hasValue()) {
+			return false;
+		}
+		String leftName = left.getName();
+		if (leftName == null || !leftName.equals(right.getName())) {
+			return false;
+		}
+		int slot = slots.index(leftName);
+		return slot < 0 || row[slot] == UNBOUND_ID;
 	}
 
 	private static long[] newEmptyRow(int size) {
@@ -378,6 +460,10 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 
 		RowMapView(VarSlots slots) {
 			this.slots = slots;
+		}
+
+		VarSlots slots() {
+			return slots;
 		}
 
 		Map<String, Long> wrap(long[] row) {
@@ -659,6 +745,10 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		if (scanPattern == null || probePattern == null || request.scanSharedComponent() == null) {
 			return null;
 		}
+		Estimate missingConstantZero = exactZeroForMissingConstant(request);
+		if (missingConstantZero != null) {
+			return missingConstantZero;
+		}
 		SharedIdScan scan = scanSharedIds(txn, scanPattern, request.scanSharedComponent(), request.sharedVarName(),
 				request.rowBudget(), request.exactDistinctLimit(), request.sampleSize());
 		if (scan == null) {
@@ -753,6 +843,10 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		Component scanComponent = request.scanSharedComponent();
 		if (scanPattern == null || scanComponent == null) {
 			return null;
+		}
+		Estimate missingConstantZero = exactZeroForMissingConstant(request);
+		if (missingConstantZero != null) {
+			return missingConstantZero;
 		}
 		SharedIdScan scan = scanSharedIds(txn, scanPattern, scanComponent, request.sharedVarName(),
 				request.rowBudget(), request.exactDistinctLimit(), request.sampleSize());
@@ -867,7 +961,10 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			return SharedIdScan.empty();
 		}
 
-		LmdbLongLongCounts exactCounts = exactDistinctLimit > 0 ? new LmdbLongLongCounts(exactDistinctLimit) : null;
+		int effectiveExactDistinctLimit = effectiveExactDistinctLimit(rowBudget, exactDistinctLimit, sampleSize);
+		LmdbLongLongCounts exactCounts = effectiveExactDistinctLimit > 0
+				? new LmdbLongLongCounts(effectiveExactDistinctLimit)
+				: null;
 		LmdbLongReservoir reservoir = sampleSize > 0 ? new LmdbLongReservoir(sampleSize, sharedVarName) : null;
 		long scannedRows = 0L;
 		String indexName;
@@ -889,15 +986,25 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 				}
 				if (exactCounts != null) {
 					exactCounts.addTo(sharedId, 1L);
-					if (exactCounts.size() > exactDistinctLimit) {
+					if (exactCounts.size() > effectiveExactDistinctLimit) {
 						exactCounts = null;
 					}
 				}
 			}
 		}
-		int distinctIds = exactCounts == null ? exactDistinctLimit + 1 : exactCounts.size();
+		int distinctIds = exactCounts == null ? effectiveExactDistinctLimit + 1 : exactCounts.size();
 		return new SharedIdScan(exactCounts, reservoir == null ? new long[0] : reservoir.copy(), scannedRows,
 				distinctIds, indexName, false);
+	}
+
+	private static int effectiveExactDistinctLimit(long rowBudget, int exactDistinctLimit, int sampleSize) {
+		if (sampleSize > 0) {
+			return Math.max(0, exactDistinctLimit);
+		}
+		if (rowBudget >= Integer.MAX_VALUE) {
+			return Integer.MAX_VALUE - 1;
+		}
+		return Math.max(0, (int) rowBudget);
 	}
 
 	private long boundRowsById(StatementPattern pattern, String sharedVarName, long sharedId) {
@@ -921,6 +1028,16 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		} catch (IOException | RuntimeException e) {
 			return -1L;
 		}
+	}
+
+	private Estimate exactZeroForMissingConstant(ExactJoinSurfaceRequest request) throws IOException {
+		for (StatementPattern pattern : request.patterns()) {
+			PatternIds ids = patternIds(pattern, request.sharedVarName(), LmdbValue.UNKNOWN_ID, false);
+			if (ids.zeroRows()) {
+				return new Estimate(0.0d, 0L, 0, 0L, null);
+			}
+		}
+		return null;
 	}
 
 	private PatternIds patternIds(StatementPattern pattern, String sharedVarName, long sharedId, boolean bindShared)

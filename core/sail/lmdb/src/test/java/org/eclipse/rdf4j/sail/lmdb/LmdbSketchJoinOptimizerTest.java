@@ -300,7 +300,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsVariableVariableOptionalCompareAsLeftJoin() {
+	void rewritesVariableVariableOptionalCompareWhenAliasIsNullRejecting() {
 		StatementPattern section = statementPattern("section", "type", "sectionType");
 		StatementPattern track = statementPattern("section", "hasTrack", "track");
 		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
@@ -311,8 +311,10 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertInstanceOf(Join.class, optimizedFilter.getArg());
+		assertFalse(containsLeftJoin(root.getArg()));
+		String rewriteMetric = optimizedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric.contains("optOp"), rewriteMetric);
 	}
 
 	@Test
@@ -352,7 +354,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsOptionalCompareAgainstConstantWhenFilterUsesOptionalAlias() {
+	void rewritesOptionalCompareAgainstConstantWhenFilterUsesOptionalAlias() {
 		StatementPattern node = statementPattern("node", "type", "nodeType");
 		Extension optional = new Extension(statementPattern("node", "weight", "w"), new ExtensionElem(new Var("w"),
 				"optWeight"));
@@ -363,8 +365,11 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertInstanceOf(Join.class, optimizedFilter.getArg());
+		assertFalse(containsLeftJoin(root.getArg()));
+		String rewriteMetric = optimizedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric.contains("source=sketch-join"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("optWeight"), rewriteMetric);
 	}
 
 	@Test
@@ -422,7 +427,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void rewritesNoNewBindingExistsProbeAboveOptionalFilterToJoinFactor() {
+	void rewritesNoNewBindingExistsProbeAboveNullRejectingOptionalAliasFilterToJoinFactor() {
 		StatementPattern sectionType = statementPattern("section", "type", "sectionType");
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
@@ -439,7 +444,7 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		assertTrue(!containsExistsFilter(root.getArg()));
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertFalse(containsLeftJoin(root.getArg()));
 		assertTrue(joinArgs(root.getArg()).contains(trackType));
 	}
 

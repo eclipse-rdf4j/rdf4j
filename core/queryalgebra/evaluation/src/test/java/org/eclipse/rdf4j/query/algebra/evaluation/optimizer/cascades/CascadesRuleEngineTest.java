@@ -24,27 +24,36 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -88,6 +97,18 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void optionalNegatedBoundDoesNotRewriteWithoutSharedVariables() {
+		LeftJoin optional = new LeftJoin(pattern("s", "p1", "o1"), pattern("x", "p2", "rhsOnly"));
+		Filter filter = new Filter(optional, new Not(new Bound(new Var("rhsOnly"))));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule(),
+				filter);
+
+		assertFalse(applications.stream().anyMatch(application -> application.alternative() instanceof Difference),
+				"OPTIONAL + !BOUND is not equivalent to MINUS when both sides share no variables: " + applications);
+	}
+
+	@Test
 	void budgetedModeRecordsApproximation() {
 		Join join = new Join(new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2")),
 				pattern("o2", "p3", "o3"));
@@ -116,6 +137,31 @@ class CascadesRuleEngineTest {
 		assertTrue(String.join("\n", telemetry.trace()).contains("winner group=7"));
 		assertNull(winnerPlan.getStringMetricPlanned("optimizer.cascadesWinner"));
 		assertNull(winnerPlan.getStringMetricPlanned("optimizer.cascadesRule"));
+	}
+
+	@Test
+	void missingInputWinnerTraceIdentifiesFailedInputGoal() {
+		Projection projection = new Projection(pattern("s", "p", "o"), projection("o"), false);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(32);
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				telemetry);
+		PhysicalProperties excludedChildShape = PhysicalProperties.builder()
+				.boundVars(Set.of("s"))
+				.build();
+		OptimizationGoal goal = new OptimizationGoal(PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT, CostVector.INFINITE, Set.of(excludedChildShape),
+				OptimizationGoal.SearchMode.EXACT, Long.MAX_VALUE, Integer.MAX_VALUE);
+
+		planner.optimize(projection, goal);
+
+		String trace = String.join("\n", telemetry.trace());
+		assertTrue(trace.contains("reason=missing-input-winner"), trace);
+		assertTrue(trace.contains("inputIndex=0"), trace);
+		assertTrue(trace.contains("inputGroup="), trace);
+		assertTrue(trace.contains("inputGoal="), trace);
 	}
 
 	@Test
@@ -195,6 +241,409 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void projectionPushdownKeepsOuterProjectionAndSharedJoinVars() {
+		BindingSetAssignment selectedNames = values("assemblyName");
+		Join nameLookup = new Join(new Projection(pattern("assembly", "name", "assemblyName"),
+				projection("assembly", "assemblyName"), false), pattern("assembly", "kind", "kind"));
+		Projection selectAssembly = new Projection(new Join(selectedNames, nameLookup), projection("assembly"), false);
+
+		Optional<Projection> maybeProjection = apply(new StandardCascadesRules.ProjectionPushdownRule(),
+				selectAssembly).stream()
+						.map(RuleApplication::alternative)
+						.filter(Projection.class::isInstance)
+						.map(Projection.class::cast)
+						.findFirst();
+
+		assertTrue(maybeProjection.isPresent(), "Projection pushdown must keep the outer projection");
+		Projection pushedProjection = maybeProjection.get();
+		assertEquals(Set.of("assembly"), pushedProjection.getBindingNames(),
+				"The outer projection keeps SELECT-visible bindings only");
+		assertTrue(pushedProjection.getArg() instanceof Join);
+		Join pushedJoin = (Join) pushedProjection.getArg();
+		assertTrue(pushedJoin.getLeftArg().getBindingNames().contains("assemblyName"));
+		assertTrue(pushedJoin.getRightArg().getBindingNames().contains("assemblyName"),
+				"Shared join variables must remain visible on both inputs after child projection pushdown");
+		assertFalse(pushedJoin.getRightArg().getBindingNames().contains("kind"),
+				"Unneeded child-only bindings can be pruned under the retained outer projection");
+	}
+
+	@Test
+	void nestedFilterMergeCombinesConditionsWithoutCrossingScope() {
+		Bound leftCondition = new Bound(new Var("s"));
+		Bound rightCondition = new Bound(new Var("o"));
+		Filter nested = new Filter(new Filter(pattern("s", "p", "o"), leftCondition), rightCondition);
+
+		List<RuleApplication> applications = apply(new StructuralCascadesRules.NestedFilterMergeRule(), nested);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Filter filter
+						&& filter.getArg() instanceof StatementPattern
+						&& filter.getCondition() instanceof And),
+				"Expected nested non-scoped filters to merge into a single conjunctive filter");
+
+		nested.setVariableScopeChange(true);
+		assertTrue(apply(new StructuralCascadesRules.NestedFilterMergeRule(), nested).isEmpty(),
+				"Do not merge across a scope-changing outer filter");
+
+		Filter scopedInner = new Filter(pattern("s", "p", "o"), leftCondition);
+		scopedInner.setVariableScopeChange(true);
+		assertTrue(apply(new StructuralCascadesRules.NestedFilterMergeRule(),
+				new Filter(scopedInner, rightCondition)).isEmpty(),
+				"Do not merge across a scope-changing inner filter");
+	}
+
+	@Test
+	void constantFilterTrueAndFalseSimplify() {
+		Filter trueFilter = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(true)));
+		Filter falseFilter = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(false)));
+
+		assertTrue(apply(new StructuralCascadesRules.FilterConstantRule(), trueFilter).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(StatementPattern.class::isInstance),
+				"FILTER(true) should simplify to its argument");
+		assertTrue(apply(new StructuralCascadesRules.FilterConstantRule(), falseFilter).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(EmptySet.class::isInstance),
+				"FILTER(false) should simplify to EmptySet");
+	}
+
+	@Test
+	void joinEmptyAndSingletonSimplify() {
+		assertTrue(apply(new StructuralCascadesRules.JoinEmptySetRule(),
+				new Join(new EmptySet(), pattern("s", "p", "o"))).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(EmptySet.class::isInstance),
+				"Join with an empty left input is empty");
+		assertTrue(apply(new StructuralCascadesRules.JoinEmptySetRule(),
+				new Join(pattern("s", "p", "o"), new EmptySet())).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(EmptySet.class::isInstance),
+				"Join with an empty right input is empty");
+		assertTrue(apply(new StructuralCascadesRules.JoinSingletonRule(),
+				new Join(new SingletonSet(), pattern("s", "p", "o"))).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(alternative -> containsStatementPattern(alternative, "s", "p", "o")),
+				"Join with a singleton left input keeps the right input");
+		assertTrue(apply(new StructuralCascadesRules.JoinSingletonRule(),
+				new Join(pattern("s", "p", "o"), new SingletonSet())).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(alternative -> containsStatementPattern(alternative, "s", "p", "o")),
+				"Join with a singleton right input keeps the left input");
+	}
+
+	@Test
+	void unionFlatteningDoesNotCrossScopeChangingUnion() {
+		StatementPattern first = pattern("s", "p1", "o1");
+		StatementPattern second = pattern("s", "p2", "o2");
+		StatementPattern third = pattern("s", "p3", "o3");
+		Union nested = new Union(new Union(first, second), third);
+
+		assertTrue(apply(new StructuralCascadesRules.UnionSimplificationRule(), nested).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union union
+						&& containsStatementPattern(union.getLeftArg(), "s", "p1", "o1")
+						&& union.getRightArg()instanceof Union right
+						&& containsStatementPattern(right.getLeftArg(), "s", "p2", "o2")
+						&& containsStatementPattern(right.getRightArg(), "s", "p3", "o3")),
+				"Expected non-scoped nested UNION to flatten to a normalized right-deep UNION");
+		assertTrue(apply(new StructuralCascadesRules.UnionSimplificationRule(),
+				new Union(new EmptySet(), first)).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(alternative -> containsStatementPattern(alternative, "s", "p1", "o1")),
+				"Empty UNION branch can be removed");
+
+		Union scopedNested = new Union(first.clone(), second.clone());
+		scopedNested.setVariableScopeChange(true);
+		Union scopedParent = new Union(scopedNested, third.clone());
+		assertFalse(apply(new StructuralCascadesRules.UnionSimplificationRule(), scopedParent).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union union
+						&& containsStatementPattern(union.getLeftArg(), "s", "p1", "o1")
+						&& union.getRightArg() instanceof Union),
+				"Do not flatten through a scope-changing UNION boundary");
+	}
+
+	@Test
+	void projectionMergeRequiresIdentityProjection() {
+		Projection inner = new Projection(pattern("s", "p", "o"), projection("s", "o"), false);
+		Projection outer = new Projection(inner, projection("o"), false);
+
+		assertTrue(apply(new StructuralCascadesRules.ProjectionMergeRule(), outer).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Projection projection
+						&& projection.getArg() instanceof StatementPattern
+						&& projection.getBindingNames().equals(Set.of("o"))),
+				"Identity nested projections can merge when the inner projection keeps all outer names");
+
+		ProjectionElemList aliasProjection = new ProjectionElemList();
+		aliasProjection.addElement(new ProjectionElem("o", "alias"));
+		Projection aliasedOuter = new Projection(new Projection(pattern("s", "p", "o"), projection("o"), false),
+				aliasProjection, false);
+		assertTrue(apply(new StructuralCascadesRules.ProjectionMergeRule(), aliasedOuter).isEmpty(),
+				"Projection aliases are not transparent identity projections");
+
+		Projection missingOuterName = new Projection(new Projection(pattern("s", "p", "o"), projection("s"), false),
+				projection("o"), false);
+		assertTrue(apply(new StructuralCascadesRules.ProjectionMergeRule(), missingOuterName).isEmpty(),
+				"Inner projection must preserve every outer projection name");
+	}
+
+	@Test
+	void filterValuesAnchorTurnsSafeInIntoValuesJoin() {
+		Filter filter = new Filter(pattern("s", "p", "o"), listMember("o", "urn:v1", "urn:v2"));
+
+		List<RuleApplication> applications = apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join join
+						&& bindingRows(join.getLeftArg(), "o") == 2
+						&& containsStatementPattern(join.getRightArg(), "s", "p", "o")),
+				"Expected safe IN filter to become VALUES join anchor");
+	}
+
+	@Test
+	void filterValuesAnchorRejectsNumericValueEquality() {
+		Filter filter = new Filter(pattern("s", "p", "o"),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(7))));
+
+		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter).isEmpty(),
+				"Numeric SPARQL value equality is not a safe RDF-term VALUES anchor");
+	}
+
+	@Test
+	void filterConjunctValuesAnchorKeepsResidualCondition() {
+		Filter filter = new Filter(pattern("s", "p", "o"),
+				new And(listMember("o", "urn:v1"), new Bound(new Var("s"))));
+
+		List<RuleApplication> applications = apply(new FilterCascadesRules.FilterConjunctValuesAnchorRule(), filter);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Filter residual
+						&& residual.getCondition() instanceof Bound
+						&& residual.getArg()instanceof Join join
+						&& bindingRows(join.getLeftArg(), "o") == 1
+						&& containsStatementPattern(join.getRightArg(), "s", "p", "o")),
+				"Expected finite conjunct to become VALUES join while residual condition remains as FILTER");
+	}
+
+	@Test
+	void filterValuesAnchorRequiresAssuredArgumentBinding() {
+		Union nullableArg = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "x"));
+		Filter filter = new Filter(nullableArg, listMember("o", "urn:v1"));
+
+		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter).isEmpty(),
+				"VALUES anchor rewrite can only drop the filter when the argument assures the filtered binding");
+	}
+
+	@Test
+	void filterValuesAnchorDeduplicatesRepeatedConstants() {
+		Filter filter = new Filter(pattern("s", "p", "o"), listMember("o", "urn:v1", "urn:v1", "urn:v2"));
+
+		List<RuleApplication> applications = apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join join
+						&& bindingRows(join.getLeftArg(), "o") == 2),
+				"Duplicate IN constants should not create duplicate VALUES rows");
+	}
+
+	@Test
+	void projectionFilterPushdownKeepsConditionVars() {
+		Projection projection = new Projection(new Filter(pattern("s", "p", "o"), new Bound(new Var("o"))),
+				projection("s"), false);
+
+		List<RuleApplication> applications = apply(new ProjectionCascadesRules.ProjectionFilterPushdownRule(),
+				projection);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Projection outer
+						&& outer.getBindingNames().equals(Set.of("s"))
+						&& outer.getArg()instanceof Filter filter
+						&& filter.getArg()instanceof Projection inner
+						&& inner.getBindingNames().equals(Set.of("s", "o"))),
+				"Projection-through-filter must retain condition variables below the filter");
+	}
+
+	@Test
+	void projectionDifferencePushdownKeepsMinusSharedVars() {
+		Difference difference = new Difference(pattern("s", "p1", "leftOnly"), pattern("s", "p2", "rightOnly"));
+		Projection projection = new Projection(difference, projection("leftOnly"), false);
+
+		List<RuleApplication> applications = apply(new ProjectionCascadesRules.ProjectionDifferencePushdownRule(),
+				projection);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Projection outer
+						&& outer.getBindingNames().equals(Set.of("leftOnly"))
+						&& outer.getArg()instanceof Difference pruned
+						&& pruned.getLeftArg().getBindingNames().equals(Set.of("s", "leftOnly"))
+						&& pruned.getRightArg().getBindingNames().equals(Set.of("s"))),
+				"Projection over MINUS must keep shared compatibility variables while pruning child-only bindings");
+	}
+
+	@Test
+	void projectionLeftJoinPushdownKeepsOptionalSharedAndConditionVars() {
+		LeftJoin leftJoin = new LeftJoin(pattern("s", "p1", "leftOnly"), pattern("s", "p2", "rightOnly"),
+				new Bound(new Var("rightOnly")));
+		Projection projection = new Projection(leftJoin, projection("leftOnly"), false);
+
+		List<RuleApplication> applications = apply(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule(),
+				projection);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Projection outer
+						&& outer.getBindingNames().equals(Set.of("leftOnly"))
+						&& outer.getArg()instanceof LeftJoin pruned
+						&& pruned.getLeftArg().getBindingNames().equals(Set.of("s", "leftOnly"))
+						&& pruned.getRightArg().getBindingNames().equals(Set.of("s", "rightOnly"))
+						&& pruned.getCondition() instanceof Bound),
+				"Projection over OPTIONAL must keep shared variables and optional condition variables");
+	}
+
+	@Test
+	void filterProjectionPushdownRequiresIdentityProjectionAndVisibleVars() {
+		Projection projection = new Projection(pattern("s", "p", "o"), projection("s", "o"), false);
+		Filter filter = new Filter(projection, new Bound(new Var("o")));
+
+		assertTrue(apply(new FilterCascadesRules.FilterProjectionPushdownRule(), filter).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Projection outer
+						&& outer.getBindingNames().equals(Set.of("s", "o"))
+						&& outer.getArg()instanceof Filter pushed
+						&& pushed.getArg() instanceof StatementPattern),
+				"Filter can push below an identity projection that preserves every condition variable");
+
+		Projection missingConditionVar = new Projection(pattern("s", "p", "o"), projection("s"), false);
+		assertTrue(apply(new FilterCascadesRules.FilterProjectionPushdownRule(),
+				new Filter(missingConditionVar, new Bound(new Var("o")))).isEmpty(),
+				"Projection must preserve every filter condition variable");
+
+		ProjectionElemList aliasProjection = new ProjectionElemList();
+		aliasProjection.addElement(new ProjectionElem("o", "alias"));
+		assertTrue(apply(new FilterCascadesRules.FilterProjectionPushdownRule(),
+				new Filter(new Projection(pattern("s", "p", "o"), aliasProjection, false),
+						new Bound(new Var("alias")))).isEmpty(),
+				"Projection aliases are not transparent filter pushdown boundaries");
+	}
+
+	@Test
+	void filterLeftJoinPushdownUsesOnlyLeftAssuredVars() {
+		LeftJoin leftJoin = new LeftJoin(pattern("s", "p1", "leftOnly"), pattern("s", "p2", "rightOnly"));
+		Filter filter = new Filter(leftJoin, new Bound(new Var("leftOnly")));
+
+		assertTrue(apply(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule(), filter).stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof LeftJoin pushed
+						&& pushed.getLeftArg() instanceof Filter
+						&& containsStatementPattern(pushed.getRightArg(), "s", "p2", "rightOnly")),
+				"Filter using only left-assured variables can push into OPTIONAL left input");
+
+		assertTrue(apply(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule(),
+				new Filter(leftJoin.clone(), new Bound(new Var("rightOnly")))).isEmpty(),
+				"Filter using nullable right variables must not push into OPTIONAL left input");
+
+		LeftJoin conditioned = new LeftJoin(pattern("s", "p1", "leftOnly"), pattern("s", "p2", "rightOnly"),
+				new Bound(new Var("rightOnly")));
+		assertTrue(apply(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule(),
+				new Filter(conditioned, new Bound(new Var("leftOnly")))).isEmpty(),
+				"OPTIONAL conditions depending on nullable right variables keep the outer filter in place");
+	}
+
+	@Test
+	void filterExtensionPushdownRejectsExtensionOutputVars() {
+		Extension extension = new Extension(pattern("s", "p", "o"), new ExtensionElem(new Var("o"), "derived"));
+
+		assertTrue(apply(new FilterCascadesRules.FilterExtensionPushdownRule(),
+				new Filter(extension, new Bound(new Var("s")))).stream()
+						.map(RuleApplication::alternative)
+						.anyMatch(alternative -> alternative instanceof Extension pushed
+								&& pushed.getArg() instanceof Filter),
+				"Filter independent of extension outputs can push below Extension");
+
+		assertTrue(apply(new FilterCascadesRules.FilterExtensionPushdownRule(),
+				new Filter(extension.clone(), new Bound(new Var("derived")))).isEmpty(),
+				"Filter depending on an Extension output must stay above the Extension");
+	}
+
+	@Test
+	void optionalLeftUnionDistributionPreservesLeftBranchMultiplicity() {
+		Union leftUnion = new Union(pattern("s", "p1", "leftValue"), pattern("s", "p2", "rightValue"));
+		LeftJoin optional = new LeftJoin(leftUnion, pattern("s", "p3", "optionalValue"));
+
+		List<RuleApplication> applications = apply(new SetCascadesRules.OptionalLeftUnionDistributionRule(),
+				optional);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union union
+						&& union.getLeftArg()instanceof LeftJoin leftBranch
+						&& union.getRightArg()instanceof LeftJoin rightBranch
+						&& containsStatementPattern(leftBranch.getLeftArg(), "s", "p1", "leftValue")
+						&& containsStatementPattern(rightBranch.getLeftArg(), "s", "p2", "rightValue")
+						&& containsStatementPattern(leftBranch.getRightArg(), "s", "p3", "optionalValue")
+						&& containsStatementPattern(rightBranch.getRightArg(), "s", "p3", "optionalValue")),
+				"OPTIONAL over a safe left UNION should distribute to one OPTIONAL per union branch");
+	}
+
+	@Test
+	void optionalLeftUnionDistributionRejectsUnsupportedBranchShapes() {
+		Union projectedLeftUnion = new Union(
+				new Projection(pattern("s", "p1", "leftValue"), projection("s", "leftValue"), false),
+				pattern("s", "p2", "rightValue"));
+		assertTrue(apply(new SetCascadesRules.OptionalLeftUnionDistributionRule(),
+				new LeftJoin(projectedLeftUnion, pattern("s", "p3", "optionalValue"))).isEmpty(),
+				"OPTIONAL left UNION distribution must reject branch shapes not covered by the proof guards");
+
+		Union scopeChangingUnion = new Union(pattern("s", "p1", "leftValue"), pattern("s", "p2", "rightValue"));
+		scopeChangingUnion.setVariableScopeChange(true);
+		assertTrue(apply(new SetCascadesRules.OptionalLeftUnionDistributionRule(),
+				new LeftJoin(scopeChangingUnion, pattern("s", "p3", "optionalValue"))).isEmpty(),
+				"OPTIONAL left UNION distribution must not cross a scope-changing union");
+	}
+
+	@Test
+	void optionalRightUnionDistributionIsNotAppliedWithoutMutualExclusion() {
+		BindingSetAssignment base = values("kind", VF.createLiteral("a"), VF.createLiteral("b"));
+		Union rightUnion = new Union(pattern("entity", "p", "optionalValue"),
+				pattern("entity", "p", "optionalValue"));
+
+		assertTrue(apply(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule(),
+				new LeftJoin(base, rightUnion)).isEmpty(),
+				"Right UNION OPTIONAL distribution requires mutually exclusive branch discriminator filters");
+	}
+
+	@Test
+	void optionalRightUnionDistributionAppliesForFiniteDiscriminatorBranches() {
+		Value kindA = VF.createLiteral("a");
+		Value kindB = VF.createLiteral("b");
+		BindingSetAssignment base = values("kind", kindA, kindB);
+		Filter branchA = new Filter(pattern("entity", "p", "optionalValue"),
+				new SameTerm(new Var("kind"), new ValueConstant(kindA)));
+		Filter branchB = new Filter(pattern("entity", "p", "optionalValue"),
+				new SameTerm(new Var("kind"), new ValueConstant(kindB)));
+		LeftJoin optional = new LeftJoin(base, new Union(branchA, branchB));
+
+		List<RuleApplication> applications = apply(
+				new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule(),
+				optional);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union union
+						&& countLeftJoins(union) == 2
+						&& containsDiscriminatorFilter(union, "kind", kindA)
+						&& containsDiscriminatorFilter(union, "kind", kindB)),
+				"Finite mutually exclusive discriminator branches can become a UNION of branch-local OPTIONALs");
+	}
+
+	@Test
 	void filterJoinPushdownDoesNotUseNullableUnionBindings() {
 		Union nullableLeft = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "x"));
 		Join join = new Join(nullableLeft, pattern("o", "p3", "z"));
@@ -206,6 +655,22 @@ class CascadesRuleEngineTest {
 				.anyMatch(application -> application.alternative()instanceof Join alternative
 						&& alternative.getLeftArg() instanceof Filter),
 				"A filter cannot be pushed to a join input that only maybe binds the filter variable");
+	}
+
+	@Test
+	void filterPushdownCanPushToSmallestNestedAssuredInput() {
+		StatementPattern branchName = pattern("branch", "name", "branchName");
+		StatementPattern locatedAt = pattern("copy", "locatedAt", "branch");
+		StatementPattern copyType = pattern("copy", "type", "Copy");
+		FunctionCall branchZeroFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("branch")),
+				new ValueConstant(VF.createLiteral("branch/0")));
+		Filter filter = new Filter(new Join(new Join(branchName, locatedAt), copyType), new Not(branchZeroFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.FilterPushdownRule(), filter);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> containsLocalNegatedFilterOnBranchName(application.alternative())),
+				"Expected filter pushdown to expose the earliest assured branch input directly: " + applications);
 	}
 
 	@Test
@@ -287,6 +752,38 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void joinUnionDistributionPushesNestedSharedPrefixIntoScopedUnion() {
+		TupleExpr sharedPrefix = new Join(pattern("work", "about", "topic"),
+				pattern("topic", "mainEntityOfPage", "page"));
+		TupleExpr residual = pattern("person", "memberOf", "org");
+		TupleExpr left = new Join(sharedPrefix, residual);
+		Union scopedUnion = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+
+		Optional<Join> maybePartial = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join).stream()
+				.map(RuleApplication::alternative)
+				.filter(Join.class::isInstance)
+				.map(Join.class::cast)
+				.filter(alternative -> containsStatementPattern(alternative, "person", "memberOf", "org"))
+				.filter(alternative -> findScopedUnion(alternative).isPresent())
+				.findFirst();
+
+		assertTrue(maybePartial.isPresent(),
+				"Expected nested shared prefix to distribute into a scoped UNION while residual joins remain outside");
+		Union distributed = findScopedUnion(maybePartial.get()).orElseThrow();
+		assertTrue(distributed.isVariableScopeChange());
+		assertTrue(containsStatementPattern(distributed.getLeftArg(), "work", "about", "topic"));
+		assertTrue(containsStatementPattern(distributed.getLeftArg(), "topic", "mainEntityOfPage", "page"));
+		assertTrue(containsStatementPattern(distributed.getRightArg(), "work", "about", "topic"));
+		assertTrue(containsStatementPattern(distributed.getRightArg(), "topic", "mainEntityOfPage", "page"));
+		assertFalse(containsStatementPattern(distributed, "person", "memberOf", "org"),
+				"Residual joins should not be duplicated into UNION branches");
+	}
+
+	@Test
 	void joinUnionDistributionDoesNotPushFiniteBindingsOverScopedBranchBindOverlap() {
 		BindingSetAssignment activities = values("activity");
 		Union scopedUnion = new Union(
@@ -299,6 +796,30 @@ class CascadesRuleEngineTest {
 
 		assertFalse(applications.stream().anyMatch(application -> application.alternative() instanceof Union),
 				"Do not push a finite binding across a scope-changing UNION branch that locally BINDs the same name");
+	}
+
+	@Test
+	void joinUnionDistributionPushesSharedLeftIntoScopedUnionWhenUnionDoesNotAssureOverlap() {
+		TupleExpr left = new Join(pattern("work", "about", "topic"), pattern("topic", "mainEntityOfPage", "page"));
+		Union scopedUnion = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+
+		Optional<Union> maybeDistributed = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join).stream()
+				.map(RuleApplication::alternative)
+				.filter(Union.class::isInstance)
+				.map(Union.class::cast)
+				.findFirst();
+
+		assertTrue(maybeDistributed.isPresent(),
+				"Expected a shared left prefix to distribute into a scope-changing UNION when branch-local "
+						+ "join variables are not assured by every branch");
+		Union distributed = maybeDistributed.get();
+		assertTrue(distributed.isVariableScopeChange());
+		assertTrue(distributed.getAssuredBindingNames().containsAll(Set.of("work", "page")),
+				"Distributed scoped UNION should assure the prefix bindings on every branch");
 	}
 
 	@Test
@@ -318,6 +839,171 @@ class CascadesRuleEngineTest {
 						&& containsBindingSetAssignment(extension.getArg(), "u")),
 				"Expected finite VALUES to move into a scope-changing Extension when the Extension does not BIND "
 						+ "the same variable");
+	}
+
+	@Test
+	void prefixPushesIntoScopeChangingExtensionWhenBindNamesAreDisjoint() {
+		StatementPattern pageLookup = pattern("topic", "mainEntityOfPage", "page");
+		Extension scopedExtension = new Extension(pattern("page", "event", "event"),
+				new ExtensionElem(new Var("event"), "fanout"));
+		scopedExtension.setVariableScopeChange(true);
+		Join join = new Join(pageLookup, scopedExtension);
+
+		List<RuleApplication> applications = applyStandardRules(join);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Extension extension
+						&& !extension.isVariableScopeChange()
+						&& extension.getArg() instanceof Join
+						&& containsStatementPattern(extension.getArg(), "topic", "mainEntityOfPage", "page")
+						&& containsStatementPattern(extension.getArg(), "page", "event", "event")),
+				"Expected a non-finite prefix to move into a scope-changing Extension when the Extension does not "
+						+ "BIND the same variable, and to remove the scope marker when incoming bindings are safe");
+	}
+
+	@Test
+	void prefixPushIntoScopeChangingExtensionKeepsScopeWhenBindNameIsIncoming() {
+		StatementPattern pageLookup = pattern("topic", "mainEntityOfPage", "page");
+		Extension scopedExtension = new Extension(pattern("page", "event", "event"),
+				new ExtensionElem(new Var("event"), "fanout"));
+		scopedExtension.setVariableScopeChange(true);
+		Join join = new Join(pageLookup, scopedExtension);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().inputBoundVars(Set.of("fanout")).build());
+
+		List<RuleApplication> applications = applyStandardRules(join, goal);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Extension extension
+						&& extension.isVariableScopeChange()
+						&& extension.getArg() instanceof Join),
+				"Incoming ?fanout must keep the pushed Extension scope marker");
+		assertFalse(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Extension extension
+						&& !extension.isVariableScopeChange()
+						&& extension.getArg() instanceof Join),
+				"Incoming ?fanout must not get a scope-removal shortcut");
+	}
+
+	@Test
+	void removesScopeChangingUnionWhenBranchBindNamesAreNotIncoming() {
+		Union union = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		union.setVariableScopeChange(true);
+
+		List<RuleApplication> applications = applyStandardRules(union);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union candidate
+						&& !candidate.isVariableScopeChange()),
+				"Expected scope-changing UNION to become normal when branch-local BIND names are not incoming");
+	}
+
+	@Test
+	void removesScopeChangingFilterWhenBranchBindNamesAreNotIncoming() {
+		Filter filter = new Filter(pattern("work", "position", "optRank"), new Bound(new Var("optRank")));
+		filter.setVariableScopeChange(true);
+
+		List<RuleApplication> applications = applyStandardRules(filter);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Filter candidate
+						&& !candidate.isVariableScopeChange()),
+				"Expected scope-changing FILTER to become normal when branch-local BIND/VALUES names are not incoming");
+	}
+
+	@Test
+	void safeScopeRemovalRecordsPlannerTraceEvent() {
+		Filter filter = new Filter(pattern("work", "position", "optRank"), new Bound(new Var("optRank")));
+		filter.setVariableScopeChange(true);
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(32);
+
+		List<RuleApplication> applications = applyStandardRules(filter, OptimizationGoal.root(), telemetry);
+
+		assertFalse(applications.isEmpty(), "Expected safe scope-removal alternative");
+		String trace = String.join("\n", telemetry.trace());
+		assertTrue(trace.contains("safe-scope-change-removal"), trace);
+		assertTrue(trace.contains("removedKinds=Filter"), trace);
+	}
+
+	@Test
+	void keepsScopeChangingUnionWhenBranchBindNameIsIncoming() {
+		Union union = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		union.setVariableScopeChange(true);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().inputBoundVars(Set.of("fanout")).build());
+
+		List<RuleApplication> applications = applyStandardRules(union, goal);
+
+		assertFalse(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union candidate
+						&& !candidate.isVariableScopeChange()),
+				"Incoming ?fanout binding must keep the UNION scope barrier");
+	}
+
+	@Test
+	void removesScopeChangingUnionWhenBranchBindNameIsOnlyRequiredOutput() {
+		Union union = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		union.setVariableScopeChange(true);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("fanout")).build());
+
+		List<RuleApplication> applications = applyStandardRules(union, goal);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Union candidate
+						&& !candidate.isVariableScopeChange()),
+				"Required output ?fanout is not an incoming binding and should not keep the UNION scope barrier");
+	}
+
+	@Test
+	void removesScopeChangingUnionBelowJoinWhenSafe() {
+		StatementPattern pageLookup = pattern("topic", "mainEntityOfPage", "page");
+		Union union = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		union.setVariableScopeChange(true);
+		Join join = new Join(pageLookup, union);
+
+		List<RuleApplication> applications = applyStandardRules(join);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join candidate
+						&& candidate.getRightArg()instanceof Union candidateUnion
+						&& !candidateUnion.isVariableScopeChange()),
+				"Parent join needs an explicit alternative with the safe child UNION scope removed");
+	}
+
+	@Test
+	void keepsScopeChangingUnionBelowJoinWhenSiblingBindsBranchBindName() {
+		StatementPattern sibling = pattern("activity", "expectedFanout", "fanout");
+		Union union = new Union(
+				new Extension(pattern("work", "review", "review"), new ExtensionElem(new Var("review"), "fanout")),
+				new Extension(pattern("page", "event", "event"), new ExtensionElem(new Var("event"), "fanout")));
+		union.setVariableScopeChange(true);
+		Join join = new Join(sibling, union);
+
+		List<RuleApplication> applications = applyStandardRules(join);
+
+		assertFalse(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join candidate
+						&& candidate.getRightArg()instanceof Union candidateUnion
+						&& !candidateUnion.isVariableScopeChange()),
+				"Sibling-bound ?fanout must keep the UNION scope barrier because both branches locally BIND fanout");
 	}
 
 	@Test
@@ -356,6 +1042,82 @@ class CascadesRuleEngineTest {
 						&& filter.getArg() instanceof Join
 						&& !containsDifference(filter.getArg())),
 				"Expected a left-side negated filter alternative for redundant RHS pattern+filter: " + applications);
+	}
+
+	@Test
+	void minusRedundantPatternFilterCanPushNegationToEarliestAssuredInput() {
+		StatementPattern branchName = pattern("branch", "name", "branchName");
+		StatementPattern locatedAt = pattern("copy", "locatedAt", "branch");
+		StatementPattern copyType = pattern("copy", "type", "Copy");
+		FunctionCall branchZeroFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("branch")),
+				new ValueConstant(VF.createLiteral("branch/0")));
+		Difference minus = new Difference(new Join(new Join(branchName, locatedAt), copyType),
+				new Filter(locatedAt.clone(), branchZeroFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> containsLocalNegatedFilterOnBranchName(application.alternative())),
+				"Expected a negated branch filter pushed to the branch-name input before copy expansion: "
+						+ applications);
+	}
+
+	@Test
+	void minusWithAssuredSharedVarsCanBecomeNegatedExistsFilterAlternative() {
+		StatementPattern medicationType = pattern("med", "type", "Medication");
+		StatementPattern medicationCode = pattern("med", "code", "code");
+		StatementPattern dosage = pattern("med", "dosage", "dose");
+		FunctionCall doseFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("dose")),
+				new ValueConstant(VF.createLiteral("x")));
+		Difference minus = new Difference(new Join(medicationType, medicationCode), new Filter(dosage, doseFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter filter
+						&& filter.getCondition()instanceof Not not
+						&& not.getArg()instanceof Exists exists
+						&& exists.getSubQuery() instanceof Filter
+						&& filter.getArg() instanceof Join
+						&& !containsDifference(filter.getArg())),
+				"Expected a negated correlated EXISTS filter alternative for safe MINUS: " + applications);
+	}
+
+	@Test
+	void minusWithoutSharedVarsDoesNotBecomeNegatedExistsFilterAlternative() {
+		Difference minus = new Difference(pattern("med", "type", "Medication"), pattern("dose", "dosage", "value"));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertFalse(applications.stream().anyMatch(application -> isNegatedExistsFilter(application.alternative())),
+				"MINUS with no shared variables is not equivalent to FILTER NOT EXISTS: " + applications);
+	}
+
+	@Test
+	void minusWithNullableSharedVarsDoesNotBecomeNegatedExistsFilterAlternative() {
+		Union nullableLeft = new Union(pattern("med", "type", "Medication"), pattern("other", "type", "Other"));
+		Difference minus = new Difference(nullableLeft, pattern("med", "dosage", "dose"));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertFalse(applications.stream().anyMatch(application -> isNegatedExistsFilter(application.alternative())),
+				"MINUS with non-assured shared variables is not equivalent to FILTER NOT EXISTS: " + applications);
+	}
+
+	@Test
+	void minusRhsFilterReferencingLeftOnlyVarDoesNotBecomeNegatedExistsFilterAlternative() {
+		StatementPattern medicationType = pattern("med", "type", "Medication");
+		StatementPattern medicationCode = pattern("med", "code", "code");
+		StatementPattern dosage = pattern("med", "dosage", "dose");
+		FunctionCall codeFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("code")),
+				new ValueConstant(VF.createLiteral("x")));
+		Difference minus = new Difference(new Join(medicationType, medicationCode), new Filter(dosage, codeFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertFalse(applications.stream().anyMatch(application -> isNegatedExistsFilter(application.alternative())),
+				"RHS filters that reference left-only variables are not MINUS-equivalent when correlated: "
+						+ applications);
 	}
 
 	@Test
@@ -416,15 +1178,24 @@ class CascadesRuleEngineTest {
 	}
 
 	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr) {
+		return applyStandardRules(tupleExpr, OptimizationGoal.root());
+	}
+
+	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr, OptimizationGoal goal) {
+		return applyStandardRules(tupleExpr, goal, CascadesTelemetry.NO_OP);
+	}
+
+	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr, OptimizationGoal goal,
+			CascadesTelemetry telemetry) {
 		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
 		Memo memo = new Memo(costModel);
 		int groupId = memo.intern(tupleExpr);
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
-		RuleContext context = new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null);
+		RuleContext context = new RuleContext(memo, costModel, telemetry, null);
 		return RuleRegistry.standardLogicalRules()
-				.applicableRules(expression, OptimizationGoal.root(), memo)
+				.applicableRules(expression, goal, memo)
 				.stream()
-				.flatMap(rule -> rule.apply(expression, OptimizationGoal.root(), context).stream())
+				.flatMap(rule -> rule.apply(expression, goal, context).stream())
 				.toList();
 	}
 
@@ -440,6 +1211,52 @@ class CascadesRuleEngineTest {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
 	}
 
+	private static ListMemberOperator listMember(String variableName, String... iriValues) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(variableName));
+		for (String iriValue : iriValues) {
+			operator.addArgument(new ValueConstant(VF.createIRI(iriValue)));
+		}
+		return operator;
+	}
+
+	private static int bindingRows(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.getBindingNames().contains(bindingName)) {
+			int rows = 0;
+			for (var ignored : assignment.getBindingSets()) {
+				rows++;
+			}
+			return rows;
+		}
+		if (tupleExpr instanceof Join join) {
+			int leftRows = bindingRows(join.getLeftArg(), bindingName);
+			return leftRows >= 0 ? leftRows : bindingRows(join.getRightArg(), bindingName);
+		}
+		return -1;
+	}
+
+	private static boolean containsStatementPattern(TupleExpr tupleExpr, String subject, String predicate,
+			String object) {
+		if (tupleExpr instanceof StatementPattern pattern) {
+			return subject.equals(pattern.getSubjectVar().getName())
+					&& predicate.equals(pattern.getPredicateVar().getName())
+					&& object.equals(pattern.getObjectVar().getName());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsStatementPattern(join.getLeftArg(), subject, predicate, object)
+					|| containsStatementPattern(join.getRightArg(), subject, predicate, object);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return containsStatementPattern(extension.getArg(), subject, predicate, object);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsStatementPattern(union.getLeftArg(), subject, predicate, object)
+					|| containsStatementPattern(union.getRightArg(), subject, predicate, object);
+		}
+		return false;
+	}
+
 	private static BindingSetAssignment values(String name) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(name));
@@ -447,6 +1264,68 @@ class CascadesRuleEngineTest {
 		bindingSet.addBinding(name, VF.createLiteral(name + "-value"));
 		assignment.setBindingSets(List.of(bindingSet));
 		return assignment;
+	}
+
+	private static BindingSetAssignment values(String name, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		List<BindingSet> bindingSets = new ArrayList<>();
+		for (Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(name, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static int countLeftJoins(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof LeftJoin) {
+			return 1;
+		}
+		if (tupleExpr instanceof Join join) {
+			return countLeftJoins(join.getLeftArg()) + countLeftJoins(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return countLeftJoins(union.getLeftArg()) + countLeftJoins(union.getRightArg());
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return countLeftJoins(filter.getArg());
+		}
+		return 0;
+	}
+
+	private static boolean containsDiscriminatorFilter(TupleExpr tupleExpr, String name, Value value) {
+		if (tupleExpr instanceof Filter filter
+				&& filter.getCondition()instanceof SameTerm sameTerm
+				&& sameTermMatches(sameTerm, name, value)) {
+			return true;
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsDiscriminatorFilter(leftJoin.getLeftArg(), name, value)
+					|| containsDiscriminatorFilter(leftJoin.getRightArg(), name, value);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsDiscriminatorFilter(join.getLeftArg(), name, value)
+					|| containsDiscriminatorFilter(join.getRightArg(), name, value);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsDiscriminatorFilter(union.getLeftArg(), name, value)
+					|| containsDiscriminatorFilter(union.getRightArg(), name, value);
+		}
+		return false;
+	}
+
+	private static boolean sameTermMatches(SameTerm sameTerm, String name, Value value) {
+		return valueEqualsVar(sameTerm.getLeftArg(), sameTerm.getRightArg(), name, value)
+				|| valueEqualsVar(sameTerm.getRightArg(), sameTerm.getLeftArg(), name, value);
+	}
+
+	private static boolean valueEqualsVar(ValueExpr left, ValueExpr right, String name, Value value) {
+		return left instanceof Var var
+				&& name.equals(var.getName())
+				&& right instanceof ValueConstant constant
+				&& value.equals(constant.getValue());
 	}
 
 	private static boolean containsDifference(TupleExpr tupleExpr) {
@@ -461,6 +1340,32 @@ class CascadesRuleEngineTest {
 		}
 		if (tupleExpr instanceof Union union) {
 			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean isNegatedExistsFilter(TupleExpr tupleExpr) {
+		return tupleExpr instanceof Filter filter
+				&& filter.getCondition()instanceof Not not
+				&& not.getArg() instanceof Exists;
+	}
+
+	private static boolean containsLocalNegatedFilterOnBranchName(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter
+				&& filter.getCondition() instanceof Not
+				&& filter.getArg()instanceof StatementPattern pattern
+				&& pattern.getSubjectVar() != null
+				&& "branch".equals(pattern.getSubjectVar().getName())
+				&& pattern.getObjectVar() != null
+				&& "branchName".equals(pattern.getObjectVar().getName())) {
+			return true;
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsLocalNegatedFilterOnBranchName(join.getLeftArg())
+					|| containsLocalNegatedFilterOnBranchName(join.getRightArg());
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return containsLocalNegatedFilterOnBranchName(filter.getArg());
 		}
 		return false;
 	}

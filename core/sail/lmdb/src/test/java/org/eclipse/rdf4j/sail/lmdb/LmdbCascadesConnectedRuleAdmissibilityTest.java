@@ -208,6 +208,35 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				() -> "The bridge lookup should see both finite anchors before it is costed: " + orderedFactors);
 	}
 
+	@Test
+	void greedyPlannerBuildsFiniteAnchorBeforeExpensiveBoundBridgeLookup() {
+		BindingSetAssignment users = values("u", VF.createIRI("urn:user:7"));
+		BindingSetAssignment names = values("optName", VF.createLiteral("user7"), VF.createLiteral("user8"));
+		StatementPattern nameLookup = new StatementPattern(new Var("u"), new Var("name", P1), new Var("optName"));
+		List<TupleExpr> factors = new ArrayList<>();
+		factors.add(users);
+		factors.add(names);
+		factors.add(nameLookup);
+		for (int i = 0; i < 35; i++) {
+			factors.add(new StatementPattern(new Var("u"), new Var("padPredicate", P2), new Var("pad" + i)));
+		}
+		TupleExpr island = joinFactors(factors);
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(island,
+				Set.of(), new BoundBridgeStatistics(), new BoundBridgeStatistics());
+
+		assertTrue(plan.isPresent());
+		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
+		int userAnchorIndex = factorIndex(orderedFactors, "u");
+		int nameAnchorIndex = factorIndex(orderedFactors, "optName");
+		int nameLookupIndex = statementPatternIndex(orderedFactors, "u", "optName");
+		assertTrue(userAnchorIndex >= 0 && nameAnchorIndex >= 0 && nameLookupIndex >= 0,
+				() -> "Expected both finite anchors and bridge lookup in the plan: " + orderedFactors);
+		assertTrue(userAnchorIndex < nameAnchorIndex && nameAnchorIndex < nameLookupIndex,
+				() -> "A small finite anchor should be counted before the expensive bound bridge lookup: "
+						+ orderedFactors);
+	}
+
 	private static void restoreLegacyOpaqueJoinProviderProperty(String previous) {
 		if (previous == null) {
 			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
@@ -274,8 +303,8 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		}
 
 		private static double estimateRows(TupleExpr factor, Set<String> currentlyBoundVars) {
-			if (factor instanceof BindingSetAssignment) {
-				return 2.0d;
+			if (factor instanceof BindingSetAssignment assignment) {
+				return assignment.getBindingNames().contains("u") ? 1.0d : 2.0d;
 			}
 			Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
 			if (factor instanceof StatementPattern pattern && "optName".equals(pattern.getObjectVar().getName())) {
@@ -286,6 +315,30 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 					return 100.0d;
 				}
 				return 10_000.0d;
+			}
+			return 10.0d;
+		}
+	}
+
+	private static final class BoundBridgeStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return estimateRows(expr, Set.of());
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			double rows = estimateRows(factor, currentlyBoundVars);
+			return Optional.of(new FactorCostEstimate(rows, rows));
+		}
+
+		private static double estimateRows(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (factor instanceof BindingSetAssignment) {
+				return 2.0d;
+			}
+			Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
+			if (factor instanceof StatementPattern pattern && "optName".equals(pattern.getObjectVar().getName())) {
+				return boundVars.contains("optName") ? 1.0d : 1_000_000.0d;
 			}
 			return 10.0d;
 		}
@@ -345,6 +398,17 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static TupleExpr joinFactors(List<TupleExpr> factors) {
+		if (factors == null || factors.isEmpty()) {
+			throw new IllegalArgumentException("Expected at least one factor");
+		}
+		TupleExpr current = factors.get(0);
+		for (int i = 1; i < factors.size(); i++) {
+			current = new Join(current, factors.get(i));
+		}
+		return current;
 	}
 
 	private static int factorIndex(List<TupleExpr> orderedFactors, String bindingName) {

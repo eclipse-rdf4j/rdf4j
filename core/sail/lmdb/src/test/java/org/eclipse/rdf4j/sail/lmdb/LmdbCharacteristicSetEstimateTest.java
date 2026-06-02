@@ -13,8 +13,16 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -22,10 +30,16 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -41,6 +55,8 @@ class LmdbCharacteristicSetEstimateTest {
 	private static final IRI P1 = VF.createIRI("urn:star:p1");
 	private static final IRI P2 = VF.createIRI("urn:star:p2");
 	private static final IRI P3 = VF.createIRI("urn:star:p3");
+	private static final IRI CLINICAL_TRIAL = VF.createIRI("http://example.com/theme/pharma/ClinicalTrial");
+	private static final IRI HAS_ARM = VF.createIRI("http://example.com/theme/pharma/hasArm");
 	private static final int FULL_STAR_COUNT = 10;
 	private static final int NOISE_PER_PREDICATE = 90;
 
@@ -96,6 +112,44 @@ class LmdbCharacteristicSetEstimateTest {
 		}
 	}
 
+	@Test
+	void pharmaTypeAndFanoutStarEstimateDoesNotCollapseToZero(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadPharmaTypeAndFanoutStarData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			StatementPattern trialType = new StatementPattern(
+					Var.of("trial"),
+					Var.of("typePredicate", RDF.TYPE),
+					Var.of("trialType", CLINICAL_TRIAL));
+			StatementPattern trialArm = new StatementPattern(
+					Var.of("trial"),
+					Var.of("hasArmPredicate", HAS_ARM),
+					Var.of("arm"));
+
+			StatisticsEstimate estimate = statistics.starMultiPredicateScan(List.of(trialType, trialArm), Set.of())
+					.orElseThrow();
+
+			assertTrue(estimate.rows() > 0.0d, () -> "PHARMA trial/arm star must not be planned empty: " + estimate);
+			assertTrue(estimate.workRows() > 0.0d,
+					() -> "PHARMA trial/arm star must not be planned as free work: " + estimate);
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+		}
+	}
+
 	private static void loadCorrelatedStarData(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (int i = 0; i < FULL_STAR_COUNT; i++) {
@@ -108,6 +162,57 @@ class LmdbCharacteristicSetEstimateTest {
 				connection.add(VF.createIRI("urn:star:p1-only:" + i), P1, VF.createIRI("urn:star:p1-value:" + i));
 				connection.add(VF.createIRI("urn:star:p2-only:" + i), P2, VF.createIRI("urn:star:p2-value:" + i));
 				connection.add(VF.createIRI("urn:star:p3-only:" + i), P3, VF.createIRI("urn:star:p3-value:" + i));
+			}
+		}
+	}
+
+	@Test
+	void rejectsZeroCharacteristicSetStarWhenIndependentPredicateEstimatesArePositive() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.estimateCount(eq(Component.S), isNull(), eq(RDF.TYPE.stringValue()),
+				eq(CLINICAL_TRIAL.stringValue()), isNull())).thenReturn(24.0d);
+		when(estimator.estimateCount(eq(Component.S), isNull(), eq(HAS_ARM.stringValue()), isNull(), isNull()))
+				.thenReturn(96.0d);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+			@Override
+			public Optional<StatisticsEstimate> characteristicSetStar(List<StatementPattern> starPatterns,
+					Set<String> boundVars) {
+				return Optional.of(new StatisticsEstimate(0.0d,
+						QErrorInterval.heuristic(0.0d, 2.0d, "lmdb-characteristic-set"),
+						0.0d, "lmdb-characteristic-set", Map.of()));
+			}
+		};
+		StatementPattern trialType = new StatementPattern(
+				Var.of("trial"),
+				Var.of("typePredicate", RDF.TYPE),
+				Var.of("trialType", CLINICAL_TRIAL));
+		StatementPattern trialArm = new StatementPattern(
+				Var.of("trial"),
+				Var.of("hasArmPredicate", HAS_ARM),
+				Var.of("arm"));
+
+		Optional<StatisticsEstimate> estimate = statistics.starMultiPredicateScan(List.of(trialType, trialArm),
+				Set.of());
+
+		assertTrue(estimate.isEmpty(), () -> "non-exact zero star estimate must not become a free scan: " + estimate);
+	}
+
+	private static void loadPharmaTypeAndFanoutStarData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int trialIndex = 0; trialIndex < 24; trialIndex++) {
+				Resource trial = VF.createIRI("http://example.com/theme/pharma/trial/" + trialIndex);
+				connection.add(trial, RDF.TYPE, CLINICAL_TRIAL);
+				for (int armIndex = 0; armIndex < 4; armIndex++) {
+					Resource arm = VF.createIRI("http://example.com/theme/pharma/arm/" + trialIndex + "/"
+							+ armIndex);
+					connection.add(trial, HAS_ARM, arm);
+				}
+			}
+			for (int i = 0; i < 200; i++) {
+				Resource nonTrial = VF.createIRI("http://example.com/theme/pharma/nonTrial/" + i);
+				connection.add(nonTrial, HAS_ARM, VF.createIRI("http://example.com/theme/pharma/noiseArm/" + i));
+				connection.add(VF.createIRI("http://example.com/theme/pharma/other/" + i), RDF.TYPE,
+						VF.createIRI("http://example.com/theme/pharma/OtherClass"));
 			}
 		}
 	}

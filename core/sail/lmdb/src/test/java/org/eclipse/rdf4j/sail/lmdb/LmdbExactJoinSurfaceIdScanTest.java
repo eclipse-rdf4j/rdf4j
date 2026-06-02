@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.time.Duration;
@@ -43,7 +42,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 	private static final IRI MARKER = VF.createIRI("urn:test:marker");
 
 	@Test
-	void exactJoinSurfaceSkipsLmdbIdScanFallback(@TempDir File dataDir) throws Exception {
+	void exactJoinSurfaceUsesLmdbPageWalkFallback(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -56,9 +55,9 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(knows, name), "friend");
 
-			assertEquals(-1.0d, rows, 0.0d,
-					"Exact join-surface estimates must not use LMDB RecordIterator scans");
-			assertNoLmdbIdTelemetry(knows, name);
+			assertEquals(4.0d, rows, 0.0d,
+					"Exact join-surface estimates should page-walk small scan sides without sampling");
+			assertLmdbPageWalkTelemetry(knows, name);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -66,7 +65,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 	}
 
 	@Test
-	void pairwiseJoinSurfaceEstimateDoesNotUseLmdbIdScanFallback(@TempDir File dataDir) throws Exception {
+	void pairwiseJoinSurfaceUsesLmdbPageWalkFallback(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -79,9 +78,9 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(knows, name), "friend");
 
-			assertEquals(-1.0d, rows, 0.0d,
-					"Pairwise planning fallback must use sketches/page-walk estimates, not LMDB RecordIterator scans");
-			assertNoLmdbIdTelemetry(knows, name);
+			assertEquals(4.0d, rows, 0.0d,
+					"Pairwise planning fallback should use LMDB page-walk estimates, not sampling");
+			assertLmdbPageWalkTelemetry(knows, name);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -109,11 +108,11 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(knows, impossibleName), "friend");
 
-			assertEquals(-1.0d, rows, 0.0d,
-					"Exact join-surface estimates must not open an LMDB scan even for missing constants");
+			assertEquals(0.0d, rows, 0.0d,
+					"Missing bound constants should return an exact zero estimate without creating values");
 			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingObject),
 					"The read-only ID lookup must not create a value-store entry");
-			assertNoLmdbIdTelemetry(knows, impossibleName);
+			assertLmdbZeroTelemetry(knows, impossibleName);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -134,9 +133,9 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(observations, markers), "value");
 
-			assertEquals(-1.0d, rows, 0.0d,
-					"Exact join-surface estimates must not sample inlined literal IDs from LMDB");
-			assertNoLmdbIdTelemetry(observations, markers);
+			assertEquals(3.0d, rows, 0.0d,
+					"Exact join-surface estimates should page-walk inlined literal IDs without sampling");
+			assertLmdbPageWalkTelemetry(observations, markers);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -188,8 +187,16 @@ class LmdbExactJoinSurfaceIdScanTest {
 		}
 	}
 
-	private static void assertNoLmdbIdTelemetry(TupleExpr first, TupleExpr second) {
-		assertNull(first.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
-		assertNull(second.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
+	private static void assertLmdbPageWalkTelemetry(TupleExpr first, TupleExpr second) {
+		assertEquals("lmdb-id", first.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
+		assertEquals("lmdb-id", second.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
+	}
+
+	private static void assertLmdbZeroTelemetry(TupleExpr first, TupleExpr second) {
+		assertLmdbPageWalkTelemetry(first, second);
+		assertEquals(0L, first.getLongMetricPlanned("optimizer.exactJoinSurfaceScannedRows"));
+		assertEquals(0L, second.getLongMetricPlanned("optimizer.exactJoinSurfaceScannedRows"));
+		assertEquals(0L, first.getLongMetricPlanned("optimizer.exactJoinSurfaceProbeCount"));
+		assertEquals(0L, second.getLongMetricPlanned("optimizer.exactJoinSurfaceProbeCount"));
 	}
 }

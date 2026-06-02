@@ -16,6 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * One expression alternative inside a memo group.
@@ -84,7 +85,12 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		appendIntList(builder, inputGroupIds);
 		builder.append('|').append(localMetadata == null ? "" : localMetadata).append('|');
 		if (tupleExpr != null) {
-			builder.append(tupleExpr.getClass().getName()).append('|').append(safeSignature(tupleExpr));
+			builder.append(tupleExpr.getClass().getName())
+					.append('|')
+					.append("scopeChange=")
+					.append(TupleExprs.isVariableScopeChange(tupleExpr))
+					.append('|')
+					.append(safeSignature(tupleExpr));
 		}
 		if (kind != RuleKind.TRANSFORMATION) {
 			builder.append('|').append(Objects.toString(deliveredProperties, "*"));

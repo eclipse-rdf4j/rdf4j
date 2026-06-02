@@ -13,11 +13,16 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
@@ -34,6 +40,91 @@ import org.junit.jupiter.api.Timeout;
 class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void finiteUnaryAnchorSketchSurfaceUsesAnchoredBranchFanout() {
+		IRI name = VF.createIRI("urn:library:name");
+		IRI locatedAt = VF.createIRI("urn:library:locatedAt");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		loadBranchCopies(store, name, locatedAt, 20, 50);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		BindingSetAssignment branchNames = finiteDomainRows(
+				valueRow("branchName", VF.createLiteral("Branch 1")),
+				valueRow("branchName", VF.createLiteral("Branch 2")));
+		StatementPattern branchName = new StatementPattern(Var.of("branch"), Var.of("name", name),
+				Var.of("branchName"));
+		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
+				Var.of("branch"));
+
+		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName), locatedAtBranch,
+				"branch");
+
+		assertEquals(100.0d, rows, 0.0d,
+				"Finite branch-name anchors should cost the derived locatedAt fanout, not all branches");
+	}
+
+	@Test
+	void finiteUnaryAnchorSketchSurfacePreservesDuplicateRows() {
+		IRI name = VF.createIRI("urn:library:name");
+		IRI locatedAt = VF.createIRI("urn:library:locatedAt");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		loadBranchCopies(store, name, locatedAt, 5, 10);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		BindingSetAssignment branchNames = finiteDomainRows(
+				valueRow("branchName", VF.createLiteral("Branch 1")),
+				valueRow("branchName", VF.createLiteral("Branch 1")),
+				valueRow("branchName", VF.createLiteral("Branch 2")));
+		StatementPattern branchName = new StatementPattern(Var.of("branch"), Var.of("name", name),
+				Var.of("branchName"));
+		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
+				Var.of("branch"));
+
+		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName), locatedAtBranch,
+				"branch");
+
+		assertEquals(30.0d, rows, 0.0d,
+				"Duplicate finite anchor rows should multiply the downstream branch fanout");
+	}
+
+	@Test
+	void finiteTupleAnchorSketchSurfaceKeepsTupleCorrelation() {
+		IRI name = VF.createIRI("urn:library:name");
+		IRI zone = VF.createIRI("urn:library:zone");
+		IRI locatedAt = VF.createIRI("urn:library:locatedAt");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource branch1 = VF.createIRI("urn:library:branch:1");
+		Resource branch2 = VF.createIRI("urn:library:branch:2");
+		Resource branch3 = VF.createIRI("urn:library:branch:3");
+		store.add(st(branch1, name, VF.createLiteral("Branch A")));
+		store.add(st(branch1, zone, VF.createLiteral("Zone X")));
+		store.add(st(branch2, name, VF.createLiteral("Branch B")));
+		store.add(st(branch2, zone, VF.createLiteral("Zone Y")));
+		store.add(st(branch3, name, VF.createLiteral("Branch A")));
+		store.add(st(branch3, zone, VF.createLiteral("Zone Y")));
+		for (int i = 0; i < 10; i++) {
+			store.add(st(VF.createIRI("urn:copy:1:" + i), locatedAt, branch1));
+			store.add(st(VF.createIRI("urn:copy:2:" + i), locatedAt, branch2));
+			store.add(st(VF.createIRI("urn:copy:3:" + i), locatedAt, branch3));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		BindingSetAssignment branchNameZones = finiteDomainRows(
+				valueRow("branchName", VF.createLiteral("Branch A"), "zone", VF.createLiteral("Zone X")),
+				valueRow("branchName", VF.createLiteral("Branch B"), "zone", VF.createLiteral("Zone Y")));
+		StatementPattern branchName = new StatementPattern(Var.of("branch"), Var.of("name", name),
+				Var.of("branchName"));
+		StatementPattern branchZone = new StatementPattern(Var.of("branch"), Var.of("zone", zone), Var.of("zone"));
+		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
+				Var.of("branch"));
+
+		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNameZones, branchName, branchZone),
+				locatedAtBranch, "branch");
+
+		assertEquals(20.0d, rows, 0.0d,
+				"Tuple finite anchors should preserve row correlation and exclude mixed branch-name/zone matches");
+	}
 
 	@Test
 	void finiteBindingSetInequalityFilterUsesExactTupleRows() {
@@ -91,6 +182,91 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 				"Overlapping finite disjunction filters should count matching rows once, not once per matching branch");
 	}
 
+	@Test
+	void exactJoinSurfaceDisablesSamplingWhenScanFitsPageWalkBudget() {
+		IRI leftPredicate = VF.createIRI("urn:test:left");
+		IRI rightPredicate = VF.createIRI("urn:test:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource shared = VF.createIRI("urn:test:shared");
+		store.add(st(VF.createIRI("urn:test:left:1"), leftPredicate, shared));
+		store.add(st(VF.createIRI("urn:test:left:2"), leftPredicate, shared));
+		store.add(st(VF.createIRI("urn:test:right:1"), rightPredicate, shared));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		AtomicInteger sampleSize = new AtomicInteger(-1);
+		estimator.setExactJoinSurfaceProvider(request -> {
+			sampleSize.set(request.sampleSize());
+			return SketchBasedJoinEstimator.ExactJoinSurfaceProvider.UNSUPPORTED;
+		});
+		StatementPattern left = new StatementPattern(Var.of("left"), Var.of("leftPredicate", leftPredicate),
+				Var.of("shared"));
+		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
+				Var.of("shared"));
+
+		estimator.estimateExactJoinSurfaceRows(List.of(left, right), "shared");
+
+		assertEquals(0, sampleSize.get(),
+				"Exact join surface estimation should reserve sampling for scans that exceed the page-walk budget");
+	}
+
+	@Test
+	void pairwiseJoinSurfaceUsesPageWalkWhenScanFitsBudgetDespiteDistinctLimit() {
+		IRI leftPredicate = VF.createIRI("urn:test:left");
+		IRI rightPredicate = VF.createIRI("urn:test:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource shared = VF.createIRI("urn:test:shared");
+		store.add(st(VF.createIRI("urn:test:left:1"), leftPredicate, shared));
+		store.add(st(VF.createIRI("urn:test:left:2"), leftPredicate, shared));
+		store.add(st(VF.createIRI("urn:test:right:1"), rightPredicate, shared));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config()
+				.withZeroIntersectionExactDistinctLimit(0)
+				.withZeroIntersectionRowBudget(10)
+				.withZeroIntersectionSampleSize(128));
+		estimator.rebuild();
+		AtomicInteger sampleSize = new AtomicInteger(-1);
+		estimator.setExactJoinSurfaceProvider(request -> {
+			sampleSize.set(request.sampleSize());
+			return SketchBasedJoinEstimator.ExactJoinSurfaceProvider.UNSUPPORTED;
+		});
+		StatementPattern left = new StatementPattern(Var.of("left"), Var.of("leftPredicate", leftPredicate),
+				Var.of("shared"));
+		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
+				Var.of("shared"));
+
+		double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(left), right, "shared");
+
+		assertEquals(2.0d, rows, 0.0d,
+				"Small join-surface fallback should page-walk rows even when distinct-threshold heuristics reject");
+		assertEquals(0, sampleSize.get(), "Pairwise fallback must not sample while the scan side fits the row budget");
+	}
+
+	@Test
+	void pairwiseJoinSurfaceUsesPageWalkForObjectSubjectBridge() {
+		IRI memberOf = VF.createIRI("urn:test:memberOf");
+		IRI employee = VF.createIRI("urn:test:employee");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource org = VF.createIRI("urn:test:org");
+		store.add(st(VF.createIRI("urn:test:person:1"), memberOf, org));
+		store.add(st(VF.createIRI("urn:test:person:2"), memberOf, org));
+		store.add(st(org, employee, VF.createIRI("urn:test:employee:1")));
+		store.add(st(org, employee, VF.createIRI("urn:test:employee:2")));
+		store.add(st(org, employee, VF.createIRI("urn:test:employee:3")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config()
+				.withZeroIntersectionExactDistinctLimit(0)
+				.withZeroIntersectionRowBudget(10)
+				.withZeroIntersectionSampleSize(0));
+		estimator.rebuild();
+		StatementPattern memberOfPattern = new StatementPattern(Var.of("person"), Var.of("memberOf", memberOf),
+				Var.of("org"));
+		StatementPattern employeePattern = new StatementPattern(Var.of("org"), Var.of("employee", employee),
+				Var.of("employee"));
+
+		double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOfPattern), employeePattern, "org");
+
+		assertEquals(6.0d, rows, 0.0d,
+				"Object-to-subject bridge surfaces should page-walk the smaller side and multiply duplicate rows");
+	}
+
 	private static BindingSetAssignment finiteDomainRows(BindingSet... rows) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(rows));
@@ -108,7 +284,41 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		return row;
 	}
 
+	private static QueryBindingSet valueRow(Object... nameValuePairs) {
+		if (nameValuePairs.length % 2 != 0) {
+			throw new IllegalArgumentException("Rows must be specified as name/value pairs");
+		}
+		QueryBindingSet row = new QueryBindingSet();
+		for (int i = 0; i < nameValuePairs.length; i += 2) {
+			row.addBinding((String) nameValuePairs[i], (Value) nameValuePairs[i + 1]);
+		}
+		return row;
+	}
+
+	private static void loadBranchCopies(StubSketchStatementSource store, IRI name, IRI locatedAt, int branchCount,
+			int copiesPerBranch) {
+		for (int branchIndex = 0; branchIndex < branchCount; branchIndex++) {
+			Resource branch = VF.createIRI("urn:library:branch:" + branchIndex);
+			store.add(st(branch, name, VF.createLiteral("Branch " + branchIndex)));
+			for (int copyIndex = 0; copyIndex < copiesPerBranch; copyIndex++) {
+				store.add(st(VF.createIRI("urn:library:copy:" + branchIndex + ':' + copyIndex), locatedAt, branch));
+			}
+		}
+	}
+
 	private static IRI iri(String value) {
 		return VF.createIRI(value);
+	}
+
+	private static Statement st(Resource subject, IRI predicate, Value object) {
+		return VF.createStatement(subject, predicate, object);
+	}
+
+	private static SketchBasedJoinEstimator.Config config() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(4096)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
 	}
 }

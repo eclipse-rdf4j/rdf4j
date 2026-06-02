@@ -1551,6 +1551,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				replacement = new Filter(new Join(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()),
 						filter.getCondition().clone());
 			}
+			replacement.setStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC,
+					LmdbNullRejectingOptionalSupport.rewriteMetric("sketch-join", optionalBindings));
 			filter.replaceWith(replacement);
 			return replacement;
 		}
@@ -1687,9 +1689,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> optionalDirectProducedBindingNames(LeftJoin leftJoin) {
 			Set<String> optionalBindings = optionalProducedBindingNames(leftJoin);
-			if (!optionalBindings.isEmpty()) {
-				optionalBindings.removeAll(extensionElementNames(leftJoin.getRightArg()));
-			}
 			return optionalBindings;
 		}
 
@@ -1765,20 +1764,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						&& hasNullRejectingOptionalProof(or.getRightArg(), optionalBindings, leftAssuredBindings);
 			}
 			return false;
-		}
-
-		private Set<String> extensionElementNames(TupleExpr tupleExpr) {
-			Set<String> names = new HashSet<>();
-			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<>() {
-				@Override
-				public void meet(Extension node) {
-					for (ExtensionElem element : node.getElements()) {
-						names.add(element.getName());
-					}
-					node.visitChildren(this);
-				}
-			});
-			return names;
 		}
 
 		private TupleExpr rewriteNullRejectingOptionalFilterAfterDelayableExtension(Filter filter, LeftJoin leftJoin) {
@@ -3638,11 +3623,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Set<String> originalBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
+				String nullRejectingOptionalRewrite = replaceTarget
+						.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
 				CollectedJoinArgs collected = collectJoinArgs(join);
 				collected.deferredFilters.addAll(additionalFilters);
 				collected.costingOnlyFilters.addAll(contextualCostingFilters);
 				TupleExpr root = buildOrderedRoot(collected, originalBoundVars);
 				if (root != null) {
+					if (nullRejectingOptionalRewrite != null) {
+						root.setStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC,
+								nullRejectingOptionalRewrite);
+					}
 					if (transparentProjection != null) {
 						root = wrapWithProjection(root, transparentProjection);
 					}

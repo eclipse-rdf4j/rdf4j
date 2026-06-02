@@ -1159,6 +1159,9 @@ class LmdbThemeQueryRegressionIT {
 					assertMetricRowsAtMost(locatedAtPattern, "plannedRepeatedInvocations", 12.0d,
 							"Library q7 should only perform one locatedAt lookup per finite branch\n"
 									+ snapshot.plan());
+					assertMetricRowsAtLeast(locatedAtPattern, "plannedCardinalityRows", 10_000.0d,
+							"Library q7 should cost finite branch locatedAt lookups by branch fanout, not as "
+									+ "singleton direct lookups\n" + snapshot.plan());
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Library q7 should not route an unbound branch/location scan through the left "
 									+ "bound-statement guard");

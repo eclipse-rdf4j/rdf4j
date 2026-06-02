@@ -37,6 +37,8 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
 	private static final String COVERED_BY_PARENT_WINNER = "covered_by_parent_winner";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
+	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
+	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String PLANNED_CARDINALITY_Q_ERROR = "plannedCardinalityQError";
 	private static final String PLANNED_COST_ROW_Q_ERROR_MAX = "plannedCostRowQErrorMax";
 	private static final String PLANNED_COST_WORK_Q_ERROR_MAX = "plannedCostWorkQErrorMax";
@@ -179,11 +181,14 @@ public final class CascadesPlanProvenanceAnnotator {
 			return;
 		}
 		EstimateSnapshot estimate = provenance.estimate();
+		CostVector cost = provenance.cost();
+		double plannedRows = finiteOr(estimate.rows(), cost.rows());
+		double plannedWorkRows = finiteOr(estimate.workRows(), cost.workRows());
 		String decisionId = decisionId(provenance);
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
 
 		setStringIfMissing(node, TelemetryMetricNames.PLANNER_ID, plannerId);
-		setStringIfMissing(node, TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
+		setStringIfMissingOrFallbackSource(node, TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
 		setStringIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, COVERED_BY_PARENT_WINNER);
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID, decisionId + ":covered");
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
@@ -193,6 +198,17 @@ public final class CascadesPlanProvenanceAnnotator {
 		setStringIfMissing(node, CASCADES_PROOFS, proofSummary(provenance.proofs()));
 		setStringIfMissing(node, CASCADES_REJECTIONS, rejectionSummary(provenance.rejectedAlternatives()));
 		setStringIfMissing(node, CASCADES_COVERED_BY_WINNER, decisionId);
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, cost.uncertaintyRows());
+		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, cost.confidence());
+		setDoubleIfMissing(node, PLANNED_CARDINALITY_Q_ERROR, cost.rowQErrorMax());
+		setDoubleIfMissing(node, PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax());
+		setDoubleIfMissing(node, PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax());
+		setDoubleIfMissing(node, "plannedCascadesEvidenceCount", cost.evidenceCount());
 	}
 
 	private static void annotateFallbackNode(TupleExpr node, String plannerId, String source, String usage,
@@ -366,6 +382,14 @@ public final class CascadesPlanProvenanceAnnotator {
 		if (isBlank(current)
 				|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(current)
 				|| FALLBACK_NO_WINNER.equals(current)) {
+			node.setStringMetricPlanned(metricName, value);
+		}
+	}
+
+	private static void setStringIfMissingOrFallbackSource(QueryModelNode node, String metricName, String value) {
+		String current = node.getStringMetricPlanned(metricName);
+		if (isBlank(current) || CASCADES_FALLBACK_SOURCE.equals(current)
+				|| LMDB_CASCADES_FALLBACK_SOURCE.equals(current)) {
 			node.setStringMetricPlanned(metricName, value);
 		}
 	}

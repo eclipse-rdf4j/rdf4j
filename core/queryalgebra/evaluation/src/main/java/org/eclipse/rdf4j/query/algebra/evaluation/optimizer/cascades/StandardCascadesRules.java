@@ -23,10 +23,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -42,7 +44,6 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -161,6 +162,13 @@ public final class StandardCascadesRules {
 			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
 			RuleProof proof = proof(semanticScope(goal), Set.of("conditionVarsVisible", "noScopeChange"),
 					"filter condition can be evaluated at one join input");
+			TupleExpr smallestInput = pushFilterToSmallestAssuredInput(join, filter.getCondition(), conditionNames);
+			if (smallestInput != null && !smallestInput.equals(filter)) {
+				RuleProof smallestProof = proof(semanticScope(goal),
+						Set.of("conditionVarsVisible", "noScopeChange", "pushedToEarliestAssuredInput"),
+						"filter condition can be evaluated at the earliest join input that assures its variables");
+				return List.of(RuleApplication.transformation(expression.groupId(), smallestInput, smallestProof));
+			}
 			if (join.getLeftArg().getAssuredBindingNames().containsAll(conditionNames)) {
 				return List.of(RuleApplication.transformation(expression.groupId(),
 						new Join(new Filter(join.getLeftArg().clone(), filter.getCondition().clone()),
@@ -305,22 +313,31 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Projection projection = (Projection) expression.tupleExpr();
 			Join join = (Join) projection.getArg();
-			Set<String> projected = plannerNames(projection.getBindingNames());
-			RuleProof proof = proof(semanticScope(goal), Set.of("projectedVarsVisible", "projectionCanMove"),
-					"projection is pushed to a single input as an alternative");
-			if (join.getLeftArg().getBindingNames().containsAll(projected)) {
-				Projection pushed = new Projection(join.getLeftArg().clone(),
-						projection.getProjectionElemList().clone());
-				return List.of(RuleApplication.transformation(expression.groupId(), new Join(pushed,
-						join.getRightArg().clone()), proof));
+			Set<String> projected = identityProjectionNames(projection);
+			if (projected == null) {
+				return List.of();
 			}
-			if (join.getRightArg().getBindingNames().containsAll(projected)) {
-				Projection pushed = new Projection(join.getRightArg().clone(),
-						projection.getProjectionElemList().clone());
-				return List.of(RuleApplication.transformation(expression.groupId(), new Join(join.getLeftArg().clone(),
-						pushed), proof));
+			Set<String> leftNames = plannerNames(join.getLeftArg().getBindingNames());
+			Set<String> rightNames = plannerNames(join.getRightArg().getBindingNames());
+			Set<String> shared = new HashSet<>(leftNames);
+			shared.retainAll(rightNames);
+
+			Set<String> leftNeeded = new HashSet<>(projected);
+			leftNeeded.retainAll(leftNames);
+			leftNeeded.addAll(shared);
+			Set<String> rightNeeded = new HashSet<>(projected);
+			rightNeeded.retainAll(rightNames);
+			rightNeeded.addAll(shared);
+			if (leftNeeded.equals(leftNames) && rightNeeded.equals(rightNames)) {
+				return List.of();
 			}
-			return List.of();
+
+			Projection alternative = projection.clone();
+			alternative.setArg(new Join(projectJoinInput(join.getLeftArg(), leftNeeded),
+					projectJoinInput(join.getRightArg(), rightNeeded)));
+			RuleProof proof = proof(semanticScope(goal), Set.of("projectedVarsVisible", "joinSharedVarsRetained"),
+					"projection is retained while child inputs are pruned to projected and shared join variables");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
 
@@ -376,6 +393,9 @@ public final class StandardCascadesRules {
 			RuleProof nestedScopedFiniteProof = proof(semanticScope(goal),
 					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedFiniteBindingsDisjointFromBranchBinds"),
 					"nested finite bindings distribute into a scope-changing UNION while residual joins remain outside");
+			RuleProof nestedScopedSharedProof = proof(semanticScope(goal),
+					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedSharedPrefixDisjointFromBranchBinds"),
+					"nested shared prefixes distribute into a scope-changing UNION while residual joins remain outside");
 			if (join.getLeftArg()instanceof Union union) {
 				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getRightArg(),
 						union)) {
@@ -388,6 +408,28 @@ public final class StandardCascadesRules {
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
+					} else {
+						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
+								join.getRightArg(), false);
+						if (nestedSharedAlternative != null) {
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									nestedSharedAlternative, nestedScopedSharedProof));
+						}
+						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getRightArg(), union);
+						recordScopedUnionDistributionEvent(context, expression, "left-union", join.getRightArg(),
+								union, nestedSharedAlternative != null, !unassuredShared.isEmpty());
+						if (!unassuredShared.isEmpty()) {
+							RuleProof scopedSharedProof = proof(semanticScope(goal),
+									Set.of("innerJoin", "bagUnion", "scopePreserved",
+											"sharedBindingsNotAssuredByUnion", "shared=" + unassuredShared),
+									"inner join distributes over a scope-changing UNION when shared join variables "
+											+ "are branch-local and therefore not assured by the UNION");
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									unionLike(union,
+											new Join(union.getLeftArg().clone(), join.getRightArg().clone()),
+											new Join(union.getRightArg().clone(), join.getRightArg().clone())),
+									scopedSharedProof));
+						}
 					}
 				}
 			}
@@ -403,11 +445,89 @@ public final class StandardCascadesRules {
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
+					} else {
+						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
+								join.getLeftArg(), true);
+						if (nestedSharedAlternative != null) {
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									nestedSharedAlternative, nestedScopedSharedProof));
+						}
+						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getLeftArg(), union);
+						recordScopedUnionDistributionEvent(context, expression, "right-union", join.getLeftArg(),
+								union, nestedSharedAlternative != null, !unassuredShared.isEmpty());
+						if (!unassuredShared.isEmpty()) {
+							RuleProof scopedSharedProof = proof(semanticScope(goal),
+									Set.of("innerJoin", "bagUnion", "scopePreserved",
+											"sharedBindingsNotAssuredByUnion", "shared=" + unassuredShared),
+									"inner join distributes over a scope-changing UNION when shared join variables "
+											+ "are branch-local and therefore not assured by the UNION");
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									unionLike(union,
+											new Join(join.getLeftArg().clone(), union.getLeftArg().clone()),
+											new Join(join.getLeftArg().clone(), union.getRightArg().clone())),
+									scopedSharedProof));
+						}
 					}
 				}
 			}
 			return applications;
 		}
+	}
+
+	private static void recordScopedUnionDistributionEvent(RuleContext context, MemoExpr expression, String side,
+			TupleExpr pushed, Union union, boolean nestedShared, boolean fullShared) {
+		if (context == null || context.telemetry() == null) {
+			return;
+		}
+		context.telemetry()
+				.plannerEvent("join-union-distribution group=" + expression.groupId()
+						+ " side=" + side
+						+ " scoped=true"
+						+ " nestedShared=" + nestedShared
+						+ " fullShared=" + fullShared
+						+ " pushed=" + plannerNames(pushed.getBindingNames())
+						+ " unionBindings=" + plannerNames(union.getBindingNames())
+						+ " unionAssured=" + plannerNames(union.getAssuredBindingNames()));
+	}
+
+	public static final class SafeScopeChangeRemovalRule extends AbstractRule {
+		public SafeScopeChangeRemovalRule() {
+			super("safe-scope-change-removal", RuleKind.TRANSFORMATION, 60);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && hasSafeScopeChangeRemoval(expression.tupleExpr(), goal);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			List<TupleExpr> alternatives = safeScopeChangeRemovalAlternatives(expression.tupleExpr(), goal);
+			if (alternatives.isEmpty()) {
+				return List.of();
+			}
+			recordSafeScopeChangeRemovalEvent(context, expression, goal, alternatives);
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("scopePreserved", "branchLocalBindingsDisjointFromIncomingBindings"),
+					"a scope-change marker can be removed when incoming bindings cannot pre-bind branch-local "
+							+ "BIND/VALUES outputs");
+			return alternatives.stream()
+					.map(alternative -> RuleApplication.transformation(expression.groupId(), alternative, proof))
+					.toList();
+		}
+	}
+
+	private static void recordSafeScopeChangeRemovalEvent(RuleContext context, MemoExpr expression,
+			OptimizationGoal goal,
+			List<TupleExpr> alternatives) {
+		if (context == null || context.telemetry() == null || expression == null) {
+			return;
+		}
+		context.telemetry()
+				.plannerEvent("safe-scope-change-removal group=" + expression.groupId()
+						+ " alternatives=" + alternatives.size()
+						+ " removedKinds=" + removableScopeChangeKinds(expression.tupleExpr(), goal)
+						+ " incoming=" + incomingBindingNames(goal));
 	}
 
 	public static final class FiniteBindingsExtensionPushdownRule extends AbstractRule {
@@ -450,6 +570,44 @@ public final class StandardCascadesRules {
 		}
 	}
 
+	public static final class JoinExtensionPushdownRule extends AbstractRule {
+		public JoinExtensionPushdownRule() {
+			super("join-extension-pushdown", RuleKind.TRANSFORMATION, 58);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical() || !(expression.tupleExpr()instanceof Join join) || barrier(join)) {
+				return false;
+			}
+			return join.getLeftArg() instanceof Extension || join.getRightArg() instanceof Extension;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Join join = (Join) expression.tupleExpr();
+			List<RuleApplication> applications = new ArrayList<>(2);
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("scopePreservedOrRemovedWhenSafe", "prefixDisjointFromExtensionBinds",
+							"extensionExprScopeSafe"),
+					"a non-finite join prefix can move into a scope-changing Extension when it cannot overwrite "
+							+ "BIND outputs; the scope marker is removed when incoming bindings are safe");
+			if (join.getLeftArg()instanceof Extension extension) {
+				TupleExpr alternative = extensionJoinAlternative(join.getRightArg(), extension, false, goal);
+				if (alternative != null) {
+					applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+				}
+			}
+			if (join.getRightArg()instanceof Extension extension) {
+				TupleExpr alternative = extensionJoinAlternative(join.getLeftArg(), extension, true, goal);
+				if (alternative != null) {
+					applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+				}
+			}
+			return applications;
+		}
+	}
+
 	public static final class OptionalNegatedBoundAntiJoinRule extends AbstractRule {
 		public OptionalNegatedBoundAntiJoinRule() {
 			super("optional-negated-bound-anti-join", RuleKind.TRANSFORMATION, 95);
@@ -475,8 +633,13 @@ public final class StandardCascadesRules {
 					|| !leftJoin.getRightArg().getAssuredBindingNames().contains(name)) {
 				return List.of();
 			}
+			Set<String> shared = plannerNames(leftJoin.getLeftArg().getBindingNames());
+			shared.retainAll(plannerNames(leftJoin.getRightArg().getBindingNames()));
+			if (shared.isEmpty()) {
+				return List.of();
+			}
 			RuleProof proof = proof(OptimizationGoal.BAG_SEMANTICS,
-					Set.of("negatedBound=" + name, "rhsAssuresBinding", "leftDoesNotBindVar"),
+					Set.of("negatedBound=" + name, "rhsAssuresBinding", "leftDoesNotBindVar", "shared=" + shared),
 					"OPTIONAL filtered by !BOUND(rhs-only var) is a MINUS/anti-join alternative");
 			return List.of(RuleApplication.transformation(expression.groupId(),
 					new Difference(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()), proof));
@@ -497,10 +660,10 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Difference difference = (Difference) expression.tupleExpr();
 			List<RuleApplication> applications = new ArrayList<>(4);
-			RuleApplication redundantPatternFilter = redundantPatternMinusFilterAlternative(expression, difference,
-					goal);
-			if (redundantPatternFilter != null) {
-				applications.add(redundantPatternFilter);
+			applications.addAll(redundantPatternMinusFilterAlternatives(expression, difference, goal));
+			RuleApplication antiExistsFilter = correlatedAntiExistsFilterAlternative(expression, difference, goal);
+			if (antiExistsFilter != null) {
+				applications.add(antiExistsFilter);
 			}
 			if (difference.getLeftArg()instanceof Union union && !union.isVariableScopeChange()) {
 				RuleProof proof = proof(semanticScope(goal), Set.of("leftUnionBranchesCompatible", "rhsScopeSafe"),
@@ -525,11 +688,12 @@ public final class StandardCascadesRules {
 			return applications;
 		}
 
-		private RuleApplication redundantPatternMinusFilterAlternative(MemoExpr expression, Difference difference,
+		private List<RuleApplication> redundantPatternMinusFilterAlternatives(MemoExpr expression,
+				Difference difference,
 				OptimizationGoal goal) {
 			if (!(difference.getRightArg()instanceof Filter rightFilter)
 					|| !(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
-				return null;
+				return List.of();
 			}
 
 			Set<String> conditionVars = plannerNames(VarNameCollector.process(rightFilter.getCondition()));
@@ -537,14 +701,42 @@ public final class StandardCascadesRules {
 					|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
 					|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
 					|| !containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
-				return null;
+				return List.of();
 			}
 
 			RuleProof proof = proof(semanticScope(goal),
 					Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter"),
 					"MINUS over an already-required RHS pattern plus total local filter is a negated left filter");
+			List<RuleApplication> applications = new ArrayList<>(2);
+			applications.add(RuleApplication.transformation(expression.groupId(),
+					new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone())), proof));
+
+			TupleExpr localFilter = pushFilterToSmallestAssuredInput(difference.getLeftArg(),
+					new Not(rightFilter.getCondition().clone()), conditionVars);
+			if (localFilter != null) {
+				RuleProof localProof = proof(semanticScope(goal),
+						Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter",
+								"pushedToEarliestAssuredInput"),
+						"MINUS redundant local filter can be evaluated at the earliest left input that assures its "
+								+ "variables");
+				applications.add(RuleApplication.transformation(expression.groupId(), localFilter, localProof));
+			}
+			return applications;
+		}
+
+		private RuleApplication correlatedAntiExistsFilterAlternative(MemoExpr expression, Difference difference,
+				OptimizationGoal goal) {
+			Set<String> shared = safeAssuredMinusSharedVars(difference);
+			if (shared.isEmpty() || !isSimpleCorrelatableMinusRhs(difference.getRightArg())) {
+				return null;
+			}
+
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("sharedVarsAssured", "correlatedAntiExists", "shared=" + shared),
+					"MINUS with assured shared variables can be costed as an equivalent negated EXISTS filter");
 			return RuleApplication.transformation(expression.groupId(),
-					new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone())), proof);
+					new Filter(difference.getLeftArg().clone(), new Not(new Exists(difference.getRightArg().clone()))),
+					proof);
 		}
 	}
 
@@ -659,6 +851,27 @@ public final class StandardCascadesRules {
 		return true;
 	}
 
+	private static Set<String> unassuredSharedScopedUnionNames(TupleExpr pushed, Union union) {
+		if (pushed == null || union == null || !union.isVariableScopeChange()) {
+			return Set.of();
+		}
+		Set<String> pushedNames = plannerNames(pushed.getBindingNames());
+		Set<String> branchLocalNames = branchLocalBindOrValuesNames(union.getLeftArg());
+		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
+		for (String name : pushedNames) {
+			if (branchLocalNames.contains(name)) {
+				return Set.of();
+			}
+		}
+		Set<String> shared = new HashSet<>(pushedNames);
+		shared.retainAll(plannerNames(union.getBindingNames()));
+		if (shared.isEmpty()) {
+			return Set.of();
+		}
+		shared.removeAll(plannerNames(union.getAssuredBindingNames()));
+		return shared;
+	}
+
 	private static TupleExpr nestedFiniteScopedUnionAlternative(Union union, TupleExpr pushedSide,
 			boolean pushedSideIsLeft) {
 		ExtractedFiniteBinding extracted = extractFiniteBindingForScopedUnion(pushedSide, union);
@@ -672,6 +885,61 @@ public final class StandardCascadesRules {
 				: unionLike(union, new Join(union.getLeftArg().clone(), finite.clone()),
 						new Join(union.getRightArg().clone(), finite.clone()));
 		return pushedSideIsLeft ? new Join(extracted.residual, distributed) : new Join(distributed, extracted.residual);
+	}
+
+	private static TupleExpr nestedSharedScopedUnionAlternative(Union union, TupleExpr pushedSide,
+			boolean pushedSideIsLeft) {
+		ExtractedScopedUnionPrefix extracted = extractSharedPrefixForScopedUnion(pushedSide, union, false);
+		if (extracted == null || extracted.residual == null) {
+			return null;
+		}
+		TupleExpr prefix = extracted.prefix;
+		Union distributed = pushedSideIsLeft
+				? unionLike(union, new Join(prefix.clone(), union.getLeftArg().clone()),
+						new Join(prefix.clone(), union.getRightArg().clone()))
+				: unionLike(union, new Join(union.getLeftArg().clone(), prefix.clone()),
+						new Join(union.getRightArg().clone(), prefix.clone()));
+		return pushedSideIsLeft ? new Join(extracted.residual, distributed) : new Join(distributed, extracted.residual);
+	}
+
+	private static ExtractedScopedUnionPrefix extractSharedPrefixForScopedUnion(TupleExpr tupleExpr, Union union,
+			boolean allowWholeExpression) {
+		if (tupleExpr == null
+				|| tupleExpr instanceof BindingSetAssignment
+				|| union == null
+				|| !union.isVariableScopeChange()
+				|| barrier(tupleExpr)) {
+			return null;
+		}
+		if (tupleExpr instanceof Join join) {
+			boolean leftRelevant = sharedScopedUnionPrefixCandidate(join.getLeftArg(), union);
+			boolean rightRelevant = sharedScopedUnionPrefixCandidate(join.getRightArg(), union);
+			if (allowWholeExpression && leftRelevant && rightRelevant
+					&& sharedScopedUnionPrefixCandidate(join, union)) {
+				return new ExtractedScopedUnionPrefix(join.clone(), null);
+			}
+			ExtractedScopedUnionPrefix left = extractSharedPrefixForScopedUnion(join.getLeftArg(), union, true);
+			if (left != null) {
+				return new ExtractedScopedUnionPrefix(left.prefix,
+						joinOrSingle(left.residual, join.getRightArg().clone()));
+			}
+			ExtractedScopedUnionPrefix right = extractSharedPrefixForScopedUnion(join.getRightArg(), union, true);
+			if (right != null) {
+				return new ExtractedScopedUnionPrefix(right.prefix,
+						joinOrSingle(join.getLeftArg().clone(), right.residual));
+			}
+		}
+		if (allowWholeExpression && sharedScopedUnionPrefixCandidate(tupleExpr, union)) {
+			return new ExtractedScopedUnionPrefix(tupleExpr.clone(), null);
+		}
+		return null;
+	}
+
+	private static boolean sharedScopedUnionPrefixCandidate(TupleExpr pushed, Union union) {
+		return pushed != null
+				&& !(pushed instanceof BindingSetAssignment)
+				&& !barrier(pushed)
+				&& !unassuredSharedScopedUnionNames(pushed, union).isEmpty();
 	}
 
 	private static ExtractedFiniteBinding extractFiniteBindingForScopedUnion(TupleExpr tupleExpr, Union union) {
@@ -733,6 +1001,202 @@ public final class StandardCascadesRules {
 		return alternative;
 	}
 
+	private static boolean removableScopeChange(TupleExpr tupleExpr, OptimizationGoal goal) {
+		return removeSafeScopeChange(tupleExpr, goal) != null;
+	}
+
+	private static boolean hasSafeScopeChangeRemoval(TupleExpr tupleExpr, OptimizationGoal goal) {
+		return !safeScopeChangeRemovalAlternatives(tupleExpr, goal).isEmpty();
+	}
+
+	private static List<TupleExpr> safeScopeChangeRemovalAlternatives(TupleExpr tupleExpr, OptimizationGoal goal) {
+		if (tupleExpr == null) {
+			return List.of();
+		}
+		List<TupleExpr> alternatives = new ArrayList<>();
+		TupleExpr direct = removeSafeScopeChange(tupleExpr, goal);
+		if (direct != null) {
+			alternatives.add(direct);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary && unary.getArg() != null) {
+			TupleExpr child = removeSafeScopeChange(unary.getArg(), goal);
+			if (child != null) {
+				UnaryTupleOperator parent = (UnaryTupleOperator) tupleExpr.clone();
+				parent.setArg(child);
+				alternatives.add(parent);
+			}
+		}
+		if (tupleExpr instanceof BinaryTupleOperator binary) {
+			TupleExpr left = binary.getLeftArg() == null
+					? null
+					: removeSafeScopeChange(binary.getLeftArg(), goal, childIncomingBindings(binary, 0));
+			if (left != null) {
+				BinaryTupleOperator parent = (BinaryTupleOperator) tupleExpr.clone();
+				parent.setLeftArg(left);
+				alternatives.add(parent);
+			}
+			TupleExpr right = binary.getRightArg() == null
+					? null
+					: removeSafeScopeChange(binary.getRightArg(), goal, childIncomingBindings(binary, 1));
+			if (right != null) {
+				BinaryTupleOperator parent = (BinaryTupleOperator) tupleExpr.clone();
+				parent.setRightArg(right);
+				alternatives.add(parent);
+			}
+		}
+		return alternatives.isEmpty() ? List.of() : List.copyOf(alternatives);
+	}
+
+	private static TupleExpr removeSafeScopeChange(TupleExpr tupleExpr, OptimizationGoal goal) {
+		return removeSafeScopeChange(tupleExpr, goal, Set.of());
+	}
+
+	private static String removableScopeChangeKinds(TupleExpr tupleExpr, OptimizationGoal goal) {
+		List<String> kinds = new ArrayList<>();
+		collectRemovableScopeChangeKinds(tupleExpr, goal, Set.of(), kinds);
+		return kinds.isEmpty() ? "none" : String.join(",", kinds);
+	}
+
+	private static void collectRemovableScopeChangeKinds(TupleExpr tupleExpr, OptimizationGoal goal,
+			Set<String> contextualIncomingBindings, List<String> kinds) {
+		if (tupleExpr == null) {
+			return;
+		}
+		if (removeSafeScopeChange(tupleExpr, goal, contextualIncomingBindings) != null) {
+			addIfAbsent(kinds, scopeChangeKind(tupleExpr));
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			collectRemovableScopeChangeKinds(unary.getArg(), goal, contextualIncomingBindings, kinds);
+		} else if (tupleExpr instanceof BinaryTupleOperator binary) {
+			collectRemovableScopeChangeKinds(binary.getLeftArg(), goal, childIncomingBindings(binary, 0), kinds);
+			collectRemovableScopeChangeKinds(binary.getRightArg(), goal, childIncomingBindings(binary, 1), kinds);
+		}
+	}
+
+	private static void addIfAbsent(List<String> values, String value) {
+		if (value != null && !values.contains(value)) {
+			values.add(value);
+		}
+	}
+
+	private static String scopeChangeKind(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter) {
+			return "Filter";
+		}
+		if (tupleExpr instanceof Union) {
+			return "Union";
+		}
+		if (tupleExpr instanceof Extension) {
+			return "Extension";
+		}
+		return tupleExpr.getClass()
+				.getSimpleName();
+	}
+
+	private static TupleExpr removeSafeScopeChange(TupleExpr tupleExpr, OptimizationGoal goal,
+			Set<String> contextualIncomingBindings) {
+		if (tupleExpr instanceof Filter filter && filter.isVariableScopeChange()) {
+			Set<String> protectedNames = branchLocalBindOrValuesNames(filter.getArg());
+			if (incomingBindingNames(goal, contextualIncomingBindings).stream().anyMatch(protectedNames::contains)) {
+				return null;
+			}
+			Filter alternative = filter.clone();
+			alternative.setVariableScopeChange(false);
+			return alternative;
+		}
+		if (tupleExpr instanceof Union union && union.isVariableScopeChange()) {
+			Set<String> protectedNames = branchLocalBindOrValuesNames(union.getLeftArg());
+			protectedNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
+			if (incomingBindingNames(goal, contextualIncomingBindings).stream().anyMatch(protectedNames::contains)) {
+				return null;
+			}
+			Union alternative = new Union(union.getLeftArg().clone(), union.getRightArg().clone());
+			alternative.setVariableScopeChange(false);
+			return alternative;
+		}
+		if (tupleExpr instanceof Extension extension && extension.isVariableScopeChange()) {
+			Set<String> protectedNames = extensionBindNames(extension);
+			if (incomingBindingNames(goal, contextualIncomingBindings).stream().anyMatch(protectedNames::contains)) {
+				return null;
+			}
+			Extension alternative = new Extension(extension.getArg().clone(),
+					extension.getElements()
+							.stream()
+							.map(element -> element.clone())
+							.toList());
+			alternative.setVariableScopeChange(false);
+			return alternative;
+		}
+		return null;
+	}
+
+	private static Set<String> incomingBindingNames(OptimizationGoal goal) {
+		return incomingBindingNames(goal, Set.of());
+	}
+
+	private static Set<String> incomingBindingNames(OptimizationGoal goal, Set<String> contextualIncomingBindings) {
+		Set<String> contextual = plannerNames(contextualIncomingBindings);
+		if (goal == null || goal.requiredProperties() == null) {
+			return contextual;
+		}
+		Set<String> incoming = new HashSet<>(plannerNames(goal.requiredProperties().inputBoundVars()));
+		incoming.addAll(contextual);
+		return incoming.isEmpty() ? Set.of() : Set.copyOf(incoming);
+	}
+
+	private static Set<String> childIncomingBindings(BinaryTupleOperator binary, int childIndex) {
+		if (binary instanceof Join join) {
+			TupleExpr sibling = childIndex == 0 ? join.getRightArg() : join.getLeftArg();
+			return plannerNames(sibling == null ? Set.of() : sibling.getBindingNames());
+		}
+		if (childIndex == 1 && binary instanceof LeftJoin leftJoin) {
+			return plannerNames(leftJoin.getLeftArg() == null ? Set.of() : leftJoin.getLeftArg().getBindingNames());
+		}
+		if (childIndex == 1 && binary instanceof Difference difference) {
+			return plannerNames(difference.getLeftArg() == null ? Set.of() : difference.getLeftArg().getBindingNames());
+		}
+		return Set.of();
+	}
+
+	private static TupleExpr extensionJoinAlternative(TupleExpr prefix, Extension extension, boolean prefixIsLeft,
+			OptimizationGoal goal) {
+		if (prefix == null
+				|| prefix instanceof BindingSetAssignment
+				|| extension == null
+				|| !extension.isVariableScopeChange()
+				|| extension.getArg() == null) {
+			return null;
+		}
+		Set<String> prefixNames = plannerNames(prefix.getBindingNames());
+		if (prefixNames.isEmpty()) {
+			return null;
+		}
+		Set<String> extensionBindNames = extensionBindNames(extension);
+		for (String prefixName : prefixNames) {
+			if (extensionBindNames.contains(prefixName)) {
+				return null;
+			}
+		}
+		Set<String> extensionArgNames = plannerNames(extension.getArg().getBindingNames());
+		Set<String> expressionNames = extensionExpressionNames(extension);
+		for (String prefixName : prefixNames) {
+			if (expressionNames.contains(prefixName) && !extensionArgNames.contains(prefixName)) {
+				return null;
+			}
+		}
+		TupleExpr joinedArg = prefixIsLeft
+				? new Join(prefix.clone(), extension.getArg().clone())
+				: new Join(extension.getArg().clone(), prefix.clone());
+		Extension alternative = new Extension(joinedArg,
+				extension.getElements()
+						.stream()
+						.map(element -> element.clone())
+						.toList());
+		alternative.setVariableScopeChange(true);
+		TupleExpr unscoped = removeSafeScopeChange(alternative, goal);
+		return unscoped == null ? alternative : unscoped;
+	}
+
 	private static boolean canPushFiniteBindingsIntoScopeChangingExtension(BindingSetAssignment finite,
 			Extension extension) {
 		if (finite == null || extension == null || !extension.isVariableScopeChange() || extension.getArg() == null) {
@@ -767,6 +1231,44 @@ public final class StandardCascadesRules {
 		return names;
 	}
 
+	private static Set<String> extensionExpressionNames(Extension extension) {
+		Set<String> names = new HashSet<>();
+		if (extension == null) {
+			return names;
+		}
+		for (var element : extension.getElements()) {
+			names.addAll(plannerNames(VarNameCollector.process(element.getExpr())));
+		}
+		return names;
+	}
+
+	private static Set<String> safeAssuredMinusSharedVars(Difference difference) {
+		Set<String> shared = plannerNames(difference.getLeftArg().getBindingNames());
+		shared.retainAll(plannerNames(difference.getRightArg().getBindingNames()));
+		if (shared.isEmpty()) {
+			return Set.of();
+		}
+		if (!plannerNames(difference.getLeftArg().getAssuredBindingNames()).containsAll(shared)
+				|| !plannerNames(difference.getRightArg().getAssuredBindingNames()).containsAll(shared)) {
+			return Set.of();
+		}
+		return shared;
+	}
+
+	private static boolean isSimpleCorrelatableMinusRhs(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
+			if (!plannerNames(filter.getArg().getAssuredBindingNames()).containsAll(conditionNames)) {
+				return false;
+			}
+			return isSimpleCorrelatableMinusRhs(filter.getArg());
+		}
+		return false;
+	}
+
 	private static final class ExtractedFiniteBinding {
 		private final BindingSetAssignment finite;
 		private final TupleExpr residual;
@@ -777,75 +1279,58 @@ public final class StandardCascadesRules {
 		}
 	}
 
-	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {
-		Set<String> names = new HashSet<>();
-		if (tupleExpr == null) {
-			return names;
+	private static final class ExtractedScopedUnionPrefix {
+		private final TupleExpr prefix;
+		private final TupleExpr residual;
+
+		private ExtractedScopedUnionPrefix(TupleExpr prefix, TupleExpr residual) {
+			this.prefix = prefix;
+			this.residual = residual;
 		}
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Extension extension) {
-				for (var element : extension.getElements()) {
-					String name = element.getName();
-					if (name != null && !name.startsWith("_const_")) {
-						names.add(name);
-					}
-				}
-				super.meet(extension);
-			}
+	}
 
-			@Override
-			public void meet(BindingSetAssignment assignment) {
-				names.addAll(plannerNames(assignment.getBindingNames()));
-			}
-
-			@Override
-			public void meet(Projection projection) {
-				// Sub-select internals are scoped behind the projection boundary.
-			}
-
-			@Override
-			public void meet(Union union) {
-				if (!union.isVariableScopeChange()) {
-					super.meet(union);
-				}
-			}
-		});
-		return names;
+	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {
+		return new HashSet<>(CascadesRewriteSupport.branchLocalBindOrValuesNames(tupleExpr));
 	}
 
 	private static Set<String> plannerNames(Set<String> names) {
-		if (names == null || names.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> result = new HashSet<>();
-		for (String name : names) {
-			if (name != null && !name.startsWith("_const_")) {
-				result.add(name);
-			}
-		}
-		return result;
+		return new HashSet<>(CascadesRewriteSupport.plannerNames(names));
+	}
+
+	private static Set<String> identityProjectionNames(Projection projection) {
+		Set<String> names = CascadesRewriteSupport.identityProjectionNames(projection);
+		return names == null ? null : new HashSet<>(names);
+	}
+
+	private static TupleExpr projectJoinInput(TupleExpr input, Set<String> neededNames) {
+		return CascadesRewriteSupport.project(input, neededNames);
 	}
 
 	private static List<ValueExpr> splitConjuncts(ValueExpr expression) {
-		if (expression instanceof And and) {
-			List<ValueExpr> result = new ArrayList<>();
-			result.addAll(splitConjuncts(and.getLeftArg()));
-			result.addAll(splitConjuncts(and.getRightArg()));
-			return result;
+		return CascadesRewriteSupport.splitConjuncts(expression);
+	}
+
+	private static TupleExpr pushFilterToSmallestAssuredInput(TupleExpr tupleExpr, ValueExpr condition,
+			Set<String> conditionVars) {
+		if (tupleExpr == null || condition == null || conditionVars == null
+				|| !plannerNames(tupleExpr.getAssuredBindingNames()).containsAll(conditionVars)) {
+			return null;
 		}
-		return expression == null ? List.of() : List.of(expression);
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			TupleExpr pushedLeft = pushFilterToSmallestAssuredInput(join.getLeftArg(), condition, conditionVars);
+			if (pushedLeft != null) {
+				return new Join(pushedLeft, join.getRightArg().clone());
+			}
+			TupleExpr pushedRight = pushFilterToSmallestAssuredInput(join.getRightArg(), condition, conditionVars);
+			if (pushedRight != null) {
+				return new Join(join.getLeftArg().clone(), pushedRight);
+			}
+		}
+		return new Filter(tupleExpr.clone(), condition.clone());
 	}
 
 	private static ValueExpr combineConjuncts(List<ValueExpr> conjuncts) {
-		if (conjuncts == null || conjuncts.isEmpty()) {
-			return null;
-		}
-		ValueExpr combined = conjuncts.getFirst().clone();
-		for (int i = 1; i < conjuncts.size(); i++) {
-			combined = new And(combined, conjuncts.get(i).clone());
-		}
-		return combined;
+		return CascadesRewriteSupport.combineConjuncts(conjuncts);
 	}
 
 	private static boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {

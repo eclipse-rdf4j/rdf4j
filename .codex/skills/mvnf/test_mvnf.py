@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -106,6 +107,112 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
             self.assertIn("-Pjacoco", verify_args)
             self.assertIn("-Dfoo=bar", verify_args)
 
+    def test_concurrent_repo_run_fails_before_invoking_maven(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._write_minimal_repo(Path(tmp))
+            calls = repo / "calls.txt"
+            started = repo / "mvn-started"
+            fake_mvn = self._write_fake_mvn(repo, calls, started)
+
+            first = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "ExampleTest#runs",
+                    "--mvn",
+                    str(fake_mvn),
+                    "--retain-logs",
+                ],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            try:
+                self._wait_for_file(started)
+
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "ExampleTest#runs",
+                        "--mvn",
+                        str(fake_mvn),
+                        "--retain-logs",
+                    ],
+                    cwd=repo,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=10,
+                )
+
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("another mvnf", result.stdout)
+                self.assertIn("--allow-concurrent", result.stdout)
+                self.assertEqual(1, len(calls.read_text(encoding="utf-8").splitlines()))
+            finally:
+                first.terminate()
+                try:
+                    first.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    first.kill()
+                    first.communicate(timeout=5)
+
+    def test_allow_concurrent_overrides_repo_run_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._write_minimal_repo(Path(tmp))
+            calls = repo / "calls.txt"
+            started = repo / "mvn-started"
+            fake_mvn = self._write_fake_mvn(repo, calls, started)
+
+            first = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "ExampleTest#runs",
+                    "--mvn",
+                    str(fake_mvn),
+                    "--retain-logs",
+                ],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            try:
+                self._wait_for_file(started)
+
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "ExampleTest#runs",
+                        "--mvn",
+                        str(fake_mvn),
+                        "--retain-logs",
+                        "--allow-concurrent",
+                    ],
+                    cwd=repo,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=10,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Continuing because --allow-concurrent was supplied", result.stdout)
+                self.assertEqual(3, len(calls.read_text(encoding="utf-8").splitlines()))
+            finally:
+                first.terminate()
+                try:
+                    first.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    first.kill()
+                    first.communicate(timeout=5)
+
     def _write_minimal_repo(self, repo: Path, class_name: str = "ExampleTest") -> Path:
         (repo / ".git").mkdir()
         (repo / "pom.xml").write_text("<project />\n", encoding="utf-8")
@@ -118,8 +225,24 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
         )
         return repo
 
-    def _write_fake_mvn(self, repo: Path, calls: Path) -> Path:
+    def _write_fake_mvn(self, repo: Path, calls: Path, started: Path | None = None) -> Path:
         fake_mvn = repo / "fake-mvn.py"
+        slow_block = ""
+        if started is not None:
+            claim = started.with_suffix(".claim")
+            slow_block = textwrap.dedent(
+                f"""\
+                import os
+                import time
+                try:
+                    fd = os.open({str(claim)!r}, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    os.close(fd)
+                    Path({str(started)!r}).write_text("started\\n", encoding="utf-8")
+                    time.sleep(30)
+                except FileExistsError:
+                    pass
+                """
+            )
         fake_mvn.write_text(
             textwrap.dedent(
                 f"""\
@@ -130,11 +253,20 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
                 with Path({str(calls)!r}).open("a", encoding="utf-8") as out:
                     out.write("\\0".join(sys.argv[1:]) + "\\n")
                 """
-            ),
+            )
+            + slow_block,
             encoding="utf-8",
         )
         os.chmod(fake_mvn, 0o755)
         return fake_mvn
+
+    def _wait_for_file(self, path: Path) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if path.is_file():
+                return
+            time.sleep(0.05)
+        self.fail(f"Timed out waiting for {path}")
 
     def _verify_args(self, calls: Path) -> list[str]:
         return self._all_args(calls)[1]

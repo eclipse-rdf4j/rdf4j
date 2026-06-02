@@ -19,6 +19,8 @@ ROW_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)([KMB])?")
 CARTESIAN_WORK_RE = re.compile(r"plannedCostCartesianWorkRows=([0-9]+(?:\.[0-9]+)?)([KMB])?")
 SPO_DIRECT_LOOKUP_RE = re.compile(
 		r"StatementPattern.*plannedIndexAccessMode=directLookup.*plannedLookupComponents=\[S, P, O\]")
+STATEMENT_PATTERN_RE = re.compile(r"StatementPattern")
+SUBJECT_RE = re.compile(r"\bs:\s+")
 UNBOUND_SUBJECT_RE = re.compile(r"\bs:\s+Var .*bindingState=unbound")
 
 
@@ -45,7 +47,7 @@ class PlanRiskDetector:
 		risks: list[PlanRisk] = []
 		for match in CARTESIAN_WORK_RE.finditer(line):
 			rows = parse_rows(match.group(0).split("=", 1)[1])
-			if rows > self.max_cartesian_work_rows:
+			if rows > self.max_cartesian_work_rows and not bounded_connected_work(line, self.max_cartesian_work_rows):
 				risks.append(PlanRisk(
 					"cartesian-work",
 					f"plannedCostCartesianWorkRows={format_rows(rows)} exceeds "
@@ -58,16 +60,18 @@ class PlanRiskDetector:
 		risks: list[PlanRisk] = []
 		if self.pending_direct_spo_header is not None:
 			self.pending_direct_spo_lines -= 1
-			if UNBOUND_SUBJECT_RE.search(line):
-				risks.append(PlanRisk(
-					"unbound-spo-direct-lookup",
-					"direct [S, P, O] lookup is planned while the subject binding is still unbound",
-					self.pending_direct_spo_header.rstrip("\n") + "\n" + line.rstrip("\n"),
-				))
+			if SUBJECT_RE.search(line):
+				if UNBOUND_SUBJECT_RE.search(line):
+					risks.append(PlanRisk(
+						"unbound-spo-direct-lookup",
+						"direct [S, P, O] lookup is planned while the subject binding is still unbound",
+						self.pending_direct_spo_header.rstrip("\n") + "\n" + line.rstrip("\n"),
+					))
 				self.pending_direct_spo_header = None
 				self.pending_direct_spo_lines = 0
-			elif self.pending_direct_spo_lines <= 0:
+			elif STATEMENT_PATTERN_RE.search(line) or self.pending_direct_spo_lines <= 0:
 				self.pending_direct_spo_header = None
+				self.pending_direct_spo_lines = 0
 		if SPO_DIRECT_LOOKUP_RE.search(line):
 			self.pending_direct_spo_header = line
 			self.pending_direct_spo_lines = 8
@@ -87,6 +91,29 @@ def parse_rows(value: str) -> float:
 	elif suffix == "B":
 		rows *= 1_000_000_000.0
 	return rows
+
+
+def metric_rows(line: str, metric_name: str) -> float:
+	match = re.search(rf"{re.escape(metric_name)}=([0-9]+(?:\.[0-9]+)?)([KMB])?", line)
+	if not match:
+		return float("nan")
+	return parse_rows(match.group(0).split("=", 1)[1])
+
+
+def bounded_connected_work(line: str, max_work_rows: float) -> bool:
+	connected_components = metric_rows(line, "optimizer.connectedComponentCount")
+	planned_cost_work = metric_rows(line, "plannedCostWorkRows")
+	planned_work = metric_rows(line, "plannedWorkRows")
+	return (
+		connected_components == 1.0
+		and is_finite(planned_cost_work)
+		and planned_cost_work <= max_work_rows
+		and (not is_finite(planned_work) or planned_work <= max_work_rows)
+	)
+
+
+def is_finite(value: float) -> bool:
+	return value == value and value not in (float("inf"), float("-inf"))
 
 
 def format_rows(rows: float) -> str:
@@ -165,16 +192,30 @@ def self_test() -> int:
 	bounded_cartesian = [
 		"Join (plannedCostCartesianWorkRows=25.0K, plannedCostWorkRows=30.0K)\n"
 	]
+	connected_filter_diagnostic_cartesian = [
+		"Filter (plannedCostCartesianWorkRows=146130.4M, plannedCostWorkRows=13.1K, "
+		"plannedWorkRows=13.1K, optimizer.connectedComponentCount=1.00)\n"
+	]
 	bound_direct_lookup = [
 		"StatementPattern (plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O])\n",
 		"  s: Var (name=rel) (bindingState=bound)\n",
+	]
+	bound_direct_lookup_with_unbound_sibling = [
+		"StatementPattern (plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O]) [right]\n",
+		"  s: Var (name=line) (bindingState=bound)\n",
+		"  p: Var (name=_const_type) (bindingState=bound)\n",
+		"  o: Var (name=_const_line) (bindingState=bound)\n",
+		"StatementPattern (plannedIndexAccessMode=directLookup, plannedLookupComponents=[P, O]) [right]\n",
+		"  s: Var (name=section) (bindingState=unbound)\n",
 	]
 
 	checks = [
 		("dangerous cartesian", dangerous_cartesian, True),
 		("dangerous direct lookup", dangerous_direct_lookup, True),
 		("bounded cartesian", bounded_cartesian, False),
+		("connected filter diagnostic cartesian", connected_filter_diagnostic_cartesian, False),
 		("bound direct lookup", bound_direct_lookup, False),
+		("bound direct lookup with unbound sibling", bound_direct_lookup_with_unbound_sibling, False),
 	]
 	for name, sample, expected_risk in checks:
 		risks = scan_lines(sample, DEFAULT_MAX_CARTESIAN_WORK_ROWS)

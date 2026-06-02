@@ -13,16 +13,22 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -179,9 +185,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 				if ((mask & bit) != 0) {
 					continue;
 				}
-				boolean disconnected = !intersects(state.boundVars(), factorVars.get(factorIndex));
-				String extensionRejection = connectedExtensionRejection(factors, mask, factorIndex, state.boundVars(),
-						factorVars);
+				boolean disconnectedByVars = !intersects(state.boundVars(), factorVars.get(factorIndex));
+				IntPredicate prefixContains = prefixMaskContains(mask);
+				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
+						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex,
+								state.boundVars(), factorVars);
+				String extensionRejection = connectedExtensionRejection(factors, prefixContains, factorIndex,
+						state.boundVars(), factorVars, bridgeEnabledFiniteAnchor);
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
@@ -191,7 +201,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
-						prefixFactors, costModel, fallbackStatistics, estimationTier, disconnected);
+						prefixFactors, costModel, fallbackStatistics, estimationTier,
+						disconnectedByVars && !bridgeEnabledFiniteAnchor);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
@@ -279,9 +290,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 					}
 					continue;
 				}
-				boolean disconnected = hasPrefix && !intersects(boundVars, factorVars.get(factorIndex));
+				boolean disconnectedByVars = hasPrefix && !intersects(boundVars, factorVars.get(factorIndex));
+				IntPredicate prefixContains = prefixOrderContains(order);
+				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
+						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex, boundVars,
+								factorVars);
 				String extensionRejection = hasPrefix
-						? connectedExtensionRejection(factors, maskFor(order), factorIndex, boundVars, factorVars)
+						? connectedExtensionRejection(factors, prefixContains, factorIndex, boundVars, factorVars,
+								bridgeEnabledFiniteAnchor)
 						: null;
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
@@ -292,7 +308,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
-						prefixFactors, costModel, fallbackStatistics, estimationTier, disconnected);
+						prefixFactors, costModel, fallbackStatistics, estimationTier,
+						disconnectedByVars && !bridgeEnabledFiniteAnchor);
 				if (step == null) {
 					if (trace.enabled()) {
 						trace.add("greedy reject order=" + order + " f" + factorIndex
@@ -448,9 +465,11 @@ final class LmdbCascadesConnectedJoinPlanner {
 			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier, boolean disconnected) {
 		TupleExpr factor = factors.get(factorIndex);
+		Map<String, Set<Value>> finiteBindingValues = finiteBindingValues(prefixFactors, boundVars);
 		CostContext context = CostContext.forOptimization(boundVars, prefixRows,
-				Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows : Double.NaN, nested, true, Map.of(),
-				prefixFactors).withEstimationTier(estimationTier == null ? EstimationTier.STANDARD : estimationTier);
+				Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows : Double.NaN, nested, true,
+				finiteBindingValues, prefixFactors)
+				.withEstimationTier(estimationTier == null ? EstimationTier.STANDARD : estimationTier);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(factor, context);
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate
 				.orElseGet(() -> fallbackEstimate(factor, fallbackStatistics));
@@ -584,6 +603,71 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return new JoinFactorCostModel.FactorCostEstimate(rows, rows, strings, doubles);
 	}
 
+	private static Map<String, Set<Value>> finiteBindingValues(List<TupleExpr> prefixFactors,
+			Set<String> boundVars) {
+		if (prefixFactors == null || prefixFactors.isEmpty() || boundVars == null || boundVars.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<Value>> values = new LinkedHashMap<>();
+		for (TupleExpr prefixFactor : prefixFactors) {
+			addFiniteBindingValues(values, prefixFactor);
+		}
+		if (values.isEmpty()) {
+			return Map.of();
+		}
+		Set<String> bound = plannerNames(boundVars);
+		Map<String, Set<Value>> retained = new LinkedHashMap<>();
+		for (Map.Entry<String, Set<Value>> entry : values.entrySet()) {
+			if (bound.contains(entry.getKey()) && entry.getValue() != null && !entry.getValue().isEmpty()) {
+				retained.put(entry.getKey(), Set.copyOf(entry.getValue()));
+			}
+		}
+		return retained.isEmpty() ? Map.of() : Map.copyOf(retained);
+	}
+
+	private static void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues,
+			TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			addFiniteBindingValues(finiteBindingValues, assignment);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			addFiniteBindingValues(finiteBindingValues, filter.getArg());
+			return;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			addFiniteBindingValues(finiteBindingValues, extension.getArg());
+			return;
+		}
+		if (tupleExpr instanceof Join join) {
+			addFiniteBindingValues(finiteBindingValues, join.getLeftArg());
+			addFiniteBindingValues(finiteBindingValues, join.getRightArg());
+		}
+	}
+
+	private static void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues,
+			BindingSetAssignment assignment) {
+		Map<String, Set<Value>> assignmentValues = new HashMap<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			for (String bindingName : bindingSet.getBindingNames()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value != null) {
+					assignmentValues.computeIfAbsent(bindingName, ignored -> new HashSet<>()).add(value);
+				}
+			}
+		}
+		for (Map.Entry<String, Set<Value>> entry : assignmentValues.entrySet()) {
+			finiteBindingValues.merge(entry.getKey(), Set.copyOf(entry.getValue()), (left, right) -> {
+				Set<Value> intersection = new HashSet<>(left);
+				intersection.retainAll(right);
+				return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
+			});
+		}
+	}
+
 	private static State better(State incumbent, State candidate) {
 		if (incumbent == null) {
 			return candidate;
@@ -599,8 +683,79 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return pathHasBoundEndpoint(factor, initialBoundVars) || !pathHasEndpointBinder;
 	}
 
-	private static String connectedExtensionRejection(List<TupleExpr> factors, int prefixMask, int candidateIndex,
-			Set<String> prefixVars, List<Set<String>> factorVars) {
+	private static int compareAccessPathQuality(List<Step> left, List<Step> right) {
+		if (left == right) {
+			return 0;
+		}
+		int leftSize = left == null ? 0 : left.size();
+		int rightSize = right == null ? 0 : right.size();
+		int limit = Math.min(leftSize, rightSize);
+		for (int i = 0; i < limit; i++) {
+			int comparison = compareAccessPathQuality(left.get(i), right.get(i));
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return Integer.compare(leftSize, rightSize);
+	}
+
+	private static int compareAccessPathQuality(Step left, Step right) {
+		if (left == right) {
+			return 0;
+		}
+		if (left == null) {
+			return 1;
+		}
+		if (right == null) {
+			return -1;
+		}
+		int comparison = compareFiniteDoubleMetric(left, right, TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, true);
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = compareFiniteDoubleMetric(left, right, TelemetryMetricNames.PLANNED_ACCESS_ROWS, true);
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = compareFiniteDoubleMetric(left, right, TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, false);
+		if (comparison != 0) {
+			return comparison;
+		}
+		return compareAccessMode(left, right);
+	}
+
+	private static int compareFiniteDoubleMetric(Step left, Step right, String metricName, boolean lowerPreferred) {
+		double leftValue = left.doubleMetrics().getOrDefault(metricName, Double.NaN);
+		double rightValue = right.doubleMetrics().getOrDefault(metricName, Double.NaN);
+		if (!Double.isFinite(leftValue) || leftValue < 0.0d || !Double.isFinite(rightValue) || rightValue < 0.0d) {
+			return 0;
+		}
+		int comparison = Double.compare(leftValue, rightValue);
+		return lowerPreferred ? comparison : -comparison;
+	}
+
+	private static int compareAccessMode(Step left, Step right) {
+		String leftMode = left.stringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		String rightMode = right.stringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		if (leftMode == null || rightMode == null) {
+			return 0;
+		}
+		return Integer.compare(accessModeRank(leftMode), accessModeRank(rightMode));
+	}
+
+	private static int accessModeRank(String accessMode) {
+		return switch (accessMode) {
+		case "directLookup" -> 0;
+		case TelemetryMetricNames.INDEX_ACCESS_MODE_DISTINCT_CURSOR_SKIP -> 1;
+		case "prefixScan" -> 2;
+		case "propertyPath" -> 3;
+		default -> 4;
+		};
+	}
+
+	private static String connectedExtensionRejection(List<TupleExpr> factors, IntPredicate prefixContains,
+			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars,
+			boolean bridgeEnabledFiniteAnchor) {
 		TupleExpr candidate = factors.get(candidateIndex);
 		Set<String> candidateVars = factorVars.get(candidateIndex);
 		if (path(candidate)) {
@@ -621,12 +776,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (intersects(prefixVars, candidateVars)) {
 			return null;
 		}
-		return disconnectedFiniteAnchorEnablesBridge(factors, prefixMask, candidateIndex, prefixVars, factorVars)
-				? null
-				: "no-shared-vars";
+		return bridgeEnabledFiniteAnchor ? null : "no-shared-vars";
 	}
 
-	private static boolean disconnectedFiniteAnchorEnablesBridge(List<TupleExpr> factors, int prefixMask,
+	private static boolean disconnectedFiniteAnchorEnablesBridge(List<TupleExpr> factors, IntPredicate prefixContains,
 			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars) {
 		TupleExpr candidate = factors.get(candidateIndex);
 		if (!(candidate instanceof BindingSetAssignment assignment) || !smallFiniteAssignment(assignment)) {
@@ -634,7 +787,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		Set<String> candidateVars = factorVars.get(candidateIndex);
 		for (int i = 0; i < factors.size(); i++) {
-			if (i == candidateIndex || (prefixMask & (1 << i)) != 0) {
+			if (i == candidateIndex || prefixContains.test(i)) {
 				continue;
 			}
 			Set<String> bridgeVars = factorVars.get(i);
@@ -643,6 +796,18 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 		return false;
+	}
+
+	private static IntPredicate prefixMaskContains(int prefixMask) {
+		return factorIndex -> (prefixMask & (1 << factorIndex)) != 0;
+	}
+
+	private static IntPredicate prefixOrderContains(List<Integer> order) {
+		if (order == null || order.isEmpty()) {
+			return ignored -> false;
+		}
+		Set<Integer> prefixIndices = Set.copyOf(order);
+		return prefixIndices::contains;
 	}
 
 	private static boolean smallFiniteAssignment(BindingSetAssignment assignment) {
@@ -1305,6 +1470,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 			if (comparison != 0) {
 				return comparison;
 			}
+			comparison = compareAccessPathQuality(steps, other.steps);
+			if (comparison != 0) {
+				return comparison;
+			}
 			return compareOrder(order, other.order);
 		}
 
@@ -1349,6 +1518,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 				return comparison;
 			}
 			comparison = Double.compare(outputRows, other.outputRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = compareAccessPathQuality(this, other);
 			if (comparison != 0) {
 				return comparison;
 			}

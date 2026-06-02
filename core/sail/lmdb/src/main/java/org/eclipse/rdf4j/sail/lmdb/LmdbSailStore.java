@@ -92,6 +92,7 @@ class LmdbSailStore implements SailStore {
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 4096;
 	private static final int EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD = 4096;
+	private static final long SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET = 100_000L;
 	private static final int INITIAL_PENDING_APPROVE_CAPACITY = 32;
 	private static final boolean LMDB_STORE_PATH_EVENTS_ENABLED = Boolean.getBoolean("rdf4j.benchmark.profiling")
 			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
@@ -540,7 +541,7 @@ class LmdbSailStore implements SailStore {
 				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
 				.withEstimateCacheSeconds(60)
 				.withZeroIntersectionExactDistinctLimit(0)
-				.withZeroIntersectionRowBudget(0)
+				.withZeroIntersectionRowBudget(SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET)
 				.withZeroIntersectionSampleSize(0)
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
 						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS));

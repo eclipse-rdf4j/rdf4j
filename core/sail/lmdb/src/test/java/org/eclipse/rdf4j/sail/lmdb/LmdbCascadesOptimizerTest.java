@@ -22,6 +22,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -31,8 +32,12 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -43,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
@@ -55,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplica
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -92,6 +99,22 @@ class LmdbCascadesOptimizerTest {
 		assertTrue(statistics.statementPattern(pattern(), Set.of()).isPresent());
 
 		assertEquals(List.of(EstimationTier.STANDARD), statistics.estimationTiers);
+	}
+
+	@Test
+	void lmdbRuleRegistryIncludesScopeRemovalAndExtensionPushdown() {
+		RuleRegistry registry = LmdbCascadesRuleProvider.rules(new EvaluationStatistics());
+
+		assertTrue(registry.rules()
+				.stream()
+				.map(CascadesRule::id)
+				.anyMatch("safe-scope-change-removal"::equals),
+				"LMDB Cascades registry must include safe scope removal for scoped UNION/Extension rewrites");
+		assertTrue(registry.rules()
+				.stream()
+				.map(CascadesRule::id)
+				.anyMatch("join-extension-pushdown"::equals),
+				"LMDB Cascades registry must include non-finite prefix pushdown into scoped Extension");
 	}
 
 	@Test
@@ -250,6 +273,130 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void optionalAnchoredLookupKeepsChildWinnersVisible() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-optional-rhs-anchored-lookup".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		LeftJoin optional = new LeftJoin(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(), "", optional, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null)).getFirst();
+
+		assertFalse(application.opaque(),
+				"Optional anchored lookup is a costed RDF4J LeftJoin alternative, not a separate executable subtree; "
+						+ "Cascades must still plan and install child winners");
+		assertEquals("lmdb-optional-anchor-decomposed", application.metadata());
+	}
+
+	@Test
+	void optionalAnchoredLookupDecomposesScopedUnionHashWildcardLeftInput() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-optional-rhs-anchored-lookup".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		LeftJoin optional = new LeftJoin(new Join(prefix, scopedUnion),
+				new StatementPattern(new Var("org"), new Var("employee"), new Var("employee")));
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(), "", optional, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		List<RuleApplication> applications = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null));
+
+		assertEquals(1, applications.size());
+		assertFalse(applications.getFirst().opaque(),
+				"An OPTIONAL estimate must not hide a scoped UNION join where unassured shared variables force "
+						+ "HashJoinIteration to scan wildcard rows; it should keep child winners visible");
+	}
+
+	@Test
+	void budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner() {
+		RecordingStatistics statistics = new RecordingStatistics();
+		LeftJoin optional = sparseQ6OptionalShape();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(4096);
+
+		CascadesPlan plan = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner(
+				CascadesCostModel.from(statistics), LmdbCascadesRuleProvider.rules(statistics), telemetry)
+						.optimize(optional, OptimizationGoal.root(optional, PhysicalProperties.ANY)
+								.asBudgeted(Duration.ofSeconds(10), 4096));
+
+		String trace = String.join("\n", telemetry.trace());
+		assertTrue(plan.winner().isPresent(), trace);
+		assertEquals("lmdb-optional-rhs-anchored-lookup",
+				plan.winner().get().provenance().ruleId(),
+				"Budgeted search already had costed child winners for this q6-shaped OPTIONAL; it should not "
+						+ "fall back after considering the decomposed optional alternative.\n" + trace);
+		assertFalse(trace.contains("lmdb-optional-rhs-anchored-lookup reason=missing-input-winner"), trace);
+	}
+
+	@Test
+	void minusBoundProbeKeepsChildWinnersVisible() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-minus-bound-rhs-probe".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Difference minus = new Difference(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
+		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null)).getFirst();
+
+		assertFalse(application.opaque(),
+				"MINUS bound RHS probe is a costed RDF4J Difference alternative, not a separate executable subtree; "
+						+ "Cascades must still plan and install child winners");
+		assertEquals("lmdb-minus-probe-decomposed", application.metadata());
+	}
+
+	@Test
+	void optionalAndMinusRulesTracePhysicalDecision() {
+		RuleRegistry registry = LmdbCascadesRuleProvider.rules(new RecordingStatistics());
+		CascadesRule optionalRule = registry.rules()
+				.stream()
+				.filter(candidate -> "lmdb-optional-rhs-anchored-lookup".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		CascadesRule minusRule = registry.rules()
+				.stream()
+				.filter(candidate -> "lmdb-minus-bound-rhs-probe".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(64);
+		RuleContext context = new RuleContext(null, null, telemetry, null);
+		LeftJoin optional = new LeftJoin(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
+		Difference minus = new Difference(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
+
+		optionalRule.apply(new MemoExpr(1, 7, "LeftJoin", List.of(), "", optional, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), OptimizationGoal.root(), context);
+		minusRule.apply(new MemoExpr(2, 8, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), OptimizationGoal.root(), context);
+
+		String trace = String.join("\n", telemetry.trace());
+		assertTrue(trace.contains("lmdb-rule id=lmdb-optional-rhs-anchored-lookup status=applied"), trace);
+		assertTrue(trace.contains("lmdb-rule id=lmdb-minus-bound-rhs-probe status=applied"), trace);
+		assertTrue(trace.contains("opaque=false"), trace);
+		assertTrue(trace.contains("metadata=lmdb-optional-anchor-decomposed"), trace);
+		assertTrue(trace.contains("metadata=lmdb-minus-probe-decomposed"), trace);
+	}
+
+	@Test
 	void cascadesTraceRecordsConsideredCostedAcceptedAndDiscardedPlans() {
 		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(64);
 		CascadesRule twoAlternativeRule = new CascadesRule() {
@@ -391,6 +538,53 @@ class LmdbCascadesOptimizerTest {
 
 			assertEquals("auto", root.getStringMetricPlanned("optimizer.cascadesMode"));
 			assertNull(root.getStringMetricPlanned("optimizer.cascadesTrace"));
+			assertNull(root.getStringMetricPlanned("optimizer.cascadesCandidatePlan"));
+		} finally {
+			restoreMode(previousMode);
+			restoreTrace(previousTrace);
+		}
+	}
+
+	@Test
+	void cascadesTraceLimitPropertyBoundsMaterializedTrace() {
+		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousTrace = System.getProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		String previousLimit = System.getProperty("rdf4j.optimizer.lmdb.cascades.traceLimit");
+		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
+		System.setProperty("rdf4j.optimizer.lmdb.cascades.traceLimit", "1");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			QueryRoot root = new QueryRoot(connectedChainJoin(4));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			String trace = root.getStringMetricPlanned("optimizer.cascadesTrace");
+			assertTrue(trace != null);
+			assertTrue(trace.split("\\s*\\|\\|\\s*").length <= 1, trace);
+		} finally {
+			restoreMode(previousMode);
+			restoreTrace(previousTrace);
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.traceLimit", previousLimit);
+		}
+	}
+
+	@Test
+	void traceMaterializesBoundedCascadesCandidatePlan() {
+		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousTrace = System.getProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			QueryRoot root = new QueryRoot(connectedChainJoin(4));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			String candidatePlan = root.getStringMetricPlanned("optimizer.cascadesCandidatePlan");
+			assertTrue(candidatePlan != null);
+			assertTrue(candidatePlan.contains("QueryRoot") || candidatePlan.contains("Join"), candidatePlan);
+			assertTrue(candidatePlan.length() <= 16_400, candidatePlan.length() + "\n" + candidatePlan);
 		} finally {
 			restoreMode(previousMode);
 			restoreTrace(previousTrace);
@@ -456,6 +650,158 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void subplanCandidateAdmitsScopedUnionJoinDistributionOpportunity() throws Exception {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(prefix, scopedUnion);
+
+		Method subplanCandidate = LmdbCascadesOptimizer.class.getDeclaredMethod("subplanCandidate", TupleExpr.class);
+		subplanCandidate.setAccessible(true);
+
+		assertTrue((Boolean) subplanCandidate.invoke(null, join),
+				"Scoped UNION joins with unassured shared bindings must be admitted so Cascades can apply "
+						+ "safe UNION distribution");
+	}
+
+	@Test
+	void emergencyFallbackCoverageDoesNotBlockSubtreePlanning() throws Exception {
+		TupleExpr tupleExpr = pattern();
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesCoveredByWinner",
+				"existing-algebra-emergency-fallback:g1:e2");
+
+		Method cascadesPlannedSubtree = LmdbCascadesOptimizer.class.getDeclaredMethod("cascadesPlannedSubtree",
+				TupleExpr.class);
+		cascadesPlannedSubtree.setAccessible(true);
+
+		assertFalse((Boolean) cascadesPlannedSubtree.invoke(null, tupleExpr),
+				"Emergency fallback coverage is not proof that a subtree was successfully replanned");
+	}
+
+	@Test
+	void emergencyFallbackRuleWithLaterCoverageDoesNotBecomePlanned() throws Exception {
+		TupleExpr tupleExpr = pattern();
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesRule", "existing-algebra-emergency-fallback");
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesCoveredByWinner", "generic-physical-implementation:g2:e3");
+
+		Method cascadesPlannedSubtree = LmdbCascadesOptimizer.class.getDeclaredMethod("cascadesPlannedSubtree",
+				TupleExpr.class);
+		cascadesPlannedSubtree.setAccessible(true);
+
+		assertFalse((Boolean) cascadesPlannedSubtree.invoke(null, tupleExpr),
+				"Any emergency fallback marker on a node must keep it eligible for replanning");
+	}
+
+	@Test
+	void plannedParentWithEmergencyFallbackChildDoesNotHideSubtreeCandidate() throws Exception {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		Join scopedJoin = new Join(prefix, scopedUnion);
+		scopedJoin.setStringMetricPlanned("optimizer.cascadesRule", "existing-algebra-emergency-fallback");
+		Filter plannedParent = new Filter(scopedJoin, new Bound(new Var("fanout")));
+		plannedParent.setStringMetricPlanned("optimizer.cascadesRule", "generic-physical-implementation");
+		QueryRoot root = new QueryRoot(plannedParent);
+		List<Object> candidates = new ArrayList<>();
+
+		collectSubtreeCandidates(root, candidates);
+
+		assertTrue(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == scopedJoin),
+				"A non-fallback parent can still contain an emergency-fallback child that must be replanned");
+	}
+
+	@Test
+	void plannedParentWithFallbackUsageChildDoesNotHideSubtreeCandidate() throws Exception {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		Join scopedJoin = new Join(prefix, scopedUnion);
+		scopedJoin.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "fallback_no_winner");
+		scopedJoin.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-cascades-fallback");
+		Filter plannedParent = new Filter(scopedJoin, new Bound(new Var("fanout")));
+		plannedParent.setStringMetricPlanned("optimizer.cascadesRule", "generic-physical-implementation");
+		QueryRoot root = new QueryRoot(plannedParent);
+		List<Object> candidates = new ArrayList<>();
+
+		collectSubtreeCandidates(root, candidates);
+
+		assertTrue(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == scopedJoin),
+				"Fallback usage/source metadata must keep a covered child eligible for replanning");
+	}
+
+	@Test
+	void genericImplementationAllowsScopedUnionJoinWithUnassuredSharedBindings() {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(prefix, scopedUnion);
+
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(join, false, false),
+				"The generic RDF4J physical join remains legal because HashJoinIteration handles compatible rows "
+						+ "with unbound shared names");
+	}
+
+	@Test
+	void connectedProviderDoesNotOwnScopedUnionSeparatorFactor() {
+		TupleExpr deepPrefix = new Join(
+				new Join(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+						new StatementPattern(new Var("org"), new Var("department"), new Var("department"))),
+				new StatementPattern(new Var("department"), new Var("makesOffer"), new Var("offer")));
+		TupleExpr pageAndFanout = new Join(
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")),
+				scopedFanoutUnion());
+		TupleExpr root = new Join(new Join(deepPrefix,
+				new StatementPattern(new Var("offer"), new Var("itemOffered"), new Var("work"))),
+				new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")), pageAndFanout));
+
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(root),
+				"The connected hypergraph provider must not treat a scoped UNION separator join as an opaque "
+						+ "costed factor; otherwise the selected candidate can be only partially planned");
+	}
+
+	@Test
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	void fallbackStandardPlanDoesNotBeatCheaperApproximateCascadesPlan() throws Exception {
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
+		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
+		Class<?> candidateClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanCandidate");
+		Object autoMode = Enum.valueOf((Class<Enum>) modeClass.asSubclass(Enum.class), "AUTO");
+		Object fallbackPolicy = Enum.valueOf((Class<Enum>) policyClass.asSubclass(Enum.class), "FALLBACK");
+		Constructor<?> candidateConstructor = candidateClass
+				.getDeclaredConstructor(LmdbCascadesOptimizer.class, TupleExpr.class, String.class);
+		candidateConstructor.setAccessible(true);
+		Object standardPlan = candidateConstructor.newInstance(optimizer, pattern(), "test-standard");
+		var costField = candidateClass.getDeclaredField("cost");
+		costField.setAccessible(true);
+		costField.set(standardPlan, CostVector.ofRowsAndWork(10_000.0d, 10_000.0d, QErrorInterval.exact(10_000.0d,
+				"test-standard")));
+		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
+				CostVector.ofRowsAndWork(1.0d, 1.0d, QErrorInterval.exact(1.0d, "test-cascades")), List.of(), true,
+				"budgeted search incomplete");
+		CascadesPlan approximatePlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
+				1, OptimizationGoal.root(), Optional.of(winner), true, List.of("approximate=budget"));
+		Method standardPlanWins = LmdbCascadesOptimizer.class.getDeclaredMethod("standardPlanWins", modeClass,
+				policyClass, candidateClass, CascadesPlan.class);
+		standardPlanWins.setAccessible(true);
+
+		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, fallbackPolicy, standardPlan,
+				approximatePlan),
+				"A legal approximate Cascades winner must still beat standard fallback when the standard plan is "
+						+ "materially more expensive");
+	}
+
+	@Test
 	void opaqueJoinOrderWinnerAnnotatesMaterializedPlanWithoutFallbackNoWinner() {
 		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
 		QueryRoot root = new QueryRoot(leftDeepJoin(4));
@@ -481,6 +827,49 @@ class LmdbCascadesOptimizerTest {
 
 	private static StatementPattern pattern() {
 		return new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+	}
+
+	private static LeftJoin sparseQ6OptionalShape() {
+		TupleExpr deepPath = new Join(
+				new Join(
+						new Join(
+								new Join(new StatementPattern(new Var("person"), iri("a"), iri("Person")),
+										new StatementPattern(new Var("person"), iri("memberOf"), new Var("org"))),
+								new StatementPattern(new Var("org"), iri("department"), new Var("department"))),
+						new StatementPattern(new Var("department"), iri("makesOffer"), new Var("offer"))),
+				new Join(
+						new Join(new StatementPattern(new Var("offer"), iri("itemOffered"), new Var("work")),
+								new StatementPattern(new Var("work"), iri("about"), new Var("topic"))),
+						new StatementPattern(new Var("topic"), iri("mainEntityOfPage"), new Var("page"))));
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), iri("review"), new Var("review")),
+				new StatementPattern(new Var("page"), iri("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		return new LeftJoin(new Join(deepPath, scopedUnion),
+				new StatementPattern(new Var("org"), iri("employee"), new Var("optEmployee")));
+	}
+
+	private static Var iri(String name) {
+		return new Var("_const_" + name, SimpleValueFactory.getInstance().createIRI("urn:test:" + name));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void collectSubtreeCandidates(TupleExpr root, List<Object> candidates) throws Exception {
+		Class<?> collectorClass = Class.forName(
+				LmdbCascadesOptimizer.class.getName() + "$ContextualSubtreeCandidateCollector");
+		Constructor<?> constructor = collectorClass.getDeclaredConstructor(TupleExpr.class, Set.class, List.class);
+		constructor.setAccessible(true);
+		Object collector = constructor.newInstance(root, Set.of(), candidates);
+		root.visit((QueryModelVisitor<RuntimeException>) collector);
+	}
+
+	private static TupleExpr candidateTupleExpr(Object candidate) {
+		try {
+			Method method = candidate.getClass().getDeclaredMethod("tupleExpr");
+			method.setAccessible(true);
+			return (TupleExpr) method.invoke(candidate);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
 	}
 
 	private static TupleExpr leftDeepJoin(int factors) {
@@ -522,6 +911,13 @@ class LmdbCascadesOptimizerTest {
 
 	private static double component(Object vector, String name) {
 		return assertDoesNotThrow(() -> ((Number) vector.getClass().getMethod(name).invoke(vector)).doubleValue());
+	}
+
+	private static Union scopedFanoutUnion() {
+		Union scopedUnion = new Union(new StatementPattern(new Var("work"), new Var("review"), new Var("review")),
+				new StatementPattern(new Var("page"), new Var("event"), new Var("event")));
+		scopedUnion.setVariableScopeChange(true);
+		return scopedUnion;
 	}
 
 	private static void restoreMode(String previousMode) {

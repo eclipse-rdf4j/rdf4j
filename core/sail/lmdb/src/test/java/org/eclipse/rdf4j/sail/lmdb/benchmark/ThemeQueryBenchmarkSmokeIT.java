@@ -72,6 +72,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 	private static final String BENCHMARK_PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String LMDB_CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
+	private static final String LIBRARY_LOCATED_AT = "http://example.com/theme/library/locatedAt";
 
 	private static String previousBenchmarkProfilingProperty;
 
@@ -241,6 +242,30 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.setup();
 		try {
 			assertBenchmarkQueryCount(benchmark, theme, queryIndex);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
+	void libraryQ7BenchmarkCostsBranchLocatedAtByFiniteBranchFanout() throws Exception {
+		ThemeQueryBenchmark benchmark = newBenchmark(Theme.LIBRARY, 7);
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("library q7 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			StatementPattern locatedAt = findPattern(optimized, LIBRARY_LOCATED_AT, "copy", "branch");
+			assertTrue(locatedAt != null, "Expected q7 to retain the branch locatedAt lookup\n" + optimized);
+
+			double plannedRows = locatedAt.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			assertTrue(Double.isFinite(plannedRows) && plannedRows >= 10_000.0d,
+					"Library q7 should cost finite branch locatedAt lookups by branch fanout, not as singleton "
+							+ "direct lookups; plannedRows=" + plannedRows + "\n" + optimized);
+
+			assertEquals(expectedBenchmarkResult(Theme.LIBRARY, 7), benchmark.executeQuery());
 		} finally {
 			benchmark.tearDown();
 		}

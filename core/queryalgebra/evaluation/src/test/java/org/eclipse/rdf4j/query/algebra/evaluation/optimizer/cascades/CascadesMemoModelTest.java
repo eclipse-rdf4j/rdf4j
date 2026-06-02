@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -70,6 +71,21 @@ class CascadesMemoModelTest {
 		assertEquals(groupId, memo.intern(commuted.clone()));
 		assertEquals(2, memo.group(groupId).expressions().size());
 		assertTrue(memo.addLogicalAlternative(groupId, commuted.clone()).isEmpty());
+	}
+
+	@Test
+	void scopeChangingLogicalAlternativeDoesNotCollideWithUnscopedAlternative() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Union scoped = new Union(pattern("work", "review", "review"), pattern("page", "event", "event"));
+		scoped.setVariableScopeChange(true);
+		int groupId = memo.intern(scoped);
+		Union unscoped = new Union(pattern("work", "review", "review"), pattern("page", "event", "event"));
+
+		assertTrue(memo.addLogicalAlternative(groupId, unscoped).isPresent(),
+				"Memo keys must keep scoped and unscoped alternatives distinct");
+		assertEquals(2, memo.group(groupId).expressions().size());
+		assertNotEquals(memo.group(groupId).expressions().get(0).structuralKey(),
+				memo.group(groupId).expressions().get(1).structuralKey());
 	}
 
 	@Test
@@ -326,7 +342,7 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
-	void coveredDescendantsDoNotInheritOpaqueWinnerCostVector() {
+	void coveredDescendantsExposeOpaqueWinnerCostVectorAsCoverageMetrics() {
 		Join join = new Join(pattern("s", "p", "o"), pattern("o", "p2", "x"));
 		CostVector parentCost = new CostVector(100.0d, 200.0d, 0.0d, 0.0d, 0.0d, 2.0d, 2.0d, 2.0d, 2.0d,
 				10.0d, 0.5d, 7.0d);
@@ -347,8 +363,36 @@ class CascadesMemoModelTest {
 		assertEquals(200.0d, join.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS), 0.0d);
 		assertEquals("alternative_ranking",
 				join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
-		assertCoveredWithoutInheritedNumbers(join.getLeftArg(), "opaque-provider:g10:e11");
-		assertCoveredWithoutInheritedNumbers(join.getRightArg(), "opaque-provider:g10:e11");
+		assertCoveredWithInheritedNumbers(join.getLeftArg(), "opaque-provider:g10:e11", parentCost);
+		assertCoveredWithInheritedNumbers(join.getRightArg(), "opaque-provider:g10:e11", parentCost);
+	}
+
+	@Test
+	void coveredDescendantsReplaceFallbackSourceWithParentWinnerSource() {
+		Join join = new Join(pattern("s", "p", "o"), pattern("o", "p2", "x"));
+		join.getLeftArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+						"lmdb-cascades-fallback");
+		join.getLeftArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+						"fallback_no_winner");
+		CostVector parentCost = new CostVector(100.0d, 200.0d, 0.0d, 0.0d, 0.0d, 2.0d, 2.0d, 2.0d, 2.0d,
+				10.0d, 0.5d, 7.0d);
+		EstimateSnapshot parentEstimate = new EstimateSnapshot("test-planner", "opaque-provider",
+				"alternative_ranking", 100.0d, 200.0d, parentCost, Map.of(), Map.of());
+		RuleProof proof = new RuleProof("opaque-provider", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("opaque"), "opaque provider owns its subtree");
+		PlanProvenance provenance = new PlanProvenance(10, 11, "Join", "opaque-provider",
+				RuleKind.IMPLEMENTATION, List.of(), parentEstimate, parentCost, PhysicalProperties.ANY,
+				PhysicalProperties.builder().accessPath("opaque-provider").boundVars(join.getBindingNames()).build(),
+				List.of(), List.of(proof), false, "");
+
+		CascadesPlanProvenanceAnnotator.annotate(join, provenance, "test-planner");
+
+		assertEquals("covered_by_parent_winner",
+				join.getLeftArg().getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
+		assertEquals("opaque-provider",
+				join.getLeftArg().getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 	}
 
 	@Test
@@ -381,13 +425,18 @@ class CascadesMemoModelTest {
 		return (List<String>) method.invoke(alternative);
 	}
 
-	private static void assertCoveredWithoutInheritedNumbers(TupleExpr node, String decisionId) {
+	private static void assertCoveredWithInheritedNumbers(TupleExpr node, String decisionId, CostVector parentCost) {
 		assertEquals("covered_by_parent_winner",
 				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
 		assertEquals(decisionId, node.getStringMetricPlanned("optimizer.cascadesCoveredByWinner"));
-		assertEquals(-1.0d, node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d);
-		assertEquals(-1.0d, node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS), 0.0d);
-		assertEquals(-1.0d, node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE), 0.0d);
+		assertEquals(parentCost.rows(), node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
+				0.0d);
+		assertEquals(parentCost.workRows(), node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
+				0.0d);
+		assertEquals(parentCost.workRows(), node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
+				0.0d);
+		assertEquals(parentCost.objectiveScore(),
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE), 0.0d);
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -45,18 +46,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FilterCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ProjectionCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SetCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StructuralCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -83,15 +88,33 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
 				.add(new StandardCascadesRules.JoinCommutationRule())
 				.add(new StandardCascadesRules.JoinAssociativityRule())
+				.add(new StructuralCascadesRules.NestedFilterMergeRule())
+				.add(new StructuralCascadesRules.FilterConstantRule())
+				.add(new StructuralCascadesRules.JoinEmptySetRule())
+				.add(new StructuralCascadesRules.JoinSingletonRule())
+				.add(new StructuralCascadesRules.UnionSimplificationRule())
+				.add(new StructuralCascadesRules.ProjectionMergeRule())
+				.add(new FilterCascadesRules.FilterValuesAnchorRule())
+				.add(new FilterCascadesRules.FilterConjunctValuesAnchorRule())
+				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
+				.add(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule())
+				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
 				.add(new StandardCascadesRules.FilterPushdownRule())
 				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
 				.add(new StandardCascadesRules.FilterDifferencePushdownRule())
 				.add(new StandardCascadesRules.FilterUnionDistributionRule())
 				.add(new LmdbNullRejectingOptionalJoinRule())
+				.add(new ProjectionCascadesRules.ProjectionFilterPushdownRule())
+				.add(new ProjectionCascadesRules.ProjectionDifferencePushdownRule())
+				.add(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
+				.add(new StandardCascadesRules.SafeScopeChangeRemovalRule())
 				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
+				.add(new StandardCascadesRules.JoinExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
+				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
+				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
 				.add(new StandardCascadesRules.MinusAlternativeRule())
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
@@ -383,6 +406,36 @@ final class LmdbCascadesRuleProvider {
 
 		RuleProof proof(String semanticScope, Set<String> facts, String reason) {
 			return new RuleProof(id, kind, semanticScope, facts, reason);
+		}
+
+		void trace(RuleContext context, String event) {
+			if (context != null && context.telemetry() != null) {
+				context.telemetry().plannerEvent(event);
+			}
+		}
+
+		void tracePhysicalDecision(RuleContext context, MemoExpr expression, OptimizationGoal goal, boolean opaque,
+				String metadata, CostVector cost, JoinFactorCostModel.FactorCostEstimate estimate) {
+			Map<String, String> stringMetrics = estimate.getStringMetrics();
+			trace(context, "lmdb-rule id=" + id
+					+ " status=applied"
+					+ " group=" + expression.groupId()
+					+ " expr=" + expression.id()
+					+ " opaque=" + opaque
+					+ " metadata=" + metadata
+					+ " goalBoundVars=" + goalBoundVars(goal)
+					+ " estimateSource="
+					+ stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "<missing>")
+					+ " estimateUsage="
+					+ stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "<missing>")
+					+ " rows=" + estimate.getOutputRows()
+					+ " workRows=" + estimate.getWorkRows()
+					+ " cost=" + cost);
+		}
+
+		double finiteMetric(Map<String, Double> metrics, String name, double fallback) {
+			Double value = metrics == null ? null : metrics.get(name);
+			return value != null && Double.isFinite(value) && value >= 0.0d ? value : fallback;
 		}
 
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, OptimizationGoal goal,
@@ -2819,20 +2872,33 @@ final class LmdbCascadesRuleProvider {
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			LeftJoin leftJoin = (LeftJoin) expression.tupleExpr();
+			boolean scopedUnionHashWildcard = containsScopedUnionHashWildcardJoin(leftJoin.getLeftArg());
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
 			if (estimate.isEmpty()) {
+				trace(context, "lmdb-rule id=" + id() + " status=no-estimate group=" + expression.groupId()
+						+ " expr=" + expression.id());
 				return List.of();
 			}
 			PhysicalProperties delivered = delivered(expression.tupleExpr(), estimate.get(), goal).withAccessPath(
 					estimate.get().isDirectLookup() ? "optionalAnchoredLookup" : "optionalRhsScan");
 			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
 			Set<String> anchoredBoundVars = optionalAnchoredBoundVars((LeftJoin) expression.tupleExpr(), boundVars);
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("optionalRhs", "anchoredBoundVars=" + anchoredBoundVars),
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("optionalRhs");
+			facts.add("childWinnersVisible");
+			facts.add("anchoredBoundVars=" + anchoredBoundVars);
+			if (scopedUnionHashWildcard) {
+				facts.add("scopedUnionHashWildcard");
+			}
+			RuleProof proof = proof(semanticScope(goal), facts,
 					"OPTIONAL RHS can be costed with assured left bindings as a physical lookup alternative");
-			CostVector cost = cost(estimate.get());
-			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
-					cost, proof, "lmdb-optional-anchor", snapshot(estimate.get(), cost)));
+			CostVector cost = decomposedOptionalOperatorCost(estimate.get());
+			tracePhysicalDecision(context, expression, goal, false, "lmdb-optional-anchor-decomposed", cost,
+					estimate.get());
+			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+					delivered, cost, proof, "lmdb-optional-anchor-decomposed",
+					snapshot(estimate.get(), cost)));
 		}
 
 		private Set<String> optionalAnchoredBoundVars(LeftJoin leftJoin, Set<String> goalBoundVars) {
@@ -2852,6 +2918,51 @@ final class LmdbCascadesRuleProvider {
 			}
 			return anchored.isEmpty() ? Set.of() : Set.copyOf(anchored);
 		}
+
+		private CostVector decomposedOptionalOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {
+			CostVector base = cost(estimate);
+			Map<String, Double> metrics = estimate.getDoubleMetrics();
+			double outputRows = finiteMetric(metrics, "plannedOptionalOutputRows", estimate.getOutputRows());
+			double rightRows = finiteMetric(metrics, "plannedOptionalRightRows", estimate.getOutputRows());
+			double rightWorkRows = finiteMetric(metrics, "plannedOptionalRightWorkRows", estimate.getWorkRows());
+			double operatorWorkRows = Math.max(rightRows, rightWorkRows);
+			if (!Double.isFinite(operatorWorkRows) || operatorWorkRows < 0.0d) {
+				operatorWorkRows = estimate.getWorkRows();
+			}
+			return base.withRows(outputRows)
+					.withWorkRows(operatorWorkRows);
+		}
+
+	}
+
+	private static boolean containsScopedUnionHashWildcardJoin(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return false;
+		}
+		if (tupleExpr instanceof Join join
+				&& (scopedUnionHashWildcardJoin(join.getLeftArg(), join.getRightArg())
+						|| scopedUnionHashWildcardJoin(join.getRightArg(), join.getLeftArg()))) {
+			return true;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			if (containsScopedUnionHashWildcardJoin(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean scopedUnionHashWildcardJoin(TupleExpr otherSide, TupleExpr maybeUnion) {
+		if (otherSide == null || !(maybeUnion instanceof Union union) || !union.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> shared = new HashSet<>(LmdbJoinPlanSupport.plannerBindingNames(otherSide.getBindingNames()));
+		shared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(union.getBindingNames()));
+		if (shared.isEmpty()) {
+			return false;
+		}
+		shared.removeAll(LmdbJoinPlanSupport.plannerBindingNames(union.getAssuredBindingNames()));
+		return !shared.isEmpty();
 	}
 
 	private static final class LmdbMinusBoundProbeRule extends LmdbRule {
@@ -2869,15 +2980,33 @@ final class LmdbCascadesRuleProvider {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
 			if (estimate.isEmpty()) {
+				trace(context, "lmdb-rule id=" + id() + " status=no-estimate group=" + expression.groupId()
+						+ " expr=" + expression.id());
 				return List.of();
 			}
 			PhysicalProperties delivered = delivered(expression.tupleExpr(), estimate.get(), goal)
 					.withAccessPath("minusBoundRhsProbe");
 			RuleProof proof = proof(semanticScope(goal), Set.of("minusRhs", "boundProbeCosted"),
 					"MINUS RHS is costed as a bound probe physical alternative when shared bindings are available");
-			CostVector cost = cost(estimate.get());
-			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
-					cost, proof, "lmdb-minus-probe", snapshot(estimate.get(), cost)));
+			CostVector cost = decomposedMinusOperatorCost(estimate.get());
+			tracePhysicalDecision(context, expression, goal, false, "lmdb-minus-probe-decomposed", cost,
+					estimate.get());
+			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+					delivered, cost, proof, "lmdb-minus-probe-decomposed", snapshot(estimate.get(), cost)));
+		}
+
+		private CostVector decomposedMinusOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {
+			CostVector base = cost(estimate);
+			Map<String, Double> metrics = estimate.getDoubleMetrics();
+			double outputRows = finiteMetric(metrics, "plannedMinusOutputRows", estimate.getOutputRows());
+			double rightRows = finiteMetric(metrics, "plannedMinusRightRows", estimate.getOutputRows());
+			double rightWorkRows = finiteMetric(metrics, "plannedMinusRightWorkRows", estimate.getWorkRows());
+			double operatorWorkRows = Math.max(rightRows, rightWorkRows);
+			if (!Double.isFinite(operatorWorkRows) || operatorWorkRows < 0.0d) {
+				operatorWorkRows = estimate.getWorkRows();
+			}
+			return base.withRows(outputRows)
+					.withWorkRows(operatorWorkRows);
 		}
 	}
 }

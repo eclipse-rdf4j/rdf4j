@@ -43,6 +43,9 @@ class LmdbCascadesContractTest {
 
 	private static final String COVERED_BY_PARENT_WINNER = "covered_by_parent_winner";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
+	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
+	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
+	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("coveredAlgebraShapes")
@@ -56,18 +59,33 @@ class LmdbCascadesContractTest {
 			LmdbCascadesExplainFinalizer.INSTANCE.optimize(root, null, EmptyBindingSet.getInstance());
 
 			List<String> fallbackNodes = new ArrayList<>();
+			List<String> fallbackSourceNodes = new ArrayList<>();
 			List<String> coveredUsageMismatches = new ArrayList<>();
+			List<String> coveredSourceMismatches = new ArrayList<>();
+			List<String> plannedSubtreesWithFallbackDescendants = new ArrayList<>();
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				protected void meetNode(QueryModelNode node) {
 					if (node instanceof TupleExpr current) {
 						String usage = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
 						String covered = current.getStringMetricPlanned("optimizer.cascadesCoveredByWinner");
+						String source = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 						if (FALLBACK_NO_WINNER.equals(usage)) {
 							fallbackNodes.add(current.getClass().getSimpleName() + ":" + current.getSignature());
 						}
+						if (fallbackSource(source)) {
+							fallbackSourceNodes
+									.add(current.getClass().getSimpleName() + ":" + current.getSignature());
+						}
 						if (covered != null && !COVERED_BY_PARENT_WINNER.equals(usage)) {
 							coveredUsageMismatches.add(current.getClass().getSimpleName() + ":" + usage);
+						}
+						if (covered != null && fallbackSource(source)) {
+							coveredSourceMismatches.add(current.getClass().getSimpleName() + ":" + source);
+						}
+						if (plannedSubtree(current) && hasFallbackDescendant(current)) {
+							plannedSubtreesWithFallbackDescendants
+									.add(current.getClass().getSimpleName() + ":" + current.getSignature());
 						}
 					}
 					node.visitChildren(this);
@@ -77,8 +95,13 @@ class LmdbCascadesContractTest {
 			assertEquals(LmdbCascadesExplainFinalizer.PLANNER_ID,
 					root.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID), name);
 			assertTrue(fallbackNodes.isEmpty(), name + " fallback nodes: " + fallbackNodes);
+			assertTrue(fallbackSourceNodes.isEmpty(), name + " fallback source nodes: " + fallbackSourceNodes);
 			assertTrue(coveredUsageMismatches.isEmpty(), name + " covered usage mismatches: "
 					+ coveredUsageMismatches);
+			assertTrue(coveredSourceMismatches.isEmpty(), name + " covered source mismatches: "
+					+ coveredSourceMismatches);
+			assertTrue(plannedSubtreesWithFallbackDescendants.isEmpty(), name
+					+ " planned subtrees with fallback descendants: " + plannedSubtreesWithFallbackDescendants);
 		} finally {
 			restoreMode(previousMode);
 		}
@@ -108,6 +131,47 @@ class LmdbCascadesContractTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static boolean plannedSubtree(TupleExpr tupleExpr) {
+		return nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesRule")
+				|| nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesWinner")
+				|| nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesCoveredByWinner");
+	}
+
+	private static boolean nonFallbackPlannedMetric(TupleExpr tupleExpr, String metricName) {
+		String value = tupleExpr.getStringMetricPlanned(metricName);
+		return value != null && !value.isBlank() && !value.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
+	private static boolean hasFallbackDescendant(TupleExpr tupleExpr) {
+		FallbackFinder finder = new FallbackFinder();
+		tupleExpr.visitChildren(finder);
+		return finder.found;
+	}
+
+	private static boolean fallbackSource(String source) {
+		return CASCADES_FALLBACK_SOURCE.equals(source) || LMDB_CASCADES_FALLBACK_SOURCE.equals(source);
+	}
+
+	private static final class FallbackFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private boolean found;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (found) {
+				return;
+			}
+			if (node instanceof TupleExpr current) {
+				String usage = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+				String source = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+				if (FALLBACK_NO_WINNER.equals(usage) || fallbackSource(source)) {
+					found = true;
+					return;
+				}
+			}
+			node.visitChildren(this);
+		}
 	}
 
 	private static void restoreMode(String previousMode) {

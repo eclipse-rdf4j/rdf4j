@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	static final String TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.trace";
+	static final String TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.traceLimit";
 	static final String SMALL_QUERY_MAX_NODES_PROPERTY = "rdf4j.optimizer.lmdb.cascades.smallQueryMaxNodes";
 	static final String BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.budget";
 	static final String TIMEOUT_MILLIS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.timeoutMillis";
@@ -78,6 +80,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final String CASCADES_RULE = "optimizer.cascadesRule";
 	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
 	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
+	private static final String CASCADES_CANDIDATE_PLAN = "optimizer.cascadesCandidatePlan";
+	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
+	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
+	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
+	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 	private static final String STANDARD_PLAN_WINNER = "standard";
@@ -87,6 +94,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private static final int DEFAULT_SMALL_QUERY_MAX_NODES = 16;
 	private static final int DEFAULT_BUDGET = 4096;
+	private static final int DEFAULT_TRACE_LIMIT = 512;
+	private static final int CANDIDATE_PLAN_TEXT_LIMIT = 16_384;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
 	private static final double DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT = 1.05d;
 
@@ -157,7 +166,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			OptimizationGoal searchGoal = boundedByStandardPlan(goal, budgetedSearch, standardPlanPolicy,
 					standardPlan);
 			boolean traceEnabled = Boolean.getBoolean(TRACE_PROPERTY);
-			CascadesTelemetry.Recording telemetry = traceEnabled ? new CascadesTelemetry.Recording() : null;
+			CascadesTelemetry.Recording telemetry = traceEnabled
+					? new CascadesTelemetry.Recording(intProperty(TRACE_LIMIT_PROPERTY, DEFAULT_TRACE_LIMIT))
+					: null;
 			CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(statistics),
 					LmdbCascadesRuleProvider.rules(statistics),
 					traceEnabled ? telemetry : CascadesTelemetry.NO_OP);
@@ -256,11 +267,18 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return policy.fallbacks();
 		}
 		if (!policy.compares()) {
+			if (mode != Mode.EXACT && cascadesPlan.approximate() && policy.fallbacks()) {
+				return standardPlanWinsByCost(candidate, cascadesPlan);
+			}
 			return false;
 		}
 		if (mode == Mode.EXACT) {
 			return false;
 		}
+		return standardPlanWinsByCost(candidate, cascadesPlan);
+	}
+
+	private boolean standardPlanWinsByCost(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
 		CostVector standardCost = candidate.cost();
 		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
 			return false;
@@ -355,7 +373,67 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr instanceof Filter filter) {
 			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
 		}
-		return tupleExpr instanceof Join && !containsJoinPlanningBarrier(tupleExpr);
+		if (tupleExpr instanceof Join join) {
+			return !containsJoinPlanningBarrier(tupleExpr) || scopedUnionDistributionOpportunity(join);
+		}
+		return false;
+	}
+
+	private static boolean scopedUnionDistributionOpportunity(Join join) {
+		return hasUnassuredScopedUnionSharedBindings(join.getLeftArg(), join.getRightArg())
+				|| hasUnassuredScopedUnionSharedBindings(join.getRightArg(), join.getLeftArg());
+	}
+
+	private static boolean hasUnassuredScopedUnionSharedBindings(TupleExpr pushed, TupleExpr maybeUnion) {
+		if (pushed == null || !(maybeUnion instanceof Union union) || !union.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> pushedNames = LmdbJoinPlanSupport.plannerBindingNames(pushed.getBindingNames());
+		if (pushedNames.isEmpty() || overlapsBranchLocalOutputs(pushedNames, union)) {
+			return false;
+		}
+		Set<String> shared = new HashSet<>(pushedNames);
+		shared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(union.getBindingNames()));
+		if (shared.isEmpty()) {
+			return false;
+		}
+		shared.removeAll(LmdbJoinPlanSupport.plannerBindingNames(union.getAssuredBindingNames()));
+		return !shared.isEmpty();
+	}
+
+	private static boolean overlapsBranchLocalOutputs(Set<String> pushedNames, Union union) {
+		Set<String> branchLocalNames = new HashSet<>(branchLocalBindOrValuesNames(union.getLeftArg()));
+		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
+		for (String name : pushedNames) {
+			if (branchLocalNames.contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {
+		Set<String> names = new HashSet<>();
+		if (tupleExpr == null) {
+			return names;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension node) {
+				for (var element : node.getElements()) {
+					if (element.getName() != null) {
+						names.add(element.getName());
+					}
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(BindingSetAssignment node) {
+				names.addAll(node.getBindingNames());
+			}
+		});
+		return LmdbJoinPlanSupport.plannerBindingNames(names);
 	}
 
 	private record SubtreeCandidate(TupleExpr tupleExpr, Set<String> boundVars) {
@@ -384,6 +462,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				return;
 			}
 			if (tupleExpr != root && cascadesPlannedSubtree(tupleExpr)) {
+				if (hasEmergencyFallbackDescendant(tupleExpr)) {
+					visitTupleChildren(tupleExpr, node);
+				}
 				return;
 			}
 			if (tupleExpr != root && subplanCandidate(tupleExpr)) {
@@ -391,6 +472,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 						tupleExpr.getBindingNames())));
 				return;
 			}
+			visitTupleChildren(tupleExpr, node);
+		}
+
+		private void visitTupleChildren(TupleExpr tupleExpr, QueryModelNode node) {
 			if (tupleExpr instanceof LeftJoin leftJoin) {
 				visitWithBoundVars(leftJoin.getLeftArg(), boundVars);
 				Set<String> rightBoundVars = union(boundVars, leftJoin.getLeftArg().getAssuredBindingNames());
@@ -449,14 +534,61 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean cascadesPlannedSubtree(TupleExpr tupleExpr) {
-		return hasMetric(tupleExpr, CASCADES_RULE)
-				|| hasMetric(tupleExpr, CASCADES_WINNER)
-				|| hasMetric(tupleExpr, CASCADES_COVERED_BY_WINNER);
+		if (hasEmergencyFallbackMetric(tupleExpr)) {
+			return false;
+		}
+		return hasNonFallbackMetric(tupleExpr, CASCADES_RULE)
+				|| hasNonFallbackMetric(tupleExpr, CASCADES_WINNER)
+				|| hasNonFallbackMetric(tupleExpr, CASCADES_COVERED_BY_WINNER);
 	}
 
-	private static boolean hasMetric(TupleExpr tupleExpr, String metric) {
+	private static boolean hasNonFallbackMetric(TupleExpr tupleExpr, String metric) {
 		String value = tupleExpr.getStringMetricPlanned(metric);
-		return value != null && !value.isBlank();
+		return value != null && !value.isBlank() && !value.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
+	private static boolean hasEmergencyFallbackDescendant(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return false;
+		}
+		EmergencyFallbackFinder finder = new EmergencyFallbackFinder();
+		tupleExpr.visitChildren(finder);
+		return finder.found;
+	}
+
+	private static boolean hasEmergencyFallbackMetric(TupleExpr tupleExpr) {
+		return hasEmergencyFallbackMetric(tupleExpr, CASCADES_RULE)
+				|| hasEmergencyFallbackMetric(tupleExpr, CASCADES_WINNER)
+				|| hasEmergencyFallbackMetric(tupleExpr, CASCADES_COVERED_BY_WINNER)
+				|| FALLBACK_NO_WINNER.equals(
+						tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
+				|| fallbackEstimateSource(tupleExpr
+						.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private static boolean hasEmergencyFallbackMetric(TupleExpr tupleExpr, String metric) {
+		String value = tupleExpr.getStringMetricPlanned(metric);
+		return value != null && value.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
+	private static boolean fallbackEstimateSource(String source) {
+		return CASCADES_FALLBACK_SOURCE.equals(source) || LMDB_CASCADES_FALLBACK_SOURCE.equals(source);
+	}
+
+	private static final class EmergencyFallbackFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private boolean found;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (found) {
+				return;
+			}
+			if (node instanceof TupleExpr tupleExpr && hasEmergencyFallbackMetric(tupleExpr)) {
+				found = true;
+				return;
+			}
+			node.visitChildren(this);
+		}
 	}
 
 	private static boolean hasFilterJoinSegment(TupleExpr tupleExpr) {
@@ -694,6 +826,26 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (telemetry != null && !telemetry.trace().isEmpty()) {
 			tupleExpr.setStringMetricPlanned("optimizer.cascadesTrace", String.join(" || ", telemetry.trace()));
 		}
+		if (telemetry != null) {
+			plan.tupleExpr()
+					.ifPresent(candidatePlan -> tupleExpr.setStringMetricPlanned(CASCADES_CANDIDATE_PLAN,
+							boundedPlanText(candidatePlan)));
+		}
+	}
+
+	private String boundedPlanText(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "";
+		}
+		String text = tupleExpr.toString()
+				.replace("\r\n", "\n")
+				.replace('\r', '\n')
+				.trim();
+		if (text.length() <= CANDIDATE_PLAN_TEXT_LIMIT) {
+			return text;
+		}
+		String suffix = "\n... truncated";
+		return text.substring(0, CANDIDATE_PLAN_TEXT_LIMIT - suffix.length()) + suffix;
 	}
 
 	private void annotateStandardPlanChoice(TupleExpr tupleExpr, Mode mode, StandardPlanPolicy standardPlanPolicy,

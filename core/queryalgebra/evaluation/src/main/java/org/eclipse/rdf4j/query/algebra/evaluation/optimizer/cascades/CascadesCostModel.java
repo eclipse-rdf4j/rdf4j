@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
@@ -110,6 +111,8 @@ public interface CascadesCostModel {
 		private static final String STATISTIC_MISSING = "optimizer.statisticMissing";
 		private static final String STATISTIC_MISSING_FALLBACK = "optimizer.statisticMissingFallback";
 		private static final String STATISTIC_MISSING_REASON_PREFIX = "optimizer.statisticMissing.";
+		private static final String COST_TRACE_PROPERTY = "rdf4j.optimizer.cascades.costTrace";
+		private static final AtomicLong COST_TRACE_SEQUENCE = new AtomicLong();
 
 		private final EvaluationStatistics statistics;
 		private final JoinFactorCostModel factorCostModel;
@@ -264,6 +267,9 @@ public interface CascadesCostModel {
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
 				Set<String> boundVars, List<Winner> inputWinners) {
 			if (expression.physical() && !expression.inputGroupIds().isEmpty()) {
+				if (tupleExpr instanceof LeftJoin leftJoin) {
+					return estimateConcretePhysicalLeftJoin(leftJoin, boundVars, inputWinners);
+				}
 				if (tupleExpr instanceof Join join) {
 					return estimateConcretePhysicalJoin(join, boundVars, inputWinners);
 				}
@@ -417,7 +423,7 @@ public interface CascadesCostModel {
 			if (inputIndex != 1) {
 				return Set.of();
 			}
-			if (tupleExpr instanceof Join join) {
+			if (tupleExpr instanceof Join join && genericJoinRightCanSeeLeftBindings(join)) {
 				return join.getLeftArg().getAssuredBindingNames();
 			}
 			if (tupleExpr instanceof LeftJoin leftJoin) {
@@ -427,6 +433,14 @@ public interface CascadesCostModel {
 				return difference.getLeftArg().getAssuredBindingNames();
 			}
 			return Set.of();
+		}
+
+		private boolean genericJoinRightCanSeeLeftBindings(Join join) {
+			return join != null
+					&& join.getRightArg() != null
+					&& !TupleExprs.isVariableScopeChange(join.getRightArg())
+					&& !TupleExprs.containsSubquery(join.getRightArg())
+					&& !"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
 		}
 
 		@Override
@@ -654,8 +668,256 @@ public interface CascadesCostModel {
 			StatisticsEstimate left = inputWinnerEstimate(inputWinners, 0, join.getLeftArg(), boundVars);
 			StatisticsEstimate right = inputWinnerEstimate(inputWinners, 1, join.getRightArg(), boundVars);
 			Set<String> sharedVars = sharedNames(join.getLeftArg(), join.getRightArg());
-			return StatisticsEstimate.fromBag(EstimateMath.innerJoin(left.bag(), right.bag(), sharedVars),
-					"physical-join");
+			BagEstimate bag = EstimateMath.innerJoin(left.bag(), right.bag(), sharedVars);
+			bag = pricePhysicalHashJoinWildcardWork(join, left, right, sharedVars, bag);
+			return StatisticsEstimate.fromBag(bag, "physical-join");
+		}
+
+		private BagEstimate pricePhysicalHashJoinWildcardWork(Join join, StatisticsEstimate left,
+				StatisticsEstimate right, Set<String> sharedVars, BagEstimate bag) {
+			if (join == null || left == null || right == null || bag == null
+					|| sharedVars == null || sharedVars.isEmpty()) {
+				return bag;
+			}
+			boolean leftMayMissJoinAttribute = mayMissHashJoinAttribute(join.getLeftArg(), sharedVars);
+			boolean rightMayMissJoinAttribute = mayMissHashJoinAttribute(join.getRightArg(), sharedVars);
+			if (!leftMayMissJoinAttribute && !rightMayMissJoinAttribute) {
+				return bag;
+			}
+			double compatibilityWorkRows = safeProduct(left.rows(), right.rows());
+			if (!Double.isFinite(compatibilityWorkRows) || compatibilityWorkRows <= bag.workRows()) {
+				return bag;
+			}
+			Map<String, Double> metrics = new LinkedHashMap<>(bag.metrics());
+			metrics.put("plannedHashJoinWildcardCompatibilityWorkRows", compatibilityWorkRows);
+			metrics.put("plannedHashJoinWildcardSharedVarCount", (double) sharedVars.size());
+			traceCost("physical-join-wildcard-work", join,
+					"sharedVars=" + sorted(sharedVars)
+							+ ", leftRows=" + estimateRows(left.rows())
+							+ ", rightRows=" + estimateRows(right.rows())
+							+ ", compatibilityWorkRows=" + estimateRows(compatibilityWorkRows)
+							+ ", leftMayMiss=" + leftMayMissJoinAttribute
+							+ ", rightMayMiss=" + rightMayMissJoinAttribute);
+			return bag.withWorkRows(compatibilityWorkRows, "physical-join-hash-wildcard")
+					.withMetrics(metrics);
+		}
+
+		private boolean mayMissHashJoinAttribute(TupleExpr tupleExpr, Set<String> sharedVars) {
+			if (tupleExpr == null || sharedVars == null || sharedVars.isEmpty()) {
+				return false;
+			}
+			Set<String> bindingNames = tupleExpr.getBindingNames();
+			if (bindingNames == null || bindingNames.isEmpty()) {
+				return false;
+			}
+			boolean participates = false;
+			for (String sharedVar : sharedVars) {
+				if (bindingNames.contains(sharedVar)) {
+					participates = true;
+					break;
+				}
+			}
+			if (!participates) {
+				return false;
+			}
+			Set<String> assuredBindings = tupleExpr.getAssuredBindingNames();
+			return assuredBindings == null || !assuredBindings.containsAll(sharedVars);
+		}
+
+		private StatisticsEstimate estimateConcretePhysicalLeftJoin(LeftJoin leftJoin, Set<String> boundVars,
+				List<Winner> inputWinners) {
+			StatisticsEstimate left = inputWinnerEstimate(inputWinners, 0, leftJoin.getLeftArg(), boundVars);
+			StatisticsEstimate right = inputWinnerEstimate(inputWinners, 1, leftJoin.getRightArg(), boundVars);
+			Set<String> sharedVars = sharedNames(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			Optional<StatisticsEstimate> parameterized = estimateParameterizedPhysicalLeftJoin(leftJoin, boundVars,
+					inputWinners, left, sharedVars);
+			if (parameterized.isPresent()) {
+				return parameterized.get();
+			}
+			return rdfStatisticsProvider.leftJoin(left, right, sharedVars)
+					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.leftJoin(left.bag(), right.bag(),
+							sharedVars), "physical-leftjoin"));
+		}
+
+		private Optional<StatisticsEstimate> estimateParameterizedPhysicalLeftJoin(LeftJoin leftJoin,
+				Set<String> boundVars, List<Winner> inputWinners, StatisticsEstimate left, Set<String> sharedVars) {
+			if (factorCostModel == null || leftJoin == null || inputWinners == null || inputWinners.size() < 2
+					|| left == null || left.rows() <= 0.0d) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin,
+						"reason=missing-prerequisite, hasFactorCostModel=" + (factorCostModel != null)
+								+ ", inputWinnerCount=" + (inputWinners == null ? -1 : inputWinners.size())
+								+ ", leftRows=" + rows(left));
+				return Optional.empty();
+			}
+			Winner rightWinner = inputWinners.get(1);
+			if (rightWinner == null || rightWinner.deliveredProperties() == null) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin, "reason=missing-right-winner");
+				return Optional.empty();
+			}
+			Set<String> inputBoundVars = rightWinner.deliveredProperties().inputBoundVars();
+			if (inputBoundVars.isEmpty()) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin, "reason=empty-input-bound-vars");
+				return Optional.empty();
+			}
+			Set<String> rightBindings = leftJoin.getRightArg().getBindingNames();
+			Set<String> effectiveBoundVars = new LinkedHashSet<>();
+			if (boundVars != null) {
+				effectiveBoundVars.addAll(boundVars);
+			}
+			effectiveBoundVars.addAll(inputBoundVars);
+			effectiveBoundVars.retainAll(rightBindings);
+			if (effectiveBoundVars.isEmpty()) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin,
+						"reason=no-effective-bound-vars, inputBoundVars=" + inputBoundVars
+								+ ", rightBindings=" + rightBindings);
+				return Optional.empty();
+			}
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
+					.forOptimization(effectiveBoundVars, left.rows(), distinctLookupBindings(left.bag(),
+							inputBoundVars), true, true, Map.of(), parameterizedPrefixFactors(leftJoin, inputWinners));
+			traceCost("physical-leftjoin-parameterized-request", leftJoin,
+					"leftRows=" + estimateRows(left.rows())
+							+ ", leftWork=" + estimateRows(left.workRows())
+							+ ", sharedVars=" + sharedVars
+							+ ", inputBoundVars=" + inputBoundVars
+							+ ", effectiveBoundVars=" + effectiveBoundVars
+							+ ", distinctLookup=" + estimateRows(context.getDistinctLookupBindings())
+							+ ", prefixFactors=" + context.getPrefixFactors().size());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel
+					.estimateFactorCost(leftJoin.getRightArg(), context);
+			if (estimate.isEmpty() || !estimate.get().isRepeatedInvocationsCosted()) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin,
+						"reason=right-estimate-not-repeated, rightEstimate="
+								+ estimate.map(this::describeFactorEstimate).orElse("empty"));
+				return Optional.empty();
+			}
+			JoinFactorCostModel.FactorCostEstimate right = estimate.get();
+			double rightRows = right.getOutputRows();
+			double rightWorkRows = right.getWorkRows();
+			if (!isFiniteNonNegative(rightRows) || !isFiniteNonNegative(rightWorkRows)) {
+				traceCost("physical-leftjoin-parameterized-reject", leftJoin,
+						"reason=non-finite-right-estimate, rightEstimate=" + describeFactorEstimate(right));
+				return Optional.empty();
+			}
+			double outputRows = Math.max(left.rows(), rightRows);
+			double workRows = Math.max(outputRows, left.workRows() + Math.max(rightWorkRows, rightRows));
+			Map<String, Double> metrics = new LinkedHashMap<>(right.getDoubleMetrics());
+			metrics.put("plannedOptionalLeftRows", left.rows());
+			metrics.put("plannedOptionalLeftWorkRows", left.workRows());
+			metrics.put("plannedOptionalRightRows", rightRows);
+			metrics.put("plannedOptionalRightWorkRows", rightWorkRows);
+			metrics.put("plannedOptionalOutputRows", outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			BagEstimate rightBag = bagWithBindings(leftJoin.getRightArg(), rightRows, rightWorkRows,
+					"physical-leftjoin-bound-lookup-right");
+			BagEstimate bag = EstimateMath.leftJoin(left.bag(), rightBag, sharedVars)
+					.withRows(outputRows, "physical-leftjoin-bound-lookup")
+					.withWorkRows(workRows, "physical-leftjoin-bound-lookup")
+					.withMetrics(metrics);
+			traceCost("physical-leftjoin-parameterized-accept", leftJoin,
+					"rightEstimate=" + describeFactorEstimate(right)
+							+ ", outputRows=" + estimateRows(outputRows)
+							+ ", workRows=" + estimateRows(workRows)
+							+ ", optionalRightRows=" + estimateRows(rightRows)
+							+ ", optionalRightWorkRows=" + estimateRows(rightWorkRows));
+			return Optional.of(StatisticsEstimate.fromBag(bag, "physical-leftjoin-bound-lookup"));
+		}
+
+		private static void traceCost(String event, TupleExpr tupleExpr, String details) {
+			if (!Boolean.getBoolean(COST_TRACE_PROPERTY)) {
+				return;
+			}
+			long id = COST_TRACE_SEQUENCE.incrementAndGet();
+			String line = "[cascades-cost-trace] id=" + id
+					+ " event=" + event
+					+ " node=" + (tupleExpr == null ? "<null>" : tupleExpr.getClass().getSimpleName())
+					+ (details == null || details.isEmpty() ? "" : " details={" + details + "}");
+			System.err.println(line);
+		}
+
+		private String describeFactorEstimate(JoinFactorCostModel.FactorCostEstimate estimate) {
+			if (estimate == null) {
+				return "<null>";
+			}
+			return "rows=" + estimateRows(estimate.getOutputRows())
+					+ ", work=" + estimateRows(estimate.getWorkRows())
+					+ ", access=" + estimateRows(estimate.getAccessRowsBeforeFilter())
+					+ ", repeated=" + estimate.isRepeatedInvocationsCosted()
+					+ ", exact=" + estimate.hasExactOutputRows()
+					+ ", source=" + estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+					+ ", lookupMode=" + estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)
+					+ ", repeatedInvocations="
+					+ estimateRows(estimate.getDoubleMetrics()
+							.getOrDefault("plannedRepeatedInvocations",
+									Double.NaN))
+					+ ", lookupDomainRows="
+					+ estimateRows(estimate.getDoubleMetrics()
+							.getOrDefault("plannedLookupDomainAverageOutputRows",
+									Double.NaN));
+		}
+
+		private static String rows(StatisticsEstimate estimate) {
+			return estimate == null ? "NaN" : estimateRows(estimate.rows());
+		}
+
+		private static String estimateRows(double value) {
+			return Double.isFinite(value) ? String.format(Locale.ROOT, "%.3f", value) : String.valueOf(value);
+		}
+
+		private List<TupleExpr> parameterizedPrefixFactors(LeftJoin leftJoin, List<Winner> inputWinners) {
+			TupleExpr leftPlan = null;
+			if (inputWinners != null && !inputWinners.isEmpty() && inputWinners.get(0) != null) {
+				leftPlan = inputWinners.get(0).plan();
+			}
+			if (leftPlan == null && leftJoin != null) {
+				leftPlan = leftJoin.getLeftArg();
+			}
+			if (leftPlan == null) {
+				return List.of();
+			}
+			List<TupleExpr> factors = new ArrayList<>();
+			flattenJoinFactors(leftPlan, factors);
+			return factors.isEmpty() ? List.of(leftPlan) : List.copyOf(factors);
+		}
+
+		private double distinctLookupBindings(BagEstimate bag, Set<String> inputBoundVars) {
+			if (bag == null || inputBoundVars == null || inputBoundVars.isEmpty()) {
+				return Double.NaN;
+			}
+			Optional<FiniteRelationEstimate> relation = bag.relationContaining(inputBoundVars);
+			if (relation.isPresent()) {
+				double distinct = relation.get().distinctRows(inputBoundVars);
+				return isPositiveFinite(distinct) ? distinct : Double.NaN;
+			}
+			double distinct = 1.0d;
+			boolean found = false;
+			for (String variable : inputBoundVars) {
+				VariableEstimate estimate = bag.variable(variable);
+				if (estimate.boundRows() <= 0.0d) {
+					continue;
+				}
+				found = true;
+				distinct *= Math.max(1.0d, estimate.distinctRows());
+				if (!Double.isFinite(distinct)) {
+					return Double.NaN;
+				}
+			}
+			if (!found) {
+				return Double.NaN;
+			}
+			distinct = Math.min(Math.max(1.0d, distinct), Math.max(1.0d, bag.rows()));
+			return isPositiveFinite(distinct) ? distinct : Double.NaN;
+		}
+
+		private boolean isFiniteNonNegative(double value) {
+			return Double.isFinite(value) && value >= 0.0d;
+		}
+
+		private boolean isPositiveFinite(double value) {
+			return Double.isFinite(value) && value > 0.0d;
 		}
 
 		private StatisticsEstimate estimateConcretePhysicalUnary(UnaryTupleOperator unary, Set<String> boundVars,
