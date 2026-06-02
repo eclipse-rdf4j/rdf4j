@@ -201,13 +201,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsLT((Literal) l, (Literal) r, strict);
 		}
-		if (l != null && l.isTripleTerm() && r != null && r.isTripleTerm()) {
-			TripleTerm leftTerm = (TripleTerm) l;
-			TripleTerm rightTerm = (TripleTerm) r;
-			return compareLT(leftTerm.getSubject(), rightTerm.getSubject(), strict) &&
-					compareLT(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) &&
-					compareLT(leftTerm.getObject(), rightTerm.getObject(), strict);
-		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -227,13 +221,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsLE((Literal) l, (Literal) r, strict);
 		}
-		if (l != null && l.isTripleTerm() && r != null && r.isTripleTerm()) {
-			TripleTerm leftTerm = (TripleTerm) l;
-			TripleTerm rightTerm = (TripleTerm) r;
-			return compareLE(leftTerm.getSubject(), rightTerm.getSubject(), strict) &&
-					compareLE(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) &&
-					compareLE(leftTerm.getObject(), rightTerm.getObject(), strict);
-		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -253,13 +241,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsGT((Literal) l, (Literal) r, strict);
 		}
-		if (l != null && l.isTripleTerm() && r != null && r.isTripleTerm()) {
-			TripleTerm leftTerm = (TripleTerm) l;
-			TripleTerm rightTerm = (TripleTerm) r;
-			return compareGT(leftTerm.getSubject(), rightTerm.getSubject(), strict) &&
-					compareGT(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) &&
-					compareGT(leftTerm.getObject(), rightTerm.getObject(), strict);
-		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -279,13 +261,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsGE((Literal) l, (Literal) r, strict);
 		}
-		if (l != null && l.isTripleTerm() && r != null && r.isTripleTerm()) {
-			TripleTerm leftTerm = (TripleTerm) l;
-			TripleTerm rightTerm = (TripleTerm) r;
-			return compareGE(leftTerm.getSubject(), rightTerm.getSubject(), strict) &&
-					compareGE(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) &&
-					compareGE(leftTerm.getObject(), rightTerm.getObject(), strict);
-		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
