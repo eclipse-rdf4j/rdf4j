@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -8069,8 +8069,8 @@ class LmdbEvaluationStatistics
 				if (value instanceof Literal) {
 					return Value.Type.Literal.name();
 				}
-				if (value instanceof Triple) {
-					return Value.Type.Triple.name();
+				if (value instanceof TripleTerm) {
+					return Value.Type.TripleTerm.name();
 				}
 				return value.getClass().getName();
 			}

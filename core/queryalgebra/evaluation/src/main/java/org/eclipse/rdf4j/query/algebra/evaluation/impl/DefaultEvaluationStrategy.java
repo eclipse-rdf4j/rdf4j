@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -63,6 +64,8 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.In;
@@ -71,10 +74,12 @@ import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -98,6 +103,8 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -110,13 +117,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -128,30 +135,21 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NativeTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.AndValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.CompareAllQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.CompareAnyValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ExistsQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.IfValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.InValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ListMemberValueOperationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.OrValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.QueryValueEvaluationStepSupplier;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleRefEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.*;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
@@ -990,6 +988,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			prepared = prepare((Label) expr, context);
 		} else if (expr instanceof Lang) {
 			prepared = prepare((Lang) expr, context);
+		} else if (expr instanceof LangDir) {
+			prepared = prepare((LangDir) expr, context);
+		} else if (expr instanceof StrLangDir) {
+			prepared = prepare((StrLangDir) expr, context);
+		} else if (expr instanceof HasLang) {
+			prepared = prepare((HasLang) expr, context);
+		} else if (expr instanceof HasLangDir) {
+			prepared = prepare((HasLangDir) expr, context);
 		} else if (expr instanceof LangMatches) {
 			prepared = prepare((LangMatches) expr, context);
 		} else if (expr instanceof Datatype) {
@@ -1000,6 +1006,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			prepared = prepare((LocalName) expr, context);
 		} else if (expr instanceof IsResource) {
 			prepared = prepare((IsResource) expr, context);
+		} else if (expr instanceof IsTriple) {
+			prepared = prepare((IsTriple) expr, context);
 		} else if (expr instanceof IsURI) {
 			prepared = prepare((IsURI) expr, context);
 		} else if (expr instanceof IsBNode) {
@@ -1042,6 +1050,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			prepared = prepare((ListMemberOperator) expr, context);
 		} else if (expr instanceof ValueExprTripleRef) {
 			prepared = prepare((ValueExprTripleRef) expr, context);
+		} else if (expr instanceof TripleComponent) {
+			prepared = prepare((TripleComponent) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -1164,6 +1174,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return QueryValueEvaluationStepSupplier.prepareLang(arg, tripleSource.getValueFactory());
 	}
 
+	protected QueryValueEvaluationStep prepare(LangDir node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareLangDir(arg, tripleSource.getValueFactory());
+	}
+
+	protected QueryValueEvaluationStep prepare(StrLangDir node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep lexArg = precompile(node.getLexicalFormArg(), context);
+		QueryValueEvaluationStep langArg = precompile(node.getLangArg(), context);
+		QueryValueEvaluationStep dirArg = precompile(node.getDirArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareStrLangDir(lexArg, langArg, dirArg,
+				tripleSource.getValueFactory());
+	}
+
+	private QueryValueEvaluationStep prepare(HasLangDir expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(expr.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareHasLangDir(arg);
+	}
+
+	private QueryValueEvaluationStep prepare(HasLang expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(expr.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareHasLang(arg);
+	}
+
 	protected QueryValueEvaluationStep prepare(Datatype node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareDatatype(arg, context);
@@ -1182,6 +1215,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryValueEvaluationStep prepare(IsResource node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareIs(arg, v -> v instanceof Resource);
+	}
+
+	protected QueryValueEvaluationStep prepare(IsTriple node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareIs(arg, v -> v instanceof TripleTerm);
 	}
 
 	protected QueryValueEvaluationStep prepare(IsURI node, QueryEvaluationContext context) {
@@ -1593,6 +1631,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	}
 
+	protected QueryValueEvaluationStep prepare(TripleComponent expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep tripleTerm = precompile(expr.getTripleRefVar(), context);
+		return new ValueExprTripleTermComponentEvaluationStep(tripleTerm, expr.getRole());
+	}
+
 	/**
 	 * evaluates a TripleRef node returning bindingsets from the matched Triple nodes in the dataset (or explore
 	 * standard reification)
@@ -1612,13 +1655,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var predVar = ref.getPredicateVar();
 		final Var objVar = ref.getObjectVar();
 		final Var extVar = ref.getExprVar();
-		// whether the TripleSouce support access to RDF star
-		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
-		if (sourceSupportsRdfStar) {
-			return new RdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, (RDFStarTripleSource) tripleSource,
+		// whether the TripleSouce support access to TripleTerms
+		final boolean nativeTripleTermSupport = tripleSource instanceof NativeTripleTermSource;
+		if (nativeTripleTermSupport) {
+			return new NativeTripleTermQueryEvaluationStep(subjVar, predVar, objVar, extVar,
+					(NativeTripleTermSource) tripleSource,
 					context);
 		} else {
-			return new ReificationRdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
+			return new EncodedTripleTermQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
 		}
 	}
 

@@ -76,8 +76,14 @@ public class QueryEvaluationUtility {
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return Result.fromBoolean(!label.isEmpty());
 			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
-				// also false for illegal values
-				return Result.fromBoolean("true".equals(label) || "1".equals(label));
+				if ("true".equals(label) || "1".equals(label)) {
+					return Result._true;
+				} else if ("false".equals(label) || "0".equals(label)) {
+					return Result._false;
+				} else {
+					// ill-typed literal — "z"^^xsd:boolean etc. must be a type error
+					return Result.incompatibleValueExpression;
+				}
 			} else if (datatype == CoreDatatype.XSD.DECIMAL) {
 				try {
 					String normDec = XMLDatatypeUtil.normalizeDecimal(label);
@@ -434,7 +440,9 @@ public class QueryEvaluationUtility {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING ||
+				l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING ||
+				l.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING;
 	}
 
 	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {

@@ -87,6 +87,28 @@ public interface LanguageHandler {
 			throws LiteralUtilException;
 
 	/**
+	 * Normalize both the language tag and the language if appropriate, and use the given value factory to generate a
+	 * literal matching the literal value and language tag.
+	 * <p>
+	 * This method must only be called after verifying that {@link #isRecognizedLanguage(String)} returns true for the
+	 * given language tag, and {@link #verifyLanguage(String, String)} also returns true for the given language and
+	 * literal value.
+	 *
+	 * @param literalValue Required literal value to use in the normalization process and to provide the value for the
+	 *                     resulting literal.
+	 * @param languageTag  The language tag which is to be normalized. This tag is available in normalized form from the
+	 *                     result using {@link Literal#getLanguage()}.
+	 * @param baseDir
+	 * @param valueFactory The {@link ValueFactory} to use to create the result literal.
+	 * @return A {@link Literal} containing the normalized literal value and language tag.
+	 * @throws LiteralUtilException If the language tag was not recognized or verified, or the literal value could not
+	 *                              be normalized due to an error.
+	 */
+	Literal normalizeLanguage(String literalValue, String languageTag, Literal.BaseDirection baseDir,
+			ValueFactory valueFactory)
+			throws LiteralUtilException;
+
+	/**
 	 * A unique key for this language handler to identify it in the LanguageHandlerRegistry.
 	 *
 	 * @return A unique string key.

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -23,6 +23,8 @@ public interface SyntaxTreeBuilderVisitor {
 	public Object visit(ASTBaseDecl node, Object data) throws VisitorException;
 
 	public Object visit(ASTPrefixDecl node, Object data) throws VisitorException;
+
+	public Object visit(ASTVersionDecl node, Object data) throws VisitorException;
 
 	public Object visit(ASTSelectQuery node, Object data) throws VisitorException;
 
@@ -112,9 +114,13 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTVar node, Object data) throws VisitorException;
 
-	public Object visit(ASTTripleRef node, Object data) throws VisitorException;
+	public Object visit(ASTReifiedTriple node, Object data) throws VisitorException;
 
-	public Object visit(ASTConstTripleRef node, Object data) throws VisitorException;
+	public Object visit(ASTTripleTerm node, Object data) throws VisitorException;
+
+	public Object visit(ASTLabeledTripleTerm node, Object data) throws VisitorException;
+
+	public Object visit(ASTConstTripleTerm node, Object data) throws VisitorException;
 
 	public Object visit(ASTOr node, Object data) throws VisitorException;
 
@@ -256,6 +262,24 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTNotExistsFunc node, Object data) throws VisitorException;
 
+	public Object visit(ASTIsTriple node, Object data) throws VisitorException;
+
+	public Object visit(ASTTripleFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTSubjectFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTPredicateFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTObjectFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTLangDirFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTHasLangFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTHasLangDirFunc node, Object data) throws VisitorException;
+
+	public Object visit(ASTStrLangDirFunc node, Object data) throws VisitorException;
+
 	public Object visit(ASTRDFLiteral node, Object data) throws VisitorException;
 
 	public Object visit(ASTTrue node, Object data) throws VisitorException;
@@ -302,4 +326,4 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTModify node, Object data) throws VisitorException;
 }
-/* JavaCC - OriginalChecksum=daffbeaaacea4dca824eb7969ebdb172 (do not edit this line) */
+/* JavaCC - OriginalChecksum=327c7a1ade3b8dcf8fc0a49e505d2383 (do not edit this line) */

@@ -88,7 +88,7 @@ public class ValueSerializerTest {
 	@Test
 	void tripleOfExampleOrg() throws IOException {
 		final IRI iri = vf.createIRI("https://example.org/lala");
-		Value toSerialize = vf.createTriple(iri, iri, iri);
+		Value toSerialize = vf.createTripleTerm(iri, iri, iri);
 		Value deserialized = serializeDeserialize(toSerialize);
 		assertEquals(toSerialize, deserialized);
 	}

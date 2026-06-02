@@ -159,7 +159,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		if (value.isBNode()) {
 			return "B|" + value.stringValue();
 		}
-		if (value.isTriple()) {
+		if (value.isTripleTerm()) {
 			return "T|" + value.stringValue();
 		}
 		return value.getClass().getName() + "|" + value.stringValue();

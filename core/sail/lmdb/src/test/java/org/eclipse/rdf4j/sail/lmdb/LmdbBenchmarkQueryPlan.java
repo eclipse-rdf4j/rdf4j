@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 
@@ -79,7 +79,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			dataset = branch.dataset(store.getDefaultIsolationLevel());
 			EvaluationStrategy strategy = store.getEvaluationStrategyFactory()
 					.createEvaluationStrategy(tupleQuery.getActiveDataset(),
-							new SailDatasetTripleSource(sailStore.getValueFactory(), dataset),
+							new SailDatasetTripleTermSource(sailStore.getValueFactory(), dataset),
 							sailStore.getEvaluationStatistics());
 			TupleExpr optimized = strategy.optimize(tupleExpr, sailStore.getEvaluationStatistics(),
 					tupleQuery.getBindings());

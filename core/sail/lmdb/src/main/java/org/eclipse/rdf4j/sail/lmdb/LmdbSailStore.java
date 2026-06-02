@@ -999,7 +999,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 					knownContextList.add(null);
-				} else if (!context.isTriple()) {
+				} else if (!context.isTripleTerm()) {
 					long contextID = valueStore.getId(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
@@ -1109,7 +1109,7 @@ class LmdbSailStore implements SailStore {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0L);
-				} else if (!context.isTriple()) {
+				} else if (!context.isTripleTerm()) {
 					long contextID = valueStore.getId(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {

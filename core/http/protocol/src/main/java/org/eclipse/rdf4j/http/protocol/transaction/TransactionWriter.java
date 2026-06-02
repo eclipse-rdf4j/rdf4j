@@ -30,12 +30,12 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 
 /**
  * Serializes of an RDF transaction.
@@ -238,28 +238,18 @@ public class TransactionWriter {
 	}
 
 	protected void serialize(Value value, XMLWriter xmlWriter) throws IOException {
-		if (value instanceof Resource) {
-			serialize((Resource) value, xmlWriter);
-		} else if (value instanceof Literal) {
+		if (value instanceof Literal) {
 			serialize((Literal) value, xmlWriter);
+		} else if (value instanceof IRI) {
+			serialize((IRI) value, xmlWriter);
+		} else if (value instanceof BNode) {
+			serialize((BNode) value, xmlWriter);
+		} else if (value instanceof TripleTerm) {
+			serialize((TripleTerm) value, xmlWriter);
 		} else if (value == null) {
 			serializeNull(xmlWriter);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass().toString());
-		}
-	}
-
-	protected void serialize(Resource resource, XMLWriter xmlWriter) throws IOException {
-		if (resource instanceof IRI) {
-			serialize((IRI) resource, xmlWriter);
-		} else if (resource instanceof BNode) {
-			serialize((BNode) resource, xmlWriter);
-		} else if (resource instanceof Triple) {
-			serialize((Triple) resource, xmlWriter);
-		} else if (resource == null) {
-			serializeNull(xmlWriter);
-		} else {
-			throw new IllegalArgumentException("Unknown resource type: " + resource.getClass().toString());
 		}
 	}
 
@@ -311,9 +301,9 @@ public class TransactionWriter {
 		xmlWriter.emptyElement(TransactionXMLConstants.NULL_TAG);
 	}
 
-	protected void serialize(Triple triple, XMLWriter xmlWriter) throws IOException {
-		if (triple != null) {
-			Value convertBase64 = RDFStarUtil.toRDFEncodedValue(triple);
+	protected void serialize(TripleTerm tripleTerm, XMLWriter xmlWriter) throws IOException {
+		if (tripleTerm != null) {
+			Value convertBase64 = TripleTermUtil.toRDFEncodedValue(tripleTerm);
 			xmlWriter.textElement(TransactionXMLConstants.TRIPLE_TAG, convertBase64.stringValue());
 		} else {
 			serializeNull(xmlWriter);

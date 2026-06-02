@@ -16,7 +16,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 
@@ -86,7 +86,7 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 5. RDF-star triples
-		return compareTriples((Triple) o1, (Triple) o2);
+		return compareTriples((TripleTerm) o1, (TripleTerm) o2);
 	}
 
 	public void setStrict(boolean flag) {
@@ -215,12 +215,12 @@ public class ValueComparator implements Comparator<Value> {
 
 	}
 
-	private int compareTriples(Triple leftTriple, Triple rightTriple) {
-		int c = compare(leftTriple.getSubject(), rightTriple.getSubject());
+	private int compareTriples(TripleTerm leftTripleTerm, TripleTerm rightTripleTerm) {
+		int c = compare(leftTripleTerm.getSubject(), rightTripleTerm.getSubject());
 		if (c == 0) {
-			c = compare(leftTriple.getPredicate(), rightTriple.getPredicate());
+			c = compare(leftTripleTerm.getPredicate(), rightTripleTerm.getPredicate());
 			if (c == 0) {
-				c = compare(leftTriple.getObject(), rightTriple.getObject());
+				c = compare(leftTripleTerm.getObject(), rightTripleTerm.getObject());
 			}
 		}
 		return c;

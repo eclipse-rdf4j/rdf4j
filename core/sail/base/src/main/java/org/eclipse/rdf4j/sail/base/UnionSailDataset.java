@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
@@ -166,11 +166,11 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
+	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 
-		CloseableIteration<? extends Triple> iteration1 = null;
-		CloseableIteration<? extends Triple> iteration2 = null;
+		CloseableIteration<? extends TripleTerm> iteration1 = null;
+		CloseableIteration<? extends TripleTerm> iteration2 = null;
 		try {
 			iteration1 = dataset1.getTriples(subj, pred, obj);
 			iteration2 = dataset2.getTriples(subj, pred, obj);

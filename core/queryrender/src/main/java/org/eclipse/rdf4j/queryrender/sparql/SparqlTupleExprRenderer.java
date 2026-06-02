@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.In;
@@ -31,9 +33,11 @@ import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -435,6 +440,26 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	@Override
+	public void meet(LangDir node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(StrLangDir node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(HasLang node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(HasLangDir node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
 	public void meet(LangMatches node) throws Exception {
 		mJoinBuffer.append(renderValueExpr(node));
 	}
@@ -471,6 +496,11 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 */
 	@Override
 	public void meet(Var node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IsTriple node) throws Exception {
 		mJoinBuffer.append(renderValueExpr(node));
 	}
 

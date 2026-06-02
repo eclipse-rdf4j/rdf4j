@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -809,7 +809,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	}
 
-	Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+	Iterable<TripleTerm> getApprovedTriples(Resource subj, IRI pred, Value obj) {
 		assert !closed;
 		if (approved == null || approvedEmpty) {
 			return Collections.emptyList();
@@ -819,9 +819,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
-			Stream<Triple> approvedSubjectTriples = approved.parallelStream()
-					.filter(st -> st.getSubject().isTriple())
-					.map(st -> (Triple) st.getSubject())
+			Stream<TripleTerm> approvedSubjectTriples = approved.parallelStream()
+					.filter(st -> st.getSubject().isTripleTerm())
+					.map(st -> (TripleTerm) st.getSubject())
 					.filter(t -> {
 						if (subj != null && !subj.equals(t.getSubject())) {
 							return false;
@@ -832,9 +832,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						return obj == null || obj.equals(t.getObject());
 					});
 
-			Stream<Triple> approvedObjectTriples = approved.parallelStream()
-					.filter(st -> st.getObject().isTriple())
-					.map(st -> (Triple) st.getObject())
+			Stream<TripleTerm> approvedObjectTriples = approved.parallelStream()
+					.filter(st -> st.getObject().isTripleTerm())
+					.map(st -> (TripleTerm) st.getObject())
 					.filter(t -> {
 						if (subj != null && !subj.equals(t.getSubject())) {
 							return false;

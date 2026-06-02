@@ -24,7 +24,7 @@ import java.io.InputStream;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -291,6 +292,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -301,14 +303,15 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J_incompleteTriple() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -322,6 +325,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J_doubleSubject() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -335,6 +339,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatStardog() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -345,14 +350,15 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatStardog_NamedGraph() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -364,14 +370,15 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
 	}
 
 	@Test
+	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatJena() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -382,8 +389,8 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");

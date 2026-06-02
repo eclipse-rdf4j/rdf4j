@@ -18,6 +18,10 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11SyntaxCo
 
 public class W3CApprovedSPARQL11SyntaxTest extends SPARQL11SyntaxComplianceTest {
 
+	public W3CApprovedSPARQL11SyntaxTest() {
+		setTestsSource("testcases-sparql-1.1-w3c/manifest-all.ttl");
+	}
+
 	@Override
 	protected ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException {
 		return QueryParserUtil.parseOperation(QueryLanguage.SPARQL, operation, fileURL);

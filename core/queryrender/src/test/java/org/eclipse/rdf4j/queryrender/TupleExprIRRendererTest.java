@@ -458,9 +458,11 @@ public class TupleExprIRRendererTest {
 	}
 
 	@RepeatedTest(10)
-	void rdf_star_triple_terms_render_verbatim() {
-		String q = "SELECT * WHERE {\n" +
-				"  <<ex:s ex:p ex:o>> ex:q ?x .\n" +
+	void rdf_12_triple_terms_render_verbatim() {
+		String q = "SELECT ?s ?x WHERE {\n" +
+				"  ?s rdf:reifies <<(ex:s ex:p ex:o)>> ." +
+				"  ?s ex:q ?x ." +
+				"\n" +
 				"}";
 		String rendered = render(SPARQL_PREFIX + q, cfg());
 //		assertTrue(rendered.contains("<<ex:s ex:p ex:o>>"), "RDF-star triple term must render as <<...>>");

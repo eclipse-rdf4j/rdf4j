@@ -192,5 +192,17 @@ public interface QueryModelVisitor<X extends Exception> {
 		// no-op
 	}
 
+	default void meet(IsTriple node) throws X {
+		// no-op
+	}
+
+	void meet(LangDir node) throws X;
+
+	void meet(StrLangDir node) throws X;
+
+	void meet(HasLang node) throws X;
+
+	void meet(HasLangDir node) throws X;
+
 	void meetOther(QueryModelNode node) throws X;
 }

@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
@@ -118,15 +118,15 @@ public class ProtocolTest {
 		BNode decodedNode = (BNode) Protocol.decodeValue(encodedBnode, vf);
 		assertEquals(bnode, decodedNode);
 
-		Triple triple1 = vf.createTriple(bnode, uri, vf.createLiteral(16));
-		String encodedTriple1 = Protocol.encodeValue(triple1);
-		Triple decodedTriple1 = (Triple) Protocol.decodeValue(encodedTriple1, vf);
-		assertEquals(triple1, decodedTriple1);
+		TripleTerm tripleTerm1 = vf.createTripleTerm(bnode, uri, vf.createLiteral(16));
+		String encodedTriple1 = Protocol.encodeValue(tripleTerm1);
+		TripleTerm decodedTripleTerm1 = (TripleTerm) Protocol.decodeValue(encodedTriple1, vf);
+		assertEquals(tripleTerm1, decodedTripleTerm1);
 
-		Triple triple2 = vf.createTriple(bnode, uri, triple1);
-		String encodedTriple2 = Protocol.encodeValue(triple2);
-		Triple decodedTriple2 = (Triple) Protocol.decodeValue(encodedTriple2, vf);
-		assertEquals(triple2, decodedTriple2);
+		TripleTerm tripleTerm2 = vf.createTripleTerm(bnode, uri, tripleTerm1);
+		String encodedTriple2 = Protocol.encodeValue(tripleTerm2);
+		TripleTerm decodedTripleTerm2 = (TripleTerm) Protocol.decodeValue(encodedTriple2, vf);
+		assertEquals(tripleTerm2, decodedTripleTerm2);
 	}
 
 	@Test
@@ -136,7 +136,7 @@ public class ProtocolTest {
 		assertEquals(vf.createBNode("bnode1"), Protocol.decodeContext("_:bnode1", vf));
 		assertEquals(vf.createIRI("urn:test"), Protocol.decodeContext("<urn:test>", vf));
 
-		// RDF-star triples are resources but they can't be used as context values
+		// triples can't be used as context values
 		try {
 			Protocol.decodeContext("<<<urn:a> <urn:b> <urn:c>>>", SimpleValueFactory.getInstance());
 			fail("Must fail with exception");

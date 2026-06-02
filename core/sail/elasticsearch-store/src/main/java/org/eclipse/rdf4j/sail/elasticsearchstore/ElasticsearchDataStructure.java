@@ -501,7 +501,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 					((Literal) statement.getObject()).getDatatype().stringValue());
 			if (((Literal) statement.getObject()).getLanguage().isPresent()) {
 				jsonMap.put("object_Lang", ((Literal) statement.getObject()).getLanguage().get());
-
+				jsonMap.put("object_LangDir", ((Literal) statement.getObject()).getBaseDirection().toString());
 			}
 		}
 		return jsonMap;
@@ -739,8 +739,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			objectRes = vf.createBNode(objectString);
 		} else {
 			if (sourceAsMap.containsKey("object_Lang")) {
-				objectRes = vf.createLiteral(objectString, (String) sourceAsMap.get("object_Lang"));
-
+				objectRes = vf.createLiteral(objectString, (String) sourceAsMap.get("object_Lang"),
+						Literal.BaseDirection.fromString((String) sourceAsMap.get("object_LangDir")));
 			} else {
 				objectRes = vf.createLiteral(objectString,
 						vf.createIRI((String) sourceAsMap.get("object_Datatype")));

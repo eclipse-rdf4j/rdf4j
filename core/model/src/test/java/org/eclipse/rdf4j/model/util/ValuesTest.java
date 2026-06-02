@@ -16,7 +16,7 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.model.util.Values.namespace;
-import static org.eclipse.rdf4j.model.util.Values.triple;
+import static org.eclipse.rdf4j.model.util.Values.tripleTerm;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -509,56 +509,56 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testTriple() {
-		Triple triple = triple(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+	public void testTripleTerm() {
+		TripleTerm tripleTerm = Values.tripleTerm(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
 
-		assertThat(triple).isNotNull();
-		assertThat(triple.getSubject()).isEqualTo(RDF.ALT);
-		assertThat(triple.getPredicate()).isEqualTo(RDF.TYPE);
-		assertThat(triple.getObject()).isEqualTo(RDFS.CONTAINER);
+		assertThat(tripleTerm).isNotNull();
+		assertThat(tripleTerm.getSubject()).isEqualTo(RDF.ALT);
+		assertThat(tripleTerm.getPredicate()).isEqualTo(RDF.TYPE);
+		assertThat(tripleTerm.getObject()).isEqualTo(RDFS.CONTAINER);
 	}
 
 	@Test
-	public void testTriple_InjectedValueFactory() {
-		triple(vf, RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
-		verify(vf).createTriple(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+	public void testTriple_Term_InjectedValueFactory() {
+		Values.tripleTerm(vf, RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+		verify(vf).createTripleTerm(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
 	}
 
 	@Test
-	public void testTripleNull() {
-		assertThatThrownBy(() -> triple(null, RDF.TYPE, RDFS.CONTAINER))
+	public void testTripleTermNull() {
+		assertThatThrownBy(() -> Values.tripleTerm(null, RDF.TYPE, RDFS.CONTAINER))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("subject may not be null");
 
-		assertThatThrownBy(() -> triple(RDF.ALT, null, RDFS.CONTAINER))
+		assertThatThrownBy(() -> Values.tripleTerm(RDF.ALT, null, RDFS.CONTAINER))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("predicate may not be null");
 
-		assertThatThrownBy(() -> triple(RDF.ALT, RDF.TYPE, null))
+		assertThatThrownBy(() -> Values.tripleTerm(RDF.ALT, RDF.TYPE, null))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("object may not be null");
 	}
 
 	@Test
-	public void testTripleFromStatement() {
+	public void testTripleTermFromStatement() {
 		Statement st = SimpleValueFactory.getInstance().createStatement(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
-		Triple triple = triple(st);
-		assertThat(triple).isNotNull();
-		assertThat(triple.getSubject()).isEqualTo(st.getSubject());
-		assertThat(triple.getPredicate()).isEqualTo(st.getPredicate());
-		assertThat(triple.getObject()).isEqualTo(st.getObject());
+		TripleTerm tripleTerm = Values.tripleTerm(st);
+		assertThat(tripleTerm).isNotNull();
+		assertThat(tripleTerm.getSubject()).isEqualTo(st.getSubject());
+		assertThat(tripleTerm.getPredicate()).isEqualTo(st.getPredicate());
+		assertThat(tripleTerm.getObject()).isEqualTo(st.getObject());
 	}
 
 	@Test
-	public void testTripleFromStatement_InjectedValueFactory() {
+	public void testTripleTermFromStatement_InjectedValueFactory() {
 		Statement st = SimpleValueFactory.getInstance().createStatement(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
-		triple(vf, st);
-		verify(vf).createTriple(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+		tripleTerm(vf, st);
+		verify(vf).createTripleTerm(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
 	}
 
 	@Test
-	public void testTripleFromStatementNull() {
-		assertThatThrownBy(() -> triple(null))
+	public void testTripleTermFromStatementNull() {
+		assertThatThrownBy(() -> Values.tripleTerm(null))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("statement may not be null");
 	}

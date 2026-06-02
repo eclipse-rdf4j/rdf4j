@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
@@ -164,18 +164,18 @@ public interface SailDataset extends SailClosable {
 	}
 
 	/**
-	 * Gets all RDF-star triples that have a specific subject, predicate and/or object. All three parameters may be null
+	 * Gets all RDF 1.2 triples that have a specific subject, predicate and/or object. All three parameters may be null
 	 * to indicate wildcards.
 	 *
 	 * @param subj A Resource specifying the subject, or <var>null</var> for a wildcard.
 	 * @param pred A IRI specifying the predicate, or <var>null</var> for a wildcard.
 	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return An iterator over the relevant triples.
-	 * @throws SailException If the triple source failed to get the RDF-star triples.
+	 * @throws SailException If the triple source failed to get the RDF 1.2 triples.
 	 */
-	default CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
+	default CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		throw new SailException("RDF-star triple retrieval not supported by this store");
+		throw new SailException("RDF 1.2 triple retrieval not supported by this store");
 	}
 
 	@Experimental
