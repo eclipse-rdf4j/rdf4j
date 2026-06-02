@@ -165,6 +165,20 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return builderFrom(this).bindingProfile(bindingProfile).build();
 	}
 
+	public PhysicalProperties normalized(BindingUniverse universe) {
+		if (universe == null) {
+			return this;
+		}
+		universe.maskOf(distinctVars);
+		universe.maskOf(boundVars);
+		universe.maskOf(inputBoundVars);
+		for (String ordered : ordering) {
+			int separator = ordered.indexOf(':');
+			universe.intern(separator < 0 ? ordered : ordered.substring(0, separator));
+		}
+		return this;
+	}
+
 	private boolean satisfiesOrdering(List<String> requiredOrdering) {
 		if (requiredOrdering.isEmpty()) {
 			return true;
