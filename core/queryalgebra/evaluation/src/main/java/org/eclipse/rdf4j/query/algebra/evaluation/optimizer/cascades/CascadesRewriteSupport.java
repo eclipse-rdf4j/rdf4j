@@ -52,15 +52,33 @@ final class CascadesRewriteSupport {
 		return !intersection(left, right).isEmpty();
 	}
 
+	static boolean intersects(BindingUniverse universe, Set<String> left, Set<String> right) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		return mask(safeUniverse, left).intersects(mask(safeUniverse, right));
+	}
+
+	static boolean containsAll(BindingUniverse universe, Set<String> left, Set<String> right) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		return mask(safeUniverse, left).containsAll(mask(safeUniverse, right));
+	}
+
 	static Set<String> intersection(Set<String> left, Set<String> right) {
-		Set<String> leftNames = plannerNames(left);
-		Set<String> rightNames = plannerNames(right);
-		if (leftNames.isEmpty() || rightNames.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> intersection = new HashSet<>(leftNames);
-		intersection.retainAll(rightNames);
-		return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
+		return intersection(null, left, right);
+	}
+
+	static Set<String> intersection(BindingUniverse universe, Set<String> left, Set<String> right) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask intersection = mask(safeUniverse, left).intersect(mask(safeUniverse, right));
+		return safeUniverse.names(intersection);
+	}
+
+	static BindingMask mask(BindingUniverse universe, Set<String> names) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		return safeUniverse.maskOf(plannerNames(names));
+	}
+
+	static BindingMask branchLocalBindOrValuesMask(TupleExpr tupleExpr, BindingUniverse universe) {
+		return mask(universe, branchLocalBindOrValuesNames(tupleExpr));
 	}
 
 	static List<ValueExpr> splitConjuncts(ValueExpr expression) {

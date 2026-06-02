@@ -29,14 +29,20 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public final class MemoGroup {
 	private final int id;
 	private LogicalProperties logicalProperties;
+	private BindingShape bindingShape;
 	private final List<MemoExpr> expressions = new ArrayList<>();
 	private final Set<String> expressionKeys = new HashSet<>();
 	private final Map<WinnerKey, WinnerFrontier> winnersByGoal = new HashMap<>();
 	private final Set<WinnerKey> failures = new HashSet<>();
 
 	MemoGroup(int id, LogicalProperties logicalProperties) {
+		this(id, logicalProperties, BindingShape.empty());
+	}
+
+	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape) {
 		this.id = id;
 		this.logicalProperties = logicalProperties == null ? LogicalProperties.EMPTY : logicalProperties;
+		this.bindingShape = bindingShape == null ? BindingShape.empty() : bindingShape;
 	}
 
 	public int id() {
@@ -47,12 +53,25 @@ public final class MemoGroup {
 		return logicalProperties;
 	}
 
+	public BindingShape bindingShape() {
+		return bindingShape;
+	}
+
 	void mergeLogicalProperties(LogicalProperties properties) {
 		if (properties == null) {
 			return;
 		}
 		if (logicalProperties == LogicalProperties.EMPTY) {
 			logicalProperties = properties;
+		}
+	}
+
+	void mergeBindingShape(BindingShape shape) {
+		if (shape == null || shape.possible().isEmpty() && shape.assured().isEmpty()) {
+			return;
+		}
+		if (bindingShape.possible().isEmpty() && bindingShape.assured().isEmpty()) {
+			bindingShape = shape;
 		}
 	}
 

@@ -76,7 +76,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 			StatementPattern knows = pattern("person", KNOWS, "friend");
 			StatementPattern name = pattern("friend", NAME, "name");
 
-			double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(knows, name), "friend");
+			double rows = estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(knows, name), "friend");
 
 			assertEquals(4.0d, rows, 0.0d,
 					"Pairwise planning fallback should use LMDB page-walk estimates, not sampling");

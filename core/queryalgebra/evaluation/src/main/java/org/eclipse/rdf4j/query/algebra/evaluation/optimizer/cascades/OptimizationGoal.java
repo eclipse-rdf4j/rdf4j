@@ -139,6 +139,20 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				deadlineNanos, taskBudget, rowGoal, estimationTier);
 	}
 
+	public OptimizationGoal normalized(BindingUniverse universe) {
+		if (universe == null) {
+			return this;
+		}
+		PhysicalProperties normalizedRequired = requiredProperties.normalized(universe);
+		Set<PhysicalProperties> normalizedExcluded = excludedProperties.isEmpty()
+				? Set.of()
+				: excludedProperties.stream()
+						.map(properties -> properties.normalized(universe))
+						.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		return new OptimizationGoal(normalizedRequired, semanticScope, costPolicy, costBound, normalizedExcluded,
+				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier);
+	}
+
 	public OptimizationGoal asBudgeted(Duration timeout, int budget) {
 		long deadline = Long.MAX_VALUE;
 		if (timeout != null && !timeout.isNegative() && !timeout.isZero()) {

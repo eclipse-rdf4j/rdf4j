@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -71,6 +72,30 @@ class CascadesMemoModelTest {
 		assertEquals(groupId, memo.intern(commuted.clone()));
 		assertEquals(2, memo.group(groupId).expressions().size());
 		assertTrue(memo.addLogicalAlternative(groupId, commuted.clone()).isEmpty());
+	}
+
+	@Test
+	void memoCarriesUniverseAndGroupBindingShape() {
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern left = pattern("s", "p1", "o");
+		StatementPattern right = pattern("o", "p2", "x");
+		Join root = new Join(left, right);
+		PhysicalProperties required = PhysicalProperties.builder()
+				.boundVars(Set.of("incoming"))
+				.distinctVars(Set.of("x"))
+				.build();
+		BindingUniverse universe = BindingUniverse.from(root, required);
+		Memo memo = new Memo(costModel, universe);
+
+		int groupId = memo.intern(root);
+		BindingShape shape = memo.group(groupId).bindingShape();
+
+		assertSame(universe, memo.universe());
+		assertTrue(memo.universe().containsName("incoming"));
+		assertTrue(shape.possible().contains(universe.symbol("s")));
+		assertTrue(shape.possible().contains(universe.symbol("x")));
+		assertTrue(shape.assured().contains(universe.symbol("o")));
+		assertTrue(shape.assured().contains(universe.symbol("x")));
 	}
 
 	@Test

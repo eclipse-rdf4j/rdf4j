@@ -75,7 +75,9 @@ public final class CascadesPlanner {
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal) {
 		OptimizationGoal normalizedGoal = goal == null ? OptimizationGoal.root(root, PhysicalProperties.ANY) : goal;
-		Memo memo = new Memo(costModel);
+		BindingUniverse universe = BindingUniverse.from(root, normalizedGoal.requiredProperties());
+		normalizedGoal = normalizedGoal.normalized(universe);
+		Memo memo = new Memo(costModel, universe);
 		int rootGroup = memo.intern(root);
 		SearchState state = new SearchState(normalizedGoal.taskBudget(), normalizedGoal.searchMode());
 		Winner winner = optimizeGroup(memo, rootGroup, normalizedGoal, state).orElse(null);

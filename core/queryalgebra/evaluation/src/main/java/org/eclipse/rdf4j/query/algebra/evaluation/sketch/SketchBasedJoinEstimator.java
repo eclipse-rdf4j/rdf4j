@@ -6135,6 +6135,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private double estimateUpperBoundIntersectionRows(double upperBoundDistinct, double leftRows, double rightRows,
 			double leftDistinct, double rightDistinct, double rowCap) {
+		return estimateUpperBoundIntersectionRows(upperBoundDistinct, leftRows, rightRows, leftDistinct, rightDistinct,
+				rowCap, true);
+	}
+
+	private double estimateUpperBoundIntersectionRows(double upperBoundDistinct, double leftRows, double rightRows,
+			double leftDistinct, double rightDistinct, double rowCap, boolean recordUse) {
 		double boundedDistinct = upperBoundDistinct(upperBoundDistinct, leftDistinct, rightDistinct);
 		if (!(boundedDistinct > 0.0d)
 				|| !(Double.isFinite(leftRows) && leftRows > 0.0d)
@@ -6153,11 +6159,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		boolean positiveBeforeNormalize = rows > 0.0d;
 		rows = normalizeRows(rows);
 		if (rows > 0.0d) {
-			recordSketchIntersectionUpperBoundUse();
+			if (recordUse) {
+				recordSketchIntersectionUpperBoundUse();
+			}
 			return rows;
 		}
 		if (positiveBeforeNormalize) {
-			recordSketchIntersectionUpperBoundUse();
+			if (recordUse) {
+				recordSketchIntersectionUpperBoundUse();
+			}
 			return 1.0d;
 		}
 		return 0.0d;
@@ -9200,6 +9210,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return estimateJoinSurfaceRows(prefixFactors, factor, joinVarName, false);
 	}
 
+	public double estimateSketchJoinSurfaceUpperBoundRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		SummaryStats stats = estimateSketchJoinSurfaceStats(prefixFactors, factor, joinVarName);
+		return stats == null ? -1.0d : normalizeRows(stats.upperBoundRows);
+	}
+
 	public double estimateExactJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
 		Double exactSurfaceRows = exactJoinSurfaceRows(prefixFactors, factor, joinVarName);
 		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
@@ -9232,7 +9248,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return Double.isFinite(rows) && rows >= 0.0d ? normalizeRows(rows) : -1.0d;
 	}
 
-	public double estimatePairwiseJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+	public double estimatePairwiseJoinSurfaceFallbackRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String joinVarName) {
 		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
 			return -1.0d;
@@ -9286,28 +9302,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return normalizeRows(finiteAnchorSurfaceRows);
 		}
 
-		SummaryStats prefixStats = null;
-		TupleExpr singlePrefixJoinFactor = null;
-		int prefixJoinFactorCount = 0;
-		for (TupleExpr prefixFactor : prefixFactors) {
-			if (prefixFactor == null || !prefixFactor.getBindingNames().contains(joinVarName)) {
-				continue;
-			}
-			prefixJoinFactorCount++;
-			singlePrefixJoinFactor = prefixFactor;
-			SummaryStats factorStats = estimateTupleExprForJoinVar(prefixFactor, joinVarName);
-			if (factorStats == null) {
-				return -1.0d;
-			}
-			prefixStats = prefixStats == null ? factorStats : mergeSummaryStats(prefixStats, factorStats);
-		}
-		if (prefixStats == null) {
+		PrefixSurfaceStats prefixSurfaceStats = estimatePrefixSurfaceStats(prefixFactors, joinVarName);
+		if (prefixSurfaceStats == null) {
 			return -1.0d;
 		}
 		SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
 		if (factorStats == null) {
 			return -1.0d;
 		}
+		SummaryStats prefixStats = prefixSurfaceStats.stats();
 		double surfaceRows = normalizeRows(mergeSummaryStats(prefixStats, factorStats).rows);
 		if (!exactFallback) {
 			return surfaceRows;
@@ -9317,9 +9320,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				&& (!Double.isFinite(surfaceRows) || surfaceRows <= 0.0d || exactSurfaceRows < surfaceRows)) {
 			return exactSurfaceRows;
 		}
-		if (surfaceRows <= 0.0d && prefixJoinFactorCount == 1) {
-			Double sampledSurfaceRows = sampledPairwiseJoinSurfaceRows(singlePrefixJoinFactor, factor, joinVarName,
-					prefixStats, factorStats);
+		if (surfaceRows <= 0.0d && prefixSurfaceStats.joinFactorCount() == 1) {
+			Double sampledSurfaceRows = sampledPairwiseJoinSurfaceRows(prefixSurfaceStats.singleJoinFactor(), factor,
+					joinVarName, prefixStats, factorStats);
 			if (sampledSurfaceRows != null && sampledSurfaceRows >= 0.0d) {
 				return sampledSurfaceRows;
 			}
@@ -9345,6 +9348,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public double estimateSketchJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
 		return estimateJoinSurfaceRows(factors, joinVarName, false);
+	}
+
+	public double estimateSketchJoinSurfaceUpperBoundRows(List<TupleExpr> factors, String joinVarName) {
+		SummaryStats stats = estimateSketchJoinSurfaceStats(factors, joinVarName);
+		return stats == null ? -1.0d : normalizeRows(stats.upperBoundRows);
 	}
 
 	public double estimateExactJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
@@ -9389,7 +9397,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				estimate.sampleCount());
 	}
 
-	public double estimatePairwiseJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+	public double estimatePairwiseJoinSurfaceFallbackRows(List<TupleExpr> factors, String joinVarName) {
 		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
 			return -1.0d;
 		}
@@ -9431,17 +9439,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return normalizeRows(finiteAnchorRows);
 		}
 
-		SummaryStats prefixStats = null;
-		for (TupleExpr factor : factors) {
-			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
-				continue;
-			}
-			SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
-			if (factorStats == null) {
-				return -1.0d;
-			}
-			prefixStats = prefixStats == null ? factorStats : mergeSummaryStats(prefixStats, factorStats);
-		}
+		SummaryStats prefixStats = estimateSketchJoinSurfaceStats(factors, joinVarName);
 		if (prefixStats == null) {
 			return -1.0d;
 		}
@@ -9475,6 +9473,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return mergeSummaryStats(prefixStats, factorStats).rows;
 	}
 
+	private SummaryStats estimateSketchJoinSurfaceStats(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
+			return null;
+		}
+		Double finiteAnchorSurfaceRows = finiteAnchorPrefixJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (finiteAnchorSurfaceRows != null) {
+			return new SummaryStats(null, finiteAnchorSurfaceRows, normalizeRows(finiteAnchorSurfaceRows), false);
+		}
+		PrefixSurfaceStats prefixStats = estimatePrefixSurfaceStats(prefixFactors, joinVarName);
+		if (prefixStats == null) {
+			return null;
+		}
+		SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		return factorStats == null ? null : mergeSummaryStats(prefixStats.stats(), factorStats);
+	}
+
 	private Double finiteAnchorPrefixSurfaceRows(List<TupleExpr> factors, String joinVarName) {
 		TuplePlanEstimate estimate = finiteAnchorPrefixEstimate(factors);
 		if (estimate == null) {
@@ -9482,6 +9497,37 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		SummaryStats stats = summaryStatsForJoinVar(estimate, joinVarName);
 		return stats == null ? null : stats.rows;
+	}
+
+	private SummaryStats estimateSketchJoinSurfaceStats(List<TupleExpr> factors, String joinVarName) {
+		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
+			return null;
+		}
+		Double finiteAnchorRows = finiteAnchorPrefixSurfaceRows(factors, joinVarName);
+		if (finiteAnchorRows != null) {
+			return new SummaryStats(null, finiteAnchorRows, normalizeRows(finiteAnchorRows), false);
+		}
+		PrefixSurfaceStats prefixStats = estimatePrefixSurfaceStats(factors, joinVarName);
+		return prefixStats == null ? null : prefixStats.stats();
+	}
+
+	private PrefixSurfaceStats estimatePrefixSurfaceStats(List<TupleExpr> factors, String joinVarName) {
+		SummaryStats prefixStats = null;
+		TupleExpr singleJoinFactor = null;
+		int joinFactorCount = 0;
+		for (TupleExpr factor : factors) {
+			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			joinFactorCount++;
+			singleJoinFactor = factor;
+			SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+			if (factorStats == null) {
+				return null;
+			}
+			prefixStats = prefixStats == null ? factorStats : mergeSummaryStats(prefixStats, factorStats);
+		}
+		return prefixStats == null ? null : new PrefixSurfaceStats(prefixStats, singleJoinFactor, joinFactorCount);
 	}
 
 	private TuplePlanEstimate finiteAnchorPrefixEstimate(List<TupleExpr> factors) {
@@ -9975,19 +10021,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 							rightStats.distinct), rows, true);
 				}
 			}
-			return new SummaryStats(inter, 0.0, 0.0, false);
+			return new SummaryStats(inter, 0.0, 0.0, 0.0, false);
 		}
 
 		double joinRows = roundJoinEstimate(intersectionStats.positiveSum());
+		double upperBoundRows = Math.max(joinRows, estimateUpperBoundIntersectionRows(
+				intersectionStats.upperBoundDistinct1StdDev(),
+				leftStats.rows, rightStats.rows, leftStats.distinct, rightStats.distinct, disconnectedRows, false));
 		if (joinRows == 0.0d) {
-			double rows = estimateUpperBoundIntersectionRows(intersectionStats.upperBoundDistinct1StdDev(),
-					leftStats.rows, rightStats.rows, leftStats.distinct, rightStats.distinct, disconnectedRows);
+			double rows = upperBoundRows;
 			if (rows > 0.0d) {
 				return new SummaryStats(inter, upperBoundDistinct(intersectionStats, leftStats.distinct,
 						rightStats.distinct), rows, true);
 			}
 		}
-		return new SummaryStats(inter, interDistinct, joinRows, false);
+		return new SummaryStats(inter, interDistinct, joinRows, upperBoundRows, false);
 	}
 
 	private Var findUnboundVarByName(StatementPattern pattern, String varName) {
@@ -9999,8 +10047,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return null;
 	}
 
-	private record SummaryStats(FastAgmsBindingSummary bindings, double distinct, double rows,
+	private record SummaryStats(FastAgmsBindingSummary bindings, double distinct, double rows, double upperBoundRows,
 			boolean upperBoundOnly) {
+
+		private SummaryStats(FastAgmsBindingSummary bindings, double distinct, double rows, boolean upperBoundOnly) {
+			this(bindings, distinct, rows, rows, upperBoundOnly);
+		}
+
+		private SummaryStats {
+			if (!Double.isFinite(upperBoundRows) || upperBoundRows < rows) {
+				upperBoundRows = rows;
+			}
+		}
+	}
+
+	private record PrefixSurfaceStats(SummaryStats stats, TupleExpr singleJoinFactor, int joinFactorCount) {
 	}
 
 	private record PatternEstimateInput(StatementPattern pattern, double filterMultiplier) {

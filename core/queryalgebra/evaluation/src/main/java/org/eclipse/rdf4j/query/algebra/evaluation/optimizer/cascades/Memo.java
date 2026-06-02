@@ -30,13 +30,23 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 @Experimental
 public final class Memo {
 	private final CascadesCostModel costModel;
+	private final BindingUniverse universe;
 	private final List<MemoGroup> groups = new ArrayList<>();
 	private final Map<String, Integer> groupByLogicalExpression = new HashMap<>();
 	private final IdentityHashMap<TupleExpr, Integer> groupByNodeIdentity = new IdentityHashMap<>();
 	private int nextExpressionId;
 
 	public Memo(CascadesCostModel costModel) {
+		this(costModel, BindingUniverse.create());
+	}
+
+	public Memo(CascadesCostModel costModel, BindingUniverse universe) {
 		this.costModel = Objects.requireNonNull(costModel, "costModel");
+		this.universe = universe == null ? BindingUniverse.create() : universe;
+	}
+
+	public BindingUniverse universe() {
+		return universe;
 	}
 
 	public int intern(TupleExpr tupleExpr) {
@@ -70,8 +80,9 @@ public final class Memo {
 			return existingGroup;
 		}
 		LogicalProperties properties = costModel.logicalProperties(tupleExpr);
+		BindingShape bindingShape = BindingShape.from(tupleExpr, universe);
 		int groupId = groups.size();
-		MemoGroup group = new MemoGroup(groupId, properties);
+		MemoGroup group = new MemoGroup(groupId, properties, bindingShape);
 		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, tupleExpr, inputs, metadata, logicalKey);
 		group.addExpression(expression, logicalKey);
 		groups.add(group);
@@ -105,6 +116,7 @@ public final class Memo {
 		if (!group.addExpression(expression, structuralKey)) {
 			return Optional.empty();
 		}
+		group.mergeBindingShape(BindingShape.from(alternative, universe));
 		groupByLogicalExpression.putIfAbsent(structuralKey, groupId);
 		groupByNodeIdentity.put(alternative, groupId);
 		return Optional.of(expression);
@@ -128,7 +140,8 @@ public final class Memo {
 		RuleKind normalizedKind = kind == null || kind == RuleKind.TRANSFORMATION ? RuleKind.IMPLEMENTATION : kind;
 		MemoGroup group = group(groupId);
 		List<Integer> inputs = opaque ? List.of() : internInputs(alternative);
-		PhysicalProperties enrichedDelivered = enrichDeliveredBindingProfile(alternative, delivered);
+		PhysicalProperties enrichedDelivered = enrichDeliveredBindingProfile(alternative, delivered)
+				.normalized(universe);
 		MemoExpr expression = MemoExpr.physical(nextExpressionId++, groupId, alternative, inputs, metadata,
 				enrichedDelivered, normalizedKind, ruleCost, proofs, estimate);
 		if (!group.addExpression(expression)) {

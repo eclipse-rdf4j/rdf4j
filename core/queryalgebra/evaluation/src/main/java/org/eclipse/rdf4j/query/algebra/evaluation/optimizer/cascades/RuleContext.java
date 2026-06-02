@@ -16,4 +16,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public record RuleContext(Memo memo, CascadesCostModel costModel, CascadesTelemetry telemetry,
 		CascadesPlanner.SearchState searchState) {
+
+	public BindingUniverse universe() {
+		return memo == null ? BindingUniverse.create() : memo.universe();
+	}
 }

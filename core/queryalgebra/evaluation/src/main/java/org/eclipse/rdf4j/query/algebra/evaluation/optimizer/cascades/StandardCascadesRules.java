@@ -317,20 +317,18 @@ public final class StandardCascadesRules {
 			if (projected == null) {
 				return List.of();
 			}
-			Set<String> leftNames = plannerNames(join.getLeftArg().getBindingNames());
-			Set<String> rightNames = plannerNames(join.getRightArg().getBindingNames());
-			Set<String> shared = new HashSet<>(leftNames);
-			shared.retainAll(rightNames);
-
-			Set<String> leftNeeded = new HashSet<>(projected);
-			leftNeeded.retainAll(leftNames);
-			leftNeeded.addAll(shared);
-			Set<String> rightNeeded = new HashSet<>(projected);
-			rightNeeded.retainAll(rightNames);
-			rightNeeded.addAll(shared);
-			if (leftNeeded.equals(leftNames) && rightNeeded.equals(rightNames)) {
+			BindingUniverse universe = context.universe();
+			BindingMask leftNames = CascadesRewriteSupport.mask(universe, join.getLeftArg().getBindingNames());
+			BindingMask rightNames = CascadesRewriteSupport.mask(universe, join.getRightArg().getBindingNames());
+			BindingMask projectedNames = CascadesRewriteSupport.mask(universe, projected);
+			BindingMask shared = leftNames.intersect(rightNames);
+			BindingMask leftNeededMask = projectedNames.intersect(leftNames).union(shared);
+			BindingMask rightNeededMask = projectedNames.intersect(rightNames).union(shared);
+			if (leftNeededMask.equals(leftNames) && rightNeededMask.equals(rightNames)) {
 				return List.of();
 			}
+			Set<String> leftNeeded = universe.names(leftNeededMask);
+			Set<String> rightNeeded = universe.names(rightNeededMask);
 
 			Projection alternative = projection.clone();
 			alternative.setArg(new Join(projectJoinInput(join.getLeftArg(), leftNeeded),
@@ -396,26 +394,29 @@ public final class StandardCascadesRules {
 			RuleProof nestedScopedSharedProof = proof(semanticScope(goal),
 					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedSharedPrefixDisjointFromBranchBinds"),
 					"nested shared prefixes distribute into a scope-changing UNION while residual joins remain outside");
+			BindingUniverse universe = context.universe();
 			if (join.getLeftArg()instanceof Union union) {
 				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getRightArg(),
-						union)) {
+						union, universe)) {
 					applications.add(RuleApplication.transformation(expression.groupId(),
 							unionLike(union, new Join(union.getLeftArg().clone(), join.getRightArg().clone()),
 									new Join(union.getRightArg().clone(), join.getRightArg().clone())),
 							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
 				} else if (union.isVariableScopeChange()) {
-					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getRightArg(), false);
+					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getRightArg(), false,
+							universe);
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
 					} else {
 						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
-								join.getRightArg(), false);
+								join.getRightArg(), false, universe);
 						if (nestedSharedAlternative != null) {
 							applications.add(RuleApplication.transformation(expression.groupId(),
 									nestedSharedAlternative, nestedScopedSharedProof));
 						}
-						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getRightArg(), union);
+						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getRightArg(), union,
+								universe);
 						recordScopedUnionDistributionEvent(context, expression, "left-union", join.getRightArg(),
 								union, nestedSharedAlternative != null, !unassuredShared.isEmpty());
 						if (!unassuredShared.isEmpty()) {
@@ -435,24 +436,26 @@ public final class StandardCascadesRules {
 			}
 			if (join.getRightArg()instanceof Union union) {
 				if (!union.isVariableScopeChange() || canPushFiniteBindingsIntoScopedUnion(join.getLeftArg(),
-						union)) {
+						union, universe)) {
 					applications.add(RuleApplication.transformation(expression.groupId(),
 							unionLike(union, new Join(join.getLeftArg().clone(), union.getLeftArg().clone()),
 									new Join(join.getLeftArg().clone(), union.getRightArg().clone())),
 							union.isVariableScopeChange() ? scopedFiniteProof : nonScopedProof));
 				} else if (union.isVariableScopeChange()) {
-					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getLeftArg(), true);
+					TupleExpr alternative = nestedFiniteScopedUnionAlternative(union, join.getLeftArg(), true,
+							universe);
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
 					} else {
 						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
-								join.getLeftArg(), true);
+								join.getLeftArg(), true, universe);
 						if (nestedSharedAlternative != null) {
 							applications.add(RuleApplication.transformation(expression.groupId(),
 									nestedSharedAlternative, nestedScopedSharedProof));
 						}
-						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getLeftArg(), union);
+						Set<String> unassuredShared = unassuredSharedScopedUnionNames(join.getLeftArg(), union,
+								universe);
 						recordScopedUnionDistributionEvent(context, expression, "right-union", join.getLeftArg(),
 								union, nestedSharedAlternative != null, !unassuredShared.isEmpty());
 						if (!unassuredShared.isEmpty()) {
@@ -834,47 +837,55 @@ public final class StandardCascadesRules {
 	}
 
 	private static boolean canPushFiniteBindingsIntoScopedUnion(TupleExpr pushed, Union union) {
+		return canPushFiniteBindingsIntoScopedUnion(pushed, union, null);
+	}
+
+	private static boolean canPushFiniteBindingsIntoScopedUnion(TupleExpr pushed, Union union,
+			BindingUniverse universe) {
 		if (!(pushed instanceof BindingSetAssignment assignment) || union == null || !union.isVariableScopeChange()) {
 			return false;
 		}
-		Set<String> pushedNames = plannerNames(assignment.getBindingNames());
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask pushedNames = CascadesRewriteSupport.mask(safeUniverse, assignment.getBindingNames());
 		if (pushedNames.isEmpty()) {
 			return false;
 		}
-		Set<String> branchLocalNames = branchLocalBindOrValuesNames(union.getLeftArg());
-		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
-		for (String name : pushedNames) {
-			if (branchLocalNames.contains(name)) {
-				return false;
-			}
-		}
-		return true;
+		BindingMask branchLocalNames = CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getLeftArg(),
+				safeUniverse)
+				.union(CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getRightArg(), safeUniverse));
+		return !pushedNames.intersects(branchLocalNames);
 	}
 
 	private static Set<String> unassuredSharedScopedUnionNames(TupleExpr pushed, Union union) {
+		return unassuredSharedScopedUnionNames(pushed, union, null);
+	}
+
+	private static Set<String> unassuredSharedScopedUnionNames(TupleExpr pushed, Union union,
+			BindingUniverse universe) {
 		if (pushed == null || union == null || !union.isVariableScopeChange()) {
 			return Set.of();
 		}
-		Set<String> pushedNames = plannerNames(pushed.getBindingNames());
-		Set<String> branchLocalNames = branchLocalBindOrValuesNames(union.getLeftArg());
-		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
-		for (String name : pushedNames) {
-			if (branchLocalNames.contains(name)) {
-				return Set.of();
-			}
-		}
-		Set<String> shared = new HashSet<>(pushedNames);
-		shared.retainAll(plannerNames(union.getBindingNames()));
-		if (shared.isEmpty()) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask pushedNames = CascadesRewriteSupport.mask(safeUniverse, pushed.getBindingNames());
+		BindingMask branchLocalNames = CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getLeftArg(),
+				safeUniverse)
+				.union(CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getRightArg(), safeUniverse));
+		if (pushedNames.intersects(branchLocalNames)) {
 			return Set.of();
 		}
-		shared.removeAll(plannerNames(union.getAssuredBindingNames()));
-		return shared;
+		BindingMask shared = pushedNames.intersect(CascadesRewriteSupport.mask(safeUniverse, union.getBindingNames()))
+				.minus(CascadesRewriteSupport.mask(safeUniverse, union.getAssuredBindingNames()));
+		return safeUniverse.names(shared);
 	}
 
 	private static TupleExpr nestedFiniteScopedUnionAlternative(Union union, TupleExpr pushedSide,
 			boolean pushedSideIsLeft) {
-		ExtractedFiniteBinding extracted = extractFiniteBindingForScopedUnion(pushedSide, union);
+		return nestedFiniteScopedUnionAlternative(union, pushedSide, pushedSideIsLeft, null);
+	}
+
+	private static TupleExpr nestedFiniteScopedUnionAlternative(Union union, TupleExpr pushedSide,
+			boolean pushedSideIsLeft, BindingUniverse universe) {
+		ExtractedFiniteBinding extracted = extractFiniteBindingForScopedUnion(pushedSide, union, universe);
 		if (extracted == null || extracted.residual == null) {
 			return null;
 		}
@@ -889,7 +900,12 @@ public final class StandardCascadesRules {
 
 	private static TupleExpr nestedSharedScopedUnionAlternative(Union union, TupleExpr pushedSide,
 			boolean pushedSideIsLeft) {
-		ExtractedScopedUnionPrefix extracted = extractSharedPrefixForScopedUnion(pushedSide, union, false);
+		return nestedSharedScopedUnionAlternative(union, pushedSide, pushedSideIsLeft, null);
+	}
+
+	private static TupleExpr nestedSharedScopedUnionAlternative(Union union, TupleExpr pushedSide,
+			boolean pushedSideIsLeft, BindingUniverse universe) {
+		ExtractedScopedUnionPrefix extracted = extractSharedPrefixForScopedUnion(pushedSide, union, false, universe);
 		if (extracted == null || extracted.residual == null) {
 			return null;
 		}
@@ -904,6 +920,11 @@ public final class StandardCascadesRules {
 
 	private static ExtractedScopedUnionPrefix extractSharedPrefixForScopedUnion(TupleExpr tupleExpr, Union union,
 			boolean allowWholeExpression) {
+		return extractSharedPrefixForScopedUnion(tupleExpr, union, allowWholeExpression, null);
+	}
+
+	private static ExtractedScopedUnionPrefix extractSharedPrefixForScopedUnion(TupleExpr tupleExpr, Union union,
+			boolean allowWholeExpression, BindingUniverse universe) {
 		if (tupleExpr == null
 				|| tupleExpr instanceof BindingSetAssignment
 				|| union == null
@@ -912,39 +933,50 @@ public final class StandardCascadesRules {
 			return null;
 		}
 		if (tupleExpr instanceof Join join) {
-			boolean leftRelevant = sharedScopedUnionPrefixCandidate(join.getLeftArg(), union);
-			boolean rightRelevant = sharedScopedUnionPrefixCandidate(join.getRightArg(), union);
+			boolean leftRelevant = sharedScopedUnionPrefixCandidate(join.getLeftArg(), union, universe);
+			boolean rightRelevant = sharedScopedUnionPrefixCandidate(join.getRightArg(), union, universe);
 			if (allowWholeExpression && leftRelevant && rightRelevant
-					&& sharedScopedUnionPrefixCandidate(join, union)) {
+					&& sharedScopedUnionPrefixCandidate(join, union, universe)) {
 				return new ExtractedScopedUnionPrefix(join.clone(), null);
 			}
-			ExtractedScopedUnionPrefix left = extractSharedPrefixForScopedUnion(join.getLeftArg(), union, true);
+			ExtractedScopedUnionPrefix left = extractSharedPrefixForScopedUnion(join.getLeftArg(), union, true,
+					universe);
 			if (left != null) {
 				return new ExtractedScopedUnionPrefix(left.prefix,
 						joinOrSingle(left.residual, join.getRightArg().clone()));
 			}
-			ExtractedScopedUnionPrefix right = extractSharedPrefixForScopedUnion(join.getRightArg(), union, true);
+			ExtractedScopedUnionPrefix right = extractSharedPrefixForScopedUnion(join.getRightArg(), union, true,
+					universe);
 			if (right != null) {
 				return new ExtractedScopedUnionPrefix(right.prefix,
 						joinOrSingle(join.getLeftArg().clone(), right.residual));
 			}
 		}
-		if (allowWholeExpression && sharedScopedUnionPrefixCandidate(tupleExpr, union)) {
+		if (allowWholeExpression && sharedScopedUnionPrefixCandidate(tupleExpr, union, universe)) {
 			return new ExtractedScopedUnionPrefix(tupleExpr.clone(), null);
 		}
 		return null;
 	}
 
 	private static boolean sharedScopedUnionPrefixCandidate(TupleExpr pushed, Union union) {
+		return sharedScopedUnionPrefixCandidate(pushed, union, null);
+	}
+
+	private static boolean sharedScopedUnionPrefixCandidate(TupleExpr pushed, Union union, BindingUniverse universe) {
 		return pushed != null
 				&& !(pushed instanceof BindingSetAssignment)
 				&& !barrier(pushed)
-				&& !unassuredSharedScopedUnionNames(pushed, union).isEmpty();
+				&& !unassuredSharedScopedUnionNames(pushed, union, universe).isEmpty();
 	}
 
 	private static ExtractedFiniteBinding extractFiniteBindingForScopedUnion(TupleExpr tupleExpr, Union union) {
+		return extractFiniteBindingForScopedUnion(tupleExpr, union, null);
+	}
+
+	private static ExtractedFiniteBinding extractFiniteBindingForScopedUnion(TupleExpr tupleExpr, Union union,
+			BindingUniverse universe) {
 		if (tupleExpr instanceof BindingSetAssignment assignment
-				&& canExtractFiniteBindingsIntoScopedUnion(assignment, union)) {
+				&& canExtractFiniteBindingsIntoScopedUnion(assignment, union, universe)) {
 			return new ExtractedFiniteBinding(assignment.clone(), null);
 		}
 		if (!(tupleExpr instanceof Join join)
@@ -953,11 +985,11 @@ public final class StandardCascadesRules {
 				|| barrier(join.getRightArg())) {
 			return null;
 		}
-		ExtractedFiniteBinding left = extractFiniteBindingForScopedUnion(join.getLeftArg(), union);
+		ExtractedFiniteBinding left = extractFiniteBindingForScopedUnion(join.getLeftArg(), union, universe);
 		if (left != null) {
 			return new ExtractedFiniteBinding(left.finite, joinOrSingle(left.residual, join.getRightArg().clone()));
 		}
-		ExtractedFiniteBinding right = extractFiniteBindingForScopedUnion(join.getRightArg(), union);
+		ExtractedFiniteBinding right = extractFiniteBindingForScopedUnion(join.getRightArg(), union, universe);
 		if (right != null) {
 			return new ExtractedFiniteBinding(right.finite, joinOrSingle(join.getLeftArg().clone(), right.residual));
 		}
@@ -965,17 +997,17 @@ public final class StandardCascadesRules {
 	}
 
 	private static boolean canExtractFiniteBindingsIntoScopedUnion(BindingSetAssignment assignment, Union union) {
-		if (!canPushFiniteBindingsIntoScopedUnion(assignment, union)) {
+		return canExtractFiniteBindingsIntoScopedUnion(assignment, union, null);
+	}
+
+	private static boolean canExtractFiniteBindingsIntoScopedUnion(BindingSetAssignment assignment, Union union,
+			BindingUniverse universe) {
+		if (!canPushFiniteBindingsIntoScopedUnion(assignment, union, universe)) {
 			return false;
 		}
-		Set<String> pushedNames = plannerNames(assignment.getBindingNames());
-		Set<String> unionNames = plannerNames(union.getBindingNames());
-		for (String name : pushedNames) {
-			if (unionNames.contains(name)) {
-				return true;
-			}
-		}
-		return false;
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		return CascadesRewriteSupport.mask(safeUniverse, assignment.getBindingNames())
+				.intersects(CascadesRewriteSupport.mask(safeUniverse, union.getBindingNames()));
 	}
 
 	private static TupleExpr joinOrSingle(TupleExpr left, TupleExpr right) {

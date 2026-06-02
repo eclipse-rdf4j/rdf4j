@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -124,6 +126,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 			EstimationTier estimationTier) {
 		int factorCount = factors.size();
 		List<Set<String>> factorVars = factorVars(factors);
+		BindingUniverse universe = BindingUniverse.create();
+		BindingMask initialMask = bindingMask(universe, initialBoundVars);
+		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
 		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
 		if (runtimeFactorIndices.size() < 2) {
@@ -131,7 +136,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
 		if (trace.enabled()) {
 			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
 					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
@@ -162,7 +167,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 				continue;
 			}
 			int mask = 1 << factorIndex;
-			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)));
+			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)),
+					initialMask.union(factorVarMasks.get(factorIndex)));
 			State incumbent = best[mask];
 			best[mask] = better(incumbent, state);
 			if (trace.enabled()) {
@@ -185,13 +191,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 				if ((mask & bit) != 0) {
 					continue;
 				}
-				boolean disconnectedByVars = !intersects(state.boundVars(), factorVars.get(factorIndex));
+				boolean disconnectedByVars = !state.boundMask().intersects(factorVarMasks.get(factorIndex));
 				IntPredicate prefixContains = prefixMaskContains(mask);
 				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
 						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex,
-								state.boundVars(), factorVars);
+								state.boundMask(), factorVarMasks);
 				String extensionRejection = connectedExtensionRejection(factors, prefixContains, factorIndex,
-						state.boundVars(), factorVars, bridgeEnabledFiniteAnchor);
+						state.boundVars(), factorVars, state.boundMask(), factorVarMasks, bridgeEnabledFiniteAnchor);
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
 						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
@@ -224,7 +230,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 					continue;
 				}
 				State next = state.append(mask | bit, factorIndex, step,
-						union(state.boundVars(), factorVars.get(factorIndex)));
+						union(state.boundVars(), factorVars.get(factorIndex)),
+						state.boundMask().union(factorVarMasks.get(factorIndex)));
 				State incumbent = best[next.mask()];
 				best[next.mask()] = better(incumbent, next);
 				if (trace.enabled()) {
@@ -258,13 +265,16 @@ final class LmdbCascadesConnectedJoinPlanner {
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
 			EstimationTier estimationTier) {
 		List<Set<String>> factorVars = factorVars(factors);
+		BindingUniverse universe = BindingUniverse.create();
+		BindingMask boundMask = bindingMask(universe, initialBoundVars);
+		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
 		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
 		if (remaining.size() < 2) {
 			trace.add("greedy reject runtimeFactorCount=" + remaining.size());
 			return Optional.empty();
 		}
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVars);
+		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
 		if (trace.enabled()) {
 			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
 					+ " zeroVar=" + zeroVarFactorIndices);
@@ -290,14 +300,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 					}
 					continue;
 				}
-				boolean disconnectedByVars = hasPrefix && !intersects(boundVars, factorVars.get(factorIndex));
+				boolean disconnectedByVars = hasPrefix && !boundMask.intersects(factorVarMasks.get(factorIndex));
 				IntPredicate prefixContains = prefixOrderContains(order);
 				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
-						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex, boundVars,
-								factorVars);
+						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex, boundMask,
+								factorVarMasks);
 				String extensionRejection = hasPrefix
 						? connectedExtensionRejection(factors, prefixContains, factorIndex, boundVars, factorVars,
-								bridgeEnabledFiniteAnchor)
+								boundMask, factorVarMasks, bridgeEnabledFiniteAnchor)
 						: null;
 				if (extensionRejection != null) {
 					if (trace.enabled()) {
@@ -336,13 +346,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 			workRows += selectedStep.workRows();
 			maxRows = Math.max(maxRows, rows);
 			boundVars = union(boundVars, factorVars.get(factorIndex));
+			boundMask = boundMask.union(factorVarMasks.get(factorIndex));
 			if (trace.enabled()) {
 				trace.add("greedy choose f" + factorIndex + " order=" + order + " bound=" + boundVars);
 			}
 		}
 		State state = new State(maskFor(order), List.copyOf(order), List.copyOf(steps),
-				boundVars, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps), confidence(steps),
-				evidence(steps));
+				boundVars, boundMask, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps),
+				confidence(steps), evidence(steps));
 		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
 				estimationTier);
 		if (complete == null) {
@@ -755,9 +766,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static String connectedExtensionRejection(List<TupleExpr> factors, IntPredicate prefixContains,
 			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars,
-			boolean bridgeEnabledFiniteAnchor) {
+			BindingMask prefixMask, List<BindingMask> factorVarMasks, boolean bridgeEnabledFiniteAnchor) {
 		TupleExpr candidate = factors.get(candidateIndex);
-		Set<String> candidateVars = factorVars.get(candidateIndex);
+		BindingMask candidateVars = factorVarMasks.get(candidateIndex);
 		if (path(candidate)) {
 			if (!pathHasBoundEndpoint(candidate, prefixVars)) {
 				return "path-endpoint-not-bound";
@@ -773,25 +784,25 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (candidateVars == null || candidateVars.isEmpty()) {
 			return "zero-runtime-vars";
 		}
-		if (intersects(prefixVars, candidateVars)) {
+		if (prefixMask.intersects(candidateVars)) {
 			return null;
 		}
 		return bridgeEnabledFiniteAnchor ? null : "no-shared-vars";
 	}
 
 	private static boolean disconnectedFiniteAnchorEnablesBridge(List<TupleExpr> factors, IntPredicate prefixContains,
-			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars) {
+			int candidateIndex, BindingMask prefixVars, List<BindingMask> factorVars) {
 		TupleExpr candidate = factors.get(candidateIndex);
 		if (!(candidate instanceof BindingSetAssignment assignment) || !smallFiniteAssignment(assignment)) {
 			return false;
 		}
-		Set<String> candidateVars = factorVars.get(candidateIndex);
+		BindingMask candidateVars = factorVars.get(candidateIndex);
 		for (int i = 0; i < factors.size(); i++) {
 			if (i == candidateIndex || prefixContains.test(i)) {
 				continue;
 			}
-			Set<String> bridgeVars = factorVars.get(i);
-			if (intersects(prefixVars, bridgeVars) && intersects(candidateVars, bridgeVars)) {
+			BindingMask bridgeVars = factorVars.get(i);
+			if (prefixVars.intersects(bridgeVars) && candidateVars.intersects(bridgeVars)) {
 				return true;
 			}
 		}
@@ -902,16 +913,17 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return mask;
 	}
 
-	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors, List<Set<String>> factorVars) {
+	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors, List<BindingMask> factorVars,
+			BindingUniverse universe) {
 		boolean[] result = new boolean[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
 			TupleExpr factor = factors.get(i);
 			if (!path(factor)) {
 				continue;
 			}
-			Set<String> endpoints = pathEndpointNames(factor);
+			BindingMask endpoints = pathEndpointMask(factor, universe);
 			for (int j = 0; j < factors.size(); j++) {
-				if (i != j && intersects(endpoints, factorVars.get(j))) {
+				if (i != j && endpoints.intersects(factorVars.get(j))) {
 					result[i] = true;
 					break;
 				}
@@ -926,6 +938,22 @@ final class LmdbCascadesConnectedJoinPlanner {
 			factorVars.add(LmdbJoinPlanSupport.runtimeBindingNames(factor));
 		}
 		return List.copyOf(factorVars);
+	}
+
+	private static List<BindingMask> factorVarMasks(List<Set<String>> factorVars, BindingUniverse universe) {
+		if (factorVars == null || factorVars.isEmpty()) {
+			return List.of();
+		}
+		List<BindingMask> masks = new ArrayList<>(factorVars.size());
+		for (Set<String> names : factorVars) {
+			masks.add(bindingMask(universe, names));
+		}
+		return List.copyOf(masks);
+	}
+
+	private static BindingMask bindingMask(BindingUniverse universe, Set<String> names) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		return safeUniverse.maskOf(plannerNames(names));
 	}
 
 	private static Set<String> plannerNames(Set<String> names) {
@@ -954,6 +982,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return endpointNames(path.getSubjectVar(), path.getObjectVar());
 		}
 		return Set.of();
+	}
+
+	private static BindingMask pathEndpointMask(TupleExpr tupleExpr, BindingUniverse universe) {
+		return bindingMask(universe, pathEndpointNames(tupleExpr));
 	}
 
 	private static Set<String> endpointNames(Var left, Var right) {
@@ -1298,17 +1330,22 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private record State(int mask, List<Integer> order, List<Step> steps, Set<String> boundVars, double rows,
-			double workRows, double maxRows, double cartesianWorkRows, double rowQErrorMax, double workQErrorMax,
-			double confidence, double evidenceCount) implements Comparable<State> {
+	private record State(int mask, List<Integer> order, List<Step> steps, Set<String> boundVars, BindingMask boundMask,
+			double rows, double workRows, double maxRows, double cartesianWorkRows, double rowQErrorMax,
+			double workQErrorMax, double confidence, double evidenceCount) implements Comparable<State> {
 
-		static State seed(int mask, int factorIndex, Step step, Set<String> boundVars) {
-			return new State(mask, List.of(factorIndex), List.of(step), boundVars, step.outputRows(), step.workRows(),
+		static State seed(int mask, int factorIndex, Step step, Set<String> boundVars, BindingMask boundMask) {
+			return new State(mask, List.of(factorIndex), List.of(step), boundVars,
+					boundMask == null ? BindingMask.EMPTY : boundMask, step.outputRows(), step.workRows(),
 					step.outputRows(), 0.0d, step.rowQErrorMax(), step.workQErrorMax(), step.confidence(),
 					step.evidenceCount());
 		}
 
 		State append(int mask, int factorIndex, Step step, Set<String> boundVars) {
+			return append(mask, factorIndex, step, boundVars, boundMask);
+		}
+
+		State append(int mask, int factorIndex, Step step, Set<String> boundVars, BindingMask boundMask) {
 			List<Integer> nextOrder = new ArrayList<>(order.size() + 1);
 			nextOrder.addAll(order);
 			nextOrder.add(factorIndex);
@@ -1316,8 +1353,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 			nextSteps.addAll(steps);
 			nextSteps.add(step);
 			double nextCartesianWorkRows = cartesianWorkRows + (step.disconnected() ? step.workRows() : 0.0d);
-			return new State(mask, List.copyOf(nextOrder), List.copyOf(nextSteps), boundVars, step.outputRows(),
-					workRows + step.workRows(), Math.max(maxRows, step.outputRows()), nextCartesianWorkRows,
+			return new State(mask, List.copyOf(nextOrder), List.copyOf(nextSteps), boundVars,
+					boundMask == null ? BindingMask.EMPTY : boundMask, step.outputRows(), workRows + step.workRows(),
+					Math.max(maxRows, step.outputRows()), nextCartesianWorkRows,
 					Math.max(rowQErrorMax, step.rowQErrorMax()), Math.max(workQErrorMax, step.workQErrorMax()),
 					Math.min(confidence, step.confidence()), evidenceCount + step.evidenceCount());
 		}

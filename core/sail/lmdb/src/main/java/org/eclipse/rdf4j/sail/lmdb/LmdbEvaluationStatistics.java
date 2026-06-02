@@ -4885,27 +4885,31 @@ class LmdbEvaluationStatistics
 //		}
 //		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
+		double sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(factors,
+				joinVarName);
 
 		countFallbackJoinSurfaceCall();
-		double pairwiseRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceRows(factors, joinVarName);
-		double cheapRows = maxFinite(sketchRows, pairwiseRows, Double.NaN, Double.NaN);
+		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors,
+				joinVarName);
+		double cheapRows = maxFinite(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN);
 		double exactRows = Double.NaN;
-		if (allowExact && shouldRunExactEstimate(sketchRows, pairwiseRows)) {
+		if (allowExact && shouldRunExactEstimate(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN)) {
 			countExactJoinSurfaceCall();
 			exactRows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
 		} else {
 			traceExactEstimateSkip("surface-list-skip-exact", null, null, joinVarName, cheapRows);
 		}
-		double selectedRows = selectJoinSurfaceRows(sketchRows, exactRows, pairwiseRows);
+		double selectedRows = selectJoinSurfaceRows(sketchRows, sketchUpperBoundRows, exactRows, pairwiseFallbackRows);
 		if (isFiniteNonNegative(selectedRows)) {
-			traceJoinSurfaceSelection("surface-list", null, joinVarName, sketchRows, exactRows, pairwiseRows,
-					Double.NaN, selectedRows);
+			traceJoinSurfaceSelection("surface-list", null, joinVarName, sketchRows, sketchUpperBoundRows, exactRows,
+					pairwiseFallbackRows, Double.NaN, selectedRows);
 			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows));
 		}
 
 		double fallbackRows = sketchRows;
-		traceJoinSurfaceSelection("surface-list-fallback", null, joinVarName, sketchRows, exactRows, pairwiseRows,
-				fallbackRows, fallbackRows);
+		traceJoinSurfaceSelection("surface-list-fallback", null, joinVarName, sketchRows, sketchUpperBoundRows,
+				exactRows,
+				pairwiseFallbackRows, fallbackRows, fallbackRows);
 		return new FiniteBranchSurfaceEstimate(fallbackRows, false);
 	}
 
@@ -4962,60 +4966,79 @@ class LmdbEvaluationStatistics
 //		}
 		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		double sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(prefixFactors,
+				factor, joinVarName);
 
 		countFallbackJoinSurfaceCall();
-		double pairwiseRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceRows(prefixFactors, factor,
+		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(prefixFactors,
+				factor,
 				joinVarName);
-		double cheapRows = maxFinite(sketchRows, pairwiseRows, Double.NaN, Double.NaN);
+		double cheapRows = maxFinite(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN);
 		double exactRows = Double.NaN;
-		if (allowExact && shouldRunExactEstimate(sketchRows, pairwiseRows)) {
+		if (allowExact && shouldRunExactEstimate(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN)) {
 			countExactJoinSurfaceCall();
 			exactRows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
 		} else {
 			traceExactEstimateSkip("surface-prefix-factor-skip-exact", factor, null, joinVarName, cheapRows);
 		}
-		double selectedRows = selectJoinSurfaceRows(sketchRows, exactRows, pairwiseRows);
+		double selectedRows = selectJoinSurfaceRows(sketchRows, sketchUpperBoundRows, exactRows, pairwiseFallbackRows);
 		if (isFiniteNonNegative(selectedRows)) {
-			traceJoinSurfaceSelection("surface-prefix-factor", factor, joinVarName, sketchRows, exactRows,
-					pairwiseRows, Double.NaN, selectedRows);
+			traceJoinSurfaceSelection("surface-prefix-factor", factor, joinVarName, sketchRows, sketchUpperBoundRows,
+					exactRows, pairwiseFallbackRows, Double.NaN, selectedRows);
 			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows));
 		}
 
 		double fallbackRows = sketchRows;
-		traceJoinSurfaceSelection("surface-prefix-factor-fallback", factor, joinVarName, sketchRows, exactRows,
-				pairwiseRows, fallbackRows, fallbackRows);
+		traceJoinSurfaceSelection("surface-prefix-factor-fallback", factor, joinVarName, sketchRows,
+				sketchUpperBoundRows, exactRows, pairwiseFallbackRows, fallbackRows, fallbackRows);
 		return new FiniteBranchSurfaceEstimate(fallbackRows, false);
 	}
 
-	private double selectJoinSurfaceRows(double sketchRows, double exactRows, double pairwiseRows) {
+	private double selectJoinSurfaceRows(double sketchRows, double sketchUpperBoundRows, double exactRows,
+			double pairwiseFallbackRows) {
 		if (isFiniteNonNegative(exactRows)) {
 			return exactRows;
 		}
-		if (isPositiveFinite(sketchRows) && isPositiveFinite(pairwiseRows)) {
-			double disagreementRatio = maxRatio(sketchRows, pairwiseRows);
+		double sketchEvidenceRows = sketchEvidenceRows(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows);
+		if (isPositiveFinite(sketchEvidenceRows) && isPositiveFinite(pairwiseFallbackRows)) {
+			double disagreementRatio = maxRatio(sketchEvidenceRows, pairwiseFallbackRows);
 			if (isPositiveFinite(disagreementRatio)
 					&& disagreementRatio <= EXACT_ESTIMATE_MAX_DISAGREEMENT) {
-				double blendedRows = harmonicMean(sketchRows, pairwiseRows);
+				double blendedRows = harmonicMean(sketchEvidenceRows, pairwiseFallbackRows);
 				if (isPositiveFinite(blendedRows)) {
 					return blendedRows;
 				}
 			}
-			return Math.max(sketchRows, pairwiseRows);
+			return Math.max(sketchEvidenceRows, pairwiseFallbackRows);
 		}
-		if (isPositiveFinite(pairwiseRows)) {
-			return pairwiseRows;
+		if (isPositiveFinite(pairwiseFallbackRows)) {
+			return pairwiseFallbackRows;
 		}
-		if (isPositiveFinite(sketchRows)) {
-			return sketchRows;
+		if (isPositiveFinite(sketchEvidenceRows)) {
+			return sketchEvidenceRows;
 		}
-		if (isFiniteNonNegative(pairwiseRows)) {
-			return pairwiseRows;
+		if (isFiniteNonNegative(pairwiseFallbackRows)) {
+			return pairwiseFallbackRows;
 		}
-		return isFiniteNonNegative(sketchRows) ? sketchRows : Double.NaN;
+		return isFiniteNonNegative(sketchEvidenceRows) ? sketchEvidenceRows : Double.NaN;
+	}
+
+	private double sketchEvidenceRows(double sketchRows, double sketchUpperBoundRows, double pairwiseFallbackRows) {
+		if (isPositiveFinite(sketchUpperBoundRows)
+				&& (!isPositiveFinite(sketchRows) || sketchUpperBoundRows > sketchRows)
+				&& isPositiveFinite(pairwiseFallbackRows)) {
+			double upperBoundDisagreement = maxRatio(sketchUpperBoundRows, pairwiseFallbackRows);
+			if (isPositiveFinite(upperBoundDisagreement)
+					&& upperBoundDisagreement <= EXACT_ESTIMATE_MAX_DISAGREEMENT) {
+				return sketchUpperBoundRows;
+			}
+		}
+		return sketchRows;
 	}
 
 	private void traceJoinSurfaceSelection(String event, TupleExpr factor, String joinVarName, double sketchRows,
-			double exactRows, double pairwiseRows, double fallbackRows, double selectedRows) {
+			double sketchUpperBoundRows, double exactRows, double pairwiseFallbackRows, double fallbackRows,
+			double selectedRows) {
 		if (!estimateTraceEnabled()) {
 			return;
 		}
@@ -5023,8 +5046,9 @@ class LmdbEvaluationStatistics
 				"joinVar=" + joinVarName
 						+ ", selected=" + estimateTraceRows(selectedRows)
 						+ ", sketch=" + estimateTraceRows(sketchRows)
+						+ ", sketchUpperBound=" + estimateTraceRows(sketchUpperBoundRows)
 						+ ", exact=" + estimateTraceRows(exactRows)
-						+ ", pairwisePageWalk=" + estimateTraceRows(pairwiseRows)
+						+ ", pairwiseFallback=" + estimateTraceRows(pairwiseFallbackRows)
 						+ ", fallback=" + estimateTraceRows(fallbackRows));
 	}
 
@@ -5661,7 +5685,7 @@ class LmdbEvaluationStatistics
 		if (sketchBasedJoinEstimator == null || factors == null || factors.isEmpty() || joinVarName == null) {
 			return selected;
 		}
-		double pageWalkRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceRows(factors, joinVarName);
+		double pageWalkRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors, joinVarName);
 		if (!isPositiveFinite(pageWalkRows)
 				|| (isPositiveFinite(selected.rows()) && pageWalkRows >= selected.rows())) {
 			return selected;

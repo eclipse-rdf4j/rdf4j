@@ -233,7 +233,7 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
 				Var.of("shared"));
 
-		double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(left), right, "shared");
+		double rows = estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(left), right, "shared");
 
 		assertEquals(2.0d, rows, 0.0d,
 				"Small join-surface fallback should page-walk rows even when distinct-threshold heuristics reject");
@@ -261,7 +261,8 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern employeePattern = new StatementPattern(Var.of("org"), Var.of("employee", employee),
 				Var.of("employee"));
 
-		double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(memberOfPattern), employeePattern, "org");
+		double rows = estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOfPattern), employeePattern,
+				"org");
 
 		assertEquals(6.0d, rows, 0.0d,
 				"Object-to-subject bridge surfaces should page-walk the smaller side and multiply duplicate rows");
