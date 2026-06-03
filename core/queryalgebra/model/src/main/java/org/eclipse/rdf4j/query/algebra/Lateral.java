@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -14,9 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * The LATERAL join operator, as defined in SPARQL 1.2. This operator evaluates the right-hand side for each row from
- * the left-hand side, with variables from the left-hand side in scope for the right-hand side evaluation.
- *
+ * This operator evaluates the right-hand side for each row from the left-hand side, with variables from the left-hand
+ * side in scope for the right-hand side evaluation.
  */
 public class Lateral extends BinaryTupleOperator {
 
