@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.net.URISyntaxException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -833,7 +834,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		Rio.write(model, stringWriter, RDFFormat.TURTLE,
 				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
 
-		assertEquals("VERSION \"1.2\"\n"
+		assertEquals("@version \"1.2\" .\n"
 				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 <http://example.com/p> \"literal\" )>> .\n",
 				stringWriter.toString());
 	}
@@ -846,7 +847,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		Rio.write(model, stringWriter, RDFFormat.TURTLE,
 				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
 
-		assertEquals("VERSION \"1.2\"\n"
+		assertEquals("@version \"1.2\" .\n"
 				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt> \"literal\"@en--ltr .\n",
 				stringWriter.toString());
 	}
@@ -860,9 +861,48 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 		StringWriter stringWriter = new StringWriter();
 		Rio.write(model, stringWriter, RDFFormat.TURTLE,
 				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
-		assertEquals("VERSION \"1.2\"\n"
+		assertEquals("@version \"1.2\" .\n"
 				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 <http://example.com/p> \"literal\" )>>;\n"
 				+ "<http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt> \"literal\"@en--ltr .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testRDFStyleDirectivesPrintedByDefault() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, false));
+		assertEquals("@base <http://example.com/base/> .\n" +
+				"@prefix ex: <http://example.com/prefix/> .\n" +
+				"@version \"1.2\" .\n" +
+				"_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 </p> \"literal\" )>> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testSPARQLStyleDirectivesPrintedUponConfiguration() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, false);
+		writerConfig.set(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES, true);
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE, writerConfig);
+		assertEquals("BASE <http://example.com/base/>\n" +
+				"PREFIX ex: <http://example.com/prefix/>\n" +
+				"VERSION \"1.2\"\n" +
+				"_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 </p> \"literal\" )>> .\n",
 				stringWriter.toString());
 	}
 }

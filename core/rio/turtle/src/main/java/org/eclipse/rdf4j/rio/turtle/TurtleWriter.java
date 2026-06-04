@@ -161,6 +161,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		settings.add(BasicWriterSettings.PRETTY_PRINT);
 		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
 		settings.add(TurtleWriterSettings.ABBREVIATE_NUMBERS);
+		settings.add(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES);
 		return settings;
 	}
 
@@ -456,18 +457,34 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	protected void writeBase(String baseURI) throws IOException {
-		writer.write("@base <");
-		StringUtil.simpleEscapeIRI(baseURI, writer, false);
-		writer.write("> .");
+		if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+			writer.write("BASE <");
+			StringUtil.simpleEscapeIRI(baseURI, writer, false);
+			// SPARQL directive style doesn't end with .
+			writer.write(">");
+		} else {
+			writer.write("@base <");
+			StringUtil.simpleEscapeIRI(baseURI, writer, false);
+			writer.write("> .");
+		}
 		writer.writeEOL();
 	}
 
 	protected void writeNamespace(String prefix, String name) throws IOException {
-		writer.write("@prefix ");
-		writer.write(prefix);
-		writer.write(": <");
-		StringUtil.simpleEscapeIRI(name, writer, false);
-		writer.write("> .");
+		if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+			writer.write("PREFIX ");
+			writer.write(prefix);
+			writer.write(": <");
+			StringUtil.simpleEscapeIRI(name, writer, false);
+			// SPARQL directive style doesn't end with .
+			writer.write(">");
+		} else {
+			writer.write("@prefix ");
+			writer.write(prefix);
+			writer.write(": <");
+			StringUtil.simpleEscapeIRI(name, writer, false);
+			writer.write("> .");
+		}
 		writer.writeEOL();
 	}
 
@@ -494,7 +511,13 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	@Override
 	protected void writeVersionAnnouncement() throws RDFHandlerException {
 		try {
-			writer.write("VERSION \"1.2\"");
+			if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+				writer.write("VERSION \"1.2\"");
+				// SPARQL directive style doesn't end with .
+			} else {
+				writer.write("@version \"1.2\"");
+				writer.write(" .");
+			}
 			writer.writeEOL();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
