@@ -57,6 +57,18 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void logicalInternReusesLocalFingerprintForStructuralKey() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		SignatureCountingStatementPattern pattern = new SignatureCountingStatementPattern(
+				new Var("s"), new Var("p"), new Var("o"));
+
+		memo.intern(pattern);
+
+		assertEquals(1, pattern.signatureCalls,
+				"Memo logical keys should not recompute tuple signatures already captured in local metadata");
+	}
+
+	@Test
 	void logicalAlternativeIsIndexedForFutureInterning() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		StatementPattern left = pattern("s", "p1", "o");
@@ -466,6 +478,20 @@ class CascadesMemoModelTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static final class SignatureCountingStatementPattern extends StatementPattern {
+		private int signatureCalls;
+
+		private SignatureCountingStatementPattern(Var subject, Var predicate, Var object) {
+			super(subject, predicate, object);
+		}
+
+		@Override
+		public String getSignature() {
+			signatureCalls++;
+			return super.getSignature();
+		}
 	}
 
 	private static StatementPattern constantPredicatePattern(String predicate) {

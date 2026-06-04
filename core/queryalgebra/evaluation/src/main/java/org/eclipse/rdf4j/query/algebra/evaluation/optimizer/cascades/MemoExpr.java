@@ -80,22 +80,7 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 
 	static String structuralKey(String operator, List<Integer> inputGroupIds, String localMetadata, TupleExpr tupleExpr,
 			PhysicalProperties deliveredProperties, RuleKind kind) {
-		StringBuilder builder = new StringBuilder(128);
-		builder.append(kind).append('|').append(operator).append('|');
-		appendIntList(builder, inputGroupIds);
-		builder.append('|').append(localMetadata == null ? "" : localMetadata).append('|');
-		if (tupleExpr != null) {
-			builder.append(tupleExpr.getClass().getName())
-					.append('|')
-					.append("scopeChange=")
-					.append(TupleExprs.isVariableScopeChange(tupleExpr))
-					.append('|')
-					.append(safeSignature(tupleExpr));
-		}
-		if (kind != RuleKind.TRANSFORMATION) {
-			builder.append('|').append(Objects.toString(deliveredProperties, "*"));
-		}
-		return builder.toString();
+		return structuralKey(operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, kind, false);
 	}
 
 	private static void appendIntList(StringBuilder builder, List<Integer> values) {
@@ -115,11 +100,33 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 
 	static String logicalKey(TupleExpr tupleExpr, List<Integer> inputGroupIds, String metadata) {
 		return structuralKey(operatorName(tupleExpr), inputGroupIds, metadata, tupleExpr, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION);
+				RuleKind.TRANSFORMATION, metadata != null && !metadata.isBlank());
 	}
 
 	private static String operatorName(TupleExpr tupleExpr) {
 		return tupleExpr == null ? "<null>" : tupleExpr.getClass().getSimpleName();
+	}
+
+	private static String structuralKey(String operator, List<Integer> inputGroupIds, String localMetadata,
+			TupleExpr tupleExpr, PhysicalProperties deliveredProperties, RuleKind kind, boolean metadataHasSignature) {
+		StringBuilder builder = new StringBuilder(128);
+		builder.append(kind).append('|').append(operator).append('|');
+		appendIntList(builder, inputGroupIds);
+		builder.append('|').append(localMetadata == null ? "" : localMetadata).append('|');
+		if (tupleExpr != null) {
+			builder.append(tupleExpr.getClass().getName())
+					.append('|')
+					.append("scopeChange=")
+					.append(TupleExprs.isVariableScopeChange(tupleExpr));
+			if (!metadataHasSignature) {
+				builder.append('|')
+						.append(safeSignature(tupleExpr));
+			}
+		}
+		if (kind != RuleKind.TRANSFORMATION) {
+			builder.append('|').append(Objects.toString(deliveredProperties, "*"));
+		}
+		return builder.toString();
 	}
 
 	private static String safeSignature(TupleExpr tupleExpr) {

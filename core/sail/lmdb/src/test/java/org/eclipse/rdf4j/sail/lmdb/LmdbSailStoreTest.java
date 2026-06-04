@@ -299,6 +299,102 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void getStatementCountMemoizesDirectLookupByResolvedIds() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:direct-count-cache:subject");
+		IRI predicate = valueFactory.createIRI("urn:direct-count-cache:predicate");
+		IRI object = valueFactory.createIRI("urn:direct-count-cache:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			IRI firstSubject = valueFactory.createIRI(subject.stringValue());
+			IRI firstPredicate = valueFactory.createIRI(predicate.stringValue());
+			IRI firstObject = valueFactory.createIRI(object.stringValue());
+			StatementPattern firstPattern = new StatementPattern(Var.of("s", firstSubject),
+					Var.of("p", firstPredicate), Var.of("o", firstObject));
+
+			IRI secondSubject = valueFactory.createIRI(subject.stringValue());
+			IRI secondPredicate = valueFactory.createIRI(predicate.stringValue());
+			IRI secondObject = valueFactory.createIRI(object.stringValue());
+			StatementPattern secondPattern = new StatementPattern(Var.of("s", secondSubject),
+					Var.of("p", secondPredicate), Var.of("o", secondObject));
+
+			assertEquals(1L, dataset.getStatementCount(firstPattern, firstSubject, firstPredicate, firstObject,
+					(Resource) null));
+			assertEquals(1L, dataset.getStatementCount(secondPattern, secondSubject, secondPredicate, secondObject,
+					(Resource) null));
+			verify(tripleStoreSpy, times(1)).exactStatementCount(any(), anyLong(), anyLong(), anyLong(), anyLong(),
+					anyBoolean());
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
+	void getStatementsMemoizesFullyBoundDirectLookupByResolvedIds() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:direct-statement-cache:subject");
+		IRI predicate = valueFactory.createIRI("urn:direct-statement-cache:predicate");
+		IRI object = valueFactory.createIRI("urn:direct-statement-cache:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			IRI firstSubject = valueFactory.createIRI(subject.stringValue());
+			IRI firstPredicate = valueFactory.createIRI(predicate.stringValue());
+			IRI firstObject = valueFactory.createIRI(object.stringValue());
+			StatementPattern firstPattern = new StatementPattern(Var.of("s", firstSubject),
+					Var.of("p", firstPredicate), Var.of("o", firstObject));
+
+			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(firstPattern, firstSubject,
+					firstPredicate, firstObject)) {
+				assertTrue(iteration.hasNext());
+				assertEquals(firstSubject, iteration.next().getSubject());
+				assertFalse(iteration.hasNext());
+			}
+
+			IRI secondSubject = valueFactory.createIRI(subject.stringValue());
+			IRI secondPredicate = valueFactory.createIRI(predicate.stringValue());
+			IRI secondObject = valueFactory.createIRI(object.stringValue());
+			StatementPattern secondPattern = new StatementPattern(Var.of("s", secondSubject),
+					Var.of("p", secondPredicate), Var.of("o", secondObject));
+
+			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(secondPattern, secondSubject,
+					secondPredicate, secondObject)) {
+				assertTrue(iteration.hasNext());
+				assertEquals(secondSubject, iteration.next().getSubject());
+				assertFalse(iteration.hasNext());
+			}
+
+			verify(tripleStoreSpy, times(1)).getTriples(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean(),
+					any(LmdbValueIdFilter.class));
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
 	void createStatementIteratorDoesNotReuseForeignLmdbValues() {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();

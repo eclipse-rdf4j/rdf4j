@@ -3256,6 +3256,9 @@ final class SketchJoinOrderPlanner {
 		long connectedCandidates = scalarCandidates
 				| structurallyConnectedCandidates(legalCandidates & ~scalarCandidates,
 						boundVarMask);
+		long bridgeAnchorCandidates = disconnectedFiniteBridgeAnchorCandidates(plan,
+				legalCandidates & ~connectedCandidates, boundVarMask);
+		connectedCandidates |= bridgeAnchorCandidates;
 		if (plan.mask() == 0L && connectedCandidates == 0L) {
 			return legalCandidates;
 		}
@@ -3268,6 +3271,45 @@ final class SketchJoinOrderPlanner {
 			return 0L;
 		}
 		return legalCandidates;
+	}
+
+	private long disconnectedFiniteBridgeAnchorCandidates(StatePlan plan, long candidates, long boundVarMask) {
+		if (plan == null || candidates == 0L || boundVarMask == 0L) {
+			return 0L;
+		}
+		long anchors = 0L;
+		long remaining = candidates;
+		while (remaining != 0L) {
+			int candidate = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if (!isSmallBindingSetAssignment(candidate)) {
+				continue;
+			}
+			long candidateVars = bindingVarMasks[candidate] & variableUniverseMask & ~boundVarMask;
+			if (candidateVars == 0L || hasStructuralConnection(candidate, boundVarMask)) {
+				continue;
+			}
+			if (hasPendingBridgeBetween(plan.mask(), candidate, boundVarMask, candidateVars)) {
+				anchors |= bit(candidate);
+			}
+		}
+		return anchors;
+	}
+
+	private boolean hasPendingBridgeBetween(long prefixMask, int candidate, long boundVarMask, long candidateVars) {
+		long bridges = factorUniverseMask & ~prefixMask & ~bit(candidate) & ~bindingSetAssignmentFactorMask;
+		while (bridges != 0L) {
+			int bridge = Long.numberOfTrailingZeros(bridges);
+			bridges &= bridges - 1L;
+			long bridgeVars = bindingVarMasks[bridge] & variableUniverseMask;
+			if ((bridgeVars & boundVarMask) == 0L || (bridgeVars & candidateVars) == 0L) {
+				continue;
+			}
+			if (isFactorActionLegal(bridge, boundVarMask | candidateVars)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private long zeroVarScalarCandidates(long candidates) {

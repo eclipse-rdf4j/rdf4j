@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -663,6 +665,10 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Difference difference = (Difference) expression.tupleExpr();
 			List<RuleApplication> applications = new ArrayList<>(4);
+			RuleApplication vacuousMinus = vacuousPatternMinusFilterAlternative(expression, difference, goal);
+			if (vacuousMinus != null) {
+				applications.add(vacuousMinus);
+			}
 			applications.addAll(redundantPatternMinusFilterAlternatives(expression, difference, goal));
 			RuleApplication antiExistsFilter = correlatedAntiExistsFilterAlternative(expression, difference, goal);
 			if (antiExistsFilter != null) {
@@ -689,6 +695,28 @@ public final class StandardCascadesRules {
 						proof));
 			}
 			return applications;
+		}
+
+		private RuleApplication vacuousPatternMinusFilterAlternative(MemoExpr expression, Difference difference,
+				OptimizationGoal goal) {
+			if (!(difference.getRightArg()instanceof Filter rightFilter)
+					|| !(rightFilter.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+
+			Set<String> availableBindings = plannerNames(rightFilter.getArg().getBindingNames());
+			availableBindings.addAll(incomingBindingNames(goal));
+			Set<String> unavailableConditionVars = plannerNames(VarNameCollector.process(rightFilter.getCondition()));
+			unavailableConditionVars.removeAll(availableBindings);
+			if (unavailableConditionVars.isEmpty()
+					|| !isStrictlyFalseWhenUnavailable(rightFilter.getCondition(), unavailableConditionVars)) {
+				return null;
+			}
+
+			RuleProof proof = proof(semanticScope(goal), Set.of("rhsPatternFilterVacuous",
+					"unavailableConditionVars=" + unavailableConditionVars, "queryInputNotRequired"),
+					"MINUS RHS filter cannot match when it depends on bindings outside the RHS scope");
+			return RuleApplication.transformation(expression.groupId(), difference.getLeftArg().clone(), proof);
 		}
 
 		private List<RuleApplication> redundantPatternMinusFilterAlternatives(MemoExpr expression,
@@ -1291,6 +1319,10 @@ public final class StandardCascadesRules {
 		if (tupleExpr instanceof StatementPattern) {
 			return true;
 		}
+		if (tupleExpr instanceof Join join) {
+			return isSimpleCorrelatableMinusRhs(join.getLeftArg())
+					&& isSimpleCorrelatableMinusRhs(join.getRightArg());
+		}
 		if (tupleExpr instanceof Filter filter) {
 			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
 			if (!plannerNames(filter.getArg().getAssuredBindingNames()).containsAll(conditionNames)) {
@@ -1427,6 +1459,26 @@ public final class StandardCascadesRules {
 					&& literal.getCoreDatatype() == CoreDatatype.XSD.STRING;
 		}
 		return false;
+	}
+
+	private static boolean isStrictlyFalseWhenUnavailable(ValueExpr condition, Set<String> unavailableVars) {
+		if (condition instanceof And and) {
+			return isStrictlyFalseWhenUnavailable(and.getLeftArg(), unavailableVars)
+					|| isStrictlyFalseWhenUnavailable(and.getRightArg(), unavailableVars);
+		}
+		if (condition instanceof Compare compare) {
+			return strictlyRequiresAvailableBinding(compare.getLeftArg(), unavailableVars)
+					|| strictlyRequiresAvailableBinding(compare.getRightArg(), unavailableVars);
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return strictlyRequiresAvailableBinding(sameTerm.getLeftArg(), unavailableVars)
+					|| strictlyRequiresAvailableBinding(sameTerm.getRightArg(), unavailableVars);
+		}
+		return false;
+	}
+
+	private static boolean strictlyRequiresAvailableBinding(ValueExpr expression, Set<String> unavailableVars) {
+		return expression instanceof Var var && !var.hasValue() && unavailableVars.contains(var.getName());
 	}
 
 	private static String semanticScope(OptimizationGoal goal) {

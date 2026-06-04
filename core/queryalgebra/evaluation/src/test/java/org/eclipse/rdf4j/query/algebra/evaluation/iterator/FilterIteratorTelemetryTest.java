@@ -33,9 +33,11 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -108,6 +110,74 @@ class FilterIteratorTelemetryTest {
 		}
 
 		assertThat(conditionBindings.get()).isSameAs(row);
+	}
+
+	@Test
+	void subqueryFilterConditionUsesInputBindingsWithoutScopeCopy() throws Exception {
+		BindingSetAssignment arg = new BindingSetAssignment();
+		arg.setBindingNames(Set.of("arm"));
+		Filter filter = new Filter(arg,
+				new Exists(new StatementPattern(Var.of("arm"), Var.of("p"), Var.of("result"))));
+
+		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		AtomicReference<BindingSet> conditionBindings = new AtomicReference<>();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.isTrue(eq(condition), any(BindingSet.class))).thenAnswer(invocation -> {
+			conditionBindings.set(invocation.getArgument(1));
+			return true;
+		});
+
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("arm", SimpleValueFactory.getInstance().createIRI("urn:arm"));
+		row.addBinding("outsideFilterScope", SimpleValueFactory.getInstance().createLiteral("ignored"));
+
+		FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator()),
+				condition,
+				strategy);
+		try (iterator) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(row);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(conditionBindings.get()).isSameAs(row);
+	}
+
+	@Test
+	void variableScopeChangeSubqueryFilterStillLimitsConditionBindings() throws Exception {
+		BindingSetAssignment arg = new BindingSetAssignment();
+		arg.setBindingNames(Set.of("arm"));
+		Filter filter = new Filter(arg,
+				new Exists(new StatementPattern(Var.of("arm"), Var.of("p"), Var.of("result"))));
+		filter.setVariableScopeChange(true);
+
+		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		AtomicReference<BindingSet> conditionBindings = new AtomicReference<>();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.isTrue(eq(condition), any(BindingSet.class))).thenAnswer(invocation -> {
+			conditionBindings.set(invocation.getArgument(1));
+			return true;
+		});
+
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("arm", SimpleValueFactory.getInstance().createIRI("urn:arm"));
+		row.addBinding("result", SimpleValueFactory.getInstance().createIRI("urn:result"));
+		row.addBinding("outsideFilterScope", SimpleValueFactory.getInstance().createLiteral("ignored"));
+
+		FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator()),
+				condition,
+				strategy);
+		try (iterator) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(row);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(conditionBindings.get()).isNotSameAs(row);
+		assertThat(conditionBindings.get().hasBinding("arm")).isTrue();
+		assertThat(conditionBindings.get().hasBinding("outsideFilterScope")).isFalse();
 	}
 
 	@Test

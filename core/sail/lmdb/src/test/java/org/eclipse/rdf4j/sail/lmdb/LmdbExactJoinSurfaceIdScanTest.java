@@ -12,8 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
 
@@ -26,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -58,6 +68,41 @@ class LmdbExactJoinSurfaceIdScanTest {
 			assertEquals(4.0d, rows, 0.0d,
 					"Exact join-surface estimates should page-walk small scan sides without sampling");
 			assertLmdbPageWalkTelemetry(knows, name);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void exactJoinSurfaceMemoizesStructurallyEquivalentRequestsUntilDataRevisionChanges(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			loadResourceJoinData(repository);
+			TripleStore tripleStore = spy(tripleStore(store));
+			ValueStore valueStore = (ValueStore) store.getBackingStore()
+					.getValueFactory();
+			LmdbStatementPatternCardinalitySource cardinalitySource = new LmdbStatementPatternCardinalitySource(
+					valueStore, tripleStore);
+			LmdbSamplingJoinCardinalityEstimator estimator = new LmdbSamplingJoinCardinalityEstimator(valueStore,
+					tripleStore, cardinalitySource, () -> () -> {
+					});
+
+			assertEquals(4.0d, estimator.estimate(exactSurfaceRequest(pattern("person", KNOWS, "friend"),
+					pattern("friend", NAME, "name"))), 0.0d);
+			assertEquals(4.0d, estimator.estimate(exactSurfaceRequest(pattern("person", KNOWS, "friend"),
+					pattern("friend", NAME, "name"))), 0.0d);
+
+			verify(tripleStore, times(1)).getTriples(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+
+			addResourceJoinMutation(repository);
+			clearInvocations(tripleStore);
+			assertEquals(5.0d, estimator.estimate(exactSurfaceRequest(pattern("person", KNOWS, "friend"),
+					pattern("friend", NAME, "name"))), 0.0d);
+			verify(tripleStore, times(1)).getTriples(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -185,6 +230,36 @@ class LmdbExactJoinSurfaceIdScanTest {
 			connection.add(VF.createIRI("urn:test:marker:2"), MARKER, VF.createLiteral("70", XSD.INT));
 			connection.commit();
 		}
+	}
+
+	private static void addResourceJoinMutation(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(VF.createIRI("urn:test:friend:2"), NAME, VF.createLiteral("Carol"));
+			connection.commit();
+		}
+	}
+
+	private static ExactJoinSurfaceRequest exactSurfaceRequest(StatementPattern scanPattern,
+			StatementPattern probePattern) {
+		return new ExactJoinSurfaceRequest(
+				List.of(scanPattern, probePattern),
+				"friend",
+				scanPattern,
+				Component.O,
+				probePattern,
+				Component.S,
+				16_384L,
+				16_384,
+				0,
+				Double.POSITIVE_INFINITY,
+				true);
+	}
+
+	private static TripleStore tripleStore(LmdbStore store) throws ReflectiveOperationException {
+		Field field = LmdbSailStore.class.getDeclaredField("tripleStore");
+		field.setAccessible(true);
+		return (TripleStore) field.get(store.getBackingStore());
 	}
 
 	private static void assertLmdbPageWalkTelemetry(TupleExpr first, TupleExpr second) {

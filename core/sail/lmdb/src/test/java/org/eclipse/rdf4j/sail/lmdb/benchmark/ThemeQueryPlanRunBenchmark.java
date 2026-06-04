@@ -121,9 +121,9 @@ public class ThemeQueryPlanRunBenchmark {
 				"LIBRARY",
 				"ENGINEERING",
 				"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
+				"TRAIN",
+				"ELECTRICAL_GRID",
+				"PHARMA",
 				"SPARSE"
 		})
 		public String themeName;

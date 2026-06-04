@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -55,11 +56,13 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	private static final long MISSING_ID = Long.MIN_VALUE;
 	private static final int CONNECTED_JOIN_MAX_ENUMERATED_ROWS = 16_384;
 	private static final double CONNECTED_JOIN_MAX_SAMPLE_MATCHES = 1_000_000.0d;
+	private static final int EXACT_SURFACE_CACHE_MAX_ENTRIES = 65_536;
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
 	private final LmdbStatementPatternCardinalitySource cardinalitySource;
 	private final ReadGuard readGuard;
+	private final Map<ExactSurfaceCacheKey, Estimate> exactSurfaceEstimateCache = new ConcurrentHashMap<>();
 
 	LmdbSamplingJoinCardinalityEstimator(ValueStore valueStore, TripleStore tripleStore,
 			LmdbStatementPatternCardinalitySource cardinalitySource, ReadGuard readGuard) {
@@ -71,8 +74,18 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 
 	@Override
 	public double estimate(ExactJoinSurfaceRequest request) {
-		if (request == null || request.sharedVarName() == null || request.patterns().isEmpty()) {
+		if (request == null || request.sharedVarName() == null || request.patterns() == null
+				|| request.patterns()
+						.isEmpty()) {
 			return UNSUPPORTED;
+		}
+		ExactSurfaceCacheKey cacheKey = exactSurfaceCacheKey(request);
+		if (cacheKey != null) {
+			Estimate cachedEstimate = exactSurfaceEstimateCache.get(cacheKey);
+			if (cachedEstimate != null) {
+				recordTelemetry(request.patterns(), cachedEstimate);
+				return cachedEstimate.rows();
+			}
 		}
 		Guard guard = readGuard.acquire();
 		if (guard == null) {
@@ -85,10 +98,48 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 				return UNSUPPORTED;
 			}
 			recordTelemetry(request.patterns(), estimate);
+			cacheExactSurfaceEstimate(cacheKey, estimate);
 			return estimate.rows();
 		} catch (IOException | RuntimeException e) {
 			return UNSUPPORTED;
 		}
+	}
+
+	private ExactSurfaceCacheKey exactSurfaceCacheKey(ExactJoinSurfaceRequest request) {
+		List<StatementPatternKey> patternKeys = new ArrayList<>(request.patterns()
+				.size());
+		for (StatementPattern pattern : request.patterns()) {
+			StatementPatternKey patternKey = StatementPatternKey.of(pattern);
+			if (patternKey == null) {
+				return null;
+			}
+			patternKeys.add(patternKey);
+		}
+		StatementPatternKey scanPatternKey = StatementPatternKey.of(request.scanPattern());
+		StatementPatternKey probePatternKey = StatementPatternKey.of(request.probePattern());
+		return new ExactSurfaceCacheKey(
+				tripleStore.getDataRevision(),
+				List.copyOf(patternKeys),
+				request.sharedVarName(),
+				scanPatternKey,
+				request.scanSharedComponent(),
+				probePatternKey,
+				request.probeSharedComponent(),
+				request.rowBudget(),
+				request.exactDistinctLimit(),
+				request.sampleSize(),
+				Double.doubleToLongBits(request.disconnectedRowCap()),
+				request.pairwiseFallback());
+	}
+
+	private void cacheExactSurfaceEstimate(ExactSurfaceCacheKey cacheKey, Estimate estimate) {
+		if (cacheKey == null) {
+			return;
+		}
+		if (exactSurfaceEstimateCache.size() >= EXACT_SURFACE_CACHE_MAX_ENTRIES) {
+			exactSurfaceEstimateCache.clear();
+		}
+		exactSurfaceEstimateCache.put(cacheKey, estimate);
 	}
 
 	@Override
@@ -1305,6 +1356,53 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		private static PatternIds zero() {
 			return new PatternIds(0L, 0L, 0L, 0L, true);
 		}
+	}
+
+	private record ExactSurfaceCacheKey(long dataRevision, List<StatementPatternKey> patterns, String sharedVarName,
+			StatementPatternKey scanPattern, Component scanSharedComponent, StatementPatternKey probePattern,
+			Component probeSharedComponent, long rowBudget, int exactDistinctLimit, int sampleSize,
+			long disconnectedRowCapBits, boolean pairwiseFallback) {
+	}
+
+	private record StatementPatternKey(StatementPattern.Scope scope, VarKey subject, VarKey predicate, VarKey object,
+			VarKey context) {
+		private static StatementPatternKey of(StatementPattern pattern) {
+			if (pattern == null) {
+				return null;
+			}
+			return new StatementPatternKey(
+					pattern.getScope(),
+					VarKey.of(pattern.getSubjectVar()),
+					VarKey.of(pattern.getPredicateVar()),
+					VarKey.of(pattern.getObjectVar()),
+					VarKey.of(pattern.getContextVar()));
+		}
+	}
+
+	private record VarKey(String name, Object value, boolean hasValue, boolean anonymous, boolean constant) {
+		private static VarKey of(Var var) {
+			if (var == null) {
+				return null;
+			}
+			boolean hasValue = var.hasValue();
+			return new VarKey(var.getName(), hasValue ? valueKey(var.getValue()) : null, hasValue, var.isAnonymous(),
+					var.isConstant());
+		}
+
+		private static Object valueKey(Value value) {
+			if (value instanceof LmdbValue lmdbValue) {
+				long internalId = lmdbValue.getInternalID();
+				ValueStoreRevision revision = lmdbValue.getValueStoreRevision();
+				if (internalId != LmdbValue.UNKNOWN_ID && revision != null) {
+					return new StoredValueKey(System.identityHashCode(revision.getValueStore()),
+							revision.getRevisionId(), internalId);
+				}
+			}
+			return value;
+		}
+	}
+
+	private record StoredValueKey(int valueStoreIdentity, long revisionId, long internalId) {
 	}
 
 	private record SharedIdScan(LmdbLongLongCounts exactCounts, long[] samples, long scannedRows, int distinctIds,

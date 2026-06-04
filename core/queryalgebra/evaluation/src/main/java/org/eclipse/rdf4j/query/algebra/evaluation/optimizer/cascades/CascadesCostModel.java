@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -117,6 +118,12 @@ public interface CascadesCostModel {
 		private final EvaluationStatistics statistics;
 		private final JoinFactorCostModel factorCostModel;
 		private final RdfStatisticsProvider rdfStatisticsProvider;
+		private final IdentityHashMap<TupleExpr, LogicalProperties> logicalPropertiesCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, String> logicalFingerprintCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Map<Set<String>, StatisticsEstimate>> estimateCache = new IdentityHashMap<>();
+		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, StatisticsEstimate>> physicalEstimateCache = new IdentityHashMap<>();
+		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, PhysicalProperties>> deliveredPropertiesCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Map<DecisionRefinementKey, Optional<StatisticsEstimate>>> decisionRefinementCache = new IdentityHashMap<>();
 
 		public DefaultCascadesCostModel(EvaluationStatistics statistics, JoinFactorCostModel factorCostModel,
 				RdfStatisticsProvider rdfStatisticsProvider) {
@@ -128,8 +135,14 @@ public interface CascadesCostModel {
 
 		@Override
 		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
-			StatisticsEstimate estimate = estimate(tupleExpr, Set.of());
-			return LogicalProperties.from(tupleExpr, estimate.rows(), estimate.qErrorInterval());
+			if (tupleExpr == null) {
+				StatisticsEstimate estimate = estimate(null, Set.of());
+				return LogicalProperties.from(null, estimate.rows(), estimate.qErrorInterval());
+			}
+			return logicalPropertiesCache.computeIfAbsent(tupleExpr, expression -> {
+				StatisticsEstimate estimate = estimate(expression, Set.of());
+				return LogicalProperties.from(expression, estimate.rows(), estimate.qErrorInterval());
+			});
 		}
 
 		@Override
@@ -137,6 +150,10 @@ public interface CascadesCostModel {
 			if (tupleExpr == null) {
 				return "<null>";
 			}
+			return logicalFingerprintCache.computeIfAbsent(tupleExpr, this::computeLogicalFingerprint);
+		}
+
+		private String computeLogicalFingerprint(TupleExpr tupleExpr) {
 			String operator = tupleExpr.getClass().getSimpleName();
 			String bindings = sorted(tupleExpr.getBindingNames());
 			String assured = sorted(tupleExpr.getAssuredBindingNames());
@@ -266,6 +283,33 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
 				Set<String> boundVars, List<Winner> inputWinners) {
+			Set<String> effectiveBoundVars = immutableBoundVars(boundVars);
+			if (cachePhysicalEstimate(expression, inputWinners)) {
+				Map<PhysicalInputKey, StatisticsEstimate> estimatesByInput = physicalEstimateCache
+						.computeIfAbsent(expression, ignored -> new LinkedHashMap<>());
+				PhysicalInputKey key = new PhysicalInputKey(effectiveBoundVars, inputWinners);
+				StatisticsEstimate cached = estimatesByInput.get(key);
+				if (cached != null) {
+					return cached;
+				}
+				StatisticsEstimate estimate = computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars,
+						inputWinners);
+				estimatesByInput.put(key, estimate);
+				return estimate;
+			}
+			return computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars, inputWinners);
+		}
+
+		private boolean cachePhysicalEstimate(MemoExpr expression, List<Winner> inputWinners) {
+			return expression != null
+					&& expression.physical()
+					&& !expression.inputGroupIds().isEmpty()
+					&& inputWinners != null
+					&& !inputWinners.isEmpty();
+		}
+
+		private StatisticsEstimate computeEstimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
+				Set<String> boundVars, List<Winner> inputWinners) {
 			if (expression.physical() && !expression.inputGroupIds().isEmpty()) {
 				if (tupleExpr instanceof LeftJoin leftJoin) {
 					return estimateConcretePhysicalLeftJoin(leftJoin, boundVars, inputWinners);
@@ -298,9 +342,8 @@ public interface CascadesCostModel {
 			Set<String> boundVars = boundVars(goal);
 			StatisticsEstimate baseEstimate = estimateForLocalCost(expression, expression.tupleExpr(), boundVars,
 					inputWinners);
-			Optional<StatisticsEstimate> providerRefined = rdfStatisticsProvider.refineForDecision(
-					new RdfStatisticsProvider.EstimationDecision(expression.tupleExpr(), boundVars, baseEstimate,
-							currentCost, incumbentCost, "cascades-winner-comparison"));
+			Optional<StatisticsEstimate> providerRefined = providerDecisionRefinement(expression.tupleExpr(),
+					boundVars, baseEstimate, currentCost, incumbentCost);
 			if (providerRefined.isPresent()) {
 				StatisticsEstimate refinedEstimate = providerRefined.get();
 				stampStatisticsEstimate(expression.tupleExpr(), refinedEstimate);
@@ -317,6 +360,18 @@ public interface CascadesCostModel {
 			stampFactorMetrics(expression.tupleExpr(), factor);
 			CostVector refined = composeOperatorCost(inputCost(inputWinners), factorCostVector(factor));
 			return applyPolicy(refined, goal);
+		}
+
+		private Optional<StatisticsEstimate> providerDecisionRefinement(TupleExpr tupleExpr, Set<String> boundVars,
+				StatisticsEstimate baseEstimate, CostVector currentCost, CostVector incumbentCost) {
+			DecisionRefinementKey key = new DecisionRefinementKey(immutableBoundVars(boundVars), currentCost,
+					incumbentCost);
+			Map<DecisionRefinementKey, Optional<StatisticsEstimate>> estimatesByDecision = decisionRefinementCache
+					.computeIfAbsent(tupleExpr, ignored -> new LinkedHashMap<>());
+			return estimatesByDecision.computeIfAbsent(key,
+					ignored -> rdfStatisticsProvider.refineForDecision(
+							new RdfStatisticsProvider.EstimationDecision(tupleExpr, key.boundVars(), baseEstimate,
+									currentCost, incumbentCost, "cascades-winner-comparison")));
 		}
 
 		@Override
@@ -358,6 +413,31 @@ public interface CascadesCostModel {
 
 		@Override
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			PhysicalInputKey key = deliveredPropertiesKey(expression, goal, inputWinners);
+			if (key != null) {
+				Map<PhysicalInputKey, PhysicalProperties> deliveredByInput = deliveredPropertiesCache
+						.computeIfAbsent(expression, ignored -> new LinkedHashMap<>());
+				PhysicalProperties cached = deliveredByInput.get(key);
+				if (cached != null) {
+					return cached;
+				}
+				PhysicalProperties delivered = computeDeliveredProperties(expression, goal, inputWinners);
+				deliveredByInput.put(key, delivered);
+				return delivered;
+			}
+			return computeDeliveredProperties(expression, goal, inputWinners);
+		}
+
+		private PhysicalInputKey deliveredPropertiesKey(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			if (expression == null || !expression.physical()) {
+				return null;
+			}
+			return new PhysicalInputKey(boundVars(goal), inputWinners);
+		}
+
+		private PhysicalProperties computeDeliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
 			PhysicalProperties delivered = expression.deliveredProperties();
 			BindingProfile declaredBindingProfile = delivered.bindingProfile();
@@ -428,9 +508,6 @@ public interface CascadesCostModel {
 			}
 			if (tupleExpr instanceof LeftJoin leftJoin) {
 				return leftJoin.getLeftArg().getAssuredBindingNames();
-			}
-			if (tupleExpr instanceof Difference difference) {
-				return difference.getLeftArg().getAssuredBindingNames();
 			}
 			return Set.of();
 		}
@@ -529,15 +606,25 @@ public interface CascadesCostModel {
 			if (tupleExpr == null) {
 				return StatisticsEstimate.exact(0.0d, "empty");
 			}
-			Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
+			Set<String> effectiveBoundVars = immutableBoundVars(boundVars);
+			Map<Set<String>, StatisticsEstimate> estimatesByBoundVars = estimateCache.computeIfAbsent(tupleExpr,
+					ignored -> new LinkedHashMap<>());
+			StatisticsEstimate cached = estimatesByBoundVars.get(effectiveBoundVars);
+			if (cached != null) {
+				return cached;
+			}
+			StatisticsEstimate estimate;
 			if (tupleExpr instanceof Join join) {
-				return applyFeedback(tupleExpr, estimateJoin(join, effectiveBoundVars));
+				estimate = applyFeedback(tupleExpr, estimateJoin(join, effectiveBoundVars));
+				estimatesByBoundVars.put(effectiveBoundVars, estimate);
+				return estimate;
 			}
 			Optional<StatisticsEstimate> providerEstimate = providerEstimate(tupleExpr, effectiveBoundVars);
 			if (providerEstimate.isPresent()) {
-				return applyFeedback(tupleExpr, withBindingStats(tupleExpr, providerEstimate.get()));
+				estimate = applyFeedback(tupleExpr, withBindingStats(tupleExpr, providerEstimate.get()));
+				estimatesByBoundVars.put(effectiveBoundVars, estimate);
+				return estimate;
 			}
-			StatisticsEstimate estimate;
 			if (tupleExpr instanceof QueryRoot root) {
 				estimate = estimateUnary(root, effectiveBoundVars, "query-root");
 			} else if (tupleExpr instanceof StatementPattern pattern) {
@@ -573,7 +660,61 @@ public interface CascadesCostModel {
 			} else {
 				estimate = fallbackEstimate(tupleExpr, "operator-" + tupleExpr.getClass().getSimpleName());
 			}
-			return applyFeedback(tupleExpr, estimate);
+			estimate = applyFeedback(tupleExpr, estimate);
+			estimatesByBoundVars.put(effectiveBoundVars, estimate);
+			return estimate;
+		}
+
+		private static Set<String> immutableBoundVars(Set<String> boundVars) {
+			if (boundVars == null || boundVars.isEmpty()) {
+				return Set.of();
+			}
+			return Set.copyOf(boundVars);
+		}
+
+		private record DecisionRefinementKey(Set<String> boundVars, CostVector currentCost,
+				CostVector incumbentCost) {
+		}
+
+		private static final class PhysicalInputKey {
+			private final Set<String> boundVars;
+			private final List<Winner> inputWinners;
+			private final int hash;
+
+			private PhysicalInputKey(Set<String> boundVars, List<Winner> inputWinners) {
+				this.boundVars = immutableBoundVars(boundVars);
+				this.inputWinners = inputWinners == null || inputWinners.isEmpty() ? List.of()
+						: List.copyOf(inputWinners);
+				int result = this.boundVars.hashCode();
+				for (Winner winner : this.inputWinners) {
+					result = 31 * result + System.identityHashCode(winner);
+				}
+				hash = result;
+			}
+
+			@Override
+			public boolean equals(Object obj) {
+				if (this == obj) {
+					return true;
+				}
+				if (!(obj instanceof PhysicalInputKey other)
+						|| hash != other.hash
+						|| !boundVars.equals(other.boundVars)
+						|| inputWinners.size() != other.inputWinners.size()) {
+					return false;
+				}
+				for (int i = 0; i < inputWinners.size(); i++) {
+					if (inputWinners.get(i) != other.inputWinners.get(i)) {
+						return false;
+					}
+				}
+				return true;
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
+			}
 		}
 
 		private Optional<StatisticsEstimate> providerEstimate(TupleExpr tupleExpr, Set<String> boundVars) {

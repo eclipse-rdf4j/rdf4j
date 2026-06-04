@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -82,6 +85,44 @@ class LmdbCascadesContextPropagationTest {
 			restoreMode(previousMode);
 			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
 		}
+	}
+
+	@Test
+	void minusBoundProbeRuleSkipsScopeChangingRightSide() {
+		StatementPattern left = new StatementPattern(new Var("item"), new Var("leftPredicate"),
+				new Var("leftValue"));
+		Extension scopeChangingRight = new Extension(
+				new StatementPattern(new Var("item"), new Var("rightPredicate"), new Var("rightValue")),
+				new ExtensionElem(new Var("item"), "copiedItem"));
+		scopeChangingRight.setVariableScopeChange(true);
+		Difference difference = new Difference(left, scopeChangingRight);
+
+		assertTrue(ruleApplications(difference, new AvailableMinusBoundProbeStatistics(), OptimizationGoal.root(),
+				"lmdb-minus-bound-rhs-probe").isEmpty(),
+				"MINUS bound-probe costing must not be selected for a scope-changing RHS because the "
+						+ "outer shared binding cannot be delivered to that child execution plan.");
+	}
+
+	@Test
+	void minusBoundProbeRuleRequiresIncomingSharedBinding() {
+		StatementPattern left = new StatementPattern(new Var("item"), new Var("leftPredicate"),
+				new Var("leftValue"));
+		StatementPattern right = new StatementPattern(new Var("item"), new Var("rightPredicate"),
+				new Var("rightValue"));
+		Difference difference = new Difference(left, right);
+		AvailableMinusBoundProbeStatistics statistics = new AvailableMinusBoundProbeStatistics();
+
+		assertTrue(ruleApplications(difference, statistics, OptimizationGoal.root(),
+				"lmdb-minus-bound-rhs-probe").isEmpty(),
+				"Generic RDF4J MINUS execution does not invoke the RHS once per left binding, so a left-assured "
+						+ "shared variable alone cannot make a bound RHS probe executable.");
+
+		OptimizationGoal incomingItem = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("item"))
+				.build());
+		assertFalse(ruleApplications(difference, statistics, incomingItem,
+				"lmdb-minus-bound-rhs-probe").isEmpty(),
+				"A shared variable that is already bound before the whole Difference is safe for both MINUS sides.");
 	}
 
 	@Test
@@ -237,6 +278,11 @@ class LmdbCascadesContextPropagationTest {
 
 	private static RuleApplication ruleApplication(TupleExpr tupleExpr, EvaluationStatistics statistics,
 			OptimizationGoal goal, String ruleId) {
+		return ruleApplications(tupleExpr, statistics, goal, ruleId).getFirst();
+	}
+
+	private static List<RuleApplication> ruleApplications(TupleExpr tupleExpr, EvaluationStatistics statistics,
+			OptimizationGoal goal, String ruleId) {
 		CascadesCostModel costModel = CascadesCostModel.from(statistics);
 		Memo memo = new Memo(costModel);
 		RuleRegistry registry = LmdbCascadesRuleProvider.rules(statistics);
@@ -248,8 +294,7 @@ class LmdbCascadesContextPropagationTest {
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Missing rule " + ruleId));
 		return rule.apply(expression, goal,
-				new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null))
-				.getFirst();
+				new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null));
 	}
 
 	private static TupleExpr thresholdPathIsland() {
@@ -368,6 +413,20 @@ class LmdbCascadesContextPropagationTest {
 			this.calls.add(new JoinOrderCall(initiallyBoundVars == null ? Set.of() : Set.copyOf(initiallyBoundVars),
 					argBindingNames));
 			return Optional.of(new JoinOrderPlan(args, 10.0d, 50.0d, List.of(), Map.of(), Map.of(), List.of()));
+		}
+	}
+
+	private static final class AvailableMinusBoundProbeStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
 		}
 	}
 

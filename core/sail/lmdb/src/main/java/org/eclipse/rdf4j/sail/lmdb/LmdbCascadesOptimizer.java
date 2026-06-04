@@ -39,9 +39,11 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -311,6 +313,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		List<SubtreeCandidate> candidates = new ArrayList<>();
 		Set<String> rootBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
 		root.visit(new ContextualSubtreeCandidateCollector(root, rootBoundVars, candidates));
+		optimizeSubtreeCandidates(candidates, planner, goal);
+
+		List<SubtreeCandidate> conditionCandidates = new ArrayList<>();
+		root.visit(new ConditionSubqueryCandidateCollector(root, rootBoundVars, conditionCandidates));
+		optimizeSubtreeCandidates(conditionCandidates, planner, goal);
+	}
+
+	private void optimizeSubtreeCandidates(List<SubtreeCandidate> candidates, CascadesPlanner planner,
+			OptimizationGoal goal) {
 		for (SubtreeCandidate candidate : candidates) {
 			if (candidate.tupleExpr().getParentNode() == null) {
 				continue;
@@ -498,6 +509,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 						union(boundVars, difference.getLeftArg().getAssuredBindingNames()));
 				return;
 			}
+			if (tupleExpr instanceof Filter filter) {
+				visitWithBoundVars(filter.getArg(), boundVars);
+				return;
+			}
 			if (tupleExpr instanceof UnaryTupleOperator unary) {
 				visitWithBoundVars(unary.getArg(), boundVars);
 				return;
@@ -507,6 +522,121 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 		private void visitWithBoundVars(TupleExpr tupleExpr, Set<String> nextBoundVars) {
 			if (tupleExpr == null) {
+				return;
+			}
+			Set<String> previous = boundVars;
+			try {
+				boundVars = nextBoundVars == null || nextBoundVars.isEmpty() ? Set.of() : Set.copyOf(nextBoundVars);
+				tupleExpr.visit(this);
+			} finally {
+				boundVars = previous;
+			}
+		}
+
+		private static Set<String> union(Set<String> left, Set<String> right) {
+			if ((left == null || left.isEmpty()) && (right == null || right.isEmpty())) {
+				return Set.of();
+			}
+			Set<String> union = new LinkedHashSet<>();
+			if (left != null) {
+				union.addAll(left);
+			}
+			if (right != null) {
+				union.addAll(right);
+			}
+			return union.isEmpty() ? Set.of() : Set.copyOf(union);
+		}
+	}
+
+	private static final class ConditionSubqueryCandidateCollector
+			extends AbstractQueryModelVisitor<RuntimeException> {
+		private final TupleExpr root;
+		private final List<SubtreeCandidate> candidates;
+		private Set<String> boundVars;
+
+		private ConditionSubqueryCandidateCollector(TupleExpr root, Set<String> rootBoundVars,
+				List<SubtreeCandidate> candidates) {
+			this.root = root;
+			this.boundVars = rootBoundVars == null || rootBoundVars.isEmpty() ? Set.of() : Set.copyOf(rootBoundVars);
+			this.candidates = candidates;
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (!(node instanceof TupleExpr tupleExpr)) {
+				node.visitChildren(this);
+				return;
+			}
+			visitTupleChildren(tupleExpr, node);
+		}
+
+		private void visitTupleChildren(TupleExpr tupleExpr, QueryModelNode node) {
+			if (tupleExpr instanceof LeftJoin leftJoin) {
+				visitWithBoundVars(leftJoin.getLeftArg(), boundVars);
+				visitWithBoundVars(leftJoin.getRightArg(), union(boundVars,
+						leftJoin.getLeftArg().getAssuredBindingNames()));
+				return;
+			}
+			if (tupleExpr instanceof Join join) {
+				visitWithBoundVars(join.getLeftArg(), boundVars);
+				visitWithBoundVars(join.getRightArg(), union(boundVars, join.getLeftArg().getAssuredBindingNames()));
+				return;
+			}
+			if (tupleExpr instanceof Union union) {
+				visitWithBoundVars(union.getLeftArg(), boundVars);
+				visitWithBoundVars(union.getRightArg(), boundVars);
+				return;
+			}
+			if (tupleExpr instanceof Difference difference) {
+				visitWithBoundVars(difference.getLeftArg(), boundVars);
+				visitWithBoundVars(difference.getRightArg(),
+						union(boundVars, difference.getLeftArg().getAssuredBindingNames()));
+				return;
+			}
+			if (tupleExpr instanceof Filter filter) {
+				visitWithBoundVars(filter.getArg(), boundVars);
+				visitConditionSubqueries(filter.getCondition(), filterConditionBoundVars(filter));
+				return;
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unary) {
+				visitWithBoundVars(unary.getArg(), boundVars);
+				return;
+			}
+			node.visitChildren(this);
+		}
+
+		private Set<String> filterConditionBoundVars(Filter filter) {
+			Set<String> inputBindings = filter.getArg().getAssuredBindingNames();
+			if (filter.isVariableScopeChange()) {
+				return inputBindings == null || inputBindings.isEmpty() ? Set.of() : Set.copyOf(inputBindings);
+			}
+			return union(boundVars, inputBindings);
+		}
+
+		private void visitConditionSubqueries(ValueExpr condition, Set<String> conditionBoundVars) {
+			if (condition == null) {
+				return;
+			}
+			condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetSubQueryValueOperator(SubQueryValueOperator subQuery) {
+					TupleExpr subQueryTuple = subQuery.getSubQuery();
+					if (subQueryTuple == null) {
+						return;
+					}
+					Set<String> subQueryBoundVars = subQuery.isVariableScopeChange() ? Set.of() : conditionBoundVars;
+					if (subplanCandidate(subQueryTuple)) {
+						candidates.add(new SubtreeCandidate(subQueryTuple,
+								contextualBoundVars(subQueryBoundVars, subQueryTuple.getBindingNames())));
+						return;
+					}
+					visitWithBoundVars(subQueryTuple, subQueryBoundVars);
+				}
+			});
+		}
+
+		private void visitWithBoundVars(TupleExpr tupleExpr, Set<String> nextBoundVars) {
+			if (tupleExpr == null || tupleExpr == root) {
 				return;
 			}
 			Set<String> previous = boundVars;

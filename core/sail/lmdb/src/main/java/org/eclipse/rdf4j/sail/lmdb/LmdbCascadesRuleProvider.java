@@ -27,6 +27,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -2973,11 +2974,17 @@ final class LmdbCascadesRuleProvider {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical() && costModel != null
-					&& expression.tupleExpr() instanceof org.eclipse.rdf4j.query.algebra.Difference;
+					&& expression.tupleExpr() instanceof Difference;
 		}
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (!(expression.tupleExpr()instanceof Difference difference)
+					|| difference.getRightArg() == null
+					|| TupleExprs.isVariableScopeChange(difference.getRightArg())
+					|| !sharedBindingsAvailableFromIncomingGoal(difference, goal)) {
+				return List.of();
+			}
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
 			if (estimate.isEmpty()) {
 				trace(context, "lmdb-rule id=" + id() + " status=no-estimate group=" + expression.groupId()
@@ -2993,6 +3000,23 @@ final class LmdbCascadesRuleProvider {
 					estimate.get());
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					delivered, cost, proof, "lmdb-minus-probe-decomposed", snapshot(estimate.get(), cost)));
+		}
+
+		private boolean sharedBindingsAvailableFromIncomingGoal(Difference difference, OptimizationGoal goal) {
+			if (difference == null || difference.getLeftArg() == null || difference.getRightArg() == null
+					|| goal == null || goal.requiredProperties() == null) {
+				return false;
+			}
+			Set<String> sharedBindings = new HashSet<>(
+					LmdbJoinPlanSupport.plannerBindingNames(difference.getLeftArg().getAssuredBindingNames()));
+			sharedBindings.retainAll(
+					LmdbJoinPlanSupport.plannerBindingNames(difference.getRightArg().getBindingNames()));
+			if (sharedBindings.isEmpty()) {
+				return false;
+			}
+			Set<String> incomingBindings = LmdbJoinPlanSupport
+					.plannerBindingNames(goal.requiredProperties().boundVars());
+			return incomingBindings.containsAll(sharedBindings);
 		}
 
 		private CostVector decomposedMinusOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {

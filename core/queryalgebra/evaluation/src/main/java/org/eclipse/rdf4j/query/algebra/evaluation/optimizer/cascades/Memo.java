@@ -163,6 +163,10 @@ public final class Memo {
 		return group(key.groupId()).addWinner(key, winner, frontierLimit, exactMode);
 	}
 
+	public boolean canAddWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
+		return group(key.groupId()).canAddWinner(key, winner, frontierLimit, exactMode);
+	}
+
 	public Optional<Winner> bestWinner(WinnerKey key) {
 		return group(key.groupId()).bestWinner(key);
 	}

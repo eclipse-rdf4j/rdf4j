@@ -55,7 +55,9 @@ import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
@@ -63,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -85,6 +88,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -662,6 +666,64 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of("s"));
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of("s"));
 		verify(tripleStore, times(1)).indexAccessPaths(anyInt());
+	}
+
+	@Test
+	void scopedFactorCostCacheReusesPrefixFactorFingerprints() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of());
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", vf.createIRI("urn:test:follows")),
+				Var.of("o"));
+		CountingBindingSetAssignment prefix = valuesAssignment("u", vf.createIRI("urn:test:u1"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(Set.of("s"),
+					1.0d, 1.0d, false, false, Map.of(), List.of(prefix));
+
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+		}
+
+		assertEquals(1, prefix.bindingSetReads,
+				"Scoped cache keys should reuse prefix factor fingerprints instead of rescanning VALUES rows");
+	}
+
+	@Test
+	void correlatedAntiExistsFilterEstimateIncludesBoundRhsProbeWorkRows() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern input = new StatementPattern(
+				Var.of("v"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("kind"));
+		StatementPattern antiProbe = new StatementPattern(
+				Var.of("v"),
+				Var.of("follows", vf.createIRI("urn:test:follows")),
+				Var.of("v"));
+		Extension wrappedAntiProbe = new Extension(antiProbe, new ExtensionElem(Var.of("v"), "anon"));
+		AntiExistsProbeStatistics statistics = new AntiExistsProbeStatistics();
+		StatisticsEstimate inputEstimate = new StatisticsEstimate(6.0d,
+				QErrorInterval.exact(6.0d, "test-input"), 12.0d, "test-input", Map.of());
+
+		Optional<StatisticsEstimate> estimate = statistics.filter(input, new Not(new Exists(wrappedAntiProbe)),
+				inputEstimate, Set.of());
+
+		assertTrue(estimate.isPresent());
+		assertEquals(List.of(Set.of("v")), statistics.boundRequests);
+		assertEquals(6.0d, estimate.get().rows());
+		assertEquals(25.0d, estimate.get().workRows());
+		assertEquals(7.0d, estimate.get().metrics().get("plannedAntiExistsProbeWorkRows"));
 	}
 
 	@Test
@@ -3457,6 +3519,25 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return ((Number) method.invoke(target)).doubleValue();
 	}
 
+	private static CountingBindingSetAssignment valuesAssignment(String bindingName, IRI value) {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		bindingSet.addBinding(bindingName, value);
+		CountingBindingSetAssignment assignment = new CountingBindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(List.of(bindingSet));
+		return assignment;
+	}
+
+	private static final class CountingBindingSetAssignment extends BindingSetAssignment {
+		private int bindingSetReads;
+
+		@Override
+		public Iterable<org.eclipse.rdf4j.query.BindingSet> getBindingSets() {
+			bindingSetReads++;
+			return super.getBindingSets();
+		}
+	}
+
 	private static boolean invokeBoolean(Object target, String methodName) throws Exception {
 		Method method = target.getClass().getDeclaredMethod(methodName);
 		method.setAccessible(true);
@@ -3483,6 +3564,29 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(null);
+	}
+
+	private static final class AntiExistsProbeStatistics extends LmdbEvaluationStatistics {
+		private final List<Set<String>> boundRequests = new ArrayList<>();
+
+		private AntiExistsProbeStatistics() {
+			super(null, null, null, null, null);
+		}
+
+		@Override
+		public EvaluationStatistics.FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new EvaluationStatistics.FilterPassEstimate(1.0d,
+					EvaluationStatistics.FilterPassEstimate.Source.EXACT);
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				JoinFactorCostModel.CostContext context) {
+			boundRequests.add(Set.copyOf(context.getCurrentlyBoundVars()));
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(7.0d, 1.0d,
+					Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "test-bound-anti-probe"),
+					Map.of(TelemetryMetricNames.PLANNED_WORK_ROWS, 7.0d), true, true, 0, 0, 1.0d, true, true));
+		}
 	}
 
 }

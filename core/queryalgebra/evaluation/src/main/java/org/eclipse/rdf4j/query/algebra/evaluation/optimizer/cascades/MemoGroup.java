@@ -123,6 +123,13 @@ public final class MemoGroup {
 		return accepted;
 	}
 
+	boolean canAddWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
+		Objects.requireNonNull(key, "key");
+		Objects.requireNonNull(winner, "winner");
+		WinnerFrontier frontier = winnersByGoal.get(key);
+		return frontier == null || frontier.canAdd(winner, frontierLimit, exactMode);
+	}
+
 	boolean hasFailure(WinnerKey key) {
 		return failures.contains(key);
 	}
@@ -144,18 +151,20 @@ public final class MemoGroup {
 		private int dominatedRejectedCount;
 		private int trimmedCount;
 
+		boolean canAdd(Winner winner, int frontierLimit, boolean exactMode) {
+			int insertionPoint = insertionPoint(winner);
+			if (insertionPoint < 0) {
+				return false;
+			}
+			int limit = exactMode ? Integer.MAX_VALUE : Math.max(1, frontierLimit);
+			return entries.size() < limit || insertionPoint < limit;
+		}
+
 		boolean add(Winner winner, int frontierLimit, boolean exactMode) {
-			int insertionPoint = 0;
-			for (int i = 0; i < entries.size(); i++) {
-				Winner existing = entries.get(i);
-				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
-						&& !baselineBlocksRuleAlternative(existing, winner)) {
-					dominatedRejectedCount++;
-					return false;
-				}
-				if (existing.cost().compareTo(winner.cost()) <= 0) {
-					insertionPoint = i + 1;
-				}
+			int insertionPoint = insertionPoint(winner);
+			if (insertionPoint < 0) {
+				dominatedRejectedCount++;
+				return false;
 			}
 			for (int i = entries.size() - 1; i >= 0; i--) {
 				Winner existing = entries.get(i);
@@ -180,6 +189,21 @@ public final class MemoGroup {
 			}
 			entries.add(insertionPoint, winner);
 			return true;
+		}
+
+		private int insertionPoint(Winner winner) {
+			int insertionPoint = 0;
+			for (int i = 0; i < entries.size(); i++) {
+				Winner existing = entries.get(i);
+				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
+						&& !baselineBlocksRuleAlternative(existing, winner)) {
+					return -1;
+				}
+				if (existing.cost().compareTo(winner.cost()) <= 0) {
+					insertionPoint = i + 1;
+				}
+			}
+			return insertionPoint;
 		}
 
 		Optional<Winner> best() {

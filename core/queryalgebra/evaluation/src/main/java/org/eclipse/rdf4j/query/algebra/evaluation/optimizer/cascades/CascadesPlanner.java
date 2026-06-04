@@ -47,6 +47,9 @@ public final class CascadesPlanner {
 	private static final int DEADLINE_CHECK_GRANULARITY = 64;
 	private static final double DECISION_REFINEMENT_CLOSE_RATIO = 4.0d;
 	private static final double PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD = 1.5d;
+	private static final String GENERIC_PHYSICAL_IMPLEMENTATION_RULE = "generic-physical-implementation";
+	private static final String EXISTING_ALGEBRA_EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
+	private static final String BASELINE_EXISTING_ALGEBRA_RULE = "baseline-existing-algebra";
 	static final String PLANNED_DECISION_SENSITIVE = "plannedCascadesDecisionSensitive";
 	static final String PLANNED_DECISION_EXACT_REFINEMENT = "plannedCascadesDecisionExactRefinement";
 	static final String PLANNED_WINNER_OBJECTIVE_GAP_RATIO = "plannedCascadesWinnerObjectiveGapRatio";
@@ -107,7 +110,15 @@ public final class CascadesPlanner {
 		}
 
 		state.markGroupExplored(key);
-		seedPhysicalWinners(memo, groupId, goal, state);
+		boolean budgetedTransformationsApply = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+				&& hasApplicableTransformation(memo, groupId, goal);
+		seedPhysicalWinners(memo, groupId, goal, state, !budgetedTransformationsApply);
+		Optional<Winner> seededWinner = budgetedTransformationsApply
+				? Optional.empty()
+				: budgetedSeededNativeWinner(memo, groupId, goal, state);
+		if (seededWinner.isPresent()) {
+			return seededWinner;
+		}
 		exploreGroup(memo, groupId, goal, state);
 		MemoGroup group = memo.group(groupId);
 		List<MemoExpr> snapshot = List.copyOf(group.mutableExpressionsView());
@@ -128,25 +139,140 @@ public final class CascadesPlanner {
 		return best;
 	}
 
-	private void seedPhysicalWinners(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
-		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
+	private Optional<Winner> budgetedSeededNativeWinner(Memo memo, int groupId, OptimizationGoal goal,
+			SearchState state) {
+		if (goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
+			return Optional.empty();
+		}
+		Optional<Winner> winner = memo.bestWinner(goal.key(groupId));
+		if (winner.isEmpty() || !seededNativeWinner(winner.get())) {
+			return Optional.empty();
+		}
+		state.markApproximate("budgeted search accepted seeded native implementation winner for group " + groupId);
+		return winner;
+	}
+
+	private boolean hasApplicableTransformation(Memo memo, int groupId, OptimizationGoal goal) {
 		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
 		for (MemoExpr expression : snapshot) {
 			if (!expression.logical()) {
 				continue;
 			}
 			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
-				if (rule.kind() == RuleKind.IMPLEMENTATION) {
-					applyRule(memo, expression, rule, goal, context, state, false);
+				if (rule.kind() == RuleKind.TRANSFORMATION) {
+					return true;
 				}
 			}
 		}
+		return false;
+	}
+
+	private boolean seededNativeWinner(Winner winner) {
+		return winner != null
+				&& (localNativePhysicalExpression(winner.expression()) || hasNativeImplementationProof(winner));
+	}
+
+	private boolean hasNativeImplementationProof(Winner winner) {
+		if (winner == null || winner.proofs() == null) {
+			return false;
+		}
+		for (RuleProof proof : winner.proofs()) {
+			if (proof.kind() == RuleKind.IMPLEMENTATION && nativeImplementationRule(proof.ruleId())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean nativeImplementationRule(String ruleId) {
+		return ruleId != null
+				&& !ruleId.isBlank()
+				&& !GENERIC_PHYSICAL_IMPLEMENTATION_RULE.equals(ruleId)
+				&& !EXISTING_ALGEBRA_EMERGENCY_FALLBACK_RULE.equals(ruleId)
+				&& !BASELINE_EXISTING_ALGEBRA_RULE.equals(ruleId);
+	}
+
+	private void seedPhysicalWinners(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
+			boolean optimizeSeededPhysical) {
+		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
+		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
+		for (MemoExpr expression : snapshot) {
+			if (!expression.logical()) {
+				continue;
+			}
+			for (CascadesRule rule : implementationSeedRules(expression, goal, memo)) {
+				applyRule(memo, expression, rule, goal, context, state, false, false);
+			}
+		}
+		if (!optimizeSeededPhysical) {
+			return;
+		}
 		List<MemoExpr> physicalSnapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
+		boolean skipGenericFallbacks = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+				&& groupHasNativePhysicalAlternative(physicalSnapshot);
 		for (MemoExpr expression : physicalSnapshot) {
+			if (skipGenericFallbacks && genericPhysicalImplementation(expression)) {
+				continue;
+			}
 			if (expression.physical()) {
 				optimizeExpression(memo, expression, goal, state, false);
 			}
 		}
+	}
+
+	private List<CascadesRule> implementationSeedRules(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+		List<CascadesRule> rules = new ArrayList<>();
+		for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
+			if (rule.kind() == RuleKind.IMPLEMENTATION) {
+				rules.add(rule);
+			}
+		}
+		if (rules.size() > 1) {
+			rules.sort((left, right) -> Boolean.compare(genericImplementationRule(left),
+					genericImplementationRule(right)));
+		}
+		return rules;
+	}
+
+	private boolean genericImplementationRule(CascadesRule rule) {
+		return rule != null && GENERIC_PHYSICAL_IMPLEMENTATION_RULE.equals(rule.id());
+	}
+
+	private boolean groupHasNativePhysicalAlternative(List<MemoExpr> expressions) {
+		if (expressions == null || expressions.isEmpty()) {
+			return false;
+		}
+		for (MemoExpr expression : expressions) {
+			if (expression != null && expression.physical() && localNativePhysicalExpression(expression)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean localNativePhysicalExpression(MemoExpr expression) {
+		if (expression == null || !expression.physical()) {
+			return false;
+		}
+		for (RuleProof proof : expression.proofs()) {
+			if (proof.kind() == RuleKind.IMPLEMENTATION && nativeImplementationRule(proof.ruleId())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean genericPhysicalImplementation(MemoExpr expression) {
+		if (expression == null || !expression.physical()) {
+			return false;
+		}
+		for (RuleProof proof : expression.proofs()) {
+			if (proof.kind() == RuleKind.IMPLEMENTATION
+					&& GENERIC_PHYSICAL_IMPLEMENTATION_RULE.equals(proof.ruleId())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Optional<Winner> seedExistingPlanWinner(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
@@ -211,6 +337,11 @@ public final class CascadesPlanner {
 
 	private boolean applyRule(Memo memo, MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
 			RuleContext context, SearchState state, boolean chargeBudget) {
+		return applyRule(memo, expression, rule, goal, context, state, chargeBudget, true);
+	}
+
+	private boolean applyRule(Memo memo, MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
+			RuleContext context, SearchState state, boolean chargeBudget, boolean optimizeBudgetedPhysical) {
 		String firedKey = expression.id() + ":" + rule.id() + ":" + goal.requiredProperties() + ":"
 				+ goal.semanticScope() + ":" + goal.costPolicy();
 		if (!state.ruleFired.add(firedKey)) {
@@ -241,7 +372,8 @@ public final class CascadesPlanner {
 						application.kind(), application.localCost(),
 						application.proofs(), application.estimate(), application.opaque());
 				addedOpaqueAlternative |= application.opaque();
-				if (added.isPresent() && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+				if (optimizeBudgetedPhysical
+						&& added.isPresent() && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
 						&& memo.bestWinner(goal.key(application.targetGroupId())).isEmpty()) {
 					optimizeExpression(memo, added.get(), goal, state, false);
 				}
@@ -327,6 +459,16 @@ public final class CascadesPlanner {
 	private Optional<Winner> optimizeExpressionWithInputs(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state, boolean enforceCostBound, List<Winner> inputWinners) {
 		String ruleId = primaryRuleId(expression);
+		WinnerKey winnerKey = goal.key(expression.groupId());
+		Optional<Winner> incumbent = memo.bestWinner(winnerKey);
+		Optional<CostVector> inputLowerBound = budgetedInputLowerBound(inputWinners, expression.ruleCost(), goal);
+		if (incumbent.isPresent() && inputLowerBound.isPresent()
+				&& cannotBeatIncumbent(inputLowerBound.get(), incumbent.get().cost())) {
+			state.recordRejected(expression.groupId(), ruleId, "input-lower-bound", inputLowerBound.get());
+			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "input-lower-bound",
+					inputLowerBound.get(), expression.tupleExpr());
+			return Optional.empty();
+		}
 		PhysicalProperties delivered = costModel.deliveredProperties(expression, goal, inputWinners);
 		if (!delivered.satisfies(goal.requiredProperties())) {
 			state.recordRejected(expression.groupId(), ruleId, "missing-physical-property", CostVector.ZERO,
@@ -342,8 +484,7 @@ public final class CascadesPlanner {
 					CostVector.ZERO, expression.tupleExpr());
 			return Optional.empty();
 		}
-		WinnerKey winnerKey = goal.key(expression.groupId());
-		Optional<Winner> incumbent = memo.bestWinner(winnerKey);
+		incumbent = memo.bestWinner(winnerKey);
 		CostVector cost = composePhysicalCost(costModel.localCost(expression, goal, inputWinners),
 				expression.ruleCost());
 		boolean decisionSensitive = decisionSensitive(incumbent.orElse(null), cost);
@@ -374,8 +515,6 @@ public final class CascadesPlanner {
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "cost-bound", cost, expression.tupleExpr());
 			return Optional.empty();
 		}
-		TupleExpr plan = costModel.buildPlan(expression, inputWinners);
-		stampDoubleMetrics(plan, decisionMetrics);
 		List<RuleProof> proofs = new ArrayList<>(expression.proofs());
 		for (Winner inputWinner : inputWinners) {
 			proofs.addAll(inputWinner.proofs());
@@ -388,6 +527,17 @@ public final class CascadesPlanner {
 		PlanProvenance provenance = new PlanProvenance(expression.groupId(), expression.id(), expression.operator(),
 				ruleId, ruleKind, inputProvenance, estimate, cost, goal.requiredProperties(), delivered,
 				state.rejectionsFor(expression.groupId()), proofs, state.approximate, state.approximateReason);
+		Winner candidate = new Winner(expression, null, delivered, cost, proofs, state.approximate,
+				state.approximateReason, provenance);
+		if (!memo.canAddWinner(winnerKey, candidate, boundedFrontierLimit,
+				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED)) {
+			state.recordRejected(expression.groupId(), ruleId, "dominated-or-trimmed", cost);
+			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "dominated-or-trimmed", cost,
+					expression.tupleExpr());
+			return Optional.empty();
+		}
+		TupleExpr plan = costModel.buildPlan(expression, inputWinners);
+		stampDoubleMetrics(plan, decisionMetrics);
 		Winner winner = new Winner(expression, plan, delivered, cost, proofs, state.approximate,
 				state.approximateReason, provenance);
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
@@ -403,6 +553,36 @@ public final class CascadesPlanner {
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
+	}
+
+	private Optional<CostVector> budgetedInputLowerBound(List<Winner> inputWinners, CostVector ruleCost,
+			OptimizationGoal goal) {
+		if (goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED || inputWinners == null
+				|| inputWinners.isEmpty()) {
+			return Optional.empty();
+		}
+		CostVector lowerBound = CostVector.ZERO;
+		for (Winner inputWinner : inputWinners) {
+			if (inputWinner == null || inputWinner.cost() == null || CostVector.INFINITE.equals(inputWinner.cost())) {
+				return Optional.empty();
+			}
+			lowerBound = lowerBound.plus(inputWinner.cost());
+		}
+		if (ruleCost != null && !CostVector.ZERO.equals(ruleCost)) {
+			lowerBound = lowerBound.plus(ruleCost);
+		}
+		return Optional.of(lowerBound);
+	}
+
+	private boolean cannotBeatIncumbent(CostVector lowerBound, CostVector incumbentCost) {
+		if (lowerBound == null || incumbentCost == null || CostVector.INFINITE.equals(incumbentCost)) {
+			return false;
+		}
+		double lowerBoundWork = lowerBound.workRows();
+		double incumbentObjective = incumbentCost.objectiveScore();
+		return Double.isFinite(lowerBoundWork)
+				&& Double.isFinite(incumbentObjective)
+				&& lowerBoundWork > incumbentObjective;
 	}
 
 	private boolean decisionSensitive(Winner incumbent, CostVector candidate) {

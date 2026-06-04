@@ -309,8 +309,13 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static boolean canEvaluateConditionAgainstInputBindings(Filter filter) {
-		return !containsSubQueryValueOperator(filter.getCondition())
-				&& filter.getArg().getBindingNames().containsAll(VarNameCollector.process(filter.getCondition()));
+		if (containsSubQueryValueOperator(filter.getCondition())) {
+			// For non-scope-changing filters the retained copy would already include every
+			// condition variable, including correlated subquery variables. Passing the
+			// original row is equivalent for those names and avoids copying each row.
+			return !filter.isVariableScopeChange();
+		}
+		return filter.getArg().getBindingNames().containsAll(VarNameCollector.process(filter.getCondition()));
 	}
 
 	private static boolean containsSubQueryValueOperator(ValueExpr condition) {

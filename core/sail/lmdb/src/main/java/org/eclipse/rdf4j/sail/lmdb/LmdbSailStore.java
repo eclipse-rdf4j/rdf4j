@@ -23,11 +23,13 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -43,6 +45,7 @@ import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -98,6 +101,8 @@ class LmdbSailStore implements SailStore {
 			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
 	private static final EventType LMDB_STORE_PATH_EVENT_TYPE = EventType.getEventType(LmdbStorePathEvent.class);
 	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
+	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
+	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
 
 	private final TripleStore tripleStore;
 
@@ -957,6 +962,12 @@ class LmdbSailStore implements SailStore {
 
 	CloseableIteration<? extends Statement> createStatementIterator(Txn txn, StatementPattern statementPattern,
 			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return createStatementIterator(txn, statementPattern, null, subj, pred, obj, explicit, contexts);
+	}
+
+	private CloseableIteration<? extends Statement> createStatementIterator(Txn txn, StatementPattern statementPattern,
+			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache, Resource subj, IRI pred,
+			Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
@@ -1010,19 +1021,36 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
+		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
 		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
 		if (statementPattern != null) {
 			statementPattern.setStringMetricActual("optimizer.idFilterRuntime", idFilter.isEmpty() ? "none" : "active");
 		}
+		boolean canUseDirectStatementLookup = canUseDirectStatementLookup(subjID, predID, objID, contextIDList,
+				idFilter);
 
 		for (int i = 0; i < contextIDList.size(); i++) {
 			long contextID = contextIDList.get(i);
+			StatementLookupCacheKey cacheKey = null;
+			if (canUseDirectStatementLookup && exactStatementLookupCache != null) {
+				cacheKey = new StatementLookupCacheKey(subjID, predID, objID, contextID, explicit);
+				StatementLookupCacheEntry cachedLookup = exactStatementLookupCache.get(cacheKey);
+				if (cachedLookup != null) {
+					perContextIterList.add(new CachedStatementIteration(cachedLookup));
+					continue;
+				}
+			}
+
 			RecordIterator records = getRecords(txn, statementPattern, subjID, predID, objID, contextID, explicit,
 					idFilter);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore,
+			LmdbStatementIterator iterator = new LmdbStatementIterator(records, valueStore,
 					subjID, knownSubject, predID, knownPredicate, objID, knownObject, contextID,
-					knownContextList.get(i)));
+					knownContextList.get(i));
+			if (cacheKey != null) {
+				perContextIterList.add(cacheExactStatementLookup(exactStatementLookupCache, cacheKey, iterator));
+			} else {
+				perContextIterList.add(iterator);
+			}
 		}
 
 		if (perContextIterList.size() == 1) {
@@ -1073,6 +1101,12 @@ class LmdbSailStore implements SailStore {
 
 	long countStatementIterator(Txn txn, StatementPattern statementPattern,
 			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return countStatementIterator(txn, statementPattern, null, subj, pred, obj, explicit, contexts);
+	}
+
+	private long countStatementIterator(Txn txn, StatementPattern statementPattern,
+			Map<StatementCountCacheKey, Long> exactStatementCountCache, Resource subj, IRI pred, Value obj,
+			boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return 0;
@@ -1123,7 +1157,8 @@ class LmdbSailStore implements SailStore {
 		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
 		if (canUseDirectStatementCount(subjID, predID, objID, contextIDList, idFilter)) {
 			for (long contextID : contextIDList) {
-				long statementCount = tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+				long statementCount = exactStatementCount(txn, exactStatementCountCache, subjID, predID, objID,
+						contextID, explicit);
 				if (statementCount >= 0) {
 					count += statementCount;
 				} else {
@@ -1140,6 +1175,49 @@ class LmdbSailStore implements SailStore {
 				idFilter);
 	}
 
+	private long exactStatementCount(Txn txn, Map<StatementCountCacheKey, Long> exactStatementCountCache, long subjID,
+			long predID, long objID, long contextID, boolean explicit) throws IOException {
+		if (exactStatementCountCache == null) {
+			return tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+		}
+		StatementCountCacheKey cacheKey = new StatementCountCacheKey(subjID, predID, objID, contextID, explicit);
+		Long cachedCount = exactStatementCountCache.get(cacheKey);
+		if (cachedCount != null) {
+			return cachedCount;
+		}
+		long statementCount = tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+		if (statementCount >= 0) {
+			cacheExactStatementCount(exactStatementCountCache, cacheKey, statementCount);
+		}
+		return statementCount;
+	}
+
+	private static void cacheExactStatementCount(Map<StatementCountCacheKey, Long> exactStatementCountCache,
+			StatementCountCacheKey cacheKey, long statementCount) {
+		if (exactStatementCountCache.size() >= EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES) {
+			exactStatementCountCache.clear();
+		}
+		exactStatementCountCache.put(cacheKey, statementCount);
+	}
+
+	private CloseableIteration<? extends Statement> cacheExactStatementLookup(
+			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache,
+			StatementLookupCacheKey cacheKey, LmdbStatementIterator iteration) {
+		String indexName = iteration.getIndexName();
+		List<Statement> statements = new ArrayList<>(1);
+		try (iteration) {
+			while (iteration.hasNext()) {
+				statements.add(iteration.next());
+			}
+		}
+		StatementLookupCacheEntry entry = new StatementLookupCacheEntry(List.copyOf(statements), indexName);
+		if (exactStatementLookupCache.size() >= EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES) {
+			exactStatementLookupCache.clear();
+		}
+		exactStatementLookupCache.put(cacheKey, entry);
+		return new CachedStatementIteration(entry);
+	}
+
 	private static boolean canUseDirectStatementCount(long subjID, long predID, long objID, List<Long> contextIDList,
 			LmdbValueIdFilter idFilter) {
 		if (subjID < 0 || predID < 0 || objID < 0 || !idFilter.isEmpty() || contextIDList.isEmpty()) {
@@ -1147,6 +1225,19 @@ class LmdbSailStore implements SailStore {
 		}
 		for (long contextID : contextIDList) {
 			if (contextID < 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean canUseDirectStatementLookup(long subjID, long predID, long objID, List<Long> contextIDList,
+			LmdbValueIdFilter idFilter) {
+		if (subjID < 0 || predID < 0 || objID < 0 || !idFilter.isEmpty() || contextIDList.isEmpty()) {
+			return false;
+		}
+		for (long contextID : contextIDList) {
+			if (contextID != LmdbValue.UNKNOWN_ID && contextID < 0) {
 				return false;
 			}
 		}
@@ -1168,6 +1259,41 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		return count;
+	}
+
+	private record StatementCountCacheKey(long subjID, long predID, long objID, long contextID, boolean explicit) {
+	}
+
+	private record StatementLookupCacheKey(long subjID, long predID, long objID, long contextID, boolean explicit) {
+	}
+
+	private record StatementLookupCacheEntry(List<Statement> statements, String indexName) {
+	}
+
+	private static final class CachedStatementIteration extends CloseableIteratorIteration<Statement>
+			implements IndexReportingIterator {
+
+		private final StatementLookupCacheEntry entry;
+
+		private CachedStatementIteration(StatementLookupCacheEntry entry) {
+			super(entry.statements().iterator());
+			this.entry = entry;
+		}
+
+		@Override
+		public String getIndexName() {
+			return entry.indexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return entry.statements().size();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return entry.statements().size();
+		}
 	}
 
 	private final class LmdbSailSource extends BackingSailSource {
@@ -2457,6 +2583,8 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
+		private final Map<StatementCountCacheKey, Long> exactStatementCountCache = new ConcurrentHashMap<>();
+		private final Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache = new ConcurrentHashMap<>();
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
@@ -2504,13 +2632,15 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
 			try {
-				return createStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
+				return createStatementIterator(txn, statementPattern, exactStatementLookupCache, subj, pred, obj,
+						explicit, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
+					return createStatementIterator(txn, statementPattern, exactStatementLookupCache, subj, pred, obj,
+							explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
@@ -2526,13 +2656,16 @@ class LmdbSailStore implements SailStore {
 		public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
-				return countStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
+				return countStatementIterator(txn, statementPattern, exactStatementCountCache, subj, pred, obj,
+						explicit,
+						contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to count statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return countStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
+					return countStatementIterator(txn, statementPattern, exactStatementCountCache, subj, pred, obj,
+							explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to count statements", e);
 				}

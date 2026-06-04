@@ -353,8 +353,11 @@ class LmdbCascadesOptimizerTest {
 				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
 		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
 				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+		OptimizationGoal incomingOrg = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("org"))
+				.build());
 
-		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+		RuleApplication application = rule.apply(expression, incomingOrg,
 				new RuleContext(null, null, null, null)).getFirst();
 
 		assertFalse(application.opaque(),
@@ -382,11 +385,14 @@ class LmdbCascadesOptimizerTest {
 				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
 		Difference minus = new Difference(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
 				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
+		OptimizationGoal incomingOrg = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("org"))
+				.build());
 
 		optionalRule.apply(new MemoExpr(1, 7, "LeftJoin", List.of(), "", optional, PhysicalProperties.ANY,
 				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), OptimizationGoal.root(), context);
 		minusRule.apply(new MemoExpr(2, 8, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), OptimizationGoal.root(), context);
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), incomingOrg, context);
 
 		String trace = String.join("\n", telemetry.trace());
 		assertTrue(trace.contains("lmdb-rule id=lmdb-optional-rhs-anchored-lookup status=applied"), trace);

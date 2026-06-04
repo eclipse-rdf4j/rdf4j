@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -20,9 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -41,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
@@ -133,6 +137,20 @@ class CascadesCostModelTest {
 		assertEquals(100.0d, properties.estimatedRows(), 0.0d,
 				"Provider row estimates must expose binding stats so later joins do not divide by the whole "
 						+ "Cartesian branch cardinality");
+	}
+
+	@Test
+	void logicalFingerprintCachesBindingSetAssignmentsByIdentity() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		CountingBindingSetAssignment assignment = valuesAssignment("name", iri("urn:test:name"));
+
+		model.logicalFingerprint(assignment);
+		int readsAfterFirstFingerprint = assignment.bindingSetReads;
+		model.logicalFingerprint(assignment);
+
+		assertTrue(readsAfterFirstFingerprint > 0, "Expected the fingerprint to read VALUES rows once");
+		assertEquals(readsAfterFirstFingerprint, assignment.bindingSetReads,
+				"Repeated fingerprinting of the same VALUES node should use the cost-model identity cache");
 	}
 
 	@Test
@@ -240,6 +258,29 @@ class CascadesCostModelTest {
 				CostVector.ofRowsAndWork(11.0d, 11.0d, QErrorInterval.exact(11.0d, "test")));
 
 		assertEquals(List.of(EstimationTier.DECISION_EXACT), factorCostModel.estimationTiers);
+	}
+
+	@Test
+	void decisionRefinementCachesProviderEstimateByExpressionAndBindings() {
+		CachingDecisionProvider provider = new CachingDecisionProvider();
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null,
+				provider);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "", pattern, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("s")).build())
+				.withEstimationTier(EstimationTier.DECISION_EXACT);
+		CostVector candidate = CostVector.ofRowsAndWork(10.0d, 10.0d, QErrorInterval.exact(10.0d, "test"));
+		CostVector incumbent = CostVector.ofRowsAndWork(11.0d, 11.0d, QErrorInterval.exact(11.0d, "test"));
+
+		CostVector first = model.refineCostForDecision(expression, goal, List.of(), candidate, incumbent);
+		CostVector second = model.refineCostForDecision(expression, goal, List.of(), candidate, incumbent);
+
+		assertEquals(3.0d, first.rows(), 0.0d);
+		assertEquals(first, second);
+		assertEquals(1, provider.refineCalls.get(),
+				"Decision-exact provider work should be reused for the same expression and required bindings");
 	}
 
 	@Test
@@ -440,6 +481,23 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void genericPhysicalDifferenceDoesNotSatisfyParameterizedChildInputBindings() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = pattern("work", "about", "topic");
+		TupleExpr right = pattern("topic", "mainEntityOfPage", "page");
+		Difference difference = new Difference(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(2, 3), "generic", difference,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 8_000.0d), parameterizedWinner(3, right, 1.0d, Set.of("topic"))));
+
+		assertTrue(delivered.inputBoundVars().contains("topic"),
+				"A generic physical Difference must not hide RHS input bindings because RDF4J MINUS execution "
+						+ "does not invoke the RHS once per left binding");
+	}
+
+	@Test
 	void genericPhysicalLeftJoinLocalCostUsesInputWinnerRowsForNestedInputs() {
 		TrackingProvider provider = new TrackingProvider(true, 1.0d);
 		CascadesCostModel model = model(provider);
@@ -477,6 +535,44 @@ class CascadesCostModelTest {
 		assertEquals(30.0d, factorCostModel.lastContext.getOuterPrefixRows(), 0.0d);
 		assertEquals(300.0d, cost.rows(), 0.0d,
 				"Nested RHS output rows must price the concrete optional iterator, not one standalone lookup");
+	}
+
+	@Test
+	void genericPhysicalEstimateReusesParameterizedRightInputCosting() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("org", "p1", "department");
+		StatementPattern right = pattern("org", "employee", "employee");
+		LeftJoin optional = new LeftJoin(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(2, 3), "generic", optional,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(winner(2, left, 30.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("org")));
+
+		model.deliveredProperties(expression, OptimizationGoal.root(), inputWinners);
+		model.localCost(expression, OptimizationGoal.root(), inputWinners);
+
+		assertEquals(1, factorCostModel.nestedCalls,
+				"Physical output profile and local cost should share the same concrete input-winner estimate");
+	}
+
+	@Test
+	void genericPhysicalDeliveredPropertiesAreReusedForSameInputWinners() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("org", "p1", "department");
+		StatementPattern right = pattern("org", "employee", "employee");
+		LeftJoin optional = new LeftJoin(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(2, 3), "generic", optional,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(winner(2, left, 30.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("org")));
+
+		PhysicalProperties first = model.deliveredProperties(expression, OptimizationGoal.root(), inputWinners);
+		PhysicalProperties second = model.deliveredProperties(expression, OptimizationGoal.root(), inputWinners);
+
+		assertSame(first, second,
+				"Repeated physical property derivation for the same expression and input winners should be cached");
 	}
 
 	@Test
@@ -524,6 +620,25 @@ class CascadesCostModelTest {
 
 	private static Value iri(String value) {
 		return SimpleValueFactory.getInstance().createIRI(value);
+	}
+
+	private static CountingBindingSetAssignment valuesAssignment(String bindingName, Value value) {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		bindingSet.addBinding(bindingName, value);
+		CountingBindingSetAssignment assignment = new CountingBindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(List.of(bindingSet));
+		return assignment;
+	}
+
+	private static final class CountingBindingSetAssignment extends BindingSetAssignment {
+		private int bindingSetReads;
+
+		@Override
+		public Iterable<org.eclipse.rdf4j.query.BindingSet> getBindingSets() {
+			bindingSetReads++;
+			return super.getBindingSets();
+		}
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
@@ -629,6 +744,16 @@ class CascadesCostModelTest {
 				return Optional.empty();
 			}
 			return Optional.of(StatisticsEstimate.heuristic(multiPatternRows, "test-multi-pattern"));
+		}
+	}
+
+	private static final class CachingDecisionProvider implements RdfStatisticsProvider {
+		private final AtomicInteger refineCalls = new AtomicInteger();
+
+		@Override
+		public Optional<StatisticsEstimate> refineForDecision(EstimationDecision decision) {
+			refineCalls.incrementAndGet();
+			return Optional.of(StatisticsEstimate.exact(3.0d, "test-decision-refine"));
 		}
 	}
 

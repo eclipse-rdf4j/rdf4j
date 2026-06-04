@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -119,6 +120,106 @@ class CascadesRuleEngineTest {
 
 		assertTrue(plan.approximate());
 		assertTrue(plan.diagnostics().stream().anyMatch(text -> text.contains("approximate")));
+	}
+
+	@Test
+	void budgetedModeReturnsSeededNativeWinnerWhenNoTransformationsApply() {
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals("native-implementation", plan.winner().get().provenance().ruleId());
+		assertTrue(plan.approximate());
+	}
+
+	@Test
+	void budgetedModeAppliesTransformationsBeforeSeededNativeWinnerShortcut() {
+		AtomicInteger transformationApplications = new AtomicInteger();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.add(new RecordingTransformationRule(transformationApplications))
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals("native-implementation", plan.winner().get().provenance().ruleId());
+		assertTrue(transformationApplications.get() > 0,
+				"Budgeted search must not lock in a seeded native winner before applicable transformations run");
+	}
+
+	@Test
+	void budgetedModeDefersSeededNativeCostingWhenTransformationsApply() {
+		AtomicInteger nativeCosts = new AtomicInteger();
+		AtomicInteger nativeCostsWhenTransformationApplied = new AtomicInteger(-1);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.add(new CostObservationTransformationRule(nativeCosts, nativeCostsWhenTransformationApplied))
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(
+				new RuleCostRecordingModel(CascadesCostModel.from(new EvaluationStatistics()), nativeCosts,
+						"native-implementation"),
+				registry, CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals(0, nativeCostsWhenTransformationApplied.get(),
+				"Budgeted search should not cost seeded native winners before required transformations run");
+		assertTrue(nativeCosts.get() > 0, "The native winner should still be costed after transformation exploration");
+	}
+
+	@Test
+	void budgetedModeReturnsWrapperAroundSeededNativeWinnerWhenNoTransformationsApply() {
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new LeafOnlyImplementationRule("native-leaf", 1.0d))
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(
+				new Projection(pattern("s", "p", "o"), projection("s"), false),
+				OptimizationGoal.root()
+						.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertTrue(plan.winner()
+				.get()
+				.proofs()
+				.stream()
+				.anyMatch(proof -> "native-leaf".equals(proof.ruleId())));
+		assertTrue(plan.approximate());
+	}
+
+	@Test
+	void budgetedModeDoesNotCostGenericFallbackWhenNativeImplementationExists() {
+		AtomicInteger genericCosts = new AtomicInteger();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.add(new TestImplementationRule("generic-physical-implementation", 100.0d))
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(
+				new GenericCostRecordingModel(CascadesCostModel.from(new EvaluationStatistics()), genericCosts),
+				registry, CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals("native-implementation", plan.winner().get().provenance().ruleId());
+		assertEquals(0, genericCosts.get(),
+				"Budgeted search should not cost generic fallback alternatives when the same group has a native winner");
 	}
 
 	@Test
@@ -1063,6 +1164,42 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void minusWithRhsFilterUnavailableOutsideScopeCanUseVacuousLeftAlternative() {
+		StatementPattern left = pattern("x", "p", "v");
+		Filter right = new Filter(pattern("meter", "measures", "load"),
+				new Compare(new Var("load"), new Var("substation"), Compare.CompareOp.EQ));
+		right.setVariableScopeChange(true);
+		Difference minus = new Difference(left, right);
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof StatementPattern alternative
+						&& "p".equals(alternative.getPredicateVar().getName())),
+				"MINUS RHS filter cannot match when it needs a binding outside the RHS and outside query input: "
+						+ applications);
+	}
+
+	@Test
+	void minusWithRhsFilterUnavailableOutsideScopeKeepsMinusWhenInputBound() {
+		StatementPattern left = pattern("x", "p", "v");
+		Filter right = new Filter(pattern("meter", "measures", "load"),
+				new Compare(new Var("load"), new Var("substation"), Compare.CompareOp.EQ));
+		right.setVariableScopeChange(true);
+		Difference minus = new Difference(left, right);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().inputBoundVars(Set.of("substation")).build());
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus, goal);
+
+		assertFalse(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof StatementPattern alternative
+						&& "p".equals(alternative.getPredicateVar().getName())),
+				"Query input bindings can make the RHS filter match, so MINUS must retain compatibility semantics: "
+						+ applications);
+	}
+
+	@Test
 	void minusWithAssuredSharedVarsCanBecomeNegatedExistsFilterAlternative() {
 		StatementPattern medicationType = pattern("med", "type", "Medication");
 		StatementPattern medicationCode = pattern("med", "code", "code");
@@ -1081,6 +1218,28 @@ class CascadesRuleEngineTest {
 						&& filter.getArg() instanceof Join
 						&& !containsDifference(filter.getArg())),
 				"Expected a negated correlated EXISTS filter alternative for safe MINUS: " + applications);
+	}
+
+	@Test
+	void minusWithAssuredSharedVarsCanCorrelateSafeRhsJoinAsNegatedExists() {
+		StatementPattern requirementName = pattern("requirement", "name", "name");
+		StatementPattern requirementType = pattern("requirement", "type", "Requirement");
+		StatementPattern verifiedBy = pattern("requirement", "verifiedBy", "test");
+		StatementPattern measurement = pattern("test", "verifiedBy", "measurement");
+		Difference minus = new Difference(new Join(requirementName, requirementType),
+				new Join(verifiedBy, measurement));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter filter
+						&& filter.getCondition()instanceof Not not
+						&& not.getArg()instanceof Exists exists
+						&& exists.getSubQuery() instanceof Join
+						&& filter.getArg() instanceof Join
+						&& !containsDifference(filter.getArg())),
+				"Expected a negated correlated EXISTS filter alternative for a safe MINUS RHS join: "
+						+ applications);
 	}
 
 	@Test
@@ -1164,6 +1323,44 @@ class CascadesRuleEngineTest {
 				"The parent should choose the locally-more-expensive child winner because it makes the parent cheap");
 	}
 
+	@Test
+	void budgetedParentPrunesInputCombinationsThatCannotBeatIncumbent() {
+		Filter root = new Filter(pattern("s", "p", "o"), new Bound(new Var("o")));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new FrontierImplementationRule())
+				.build();
+		AtomicInteger parentCosts = new AtomicInteger();
+		CascadesPlanner planner = new CascadesPlanner(new ConstantParentCostModel(parentCosts), registry,
+				CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		Winner winner = plan.winner().orElseThrow();
+		assertEquals(2.0d, winner.cost().workRows(), 0.0d);
+		assertEquals(1, parentCosts.get(),
+				"Budgeted search should not cost child-frontier combinations whose input work already exceeds the incumbent objective");
+	}
+
+	@Test
+	void budgetedModeDoesNotBuildPlanForDominatedCandidates() {
+		AtomicInteger planBuilds = new AtomicInteger();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("cheap-rule", 1.0d))
+				.add(new TestImplementationRule("expensive-rule", 100.0d))
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(
+				new PlanBuildRecordingModel(CascadesCostModel.from(new EvaluationStatistics()), planBuilds),
+				registry, CascadesTelemetry.NO_OP);
+
+		CascadesPlan plan = planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+				.asBudgeted(Duration.ofSeconds(1), 256));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals("cheap-rule", plan.winner().get().provenance().ruleId());
+		assertEquals(1, planBuilds.get(), "Dominated physical candidates should be rejected before cloning a plan");
+	}
+
 	private static CascadesPlanner planner() {
 		return new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
 				RuleRegistry.standardLogicalRules(),
@@ -1171,10 +1368,14 @@ class CascadesRuleEngineTest {
 	}
 
 	private static List<RuleApplication> apply(CascadesRule rule, TupleExpr tupleExpr) {
+		return apply(rule, tupleExpr, null);
+	}
+
+	private static List<RuleApplication> apply(CascadesRule rule, TupleExpr tupleExpr, OptimizationGoal goal) {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		int groupId = memo.intern(tupleExpr);
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
-		return rule.apply(expression, null, new RuleContext(memo, null, CascadesTelemetry.NO_OP, null));
+		return rule.apply(expression, goal, new RuleContext(memo, null, CascadesTelemetry.NO_OP, null));
 	}
 
 	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr) {
@@ -1437,6 +1638,171 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private record LeafOnlyImplementationRule(String id, double rows) implements CascadesRule {
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			CostVector cost = exactCost(rows);
+			EstimateSnapshot estimate = new EstimateSnapshot("test-planner", "test-source", "alternative_ranking",
+					rows, rows, cost, Map.of(), Map.of());
+			RuleProof proof = proof(expression, goal, context);
+			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+					PhysicalProperties.ANY, cost, proof, id, estimate));
+		}
+
+		@Override
+		public RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			return new RuleProof(id, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS, Set.of("test"),
+					"leaf implementation");
+		}
+	}
+
+	private record RecordingTransformationRule(AtomicInteger applications) implements CascadesRule {
+
+		@Override
+		public String id() {
+			return "recording-transformation";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical();
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			applications.incrementAndGet();
+			return List.of(RuleApplication.transformation(expression.groupId(), expression.tupleExpr().clone(),
+					proof(expression, goal, context)));
+		}
+	}
+
+	private record CostObservationTransformationRule(AtomicInteger nativeCosts,
+			AtomicInteger nativeCostsWhenApplied) implements CascadesRule {
+
+		@Override
+		public String id() {
+			return "cost-observation-transformation";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical();
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			nativeCostsWhenApplied.compareAndSet(-1, nativeCosts.get());
+			return List.of(RuleApplication.transformation(expression.groupId(), expression.tupleExpr().clone(),
+					proof(expression, goal, context)));
+		}
+	}
+
+	private record GenericCostRecordingModel(CascadesCostModel delegate, AtomicInteger genericCosts)
+			implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (expression != null && expression.proofs()
+					.stream()
+					.anyMatch(proof -> "generic-physical-implementation".equals(proof.ruleId()))) {
+				genericCosts.incrementAndGet();
+			}
+			return delegate.localCost(expression, goal, inputWinners);
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return delegate.deliveredProperties(expression, goal, inputWinners);
+		}
+
+		@Override
+		public TupleExpr buildPlan(MemoExpr expression, List<Winner> inputWinners) {
+			return delegate.buildPlan(expression, inputWinners);
+		}
+	}
+
+	private record RuleCostRecordingModel(CascadesCostModel delegate, AtomicInteger costs, String ruleId)
+			implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (expression != null && expression.proofs()
+					.stream()
+					.anyMatch(proof -> ruleId.equals(proof.ruleId()))) {
+				costs.incrementAndGet();
+			}
+			return delegate.localCost(expression, goal, inputWinners);
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return delegate.deliveredProperties(expression, goal, inputWinners);
+		}
+
+		@Override
+		public TupleExpr buildPlan(MemoExpr expression, List<Winner> inputWinners) {
+			return delegate.buildPlan(expression, inputWinners);
+		}
+	}
+
 	private static final class FrontierImplementationRule implements CascadesRule {
 		@Override
 		public String id() {
@@ -1516,6 +1882,71 @@ class CascadesRuleEngineTest {
 				List<Winner> inputWinners) {
 			return expression.tupleExpr() instanceof Filter ? PhysicalProperties.ANY
 					: expression.deliveredProperties();
+		}
+	}
+
+	private static final class ConstantParentCostModel implements CascadesCostModel {
+		private final AtomicInteger parentCosts;
+
+		private ConstantParentCostModel(AtomicInteger parentCosts) {
+			this.parentCosts = parentCosts;
+		}
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return LogicalProperties.from(tupleExpr, 1.0d, QErrorInterval.exact(1.0d, "test"));
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return tupleExpr == null ? "<null>" : tupleExpr.getClass().getName() + ':' + tupleExpr.getSignature();
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (expression.tupleExpr() instanceof Filter && !inputWinners.isEmpty()) {
+				parentCosts.incrementAndGet();
+				return inputWinners.getFirst().cost().plus(exactCost(1.0d));
+			}
+			return CostVector.ZERO;
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return expression.tupleExpr() instanceof Filter ? PhysicalProperties.ANY
+					: expression.deliveredProperties();
+		}
+	}
+
+	private record PlanBuildRecordingModel(CascadesCostModel delegate, AtomicInteger planBuilds)
+			implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			return delegate.localCost(expression, goal, inputWinners);
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return delegate.deliveredProperties(expression, goal, inputWinners);
+		}
+
+		@Override
+		public TupleExpr buildPlan(MemoExpr expression, List<Winner> inputWinners) {
+			planBuilds.incrementAndGet();
+			return delegate.buildPlan(expression, inputWinners);
 		}
 	}
 
