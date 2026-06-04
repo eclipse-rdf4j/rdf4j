@@ -18,14 +18,18 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Shared safety helpers for bag-equivalent Cascades SPARQL algebra rewrites.
@@ -100,6 +104,44 @@ final class CascadesRewriteSupport {
 			combined = new And(combined, conjuncts.get(i).clone());
 		}
 		return combined;
+	}
+
+	static Set<String> conditionNames(ValueExpr condition, Set<String> visibleNames) {
+		if (condition == null) {
+			return Set.of();
+		}
+		Set<String> visible = plannerNames(visibleNames);
+		Set<String> names = new HashSet<>();
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				String name = var.getName();
+				if (!var.hasValue() && name != null && !name.startsWith("_const_")) {
+					names.add(name);
+				}
+			}
+
+			@Override
+			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
+				addCorrelatedNames(node);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				addCorrelatedNames(node);
+			}
+
+			private void addCorrelatedNames(SubQueryValueOperator node) {
+				if (node == null || node.getSubQuery() == null || visible.isEmpty()) {
+					return;
+				}
+				names.addAll(intersection(visible, VarNameCollector.process(node.getSubQuery())));
+			}
+		});
+		return plannerNames(names);
 	}
 
 	static boolean isIdentityProjection(Projection projection) {

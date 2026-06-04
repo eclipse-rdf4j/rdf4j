@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -46,6 +50,60 @@ class LmdbCascadesContractTest {
 	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
 	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
+
+	@Test
+	void coveredWinnerChildrenDoNotEnableCostFeedback(@TempDir Path tempDir) {
+		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(tempDir.resolve("join-estimator.rjes"));
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
+				null);
+		StatementPattern left = pattern("s", "p1", "o");
+		Union coveredUnion = new Union(pattern("s", "p2", "a"), pattern("s", "p3", "b"));
+		Join parent = new Join(left, coveredUnion);
+		stampEstimate(parent, 100.0d, 200.0d);
+		stampEstimate(coveredUnion, 10.0d, 20.0d);
+		coveredUnion.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+				COVERED_BY_PARENT_WINNER);
+		coveredUnion.setStringMetricPlanned("optimizer.cascadesCoveredByWinner", "winner:g1:e1");
+
+		new LmdbCascadesExplainFinalizer(statistics, false).optimize(parent, null, EmptyBindingSet.getInstance());
+
+		assertTrue(parent.isCostFeedbackTrackingEnabled(), "The selected parent winner should still collect feedback");
+		assertFalse(coveredUnion.isCostFeedbackTrackingEnabled(),
+				"Covered implementation children may be executed repeatedly under the parent winner and must not "
+						+ "collect independent operator feedback");
+	}
+
+	@Test
+	void decisionDrivenSummaryEstimatesDoNotEnableCostFeedback(@TempDir Path tempDir) {
+		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(tempDir.resolve("join-estimator.rjes"));
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
+				null);
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		stampEstimate(join, 100.0d, 200.0d);
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-decision-driven-estimate");
+
+		new LmdbCascadesExplainFinalizer(statistics, false).optimize(join, null, EmptyBindingSet.getInstance());
+
+		assertFalse(join.isCostFeedbackTrackingEnabled(),
+				"Decision-driven Cascades summaries are planner ranking metadata, not operator-local estimates; "
+						+ "enabling runtime feedback here wraps the executed iterator on every query run");
+	}
+
+	@Test
+	void innerBoundLookupEstimatesDoNotEnableCostFeedback(@TempDir Path tempDir) {
+		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(tempDir.resolve("join-estimator.rjes"));
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
+				null);
+		Join join = new Join(pattern("arm", "p1", "comp"), pattern("comp", "p2", "name"));
+		stampEstimate(join, 955.0d, 2_900.0d);
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-inner-bound-lookup");
+
+		new LmdbCascadesExplainFinalizer(statistics, false).optimize(join, null, EmptyBindingSet.getInstance());
+
+		assertFalse(join.isCostFeedbackTrackingEnabled(),
+				"Inner-bound lookup estimates are selected physical-rule costs, not independent operator-local "
+						+ "statistics; enabling feedback here wraps hot repeated RHS probes during execution");
+	}
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("coveredAlgebraShapes")
@@ -131,6 +189,11 @@ class LmdbCascadesContractTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static void stampEstimate(TupleExpr tupleExpr, double rows, double workRows) {
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 	}
 
 	private static boolean plannedSubtree(TupleExpr tupleExpr) {

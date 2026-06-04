@@ -120,6 +120,7 @@ class LmdbEvaluationStatistics
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_DISTINCT_ROWS = 1_024.0d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_MIN_FANOUT = 64.0d;
 	private static final String BOUND_JOIN_PRODUCT_SOURCE = "lmdb-bound-join-product";
+	private static final String INNER_JOIN_BOUND_LOOKUP_SOURCE = "lmdb-inner-bound-lookup";
 	private static final String OPTIONAL_BOUND_LOOKUP_SOURCE = "lmdb-optional-bound-lookup";
 	private static final String MINUS_BOUND_PROBE_SOURCE = "lmdb-minus-bound-probe";
 	private static final String ROW_PRESERVING_SUBPLAN_SOURCE = "lmdb-row-preserving-subplan";
@@ -608,7 +609,7 @@ class LmdbEvaluationStatistics
 		Filter synthetic = new Filter(input == null ? new SingletonSet() : input.clone(), condition.clone());
 		FilterPassEstimate passEstimate = estimateFilterPass(synthetic);
 		if (passEstimate == null || !isFiniteNonNegative(passEstimate.getPlanningPassRatio())) {
-			return Optional.empty();
+			return correlatedAntiExistsFilterEstimate(input, condition, inputEstimate, inputEstimate, boundVars);
 		}
 		QErrorInterval interval = QErrorInterval.fromBounds(passEstimate.getLower95PassRatio(),
 				passEstimate.getPlanningPassRatio(), passEstimate.getUpper95PassRatio(),
@@ -1813,6 +1814,12 @@ class LmdbEvaluationStatistics
 		if (finiteFilterEstimate.isPresent()) {
 			return finiteFilterEstimate;
 		}
+		if (factor instanceof Join join) {
+			Optional<FactorCostEstimate> joinEstimate = estimateInnerJoinBoundLookupFactorCost(join, context);
+			if (joinEstimate.isPresent()) {
+				return joinEstimate;
+			}
+		}
 		if (factor instanceof LeftJoin leftJoin) {
 			Optional<FactorCostEstimate> optionalEstimate = estimateOptionalBoundLookupFactorCost(leftJoin,
 					context);
@@ -1841,6 +1848,89 @@ class LmdbEvaluationStatistics
 		return estimateLmdbFactorCost(factor, context.getCurrentlyBoundVars(), Double.NaN,
 				context.shouldCollectMetrics(), context.getFiniteBindingValues(), context.getEstimationTier(),
 				requestedAccessPath);
+	}
+
+	private Optional<FactorCostEstimate> estimateInnerJoinBoundLookupFactorCost(Join join,
+			JoinFactorCostModel.CostContext context) {
+		if (join == null || context == null || context.hasRequestedAccessPath()
+				|| TupleExprs.isVariableScopeChange(join)
+				|| TupleExprs.isVariableScopeChange(join.getRightArg())
+				|| TupleExprs.containsSubquery(join.getRightArg())
+				|| "hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
+			return Optional.empty();
+		}
+		TupleExpr leftArg = join.getLeftArg();
+		TupleExpr rightArg = join.getRightArg();
+		Set<String> leftAssuredBindings = plannerBindingNames(leftArg.getAssuredBindingNames());
+		Set<String> rightBindings = plannerBindingNames(rightArg.getBindingNames());
+		Set<String> sharedBindings = new HashSet<>(leftAssuredBindings);
+		sharedBindings.retainAll(rightBindings);
+		if (sharedBindings.isEmpty()) {
+			return Optional.empty();
+		}
+
+		Optional<FactorCostEstimate> leftEstimate = estimateFactorCost(leftArg, context);
+		if (leftEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		FactorCostEstimate left = leftEstimate.get();
+		double leftRows = left.getOutputRows();
+		if (!isPositiveFinite(leftRows)) {
+			return Optional.empty();
+		}
+		JoinFactorCostModel.CostContext rightContext = optionalRightCostContext(context, leftArg, rightArg, leftRows,
+				sharedBindings);
+		Optional<FactorCostEstimate> rightEstimate = estimateFactorCost(rightArg, rightContext);
+		if (rightEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		FactorCostEstimate right = rightEstimate.get();
+		double rightRows = right.getOutputRows();
+		double rightWorkRows = right.getWorkRows();
+		if (!isFiniteNonNegative(rightRows) || !isFiniteNonNegative(rightWorkRows)) {
+			return Optional.empty();
+		}
+		double leftWorkRows = left.getWorkRows();
+		if (!isFiniteNonNegative(leftWorkRows)) {
+			leftWorkRows = leftRows;
+		}
+		double outputRows = estimateFactorOutputRows(join, context.getCurrentlyBoundVars());
+		if (!isFiniteNonNegative(outputRows)) {
+			outputRows = Math.max(1.0d, Math.min(leftRows, rightRows));
+		}
+		double workRows = leftWorkRows + Math.max(rightWorkRows, rightRows);
+		if (!isFiniteNonNegative(workRows)) {
+			return Optional.empty();
+		}
+		workRows = Math.max(workRows, outputRows);
+
+		Map<String, String> stringMetrics = new HashMap<>(right.getStringMetrics());
+		String rightSource = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (rightSource != null) {
+			stringMetrics.put("plannedInnerJoinRightBaseEstimateSource", rightSource);
+		}
+		String leftSource = left.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (leftSource != null) {
+			stringMetrics.put("plannedInnerJoinLeftBaseEstimateSource", leftSource);
+		}
+		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, INNER_JOIN_BOUND_LOOKUP_SOURCE);
+		stringMetrics.put("plannedInnerJoinSharedBindings", new TreeSet<>(sharedBindings).toString());
+
+		Map<String, Double> doubleMetrics = new HashMap<>(right.getDoubleMetrics());
+		doubleMetrics.put("plannedInnerJoinLeftRows", leftRows);
+		doubleMetrics.put("plannedInnerJoinLeftWorkRows", leftWorkRows);
+		doubleMetrics.put("plannedInnerJoinRightRows", rightRows);
+		doubleMetrics.put("plannedInnerJoinRightWorkRows", rightWorkRows);
+		doubleMetrics.put("plannedInnerJoinOutputRows", outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+
+		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, false,
+				false, 0, 0, Double.NaN, true, false));
 	}
 
 	private Optional<FactorCostEstimate> estimateOptionalBoundLookupFactorCost(LeftJoin leftJoin,
@@ -2107,7 +2197,8 @@ class LmdbEvaluationStatistics
 		double nestedOutputRows = estimate.getOutputRows();
 		if (isFiniteNonNegative(lookupDomainOutputRows)) {
 			nestedOutputRows = lookupDomainOutputRows;
-			if (isDirectLookup(estimate)) {
+			if (isDirectLookup(estimate) || !hasDuplicateLookupKeyInvocations(repeatedInvocations,
+					distinctLookupBindings)) {
 				double lookupDomainWorkRows = lookupDomainRepeatedWorkRows(lookupDomainOutputRows,
 						repeatedInvocations);
 				if (isFiniteNonNegative(lookupDomainWorkRows)) {
@@ -2321,7 +2412,9 @@ class LmdbEvaluationStatistics
 				repeatedRows = repeatedPhysicalRows;
 			}
 		}
-		if (!estimate.isDirectLookup() && isFiniteNonNegative(perInvocationRows)
+		if (hasDuplicateLookupKeyInvocations(repeatedInvocations, distinctLookupBindings)
+				&& !estimate.isDirectLookup()
+				&& isFiniteNonNegative(perInvocationRows)
 				&& perInvocationRows > distinctLookupBindings && isFiniteNonNegative(repeatedRows)) {
 			double repeatedPhysicalRows = repeatedOutputRows(estimate, repeatedInvocations);
 			if (isFiniteNonNegative(repeatedPhysicalRows) && repeatedRows < repeatedPhysicalRows) {
@@ -2329,6 +2422,12 @@ class LmdbEvaluationStatistics
 			}
 		}
 		return isFiniteNonNegative(repeatedRows) ? repeatedRows : Double.NaN;
+	}
+
+	private boolean hasDuplicateLookupKeyInvocations(double repeatedInvocations, double distinctLookupBindings) {
+		return isFiniteNonNegative(repeatedInvocations)
+				&& isFiniteNonNegative(distinctLookupBindings)
+				&& repeatedInvocations > distinctLookupBindings;
 	}
 
 	private boolean isBoundSingletonDirectLookup(FactorCostEstimate estimate, int derivedJoinBoundComponentMask,
@@ -2542,8 +2641,14 @@ class LmdbEvaluationStatistics
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVars);
 		}
-		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+		Optional<FactorCostEstimate> antiExistsFilterEstimate = estimateCorrelatedAntiExistsFilterFactorCost(factor,
 				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
+		if (antiExistsFilterEstimate.isPresent()) {
+			return antiExistsFilterEstimate;
+		}
+		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier,
+				requestedAccessPath);
 		if (rowPreservingSubplanEstimate.isPresent()) {
 			return rowPreservingSubplanEstimate;
 		}
@@ -2633,8 +2738,14 @@ class LmdbEvaluationStatistics
 			return estimateJoinFactorCost(join, boundVariableMaskSet(variableNames, boundVarMask));
 		}
 		Set<String> boundVars = boundVariableMaskSet(variableNames, boundVarMask);
-		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+		Optional<FactorCostEstimate> antiExistsFilterEstimate = estimateCorrelatedAntiExistsFilterFactorCost(factor,
 				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
+		if (antiExistsFilterEstimate.isPresent()) {
+			return antiExistsFilterEstimate;
+		}
+		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier,
+				requestedAccessPath);
 		if (rowPreservingSubplanEstimate.isPresent()) {
 			return rowPreservingSubplanEstimate;
 		}
@@ -2664,6 +2775,94 @@ class LmdbEvaluationStatistics
 			}
 		}
 		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, requestedAccessPath);
+	}
+
+	private Optional<FactorCostEstimate> estimateCorrelatedAntiExistsFilterFactorCost(TupleExpr factor,
+			Set<String> boundVars, double knownOutputRows, boolean collectMetrics,
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+		if (!(factor instanceof Filter filter)) {
+			return Optional.empty();
+		}
+		TupleExpr antiProbe = antiExistsProbe(filter.getCondition());
+		if (antiProbe == null || filter.getArg() == null) {
+			return Optional.empty();
+		}
+		Optional<FactorCostEstimate> inputEstimate = estimateLmdbFactorCost(filter.getArg(), boundVars, knownOutputRows,
+				collectMetrics, finiteBindingValues, estimationTier, null);
+		if (inputEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		FactorCostEstimate input = inputEstimate.get();
+		double inputRows = input.getOutputRows();
+		if (!isFiniteNonNegative(inputRows)) {
+			return Optional.empty();
+		}
+		Set<String> sharedBindings = plannerBindingNames(filter.getArg().getAssuredBindingNames());
+		sharedBindings.retainAll(plannerBindingNames(antiProbe.getBindingNames()));
+		if (sharedBindings.isEmpty()) {
+			return Optional.empty();
+		}
+		JoinFactorCostModel.CostContext baseContext = JoinFactorCostModel.CostContext.forOptimization(
+				plannerBindingNames(boundVars), inputRows, Double.NaN, true, collectMetrics,
+				finiteBindingValues == null ? Map.of() : finiteBindingValues, List.of(filter.getArg()))
+				.withEstimationTier(estimationTier == null ? JoinFactorCostModel.EstimationTier.STANDARD
+						: estimationTier);
+		JoinFactorCostModel.CostContext rightContext = optionalRightCostContext(baseContext, filter.getArg(),
+				antiProbe, inputRows, sharedBindings);
+		Optional<FactorCostEstimate> antiProbeEstimate = estimateFactorCost(antiProbe, rightContext);
+		if (antiProbeEstimate.isEmpty() || !antiProbeEstimate.get().isRepeatedInvocationsCosted()) {
+			return Optional.empty();
+		}
+		double probeWorkRows = antiProbeEstimate.get().getWorkRows();
+		if (!isFiniteNonNegative(probeWorkRows)) {
+			return Optional.empty();
+		}
+		FilterPassEstimate passEstimate = estimateFilterPass(filter);
+		double outputRows = isFiniteNonNegative(knownOutputRows) ? knownOutputRows : inputRows;
+		if (passEstimate != null && isFiniteNonNegative(passEstimate.getPlanningPassRatio())) {
+			outputRows = inputRows * passEstimate.getPlanningPassRatio();
+		}
+		if (!isFiniteNonNegative(outputRows)) {
+			return Optional.empty();
+		}
+		double inputWorkRows = input.getWorkRows();
+		if (!isFiniteNonNegative(inputWorkRows)) {
+			inputWorkRows = inputRows;
+		}
+		double probeOutputRows = antiProbeEstimate.get().getOutputRows();
+		double workRows = inputWorkRows + Math.max(probeWorkRows,
+				isFiniteNonNegative(probeOutputRows) ? probeOutputRows : 0.0d);
+		if (!isFiniteNonNegative(workRows)) {
+			return Optional.empty();
+		}
+
+		Map<String, String> stringMetrics = Map.of();
+		Map<String, Double> doubleMetrics = Map.of();
+		if (collectMetrics) {
+			Map<String, String> mutableStrings = new HashMap<>(input.getStringMetrics());
+			mutableStrings.put("plannedBaseEstimateSource", mutableStrings
+					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "unknown"));
+			mutableStrings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+					"lmdb-correlated-anti-exists-filter");
+			stringMetrics = mutableStrings;
+
+			Map<String, Double> mutableDoubles = new HashMap<>(input.getDoubleMetrics());
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			mutableDoubles.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+			mutableDoubles.put("plannedAntiExistsInputRows", inputRows);
+			mutableDoubles.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
+			if (passEstimate != null) {
+				mutableDoubles.put(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
+						passEstimate.getPlanningPassRatio());
+				mutableDoubles.put(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+						passEstimate.getConfidenceScore());
+			}
+			doubleMetrics = mutableDoubles;
+		}
+		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics));
 	}
 
 	private SketchBasedJoinEstimator.AccessShape accessShapeForJoinOrdering(TupleExpr factor, Set<String> boundVars,
@@ -2706,13 +2905,14 @@ class LmdbEvaluationStatistics
 
 	private Optional<FactorCostEstimate> estimateRowPreservingSubplanFactorCost(TupleExpr factor,
 			Set<String> boundVars, double knownOutputRows, boolean collectMetrics,
-			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+			RequestedAccessPath requestedAccessPath) {
 		TupleExpr arg = rowPreservingSubplanArg(factor);
 		if (arg == null) {
 			return Optional.empty();
 		}
 		Optional<FactorCostEstimate> childEstimate = estimateLmdbFactorCost(arg, boundVars, knownOutputRows,
-				collectMetrics, finiteBindingValues, estimationTier);
+				collectMetrics, finiteBindingValues, estimationTier, requestedAccessPath);
 		if (childEstimate.isEmpty()) {
 			return Optional.empty();
 		}
@@ -2757,6 +2957,9 @@ class LmdbEvaluationStatistics
 	}
 
 	private TupleExpr rowPreservingSubplanArg(TupleExpr factor) {
+		if (factor instanceof Extension extension) {
+			return extension.getArg();
+		}
 		if (factor instanceof Projection projection) {
 			TupleExpr arg = projection.getArg();
 			if (arg instanceof Join) {
@@ -3297,6 +3500,10 @@ class LmdbEvaluationStatistics
 						"reason=finite-binding-values names="
 								+ LmdbJoinPlanSupport.describeBindingNames(context.getFiniteBindingValues().keySet()));
 			}
+			return Optional.empty();
+		}
+		if (completeBaseBoundLookupAlreadyCoversContextLookup(factor, context, baseEstimate)) {
+			traceEstimate("bound-product-reject", factor, context, "reason=complete-base-bound-lookup");
 			return Optional.empty();
 		}
 		BoundJoinProductEstimate productEstimate = estimateBoundJoinProduct(context.getPrefixFactors(), factor,
@@ -4068,12 +4275,18 @@ class LmdbEvaluationStatistics
 			}
 			return Optional.empty();
 		}
-		if (lookupComponentsAlreadyFinite(accessShape, finiteBindingValues)) {
+		if (lookupComponentsAlreadyFinite(accessShape, lookupComponentMask, finiteBindingValues)) {
 			if (estimateTraceEnabled()) {
 				traceEstimate("finite-derived-surface-reject", factor, null,
 						"reason=lookup-components-already-finite");
 			}
 			return Optional.empty();
+		}
+		boolean allowExactFiniteDerivedSurface = !completeBaseBoundLookupAlreadyCoversDerivedLookup(baseEstimate,
+				lookupComponentMask, pattern, currentlyBoundVars);
+		if (!allowExactFiniteDerivedSurface && estimateTraceEnabled()) {
+			traceEstimate("finite-derived-surface-skip-exact", factor, null,
+					"reason=complete-base-bound-lookup");
 		}
 
 		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = null;
@@ -4086,7 +4299,7 @@ class LmdbEvaluationStatistics
 				continue;
 			}
 			FiniteDerivedSurfaceEstimate surfaceEstimate = finiteDerivedSurfaceRows(prefixFactors, surfaceFactor,
-					finiteVarName, finiteValues, true);
+					finiteVarName, finiteValues, allowExactFiniteDerivedSurface);
 			if (surfaceEstimate != null && isFiniteNonNegative(surfaceEstimate.surfaceRows())
 					&& (bestSurfaceEstimate == null
 							|| surfaceEstimate.surfaceRows() < bestSurfaceEstimate.surfaceRows())) {
@@ -4232,7 +4445,7 @@ class LmdbEvaluationStatistics
 
 	private int lookupComponentMaskWithConstants(SketchBasedJoinEstimator.AccessShape accessShape,
 			StatementPattern pattern) {
-		int lookupComponentMask = accessShape.lookupBoundComponentMask();
+		int lookupComponentMask = accessShape.lookupBoundComponentMask() | accessShape.joinBoundComponentMask();
 		if (pattern != null) {
 			lookupComponentMask |= constantComponentMask(pattern);
 		}
@@ -4274,11 +4487,12 @@ class LmdbEvaluationStatistics
 	}
 
 	private boolean lookupComponentsAlreadyFinite(SketchBasedJoinEstimator.AccessShape accessShape,
+			int lookupComponentMask,
 			Map<String, Set<Value>> finiteBindingValues) {
 		StatementPattern pattern = accessShape.pattern();
 		for (Component component : Component.values()) {
 			int componentMask = componentBit(component);
-			if ((accessShape.lookupBoundComponentMask() & componentMask) == 0) {
+			if ((lookupComponentMask & componentMask) == 0) {
 				continue;
 			}
 			Var componentVar = componentVar(pattern, component);
@@ -4292,6 +4506,47 @@ class LmdbEvaluationStatistics
 			}
 		}
 		return true;
+	}
+
+	private boolean completeBaseBoundLookupAlreadyCoversDerivedLookup(FactorCostEstimate baseEstimate,
+			int lookupComponentMask, StatementPattern pattern, Set<String> currentlyBoundVars) {
+		return baseEstimate != null
+				&& baseEstimate.hasPhysicalAccessPath()
+				&& baseEstimate.getLookupComponentMask() != 0
+				&& baseEstimate.getMissingLookupComponentMask() == 0
+				&& (baseEstimate.getLookupComponentMask() & lookupComponentMask) == lookupComponentMask
+				&& currentlyBoundLookupComponentMask(pattern, lookupComponentMask, currentlyBoundVars) != 0;
+	}
+
+	private boolean completeBaseBoundLookupAlreadyCoversContextLookup(TupleExpr factor,
+			JoinFactorCostModel.CostContext context, FactorCostEstimate baseEstimate) {
+		if (context == null || baseEstimate == null) {
+			return false;
+		}
+		StatementPattern basePattern = accessPattern(factor);
+		if (basePattern != null && baseEstimate.getLookupComponentMask() != 0) {
+			return completeBaseBoundLookupAlreadyCoversDerivedLookup(baseEstimate,
+					baseEstimate.getLookupComponentMask(),
+					basePattern, context.getCurrentlyBoundVars());
+		}
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShapeForContext(factor, context);
+		if (accessShape == null) {
+			return false;
+		}
+		StatementPattern pattern = accessShape.pattern();
+		int lookupComponentMask = lookupComponentMaskWithConstants(accessShape, pattern);
+		return completeBaseBoundLookupAlreadyCoversDerivedLookup(baseEstimate, lookupComponentMask, pattern,
+				context.getCurrentlyBoundVars());
+	}
+
+	private StatementPattern accessPattern(TupleExpr factor) {
+		if (factor instanceof StatementPattern pattern) {
+			return pattern;
+		}
+		if (factor instanceof Filter filter && filter.getArg()instanceof StatementPattern pattern) {
+			return pattern;
+		}
+		return null;
 	}
 
 	private FiniteDerivedSurfaceEstimate finiteDerivedSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,

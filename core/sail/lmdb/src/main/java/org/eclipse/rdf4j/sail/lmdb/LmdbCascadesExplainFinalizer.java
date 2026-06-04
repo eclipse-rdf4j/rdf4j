@@ -42,6 +42,8 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 
 	private static final String FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String FALLBACK_USAGE = "fallback_no_winner";
+	private static final String DECISION_DRIVEN_ESTIMATE_SOURCE = "lmdb-decision-driven-estimate";
+	private static final String INNER_BOUND_LOOKUP_ESTIMATE_SOURCE = "lmdb-inner-bound-lookup";
 	private static final CostVector FALLBACK_COST = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d,
 			4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
@@ -86,7 +88,8 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private void annotateCostFeedbackNode(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
-		if (!lmdbStatistics.supportsOperatorFeedbackTracking(tupleExpr) || protectedCostFeedbackSource(tupleExpr)) {
+		if (!lmdbStatistics.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
+				|| protectedCostFeedbackSource(tupleExpr)) {
 			tupleExpr.setCostFeedbackTrackingEnabled(false);
 			return;
 		}
@@ -111,11 +114,21 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
 	}
 
+	private static boolean coveredByParentWinner(TupleExpr tupleExpr) {
+		return tupleExpr != null
+				&& ("covered_by_parent_winner"
+						.equals(tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
+						|| tupleExpr.getStringMetricPlanned("optimizer.cascadesCoveredByWinner") != null);
+	}
+
 	private static boolean protectedCostFeedbackSource(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return true;
 		}
 		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (DECISION_DRIVEN_ESTIMATE_SOURCE.equals(source) || INNER_BOUND_LOOKUP_ESTIMATE_SOURCE.equals(source)) {
+			return true;
+		}
 		if (source != null && (source.startsWith("exact") || source.contains("finite"))) {
 			return true;
 		}

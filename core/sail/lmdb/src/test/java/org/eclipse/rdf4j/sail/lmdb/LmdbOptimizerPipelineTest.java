@@ -209,6 +209,8 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
 				LmdbFilterSimplifierOptimizer.class));
 		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
+		assertFalse(optimizers.stream().anyMatch(LmdbStandardPlanBaselineOptimizer.class::isInstance),
+				"Default fallback policy should avoid eager no-Cascades baseline cloning when Cascades has a winner");
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -83,6 +84,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
 	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
 	private static final String CASCADES_CANDIDATE_PLAN = "optimizer.cascadesCandidatePlan";
+	private static final String GENERIC_PHYSICAL_RULE = "generic-physical-implementation";
 	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
 	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
@@ -153,7 +155,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			StandardPlanPolicy standardPlanPolicy = standardPlanPolicy();
-			StandardPlanCandidate standardPlan = mode.replacesAlgebra()
+			StandardPlanCandidate standardPlan = needsPreSearchStandardPlan(mode, budgetedSearch, standardPlanPolicy)
 					? standardPlanCandidate(tupleExpr, dataset, bindings, standardPlanPolicy)
 					: emptyStandardPlanCandidate();
 			if (useStandardPlanWithoutCascades(mode, budgetedSearch, standardPlanPolicy, standardPlan)) {
@@ -175,6 +177,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					LmdbCascadesRuleProvider.rules(statistics),
 					traceEnabled ? telemetry : CascadesTelemetry.NO_OP);
 			CascadesPlan plan = planner.optimize(tupleExpr, searchGoal);
+			if (!standardPlan.isPresent() && needsFallbackStandardPlan(mode, standardPlanPolicy, plan)) {
+				standardPlan = standardPlanCandidate(tupleExpr, dataset, bindings, standardPlanPolicy);
+			}
 			boolean standardWinner = standardPlanWins(mode, standardPlanPolicy, standardPlan, plan);
 			boolean appliesPlan = mode.replacesAlgebra()
 					&& (standardWinner || (!standardWinner && plan.tupleExpr().isPresent()));
@@ -242,6 +247,23 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return new StandardPlanCandidate(standardPlan, origin);
 	}
 
+	private boolean needsPreSearchStandardPlan(Mode mode, boolean budgetedSearch, StandardPlanPolicy policy) {
+		if (mode == null || !mode.replacesAlgebra() || policy == null || !policy.enabled()) {
+			return false;
+		}
+		if (policy.compares()) {
+			return true;
+		}
+		return policy.shortCircuits() && (budgetedSearch || mode == Mode.BUDGETED);
+	}
+
+	private boolean needsFallbackStandardPlan(Mode mode, StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
+		if (mode == null || !mode.replacesAlgebra() || policy == null || !policy.fallbacks()) {
+			return false;
+		}
+		return cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty() || cascadesPlan.approximate();
+	}
+
 	private boolean useStandardPlanWithoutCascades(Mode mode, boolean budgetedSearch, StandardPlanPolicy policy,
 			StandardPlanCandidate candidate) {
 		return mode.replacesAlgebra() && candidate.isPresent() && policy.shortCircuits()
@@ -268,16 +290,35 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
 			return policy.fallbacks();
 		}
+		if (mode != Mode.EXACT && cascadesPlan.approximate()) {
+			return standardPlanWinsByWork(candidate, cascadesPlan);
+		}
 		if (!policy.compares()) {
-			if (mode != Mode.EXACT && cascadesPlan.approximate() && policy.fallbacks()) {
-				return standardPlanWinsByCost(candidate, cascadesPlan);
-			}
 			return false;
 		}
 		if (mode == Mode.EXACT) {
 			return false;
 		}
 		return standardPlanWinsByCost(candidate, cascadesPlan);
+	}
+
+	private boolean standardPlanWinsByWork(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
+		CostVector standardCost = candidate.cost();
+		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
+			return false;
+		}
+		CostVector cascadesCost = cascadesPlan.cost();
+		double standardWork = standardCost.workRows();
+		double cascadesWork = cascadesCost.workRows();
+		if (!Double.isFinite(standardWork) || standardWork >= Double.MAX_VALUE) {
+			return false;
+		}
+		if (!Double.isFinite(cascadesWork) || cascadesWork >= Double.MAX_VALUE) {
+			return true;
+		}
+		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
+				DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT);
+		return standardWork * Math.max(1.0d, minImprovement) <= cascadesWork;
 	}
 
 	private boolean standardPlanWinsByCost(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
@@ -625,6 +666,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 						return;
 					}
 					Set<String> subQueryBoundVars = subQuery.isVariableScopeChange() ? Set.of() : conditionBoundVars;
+					if (cascadesPlannedConditionSubquery(subQueryTuple)) {
+						if (hasEmergencyFallbackDescendant(subQueryTuple)) {
+							visitWithBoundVars(subQueryTuple, subQueryBoundVars);
+						}
+						return;
+					}
 					if (subplanCandidate(subQueryTuple)) {
 						candidates.add(new SubtreeCandidate(subQueryTuple,
 								contextualBoundVars(subQueryBoundVars, subQueryTuple.getBindingNames())));
@@ -672,9 +719,25 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				|| hasNonFallbackMetric(tupleExpr, CASCADES_COVERED_BY_WINNER);
 	}
 
+	private static boolean cascadesPlannedConditionSubquery(TupleExpr tupleExpr) {
+		if (hasEmergencyFallbackMetric(tupleExpr)) {
+			return false;
+		}
+		return hasNonGenericNonFallbackMetric(tupleExpr, CASCADES_RULE)
+				|| hasNonGenericNonFallbackMetric(tupleExpr, CASCADES_COVERED_BY_WINNER)
+				|| STANDARD_PLAN_WINNER.equals(tupleExpr.getStringMetricPlanned(CASCADES_WINNER));
+	}
+
 	private static boolean hasNonFallbackMetric(TupleExpr tupleExpr, String metric) {
 		String value = tupleExpr.getStringMetricPlanned(metric);
 		return value != null && !value.isBlank() && !value.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
+	private static boolean hasNonGenericNonFallbackMetric(TupleExpr tupleExpr, String metric) {
+		String value = tupleExpr.getStringMetricPlanned(metric);
+		return value != null && !value.isBlank()
+				&& !value.startsWith(EMERGENCY_FALLBACK_RULE)
+				&& !value.startsWith(GENERIC_PHYSICAL_RULE);
 	}
 
 	private static boolean hasEmergencyFallbackDescendant(TupleExpr tupleExpr) {
@@ -1080,6 +1143,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			original.replaceWith(replacement);
 			return;
 		}
+		if (original instanceof QueryRoot originalRoot) {
+			if (replacement instanceof QueryRoot replacementRoot) {
+				originalRoot.setArg(replacementRoot.getArg().clone());
+			} else {
+				originalRoot.setArg(replacement.clone());
+			}
+			return;
+		}
 		if (original instanceof UnaryTupleOperator originalUnary
 				&& replacement instanceof UnaryTupleOperator replacementUnary) {
 			originalUnary.setArg(replacementUnary.getArg().clone());
@@ -1097,7 +1168,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	static boolean standardPlanBaselineCaptureEnabled() {
-		return modeFromProperty().replacesAlgebra() && standardPlanPolicyFromProperty().enabled();
+		Mode mode = modeFromProperty();
+		StandardPlanPolicy policy = standardPlanPolicyFromProperty();
+		return mode.replacesAlgebra() && policy.enabled() && policy.compares();
 	}
 
 	private static Mode modeFromProperty() {

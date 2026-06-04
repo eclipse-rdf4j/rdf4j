@@ -727,6 +727,32 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void correlatedAntiExistsFilterEstimateDoesNotNeedGenericPassEstimate() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern input = new StatementPattern(
+				Var.of("v"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("kind"));
+		StatementPattern antiProbe = new StatementPattern(
+				Var.of("v"),
+				Var.of("follows", vf.createIRI("urn:test:follows")),
+				Var.of("v"));
+		Extension wrappedAntiProbe = new Extension(antiProbe, new ExtensionElem(Var.of("v"), "anon"));
+		AntiExistsProbeStatistics statistics = new AntiExistsProbeStatistics(null);
+		StatisticsEstimate inputEstimate = new StatisticsEstimate(6.0d,
+				QErrorInterval.exact(6.0d, "test-input"), 12.0d, "test-input", Map.of());
+
+		Optional<StatisticsEstimate> estimate = statistics.filter(input, new Not(new Exists(wrappedAntiProbe)),
+				inputEstimate, Set.of());
+
+		assertTrue(estimate.isPresent());
+		assertEquals(List.of(Set.of("v")), statistics.boundRequests);
+		assertEquals(6.0d, estimate.get().rows());
+		assertEquals(19.0d, estimate.get().workRows());
+		assertEquals(7.0d, estimate.get().metrics().get("plannedAntiExistsProbeWorkRows"));
+	}
+
+	@Test
 	void clonedNestedFactorCostUsesScopedFinalEstimateCache() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
@@ -970,6 +996,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
+		verify(estimator, times(0)).estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class));
+		verify(estimator, times(0)).estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class),
+				any(String.class));
 	}
 
 	@Test
@@ -1503,6 +1532,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
+		verify(estimator, times(0)).estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class));
+		verify(estimator, times(0)).estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class),
+				any(String.class));
 	}
 
 	@Test
@@ -1560,6 +1592,55 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertTrue(estimate.getWorkRows() > 12.0d);
 		assertEquals(4.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"));
+	}
+
+	@Test
+	void uniqueNestedPhysicalLookupKeysUseLookupDomainWorkRows() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, null, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("drug"),
+				Var.of("predicate", vf.createIRI("http://example.com/theme/pharma/targets")),
+				Var.of("target"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		int lookupMask = predicateBit | objectBit;
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(20_000.0d);
+		Set<String> boundVars = Set.of("pathway", "target");
+		when(estimator.accessShapeForJoinOrdering(pattern, boundVars)).thenReturn(accessShape);
+		when(estimator.estimateJoinVarDistinctRows(pattern, "target")).thenReturn(3.0d);
+		JoinFactorCostModel.FactorCostEstimate estimate = new JoinFactorCostModel.FactorCostEstimate(
+				7_179.0d,
+				1.0d,
+				Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "prefixScan"),
+				Map.of(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 7_179.0d),
+				true,
+				false,
+				lookupMask,
+				0,
+				7_179.0d);
+		JoinFactorCostModel.CostContext context = new JoinFactorCostModel.CostContext(boundVars, 666.0d,
+				666.0d, true);
+
+		JoinFactorCostModel.FactorCostEstimate nestedEstimate = invokeAccountNestedInvocationWork(statistics,
+				pattern, estimate, context);
+
+		assertEquals(20_000.0d, nestedEstimate.getOutputRows(), 0.0d);
+		assertEquals(20_666.0d, nestedEstimate.getWorkRows(), 0.0d,
+				"Unique lookup keys should charge one lookup-domain traversal plus one probe per key, not replay "
+						+ "the per-invocation prefix-scan estimate for every outer row.");
+		assertEquals(666.0d, nestedEstimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(666.0d, nestedEstimate.getDoubleMetrics().get("plannedDistinctLookupBindings"), 0.0d);
+		assertEquals(20_000.0d, nestedEstimate.getDoubleMetrics().get("plannedLookupDomainAverageOutputRows"),
+				0.0d);
 	}
 
 	@Test
@@ -3519,6 +3600,16 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return ((Number) method.invoke(target)).doubleValue();
 	}
 
+	private static JoinFactorCostModel.FactorCostEstimate invokeAccountNestedInvocationWork(
+			LmdbEvaluationStatistics statistics, TupleExpr factor, JoinFactorCostModel.FactorCostEstimate estimate,
+			JoinFactorCostModel.CostContext context)
+			throws Exception {
+		Method method = LmdbEvaluationStatistics.class.getDeclaredMethod("accountNestedInvocationWork",
+				TupleExpr.class, JoinFactorCostModel.FactorCostEstimate.class, JoinFactorCostModel.CostContext.class);
+		method.setAccessible(true);
+		return (JoinFactorCostModel.FactorCostEstimate) method.invoke(statistics, factor, estimate, context);
+	}
+
 	private static CountingBindingSetAssignment valuesAssignment(String bindingName, IRI value) {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		bindingSet.addBinding(bindingName, value);
@@ -3568,15 +3659,21 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	private static final class AntiExistsProbeStatistics extends LmdbEvaluationStatistics {
 		private final List<Set<String>> boundRequests = new ArrayList<>();
+		private final EvaluationStatistics.FilterPassEstimate filterPassEstimate;
 
 		private AntiExistsProbeStatistics() {
+			this(new EvaluationStatistics.FilterPassEstimate(1.0d,
+					EvaluationStatistics.FilterPassEstimate.Source.EXACT));
+		}
+
+		private AntiExistsProbeStatistics(EvaluationStatistics.FilterPassEstimate filterPassEstimate) {
 			super(null, null, null, null, null);
+			this.filterPassEstimate = filterPassEstimate;
 		}
 
 		@Override
 		public EvaluationStatistics.FilterPassEstimate estimateFilterPass(Filter filter) {
-			return new EvaluationStatistics.FilterPassEstimate(1.0d,
-					EvaluationStatistics.FilterPassEstimate.Source.EXACT);
+			return filterPassEstimate;
 		}
 
 		@Override

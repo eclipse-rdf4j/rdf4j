@@ -260,6 +260,50 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@Test
+	@Timeout(45)
+	void manyFiniteValuesAnchorsStayNearConsumingPattern(@TempDir File dataDir) throws Exception {
+		runPlannerTest(dataDir, "manyFiniteValuesAnchorsStayNearConsumingPattern", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+
+			try {
+				loadValuesLocalityData(repository);
+				var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+				estimator.rebuild();
+				LmdbPlannerAwait.awaitEstimatorReady(estimator);
+
+				String query = valuesLocalityQuery();
+				TupleExpr optimized;
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					optimized = (TupleExpr) connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized)
+							.tupleExpr();
+				}
+
+				List<String> leaves = collectValuesLocalityLeaves(optimized);
+				for (int i = 0; i < 10; i++) {
+					String bindingName = "v" + i;
+					int valuesIndex = leaves.indexOf(valuesLeaf(bindingName));
+					int patternIndex = leaves.indexOf(patternLeaf(bindingName));
+					assertTrue(valuesIndex >= 0,
+							"Expected finite anchor for " + bindingName + " in " + leaves + "\n" + optimized);
+					assertTrue(patternIndex >= 0,
+							"Expected consuming pattern for " + bindingName + " in " + leaves + "\n" + optimized);
+					assertEquals(valuesIndex + 1, patternIndex,
+							"Finite anchor for " + bindingName + " should be immediately before its consuming "
+									+ "statement pattern, not hoisted into a VALUES prefix: " + leaves + "\n"
+									+ optimized);
+				}
+				assertTrue(initialValuesPrefixLength(leaves) < 10,
+						"Finite anchors should not all be placed at the top: " + leaves + "\n" + optimized);
+			} finally {
+				repository.shutDown();
+			}
+		});
+	}
+
+	@Test
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats", attemptDir -> {
@@ -875,6 +919,25 @@ class LmdbSketchAwareFilterPlacementIT {
 		}
 	}
 
+	private static void loadValuesLocalityData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int entityIndex = 0; entityIndex < 12; entityIndex++) {
+				for (int valueIndex = 0; valueIndex < 10; valueIndex++) {
+					if (valueIndex % 2 == 0) {
+						connection.add(valuesLocalityValue(valueIndex, entityIndex),
+								valuesLocalityPredicate(valueIndex),
+								VF.createIRI("urn:test:tail:" + valueIndex + ":" + entityIndex));
+					} else {
+						connection.add(VF.createIRI("urn:test:carrier:" + valueIndex + ":" + entityIndex),
+								valuesLocalityPredicate(valueIndex), valuesLocalityValue(valueIndex, entityIndex));
+					}
+				}
+			}
+			connection.commit();
+		}
+	}
+
 	private static long evaluateCount(SailRepository repository, String query) {
 		try (SailRepositoryConnection connection = repository.getConnection();
 				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
@@ -883,6 +946,57 @@ class LmdbSketchAwareFilterPlacementIT {
 			assertTrue(!result.hasNext(), "Aggregate count query should return only one result row");
 			return ((Literal) bindingSet.getValue("count")).longValue();
 		}
+	}
+
+	private static String valuesLocalityQuery() {
+		return String.join("\n",
+				"PREFIX ex: <urn:test:>",
+				"SELECT (COUNT(*) AS ?count) WHERE {",
+				"  VALUES ?v0 { " + iriList(0) + " }",
+				"  ?v0 ex:p0 ?tail0 .",
+				"  ?carrier1 ex:p1 ?v1 .",
+				"  FILTER (?v1 IN (" + commaIriList(1) + "))",
+				"  VALUES ?v2 { " + iriList(2) + " }",
+				"  ?v2 ex:p2 ?tail2 .",
+				"  ?carrier3 ex:p3 ?v3 .",
+				"  FILTER (?v3 IN (" + commaIriList(3) + "))",
+				"  VALUES ?v4 { " + iriList(4) + " }",
+				"  ?v4 ex:p4 ?tail4 .",
+				"  ?carrier5 ex:p5 ?v5 .",
+				"  FILTER (?v5 IN (" + commaIriList(5) + "))",
+				"  VALUES ?v6 { " + iriList(6) + " }",
+				"  ?v6 ex:p6 ?tail6 .",
+				"  ?carrier7 ex:p7 ?v7 .",
+				"  FILTER (?v7 IN (" + commaIriList(7) + "))",
+				"  VALUES ?v8 { " + iriList(8) + " }",
+				"  ?v8 ex:p8 ?tail8 .",
+				"  ?carrier9 ex:p9 ?v9 .",
+				"  FILTER (?v9 IN (" + commaIriList(9) + "))",
+				"}");
+	}
+
+	private static String iriList(int valueIndex) {
+		List<String> values = new ArrayList<>(12);
+		for (int i = 0; i < 12; i++) {
+			values.add("<" + valuesLocalityValue(valueIndex, i) + ">");
+		}
+		return String.join(" ", values);
+	}
+
+	private static String commaIriList(int valueIndex) {
+		List<String> values = new ArrayList<>(12);
+		for (int i = 0; i < 12; i++) {
+			values.add("<" + valuesLocalityValue(valueIndex, i) + ">");
+		}
+		return String.join(", ", values);
+	}
+
+	private static IRI valuesLocalityValue(int valueIndex, int constantIndex) {
+		return VF.createIRI("urn:test:v" + valueIndex + "-" + constantIndex);
+	}
+
+	private static IRI valuesLocalityPredicate(int valueIndex) {
+		return VF.createIRI("urn:test:p" + valueIndex);
 	}
 
 	private static void loadThemeData(SailRepository repository, Theme theme) {
@@ -959,6 +1073,87 @@ class LmdbSketchAwareFilterPlacementIT {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
 		return args;
+	}
+
+	private static List<String> collectValuesLocalityLeaves(TupleExpr tupleExpr) {
+		List<String> leaves = new ArrayList<>();
+		collectValuesLocalityLeaves(tupleExpr, leaves);
+		return leaves;
+	}
+
+	private static void collectValuesLocalityLeaves(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join join) {
+			collectValuesLocalityLeaves(join.getLeftArg(), leaves);
+			collectValuesLocalityLeaves(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.getArg()instanceof BindingSetAssignment bindingSetAssignment) {
+				addValuesLocalityLeaf(bindingSetAssignment, leaves);
+				return;
+			}
+			collectValuesLocalityLeaves(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment bindingSetAssignment) {
+			addValuesLocalityLeaf(bindingSetAssignment, leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			String bindingName = valuesLocalityBindingName(statementPattern);
+			if (bindingName != null) {
+				leaves.add(patternLeaf(bindingName));
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			collectValuesLocalityLeaves(unaryTupleOperator.getArg(), leaves);
+		}
+	}
+
+	private static String valuesLocalityBindingName(StatementPattern statementPattern) {
+		Var predicateVar = statementPattern.getPredicateVar();
+		if (predicateVar == null || !predicateVar.hasValue()) {
+			return null;
+		}
+		Value predicate = predicateVar.getValue();
+		for (int i = 0; i < 10; i++) {
+			if (valuesLocalityPredicate(i).equals(predicate)) {
+				Var localVar = i % 2 == 0 ? statementPattern.getSubjectVar() : statementPattern.getObjectVar();
+				String expectedName = "v" + i;
+				if (localVar != null && expectedName.equals(localVar.getName())) {
+					return expectedName;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static void addValuesLocalityLeaf(BindingSetAssignment bindingSetAssignment, List<String> leaves) {
+		for (String bindingName : bindingSetAssignment.getBindingNames()) {
+			if (bindingName.matches("v\\d+")) {
+				leaves.add(valuesLeaf(bindingName));
+			}
+		}
+	}
+
+	private static int initialValuesPrefixLength(List<String> leaves) {
+		int count = 0;
+		for (String leaf : leaves) {
+			if (!leaf.startsWith("values:")) {
+				return count;
+			}
+			count++;
+		}
+		return count;
+	}
+
+	private static String valuesLeaf(String bindingName) {
+		return "values:" + bindingName;
+	}
+
+	private static String patternLeaf(String bindingName) {
+		return "pattern:" + bindingName;
 	}
 
 	private static boolean containsFilter(TupleExpr tupleExpr) {

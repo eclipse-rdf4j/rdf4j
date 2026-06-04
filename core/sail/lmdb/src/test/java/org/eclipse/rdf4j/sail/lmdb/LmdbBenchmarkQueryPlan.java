@@ -63,6 +63,11 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
 			int maxExecutionTimeSeconds) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, true);
+	}
+
+	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan) {
 		SailTupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
 		tupleQuery.setIncludeInferred(false);
 		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
@@ -84,11 +89,15 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			TupleExpr optimized = strategy.optimize(tupleExpr, sailStore.getEvaluationStatistics(),
 					tupleQuery.getBindings());
 			QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
-			String optimizedDiagnostics = optimizedDiagnostics(optimized);
-			String optimizedPlan = new QueryModelTreeToGenericPlanNode(optimized, tupleQuery.getBindings()
-					.getBindingNames(), Explanation.Level.Optimized)
-							.getGenericPlanNode()
-							.toString();
+			String optimizedDiagnostics = "";
+			String optimizedPlan = "";
+			if (captureOptimizedPlan) {
+				optimizedDiagnostics = optimizedDiagnostics(optimized);
+				optimizedPlan = new QueryModelTreeToGenericPlanNode(optimized, tupleQuery.getBindings()
+						.getBindingNames(), Explanation.Level.Optimized)
+								.getGenericPlanNode()
+								.toString();
+			}
 			return new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
 					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds, optimizedPlan,
 					optimizedDiagnostics);

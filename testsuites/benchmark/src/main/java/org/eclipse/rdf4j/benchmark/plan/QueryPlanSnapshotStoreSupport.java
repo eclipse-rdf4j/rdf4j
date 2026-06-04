@@ -34,6 +34,11 @@ final class QueryPlanSnapshotStoreSupport {
 
 	private static final String LMDB_FULLY_LOADED_SIZE_FILE = ".rdf4j-query-plan-cli-fully-loaded-size-bytes";
 	private static final long LMDB_SIZE_MATCH_TOLERANCE_BYTES = 1_048_576L;
+	private static final String THEME_BENCHMARK_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+	private static final int THEME_SUBJECT_BUCKET_COUNT = 4096;
+	private static final int THEME_PREDICATE_BUCKET_COUNT = 64;
+	private static final int THEME_OBJECT_BUCKET_COUNT = 4096;
+	private static final int THEME_CONTEXT_BUCKET_COUNT = 16;
 
 	private QueryPlanSnapshotStoreSupport() {
 	}
@@ -79,10 +84,15 @@ final class QueryPlanSnapshotStoreSupport {
 			dataDirectory = Files.createTempDirectory("rdf4j-lmdb-plan-cli-");
 			deleteDataDirectory = true;
 		}
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = new LmdbStoreConfig(THEME_BENCHMARK_TRIPLE_INDEXES);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());
+		config.setSketchEstimatorSubjectBucketCount(THEME_SUBJECT_BUCKET_COUNT);
+		config.setSketchEstimatorPredicateBucketCount(THEME_PREDICATE_BUCKET_COUNT);
+		config.setSketchEstimatorObjectBucketCount(THEME_OBJECT_BUCKET_COUNT);
+		config.setSketchEstimatorContextBucketCount(THEME_CONTEXT_BUCKET_COUNT);
+		config.setSketchEstimatorContextPairSketchesEnabled(false);
 		LmdbStore lmdbStore = new LmdbStore(dataDirectory.toFile(), config);
 		SailRepository repository = new SailRepository(lmdbStore);
 		return new StoreRuntime(repository, null, lmdbStore, config, dataDirectory, deleteDataDirectory);

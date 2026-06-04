@@ -34,9 +34,11 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -342,64 +344,25 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void minusBoundProbeKeepsChildWinnersVisible() {
-		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
-				.rules()
-				.stream()
-				.filter(candidate -> "lmdb-minus-bound-rhs-probe".equals(candidate.id()))
-				.findFirst()
-				.orElseThrow();
-		Difference minus = new Difference(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
-				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
-		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
-		OptimizationGoal incomingOrg = OptimizationGoal.exact(PhysicalProperties.builder()
-				.boundVars(Set.of("org"))
-				.build());
-
-		RuleApplication application = rule.apply(expression, incomingOrg,
-				new RuleContext(null, null, null, null)).getFirst();
-
-		assertFalse(application.opaque(),
-				"MINUS bound RHS probe is a costed RDF4J Difference alternative, not a separate executable subtree; "
-						+ "Cascades must still plan and install child winners");
-		assertEquals("lmdb-minus-probe-decomposed", application.metadata());
-	}
-
-	@Test
-	void optionalAndMinusRulesTracePhysicalDecision() {
+	void optionalRuleTracesPhysicalDecision() {
 		RuleRegistry registry = LmdbCascadesRuleProvider.rules(new RecordingStatistics());
 		CascadesRule optionalRule = registry.rules()
 				.stream()
 				.filter(candidate -> "lmdb-optional-rhs-anchored-lookup".equals(candidate.id()))
 				.findFirst()
 				.orElseThrow();
-		CascadesRule minusRule = registry.rules()
-				.stream()
-				.filter(candidate -> "lmdb-minus-bound-rhs-probe".equals(candidate.id()))
-				.findFirst()
-				.orElseThrow();
 		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(64);
 		RuleContext context = new RuleContext(null, null, telemetry, null);
 		LeftJoin optional = new LeftJoin(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
 				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
-		Difference minus = new Difference(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
-				new StatementPattern(new Var("org"), new Var("label"), new Var("orgName")));
-		OptimizationGoal incomingOrg = OptimizationGoal.exact(PhysicalProperties.builder()
-				.boundVars(Set.of("org"))
-				.build());
 
 		optionalRule.apply(new MemoExpr(1, 7, "LeftJoin", List.of(), "", optional, PhysicalProperties.ANY,
 				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), OptimizationGoal.root(), context);
-		minusRule.apply(new MemoExpr(2, 8, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null), incomingOrg, context);
 
 		String trace = String.join("\n", telemetry.trace());
 		assertTrue(trace.contains("lmdb-rule id=lmdb-optional-rhs-anchored-lookup status=applied"), trace);
-		assertTrue(trace.contains("lmdb-rule id=lmdb-minus-bound-rhs-probe status=applied"), trace);
 		assertTrue(trace.contains("opaque=false"), trace);
 		assertTrue(trace.contains("metadata=lmdb-optional-anchor-decomposed"), trace);
-		assertTrue(trace.contains("metadata=lmdb-minus-probe-decomposed"), trace);
 	}
 
 	@Test
@@ -742,6 +705,40 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void plannedConditionSubqueryDoesNotBecomeSubtreeCandidate() throws Exception {
+		TupleExpr plannedExistsJoin = new Join(
+				new StatementPattern(new Var("v"), iri("follows"), new Var("u")),
+				new StatementPattern(new Var("u"), iri("follows"), new Var("v")));
+		plannedExistsJoin.setStringMetricPlanned("optimizer.cascadesRule", "lmdb-guarantee-options");
+		Filter rootFilter = new Filter(pattern(), new Exists(plannedExistsJoin));
+		QueryRoot root = new QueryRoot(rootFilter);
+		List<Object> candidates = new ArrayList<>();
+
+		collectConditionSubqueryCandidates(root, candidates);
+
+		assertFalse(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == plannedExistsJoin),
+				"Condition subqueries already covered by a non-fallback Cascades winner must not be submitted "
+						+ "for another subtree optimization pass");
+	}
+
+	@Test
+	void genericConditionSubqueryRemainsSubtreeCandidate() throws Exception {
+		TupleExpr genericExistsJoin = new Join(
+				new StatementPattern(new Var("trial"), iri("hasArm"), new Var("arm")),
+				new StatementPattern(new Var("arm"), iri("armDrug"), new Var("drug")));
+		genericExistsJoin.setStringMetricPlanned("optimizer.cascadesRule", "generic-physical-implementation");
+		Filter rootFilter = new Filter(pattern(), new Exists(genericExistsJoin));
+		QueryRoot root = new QueryRoot(rootFilter);
+		List<Object> candidates = new ArrayList<>();
+
+		collectConditionSubqueryCandidates(root, candidates);
+
+		assertTrue(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == genericExistsJoin),
+				"Generic condition subquery coverage only proves that RDF4J algebra is legal; correlated EXISTS "
+						+ "subqueries still need a local subtree optimization pass");
+	}
+
+	@Test
 	void genericImplementationAllowsScopedUnionJoinWithUnassuredSharedBindings() {
 		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
 				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
@@ -831,6 +828,20 @@ class LmdbCascadesOptimizerTest {
 		assertTrue(fallbackNodes.isEmpty(), fallbackNodes.toString());
 	}
 
+	@Test
+	void rootReplacementKeepsReplacementOperatorWhenRootHasNoParent() throws Exception {
+		QueryRoot root = new QueryRoot(new Difference(pattern(), pattern()));
+		Filter replacement = new Filter(pattern(), new Not(new Exists(pattern())));
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Method replaceRootIfSafe = LmdbCascadesOptimizer.class.getDeclaredMethod("replaceRootIfSafe",
+				TupleExpr.class, TupleExpr.class);
+		replaceRootIfSafe.setAccessible(true);
+
+		replaceRootIfSafe.invoke(optimizer, root, replacement);
+
+		assertTrue(root.getArg() instanceof Filter, root.toString());
+	}
+
 	private static StatementPattern pattern() {
 		return new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
 	}
@@ -862,6 +873,16 @@ class LmdbCascadesOptimizerTest {
 	private static void collectSubtreeCandidates(TupleExpr root, List<Object> candidates) throws Exception {
 		Class<?> collectorClass = Class.forName(
 				LmdbCascadesOptimizer.class.getName() + "$ContextualSubtreeCandidateCollector");
+		Constructor<?> constructor = collectorClass.getDeclaredConstructor(TupleExpr.class, Set.class, List.class);
+		constructor.setAccessible(true);
+		Object collector = constructor.newInstance(root, Set.of(), candidates);
+		root.visit((QueryModelVisitor<RuntimeException>) collector);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void collectConditionSubqueryCandidates(TupleExpr root, List<Object> candidates) throws Exception {
+		Class<?> collectorClass = Class.forName(
+				LmdbCascadesOptimizer.class.getName() + "$ConditionSubqueryCandidateCollector");
 		Constructor<?> constructor = collectorClass.getDeclaredConstructor(TupleExpr.class, Set.class, List.class);
 		constructor.setAccessible(true);
 		Object collector = constructor.newInstance(root, Set.of(), candidates);

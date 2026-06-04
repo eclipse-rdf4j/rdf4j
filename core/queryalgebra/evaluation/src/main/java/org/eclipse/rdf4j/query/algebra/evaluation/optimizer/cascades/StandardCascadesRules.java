@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -46,6 +47,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterConditionCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -161,15 +164,26 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter filter = (Filter) expression.tupleExpr();
 			Join join = (Join) filter.getArg();
-			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
+			Set<String> conditionNames = conditionNames(filter.getCondition(),
+					filter.getArg().getAssuredBindingNames());
 			RuleProof proof = proof(semanticScope(goal), Set.of("conditionVarsVisible", "noScopeChange"),
 					"filter condition can be evaluated at one join input");
-			TupleExpr smallestInput = pushFilterToSmallestAssuredInput(join, filter.getCondition(), conditionNames);
+			PushedFilter smallestInput = pushedFilterToSmallestAssuredInput(join, filter.getCondition(),
+					conditionNames);
+			if (smallestInput != null
+					&& expensiveFilterCondition(filter.getCondition())
+					&& !smallestInput.crossedScopeBarrier()) {
+				smallestInput = null;
+			}
 			if (smallestInput != null && !smallestInput.equals(filter)) {
 				RuleProof smallestProof = proof(semanticScope(goal),
 						Set.of("conditionVarsVisible", "noScopeChange", "pushedToEarliestAssuredInput"),
 						"filter condition can be evaluated at the earliest join input that assures its variables");
-				return List.of(RuleApplication.transformation(expression.groupId(), smallestInput, smallestProof));
+				return List.of(
+						RuleApplication.transformation(expression.groupId(), smallestInput.tupleExpr(), smallestProof));
+			}
+			if (expensiveFilterCondition(filter.getCondition())) {
+				return List.of();
 			}
 			if (join.getLeftArg().getAssuredBindingNames().containsAll(conditionNames)) {
 				return List.of(RuleApplication.transformation(expression.groupId(),
@@ -205,40 +219,46 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter filter = (Filter) expression.tupleExpr();
 			Join join = (Join) filter.getArg();
-			List<ValueExpr> leftConjuncts = new ArrayList<>();
-			List<ValueExpr> rightConjuncts = new ArrayList<>();
 			List<ValueExpr> residualConjuncts = new ArrayList<>();
+			Set<String> visibleNames = filter.getArg().getAssuredBindingNames();
+			TupleExpr alternative = join.clone();
+			int pushedConjuncts = 0;
+			int expensivePushedPastScopeBarrier = 0;
+			int deferredExpensiveConjuncts = 0;
 			for (ValueExpr conjunct : splitConjuncts(filter.getCondition())) {
-				Set<String> names = plannerNames(VarNameCollector.process(conjunct));
-				if (join.getLeftArg().getAssuredBindingNames().containsAll(names)) {
-					leftConjuncts.add(conjunct);
-				} else if (join.getRightArg().getAssuredBindingNames().containsAll(names)) {
-					rightConjuncts.add(conjunct);
-				} else {
+				Set<String> names = conditionNames(conjunct, visibleNames);
+				if (expensiveFilterCondition(conjunct)) {
+					PushedFilter pushed = pushedFilterToSmallestAssuredInput(alternative, conjunct, names);
+					if (pushed != null && pushed.crossedScopeBarrier()) {
+						alternative = pushed.tupleExpr();
+						pushedConjuncts++;
+						expensivePushedPastScopeBarrier++;
+						continue;
+					}
 					residualConjuncts.add(conjunct);
+					deferredExpensiveConjuncts++;
+				} else {
+					PushedFilter pushed = pushedFilterToSmallestAssuredInput(alternative, conjunct, names);
+					if (pushed == null) {
+						residualConjuncts.add(conjunct);
+					} else {
+						alternative = pushed.tupleExpr();
+						pushedConjuncts++;
+					}
 				}
 			}
-			if (leftConjuncts.isEmpty() && rightConjuncts.isEmpty()) {
+			if (pushedConjuncts == 0) {
 				return List.of();
 			}
-			TupleExpr left = join.getLeftArg().clone();
-			TupleExpr right = join.getRightArg().clone();
-			ValueExpr leftCondition = combineConjuncts(leftConjuncts);
-			ValueExpr rightCondition = combineConjuncts(rightConjuncts);
-			if (leftCondition != null) {
-				left = new Filter(left, leftCondition);
-			}
-			if (rightCondition != null) {
-				right = new Filter(right, rightCondition);
-			}
-			TupleExpr alternative = new Join(left, right);
 			ValueExpr residual = combineConjuncts(residualConjuncts);
 			if (residual != null) {
 				alternative = new Filter(alternative, residual);
 			}
 			RuleProof proof = proof(semanticScope(goal), Set.of("conjunctsSplit", "scopeSafe",
-					"leftPushed=" + leftConjuncts.size(), "rightPushed=" + rightConjuncts.size()),
-					"independent filter conjuncts are pushed to the earliest visible join input");
+					"pushed=" + pushedConjuncts, "expensiveDeferred=" + deferredExpensiveConjuncts,
+					"expensivePushedPastScopeBarrier=" + expensivePushedPastScopeBarrier),
+					"cheap independent filter conjuncts are pushed; expensive nested tuple filters only move when "
+							+ "they unblock a scope barrier");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
@@ -260,7 +280,8 @@ public final class StandardCascadesRules {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter filter = (Filter) expression.tupleExpr();
 			Difference difference = (Difference) filter.getArg();
-			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
+			Set<String> conditionNames = conditionNames(filter.getCondition(),
+					filter.getArg().getAssuredBindingNames());
 			if (!difference.getLeftArg().getAssuredBindingNames().containsAll(conditionNames)) {
 				return List.of();
 			}
@@ -757,17 +778,16 @@ public final class StandardCascadesRules {
 
 		private RuleApplication correlatedAntiExistsFilterAlternative(MemoExpr expression, Difference difference,
 				OptimizationGoal goal) {
-			Set<String> shared = safeAssuredMinusSharedVars(difference);
-			if (shared.isEmpty() || !isSimpleCorrelatableMinusRhs(difference.getRightArg())) {
+			TupleExpr alternative = correlatedAntiExistsFilter(difference);
+			if (alternative == null) {
 				return null;
 			}
+			Set<String> shared = safeAssuredMinusSharedVars(difference);
 
 			RuleProof proof = proof(semanticScope(goal),
 					Set.of("sharedVarsAssured", "correlatedAntiExists", "shared=" + shared),
 					"MINUS with assured shared variables can be costed as an equivalent negated EXISTS filter");
-			return RuleApplication.transformation(expression.groupId(),
-					new Filter(difference.getLeftArg().clone(), new Not(new Exists(difference.getRightArg().clone()))),
-					proof);
+			return RuleApplication.transformation(expression.groupId(), alternative, proof);
 		}
 	}
 
@@ -1315,9 +1335,26 @@ public final class StandardCascadesRules {
 		return shared;
 	}
 
+	public static TupleExpr correlatedAntiExistsFilter(Difference difference) {
+		if (difference == null || difference.getLeftArg() == null || difference.getRightArg() == null) {
+			return null;
+		}
+		Set<String> shared = safeAssuredMinusSharedVars(difference);
+		if (shared.isEmpty() || !isSimpleCorrelatableMinusRhs(difference.getRightArg())) {
+			return null;
+		}
+		return new Filter(difference.getLeftArg().clone(), new Not(new Exists(difference.getRightArg().clone())));
+	}
+
 	private static boolean isSimpleCorrelatableMinusRhs(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof StatementPattern) {
 			return true;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			if (!isRowPreservingNonShadowingExtension(extension)) {
+				return false;
+			}
+			return isSimpleCorrelatableMinusRhs(extension.getArg());
 		}
 		if (tupleExpr instanceof Join join) {
 			return isSimpleCorrelatableMinusRhs(join.getLeftArg())
@@ -1331,6 +1368,24 @@ public final class StandardCascadesRules {
 			return isSimpleCorrelatableMinusRhs(filter.getArg());
 		}
 		return false;
+	}
+
+	private static boolean isRowPreservingNonShadowingExtension(Extension extension) {
+		if (extension == null || extension.getArg() == null || TupleExprs.isVariableScopeChange(extension)) {
+			return false;
+		}
+		Set<String> argBindings = plannerNames(extension.getArg().getBindingNames());
+		Set<String> argAssuredBindings = plannerNames(extension.getArg().getAssuredBindingNames());
+		for (ExtensionElem element : extension.getElements()) {
+			if (element.getName() == null || argBindings.contains(element.getName())) {
+				return false;
+			}
+			Set<String> expressionNames = plannerNames(VarNameCollector.process(element.getExpr()));
+			if (!argAssuredBindings.containsAll(expressionNames)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static final class ExtractedFiniteBinding {
@@ -1361,6 +1416,17 @@ public final class StandardCascadesRules {
 		return new HashSet<>(CascadesRewriteSupport.plannerNames(names));
 	}
 
+	private static Set<String> conditionNames(ValueExpr condition, Set<String> visibleNames) {
+		return new HashSet<>(CascadesRewriteSupport.conditionNames(condition, visibleNames));
+	}
+
+	private static boolean expensiveFilterCondition(ValueExpr condition) {
+		return FilterConditionCostModel.conditionCostClass(condition) >= JoinOrderPlanner.FILTER_COST_EXPENSIVE;
+	}
+
+	private record PushedFilter(TupleExpr tupleExpr, boolean crossedScopeBarrier) {
+	}
+
 	private static Set<String> identityProjectionNames(Projection projection) {
 		Set<String> names = CascadesRewriteSupport.identityProjectionNames(projection);
 		return names == null ? null : new HashSet<>(names);
@@ -1376,21 +1442,29 @@ public final class StandardCascadesRules {
 
 	private static TupleExpr pushFilterToSmallestAssuredInput(TupleExpr tupleExpr, ValueExpr condition,
 			Set<String> conditionVars) {
+		PushedFilter pushed = pushedFilterToSmallestAssuredInput(tupleExpr, condition, conditionVars);
+		return pushed == null ? null : pushed.tupleExpr();
+	}
+
+	private static PushedFilter pushedFilterToSmallestAssuredInput(TupleExpr tupleExpr, ValueExpr condition,
+			Set<String> conditionVars) {
 		if (tupleExpr == null || condition == null || conditionVars == null
 				|| !plannerNames(tupleExpr.getAssuredBindingNames()).containsAll(conditionVars)) {
 			return null;
 		}
 		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-			TupleExpr pushedLeft = pushFilterToSmallestAssuredInput(join.getLeftArg(), condition, conditionVars);
+			PushedFilter pushedLeft = pushedFilterToSmallestAssuredInput(join.getLeftArg(), condition, conditionVars);
 			if (pushedLeft != null) {
-				return new Join(pushedLeft, join.getRightArg().clone());
+				return new PushedFilter(new Join(pushedLeft.tupleExpr(), join.getRightArg().clone()),
+						pushedLeft.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getRightArg()));
 			}
-			TupleExpr pushedRight = pushFilterToSmallestAssuredInput(join.getRightArg(), condition, conditionVars);
+			PushedFilter pushedRight = pushedFilterToSmallestAssuredInput(join.getRightArg(), condition, conditionVars);
 			if (pushedRight != null) {
-				return new Join(join.getLeftArg().clone(), pushedRight);
+				return new PushedFilter(new Join(join.getLeftArg().clone(), pushedRight.tupleExpr()),
+						pushedRight.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getLeftArg()));
 			}
 		}
-		return new Filter(tupleExpr.clone(), condition.clone());
+		return new PushedFilter(new Filter(tupleExpr.clone(), condition.clone()), false);
 	}
 
 	private static ValueExpr combineConjuncts(List<ValueExpr> conjuncts) {

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -53,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ProjectionCascadesRules;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
@@ -127,9 +129,11 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbStarMultiPredicateScanRule(statistics))
 				.add(new LmdbPropertyPathImplementationRule(statistics))
 				.add(new LmdbAccessPathImplementationRule(statistics))
+				.add(new LmdbRowPreservingSubplanAccessPathRule(statistics))
 				.add(new LmdbDistinctCursorSkipRule(statistics))
+				.add(new LmdbInnerJoinBoundLookupRule(statistics))
+				.add(new LmdbCorrelatedMinusAntiExistsRule(statistics))
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
-				.add(new LmdbMinusBoundProbeRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
 								(cascadesConnectedJoinProviderAvailable
@@ -503,6 +507,15 @@ final class LmdbCascadesRuleProvider {
 				}
 				return statementPatternInputBoundVars(sp, lookupComponentMask, goalBoundVars);
 			}
+			StatementPattern rowPreservingStatement = rowPreservingAccessPathStatement(tupleExpr);
+			if (rowPreservingStatement != null) {
+				int lookupComponentMask = estimate.getLookupComponentMask();
+				if (lookupComponentMask == 0) {
+					lookupComponentMask = lookupComponentMask(estimate.getStringMetrics()
+							.get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
+				}
+				return statementPatternInputBoundVars(rowPreservingStatement, lookupComponentMask, goalBoundVars);
+			}
 			return bindingNameIntersection(tupleExpr.getBindingNames(), goalBoundVars);
 		}
 
@@ -513,7 +526,7 @@ final class LmdbCascadesRuleProvider {
 			return bindingNameIntersection(tupleExpr.getBindingNames(), goalBoundVars(goal));
 		}
 
-		private Set<String> goalBoundVars(OptimizationGoal goal) {
+		Set<String> goalBoundVars(OptimizationGoal goal) {
 			return goal == null ? Set.of() : goal.requiredProperties().boundVars();
 		}
 
@@ -570,17 +583,102 @@ final class LmdbCascadesRuleProvider {
 			return mask;
 		}
 
-		private int componentBit(Component component) {
+		int componentBit(Component component) {
 			return 1 << component.ordinal();
 		}
 
-		private Var componentVar(StatementPattern pattern, Component component) {
+		Var componentVar(StatementPattern pattern, Component component) {
 			return switch (component) {
 			case S -> pattern.getSubjectVar();
 			case P -> pattern.getPredicateVar();
 			case O -> pattern.getObjectVar();
 			case C -> pattern.getContextVar();
 			};
+		}
+
+		StatementPattern rowPreservingAccessPathStatement(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Extension extension && extension.getArg()instanceof StatementPattern pattern) {
+				return pattern;
+			}
+			return null;
+		}
+
+		int requestedLookupComponentMask(StatementPattern pattern, Set<String> goalBoundVars) {
+			int mask = 0;
+			for (Component component : Component.values()) {
+				Var var = componentVar(pattern, component);
+				if (var == null) {
+					continue;
+				}
+				if (var.hasValue()) {
+					mask |= componentBit(component);
+					continue;
+				}
+				String name = var.getName();
+				if (name != null && goalBoundVars.contains(name)) {
+					mask |= componentBit(component);
+				}
+			}
+			return mask;
+		}
+
+		boolean usesGoalBoundLookupVariable(StatementPattern pattern, int lookupComponentMask,
+				Set<String> goalBoundVars) {
+			for (Component component : Component.values()) {
+				if ((lookupComponentMask & componentBit(component)) == 0) {
+					continue;
+				}
+				Var var = componentVar(pattern, component);
+				if (var == null || var.hasValue()) {
+					continue;
+				}
+				String name = var.getName();
+				if (name != null && goalBoundVars.contains(name)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		boolean equivalentAccessPath(JoinFactorCostModel.FactorCostEstimate left,
+				JoinFactorCostModel.FactorCostEstimate right) {
+			if (left == null || right == null) {
+				return false;
+			}
+			return left.getLookupComponentMask() == right.getLookupComponentMask()
+					&& left.getMissingLookupComponentMask() == right.getMissingLookupComponentMask()
+					&& left.isDirectLookup() == right.isDirectLookup();
+		}
+
+		String componentMaskString(int componentMask) {
+			List<String> components = new ArrayList<>(Component.values().length);
+			for (Component component : Component.values()) {
+				if ((componentMask & componentBit(component)) != 0) {
+					components.add(component.name());
+				}
+			}
+			return components.toString();
+		}
+
+		void stampAccessPathMetrics(TupleExpr target, JoinFactorCostModel.FactorCostEstimate estimate) {
+			if (target == null || estimate == null) {
+				return;
+			}
+			for (Map.Entry<String, String> entry : estimate.getStringMetrics().entrySet()) {
+				target.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : estimate.getDoubleMetrics().entrySet()) {
+				target.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			String baseSource = estimate.getStringMetrics().get("plannedBaseEstimateSource");
+			if (baseSource == null || baseSource.isBlank()) {
+				baseSource = estimate.getStringMetrics().get("plannedInnerJoinRightBaseEstimateSource");
+			}
+			if (baseSource != null && !baseSource.isBlank()) {
+				target.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, baseSource);
+			}
+			target.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
 		}
 
 		CostVector cost(JoinFactorCostModel.FactorCostEstimate estimate) {
@@ -2760,9 +2858,11 @@ final class LmdbCascadesRuleProvider {
 			RuleProof proof = proof(semanticScope(goal), Set.of("lmdbCostModel", "accessPathCosted"),
 					"LMDB cost model selected a scan, prefix lookup or direct lookup physical alternative");
 			CostVector cost = cost(estimate.get());
-			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+			RuleApplication base = RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
-					"lmdb-access", snapshot(estimate.get(), cost)));
+					"lmdb-access", snapshot(estimate.get(), cost));
+			Optional<RuleApplication> inputBound = requestedInputBoundAccessPath(expression, goal, estimate.get());
+			return inputBound.map(application -> List.of(base, application)).orElseGet(() -> List.of(base));
 		}
 
 		private boolean isAccessPathCandidate(TupleExpr tupleExpr) {
@@ -2774,6 +2874,116 @@ final class LmdbCascadesRuleProvider {
 				return isAccessPathCandidate(filter.getArg());
 			}
 			return false;
+		}
+
+		private Optional<RuleApplication> requestedInputBoundAccessPath(MemoExpr expression, OptimizationGoal goal,
+				JoinFactorCostModel.FactorCostEstimate baseEstimate) {
+			if (!(expression.tupleExpr()instanceof StatementPattern pattern) || goal == null) {
+				return Optional.empty();
+			}
+			Set<String> goalBoundVars = goalBoundVars(goal);
+			if (goalBoundVars.isEmpty()) {
+				return Optional.empty();
+			}
+			int lookupComponentMask = requestedLookupComponentMask(pattern, goalBoundVars);
+			if (lookupComponentMask == 0 || !usesGoalBoundLookupVariable(pattern, lookupComponentMask, goalBoundVars)) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.CostContext costContext = JoinFactorCostModel.CostContext
+					.forOptimization(goalBoundVars, Double.NaN, Double.NaN, false, true, Map.of(), List.of())
+					.withEstimationTier(goal.estimationTier())
+					.withRequestedAccessPath("inputBoundLookup", lookupComponentMask, 0, true);
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel
+					.estimateFactorCost(expression.tupleExpr(), costContext);
+			if (estimate.isEmpty() || equivalentAccessPath(baseEstimate, estimate.get())) {
+				return Optional.empty();
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("lmdbCostModel", "requestedInputBoundAccessPath",
+							"lookupComponents=" + componentMaskString(lookupComponentMask)),
+					"LMDB cost model priced the access path that consumes variables already bound by the left prefix");
+			CostVector cost = cost(estimate.get());
+			return Optional.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+					delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
+					"lmdb-input-bound-access", snapshot(estimate.get(), cost)));
+		}
+
+	}
+
+	private static final class LmdbRowPreservingSubplanAccessPathRule extends LmdbRule {
+		LmdbRowPreservingSubplanAccessPathRule(EvaluationStatistics statistics) {
+			super("lmdb-row-preserving-subplan-access-path", RuleKind.IMPLEMENTATION, 95, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& rowPreservingAccessPathStatement(expression.tupleExpr()) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, false);
+			if (estimate.isEmpty() || !estimate.get().hasPhysicalAccessPath()) {
+				return List.of();
+			}
+			List<RuleApplication> applications = new ArrayList<>();
+			TupleExpr alternative = expression.tupleExpr().clone();
+			StatementPattern statementPattern = rowPreservingAccessPathStatement(alternative);
+			if (statementPattern == null) {
+				return List.of();
+			}
+			stampAccessPathMetrics(statementPattern, estimate.get());
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("lmdbCostModel", "rowPreservingSubplan", "accessPathCosted"),
+					"LMDB cost model selected an access path through a row-preserving wrapper subplan");
+			CostVector cost = cost(estimate.get());
+			applications.add(RuleApplication.opaquePhysical(expression.groupId(), alternative,
+					delivered(alternative, estimate.get(), goal), cost, proof,
+					"lmdb-row-preserving-subplan-access", snapshot(estimate.get(), cost)));
+			requestedInputBoundAccessPath(expression, goal, estimate.get()).ifPresent(applications::add);
+			return List.copyOf(applications);
+		}
+
+		private Optional<RuleApplication> requestedInputBoundAccessPath(MemoExpr expression, OptimizationGoal goal,
+				JoinFactorCostModel.FactorCostEstimate baseEstimate) {
+			StatementPattern pattern = rowPreservingAccessPathStatement(expression.tupleExpr());
+			if (pattern == null || goal == null) {
+				return Optional.empty();
+			}
+			Set<String> goalBoundVars = goalBoundVars(goal);
+			if (goalBoundVars.isEmpty()) {
+				return Optional.empty();
+			}
+			int lookupComponentMask = requestedLookupComponentMask(pattern, goalBoundVars);
+			if (lookupComponentMask == 0 || !usesGoalBoundLookupVariable(pattern, lookupComponentMask, goalBoundVars)) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.CostContext costContext = JoinFactorCostModel.CostContext
+					.forOptimization(goalBoundVars, Double.NaN, Double.NaN, false, true, Map.of(), List.of())
+					.withEstimationTier(goal.estimationTier())
+					.withRequestedAccessPath("inputBoundLookup", lookupComponentMask, 0, true);
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel
+					.estimateFactorCost(expression.tupleExpr(), costContext);
+			if (estimate.isEmpty() || equivalentAccessPath(baseEstimate, estimate.get())) {
+				return Optional.empty();
+			}
+			TupleExpr alternative = expression.tupleExpr().clone();
+			StatementPattern statementPattern = rowPreservingAccessPathStatement(alternative);
+			if (statementPattern == null) {
+				return Optional.empty();
+			}
+			stampAccessPathMetrics(statementPattern, estimate.get());
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("lmdbCostModel", "rowPreservingSubplan", "requestedInputBoundAccessPath",
+							"lookupComponents=" + componentMaskString(lookupComponentMask)),
+					"LMDB cost model priced the row-preserving wrapper access path that consumes variables already "
+							+ "bound by the left prefix");
+			CostVector cost = cost(estimate.get());
+			return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), alternative,
+					delivered(alternative, estimate.get(), goal), cost, proof,
+					"lmdb-row-preserving-input-bound-access", snapshot(estimate.get(), cost)));
 		}
 	}
 
@@ -2857,6 +3067,193 @@ final class LmdbCascadesRuleProvider {
 			CostVector cost = cost(estimate.get());
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
 					cost, proof, "lmdb-distinct-skip", snapshot(estimate.get(), cost)));
+		}
+	}
+
+	private static final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
+		LmdbInnerJoinBoundLookupRule(EvaluationStatistics statistics) {
+			super("lmdb-inner-join-bound-lookup", RuleKind.IMPLEMENTATION, 92, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& expression.tupleExpr()instanceof Join join
+					&& !TupleExprs.isVariableScopeChange(join)
+					&& !TupleExprs.isVariableScopeChange(join.getRightArg())
+					&& !TupleExprs.containsSubquery(join.getRightArg());
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
+			if (estimate.isEmpty() || !"lmdb-inner-bound-lookup".equals(estimate.get()
+					.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+				return List.of();
+			}
+			Join alternative = (Join) expression.tupleExpr().clone();
+			stampNestedAccessPathMetrics(alternative, rootCostContext(goal));
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(alternative.getBindingNames())
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
+					.accessPath("innerBoundLookup")
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("innerJoin");
+			facts.add("rightBoundLookup");
+			facts.add("anchoredBoundVars=" + innerJoinAnchoredBoundVars(alternative));
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"INNER JOIN RHS can be costed and materialized with bindings assured by the left prefix");
+			CostVector cost = decomposedInnerJoinOperatorCost(estimate.get());
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
+					"lmdb-inner-join-bound-lookup", snapshot(estimate.get(), cost)));
+		}
+
+		private CostVector decomposedInnerJoinOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {
+			CostVector base = cost(estimate);
+			Map<String, Double> metrics = estimate.getDoubleMetrics();
+			double outputRows = finiteMetric(metrics, "plannedInnerJoinOutputRows", estimate.getOutputRows());
+			double rightRows = finiteMetric(metrics, "plannedInnerJoinRightRows", estimate.getOutputRows());
+			double rightWorkRows = finiteMetric(metrics, "plannedInnerJoinRightWorkRows", estimate.getWorkRows());
+			double operatorWorkRows = Math.max(rightRows, rightWorkRows);
+			if (!Double.isFinite(operatorWorkRows) || operatorWorkRows < 0.0d) {
+				operatorWorkRows = estimate.getWorkRows();
+			}
+			return base.withRows(outputRows)
+					.withWorkRows(operatorWorkRows);
+		}
+
+		private JoinFactorCostModel.CostContext rootCostContext(OptimizationGoal goal) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
+					.forOptimization(goalBoundVars(goal), Double.NaN, Double.NaN, false, true, Map.of(), List.of());
+			return goal == null ? context : context.withEstimationTier(goal.estimationTier());
+		}
+
+		private void stampNestedAccessPathMetrics(TupleExpr tupleExpr, JoinFactorCostModel.CostContext context) {
+			if (tupleExpr == null || context == null) {
+				return;
+			}
+			StatementPattern rowPreservingStatement = rowPreservingAccessPathStatement(tupleExpr);
+			if (rowPreservingStatement != null) {
+				costModel.estimateFactorCost(tupleExpr, context)
+						.ifPresent(estimate -> {
+							stampAccessPathMetrics(tupleExpr, estimate);
+							stampAccessPathMetrics(rowPreservingStatement, estimate);
+						});
+				return;
+			}
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				costModel.estimateFactorCost(statementPattern, context)
+						.ifPresent(estimate -> stampAccessPathMetrics(statementPattern, estimate));
+				return;
+			}
+			if (tupleExpr instanceof Join join
+					&& !TupleExprs.isVariableScopeChange(join)
+					&& !TupleExprs.isVariableScopeChange(join.getRightArg())
+					&& !TupleExprs.containsSubquery(join.getRightArg())) {
+				stampNestedAccessPathMetrics(join.getLeftArg(), context);
+				stampNestedAccessPathMetrics(join.getRightArg(), rightCostContext(join, context));
+				return;
+			}
+			if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+				stampNestedAccessPathMetrics(filter.getArg(), context);
+				return;
+			}
+			if (tupleExpr instanceof Union union) {
+				stampNestedAccessPathMetrics(union.getLeftArg(), context);
+				stampNestedAccessPathMetrics(union.getRightArg(), context);
+			}
+		}
+
+		private JoinFactorCostModel.CostContext rightCostContext(Join join, JoinFactorCostModel.CostContext context) {
+			Set<String> rightBoundVars = new LinkedHashSet<>(context.getCurrentlyBoundVars());
+			Set<String> sharedBindings = new LinkedHashSet<>(join.getLeftArg().getAssuredBindingNames());
+			sharedBindings.retainAll(join.getRightArg().getBindingNames());
+			rightBoundVars.addAll(sharedBindings);
+			double leftRows = costModel.estimateFactorCost(join.getLeftArg(), context)
+					.map(JoinFactorCostModel.FactorCostEstimate::getOutputRows)
+					.filter(rows -> Double.isFinite(rows) && rows > 0.0d)
+					.orElse(Double.NaN);
+			return JoinFactorCostModel.CostContext
+					.forOptimization(rightBoundVars, leftRows, Double.NaN, true, true, Map.of(), List.of())
+					.withEstimationTier(context.getEstimationTier());
+		}
+
+		private Set<String> innerJoinAnchoredBoundVars(Join join) {
+			Set<String> anchored = new LinkedHashSet<>(join.getLeftArg().getAssuredBindingNames());
+			anchored.retainAll(join.getRightArg().getBindingNames());
+			return anchored.isEmpty() ? Set.of() : Set.copyOf(anchored);
+		}
+	}
+
+	private static final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
+		private final RdfStatisticsProvider statisticsProvider;
+
+		LmdbCorrelatedMinusAntiExistsRule(EvaluationStatistics statistics) {
+			super("lmdb-correlated-minus-anti-exists", RuleKind.IMPLEMENTATION, 91, statistics);
+			this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& statisticsProvider != null
+					&& expression.tupleExpr()instanceof Difference difference
+					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Difference difference = (Difference) expression.tupleExpr();
+			TupleExpr alternative = StandardCascadesRules.correlatedAntiExistsFilter(difference);
+			if (!(alternative instanceof Filter filter)) {
+				return List.of();
+			}
+			Set<String> boundVars = goalBoundVars(goal);
+			StatisticsEstimate inputEstimate = inputEstimate(difference.getLeftArg(), boundVars);
+			Optional<StatisticsEstimate> antiExistsEstimate = statisticsProvider.filter(filter.getArg(),
+					filter.getCondition(), inputEstimate, boundVars);
+			if (antiExistsEstimate.isEmpty()) {
+				return List.of();
+			}
+			StatisticsEstimate estimate = antiExistsEstimate.get();
+			double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
+					Math.max(1.0d, estimate.rows()));
+			CostVector cost = estimate.vector()
+					.toCostVector()
+					.withWorkRows(probeWorkRows);
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(alternative.getBindingNames())
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
+					.accessPath("correlatedAntiExists")
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("sharedVarsAssured");
+			facts.add("correlatedAntiExists");
+			facts.add("operatorWorkRows=" + probeWorkRows);
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"MINUS with assured shared variables is implemented as a streaming correlated NOT EXISTS probe");
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
+					"lmdb-correlated-minus-anti-exists",
+					snapshot(estimate, cost, "lmdb-correlated-anti-exists-filter")));
+		}
+
+		private StatisticsEstimate inputEstimate(TupleExpr input, Set<String> boundVars) {
+			if (costModel == null || input == null) {
+				return StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-anti-exists-input");
+			}
+			return estimate(input, boundVars, false)
+					.map(estimate -> new StatisticsEstimate(estimate.getOutputRows(),
+							QErrorInterval.heuristic(estimate.getOutputRows(), 4.0d,
+									"lmdb-correlated-anti-exists-input"),
+							estimate.getWorkRows(), "lmdb-correlated-anti-exists-input", estimate.getDoubleMetrics()))
+					.orElseGet(() -> StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-anti-exists-input"));
 		}
 	}
 
@@ -2966,71 +3363,4 @@ final class LmdbCascadesRuleProvider {
 		return !shared.isEmpty();
 	}
 
-	private static final class LmdbMinusBoundProbeRule extends LmdbRule {
-		LmdbMinusBoundProbeRule(EvaluationStatistics statistics) {
-			super("lmdb-minus-bound-rhs-probe", RuleKind.IMPLEMENTATION, 85, statistics);
-		}
-
-		@Override
-		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical() && costModel != null
-					&& expression.tupleExpr() instanceof Difference;
-		}
-
-		@Override
-		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			if (!(expression.tupleExpr()instanceof Difference difference)
-					|| difference.getRightArg() == null
-					|| TupleExprs.isVariableScopeChange(difference.getRightArg())
-					|| !sharedBindingsAvailableFromIncomingGoal(difference, goal)) {
-				return List.of();
-			}
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
-			if (estimate.isEmpty()) {
-				trace(context, "lmdb-rule id=" + id() + " status=no-estimate group=" + expression.groupId()
-						+ " expr=" + expression.id());
-				return List.of();
-			}
-			PhysicalProperties delivered = delivered(expression.tupleExpr(), estimate.get(), goal)
-					.withAccessPath("minusBoundRhsProbe");
-			RuleProof proof = proof(semanticScope(goal), Set.of("minusRhs", "boundProbeCosted"),
-					"MINUS RHS is costed as a bound probe physical alternative when shared bindings are available");
-			CostVector cost = decomposedMinusOperatorCost(estimate.get());
-			tracePhysicalDecision(context, expression, goal, false, "lmdb-minus-probe-decomposed", cost,
-					estimate.get());
-			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
-					delivered, cost, proof, "lmdb-minus-probe-decomposed", snapshot(estimate.get(), cost)));
-		}
-
-		private boolean sharedBindingsAvailableFromIncomingGoal(Difference difference, OptimizationGoal goal) {
-			if (difference == null || difference.getLeftArg() == null || difference.getRightArg() == null
-					|| goal == null || goal.requiredProperties() == null) {
-				return false;
-			}
-			Set<String> sharedBindings = new HashSet<>(
-					LmdbJoinPlanSupport.plannerBindingNames(difference.getLeftArg().getAssuredBindingNames()));
-			sharedBindings.retainAll(
-					LmdbJoinPlanSupport.plannerBindingNames(difference.getRightArg().getBindingNames()));
-			if (sharedBindings.isEmpty()) {
-				return false;
-			}
-			Set<String> incomingBindings = LmdbJoinPlanSupport
-					.plannerBindingNames(goal.requiredProperties().boundVars());
-			return incomingBindings.containsAll(sharedBindings);
-		}
-
-		private CostVector decomposedMinusOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {
-			CostVector base = cost(estimate);
-			Map<String, Double> metrics = estimate.getDoubleMetrics();
-			double outputRows = finiteMetric(metrics, "plannedMinusOutputRows", estimate.getOutputRows());
-			double rightRows = finiteMetric(metrics, "plannedMinusRightRows", estimate.getOutputRows());
-			double rightWorkRows = finiteMetric(metrics, "plannedMinusRightWorkRows", estimate.getWorkRows());
-			double operatorWorkRows = Math.max(rightRows, rightWorkRows);
-			if (!Double.isFinite(operatorWorkRows) || operatorWorkRows < 0.0d) {
-				operatorWorkRows = estimate.getWorkRows();
-			}
-			return base.withRows(outputRows)
-					.withWorkRows(operatorWorkRows);
-		}
-	}
 }

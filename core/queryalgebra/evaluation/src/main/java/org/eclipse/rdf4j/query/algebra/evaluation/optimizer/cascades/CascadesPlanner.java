@@ -915,16 +915,15 @@ public final class CascadesPlanner {
 			TupleExpr parent, int inputIndex) {
 		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
 		Set<String> candidateBoundVars = childBoundVars(safeGoal, input, contextualBoundVars);
-		boolean bindingsVisible = externalBindingsVisible(parent, input);
-		if (!bindingsVisible && !candidateBoundVars.isEmpty()) {
+		Set<String> boundVars = visibleChildBoundVars(parent, input, candidateBoundVars);
+		if (boundVars.size() != candidateBoundVars.size()) {
 			telemetry.plannerEvent("input-goal-hidden-bindings parent=" + nodeSummary(parent)
 					+ " input=" + nodeSummary(input)
 					+ " inputIndex=" + inputIndex
-					+ " hidden=" + candidateBoundVars
+					+ " hidden=" + hiddenChildBoundVars(candidateBoundVars, boundVars)
 					+ " parentScopeChange=" + TupleExprs.isVariableScopeChange(parent)
 					+ " inputScopeChange=" + TupleExprs.isVariableScopeChange(input));
 		}
-		Set<String> boundVars = bindingsVisible ? candidateBoundVars : Set.of();
 		PhysicalProperties required = boundVars.isEmpty()
 				? PhysicalProperties.ANY
 				: PhysicalProperties.builder().boundVars(boundVars).build();
@@ -939,9 +938,44 @@ public final class CascadesPlanner {
 		return tupleExpr.getClass().getSimpleName() + tupleExpr.getBindingNames();
 	}
 
-	private static boolean externalBindingsVisible(TupleExpr parent, TupleExpr input) {
-		return (parent == null || !TupleExprs.isVariableScopeChange(parent))
-				&& (input == null || !TupleExprs.isVariableScopeChange(input));
+	private static Set<String> visibleChildBoundVars(TupleExpr parent, TupleExpr input,
+			Set<String> candidateBoundVars) {
+		if (candidateBoundVars == null || candidateBoundVars.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> protectedNames = new LinkedHashSet<>();
+		protectedNames.addAll(scopeProtectedBindingNames(parent));
+		protectedNames.addAll(scopeProtectedBindingNames(input));
+		if (protectedNames.isEmpty()) {
+			return candidateBoundVars;
+		}
+		Set<String> visible = new LinkedHashSet<>(candidateBoundVars);
+		visible.removeAll(protectedNames);
+		return visible.isEmpty() ? Set.of() : Set.copyOf(visible);
+	}
+
+	private static Set<String> hiddenChildBoundVars(Set<String> candidateBoundVars, Set<String> visibleBoundVars) {
+		if (candidateBoundVars == null || candidateBoundVars.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> hidden = new LinkedHashSet<>(candidateBoundVars);
+		if (visibleBoundVars != null) {
+			hidden.removeAll(visibleBoundVars);
+		}
+		return hidden.isEmpty() ? Set.of() : Set.copyOf(hidden);
+	}
+
+	private static Set<String> scopeProtectedBindingNames(TupleExpr tupleExpr) {
+		if (tupleExpr == null || !TupleExprs.isVariableScopeChange(tupleExpr)) {
+			return Set.of();
+		}
+		if (tupleExpr instanceof Union union) {
+			Set<String> protectedNames = new LinkedHashSet<>(
+					CascadesRewriteSupport.branchLocalBindOrValuesNames(union.getLeftArg()));
+			protectedNames.addAll(CascadesRewriteSupport.branchLocalBindOrValuesNames(union.getRightArg()));
+			return protectedNames.isEmpty() ? Set.of() : Set.copyOf(protectedNames);
+		}
+		return CascadesRewriteSupport.branchLocalBindOrValuesNames(tupleExpr);
 	}
 
 	private OptimizationGoal.RowGoal childRowGoal(OptimizationGoal goal, TupleExpr parent, int inputIndex) {

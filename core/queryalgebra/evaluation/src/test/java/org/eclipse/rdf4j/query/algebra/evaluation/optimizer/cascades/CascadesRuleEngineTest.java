@@ -314,6 +314,46 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void filterConjunctPushdownKeepsExpensiveExistsConjunctDeferred() {
+		Join armPrefix = new Join(pattern("trial", "type", "trialType"), pattern("trial", "hasArm", "arm"));
+		TupleExpr comparatorName = pattern("comp", "name", "optCompName");
+		TupleExpr query = new Join(armPrefix, comparatorName);
+		ValueExpr nameNotEmpty = new Compare(new Var("optCompName"), new ValueConstant(VF.createLiteral("")),
+				Compare.CompareOp.NE);
+		ValueExpr armWithoutResult = new Not(new Exists(
+				new Join(pattern("arm", "hasResult", "r"), pattern("r", "pValue", "p"))));
+		Filter filter = new Filter(query, new And(nameNotEmpty, armWithoutResult));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.FilterConjunctPushdownRule(), filter);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter residual
+						&& isNegatedExistsFilter(residual)
+						&& residual.getArg()instanceof Join alternative
+						&& !(alternative.getLeftArg() instanceof Filter)
+						&& alternative.getRightArg() instanceof Filter),
+				"The cheap scalar conjunct should move, but the expensive ?arm-correlated NOT EXISTS should stay "
+						+ "deferred for the costed join segment: " + applications);
+	}
+
+	@Test
+	void filterConjunctPushdownKeepsOuterVarsUsedInsideExistsFilterVisible() {
+		Join serviceWithThreshold = new Join(pattern("service", "type", "serviceType"), values("threshold"));
+		TupleExpr query = new Join(serviceWithThreshold, pattern("service", "scheduledTime", "time"));
+		ValueExpr lateAfterThreshold = new Compare(new Var("late"), new Var("threshold"), Compare.CompareOp.GT);
+		ValueExpr noLateService = new Not(new Exists(new Filter(
+				pattern("service", "scheduledTime", "late"), lateAfterThreshold)));
+		Filter filter = new Filter(query, noLateService);
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.FilterConjunctPushdownRule(), filter);
+
+		assertFalse(applications.stream()
+				.anyMatch(application -> containsNegatedExistsFilterWithoutBinding(application.alternative(),
+						"threshold")),
+				"NOT EXISTS must not be pushed below an outer variable used by a nested filter: " + applications);
+	}
+
+	@Test
 	void filterUnionDistributionAllowsBranchLocalUnboundConditionVars() {
 		Union safeUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "o"));
 		Union branchLocalUnion = new Union(pattern("s", "p1", "o"), pattern("s", "p2", "other"));
@@ -1243,6 +1283,26 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void minusWithRowPreservingRhsExtensionCanBecomeNegatedExistsFilterAlternative() {
+		StatementPattern namedUser = pattern("user", "name", "name");
+		StatementPattern selfLoop = pattern("user", "follows", "user");
+		Extension rhs = new Extension(selfLoop, new ExtensionElem(new Var("user"), "pathEnd"));
+		Difference minus = new Difference(namedUser, rhs);
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter filter
+						&& filter.getCondition()instanceof Not not
+						&& not.getArg()instanceof Exists exists
+						&& exists.getSubQuery() instanceof Extension
+						&& filter.getArg() instanceof StatementPattern
+						&& !containsDifference(filter.getArg())),
+				"Expected row-preserving RHS Extension to remain safe for a negated correlated EXISTS: "
+						+ applications);
+	}
+
+	@Test
 	void minusWithoutSharedVarsDoesNotBecomeNegatedExistsFilterAlternative() {
 		Difference minus = new Difference(pattern("med", "type", "Medication"), pattern("dose", "dosage", "value"));
 
@@ -1549,6 +1609,25 @@ class CascadesRuleEngineTest {
 		return tupleExpr instanceof Filter filter
 				&& filter.getCondition()instanceof Not not
 				&& not.getArg() instanceof Exists;
+	}
+
+	private static boolean containsNegatedExistsFilterWithoutBinding(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof Filter filter) {
+			return isNegatedExistsFilter(filter) && !containsBindingSetAssignment(filter.getArg(), bindingName)
+					|| containsNegatedExistsFilterWithoutBinding(filter.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsNegatedExistsFilterWithoutBinding(join.getLeftArg(), bindingName)
+					|| containsNegatedExistsFilterWithoutBinding(join.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return containsNegatedExistsFilterWithoutBinding(extension.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsNegatedExistsFilterWithoutBinding(union.getLeftArg(), bindingName)
+					|| containsNegatedExistsFilterWithoutBinding(union.getRightArg(), bindingName);
+		}
+		return false;
 	}
 
 	private static boolean containsLocalNegatedFilterOnBranchName(TupleExpr tupleExpr) {

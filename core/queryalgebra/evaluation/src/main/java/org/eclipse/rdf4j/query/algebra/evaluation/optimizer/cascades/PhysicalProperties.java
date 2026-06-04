@@ -246,13 +246,18 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (names == null || names.isEmpty()) {
 			return Set.of();
 		}
-		Set<String> copy = new LinkedHashSet<>();
 		for (String name : names) {
-			if (name != null && !name.isBlank()) {
-				copy.add(name);
+			if (name == null || name.isBlank()) {
+				Set<String> copy = new LinkedHashSet<>();
+				for (String candidate : names) {
+					if (candidate != null && !candidate.isBlank()) {
+						copy.add(candidate);
+					}
+				}
+				return copy.isEmpty() ? Set.of() : Set.copyOf(copy);
 			}
 		}
-		return copy.isEmpty() ? Set.of() : Set.copyOf(copy);
+		return Set.copyOf(names);
 	}
 
 	public enum Materialization {

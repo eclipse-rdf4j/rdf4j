@@ -8,6 +8,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -127,6 +128,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="In query drill-down mode, only print the selected results file name.",
     )
     parser.add_argument(
+        "--latest-file",
+        help="Use this results file as the latest run instead of the newest dated file.",
+    )
+    parser.add_argument(
+        "--today",
+        action="store_true",
+        help="Use the newest results-YYYY-MM-DD(-N).md file for today's local date as the latest run.",
+    )
+    parser.add_argument(
         "--plan-kind",
         choices=("all", "optimized", "telemetry"),
         default="all",
@@ -180,6 +190,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     query_only_flags = args.plans_only or args.result_file is not None or args.plan_kind != "all"
     if query_only_flags and not query_mode:
         parser.error("--plans-only, --result-file, and --plan-kind require --theme/--query-index")
+    if args.latest_file is not None and args.today:
+        parser.error("--latest-file and --today cannot be combined")
     if args.top is not None and args.top < 1:
         parser.error("--top must be >= 1")
     if args.min_slower_pct < 0.0 or args.min_slower_pct > 100.0:
@@ -352,6 +364,28 @@ def newest_dated_file(files: Dict[str, ResultFile]) -> ResultFile:
     return files[sorted(dated)[-1][2]]
 
 
+def newest_file_for_date(files: Dict[str, ResultFile], date_text: str) -> ResultFile:
+    dated: List[Tuple[int, str]] = []
+    for name in files:
+        match = DATED_FILE_RE.match(name)
+        if match and match.group(1) == date_text:
+            dated.append((int(match.group(2) or 0), name))
+    if not dated:
+        raise SystemExit(f"No results file found for {date_text}")
+    return files[sorted(dated)[-1][1]]
+
+
+def selected_latest_file(files: Dict[str, ResultFile], args: argparse.Namespace) -> ResultFile:
+    if args.latest_file is not None:
+        latest_name = Path(args.latest_file).name
+        if latest_name not in files:
+            raise SystemExit(f"Latest file not found in results directory: {latest_name}")
+        return files[latest_name]
+    if args.today:
+        return newest_file_for_date(files, date.today().isoformat())
+    return newest_dated_file(files)
+
+
 def dated_file_key(name: str) -> Optional[Tuple[str, int]]:
     match = DATED_FILE_RE.match(name)
     if not match:
@@ -432,9 +466,8 @@ def historical_matches(
     return sort_matches(matches)
 
 
-def query_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatch]:
+def query_runs(files: Dict[str, ResultFile], latest: ResultFile, key: QueryKey) -> List[HistoricalMatch]:
     rows: List[HistoricalMatch] = []
-    latest = newest_dated_file(files)
     latest_score = latest_rows(latest).get(key)
     if latest_score is None:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
@@ -727,7 +760,7 @@ def render_query_mode(
     if key not in latest_summary_rows:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
 
-    matches = query_runs(files, key)
+    matches = query_runs(files, latest, key)
     if result_file is not None:
         matches = [match for match in matches if match.file_name == result_file]
     if plans_only:
@@ -810,7 +843,7 @@ def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     results_dir = Path(args.results_dir).resolve()
     files = load_result_files(results_dir)
-    latest = newest_dated_file(files)
+    latest = selected_latest_file(files, args)
 
     if args.theme is not None:
         output = render_query_mode(

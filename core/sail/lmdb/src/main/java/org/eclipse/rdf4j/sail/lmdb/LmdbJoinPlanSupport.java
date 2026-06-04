@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -83,7 +85,7 @@ final class LmdbJoinPlanSupport {
 		for (Filter filter : filters) {
 			Set<StatementPattern> originPatterns = FilterSelectivityKeys.originPatternsForFilter(filter);
 			for (ValueExpr condition : splitConjuncts(filter.getCondition())) {
-				Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+				Set<String> conditionVars = conditionBindingNames(condition, scopeBindingNames);
 				Set<String> requiredVars = new HashSet<>(conditionVars);
 				requiredVars.retainAll(scopeBindingNames);
 				deferredFilters
@@ -95,6 +97,55 @@ final class LmdbJoinPlanSupport {
 			}
 		}
 		return deferredFilters;
+	}
+
+	private static Set<String> conditionBindingNames(ValueExpr condition, Set<String> scopeBindingNames) {
+		if (condition == null) {
+			return Set.of();
+		}
+		Set<String> visibleNames = plannerBindingNames(scopeBindingNames);
+		if (visibleNames.isEmpty()) {
+			return DeferredFilter.conditionBindingNames(condition);
+		}
+		Set<String> names = new HashSet<>();
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				addVisibleName(var);
+			}
+
+			@Override
+			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
+				addVisibleSubQueryNames(node);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				addVisibleSubQueryNames(node);
+			}
+
+			private void addVisibleName(Var var) {
+				String name = var == null ? null : var.getName();
+				if (name != null && !var.hasValue() && visibleNames.contains(name)) {
+					names.add(name);
+				}
+			}
+
+			private void addVisibleSubQueryNames(SubQueryValueOperator node) {
+				if (node == null || node.getSubQuery() == null) {
+					return;
+				}
+				for (String name : VarNameCollector.process(node.getSubQuery())) {
+					if (visibleNames.contains(name)) {
+						names.add(name);
+					}
+				}
+			}
+		});
+		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
 	static void markRedundantRequiredExistsFilters(List<TupleExpr> requiredArgs, List<DeferredFilter> filters) {

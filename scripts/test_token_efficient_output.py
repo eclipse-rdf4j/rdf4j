@@ -132,6 +132,89 @@ class TokenEfficientOutputTest(unittest.TestCase):
                 (REPO_ROOT / "maven-build.log").read_text(encoding="utf-8"),
             )
 
+    def test_run_single_benchmark_runs_without_plan_guard_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            module = tmp / "bench-module"
+            module.mkdir()
+            fake_bin = tmp / "bin"
+            fake_bin.mkdir()
+
+            fake_mvn = fake_bin / "mvn"
+            fake_mvn.write_text(
+                dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    module=""
+                    while [[ $# -gt 0 ]]; do
+                      if [[ "$1" == "-pl" ]]; then
+                        module="$2"
+                        shift 2
+                      else
+                        shift
+                      fi
+                    done
+                    mkdir -p "${module}/target"
+                    touch "${module}/target/fake-jmh.jar"
+                    echo "[INFO] Reactor Summary for fake benchmark build:"
+                    echo "[INFO] fake-module SUCCESS"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_mvn.chmod(fake_mvn.stat().st_mode | stat.S_IXUSR)
+
+            fake_java = fake_bin / "java"
+            fake_java.write_text(
+                dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    echo "Benchmark                         Mode  Cnt  Score   Error  Units"
+                    echo "ExampleBenchmark.method           avgt    1  1.000          ns/op"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_java.chmod(fake_java.stat().st_mode | stat.S_IXUSR)
+
+            result = subprocess.run(
+                [
+                    str(REPO_ROOT / "scripts" / "run-single-benchmark.sh"),
+                    "--module",
+                    os.path.relpath(module, REPO_ROOT),
+                    "--class",
+                    "ExampleBenchmark",
+                    "--method",
+                    "method",
+                    "--warmup-iterations",
+                    "0",
+                    "--measurement-iterations",
+                    "1",
+                    "--forks",
+                    "0",
+                ],
+                cwd=REPO_ROOT,
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                    "RDF4J_BENCHMARK_SKIP_FORK_SOCKET_PREFLIGHT": "true",
+                    "RDF4J_BENCHMARK_PLAN_GUARD_PYTHON": str(tmp / "missing-python"),
+                },
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("query-plan risk guard disabled", result.stdout)
+            self.assertIn("ExampleBenchmark.method", result.stdout)
+            self.assertIn(
+                "ExampleBenchmark.method",
+                (module / "target" / "benchmark-output.log").read_text(encoding="utf-8"),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

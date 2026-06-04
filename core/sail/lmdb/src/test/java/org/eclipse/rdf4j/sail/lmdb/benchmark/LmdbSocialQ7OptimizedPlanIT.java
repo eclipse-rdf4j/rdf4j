@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.junit.jupiter.api.Test;
@@ -22,13 +24,16 @@ class LmdbSocialQ7OptimizedPlanIT {
 
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String NAME_LOOKUP = "?v <http://example.com/theme/social/name> ?optName";
-	private static final String PAIR_VALUES = "VALUES (?v ?u)";
+	private static final List<String> PAIR_VALUES = List.of("VALUES (?v ?u)", "VALUES (?u ?v)");
+	private static final String OPT_NAME_VALUES = "VALUES ?optName";
+	private static final String OPT_NAME_FILTER = "FILTER (?optName IN";
+	private static final String MUTUAL_FOLLOW = "?u <http://example.com/theme/social/follows> ?v";
 	private static final String MATERIALIZED_MINUS = "MINUS {";
 	private static final String CORRELATED_ANTI_PROBE = "FILTER NOT EXISTS";
 
 	@Test
 	@Timeout(120)
-	void nameFilterAnchorsBeforeMutualFollowAntiProbe() throws Exception {
+	void finiteAnchorsStayLocalAndMinusBecomesAntiExists() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.SOCIAL_MEDIA.name();
 		benchmark.z_queryIndex = 7;
@@ -44,12 +49,16 @@ class LmdbSocialQ7OptimizedPlanIT {
 				String plan = benchmark.explainOptimizedPlan(query);
 				String renderedQuery = benchmark.renderOptimizedQuery(query);
 
-				assertBefore(renderedQuery, "VALUES ?optName", NAME_LOOKUP,
-						"q7 should materialize the null-rejecting optional name filter as a finite anchor\n" + plan);
+				assertBefore(renderedQuery, PAIR_VALUES, CORRELATED_ANTI_PROBE,
+						"q7 should use the finite pair anchor at the mutual-follow anti-probe\n" + plan);
+				assertBefore(renderedQuery, PAIR_VALUES, MUTUAL_FOLLOW,
+						"q7 should use the finite pair anchor before expanding mutual follow pairs\n" + plan);
+				assertBefore(renderedQuery, OPT_NAME_VALUES, OPT_NAME_FILTER,
+						"q7 should apply the optName VALUES anchor before the redundant IN filter\n" + plan);
+				assertBefore(renderedQuery, OPT_NAME_FILTER, NAME_LOOKUP,
+						"q7 should keep the optional name finite anchor local to the name lookup\n" + plan);
 				assertBefore(renderedQuery, NAME_LOOKUP, PAIR_VALUES,
 						"q7 should bind the named user set before expanding mutual follow pairs\n" + plan);
-				assertBefore(renderedQuery, NAME_LOOKUP, CORRELATED_ANTI_PROBE,
-						"q7 should run the finite name lookup before the anti-probe\n" + plan);
 				assertTrue(!renderedQuery.contains(MATERIALIZED_MINUS),
 						"q7 should use a correlated anti-exists probe instead of retaining materialized MINUS\n"
 								+ renderedQuery + "\n" + plan);
@@ -59,6 +68,32 @@ class LmdbSocialQ7OptimizedPlanIT {
 			}
 		} finally {
 			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+		}
+	}
+
+	private static void assertBefore(String value, List<String> firsts, String second, String message) {
+		int firstIndex = firsts.stream()
+				.mapToInt(value::indexOf)
+				.filter(index -> index >= 0)
+				.min()
+				.orElse(-1);
+		int secondIndex = value.indexOf(second);
+		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+			throw new AssertionError(message + "\nExpected one of `" + firsts + "` before `" + second + "` in:\n"
+					+ value);
+		}
+	}
+
+	private static void assertBefore(String value, String first, List<String> seconds, String message) {
+		int firstIndex = value.indexOf(first);
+		int secondIndex = seconds.stream()
+				.mapToInt(value::indexOf)
+				.filter(index -> index >= 0)
+				.min()
+				.orElse(-1);
+		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+			throw new AssertionError(message + "\nExpected `" + first + "` before one of `" + seconds + "` in:\n"
+					+ value);
 		}
 	}
 

@@ -154,6 +154,19 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void structurallyEquivalentJoinClonesReuseProviderEstimate() {
+		TrackingProvider provider = new TrackingProvider();
+		CascadesCostModel model = model(provider);
+		Join join = new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2"));
+
+		model.logicalProperties(join);
+		model.logicalProperties(join.clone());
+
+		assertEquals(1, provider.multiPatternCalls,
+				"Equivalent cloned algebra should not repeat expensive provider join estimates");
+	}
+
+	@Test
 	void leftJoinAndDifferenceKeepConservativeRowBounds() {
 		CascadesCostModel model = model(new TrackingProvider());
 		StatementPattern left = pattern("s", "p1", "o1");

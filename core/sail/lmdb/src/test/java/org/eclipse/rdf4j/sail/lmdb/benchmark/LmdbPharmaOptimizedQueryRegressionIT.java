@@ -33,9 +33,11 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbPharmaOptimizedQueryRegressionIT {
@@ -49,6 +51,104 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final Pattern DIRECT_LOOKUP_ACCESS_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedAccessWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+
+	@Test
+	@Timeout(120)
+	void pharmaQ7RunQueryPlanKeepsArmBindingBeforeComparatorUnion() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		state.setup();
+		try {
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+			String diagnostics = snapshot.diagnostics();
+
+			assertBefore(plan,
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armComparator",
+					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the comparator "
+							+ "union\n" + plan);
+			assertBefore(plan,
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armDrug",
+					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the drug union\n"
+							+ plan);
+			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
+					"PHARMA q7 should exercise the default standard fallback policy\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=true"),
+					"Default fallback should capture the standard plan when Cascades returns an approximate winner\n"
+							+ diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesWinner=standard"),
+					"Default fallback should choose the cheaper standard plan over the approximate Cascades winner\n"
+							+ diagnostics);
+			boolean standardWinner = diagnostics.contains("optimizer.cascadesWinner=standard");
+			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armComparator");
+			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armDrug");
+			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
+			if (!standardWinner) {
+				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armComparator");
+				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armDrug");
+				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
+			}
+		} finally {
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ2KeepsCascadesPlanWhenStandardFallbackWorkIsComparable() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 2;
+		state.sketchEstimatorEnabled = true;
+
+		state.setup();
+		try {
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+			String diagnostics = snapshot.diagnostics();
+
+			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
+					"PHARMA q2 should exercise the default standard fallback policy\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=true"),
+					"PHARMA q2 should exercise the approximate Cascades comparison path\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
+					"Default fallback should keep Cascades when the standard plan does not materially reduce work\n"
+							+ diagnostics);
+			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-optional-rhs-anchored-lookup"),
+					"PHARMA q2 should keep the Cascades optional RHS lookup alternative\n" + plan);
+			assertBefore(plan,
+					"value=http://example.com/theme/pharma/armDrug",
+					"value=http://example.com/theme/pharma/hasArm",
+					"PHARMA q2 EXISTS should use the outer-bound ?drug armDrug probe before broader hasArm\n"
+							+ plan);
+			assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/armDrug");
+		} finally {
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void runQueryPlanCanPrepareWithoutRenderingOptimizedPlan() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		state.setup();
+		try (LmdbBenchmarkQueryPlan plan = state.preparePlanWithoutRendering()) {
+			assertTrue(plan.bindingCount() > 0);
+			assertTrue(plan.optimizedPlan().isBlank());
+			assertTrue(plan.optimizedDiagnostics().isBlank());
+		} finally {
+			state.tearDown();
+		}
+	}
 
 	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
@@ -199,6 +299,42 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
+	private static void assertStatementPatternUsesDirectLookup(String plan, String predicate) {
+		String statementPattern = statementPatternContaining(plan, predicate);
+		assertStatementPatternSeesBoundSubject(statementPattern, predicate);
+		assertTrue(statementPattern.contains("plannedIndexAccessMode=directLookup"),
+				"Expected bound branch statement pattern to use direct lookup for `" + predicate + "`:\n"
+						+ statementPattern + "\nFull plan:\n" + plan);
+	}
+
+	private static void assertStatementPatternSeesBoundSubject(String plan, String predicate) {
+		String statementPattern = statementPatternContaining(plan, predicate);
+		assertTrue(statementPattern.contains("bindingState=bound"),
+				"Expected branch statement pattern to see its join subject as bound:\n" + statementPattern
+						+ "\nFull plan:\n" + plan);
+	}
+
+	private static void assertStatementPatternSeesBoundObject(String plan, String predicate) {
+		String statementPattern = statementPatternContaining(plan, predicate);
+		assertTrue(statementPattern.contains("o: Var") && statementPattern.contains("bindingState=bound"),
+				"Expected branch statement pattern to see its join object as bound:\n" + statementPattern
+						+ "\nFull plan:\n" + plan);
+	}
+
+	private static String statementPatternContaining(String plan, String predicate) {
+		int predicateIndex = plan.indexOf("value=" + predicate);
+		if (predicateIndex < 0) {
+			throw new AssertionError("Missing statement pattern for `" + predicate + "` in:\n" + plan);
+		}
+		int startIndex = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		if (startIndex < 0) {
+			throw new AssertionError("Missing statement pattern header for `" + predicate + "` in:\n" + plan);
+		}
+		int nextIndex = plan.indexOf("StatementPattern (", predicateIndex + predicate.length());
+		int endIndex = nextIndex >= 0 ? nextIndex : plan.length();
+		return plan.substring(startIndex, endIndex);
+	}
+
 	private static double parsePlanRows(String value) {
 		String trimmed = value.trim();
 		double multiplier = 1.0d;
@@ -230,6 +366,26 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
+	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
+
+		private String optimizedPlan() {
+			return optimizedPlanSnapshot().plan();
+		}
+
+		private OptimizedPlanSnapshot optimizedPlanSnapshot() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {
+				return new OptimizedPlanSnapshot(plan.optimizedPlan(), plan.optimizedDiagnostics());
+			}
+		}
+
+		private LmdbBenchmarkQueryPlan preparePlanWithoutRendering() {
+			return preparePlan(false);
+		}
+	}
+
 	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	}
+
+	private record OptimizedPlanSnapshot(String plan, String diagnostics) {
 	}
 }

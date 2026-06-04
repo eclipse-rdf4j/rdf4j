@@ -314,6 +314,38 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsNoTimezoneTimeFilterInAsLocalFilterWhenPredicateGuaranteesNoTimezoneTime() {
+		Filter filter = new Filter(statementPatternWithPredicate("service",
+				"http://example.com/theme/train/scheduledTime", "time"),
+				listMemberValues("time", VF.createLiteral("08:00:00", XSD.TIME),
+						VF.createLiteral("09:00:00", XSD.TIME)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("10:00:00", XSD.TIME)))).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()));
+	}
+
+	@Test
+	void keepsUtcTimeFilterInAsLocalFilterWhenPredicateGuaranteesUtcTime() {
+		Filter filter = new Filter(statementPatternWithPredicate("service",
+				"http://example.com/theme/train/scheduledTime", "time"),
+				listMemberValues("time", VF.createLiteral("08:00:00Z", XSD.TIME),
+						VF.createLiteral("09:00:00Z", XSD.TIME)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("10:00:00Z", XSD.TIME)))).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()));
+	}
+
+	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void keepsCanonicalIntegerFilterInAsLocalFilterForPlannerOptions() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",

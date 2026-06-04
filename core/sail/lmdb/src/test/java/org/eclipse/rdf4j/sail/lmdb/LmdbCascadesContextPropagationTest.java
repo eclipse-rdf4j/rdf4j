@@ -88,44 +88,6 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
-	void minusBoundProbeRuleSkipsScopeChangingRightSide() {
-		StatementPattern left = new StatementPattern(new Var("item"), new Var("leftPredicate"),
-				new Var("leftValue"));
-		Extension scopeChangingRight = new Extension(
-				new StatementPattern(new Var("item"), new Var("rightPredicate"), new Var("rightValue")),
-				new ExtensionElem(new Var("item"), "copiedItem"));
-		scopeChangingRight.setVariableScopeChange(true);
-		Difference difference = new Difference(left, scopeChangingRight);
-
-		assertTrue(ruleApplications(difference, new AvailableMinusBoundProbeStatistics(), OptimizationGoal.root(),
-				"lmdb-minus-bound-rhs-probe").isEmpty(),
-				"MINUS bound-probe costing must not be selected for a scope-changing RHS because the "
-						+ "outer shared binding cannot be delivered to that child execution plan.");
-	}
-
-	@Test
-	void minusBoundProbeRuleRequiresIncomingSharedBinding() {
-		StatementPattern left = new StatementPattern(new Var("item"), new Var("leftPredicate"),
-				new Var("leftValue"));
-		StatementPattern right = new StatementPattern(new Var("item"), new Var("rightPredicate"),
-				new Var("rightValue"));
-		Difference difference = new Difference(left, right);
-		AvailableMinusBoundProbeStatistics statistics = new AvailableMinusBoundProbeStatistics();
-
-		assertTrue(ruleApplications(difference, statistics, OptimizationGoal.root(),
-				"lmdb-minus-bound-rhs-probe").isEmpty(),
-				"Generic RDF4J MINUS execution does not invoke the RHS once per left binding, so a left-assured "
-						+ "shared variable alone cannot make a bound RHS probe executable.");
-
-		OptimizationGoal incomingItem = OptimizationGoal.exact(PhysicalProperties.builder()
-				.boundVars(Set.of("item"))
-				.build());
-		assertFalse(ruleApplications(difference, statistics, incomingItem,
-				"lmdb-minus-bound-rhs-probe").isEmpty(),
-				"A shared variable that is already bound before the whole Difference is safe for both MINUS sides.");
-	}
-
-	@Test
 	void subtreeRequiredOutputVarsAreNotTreatedAsAlreadyBoundAccessInputs() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
 		try {
@@ -205,7 +167,7 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
-	void scopeChangingUnionBranchJoinIslandsDoNotReceiveOuterBindings() {
+	void scopeChangingUnionBranchJoinIslandsReceiveVisibleOuterBindings() {
 		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
 				"true");
 		try {
@@ -227,18 +189,55 @@ class LmdbCascadesContextPropagationTest {
 					.optimize(union, goal);
 
 			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().isEmpty()
+					.anyMatch(call -> call.initiallyBoundVars().contains("line")
 							&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
-					"Scope-changing UNION left branch should be planned without the outer variable: "
+					"Scope-changing UNION left branch should keep visible outside variables for access costing: "
 							+ statistics.calls);
 			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().isEmpty()
+					.anyMatch(call -> call.initiallyBoundVars().contains("line")
 							&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
-					"Scope-changing UNION right branch should be planned without the outer variable: "
+					"Scope-changing UNION right branch should keep visible outside variables for access costing: "
 							+ statistics.calls);
 		} finally {
 			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
 		}
+	}
+
+	@Test
+	void scopeChangingUnionHidesOnlyBranchLocalBindOutputs() {
+		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(256);
+		TupleExpr branchA = new Extension(
+				new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
+				new ExtensionElem(new Var("line"), "branchLocalA"));
+		TupleExpr branchB = new Extension(
+				new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
+				new ExtensionElem(new Var("line"), "branchLocalB"));
+		Union union = new Union(branchA, branchB);
+		union.setVariableScopeChange(true);
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.boundVars(Set.of("line", "branchLocalA", "branchLocalB"))
+				.build());
+
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), telemetry).optimize(union, goal);
+
+		assertTrue(telemetry.trace()
+				.stream()
+				.anyMatch(event -> event.contains("input-goal-hidden-bindings")
+						&& event.contains("hidden=[branchLocalA]")),
+				"Scope-changing UNION left branch should hide only the branch-local BIND output: "
+						+ telemetry.trace());
+		assertTrue(telemetry.trace()
+				.stream()
+				.anyMatch(event -> event.contains("input-goal-hidden-bindings")
+						&& event.contains("hidden=[branchLocalB]")),
+				"Scope-changing UNION right branch should hide only the branch-local BIND output: "
+						+ telemetry.trace());
+		assertFalse(telemetry.trace()
+				.stream()
+				.anyMatch(event -> event.contains("input-goal-hidden-bindings") && event.contains("hidden=[line")),
+				"Visible statement variables must not be hidden by a scope-changing UNION: " + telemetry.trace());
 	}
 
 	@Test
@@ -413,20 +412,6 @@ class LmdbCascadesContextPropagationTest {
 			this.calls.add(new JoinOrderCall(initiallyBoundVars == null ? Set.of() : Set.copyOf(initiallyBoundVars),
 					argBindingNames));
 			return Optional.of(new JoinOrderPlan(args, 10.0d, 50.0d, List.of(), Map.of(), Map.of(), List.of()));
-		}
-	}
-
-	private static final class AvailableMinusBoundProbeStatistics extends EvaluationStatistics
-			implements JoinFactorCostModel {
-
-		@Override
-		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
-			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
-		}
-
-		@Override
-		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
-			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
 		}
 	}
 

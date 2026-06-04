@@ -78,12 +78,13 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
+	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String COUNT_BINDING_NAME = "count";
 	private static final int QUERY_TIMEOUT_SECONDS = 60;
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
-		try (LmdbBenchmarkQueryPlan plan = state.preparePlan()) {
+		try (LmdbBenchmarkQueryPlan plan = state.preparePlan(false)) {
 			return plan.bindingCount();
 		}
 	}
@@ -333,7 +334,16 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan() {
-			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS);
+			return preparePlan(!profiling());
+		}
+
+		protected LmdbBenchmarkQueryPlan preparePlan(boolean captureOptimizedPlan) {
+			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS,
+					captureOptimizedPlan);
+		}
+
+		protected boolean profiling() {
+			return Boolean.getBoolean(PROFILING_PROPERTY);
 		}
 
 		protected void printOptimizedPlanBeforeRunQuery(LmdbBenchmarkQueryPlan plan) {
@@ -455,11 +465,12 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Setup(Level.Invocation)
 		public void prepareQuery() {
-			plannedQuery = preparePlan();
-			if (!printedOptimizedPlan) {
+			boolean captureOptimizedPlan = !printedOptimizedPlan && !profiling();
+			plannedQuery = preparePlan(captureOptimizedPlan);
+			if (captureOptimizedPlan) {
 				printOptimizedPlanBeforeRunQuery(plannedQuery);
-				printedOptimizedPlan = true;
 			}
+			printedOptimizedPlan = true;
 		}
 
 		@TearDown(Level.Invocation)

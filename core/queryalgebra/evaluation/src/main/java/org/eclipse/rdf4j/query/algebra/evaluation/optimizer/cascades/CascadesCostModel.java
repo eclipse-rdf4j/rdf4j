@@ -120,10 +120,12 @@ public interface CascadesCostModel {
 		private final RdfStatisticsProvider rdfStatisticsProvider;
 		private final IdentityHashMap<TupleExpr, LogicalProperties> logicalPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> logicalFingerprintCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, String> structuralFingerprintCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Map<Set<String>, StatisticsEstimate>> estimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, StatisticsEstimate>> physicalEstimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, PhysicalProperties>> deliveredPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Map<DecisionRefinementKey, Optional<StatisticsEstimate>>> decisionRefinementCache = new IdentityHashMap<>();
+		private final Map<ProviderEstimateKey, Optional<StatisticsEstimate>> providerEstimateCache = new LinkedHashMap<>();
 
 		public DefaultCascadesCostModel(EvaluationStatistics statistics, JoinFactorCostModel factorCostModel,
 				RdfStatisticsProvider rdfStatisticsProvider) {
@@ -182,6 +184,35 @@ public interface CascadesCostModel {
 			return operator + ";signature=" + tupleExpr.getSignature()
 					+ ";bindings=" + bindings
 					+ ";assured=" + assured;
+		}
+
+		private String structuralFingerprint(TupleExpr tupleExpr) {
+			if (tupleExpr == null) {
+				return "<null>";
+			}
+			return structuralFingerprintCache.computeIfAbsent(tupleExpr, expression -> {
+				StringBuilder builder = new StringBuilder(256);
+				appendStructuralFingerprint(expression, builder);
+				return builder.toString();
+			});
+		}
+
+		private void appendStructuralFingerprint(TupleExpr tupleExpr, StringBuilder builder) {
+			if (tupleExpr == null) {
+				builder.append("<null>");
+				return;
+			}
+			builder.append('[').append(logicalFingerprint(tupleExpr));
+			if (tupleExpr instanceof UnaryTupleOperator unary) {
+				builder.append(";arg=");
+				appendStructuralFingerprint(unary.getArg(), builder);
+			} else if (tupleExpr instanceof BinaryTupleOperator binary) {
+				builder.append(";left=");
+				appendStructuralFingerprint(binary.getLeftArg(), builder);
+				builder.append(";right=");
+				appendStructuralFingerprint(binary.getRightArg(), builder);
+			}
+			builder.append(']');
 		}
 
 		private String varFingerprint(Var var) {
@@ -676,6 +707,13 @@ public interface CascadesCostModel {
 				CostVector incumbentCost) {
 		}
 
+		private record ProviderEstimateKey(String fingerprint, Set<String> boundVars) {
+
+			private ProviderEstimateKey {
+				boundVars = immutableBoundVars(boundVars);
+			}
+		}
+
 		private static final class PhysicalInputKey {
 			private final Set<String> boundVars;
 			private final List<Winner> inputWinners;
@@ -718,6 +756,20 @@ public interface CascadesCostModel {
 		}
 
 		private Optional<StatisticsEstimate> providerEstimate(TupleExpr tupleExpr, Set<String> boundVars) {
+			if (tupleExpr == null) {
+				return Optional.empty();
+			}
+			ProviderEstimateKey key = new ProviderEstimateKey(structuralFingerprint(tupleExpr), boundVars);
+			Optional<StatisticsEstimate> cached = providerEstimateCache.get(key);
+			if (cached != null) {
+				return cached;
+			}
+			Optional<StatisticsEstimate> estimate = computeProviderEstimate(tupleExpr, immutableBoundVars(boundVars));
+			providerEstimateCache.put(key, estimate);
+			return estimate;
+		}
+
+		private Optional<StatisticsEstimate> computeProviderEstimate(TupleExpr tupleExpr, Set<String> boundVars) {
 			if (tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath) {
 				return rdfStatisticsProvider.propertyPathNodePairs(tupleExpr, boundVars);
 			}

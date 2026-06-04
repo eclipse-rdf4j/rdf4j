@@ -475,6 +475,15 @@ plan_guard_enabled() {
         esac
 }
 
+resolve_plan_guard_python() {
+        if [[ -n "${RDF4J_BENCHMARK_PLAN_GUARD_PYTHON:-}" ]]; then
+                command -v "${RDF4J_BENCHMARK_PLAN_GUARD_PYTHON}"
+                return
+        fi
+
+        command -v python3 || command -v python
+}
+
 run_benchmark_command() {
         if ! plan_guard_enabled; then
                 "${java_cmd[@]}"
@@ -483,9 +492,21 @@ run_benchmark_command() {
 
         local guard_script="${REPO_ROOT}/scripts/query-plan-risk-guard.py"
         local benchmark_log="${module_dir}/target/benchmark-output.log"
+        local guard_python
         mkdir -p "$(dirname "${benchmark_log}")"
+
+        if ! guard_python="$(resolve_plan_guard_python)"; then
+                echo "Warning: query-plan risk guard disabled because no Python interpreter was found." >&2
+                set +e
+                "${java_cmd[@]}" 2>&1 | tee "${benchmark_log}"
+                local pipeline_status=("${PIPESTATUS[@]}")
+                local java_status=${pipeline_status[0]:-1}
+                set -e
+                return "${java_status}"
+        fi
+
         set +e
-        "${java_cmd[@]}" 2>&1 | python3 "${guard_script}" --compact --log "${benchmark_log}"
+        "${java_cmd[@]}" 2>&1 | "${guard_python}" "${guard_script}" --compact --log "${benchmark_log}"
         local pipeline_status=("${PIPESTATUS[@]}")
         local java_status=${pipeline_status[0]:-1}
         local guard_status=${pipeline_status[1]:-1}

@@ -738,7 +738,30 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private static String normalize(String value) {
-		return value == null ? "<null>" : value.replaceAll("\\s+", " ").trim();
+		if (value == null) {
+			return "<null>";
+		}
+		StringBuilder normalized = new StringBuilder(value.length());
+		boolean emitted = false;
+		boolean pendingSpace = false;
+		for (int i = 0; i < value.length(); i++) {
+			char ch = value.charAt(i);
+			if (isRegexWhitespace(ch)) {
+				pendingSpace = emitted;
+			} else {
+				if (pendingSpace) {
+					normalized.append(' ');
+					pendingSpace = false;
+				}
+				normalized.append(ch);
+				emitted = true;
+			}
+		}
+		return normalized.toString();
+	}
+
+	private static boolean isRegexWhitespace(char ch) {
+		return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\u000B' || ch == '\f' || ch == '\r';
 	}
 
 	private SnapshotRevision currentEstimatorRevision() {
