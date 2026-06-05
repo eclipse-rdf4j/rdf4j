@@ -450,6 +450,8 @@ class CascadesCostModelTest {
 				"Generic physical JoinIterator costing must use child winners, not re-estimate nested joins");
 		assertEquals(150.0d, cost.rows(), 0.0d,
 				"Disconnected generic physical joins must use concrete child winner row counts");
+		assertEquals(185.0d, cost.workRows(), 0.0d,
+				"Physical join estimates already include child work and must not count child winners twice");
 	}
 
 	@Test

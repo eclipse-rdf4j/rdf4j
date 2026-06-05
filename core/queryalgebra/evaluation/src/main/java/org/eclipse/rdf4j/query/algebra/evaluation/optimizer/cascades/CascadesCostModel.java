@@ -337,16 +337,27 @@ public interface CascadesCostModel {
 						vector.rows() * Math.log(Math.max(2.0d, vector.rows()))), "enforcer-work");
 			}
 			CostVector operatorCost = vector.toCostVector();
-			if (expression.physical()
-					&& tupleExpr instanceof UnaryTupleOperator
-					&& inputWinners != null
-					&& inputWinners.size() == 1) {
-				operatorCost = physicalUnaryOperatorCost(inputCost, operatorCost);
+			if (physicalEstimateIncludesInputWork(expression, tupleExpr, inputWinners)) {
+				operatorCost = physicalLocalOperatorCost(inputCost, operatorCost);
 			}
 			return applyPolicy(composeOperatorCost(inputCost, operatorCost), goal);
 		}
 
-		private CostVector physicalUnaryOperatorCost(CostVector inputCost, CostVector cumulativeCost) {
+		private boolean physicalEstimateIncludesInputWork(MemoExpr expression, TupleExpr tupleExpr,
+				List<Winner> inputWinners) {
+			if (expression == null || !expression.physical() || inputWinners == null) {
+				return false;
+			}
+			if (tupleExpr instanceof UnaryTupleOperator) {
+				return inputWinners.size() == 1;
+			}
+			if (tupleExpr instanceof Join || tupleExpr instanceof LeftJoin) {
+				return inputWinners.size() == 2;
+			}
+			return false;
+		}
+
+		private CostVector physicalLocalOperatorCost(CostVector inputCost, CostVector cumulativeCost) {
 			if (cumulativeCost == null) {
 				return CostVector.ZERO;
 			}
