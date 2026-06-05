@@ -1652,7 +1652,12 @@ public interface CascadesCostModel {
 				return base;
 			}
 			EstimateVector vector = base.vector().applyFeedback(feedback.get(), FEEDBACK_CONFIDENCE_THRESHOLD);
-			return StatisticsEstimate.fromVector(vector, vector.source());
+			BagEstimate bag = base.bag()
+					.withRows(vector.rows(), vector.source())
+					.withWorkRows(vector.workRows(), vector.source())
+					.withMetrics(vector.metrics());
+			return StatisticsEstimate.fromVector(vector, vector.source())
+					.withBag(bag);
 		}
 
 		private double estimateJoinRows(StatisticsEstimate left, StatisticsEstimate right, Set<String> sharedVars) {

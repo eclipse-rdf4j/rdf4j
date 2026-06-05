@@ -140,6 +140,29 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void feedbackCorrectionPreservesJoinedSketchProfile() {
+		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
+		CascadesCostModel model = model(provider);
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "test-feedback");
+
+		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
+		PhysicalProperties delivered = model.deliveredProperties(logicalJoin, OptimizationGoal.root(), List.of());
+		VariableEstimate joinedEstimate = delivered.bindingProfile().variables().get("o");
+
+		assertEquals(12.0d, cost.rows(), 0.0d, "Trusted feedback should correct the join row estimate");
+		assertNotNull(joinedEstimate,
+				"Feedback-corrected estimates must keep the base joined bag variables for later costing");
+		DistributionSketch joinedSketch = joinedEstimate.sketch();
+		assertNotNull(joinedSketch,
+				"Feedback-corrected estimates must keep the base joined bag evidence for later costing");
+		assertNotSame(provider.leftSketch, joinedSketch,
+				"The delivered joined sketch must not be stale left input evidence");
+		assertNotSame(provider.rightSketch, joinedSketch,
+				"The delivered joined sketch must not be stale right input evidence");
+	}
+
+	@Test
 	void joinLogicalCardinalityDoesNotTreatLeftOutputsAsExternalBindings() {
 		TrackingProvider provider = new TrackingProvider(false);
 		CascadesCostModel model = model(provider);
@@ -814,6 +837,31 @@ class CascadesCostModelTest {
 		@Override
 		public OptionalDouble innerProduct(DistributionSketch other) {
 			return OptionalDouble.of(innerProduct);
+		}
+	}
+
+	private static final class SketchedFeedbackProvider implements RdfStatisticsProvider {
+
+		private final DistributionSketch leftSketch = new TestSketch(40.0d, 17.0d);
+		private final DistributionSketch rightSketch = new TestSketch(30.0d, 17.0d);
+
+		@Override
+		public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
+			double rows = pattern.getPredicateVar().getName().equals("p1") ? 100.0d : 80.0d;
+			DistributionSketch sketch = pattern.getPredicateVar().getName().equals("p1") ? leftSketch : rightSketch;
+			BagEstimate bag = BagEstimate.exact(rows, "test-sketched-statement")
+					.withVariable("o", new VariableEstimate(sketch.distinctRows(), rows, 0.0d, sketch));
+			return Optional.of(StatisticsEstimate.fromBag(bag, "test-sketched-statement"));
+		}
+
+		@Override
+		public Optional<FeedbackCorrection> feedbackCorrection(TupleExpr tupleExpr,
+				StatisticsEstimate baseEstimate) {
+			if (tupleExpr instanceof Join) {
+				return Optional.of(new FeedbackCorrection(12.0d, 12.0d, 0.95d, 2.0d, 2.0d,
+						"test-feedback"));
+			}
+			return Optional.empty();
 		}
 	}
 
