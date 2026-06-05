@@ -107,6 +107,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -6304,6 +6305,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				estimates.put(entry.getKey(), new VariableEstimate(distinct, outputRows, 0.0d, sketch));
 			}
 			return estimates;
+		}
+
+		EvidenceProfile evidenceProfile() {
+			return EvidenceProfile.of(outputRows, outputRows, 0.0d, 1.0d, "tuple-plan-estimate",
+					variableEstimates(), Map.of(), Map.of(), Map.of());
 		}
 
 		boolean hasSketchEvidence(String variableName) {

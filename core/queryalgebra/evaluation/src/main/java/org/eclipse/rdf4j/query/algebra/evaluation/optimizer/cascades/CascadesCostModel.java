@@ -1260,8 +1260,17 @@ public interface CascadesCostModel {
 				mergedMetrics.putAll(metrics);
 			}
 			mergedMetrics.putAll(profile.overlapEvidence());
+			if (!profile.evidenceProfile().isEmpty()) {
+				BagEstimate profiled = profile.toBagEstimate(base.rows(), base.workRows(), base.memoryRows(),
+						base.confidence(), source, mergedMetrics);
+				variables.putAll(profiled.variables());
+				return new BagEstimate(profiled.rows(), profiled.workRows(), profiled.memoryRows(),
+						profiled.confidence(), profiled.source(), variables, profiled.finiteRelations(),
+						profiled.sketchRelations(), profiled.metrics());
+			}
 			return new BagEstimate(base.rows(), base.workRows(), base.memoryRows(), base.confidence(), source,
-					variables, relations, sketchRelations, mergedMetrics);
+					variables,
+					relations, sketchRelations, mergedMetrics);
 		}
 
 		private boolean weakZeroContradictsPositiveJoin(StatisticsEstimate provider, StatisticsEstimate formula) {

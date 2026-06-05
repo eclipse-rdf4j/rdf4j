@@ -2246,6 +2246,36 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void cyclicJoinSubtreeEstimateExposesEvidenceProfileForBridgePlanning() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI follows = VF.createIRI("urn:follows");
+		for (int i = 0; i < 12; i++) {
+			Resource left = VF.createIRI("urn:user:" + i);
+			Resource right = VF.createIRI("urn:user:" + ((i + 1) % 12));
+			store.add(VF.createStatement(left, follows, right));
+			store.add(VF.createStatement(right, follows, left));
+		}
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern aFollowsB = pattern("a", follows, "b");
+		StatementPattern bFollowsA = pattern("b", follows, "a");
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(
+				new Join(aFollowsB, bFollowsA), Set.of());
+		Method evidenceProfile = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredMethod("evidenceProfile");
+		evidenceProfile.setAccessible(true);
+		Object profile = evidenceProfile.invoke(estimate);
+		Method rows = profile.getClass()
+				.getMethod("rows");
+		Method sketches = profile.getClass()
+				.getMethod("sketches");
+
+		assertEquals(estimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
+		assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
+				"Cyclic subtree estimates must expose tuple/set sketches so bridge planning can avoid scalar-only costs");
+	}
+
+	@Test
 	void cardinalityFilterRetainsSelectivityAboveJoinSubtree() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI hasObservation = VF.createIRI("urn:hasObservation");

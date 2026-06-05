@@ -62,6 +62,11 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 		return Optional.ofNullable(sketchRelations.get(VariableSetKey.of(names)));
 	}
 
+	public EvidenceProfile evidenceProfile() {
+		return EvidenceProfile.of(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations, metrics);
+	}
+
 	public BagEstimate withVariable(String name, VariableEstimate estimate) {
 		Map<String, VariableEstimate> copy = new LinkedHashMap<>(variables);
 		copy.put(name, estimate);
@@ -111,11 +116,10 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 
 	public BagEstimate withRowsPreservingEvidence(double rows, double workRows, double confidence, String source,
 			Map<String, Double> metrics, boolean preserveFiniteRelations) {
-		Map<String, VariableEstimate> normalizedVariables = normalizeVariables(rows);
-		Map<VariableSetKey, FiniteRelationEstimate> normalizedRelations = preserveFiniteRelations
-				&& Math.abs(this.rows - finiteNonNegative(rows)) < ROW_EPSILON ? finiteRelations : Map.of();
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, normalizedVariables,
-				normalizedRelations, sketchRelations, metrics);
+		RebaseMode mode = preserveFiniteRelations ? RebaseMode.PRESERVE_EXACT_RELATIONS
+				: RebaseMode.DROP_EXACT_RELATIONS;
+		return evidenceProfile().rebaseRows(rows, workRows, confidence, source, metrics, mode)
+				.toBagEstimate();
 	}
 
 	public BagEstimate withWorkRows(double workRows, String source) {

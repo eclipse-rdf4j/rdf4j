@@ -26,8 +26,11 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 
 /**
  * Stateful physical-planning prefix. This is the transition-state container used while the LMDB planner migrates away
@@ -165,11 +168,20 @@ final class PlanState {
 		if (tupleVariables.isEmpty()) {
 			return nextEstimate;
 		}
+		BagEstimate tupleBag = tupleEstimate.evidenceProfile()
+				.rebaseRows(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.confidence(),
+						nextEstimate.source(), nextEstimate.metrics(), RebaseMode.PRESERVE_EXACT_RELATIONS)
+				.toBagEstimate();
 		Map<String, VariableEstimate> variables = new LinkedHashMap<>(nextEstimate.variables());
-		variables.putAll(tupleVariables);
+		variables.putAll(tupleBag.variables());
+		Map<VariableSetKey, FiniteRelationEstimate> finiteRelations = new LinkedHashMap<>(
+				nextEstimate.finiteRelations());
+		finiteRelations.putAll(tupleBag.finiteRelations());
+		Map<VariableSetKey, DistributionSketch> sketchRelations = new LinkedHashMap<>(nextEstimate.sketchRelations());
+		sketchRelations.putAll(tupleBag.sketchRelations());
 		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
-				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
-				nextEstimate.sketchRelations(), nextEstimate.metrics());
+				nextEstimate.confidence(), nextEstimate.source(), variables, finiteRelations, sketchRelations,
+				nextEstimate.metrics());
 	}
 
 	private static BagEstimate withBoundVariableRows(BagEstimate nextEstimate, Set<String> normalizedBoundVars,

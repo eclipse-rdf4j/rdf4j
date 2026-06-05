@@ -79,12 +79,24 @@ public final class ProductDistributionSketch implements DistributionSketch {
 		if (other == null) {
 			return OptionalDouble.empty();
 		}
-		OptionalDouble delegated = other instanceof ProductDistributionSketch product ? productInnerProduct(product)
-				: other.innerProduct(this);
+		OptionalDouble delegated = highQualityInnerProduct(other);
 		if (usable(delegated)) {
 			return delegated;
 		}
 		return scalarInnerProduct(other);
+	}
+
+	@Override
+	public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+		if (other == null) {
+			return OptionalDouble.empty();
+		}
+		return other instanceof ProductDistributionSketch product ? delegatedProductInnerProduct(product)
+				: other.highQualityInnerProduct(this);
+	}
+
+	OptionalDouble delegatedInnerProduct(DistributionSketch other) {
+		return highQualityInnerProduct(other);
 	}
 
 	private static void addFactor(List<DistributionSketch> factors, DistributionSketch sketch) {
@@ -96,6 +108,14 @@ public final class ProductDistributionSketch implements DistributionSketch {
 	}
 
 	private OptionalDouble productInnerProduct(ProductDistributionSketch other) {
+		OptionalDouble delegated = delegatedProductInnerProduct(other);
+		if (usable(delegated)) {
+			return delegated;
+		}
+		return scalarInnerProduct(other);
+	}
+
+	private OptionalDouble delegatedProductInnerProduct(ProductDistributionSketch other) {
 		for (DistributionSketch factor : factors) {
 			OptionalDouble rows = factor.innerProduct(other);
 			if (usable(rows)) {
@@ -108,7 +128,7 @@ public final class ProductDistributionSketch implements DistributionSketch {
 				return rows;
 			}
 		}
-		return scalarInnerProduct(other);
+		return OptionalDouble.empty();
 	}
 
 	private OptionalDouble scalarInnerProduct(DistributionSketch other) {

@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -164,6 +165,21 @@ class CascadesCostModelTest {
 				"Feedback-corrected bags must normalize variable bound rows to corrected output rows");
 		assertEquals(12.0d, joinedEstimate.distinctRows(), 0.0d,
 				"Feedback-corrected bags must clamp variable distinct rows to corrected output rows");
+	}
+
+	@Test
+	void feedbackCorrectionRebasesDeliveredEvidenceProfileRows() throws Exception {
+		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
+		CascadesCostModel model = model(provider);
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "test-feedback-profile");
+
+		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
+		PhysicalProperties delivered = model.deliveredProperties(logicalJoin, OptimizationGoal.root(), List.of());
+
+		assertEquals(12.0d, cost.rows(), 0.0d);
+		assertEquals(12.0d, evidenceProfileRows(delivered.bindingProfile()), 0.0d,
+				"Delivered physical evidence must carry the feedback-corrected cardinality as profile state");
 	}
 
 	@Test
@@ -723,6 +739,14 @@ class CascadesCostModelTest {
 		BagEstimate bag = BagEstimate.exact(1.0d, "test-finite-anchor")
 				.withFiniteRelation(relation);
 		return BindingProfile.fromBag(null, bag, Map.of());
+	}
+
+	private static double evidenceProfileRows(BindingProfile profile) throws Exception {
+		Method evidenceProfile = BindingProfile.class.getMethod("evidenceProfile");
+		Object evidence = evidenceProfile.invoke(profile);
+		Method rows = evidence.getClass()
+				.getMethod("rows");
+		return ((Number) rows.invoke(evidence)).doubleValue();
 	}
 
 	private static Value iri(String value) {

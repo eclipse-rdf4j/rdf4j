@@ -23,7 +23,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 
@@ -43,11 +45,12 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<VariableSetKey, Double> jointDistinctRows,
 		Set<String> sketchVars,
 		Map<String, Double> overlapEvidence,
-		String endpointMode) {
+		String endpointMode,
+		EvidenceProfile evidenceProfile) {
 
 	public static final String ANY_ENDPOINT_MODE = "*";
 	public static final BindingProfile ANY = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(),
-			Map.of(), ANY_ENDPOINT_MODE);
+			Map.of(), ANY_ENDPOINT_MODE, EvidenceProfile.empty());
 
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
@@ -60,6 +63,20 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		sketchVars = immutableSketchVars(sketchVars, variables);
 		overlapEvidence = immutableOverlapEvidence(overlapEvidence);
 		endpointMode = endpointMode == null || endpointMode.isBlank() ? ANY_ENDPOINT_MODE : endpointMode;
+		evidenceProfile = evidenceProfile == null ? EvidenceProfile.of(0.0d, 0.0d, 0.0d, 0.0d,
+				"binding-profile", variables, finiteRelations, sketchRelations, Map.of()) : evidenceProfile;
+	}
+
+	public BindingProfile(Map<String, VariableEstimate> variables,
+			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+			Map<VariableSetKey, DistributionSketch> sketchRelations,
+			Map<VariableSetKey, Double> jointDistinctRows,
+			Set<String> sketchVars,
+			Map<String, Double> overlapEvidence,
+			String endpointMode) {
+		this(variables, finiteRelations, sketchRelations, jointDistinctRows, sketchVars, overlapEvidence, endpointMode,
+				EvidenceProfile.of(0.0d, 0.0d, 0.0d, 0.0d, "binding-profile", variables, finiteRelations,
+						sketchRelations, Map.of()));
 	}
 
 	public BindingProfile(Map<String, VariableEstimate> variables,
@@ -85,7 +102,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<VariableSetKey, Double> joint = jointDistinctRows(bag.finiteRelations());
 		Map<String, Double> overlap = overlapEvidence(bag.metrics(), extraMetrics);
 		return new BindingProfile(bag.variables(), bag.finiteRelations(), bag.sketchRelations(), joint,
-				sketchVars(bag.variables()), overlap, endpointMode(tupleExpr));
+				sketchVars(bag.variables()), overlap, endpointMode(tupleExpr), bag.evidenceProfile());
 	}
 
 	public static BindingProfile endpointOnly(TupleExpr tupleExpr) {
@@ -101,6 +118,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				&& jointDistinctRows.isEmpty()
 				&& sketchVars.isEmpty()
 				&& overlapEvidence.isEmpty()
+				&& evidenceProfile.isEmpty()
 				&& ANY_ENDPOINT_MODE.equals(endpointMode);
 	}
 
@@ -137,8 +155,9 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<String, Double> mergedOverlap = new LinkedHashMap<>(overlapEvidence);
 		other.overlapEvidence.forEach(mergedOverlap::putIfAbsent);
 		String mergedEndpoint = ANY_ENDPOINT_MODE.equals(endpointMode) ? other.endpointMode : endpointMode;
+		EvidenceProfile mergedEvidence = evidenceProfile.isEmpty() ? other.evidenceProfile : evidenceProfile;
 		return new BindingProfile(mergedVariables, mergedFinite, mergedSketchRelations, mergedJoint, mergedSketchVars,
-				mergedOverlap, mergedEndpoint);
+				mergedOverlap, mergedEndpoint, mergedEvidence);
 	}
 
 	public BagEstimate toBagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
@@ -148,6 +167,11 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 			mergedMetrics.putAll(metrics);
 		}
 		mergedMetrics.putAll(overlapEvidence);
+		if (!evidenceProfile.isEmpty()) {
+			return evidenceProfile.rebaseRows(rows, workRows, confidence, source, mergedMetrics,
+					RebaseMode.PRESERVE_EXACT_RELATIONS)
+					.toBagEstimate();
+		}
 		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
 				sketchRelations,
 				mergedMetrics);

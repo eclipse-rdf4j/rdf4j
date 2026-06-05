@@ -15,9 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
 
@@ -195,6 +198,76 @@ class BagEstimateMathTest {
 		assertEquals(7.0d, joined.rows(), 0.0d,
 				"Multi-variable sketch evidence should override independent product-distinct fallback");
 		assertNotNull(carried, "The joined multi-variable sketch relation should cross planner bridges");
+	}
+
+	@Test
+	void rebasedComposedSketchUsesProfileRowsInsteadOfRawSketchRows() {
+		DistributionSketch leftSketch = new RowMassSketch(10.0d, 100.0d, OptionalDouble.of(17.0d),
+				OptionalDouble.empty());
+		DistributionSketch rightSketch = new RowMassSketch(10.0d, 80.0d, OptionalDouble.of(17.0d),
+				OptionalDouble.empty());
+		DistributionSketch thirdSketch = new RowMassSketch(6.0d, 6.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		BagEstimate left = sketched("left", 100.0d, "code", 10.0d, leftSketch);
+		BagEstimate right = sketched("right", 80.0d, "code", 10.0d, rightSketch);
+		BagEstimate third = sketched("third", 6.0d, "code", 6.0d, thirdSketch);
+
+		BagEstimate firstJoin = EstimateMath.innerJoin(left, right, Set.of("code"));
+		BagEstimate rebased = firstJoin.withRowsPreservingEvidence(12.0d, 12.0d, 0.95d, "feedback", Map.of(),
+				false);
+		BagEstimate chained = EstimateMath.innerJoin(rebased, third, Set.of("code"));
+
+		assertEquals(7.2d, chained.rows(), 0.000001d,
+				"Rebased evidence must use the current profile rows, not the stale product sketch totalRows");
+	}
+
+	@Test
+	void innerJoinDoesNotCarryUnconditionedSideRelationSketches() {
+		DistributionSketch leftRelationSketch = new RowMassSketch(30.0d, 100.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		DistributionSketch rightRelationSketch = new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"), leftRelationSketch);
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"), rightRelationSketch);
+
+		BagEstimate joined = EstimateMath.innerJoin(left, right, Set.of("b"));
+
+		assertTrue(joined.sketchRelation(Set.of("a", "b")).isEmpty(),
+				"The joined bag must not expose the unconditioned left relation sketch as current evidence");
+		assertTrue(joined.sketchRelation(Set.of("b", "c")).isEmpty(),
+				"The joined bag must not expose the unconditioned right relation sketch as current evidence");
+	}
+
+	@Test
+	void evidenceProfileApiExposesQualityTaggedComposition() throws Exception {
+		Class<?> qualityClass = Class.forName(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality");
+		Class<?> sketchEvidenceClass = Class.forName(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence");
+		Method evidenceProfile = BagEstimate.class.getMethod("evidenceProfile");
+		Class<?> profileClass = evidenceProfile.getReturnType();
+		Class<?> rebaseModeClass = Class.forName(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode");
+
+		assertNotNull(Enum.valueOf(qualityClass.asSubclass(Enum.class), "TUPLE_SKETCH"));
+		assertNotNull(Enum.valueOf(qualityClass.asSubclass(Enum.class), "SCALAR_FALLBACK"));
+		assertNotNull(sketchEvidenceClass.getMethod("estimateInnerProduct", sketchEvidenceClass));
+		assertNotNull(profileClass.getMethod("rows"));
+		assertNotNull(profileClass.getMethod("composeInnerJoin", profileClass, Set.class));
+		assertNotNull(profileClass.getMethod("rebaseRows", double.class, double.class, double.class, String.class,
+				Map.class, rebaseModeClass));
+		assertNotNull(profileClass.getMethod("project", Set.class));
+		assertNotNull(profileClass.getMethod("filter", double.class, String.class));
+		assertNotNull(profileClass.getMethod("union", profileClass));
+		assertNotNull(profileClass.getMethod("leftJoin", profileClass, Set.class));
+		assertNotNull(profileClass.getMethod("difference", profileClass, Set.class));
+		assertNotNull(evidenceProfile.invoke(BagEstimate.heuristic(1.0d, "test")));
 	}
 
 	@Test
@@ -419,6 +492,25 @@ class BagEstimateMathTest {
 
 		private TestSketch(double distinctRows, double innerProduct, OptionalDouble overlapDistinctRows) {
 			this(distinctRows, OptionalDouble.of(innerProduct), overlapDistinctRows);
+		}
+
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return innerProduct;
+		}
+
+		@Override
+		public OptionalDouble overlapDistinctRows(DistributionSketch other) {
+			return overlapDistinctRows;
+		}
+	}
+
+	private record RowMassSketch(double distinctRows, double rowMass, OptionalDouble innerProduct,
+			OptionalDouble overlapDistinctRows) implements DistributionSketch {
+
+		@Override
+		public OptionalDouble totalRows() {
+			return OptionalDouble.of(rowMass);
 		}
 
 		@Override

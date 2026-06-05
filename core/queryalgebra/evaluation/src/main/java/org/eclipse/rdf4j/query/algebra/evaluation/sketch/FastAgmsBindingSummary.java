@@ -152,6 +152,20 @@ final class FastAgmsBindingSummary implements DistributionSketch {
 	}
 
 	@Override
+	public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+		if (other instanceof FastAgmsBindingSummary summary) {
+			if (isTuple() != summary.isTuple()) {
+				return OptionalDouble.empty();
+			}
+			return OptionalDouble.of(innerProduct(summary));
+		}
+		if (other instanceof ProductDistributionSketch product) {
+			return productInnerProduct(product);
+		}
+		return OptionalDouble.empty();
+	}
+
+	@Override
 	public OptionalDouble overlapDistinctRows(DistributionSketch other) {
 		if (other instanceof FastAgmsBindingSummary summary) {
 			FrequencySummaryOps.IntersectionStats stats = intersectProductStats(summary);

@@ -247,6 +247,55 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void fastAgmsProductScalarFallbackIsQualityTagged() throws Exception {
+		FastAgmsBindingSummary leftSketch = fastAgmsSummary(entry(1L, 2.0d), entry(2L, 1.0d));
+		FastAgmsBindingSummary rightSketch = fastAgmsSummary(entry(1L, 3.0d), entry(3L, 1.0d));
+		FastAgmsBindingSummary thirdSketch = fastAgmsSummary(entry(1L, 5.0d));
+		BagEstimate left = sketchedBag("left", "code", leftSketch);
+		BagEstimate right = sketchedBag("right", "code", rightSketch);
+		BagEstimate third = sketchedBag("third", "code", thirdSketch);
+		BagEstimate firstJoin = EstimateMath.innerJoin(left, right, Set.of("code"));
+
+		Object joinedEvidence = sketchEvidence(firstJoin, Set.of("code")).orElseThrow();
+		Object thirdEvidence = sketchEvidence(third, Set.of("code")).orElseThrow();
+		Method estimateInnerProduct = joinedEvidence.getClass()
+				.getMethod("estimateInnerProduct", joinedEvidence.getClass());
+		Object scalar = estimateInnerProduct.invoke(joinedEvidence, thirdEvidence);
+		Object quality = scalar.getClass()
+				.getMethod("quality")
+				.invoke(scalar);
+		Object scalarFallback = Enum.valueOf(Class
+				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality")
+				.asSubclass(Enum.class), "SCALAR_FALLBACK");
+
+		assertEquals(scalarFallback, quality,
+				"Default FAST_AGMS product fallback must be usable but explicitly lower confidence");
+	}
+
+	@Test
+	void mixedFastAgmsScalarFallbackIsQualityTagged() throws Exception {
+		FastAgmsBindingSummary tupleSketch = tupleSummary(entry(1L, 2.0d), entry(2L, 1.0d));
+		FastAgmsBindingSummary fastSketch = fastAgmsSummary(entry(1L, 3.0d), entry(3L, 1.0d));
+		BagEstimate tupleBag = sketchedBag("tuple", "code", tupleSketch);
+		BagEstimate fastBag = sketchedBag("fast-agms", "code", fastSketch);
+
+		Object tupleEvidence = sketchEvidence(tupleBag, Set.of("code")).orElseThrow();
+		Object fastEvidence = sketchEvidence(fastBag, Set.of("code")).orElseThrow();
+		Method estimateInnerProduct = tupleEvidence.getClass()
+				.getMethod("estimateInnerProduct", tupleEvidence.getClass());
+		Object scalar = estimateInnerProduct.invoke(tupleEvidence, fastEvidence);
+		Object quality = scalar.getClass()
+				.getMethod("quality")
+				.invoke(scalar);
+		Object scalarFallback = Enum.valueOf(Class
+				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality")
+				.asSubclass(Enum.class), "SCALAR_FALLBACK");
+
+		assertEquals(scalarFallback, quality,
+				"Mixed tuple/FAST_AGMS fallback must be usable but not reported as high-quality sketch evidence");
+	}
+
+	@Test
 	void planStateAdvanceNormalizesRuntimeVariableSurfaces() {
 		StatementPattern factor = pattern("seed", PREDICATE, "value");
 		PlanState prefix = PlanState.initial(BagEstimate.exact(2.0d, "outer")
@@ -361,6 +410,44 @@ class PlanStateTransitionAdapterTest {
 					.orElse(null);
 			assertTrue(hasSketchEvidence != null, "PlanState must expose per-variable sketch evidence");
 			assertEquals(Boolean.TRUE, hasSketchEvidence.invoke(state, "org"));
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void tuplePlanEstimateExposesEvidenceProfileForBridgeTransitions() throws Exception {
+		IRI memberOf = VF.createIRI("urn:memberOf");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 16; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:person:" + i), memberOf,
+					VF.createIRI("urn:org:" + (i % 4))));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			StatementPattern factor = pattern("person", memberOf, "org");
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate = estimator.planEstimateForJoinOrdering(factor,
+					Set.of());
+			Method evidenceProfile = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredMethod(
+					"evidenceProfile");
+			evidenceProfile.setAccessible(true);
+			Object profile = evidenceProfile.invoke(tupleEstimate);
+			Method rows = profile.getClass()
+					.getMethod("rows");
+			Method sketches = profile.getClass()
+					.getMethod("sketches");
+
+			assertEquals(tupleEstimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
+			assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
+					"TuplePlanEstimate must expose tuple/set sketch evidence, not only per-variable surfaces");
 		} finally {
 			estimator.close();
 		}
@@ -490,6 +577,22 @@ class PlanStateTransitionAdapterTest {
 			summary.update((long) entry[0], entry[1]);
 		}
 		return summary;
+	}
+
+	private static FastAgmsBindingSummary tupleSummary(double[]... entries) {
+		FastAgmsBindingSummary summary = FastAgmsBindingSummary.tuple(64);
+		for (double[] entry : entries) {
+			summary.update((long) entry[0], entry[1]);
+		}
+		return summary;
+	}
+
+	private static Optional<?> sketchEvidence(BagEstimate bag, Set<String> variables) throws Exception {
+		Method evidenceProfile = BagEstimate.class.getMethod("evidenceProfile");
+		Object profile = evidenceProfile.invoke(bag);
+		Method sketchEvidence = profile.getClass()
+				.getMethod("sketchEvidence", Set.class);
+		return (Optional<?>) sketchEvidence.invoke(profile, variables);
 	}
 
 	private static double[] entry(long key, double weight) {

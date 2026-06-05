@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -1683,10 +1684,10 @@ final class SketchJoinOrderPlanner {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, filter.getConfidenceScore());
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT, (double) filter.getEvidenceCount());
 		}
-		BagEstimate estimate = new BagEstimate(nextEstimate.outputRows(), filterWorkRows,
-				prefixState.estimate().memoryRows(), prefixState.estimate().confidence(), "filter-transition",
-				prefixState.estimate().variables(), prefixState.estimate().finiteRelations(),
-				prefixState.estimate().sketchRelations(), doubleMetrics);
+		BagEstimate estimate = nextEstimate.evidenceProfile()
+				.rebaseRows(nextEstimate.outputRows(), filterWorkRows, prefixState.estimate().confidence(),
+						"filter-transition", doubleMetrics, RebaseMode.DROP_EXACT_RELATIONS)
+				.toBagEstimate();
 		return prefixState.withEstimateAndCost(estimate, costVector, stringMetrics, doubleMetrics);
 	}
 
