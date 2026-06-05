@@ -160,6 +160,28 @@ class CascadesCostModelTest {
 				"The delivered joined sketch must not be stale left input evidence");
 		assertNotSame(provider.rightSketch, joinedSketch,
 				"The delivered joined sketch must not be stale right input evidence");
+		assertEquals(12.0d, joinedEstimate.boundRows(), 0.0d,
+				"Feedback-corrected bags must normalize variable bound rows to corrected output rows");
+		assertEquals(12.0d, joinedEstimate.distinctRows(), 0.0d,
+				"Feedback-corrected bags must clamp variable distinct rows to corrected output rows");
+	}
+
+	@Test
+	void providerFilterKeepsSelectedBagSketchProfile() {
+		SelectedFilterBagProvider provider = new SelectedFilterBagProvider();
+		CascadesCostModel model = model(provider);
+		Filter filter = new Filter(pattern("s", "p1", "o"), new Bound(new Var("o")));
+		MemoExpr logicalFilter = MemoExpr.logical(10, 0, filter, List.of(), "test-selected-filter");
+
+		CostVector cost = model.localCost(logicalFilter, OptimizationGoal.root(), List.of());
+		PhysicalProperties delivered = model.deliveredProperties(logicalFilter, OptimizationGoal.root(), List.of());
+		VariableEstimate selectedEstimate = delivered.bindingProfile().variables().get("o");
+
+		assertEquals(2.0d, cost.rows(), 0.0d);
+		assertNotNull(selectedEstimate, "Provider-selected filter bags must keep variable estimates");
+		assertSame(provider.selectedSketch, selectedEstimate.sketch(),
+				"Provider-selected filter bag sketches must survive Cascades row/work normalization");
+		assertEquals(2.0d, selectedEstimate.boundRows(), 0.0d);
 	}
 
 	@Test
@@ -862,6 +884,27 @@ class CascadesCostModelTest {
 						"test-feedback"));
 			}
 			return Optional.empty();
+		}
+	}
+
+	private static final class SelectedFilterBagProvider implements RdfStatisticsProvider {
+
+		private final DistributionSketch inputSketch = new TestSketch(100.0d, 50.0d);
+		private final DistributionSketch selectedSketch = new TestSketch(2.0d, 2.0d);
+
+		@Override
+		public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
+			BagEstimate bag = BagEstimate.exact(100.0d, "test-filter-input")
+					.withVariable("o", new VariableEstimate(inputSketch.distinctRows(), 100.0d, 0.0d, inputSketch));
+			return Optional.of(StatisticsEstimate.fromBag(bag, "test-filter-input"));
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition,
+				StatisticsEstimate inputEstimate, Set<String> boundVars) {
+			BagEstimate bag = BagEstimate.exact(2.0d, "test-selected-filter")
+					.withVariable("o", new VariableEstimate(2.0d, 2.0d, 0.0d, selectedSketch));
+			return Optional.of(StatisticsEstimate.fromBag(bag, "test-selected-filter"));
 		}
 	}
 

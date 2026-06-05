@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
@@ -1252,13 +1253,15 @@ public interface CascadesCostModel {
 			variables.putAll(profile.variables());
 			Map<VariableSetKey, FiniteRelationEstimate> relations = new LinkedHashMap<>(base.finiteRelations());
 			relations.putAll(profile.finiteRelations());
+			Map<VariableSetKey, DistributionSketch> sketchRelations = new LinkedHashMap<>(base.sketchRelations());
+			sketchRelations.putAll(profile.sketchRelations());
 			Map<String, Double> mergedMetrics = new LinkedHashMap<>(base.metrics());
 			if (metrics != null) {
 				mergedMetrics.putAll(metrics);
 			}
 			mergedMetrics.putAll(profile.overlapEvidence());
 			return new BagEstimate(base.rows(), base.workRows(), base.memoryRows(), base.confidence(), source,
-					variables, relations, mergedMetrics);
+					variables, relations, sketchRelations, mergedMetrics);
 		}
 
 		private boolean weakZeroContradictsPositiveJoin(StatisticsEstimate provider, StatisticsEstimate formula) {
@@ -1269,18 +1272,16 @@ public interface CascadesCostModel {
 
 		private BagEstimate adjustJoinBagRows(BagEstimate formulaBag, StatisticsEstimate selectedEstimate) {
 			double selectedRows = selectedEstimate.rows();
-			double formulaRows = formulaBag.rows();
-			double scale = formulaRows > 0.0d ? selectedRows / formulaRows : 0.0d;
-			Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-			for (Map.Entry<String, VariableEstimate> entry : formulaBag.variables().entrySet()) {
-				variables.put(entry.getKey(), entry.getValue().scale(scale));
+			BagEstimate selectedBag = selectedEstimate.bag();
+			if (selectedBag.hasBindingEvidence()) {
+				return selectedBag.withRowsPreservingEvidence(selectedRows, selectedEstimate.workRows(),
+						selectedEstimate.qErrorInterval().confidence(), selectedEstimate.method(),
+						selectedEstimate.metrics(), true);
 			}
-			Map<VariableSetKey, FiniteRelationEstimate> relations = Math.abs(scale - 1.0d) < 0.000001d
-					? formulaBag.finiteRelations()
-					: Map.of();
-			return new BagEstimate(selectedRows, selectedEstimate.workRows(), formulaBag.memoryRows(),
-					selectedEstimate.qErrorInterval().confidence(), selectedEstimate.method(), variables,
-					relations, selectedEstimate.metrics());
+			return formulaBag.withRowsPreservingEvidence(selectedRows, selectedEstimate.workRows(),
+					selectedEstimate.qErrorInterval().confidence(), selectedEstimate.method(),
+					selectedEstimate.metrics(),
+					false);
 		}
 
 		private StatisticsEstimate estimateLeftJoin(LeftJoin leftJoin, Set<String> boundVars) {
@@ -1584,6 +1585,12 @@ public interface CascadesCostModel {
 			if (input == null || selected == null || input.rows() <= 0.0d) {
 				return selected;
 			}
+			BagEstimate selectedBag = selected.bag();
+			if (selectedBag.hasBindingEvidence()) {
+				BagEstimate bag = selectedBag.withRowsPreservingEvidence(selected.rows(), selected.workRows(),
+						selected.qErrorInterval().confidence(), selected.method(), selected.metrics(), true);
+				return selected.withBag(bag);
+			}
 			double passRatio = selected.rows() / input.rows();
 			BagEstimate bag = EstimateMath.filter(input.bag(), passRatio, source)
 					.withWorkRows(selected.workRows(), source + "-work")
@@ -1597,16 +1604,8 @@ public interface CascadesCostModel {
 			if (Math.abs(bag.rows() - rows) < 0.000001d && Math.abs(bag.workRows() - workRows) < 0.000001d) {
 				return bag;
 			}
-			double scale = bag.rows() > 0.0d ? rows / bag.rows() : 0.0d;
-			Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-			for (Map.Entry<String, VariableEstimate> entry : bag.variables().entrySet()) {
-				variables.put(entry.getKey(), entry.getValue().scale(scale));
-			}
-			Map<VariableSetKey, FiniteRelationEstimate> relations = Math.abs(scale - 1.0d) < 0.000001d
-					? bag.finiteRelations()
-					: Map.of();
-			return new BagEstimate(rows, workRows, bag.memoryRows(), estimate.qErrorInterval().confidence(),
-					estimate.method(), variables, relations, estimate.metrics());
+			return bag.withRowsPreservingEvidence(rows, workRows, estimate.qErrorInterval().confidence(),
+					estimate.method(), estimate.metrics(), true);
 		}
 
 		private StatisticsEstimate fallbackEstimate(TupleExpr tupleExpr, String reason) {
@@ -1653,9 +1652,8 @@ public interface CascadesCostModel {
 			}
 			EstimateVector vector = base.vector().applyFeedback(feedback.get(), FEEDBACK_CONFIDENCE_THRESHOLD);
 			BagEstimate bag = base.bag()
-					.withRows(vector.rows(), vector.source())
-					.withWorkRows(vector.workRows(), vector.source())
-					.withMetrics(vector.metrics());
+					.withRowsPreservingEvidence(vector.rows(), vector.workRows(), vector.confidence(),
+							vector.source(), vector.metrics(), false);
 			return StatisticsEstimate.fromVector(vector, vector.source())
 					.withBag(bag);
 		}

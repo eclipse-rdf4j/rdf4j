@@ -21,6 +21,10 @@ public interface DistributionSketch {
 
 	double distinctRows();
 
+	default OptionalDouble totalRows() {
+		return OptionalDouble.empty();
+	}
+
 	default OptionalDouble innerProduct(DistributionSketch other) {
 		return OptionalDouble.empty();
 	}

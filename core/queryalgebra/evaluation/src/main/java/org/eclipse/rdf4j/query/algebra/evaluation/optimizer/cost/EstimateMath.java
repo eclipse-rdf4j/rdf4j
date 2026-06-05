@@ -38,8 +38,10 @@ public final class EstimateMath {
 		Set<String> joinVars = safeSet(sharedVars);
 		double rows = innerJoinRows(left, right, joinVars);
 		Map<String, VariableEstimate> variables = joinedVariables(left, right, rows, rows, 0.0d, joinVars, false);
+		Map<VariableSetKey, DistributionSketch> sketchRelations = joinedSketchRelations(left, right, joinVars, rows);
 		BagEstimate result = new BagEstimate(rows, left.workRows() + right.workRows() + rows, 0.0d,
-				Math.min(left.confidence(), right.confidence()), "inner-join", variables, Map.of(), Map.of());
+				Math.min(left.confidence(), right.confidence()), "inner-join", variables, Map.of(), sketchRelations,
+				Map.of());
 		return exactJoinedRelation(left, right, joinVars)
 				.map(result::withFiniteRelation)
 				.orElse(result);
@@ -81,8 +83,11 @@ public final class EstimateMath {
 		}
 		Map<VariableSetKey, FiniteRelationEstimate> relations = scaleFiniteRelations(input.finiteRelations(), safeRatio,
 				source);
+		Map<VariableSetKey, DistributionSketch> sketchRelations = Math.abs(safeRatio - 1.0d) < 0.000000001d
+				? input.sketchRelations()
+				: Map.of();
 		return new BagEstimate(rows, input.workRows() + input.rows(), input.memoryRows(), input.confidence(), source,
-				variables, relations, input.metrics());
+				variables, relations, sketchRelations, input.metrics());
 	}
 
 	public static BagEstimate group(BagEstimate input, Set<String> groupVars) {
@@ -142,8 +147,9 @@ public final class EstimateMath {
 			relation.projectTo(vars, "projected-finite-relation")
 					.ifPresent(projected -> relations.put(projected.variableSetKey(), projected));
 		}
+		Map<VariableSetKey, DistributionSketch> sketchRelations = projectedSketchRelations(input, vars);
 		return new BagEstimate(input.rows(), input.workRows(), input.memoryRows(), input.confidence(), "projection",
-				variables, relations, input.metrics());
+				variables, relations, sketchRelations, input.metrics());
 	}
 
 	public static BagEstimate extendConstant(BagEstimate input, String variable) {
@@ -176,7 +182,7 @@ public final class EstimateMath {
 		double n = input.rows();
 		double sortWork = n * (Math.log(Math.max(2.0d, n)) / Math.log(2.0d));
 		return new BagEstimate(input.rows(), input.workRows() + sortWork, n, input.confidence(), "order",
-				input.variables(), input.finiteRelations(), input.metrics());
+				input.variables(), input.finiteRelations(), input.sketchRelations(), input.metrics());
 	}
 
 	private static double innerJoinRows(BagEstimate left, BagEstimate right, Set<String> joinVars) {
@@ -191,6 +197,10 @@ public final class EstimateMath {
 				rows += entry.getValue() * rightFrequencies.get().getOrDefault(entry.getKey(), 0.0d);
 			}
 			return rows;
+		}
+		OptionalDouble relationSketchRows = sketchRelationInnerProduct(left, right, joinVars);
+		if (relationSketchRows.isPresent()) {
+			return clampRows(relationSketchRows.getAsDouble(), 0.0d, multiplyRows(left.rows(), right.rows()));
 		}
 		OptionalDouble sketchRows = singleVariableInnerProduct(left, right, joinVars);
 		if (sketchRows.isPresent()) {
@@ -376,6 +386,16 @@ public final class EstimateMath {
 		return innerProduct(left.variable(variable).sketch(), right.variable(variable).sketch());
 	}
 
+	private static OptionalDouble sketchRelationInnerProduct(BagEstimate left, BagEstimate right,
+			Set<String> joinVars) {
+		if (joinVars.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		DistributionSketch leftSketch = left.sketchRelation(joinVars).orElse(null);
+		DistributionSketch rightSketch = right.sketchRelation(joinVars).orElse(null);
+		return innerProduct(leftSketch, rightSketch);
+	}
+
 	private static OptionalDouble singleVariableOverlapDistinct(BagEstimate left, BagEstimate right,
 			Set<String> joinVars) {
 		if (joinVars.size() != 1) {
@@ -448,7 +468,7 @@ public final class EstimateMath {
 				double distinct = joinVars.contains(name) ? sharedDistinct
 						: Math.min(Math.max(leftVar.distinctRows(), rightVar.distinctRows()), rows);
 				DistributionSketch sketch = joinVars.contains(name)
-						? ProductDistributionSketch.join(leftVar.sketch(), rightVar.sketch(), distinct)
+						? ProductDistributionSketch.join(leftVar.sketch(), rightVar.sketch(), distinct, rows)
 						: null;
 				variables.put(name, new VariableEstimate(distinct, rows, 0.0d, sketch));
 			} else if (inLeft) {
@@ -461,6 +481,37 @@ public final class EstimateMath {
 			}
 		}
 		return variables;
+	}
+
+	private static Map<VariableSetKey, DistributionSketch> joinedSketchRelations(BagEstimate left, BagEstimate right,
+			Set<String> joinVars, double rows) {
+		Map<VariableSetKey, DistributionSketch> sketches = new LinkedHashMap<>();
+		sketches.putAll(left.sketchRelations());
+		sketches.putAll(right.sketchRelations());
+		if (!joinVars.isEmpty()) {
+			DistributionSketch leftSketch = left.sketchRelation(joinVars).orElse(null);
+			DistributionSketch rightSketch = right.sketchRelation(joinVars).orElse(null);
+			DistributionSketch joinedSketch = ProductDistributionSketch.join(leftSketch, rightSketch,
+					Math.min(tupleDistinct(left, joinVars), tupleDistinct(right, joinVars)), rows);
+			if (joinedSketch != null) {
+				sketches.put(VariableSetKey.of(joinVars), joinedSketch);
+			}
+		}
+		return sketches.isEmpty() ? Map.of() : Map.copyOf(sketches);
+	}
+
+	private static Map<VariableSetKey, DistributionSketch> projectedSketchRelations(BagEstimate input,
+			Set<String> vars) {
+		if (input.sketchRelations().isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, DistributionSketch> sketches = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, DistributionSketch> entry : input.sketchRelations().entrySet()) {
+			if (vars.containsAll(entry.getKey().names())) {
+				sketches.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return sketches.isEmpty() ? Map.of() : Map.copyOf(sketches);
 	}
 
 	private static Optional<FiniteRelationEstimate> exactJoinedRelation(BagEstimate left, BagEstimate right,
@@ -516,6 +567,8 @@ public final class EstimateMath {
 	private static double tupleDistinct(BagEstimate estimate, Set<String> vars) {
 		return estimate.relationContaining(vars)
 				.map(relation -> relation.distinctRows(vars))
+				.or(() -> estimate.sketchRelation(vars)
+						.map(DistributionSketch::distinctRows))
 				.orElseGet(() -> productDistinct(estimate, vars));
 	}
 

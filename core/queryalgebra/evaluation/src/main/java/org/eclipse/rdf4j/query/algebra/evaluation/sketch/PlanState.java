@@ -169,7 +169,7 @@ final class PlanState {
 		variables.putAll(tupleVariables);
 		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
 				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
-				nextEstimate.metrics());
+				nextEstimate.sketchRelations(), nextEstimate.metrics());
 	}
 
 	private static BagEstimate withBoundVariableRows(BagEstimate nextEstimate, Set<String> normalizedBoundVars,
@@ -186,7 +186,7 @@ final class PlanState {
 		}
 		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
 				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
-				nextEstimate.metrics());
+				nextEstimate.sketchRelations(), nextEstimate.metrics());
 	}
 
 	private static VariableEstimate nextVariableEstimate(VariableEstimate existing, double rows) {

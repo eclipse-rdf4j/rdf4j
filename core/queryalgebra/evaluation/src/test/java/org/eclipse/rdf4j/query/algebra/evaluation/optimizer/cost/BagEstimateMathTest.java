@@ -176,6 +176,28 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void innerJoinUsesMultiVariableSketchRelationBeforeProductDistinctFallback() {
+		DistributionSketch leftSketch = new TestSketch(20.0d, 7.0d, OptionalDouble.empty());
+		DistributionSketch rightSketch = new TestSketch(20.0d, 7.0d, OptionalDouble.empty());
+		BagEstimate left = BagEstimate.exact(1_000.0d, "left")
+				.withVariable("code", VariableEstimate.bound(1_000.0d, 100.0d))
+				.withVariable("enc", VariableEstimate.bound(1_000.0d, 100.0d))
+				.withSketchRelation(Set.of("code", "enc"), leftSketch);
+		BagEstimate right = BagEstimate.exact(1_000.0d, "right")
+				.withVariable("code", VariableEstimate.bound(1_000.0d, 100.0d))
+				.withVariable("enc", VariableEstimate.bound(1_000.0d, 100.0d))
+				.withSketchRelation(Set.of("code", "enc"), rightSketch);
+
+		BagEstimate joined = EstimateMath.innerJoin(left, right, Set.of("code", "enc"));
+		DistributionSketch carried = joined.sketchRelation(Set.of("code", "enc"))
+				.orElseThrow(() -> new AssertionError("Joined bag should carry the multi-variable sketch relation"));
+
+		assertEquals(7.0d, joined.rows(), 0.0d,
+				"Multi-variable sketch evidence should override independent product-distinct fallback");
+		assertNotNull(carried, "The joined multi-variable sketch relation should cross planner bridges");
+	}
+
+	@Test
 	void innerJoinExposesProductSketchForSharedVariable() {
 		DistributionSketch leftSketch = new TestSketch(100.0d, 250.0d, OptionalDouble.empty());
 		DistributionSketch rightSketch = new TestSketch(80.0d, 250.0d, OptionalDouble.empty());

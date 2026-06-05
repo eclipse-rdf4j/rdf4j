@@ -22,6 +22,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
@@ -38,14 +39,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 @Experimental
 public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+		Map<VariableSetKey, DistributionSketch> sketchRelations,
 		Map<VariableSetKey, Double> jointDistinctRows,
 		Set<String> sketchVars,
 		Map<String, Double> overlapEvidence,
 		String endpointMode) {
 
 	public static final String ANY_ENDPOINT_MODE = "*";
-	public static final BindingProfile ANY = new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
-			ANY_ENDPOINT_MODE);
+	public static final BindingProfile ANY = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(),
+			Map.of(), ANY_ENDPOINT_MODE);
 
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
@@ -53,10 +55,20 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 	public BindingProfile {
 		variables = immutableVariables(variables);
 		finiteRelations = immutableFiniteRelations(finiteRelations);
+		sketchRelations = immutableSketchRelations(sketchRelations);
 		jointDistinctRows = immutableJointDistinctRows(jointDistinctRows);
 		sketchVars = immutableSketchVars(sketchVars, variables);
 		overlapEvidence = immutableOverlapEvidence(overlapEvidence);
 		endpointMode = endpointMode == null || endpointMode.isBlank() ? ANY_ENDPOINT_MODE : endpointMode;
+	}
+
+	public BindingProfile(Map<String, VariableEstimate> variables,
+			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+			Map<VariableSetKey, Double> jointDistinctRows,
+			Set<String> sketchVars,
+			Map<String, Double> overlapEvidence,
+			String endpointMode) {
+		this(variables, finiteRelations, Map.of(), jointDistinctRows, sketchVars, overlapEvidence, endpointMode);
 	}
 
 	public static BindingProfile fromEstimate(TupleExpr tupleExpr, StatisticsEstimate estimate) {
@@ -72,19 +84,20 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		}
 		Map<VariableSetKey, Double> joint = jointDistinctRows(bag.finiteRelations());
 		Map<String, Double> overlap = overlapEvidence(bag.metrics(), extraMetrics);
-		return new BindingProfile(bag.variables(), bag.finiteRelations(), joint, sketchVars(bag.variables()), overlap,
-				endpointMode(tupleExpr));
+		return new BindingProfile(bag.variables(), bag.finiteRelations(), bag.sketchRelations(), joint,
+				sketchVars(bag.variables()), overlap, endpointMode(tupleExpr));
 	}
 
 	public static BindingProfile endpointOnly(TupleExpr tupleExpr) {
 		String endpointMode = endpointMode(tupleExpr);
 		return ANY_ENDPOINT_MODE.equals(endpointMode) ? ANY
-				: new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), endpointMode);
+				: new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), endpointMode);
 	}
 
 	public boolean isAny() {
 		return variables.isEmpty()
 				&& finiteRelations.isEmpty()
+				&& sketchRelations.isEmpty()
 				&& jointDistinctRows.isEmpty()
 				&& sketchVars.isEmpty()
 				&& overlapEvidence.isEmpty()
@@ -98,6 +111,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		return satisfiesEndpointMode(required.endpointMode)
 				&& variables.keySet().containsAll(required.variables.keySet())
 				&& finiteRelations.keySet().containsAll(required.finiteRelations.keySet())
+				&& sketchRelations.keySet().containsAll(required.sketchRelations.keySet())
 				&& jointDistinctRows.keySet().containsAll(required.jointDistinctRows.keySet())
 				&& sketchVars.containsAll(required.sketchVars)
 				&& overlapEvidence.keySet().containsAll(required.overlapEvidence.keySet());
@@ -114,6 +128,8 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		other.variables.forEach(mergedVariables::putIfAbsent);
 		Map<VariableSetKey, FiniteRelationEstimate> mergedFinite = new LinkedHashMap<>(finiteRelations);
 		other.finiteRelations.forEach(mergedFinite::putIfAbsent);
+		Map<VariableSetKey, DistributionSketch> mergedSketchRelations = new LinkedHashMap<>(sketchRelations);
+		other.sketchRelations.forEach(mergedSketchRelations::putIfAbsent);
 		Map<VariableSetKey, Double> mergedJoint = new LinkedHashMap<>(jointDistinctRows);
 		other.jointDistinctRows.forEach(mergedJoint::putIfAbsent);
 		Set<String> mergedSketchVars = new LinkedHashSet<>(sketchVars);
@@ -121,8 +137,8 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<String, Double> mergedOverlap = new LinkedHashMap<>(overlapEvidence);
 		other.overlapEvidence.forEach(mergedOverlap::putIfAbsent);
 		String mergedEndpoint = ANY_ENDPOINT_MODE.equals(endpointMode) ? other.endpointMode : endpointMode;
-		return new BindingProfile(mergedVariables, mergedFinite, mergedJoint, mergedSketchVars, mergedOverlap,
-				mergedEndpoint);
+		return new BindingProfile(mergedVariables, mergedFinite, mergedSketchRelations, mergedJoint, mergedSketchVars,
+				mergedOverlap, mergedEndpoint);
 	}
 
 	public BagEstimate toBagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
@@ -133,6 +149,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		}
 		mergedMetrics.putAll(overlapEvidence);
 		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations,
 				mergedMetrics);
 	}
 
@@ -245,6 +262,20 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		}
 		Map<VariableSetKey, FiniteRelationEstimate> copy = new LinkedHashMap<>();
 		for (Map.Entry<VariableSetKey, FiniteRelationEstimate> entry : finiteRelations.entrySet()) {
+			if (entry.getKey() != null && entry.getValue() != null) {
+				copy.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return copy.isEmpty() ? Map.of() : Map.copyOf(copy);
+	}
+
+	private static Map<VariableSetKey, DistributionSketch> immutableSketchRelations(
+			Map<VariableSetKey, DistributionSketch> sketchRelations) {
+		if (sketchRelations == null || sketchRelations.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, DistributionSketch> copy = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, DistributionSketch> entry : sketchRelations.entrySet()) {
 			if (entry.getKey() != null && entry.getValue() != null) {
 				copy.put(entry.getKey(), entry.getValue());
 			}

@@ -108,14 +108,15 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 			BagEstimate joined = EstimateMath.innerJoin(prefixEstimate, factorEstimate,
 					sharedVariables(prefixEstimate, factorEstimate));
 			return new BagEstimate(joined.rows(), estimateVector.workRows(), estimateVector.memoryRows(),
-					estimateVector.confidence(), source, joined.variables(), joined.finiteRelations(), metrics);
+					estimateVector.confidence(), source, joined.variables(), joined.finiteRelations(),
+					joined.sketchRelations(), metrics);
 		}
 		double rows = nextTupleEstimate == null ? estimateVector.rows() : nextTupleEstimate.outputRows();
 		Map<String, VariableEstimate> variables = nextTupleEstimate == null ? Map.of()
 				: nextTupleEstimate.variableEstimates();
 		return new BagEstimate(rows, estimateVector.workRows(), estimateVector.memoryRows(),
 				estimateVector.confidence(),
-				source, variables, prefixEstimate.finiteRelations(), metrics);
+				source, variables, prefixEstimate.finiteRelations(), prefixEstimate.sketchRelations(), metrics);
 	}
 
 	private static BagEstimate factorEstimate(SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate,

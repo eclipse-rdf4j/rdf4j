@@ -19,7 +19,10 @@ import java.util.Set;
 
 public record BagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
 		Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+		Map<VariableSetKey, DistributionSketch> sketchRelations,
 		Map<String, Double> metrics) {
+
+	private static final double ROW_EPSILON = 0.000001d;
 
 	public BagEstimate {
 		rows = finiteNonNegative(rows);
@@ -28,17 +31,23 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 		confidence = Double.isFinite(confidence) ? Math.max(0.0d, Math.min(1.0d, confidence)) : 0.0d;
 		source = source == null || source.isBlank() ? "unknown" : source;
 		variables = variables == null || variables.isEmpty() ? Map.of() : Map.copyOf(variables);
-		finiteRelations = finiteRelations == null || finiteRelations.isEmpty() ? Map.of()
-				: Map.copyOf(finiteRelations);
+		finiteRelations = finiteRelations == null || finiteRelations.isEmpty() ? Map.of() : Map.copyOf(finiteRelations);
+		sketchRelations = immutableSketchRelations(sketchRelations);
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
 	}
 
+	public BagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
+			Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+			Map<String, Double> metrics) {
+		this(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, Map.of(), metrics);
+	}
+
 	public static BagEstimate exact(double rows, String source) {
-		return new BagEstimate(rows, rows, 0.0d, 1.0d, source, Map.of(), Map.of(), Map.of());
+		return new BagEstimate(rows, rows, 0.0d, 1.0d, source, Map.of(), Map.of(), Map.of(), Map.of());
 	}
 
 	public static BagEstimate heuristic(double rows, String source) {
-		return new BagEstimate(rows, rows, 0.0d, 0.0d, source, Map.of(), Map.of(), Map.of());
+		return new BagEstimate(rows, rows, 0.0d, 0.0d, source, Map.of(), Map.of(), Map.of(), Map.of());
 	}
 
 	public VariableEstimate variable(String name) {
@@ -49,10 +58,15 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 		return Optional.ofNullable(finiteRelations.get(VariableSetKey.of(names)));
 	}
 
+	public Optional<DistributionSketch> sketchRelation(Set<String> names) {
+		return Optional.ofNullable(sketchRelations.get(VariableSetKey.of(names)));
+	}
+
 	public BagEstimate withVariable(String name, VariableEstimate estimate) {
 		Map<String, VariableEstimate> copy = new LinkedHashMap<>(variables);
 		copy.put(name, estimate);
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, copy, finiteRelations, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, copy, finiteRelations, sketchRelations,
+				metrics);
 	}
 
 	public BagEstimate withFiniteRelation(FiniteRelationEstimate relation) {
@@ -66,23 +80,57 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 		}
 		Map<VariableSetKey, FiniteRelationEstimate> relationCopy = new LinkedHashMap<>(finiteRelations);
 		relationCopy.put(relation.variableSetKey(), relation);
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variableCopy, relationCopy, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variableCopy, relationCopy,
+				sketchRelations, metrics);
+	}
+
+	public BagEstimate withSketchRelation(Set<String> names, DistributionSketch sketch) {
+		if (names == null || names.isEmpty() || sketch == null) {
+			return this;
+		}
+		Map<VariableSetKey, DistributionSketch> copy = new LinkedHashMap<>(sketchRelations);
+		copy.put(VariableSetKey.of(names), sketch);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, copy,
+				metrics);
+	}
+
+	public BagEstimate withSketchRelations(Map<VariableSetKey, DistributionSketch> sketches) {
+		if (sketches == null || sketches.isEmpty()) {
+			return this;
+		}
+		Map<VariableSetKey, DistributionSketch> copy = new LinkedHashMap<>(sketchRelations);
+		copy.putAll(sketches);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, copy,
+				metrics);
 	}
 
 	public BagEstimate withRows(double rows, String source) {
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations, metrics);
+	}
+
+	public BagEstimate withRowsPreservingEvidence(double rows, double workRows, double confidence, String source,
+			Map<String, Double> metrics, boolean preserveFiniteRelations) {
+		Map<String, VariableEstimate> normalizedVariables = normalizeVariables(rows);
+		Map<VariableSetKey, FiniteRelationEstimate> normalizedRelations = preserveFiniteRelations
+				&& Math.abs(this.rows - finiteNonNegative(rows)) < ROW_EPSILON ? finiteRelations : Map.of();
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, normalizedVariables,
+				normalizedRelations, sketchRelations, metrics);
 	}
 
 	public BagEstimate withWorkRows(double workRows, String source) {
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations, metrics);
 	}
 
 	public BagEstimate withMemoryRows(double memoryRows, String source) {
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations, metrics);
 	}
 
 	public BagEstimate withMetrics(Map<String, Double> metrics) {
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, metrics);
+		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
+				sketchRelations, metrics);
 	}
 
 	public Optional<FiniteRelationEstimate> relationContaining(Set<String> names) {
@@ -95,6 +143,68 @@ public record BagEstimate(double rows, double workRows, double memoryRows, doubl
 				.stream()
 				.filter(relation -> relation.containsAll(names))
 				.max(Comparator.comparingInt(relation -> relation.variables().size()));
+	}
+
+	public boolean hasBindingEvidence() {
+		if (!finiteRelations.isEmpty() || !sketchRelations.isEmpty()) {
+			return true;
+		}
+		for (VariableEstimate variable : variables.values()) {
+			if (variable != null && (variable.boundRows() > 0.0d || variable.distinctRows() > 0.0d
+					|| variable.sketch() != null)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private Map<String, VariableEstimate> normalizeVariables(double targetRows) {
+		if (variables.isEmpty()) {
+			return variables;
+		}
+		double safeRows = finiteNonNegative(targetRows);
+		Map<String, VariableEstimate> normalized = new LinkedHashMap<>();
+		for (Map.Entry<String, VariableEstimate> entry : variables.entrySet()) {
+			normalized.put(entry.getKey(), normalizeVariable(entry.getValue(), safeRows));
+		}
+		return Map.copyOf(normalized);
+	}
+
+	private VariableEstimate normalizeVariable(VariableEstimate variable, double targetRows) {
+		if (variable == null) {
+			return VariableEstimate.empty();
+		}
+		if (Math.abs(rows - targetRows) < ROW_EPSILON) {
+			return variable;
+		}
+		double boundRows = variable.boundRows();
+		double nullableRows = variable.nullableRows();
+		if (Math.abs(boundRows - rows) < ROW_EPSILON && nullableRows < ROW_EPSILON) {
+			boundRows = targetRows;
+			nullableRows = 0.0d;
+		} else if (rows > 0.0d && boundRows + nullableRows > targetRows + ROW_EPSILON) {
+			double scale = targetRows / rows;
+			boundRows *= scale;
+			nullableRows *= scale;
+		}
+		boundRows = Math.min(boundRows, targetRows);
+		nullableRows = Math.min(nullableRows, Math.max(0.0d, targetRows - boundRows));
+		double distinctRows = boundRows <= 0.0d ? 0.0d : Math.min(variable.distinctRows(), Math.max(1.0d, boundRows));
+		return new VariableEstimate(distinctRows, boundRows, nullableRows, variable.sketch());
+	}
+
+	private static Map<VariableSetKey, DistributionSketch> immutableSketchRelations(
+			Map<VariableSetKey, DistributionSketch> sketches) {
+		if (sketches == null || sketches.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, DistributionSketch> copy = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, DistributionSketch> entry : sketches.entrySet()) {
+			if (entry.getKey() != null && entry.getValue() != null) {
+				copy.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return copy.isEmpty() ? Map.of() : Map.copyOf(copy);
 	}
 
 	static double finiteNonNegative(double value) {

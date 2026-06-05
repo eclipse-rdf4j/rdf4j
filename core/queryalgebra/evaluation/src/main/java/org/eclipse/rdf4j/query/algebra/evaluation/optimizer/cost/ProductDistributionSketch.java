@@ -26,13 +26,28 @@ public final class ProductDistributionSketch implements DistributionSketch {
 
 	private final List<DistributionSketch> factors;
 	private final double distinctRows;
+	private final double totalRows;
 
-	private ProductDistributionSketch(List<DistributionSketch> factors, double distinctRows) {
+	private ProductDistributionSketch(List<DistributionSketch> factors, double distinctRows, double totalRows) {
 		this.factors = List.copyOf(factors);
 		this.distinctRows = finiteNonNegative(distinctRows);
+		this.totalRows = Double.isFinite(totalRows) && totalRows >= 0.0d ? totalRows : Double.NaN;
 	}
 
 	public static DistributionSketch join(DistributionSketch left, DistributionSketch right, double distinctRows) {
+		double rows = Double.NaN;
+		if (left != null && right != null) {
+			OptionalDouble innerProduct = left.innerProduct(right);
+			if (innerProduct.isPresent() && Double.isFinite(innerProduct.getAsDouble())
+					&& innerProduct.getAsDouble() >= 0.0d) {
+				rows = innerProduct.getAsDouble();
+			}
+		}
+		return join(left, right, distinctRows, rows);
+	}
+
+	public static DistributionSketch join(DistributionSketch left, DistributionSketch right, double distinctRows,
+			double totalRows) {
 		if (left == null || right == null) {
 			return null;
 		}
@@ -42,7 +57,7 @@ public final class ProductDistributionSketch implements DistributionSketch {
 		if (factors.isEmpty()) {
 			return null;
 		}
-		return new ProductDistributionSketch(factors, distinctRows);
+		return new ProductDistributionSketch(factors, distinctRows, totalRows);
 	}
 
 	public List<DistributionSketch> factors() {
@@ -55,11 +70,21 @@ public final class ProductDistributionSketch implements DistributionSketch {
 	}
 
 	@Override
+	public OptionalDouble totalRows() {
+		return Double.isFinite(totalRows) ? OptionalDouble.of(totalRows) : OptionalDouble.empty();
+	}
+
+	@Override
 	public OptionalDouble innerProduct(DistributionSketch other) {
-		if (other == null || other instanceof ProductDistributionSketch) {
+		if (other == null) {
 			return OptionalDouble.empty();
 		}
-		return other.innerProduct(this);
+		OptionalDouble delegated = other instanceof ProductDistributionSketch product ? productInnerProduct(product)
+				: other.innerProduct(this);
+		if (usable(delegated)) {
+			return delegated;
+		}
+		return scalarInnerProduct(other);
 	}
 
 	private static void addFactor(List<DistributionSketch> factors, DistributionSketch sketch) {
@@ -68,6 +93,37 @@ public final class ProductDistributionSketch implements DistributionSketch {
 		} else {
 			factors.add(sketch);
 		}
+	}
+
+	private OptionalDouble productInnerProduct(ProductDistributionSketch other) {
+		for (DistributionSketch factor : factors) {
+			OptionalDouble rows = factor.innerProduct(other);
+			if (usable(rows)) {
+				return rows;
+			}
+		}
+		for (DistributionSketch factor : other.factors) {
+			OptionalDouble rows = factor.innerProduct(this);
+			if (usable(rows)) {
+				return rows;
+			}
+		}
+		return scalarInnerProduct(other);
+	}
+
+	private OptionalDouble scalarInnerProduct(DistributionSketch other) {
+		OptionalDouble leftRows = totalRows();
+		OptionalDouble rightRows = other.totalRows();
+		if (leftRows.isEmpty() || rightRows.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		double denominator = Math.max(1.0d, Math.max(distinctRows, finiteNonNegative(other.distinctRows())));
+		double rows = (leftRows.getAsDouble() * rightRows.getAsDouble()) / denominator;
+		return Double.isFinite(rows) && rows >= 0.0d ? OptionalDouble.of(rows) : OptionalDouble.empty();
+	}
+
+	private static boolean usable(OptionalDouble rows) {
+		return rows.isPresent() && Double.isFinite(rows.getAsDouble()) && rows.getAsDouble() >= 0.0d;
 	}
 
 	private static double finiteNonNegative(double value) {

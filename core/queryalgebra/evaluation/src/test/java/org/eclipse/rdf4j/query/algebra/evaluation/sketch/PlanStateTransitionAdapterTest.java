@@ -227,6 +227,26 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void fastAgmsProductSketchRemainsConsumableAfterJoin() {
+		FastAgmsBindingSummary leftSketch = fastAgmsSummary(entry(1L, 2.0d), entry(2L, 1.0d));
+		FastAgmsBindingSummary rightSketch = fastAgmsSummary(entry(1L, 3.0d), entry(3L, 1.0d));
+		FastAgmsBindingSummary thirdSketch = fastAgmsSummary(entry(1L, 5.0d));
+		BagEstimate left = sketchedBag("left", "code", leftSketch);
+		BagEstimate right = sketchedBag("right", "code", rightSketch);
+		BagEstimate third = sketchedBag("third", "code", thirdSketch);
+
+		BagEstimate firstJoin = EstimateMath.innerJoin(left, right, Set.of("code"));
+		DistributionSketch joinedSketch = firstJoin.variable("code").sketch();
+		OptionalDouble chainedRows = joinedSketch.innerProduct(thirdSketch);
+		BagEstimate chainedJoin = EstimateMath.innerJoin(firstJoin, third, Set.of("code"));
+
+		assertTrue(chainedRows.isPresent(),
+				"A joined FAST_AGMS product sketch must remain consumable by the next join");
+		assertEquals(chainedRows.getAsDouble(), chainedJoin.rows(), 1.0e-9d,
+				"The next join should use the carried product sketch instead of scalar fallback math");
+	}
+
+	@Test
 	void planStateAdvanceNormalizesRuntimeVariableSurfaces() {
 		StatementPattern factor = pattern("seed", PREDICATE, "value");
 		PlanState prefix = PlanState.initial(BagEstimate.exact(2.0d, "outer")
@@ -456,6 +476,24 @@ class PlanStateTransitionAdapterTest {
 
 	private static StatementPattern pattern(String subjectName, IRI predicate, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var("p", predicate), new Var(objectName));
+	}
+
+	private static BagEstimate sketchedBag(String source, String variable, FastAgmsBindingSummary sketch) {
+		return BagEstimate.exact(sketch.rows(), source)
+				.withVariable(variable, new VariableEstimate(sketch.distinctRows(), sketch.rows(), 0.0d, sketch));
+	}
+
+	private static FastAgmsBindingSummary fastAgmsSummary(double[]... entries) {
+		FastAgmsBindingSummary summary = new FastAgmsBindingSummary(SketchBasedJoinEstimator.FAST_AGMS_ROWS,
+				SketchBasedJoinEstimator.FAST_AGMS_BUCKETS, SketchBasedJoinEstimator.FAST_AGMS_SEED);
+		for (double[] entry : entries) {
+			summary.update((long) entry[0], entry[1]);
+		}
+		return summary;
+	}
+
+	private static double[] entry(long key, double weight) {
+		return new double[] { key, weight };
 	}
 
 	private static QueryBindingSet binding(String name, String value) {

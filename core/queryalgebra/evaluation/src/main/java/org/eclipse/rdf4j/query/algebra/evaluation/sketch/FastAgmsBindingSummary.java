@@ -136,6 +136,11 @@ final class FastAgmsBindingSummary implements DistributionSketch {
 	}
 
 	@Override
+	public OptionalDouble totalRows() {
+		return OptionalDouble.of(rows());
+	}
+
+	@Override
 	public OptionalDouble innerProduct(DistributionSketch other) {
 		if (other instanceof FastAgmsBindingSummary summary) {
 			return OptionalDouble.of(innerProduct(summary));

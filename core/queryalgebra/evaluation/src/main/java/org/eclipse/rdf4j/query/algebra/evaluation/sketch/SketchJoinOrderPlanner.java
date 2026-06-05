@@ -1685,7 +1685,8 @@ final class SketchJoinOrderPlanner {
 		}
 		BagEstimate estimate = new BagEstimate(nextEstimate.outputRows(), filterWorkRows,
 				prefixState.estimate().memoryRows(), prefixState.estimate().confidence(), "filter-transition",
-				prefixState.estimate().variables(), prefixState.estimate().finiteRelations(), doubleMetrics);
+				prefixState.estimate().variables(), prefixState.estimate().finiteRelations(),
+				prefixState.estimate().sketchRelations(), doubleMetrics);
 		return prefixState.withEstimateAndCost(estimate, costVector, stringMetrics, doubleMetrics);
 	}
 
