@@ -112,6 +112,10 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		if (!semanticDependencies.isEmpty()) {
 			optimizers.add(new LmdbSemanticDependencyOptimizer(semanticDependencies));
 		}
+		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
+			optimizers.add(new LmdbStandardPlanBaselineOptimizer(
+					LmdbStandardPlanBaselineOptimizer.Kind.SKETCH_INPUT));
+		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
 		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
 			optimizers.add(new LmdbStandardPlanBaselineOptimizer());

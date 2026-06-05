@@ -84,6 +84,8 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 						+ "\nbroad-targets-first:\n" + describePlan(broadTargetsFirst)
 						+ "\nquery:\n" + snapshot.renderedQuery()
 						+ "\noptimized plan:\n" + snapshot.plan();
+				assertTrue(targetDomainFirst.getEstimatedTotalWork() < broadTargetsFirst.getEstimatedTotalWork(),
+						diagnostics);
 				assertConnectedPlanDoesNotStartFromTargetsScan(snapshot.plan(), diagnostics);
 				assertExistsStartsFromBoundArmDrugLookup(snapshot.plan(), diagnostics);
 			} finally {
@@ -118,12 +120,40 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 	}
 
 	private static String firstConnectedAccessPathLine(String plan) {
-		return plan.lines()
+		String connectedFactorLine = plan.lines()
 				.filter(line -> line.contains("StatementPattern ("))
 				.filter(line -> line.contains("plannedIndexAccessMode"))
 				.filter(line -> line.contains("optimizer.connectedFactor="))
 				.findFirst()
 				.orElse(null);
+		if (connectedFactorLine != null) {
+			return connectedFactorLine;
+		}
+		String[] lines = plan.split("\\R");
+		int mainJoinLine = firstMainJoinLine(lines);
+		if (mainJoinLine < 0) {
+			return null;
+		}
+		for (int i = mainJoinLine + 1; i < lines.length; i++) {
+			String line = lines[i];
+			if (line.contains("ExtensionElem (optDisease)")) {
+				break;
+			}
+			if (line.contains("StatementPattern (") && line.contains("plannedIndexAccessMode")) {
+				return line;
+			}
+		}
+		return null;
+	}
+
+	private static int firstMainJoinLine(String[] lines) {
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i];
+			if (line.contains("LeftJoin") && line.contains("plannedBoundJoinProductJoinVar=drug")) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static int firstStatementPatternLine(String plan, String predicate) {

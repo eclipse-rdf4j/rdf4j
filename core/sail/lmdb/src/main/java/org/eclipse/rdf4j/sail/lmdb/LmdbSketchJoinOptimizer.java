@@ -2573,6 +2573,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (leftCost.isEmpty() || rightMaterializedCost.isEmpty() || rightCorrelatedCost.isEmpty()) {
 				return false;
 			}
+			if (rightMaterializedCost.get().outputRows() == 0.0d) {
+				return false;
+			}
 
 			double leftRows = Math.max(1.0d, leftCost.get().outputRows());
 			double correlatedProbeWork = leftRows * Math.max(1.0d, rightCorrelatedCost.get().workRows());
@@ -2851,6 +2854,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (Map.Entry<String, String> entry : factorCost.getStringMetrics().entrySet()) {
 				statementPattern.setStringMetricPlanned(entry.getKey(), entry.getValue());
 			}
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "scalar");
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
 			for (Map.Entry<String, Double> entry : factorCost.getDoubleMetrics().entrySet()) {
 				statementPattern.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
 			}
@@ -7342,6 +7349,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Join createJoin(TupleExpr left, TupleExpr right) {
+			refreshJoinRightUnionBranchAccessPaths(left, right);
 			Join join = new Join(left, right);
 			PlannedPrefixEstimate prefixEstimate = selectedPlanPrefixEstimate(left, right);
 			if (prefixEstimate != null) {
@@ -7359,6 +7367,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			stampPlanSummaryMetrics(join);
 			return join;
+		}
+
+		private void refreshJoinRightUnionBranchAccessPaths(TupleExpr left, TupleExpr right) {
+			if (!(right instanceof Union) || left == null) {
+				return;
+			}
+			Set<String> assuredLeftBindings = plannerBindingNames(left.getAssuredBindingNames());
+			if (assuredLeftBindings.isEmpty()) {
+				return;
+			}
+			refreshSelectedUnionBranchAccessPaths(right, assuredLeftBindings, estimatedSubplanInvocationRows(left));
 		}
 
 		private PlannedPrefixEstimate selectedPlanPrefixEstimate(TupleExpr left, TupleExpr right) {
@@ -7673,6 +7692,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return;
 			}
 			double cumulativeWorkRows = 0.0d;
+			double prefixRowsBeforeStep = 1.0d;
 			for (int i = 0; i < steps.size(); i++) {
 				JoinOrderPlanner.PlanStep step = steps.get(i);
 				TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
@@ -7685,7 +7705,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				selectedPlanPrefixByFactor.put(tupleExpr,
 						new PlannedPrefixEstimate(step.getPrefixOutputRows(), cumulativeWorkRows));
 				stampPlanSummaryMetrics(tupleExpr);
-				applyPlannerStepEstimate(tupleExpr, step);
+				applyPlannerStepEstimate(tupleExpr, step, prefixRowsBeforeStep);
+				double stepFinalRows = stepFinalRows(step);
+				if (LmdbJoinPlanSupport.isFiniteNonNegative(stepFinalRows)) {
+					prefixRowsBeforeStep = stepFinalRows;
+				}
 			}
 		}
 
@@ -7719,7 +7743,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, factorCost.getWorkRows());
 			JoinOrderPlanner.PlanStep step = new JoinOrderPlanner.PlanStep(safeBoundVars, factorCost.getOutputRows(),
 					factorCost.getOutputRows(), factorCost.getWorkRows(), stringMetrics, doubleMetrics);
-			applyPlannerStepEstimate(tupleExpr, step);
+			applyPlannerStepEstimate(tupleExpr, step, outerPrefixRows);
 		}
 
 		private String operatorFeedbackDecisionId(TupleExpr tupleExpr,
@@ -7730,7 +7754,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					+ Integer.toUnsignedString(signature.hashCode(), 16);
 		}
 
-		private void applyPlannerStepEstimate(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step) {
+		private void applyPlannerStepEstimate(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step,
+				double prefixRowsBeforeStep) {
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(step.getFactorOutputRows())) {
 				tupleExpr.setResultSizeEstimate(step.getFactorOutputRows());
 			}
@@ -7749,6 +7774,100 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (Map.Entry<String, Double> entry : step.getDoubleMetrics().entrySet()) {
 				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
 			}
+			refreshSelectedUnionBranchAccessPaths(tupleExpr, step.getBoundVarsBefore(), prefixRowsBeforeStep);
+		}
+
+		private double stepFinalRows(JoinOrderPlanner.PlanStep step) {
+			if (step == null) {
+				return Double.NaN;
+			}
+			Double finalRows = step.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+			if (finalRows != null && LmdbJoinPlanSupport.isFiniteNonNegative(finalRows)) {
+				return finalRows;
+			}
+			return step.getPrefixOutputRows();
+		}
+
+		private void refreshSelectedUnionBranchAccessPaths(TupleExpr tupleExpr, Set<String> boundVarsBefore,
+				double prefixRowsBeforeStep) {
+			if (!(tupleExpr instanceof Union union) || !(statistics instanceof JoinFactorCostModel costModel)) {
+				return;
+			}
+			Set<String> safeBoundVars = boundVarsBefore == null || boundVarsBefore.isEmpty()
+					? Set.of()
+					: Set.copyOf(boundVarsBefore);
+			double safePrefixRows = LmdbJoinPlanSupport.isFiniteNonNegative(prefixRowsBeforeStep)
+					? prefixRowsBeforeStep
+					: Double.NaN;
+			boolean nestedInvocation = LmdbJoinPlanSupport.isFiniteNonNegative(safePrefixRows)
+					&& safePrefixRows > 1.0d;
+			refreshUnionBranchAccessPaths(union.getLeftArg(), costModel, safeBoundVars, safePrefixRows,
+					nestedInvocation);
+			refreshUnionBranchAccessPaths(union.getRightArg(), costModel, safeBoundVars, safePrefixRows,
+					nestedInvocation);
+		}
+
+		private void refreshUnionBranchAccessPaths(TupleExpr tupleExpr, JoinFactorCostModel costModel,
+				Set<String> boundVarsBefore, double prefixRowsBeforeStep, boolean nestedInvocation) {
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				refreshStatementPatternAccessPath(statementPattern, costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+				return;
+			}
+			if (tupleExpr instanceof Union union) {
+				refreshUnionBranchAccessPaths(union.getLeftArg(), costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+				refreshUnionBranchAccessPaths(union.getRightArg(), costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+				return;
+			}
+			if (tupleExpr instanceof Filter filter) {
+				refreshUnionBranchAccessPaths(filter.getArg(), costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+				return;
+			}
+			if (tupleExpr instanceof Extension extension) {
+				refreshUnionBranchAccessPaths(extension.getArg(), costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+				return;
+			}
+			if (tupleExpr instanceof Projection projection) {
+				refreshUnionBranchAccessPaths(projection.getArg(), costModel, boundVarsBefore,
+						prefixRowsBeforeStep, nestedInvocation);
+			}
+		}
+
+		private void refreshStatementPatternAccessPath(StatementPattern statementPattern,
+				JoinFactorCostModel costModel, Set<String> boundVarsBefore, double prefixRowsBeforeStep,
+				boolean nestedInvocation) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(
+					boundVarsBefore, prefixRowsBeforeStep, Double.NaN, nestedInvocation, true, Map.of(),
+					List.of());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(
+					statementPattern, context);
+			if (estimate.isEmpty() || !estimate.get().hasPhysicalAccessPath()) {
+				return;
+			}
+			JoinFactorCostModel.FactorCostEstimate factorCost = estimate.get();
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(factorCost.getOutputRows())) {
+				statementPattern.setResultSizeEstimate(factorCost.getOutputRows());
+			}
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(factorCost.getWorkRows())) {
+				statementPattern.setCostEstimate(factorCost.getWorkRows());
+				statementPattern.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
+						factorCost.getWorkRows());
+			}
+			for (Map.Entry<String, String> entry : factorCost.getStringMetrics().entrySet()) {
+				statementPattern.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "scalar");
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
+			for (Map.Entry<String, Double> entry : factorCost.getDoubleMetrics().entrySet()) {
+				statementPattern.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			applyPhysicalAccessPathMetrics(statementPattern, factorCost);
 		}
 
 		private void clearSelectedPlanAnnotations() {

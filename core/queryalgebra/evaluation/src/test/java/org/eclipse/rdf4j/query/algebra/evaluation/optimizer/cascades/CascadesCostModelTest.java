@@ -351,6 +351,8 @@ class CascadesCostModelTest {
 				List.of(winner(2, group.getArg(), 1.0d)));
 
 		assertEquals(1.0d, cost.rows(), 0.0d);
+		assertEquals(2.0d, cost.workRows(), 0.0d,
+				"Physical unary estimates are already based on the child winner and must not count it twice");
 		assertTrue(factorCostModel.estimationTiers.isEmpty(),
 				"Composite tuple algebra operators must use operator formulas, not join-factor access estimates");
 	}

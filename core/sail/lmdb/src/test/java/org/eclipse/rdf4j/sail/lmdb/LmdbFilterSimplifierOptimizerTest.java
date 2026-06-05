@@ -562,6 +562,28 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void rewritesNullRejectingOptionalListMemberConjunctWithNestedExistsToMandatoryJoin() {
+		StatementPattern drug = statementPattern("drug", "type", "drugType");
+		StatementPattern label = statementPattern("drug", "label", "label");
+		StatementPattern optionalDisease = statementPattern("drug", "indicatedFor", "optDisease");
+		StatementPattern nestedIndication = statementPattern("drug", "indicatedFor", "otherDisease");
+		Filter filter = new Filter(new LeftJoin(new Join(drug, label), optionalDisease),
+				new And(listMember("optDisease", "Disease 2", "Disease 3"), new Exists(nestedIndication)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Join.class, retainedFilter.getArg());
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+		assertInstanceOf(And.class, retainedFilter.getCondition());
+		String rewriteMetric = retainedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric != null && rewriteMetric.contains("source=filter-simplifier"),
+				String.valueOf(rewriteMetric));
+		assertTrue(rewriteMetric.contains("optDisease"), rewriteMetric);
+	}
+
+	@Test
 	void rewritesNullRejectingOptionalCompareOnBindAliasToMandatoryJoin() {
 		StatementPattern result = statementPattern("result", "type", "resultType");
 		Extension optional = new Extension(statementPattern("result", "effectSize", "effect"),

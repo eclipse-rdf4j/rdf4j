@@ -97,8 +97,6 @@ final class LmdbCascadesRuleProvider {
 				.add(new StructuralCascadesRules.JoinSingletonRule())
 				.add(new StructuralCascadesRules.UnionSimplificationRule())
 				.add(new StructuralCascadesRules.ProjectionMergeRule())
-				.add(new FilterCascadesRules.FilterValuesAnchorRule())
-				.add(new FilterCascadesRules.FilterConjunctValuesAnchorRule())
 				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
 				.add(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule())
 				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
@@ -119,8 +117,13 @@ final class LmdbCascadesRuleProvider {
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
-				.add(new StandardCascadesRules.MinusAlternativeRule())
+				.add(new StandardCascadesRules.MinusAlternativeRule(
+						(difference, goal) -> correlatedMinusRewriteIsCheaper(statistics, difference, goal)))
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
+		if (cascadesConnectedJoinProviderAvailable) {
+			builder.add(new FilterCascadesRules.FilterValuesAnchorRule())
+					.add(new FilterCascadesRules.FilterConjunctValuesAnchorRule());
+		}
 		if (legacyOpaqueJoinProviders) {
 			builder.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
 					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
@@ -169,6 +172,85 @@ final class LmdbCascadesRuleProvider {
 			root = runtimeMetrics.createJoin(runtimeMetrics.cloneFactor(orderedArgs.get(i)), root);
 		}
 		return root;
+	}
+
+	private static boolean correlatedMinusRewriteIsCheaper(EvaluationStatistics statistics, Difference difference,
+			OptimizationGoal goal) {
+		if (!(statistics instanceof JoinFactorCostModel costModel) || difference == null) {
+			return true;
+		}
+		TupleExpr leftArg = difference.getLeftArg();
+		TupleExpr rightArg = difference.getRightArg();
+		if (leftArg == null || rightArg == null) {
+			return true;
+		}
+		Set<String> sharedBindings = new HashSet<>(LmdbJoinPlanSupport.plannerBindingNames(
+				leftArg.getAssuredBindingNames()));
+		sharedBindings.retainAll(LmdbJoinPlanSupport.plannerBindingNames(rightArg.getBindingNames()));
+		if (sharedBindings.isEmpty()) {
+			return true;
+		}
+
+		Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+		Optional<AntiJoinCost> leftCost = estimateAntiJoinCost(statistics, costModel, leftArg, boundVars);
+		Optional<AntiJoinCost> rightMaterializedCost = estimateAntiJoinCost(statistics, costModel, rightArg,
+				boundVars);
+		Set<String> correlatedBoundVars = new HashSet<>(boundVars);
+		correlatedBoundVars.addAll(sharedBindings);
+		Optional<AntiJoinCost> rightCorrelatedCost = estimateAntiJoinCost(statistics, costModel, rightArg,
+				correlatedBoundVars);
+		if (leftCost.isEmpty() || rightMaterializedCost.isEmpty() || rightCorrelatedCost.isEmpty()) {
+			return true;
+		}
+		if (rightMaterializedCost.get().outputRows() == 0.0d) {
+			return false;
+		}
+
+		double leftRows = Math.max(1.0d, leftCost.get().outputRows());
+		double leftWork = Math.max(leftRows, leftCost.get().workRows());
+		double correlatedProbeWork = leftRows * Math.max(1.0d, rightCorrelatedCost.get().workRows());
+		double correlatedWork = leftWork + correlatedProbeWork;
+		double materializedWork = leftWork
+				+ rightMaterializedCost.get().workRows()
+				+ Math.max(leftRows, rightMaterializedCost.get().outputRows());
+		if (!LmdbJoinPlanSupport.isFiniteNonNegative(correlatedWork)
+				|| !LmdbJoinPlanSupport.isFiniteNonNegative(materializedWork)) {
+			return true;
+		}
+		return correlatedWork < materializedWork;
+	}
+
+	private static Optional<AntiJoinCost> estimateAntiJoinCost(EvaluationStatistics statistics,
+			JoinFactorCostModel costModel, TupleExpr tupleExpr, Set<String> boundVars) {
+		TupleExpr transparentSinglePattern = transparentSinglePatternExtensionArg(tupleExpr);
+		if (transparentSinglePattern != null) {
+			return estimateAntiJoinCost(statistics, costModel, transparentSinglePattern, boundVars);
+		}
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
+				boundVars);
+		if (estimate.isPresent()
+				&& LmdbJoinPlanSupport.isFiniteNonNegative(estimate.get().getWorkRows())
+				&& LmdbJoinPlanSupport.isFiniteNonNegative(estimate.get().getOutputRows())) {
+			return Optional.of(new AntiJoinCost(estimate.get().getWorkRows(), estimate.get().getOutputRows()));
+		}
+		double rows = statistics.getCardinality(tupleExpr);
+		if (LmdbJoinPlanSupport.isFiniteNonNegative(rows)) {
+			return Optional.of(new AntiJoinCost(rows, rows));
+		}
+		return Optional.empty();
+	}
+
+	private static TupleExpr transparentSinglePatternExtensionArg(TupleExpr tupleExpr) {
+		TupleExpr current = tupleExpr;
+		boolean unwrapped = false;
+		while (current instanceof Extension extension && !TupleExprs.isVariableScopeChange(extension)) {
+			current = extension.getArg();
+			unwrapped = true;
+		}
+		return unwrapped && current instanceof StatementPattern ? current : null;
+	}
+
+	private record AntiJoinCost(double workRows, double outputRows) {
 	}
 
 	private static final class PlannedRuntimeMetrics {
@@ -3203,7 +3285,8 @@ final class LmdbCascadesRuleProvider {
 			return expression.logical()
 					&& statisticsProvider != null
 					&& expression.tupleExpr()instanceof Difference difference
-					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null;
+					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null
+					&& correlatedMinusRewriteIsCheaper(statistics, difference, goal);
 		}
 
 		@Override

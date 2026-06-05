@@ -336,7 +336,26 @@ public interface CascadesCostModel {
 				vector = vector.withWorkRows(vector.workRows() + Math.max(1.0d,
 						vector.rows() * Math.log(Math.max(2.0d, vector.rows()))), "enforcer-work");
 			}
-			return applyPolicy(composeOperatorCost(inputCost, vector.toCostVector()), goal);
+			CostVector operatorCost = vector.toCostVector();
+			if (expression.physical()
+					&& tupleExpr instanceof UnaryTupleOperator
+					&& inputWinners != null
+					&& inputWinners.size() == 1) {
+				operatorCost = physicalUnaryOperatorCost(inputCost, operatorCost);
+			}
+			return applyPolicy(composeOperatorCost(inputCost, operatorCost), goal);
+		}
+
+		private CostVector physicalUnaryOperatorCost(CostVector inputCost, CostVector cumulativeCost) {
+			if (cumulativeCost == null) {
+				return CostVector.ZERO;
+			}
+			if (inputCost == null
+					|| !Double.isFinite(cumulativeCost.workRows())
+					|| !Double.isFinite(inputCost.workRows())) {
+				return cumulativeCost;
+			}
+			return cumulativeCost.withWorkRows(Math.max(0.0d, cumulativeCost.workRows() - inputCost.workRows()));
 		}
 
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,

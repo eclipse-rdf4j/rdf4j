@@ -164,6 +164,9 @@ final class LmdbOperatorFeedbackStats {
 
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
 			double baseWorkRows, String executionMode) {
+		if (learnedByOperator.isEmpty()) {
+			return null;
+		}
 		OperatorKey key = keyFor(node, executionMode);
 		if (key == null) {
 			return null;

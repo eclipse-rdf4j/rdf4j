@@ -147,6 +147,7 @@ class LmdbEvaluationStatistics
 	private static final String PATH_MODE_TO_END = "toEnd";
 	private static final String PATH_MODE_BETWEEN = "between";
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
+	static final String OPERATOR_FEEDBACK_TRACKING_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackTracking";
 	private static final AtomicLong ESTIMATE_TRACE_SEQUENCE = new AtomicLong();
 	private static final String FINITE_DERIVED_SURFACE_CACHE_HITS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
 			+ "finiteDerivedSurfaceCacheHits";
@@ -178,6 +179,7 @@ class LmdbEvaluationStatistics
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private final LmdbFilterSelectivityStats filterSelectivityStats;
 	private final LmdbOperatorFeedbackStats operatorFeedbackStats;
+	private final boolean operatorFeedbackTrackingEnabled;
 	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
 	private volatile boolean joinSupportCacheValue = false;
@@ -213,6 +215,7 @@ class LmdbEvaluationStatistics
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
 		this.filterSelectivityStats = filterSelectivityStats;
 		this.operatorFeedbackStats = operatorFeedbackStats;
+		this.operatorFeedbackTrackingEnabled = Boolean.getBoolean(OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 	}
 
 	ValueStore getValueStore() {
@@ -3163,8 +3166,9 @@ class LmdbEvaluationStatistics
 	}
 
 	private FiniteBranchSurfaceCacheKey finiteBranchSurfaceCacheKey(List<TupleExpr> factors, String joinVarName,
-			boolean allowExact) {
-		return new FiniteBranchSurfaceCacheKey(finiteBranchRowsCacheKey(factors), joinVarName, allowExact);
+			boolean allowExact, boolean forceExact) {
+		return new FiniteBranchSurfaceCacheKey(finiteBranchRowsCacheKey(factors), joinVarName, allowExact,
+				forceExact);
 	}
 
 	private FiniteBranchFactorSurfaceCacheKey finiteBranchFactorSurfaceCacheKey(List<TupleExpr> prefixFactors,
@@ -5245,11 +5249,17 @@ class LmdbEvaluationStatistics
 
 	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimate(List<TupleExpr> factors, String joinVarName,
 			boolean allowExact) {
+		return finiteBranchSurfaceEstimate(factors, joinVarName, allowExact, false);
+	}
+
+	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimate(List<TupleExpr> factors, String joinVarName,
+			boolean allowExact, boolean forceExact) {
 		OptimizationCostScope scope = optimizationCostScope.get();
 		if (scope == null) {
-			return finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact);
+			return finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact, forceExact);
 		}
-		FiniteBranchSurfaceCacheKey cacheKey = finiteBranchSurfaceCacheKey(factors, joinVarName, allowExact);
+		FiniteBranchSurfaceCacheKey cacheKey = finiteBranchSurfaceCacheKey(factors, joinVarName, allowExact,
+				forceExact);
 		FiniteBranchSurfaceEstimate cachedEstimate = scope.finiteBranchSurfaceCache.get(cacheKey);
 		if (cachedEstimate != null) {
 			scope.finiteBranchSurfaceCacheHits++;
@@ -5261,13 +5271,14 @@ class LmdbEvaluationStatistics
 			return cachedEstimate;
 		}
 		scope.finiteBranchSurfaceCacheMisses++;
-		FiniteBranchSurfaceEstimate estimate = finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact);
+		FiniteBranchSurfaceEstimate estimate = finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact,
+				forceExact);
 		scope.finiteBranchSurfaceCache.put(cacheKey, estimate);
 		return estimate;
 	}
 
 	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimateUncached(List<TupleExpr> factors,
-			String joinVarName, boolean allowExact) {
+			String joinVarName, boolean allowExact, boolean forceExact) {
 //		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(factors, joinVarName);
 //		if (isFiniteNonNegative(finiteRows)) {
 //			traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
@@ -5284,7 +5295,10 @@ class LmdbEvaluationStatistics
 				joinVarName);
 		double cheapRows = maxFinite(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN);
 		double exactRows = Double.NaN;
-		if (allowExact && shouldRunExactEstimate(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows, Double.NaN)) {
+		if (allowExact
+				&& (forceExact
+						|| shouldRunExactEstimate(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows,
+								Double.NaN))) {
 			countExactJoinSurfaceCall();
 			exactRows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
 		} else {
@@ -6045,9 +6059,9 @@ class LmdbEvaluationStatistics
 		boolean rightIntroducesNoNewBindings = !introducesNewBinding(rightFactor, allLeftBindingNames);
 		BoundJoinProductEstimate fullPrefixEstimate = null;
 		for (String sharedBindingName : leftBindingNames) {
-			FiniteBranchSurfaceEstimate prefixSurface = duplicateCorrectionPrefixSurfaceEstimate(leftFactors,
-					sharedBindingName);
 			boolean forceExactPrefixRightSurface = shouldForceExactBoundJoinProductSurface(prefixRows);
+			FiniteBranchSurfaceEstimate prefixSurface = duplicateCorrectionPrefixSurfaceEstimate(leftFactors,
+					sharedBindingName, forceExactPrefixRightSurface);
 			FiniteBranchSurfaceEstimate prefixRightSurface = finiteBranchSurfaceEstimate(leftFactors, rightFactor,
 					sharedBindingName, forceExactPrefixRightSurface, forceExactPrefixRightSurface);
 			double prefixSurfaceRows = prefixSurface.rows();
@@ -6085,8 +6099,17 @@ class LmdbEvaluationStatistics
 
 	private FiniteBranchSurfaceEstimate duplicateCorrectionPrefixSurfaceEstimate(List<TupleExpr> factors,
 			String joinVarName) {
-		FiniteBranchSurfaceEstimate selected = finiteBranchSurfaceEstimate(factors, joinVarName, false);
+		return duplicateCorrectionPrefixSurfaceEstimate(factors, joinVarName, false);
+	}
+
+	private FiniteBranchSurfaceEstimate duplicateCorrectionPrefixSurfaceEstimate(List<TupleExpr> factors,
+			String joinVarName, boolean forceExact) {
+		FiniteBranchSurfaceEstimate selected = finiteBranchSurfaceEstimate(factors, joinVarName, forceExact,
+				forceExact);
 		if (sketchBasedJoinEstimator == null || factors == null || factors.isEmpty() || joinVarName == null) {
+			return selected;
+		}
+		if (selected.exactRows()) {
 			return selected;
 		}
 		double pageWalkRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors, joinVarName);
@@ -6154,7 +6177,7 @@ class LmdbEvaluationStatistics
 					continue;
 				}
 				FiniteBranchSurfaceEstimate bridgeSurface = duplicateCorrectionPrefixSurfaceEstimate(
-						List.of(leftFactor), sharedBindingName);
+						List.of(leftFactor), sharedBindingName, shouldForceExactBoundJoinProductSurface(prefixRows));
 				double bridgeSurfaceRows = bridgeSurface.rows();
 				double bridgeDenominatorRows = bridgeSurfaceRows;
 				if (!isPositiveFinite(bridgeDenominatorRows)) {
@@ -6451,7 +6474,7 @@ class LmdbEvaluationStatistics
 					continue;
 				}
 				FiniteBranchSurfaceEstimate bridgeSurface = duplicateCorrectionPrefixSurfaceEstimate(
-						List.of(leftFactor), sharedBindingName);
+						List.of(leftFactor), sharedBindingName, shouldForceExactBoundJoinProductSurface(prefixRows));
 				double bridgeDenominatorRows = bridgeSurface.rows();
 				if (!isPositiveFinite(bridgeDenominatorRows)) {
 					bridgeDenominatorRows = bridgeFactorRows(leftFactor);
@@ -6499,7 +6522,7 @@ class LmdbEvaluationStatistics
 		PrefixBridgeEstimate bestEstimate = null;
 		for (String sharedBindingName : leftBindingNames) {
 			FiniteBranchSurfaceEstimate prefixSurface = duplicateCorrectionPrefixSurfaceEstimate(leftFactors,
-					sharedBindingName);
+					sharedBindingName, shouldForceExactBoundJoinProductSurface(prefixRows));
 			double prefixSurfaceRows = prefixSurface.rows();
 			double prefixBridgeSurfaceRows = finiteBranchSurfaceRows(leftFactors, bridge, sharedBindingName);
 			if (!isPositiveFinite(prefixSurfaceRows) || !isPositiveFinite(prefixBridgeSurfaceRows)) {
@@ -8686,11 +8709,12 @@ class LmdbEvaluationStatistics
 	}
 
 	private record FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey factors, String joinVarName,
-			boolean allowExact) {
+			boolean allowExact, boolean forceExact) {
 
 		private static FiniteBranchSurfaceCacheKey of(List<TupleExpr> factors, String joinVarName,
 				boolean allowExact) {
-			return new FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), joinVarName, allowExact);
+			return new FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), joinVarName, allowExact,
+					false);
 		}
 	}
 
@@ -9120,7 +9144,8 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public boolean shouldTrackCostFeedback(QueryModelNode node) {
-		return operatorFeedbackStats != null
+		return operatorFeedbackTrackingEnabled
+				&& operatorFeedbackStats != null
 				&& node instanceof TupleExpr tupleExpr
 				&& tupleExpr.isCostFeedbackTrackingEnabled()
 				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr);
@@ -9128,19 +9153,23 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public boolean shouldReportCostFeedback(QueryModelNode node) {
-		return operatorFeedbackStats != null
+		return operatorFeedbackTrackingEnabled
+				&& operatorFeedbackStats != null
 				&& node instanceof TupleExpr tupleExpr
 				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr)
 				&& super.shouldReportCostFeedback(node);
 	}
 
 	boolean supportsOperatorFeedbackTracking(TupleExpr node) {
-		return operatorFeedbackStats != null && LmdbOperatorFeedbackStats.supportsOperatorFeedback(node);
+		return operatorFeedbackTrackingEnabled
+				&& operatorFeedbackStats != null
+				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(node);
 	}
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
-		if (operatorFeedbackStats == null || !(node instanceof TupleExpr tupleExpr)) {
+		if (!operatorFeedbackTrackingEnabled || operatorFeedbackStats == null
+				|| !(node instanceof TupleExpr tupleExpr)) {
 			return;
 		}
 		if (tupleExpr.getParentNode() == null) {

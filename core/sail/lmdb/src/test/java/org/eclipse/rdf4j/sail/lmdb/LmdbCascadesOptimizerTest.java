@@ -145,6 +145,31 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void statementPatternPlanningEstimateAppliesRepeatedVariableEquality() throws IOException {
+		ValueStore valueStore = mock(ValueStore.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		org.eclipse.rdf4j.model.IRI predicate = vf.createIRI("urn:test:p");
+		StatementPattern pattern = new StatementPattern(new Var("node"), new Var("p", predicate), new Var("node"));
+		int repeatedPairMask = TripleStore.repeatedComponentPairMask(TripleStore.SUBJ_IDX, TripleStore.OBJ_IDX);
+		when(valueStore.getId(predicate)).thenReturn(2L);
+		when(tripleStore.getDataRevision()).thenReturn(7L);
+		when(tripleStore.repeatedVariableCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID, repeatedPairMask)).thenReturn(3.0d);
+		when(tripleStore.planningCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID)).thenReturn(42.0d);
+
+		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(valueStore,
+				tripleStore);
+
+		assertEquals(3.0d, source.estimateForPlanning(pattern));
+		verify(tripleStore).repeatedVariableCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID, repeatedPairMask);
+		verify(tripleStore, never()).planningCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID);
+	}
+
+	@Test
 	void factorCostEstimateExposesRobustEstimateVector() {
 		JoinFactorCostModel.FactorCostEstimate estimate = new JoinFactorCostModel.FactorCostEstimate(50.0d, 10.0d,
 				Map.of(), robustMetrics(), true, true, 0, 0, 12.0d);

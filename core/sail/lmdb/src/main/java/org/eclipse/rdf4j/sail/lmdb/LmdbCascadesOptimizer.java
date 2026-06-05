@@ -61,6 +61,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTel
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -230,21 +232,59 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (!policy.enabled() || tupleExpr == null || preserveSerializableObservationOrder) {
 			return emptyStandardPlanCandidate();
 		}
+		TupleExpr capturedSketchInputPlan = LmdbStandardPlanBaselineOptimizer.consumeSketchInputBaseline(tupleExpr);
 		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.consumeBaseline(tupleExpr);
 		if (capturedPlan != null) {
-			return standardPlanCandidate(capturedPlan, "lmdb-no-cascades");
+			return standardPlanCandidate(capturedPlan, capturedSketchInputPlan, dataset, bindings,
+					"lmdb-no-cascades");
 		}
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			return standardPlanCandidate(standardPlan, "current-lmdb-no-cascades");
+			return standardPlanCandidate(standardPlan, capturedSketchInputPlan, dataset, bindings,
+					"current-lmdb-no-cascades");
 		} catch (RuntimeException e) {
 			return emptyStandardPlanCandidate();
 		}
 	}
 
-	private StandardPlanCandidate standardPlanCandidate(TupleExpr standardPlan, String origin) {
+	private StandardPlanCandidate standardPlanCandidate(TupleExpr standardPlan, TupleExpr sketchInputPlan,
+			Dataset dataset, BindingSet bindings, String origin) {
+		TupleExpr sketchCandidateInput = sketchInputPlan == null ? standardPlan : sketchInputPlan;
+		StandardPlanCandidate sketchCandidate = sketchRefinedStandardPlanCandidate(sketchCandidateInput, dataset,
+				bindings);
+		if (sketchCandidate.isPresent()) {
+			return sketchCandidate;
+		}
 		return new StandardPlanCandidate(standardPlan, origin);
+	}
+
+	private StandardPlanCandidate sketchRefinedStandardPlanCandidate(TupleExpr standardPlan, Dataset dataset,
+			BindingSet bindings) {
+		if (standardPlan == null || statistics == null || Boolean.getBoolean(
+				LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY)) {
+			return emptyStandardPlanCandidate();
+		}
+		try {
+			TupleExpr sketchPlan = standardPlan.clone();
+			new ParentReferenceCleaner().optimize(sketchPlan, dataset, bindings);
+			new LmdbSketchJoinOptimizer(statistics, trackResultSize).optimize(sketchPlan, dataset, bindings);
+			new ParentReferenceCleaner().optimize(sketchPlan, dataset, bindings);
+			return containsPlannerId(sketchPlan, "lmdb-sketch")
+					? new StandardPlanCandidate(sketchPlan, "lmdb-sketch-baseline")
+					: emptyStandardPlanCandidate();
+		} catch (RuntimeException e) {
+			return emptyStandardPlanCandidate();
+		}
+	}
+
+	private boolean containsPlannerId(TupleExpr tupleExpr, String plannerId) {
+		if (tupleExpr == null || plannerId == null || plannerId.isBlank()) {
+			return false;
+		}
+		PlannerIdFinder finder = new PlannerIdFinder(plannerId);
+		tupleExpr.visit(finder);
+		return finder.found;
 	}
 
 	private boolean needsPreSearchStandardPlan(Mode mode, boolean budgetedSearch, StandardPlanPolicy policy) {
@@ -288,6 +328,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return false;
 		}
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
+			return policy.fallbacks();
+		}
+		if (cascadesPlan.approximate() && hasEmergencyFallbackProvenance(cascadesPlan)) {
 			return policy.fallbacks();
 		}
 		if (mode != Mode.EXACT && cascadesPlan.approximate()) {
@@ -749,6 +792,39 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return finder.found;
 	}
 
+	private static boolean hasEmergencyFallbackProvenance(CascadesPlan plan) {
+		if (plan == null) {
+			return false;
+		}
+		return plan.provenance()
+				.filter(LmdbCascadesOptimizer::hasEmergencyFallbackProvenance)
+				.isPresent();
+	}
+
+	private static boolean hasEmergencyFallbackProvenance(PlanProvenance provenance) {
+		if (provenance == null) {
+			return false;
+		}
+		if (fallbackRuleId(provenance.ruleId())) {
+			return true;
+		}
+		for (RuleProof proof : provenance.proofs()) {
+			if (proof != null && fallbackRuleId(proof.ruleId())) {
+				return true;
+			}
+		}
+		for (PlanProvenance input : provenance.inputs()) {
+			if (hasEmergencyFallbackProvenance(input)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean fallbackRuleId(String ruleId) {
+		return ruleId != null && ruleId.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
 	private static boolean hasEmergencyFallbackMetric(TupleExpr tupleExpr) {
 		return hasEmergencyFallbackMetric(tupleExpr, CASCADES_RULE)
 				|| hasEmergencyFallbackMetric(tupleExpr, CASCADES_WINNER)
@@ -1170,7 +1246,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static boolean standardPlanBaselineCaptureEnabled() {
 		Mode mode = modeFromProperty();
 		StandardPlanPolicy policy = standardPlanPolicyFromProperty();
-		return mode.replacesAlgebra() && policy.enabled() && policy.compares();
+		return mode.replacesAlgebra() && policy.enabled() && (policy.compares() || policy.fallbacks());
 	}
 
 	private static Mode modeFromProperty() {
@@ -1435,6 +1511,28 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 		boolean replacesAlgebra() {
 			return replacesAlgebra;
+		}
+	}
+
+	private static final class PlannerIdFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private final String plannerId;
+		private boolean found;
+
+		private PlannerIdFinder(String plannerId) {
+			this.plannerId = plannerId;
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (found) {
+				return;
+			}
+			if (node instanceof TupleExpr tupleExpr
+					&& plannerId.equals(tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID))) {
+				found = true;
+				return;
+			}
+			super.meetNode(node);
 		}
 	}
 

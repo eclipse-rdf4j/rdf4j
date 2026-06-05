@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,6 +68,24 @@ class LmdbOperatorFeedbackPlanningTest {
 			* DEPARTMENTS_PER_ORG
 			* OFFERS_PER_DEPARTMENT
 			* REVIEWS_PER_PAGE;
+	private String previousOperatorFeedbackTrackingProperty;
+
+	@BeforeEach
+	void enableOperatorFeedbackTracking() {
+		previousOperatorFeedbackTrackingProperty = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+	}
+
+	@AfterEach
+	void restoreOperatorFeedbackTracking() {
+		if (previousOperatorFeedbackTrackingProperty == null) {
+			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		} else {
+			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY,
+					previousOperatorFeedbackTrackingProperty);
+		}
+	}
 
 	@Test
 	void secondPlanUsesLeftJoinOperatorFeedbackForBoundOptionalFanout(@TempDir File dataDir) throws Exception {

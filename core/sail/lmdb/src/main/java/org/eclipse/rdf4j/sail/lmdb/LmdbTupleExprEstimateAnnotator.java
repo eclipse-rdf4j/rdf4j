@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -825,6 +826,9 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				|| replacementEstimate.isDirectLookup()) {
 			return false;
 		}
+		if (selectedDirectAccessPathDominatesReplacement(node, replacementEstimate)) {
+			return true;
+		}
 		double selectedAccessRows = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
 		double replacementAccessRows = firstFinitePositive(
 				replacementEstimate.getAccessRowsBeforeFilter(),
@@ -834,6 +838,50 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		return isFiniteNonNegative(selectedAccessRows)
 				&& isFiniteNonNegative(replacementAccessRows)
 				&& selectedAccessRows <= replacementAccessRows;
+	}
+
+	private boolean selectedDirectAccessPathDominatesReplacement(StatementPattern node,
+			JoinFactorCostModel.FactorCostEstimate replacementEstimate) {
+		if (!replacementEstimate.hasPhysicalAccessPath()) {
+			return false;
+		}
+		int selectedLookupMask = lookupComponentMask(
+				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
+		if (selectedLookupMask == 0 || lookupComponentMask(
+				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS)) != 0) {
+			return false;
+		}
+		int replacementLookupMask = replacementEstimate.getLookupComponentMask();
+		return replacementLookupMask != 0 && (selectedLookupMask & replacementLookupMask) == replacementLookupMask;
+	}
+
+	private int lookupComponentMask(String lookupComponents) {
+		if (lookupComponents == null) {
+			return 0;
+		}
+		String normalized = lookupComponents.trim();
+		if (normalized.length() >= 2 && normalized.charAt(0) == '['
+				&& normalized.charAt(normalized.length() - 1) == ']') {
+			normalized = normalized.substring(1, normalized.length() - 1);
+		}
+		if (normalized.isBlank()) {
+			return 0;
+		}
+		int mask = 0;
+		for (String token : normalized.split(",")) {
+			String componentName = token.trim();
+			if (componentName.isEmpty()) {
+				continue;
+			}
+			try {
+				SketchBasedJoinEstimator.Component component = SketchBasedJoinEstimator.Component
+						.valueOf(componentName);
+				mask |= 1 << component.ordinal();
+			} catch (IllegalArgumentException ignored) {
+				return 0;
+			}
+		}
+		return mask;
 	}
 
 	private double[] optionalBridgeBlend(StatementPattern node, JoinFactorCostModel.FactorCostEstimate factorEstimate,

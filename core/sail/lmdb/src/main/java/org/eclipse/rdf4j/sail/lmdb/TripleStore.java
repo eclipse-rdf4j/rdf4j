@@ -129,6 +129,12 @@ class TripleStore implements Closeable {
 	static final int PRED_IDX = 1;
 	static final int OBJ_IDX = 2;
 	static final int CONTEXT_IDX = 3;
+	private static final int REPEATED_SUBJ_PRED_PAIR = 1;
+	private static final int REPEATED_SUBJ_OBJ_PAIR = 1 << 1;
+	private static final int REPEATED_SUBJ_CONTEXT_PAIR = 1 << 2;
+	private static final int REPEATED_PRED_OBJ_PAIR = 1 << 3;
+	private static final int REPEATED_PRED_CONTEXT_PAIR = 1 << 4;
+	private static final int REPEATED_OBJ_CONTEXT_PAIR = 1 << 5;
 
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
@@ -1570,6 +1576,62 @@ class TripleStore implements Closeable {
 			}
 		}
 		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+	}
+
+	protected double repeatedVariableCardinality(long subj, long pred, long obj, long context,
+			int repeatedComponentPairMask) throws IOException {
+		if (repeatedComponentPairMask == 0) {
+			return cardinality(subj, pred, obj, context);
+		}
+		try (TxnManager.Txn txn = txnManager.createReadTxn()) {
+			double cardinality = 0.0d;
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator records = getTriples(txn, subj, pred, obj, context, explicit)) {
+					long[] quad;
+					while ((quad = records.next()) != null) {
+						if (matchesRepeatedComponentPairs(quad, repeatedComponentPairMask)) {
+							cardinality++;
+						}
+					}
+				}
+			}
+			return cardinality;
+		}
+	}
+
+	static int repeatedComponentPairMask(int leftComponentIndex, int rightComponentIndex) {
+		if (leftComponentIndex == rightComponentIndex) {
+			return 0;
+		}
+		int left = Math.min(leftComponentIndex, rightComponentIndex);
+		int right = Math.max(leftComponentIndex, rightComponentIndex);
+		return switch (left) {
+		case SUBJ_IDX -> switch (right) {
+			case PRED_IDX -> REPEATED_SUBJ_PRED_PAIR;
+			case OBJ_IDX -> REPEATED_SUBJ_OBJ_PAIR;
+			case CONTEXT_IDX -> REPEATED_SUBJ_CONTEXT_PAIR;
+			default -> 0;
+			};
+		case PRED_IDX -> switch (right) {
+			case OBJ_IDX -> REPEATED_PRED_OBJ_PAIR;
+			case CONTEXT_IDX -> REPEATED_PRED_CONTEXT_PAIR;
+			default -> 0;
+			};
+		case OBJ_IDX -> right == CONTEXT_IDX ? REPEATED_OBJ_CONTEXT_PAIR : 0;
+		default -> 0;
+		};
+	}
+
+	private static boolean matchesRepeatedComponentPairs(long[] quad, int repeatedComponentPairMask) {
+		return ((repeatedComponentPairMask & REPEATED_SUBJ_PRED_PAIR) == 0 || quad[SUBJ_IDX] == quad[PRED_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_OBJ_PAIR) == 0 || quad[SUBJ_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_CONTEXT_PAIR) == 0
+						|| quad[SUBJ_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_OBJ_PAIR) == 0 || quad[PRED_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_CONTEXT_PAIR) == 0
+						|| quad[PRED_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_OBJ_CONTEXT_PAIR) == 0
+						|| quad[OBJ_IDX] == quad[CONTEXT_IDX]);
 	}
 
 	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)

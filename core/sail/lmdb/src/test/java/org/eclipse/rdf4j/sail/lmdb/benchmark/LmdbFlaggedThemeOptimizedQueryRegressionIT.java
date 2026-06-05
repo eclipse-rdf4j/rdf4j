@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,6 +76,57 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		}
 		if (themes.contains(Theme.HIGHLY_CONNECTED)) {
 			assertHighlyConnectedStoreRegressionsPass(dataDir);
+		}
+	}
+
+	@Test
+	void highlyConnectedQ10KeepsAntiJoinBeforeWeightFanout(@TempDir Path dataDir) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("highly-connected-q10"),
+						PERSISTENT_STORE_KEY_PREFIX + "/highly-connected-q10",
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadBenchmarkData(repository, List.of(Theme.HIGHLY_CONNECTED));
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, Theme.HIGHLY_CONNECTED, 10);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for HIGHLY_CONNECTED q10. " + PERSISTENT_STORE_HINT);
+		}
+		try {
+			LmdbStore store = new LmdbStore(preparedStore.storeDirectory().toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, expectation(Theme.HIGHLY_CONNECTED, 10));
+				String plan = snapshot.plan();
+				String renderedQuery = snapshot.renderedQuery();
+				Assertions.assertFalse(renderedQuery.contains("VALUES (?threshold ?w)"),
+						"Highly connected q10 must not use a finite threshold/weight anchor: weight values are "
+								+ "high-fanout and make anti-join work run once per candidate weight row\n" + plan);
+				assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+						"<http://example.com/theme/connected/weight> ?w",
+						"Highly connected q10 should bind typed nodes before expanding outer weight fanout\n" + plan);
+				assertBefore(renderedQuery, "?node <http://example.com/theme/connected/connectsTo> ?n2",
+						"<http://example.com/theme/connected/weight> ?w",
+						"Highly connected q10 should evaluate the selective low-neighbor anti-join before "
+								+ "expanding outer weight rows\n" + plan);
+				Assertions.assertTrue(renderedQuery.contains("MINUS"),
+						"Highly connected q10 should keep the self-loop exclusion as a materialized anti-join "
+								+ "when the RHS is empty instead of probing it per candidate row\n" + plan);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.cleanupThemeRegressionStore(preparedStore);
 		}
 	}
 
@@ -447,6 +499,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		int firstIndex = text.indexOf(first);
 		int secondIndex = text.indexOf(second);
 		return firstIndex >= 0 && secondIndex > firstIndex;
+	}
+
+	private static void assertBefore(String value, String first, String second, String message) {
+		Assertions.assertTrue(before(value, first, second),
+				() -> message + "\nExpected to find `" + first + "` before `" + second + "` in:\n" + value);
 	}
 
 	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {

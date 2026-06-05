@@ -20,11 +20,15 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -33,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -106,6 +111,16 @@ class LmdbOperatorFeedbackStatsTest {
 
 		assertNull(stats.estimate(join("s", "y", "o"), 200, 100, 10, 20),
 				"Different shared/bound context must not reuse operator feedback");
+	}
+
+	@Test
+	void emptyFeedbackStoreDoesNotFingerprintEstimateMisses(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		CountingBindingSetAssignment values = countingValues("kind", "a", "b", "c");
+
+		assertNull(stats.estimate(new Join(values, sp("kind", P1, "o")), 3, 10, 30, 30));
+		assertEquals(0, values.bindingSetsReads,
+				"An empty feedback store cannot produce an estimate and should not build expensive operator keys");
 	}
 
 	@Test
@@ -239,21 +254,47 @@ class LmdbOperatorFeedbackStatsTest {
 
 	@Test
 	void lmdbStatisticsTracksCostFeedbackOnlyForStampedSupportedOperators(@TempDir Path tempDir) throws Exception {
-		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
-				feedbackStats, null);
-		Join join = join("s", "x", "o");
-		assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join));
+		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+		try {
+			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
+					feedbackStats, null);
+			Join join = join("s", "x", "o");
+			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join));
 
-		StatementPattern unsupported = sp("s", P1, "o");
-		unsupported.setCostFeedbackTrackingEnabled(true);
-		assertTrue(!evaluationStatistics.shouldTrackCostFeedback(unsupported),
-				"Unsupported nodes should not get the low-overhead LEO wrapper");
+			StatementPattern unsupported = sp("s", P1, "o");
+			unsupported.setCostFeedbackTrackingEnabled(true);
+			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(unsupported),
+					"Unsupported nodes should not get the low-overhead LEO wrapper");
 
-		assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
-				"Supported operators should be wrapped only after planner stamping enables feedback tracking");
-		join.setCostFeedbackTrackingEnabled(true);
-		assertTrue(evaluationStatistics.shouldTrackCostFeedback(join));
+			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
+					"Supported operators should be wrapped only after planner stamping enables feedback tracking");
+			join.setCostFeedbackTrackingEnabled(true);
+			assertTrue(evaluationStatistics.shouldTrackCostFeedback(join));
+		} finally {
+			restoreOperatorFeedbackTrackingProperty(previous);
+		}
+	}
+
+	@Test
+	void lmdbStatisticsDoesNotTrackCostFeedbackByDefault(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		try {
+			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
+					feedbackStats, null);
+			Join join = join("s", "x", "o");
+			join.setCostFeedbackTrackingEnabled(true);
+
+			assertTrue(!evaluationStatistics.supportsOperatorFeedbackTracking(join),
+					"Runtime operator feedback should not be stamped by default");
+			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
+					"Runtime operator feedback should be opt-in so normal read queries do not pay feedback wrappers");
+		} finally {
+			restoreOperatorFeedbackTrackingProperty(previous);
+		}
 	}
 
 	@Test
@@ -424,6 +465,22 @@ class LmdbOperatorFeedbackStatsTest {
 		return new StatementPattern(Var.of(subjectName), Var.of("_p", predicate, true, true), Var.of(objectName));
 	}
 
+	private static CountingBindingSetAssignment countingValues(String bindingName, String... values) {
+		CountingBindingSetAssignment assignment = new CountingBindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>(values.length);
+		for (String value : values) {
+			rows.add(bindingSet(bindingName, value));
+		}
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static BindingSet bindingSet(String bindingName, String value) {
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(bindingName, VF.createLiteral(value));
+		return bindingSet;
+	}
+
 	private static void completeBinary(TupleExpr node, long actualRows, double plannedRows, double plannedWorkRows,
 			long leftRows, long rightRows) {
 		if (node instanceof org.eclipse.rdf4j.query.algebra.BinaryTupleOperator binary) {
@@ -493,6 +550,25 @@ class LmdbOperatorFeedbackStatsTest {
 			return Double.NaN;
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Could not read " + accessorName, e);
+		}
+	}
+
+	private static void restoreOperatorFeedbackTrackingProperty(String previous) {
+		if (previous == null) {
+			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		} else {
+			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
+		}
+	}
+
+	private static final class CountingBindingSetAssignment extends BindingSetAssignment {
+
+		private int bindingSetsReads;
+
+		@Override
+		public Iterable<BindingSet> getBindingSets() {
+			bindingSetsReads++;
+			return super.getBindingSets();
 		}
 	}
 }

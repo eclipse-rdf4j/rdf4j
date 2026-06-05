@@ -26,12 +26,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -259,6 +261,25 @@ class LmdbCascadesContextPropagationTest {
 		}
 	}
 
+	@Test
+	void semanticFiniteAnchorRewriteDoesNotBypassCheaperOriginalPlan() {
+		SemanticRewriteCostingStatistics statistics = new SemanticRewriteCostingStatistics();
+		TupleExpr input = new Join(
+				new StatementPattern(new Var("node"), new Var("typePredicate"), new Var("type")),
+				new StatementPattern(new Var("node"), new Var("weightPredicate"), new Var("w")));
+		Filter filter = new Filter(input, listMember("w", "urn:w1", "urn:w2", "urn:w3", "urn:w4"));
+
+		RuleApplication application = ruleApplication(filter, statistics, OptimizationGoal.root(),
+				"lmdb-guarantee-options");
+
+		assertTrue(application.alternative()
+				.getStringMetricPlanned("optimizer.guaranteeOptions")
+				.contains("selected=original"),
+				() -> "Semantic finite anchors must compete on planner work instead of bypassing the original plan: "
+						+ application.alternative()
+								.getStringMetricPlanned("optimizer.guaranteeOptions"));
+	}
+
 	private static void restoreMode(String previousMode) {
 		if (previousMode == null) {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
@@ -333,6 +354,15 @@ class LmdbCascadesContextPropagationTest {
 								new ValueConstant(VF.createLiteral("15.0", XMLSchema.DECIMAL)),
 								Compare.CompareOp.GT)));
 		return new Join(new Join(left, pathBranch), propertyBranch);
+	}
+
+	private static ListMemberOperator listMember(String variableName, String... iriValues) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(variableName));
+		for (String iriValue : iriValues) {
+			operator.addArgument(new ValueConstant(VF.createIRI(iriValue)));
+		}
+		return operator;
 	}
 
 	private record JoinOrderCall(Set<String> initiallyBoundVars, List<Set<String>> argBindingNames) {
@@ -513,6 +543,25 @@ class LmdbCascadesContextPropagationTest {
 			int lookupMask = relBound ? SUBJECT_COMPONENT | PREDICATE_COMPONENT : PREDICATE_COMPONENT;
 			return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, true,
 					relBound, lookupMask, 0, outputRows));
+		}
+	}
+
+	private static final class SemanticRewriteCostingStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel {
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			boolean finiteAnchor = args.stream()
+					.anyMatch(BindingSetAssignment.class::isInstance);
+			double workRows = finiteAnchor ? 1_000.0d : 100.0d;
+			Map<String, Double> metrics = Map.of(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			return Optional.of(new JoinOrderPlan(args, 10.0d, workRows, List.of(), Map.of(), metrics, List.of()));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
 		}
 	}
 }

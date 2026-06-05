@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -108,6 +109,9 @@ final class LmdbNullRejectingOptionalSupport {
 		if (expression instanceof Compare compare) {
 			return isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings);
 		}
+		if (expression instanceof ListMemberOperator listMember) {
+			return isNullRejectingOptionalListMember(listMember, optionalBindings, leftAssuredBindings);
+		}
 		return false;
 	}
 
@@ -118,6 +122,17 @@ final class LmdbNullRejectingOptionalSupport {
 				&& referencesAnyOptionalBinding(compare, optionalBindings)
 				&& nonOptionalOperandIsAssured(compare.getLeftArg(), optionalBindings, leftAssuredBindings)
 				&& nonOptionalOperandIsAssured(compare.getRightArg(), optionalBindings, leftAssuredBindings);
+	}
+
+	private static boolean isNullRejectingOptionalListMember(ListMemberOperator listMember,
+			Set<String> optionalBindings, Set<String> leftAssuredBindings) {
+		for (ValueExpr argument : listMember.getArguments()) {
+			if (!isSupportedCompareOperand(argument)
+					|| !nonOptionalOperandIsAssured(argument, optionalBindings, leftAssuredBindings)) {
+				return false;
+			}
+		}
+		return referencesAnyOptionalBinding(listMember, optionalBindings);
 	}
 
 	private static boolean isSupportedCompareOperand(ValueExpr expression) {

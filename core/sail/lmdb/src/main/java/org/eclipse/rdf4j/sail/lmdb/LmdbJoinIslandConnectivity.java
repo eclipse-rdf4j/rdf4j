@@ -21,14 +21,17 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Shared structural classifier for reorderable LMDB inner-join islands.
@@ -86,7 +89,29 @@ final class LmdbJoinIslandConnectivity {
 		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)) {
 			return false;
 		}
+		if (pureCorrelatedNotExistsFilter(tupleExpr)) {
+			return false;
+		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
+	}
+
+	private static boolean pureCorrelatedNotExistsFilter(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter) || TupleExprs.isVariableScopeChange(filter)) {
+			return false;
+		}
+		if (!(filter.getCondition()instanceof Not not) || !(not.getArg()instanceof Exists exists)) {
+			return false;
+		}
+		Set<String> inputNames = LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getBindingNames());
+		return !inputNames.isEmpty() && subQuerySharesInput(exists.getSubQuery(), inputNames);
+	}
+
+	private static boolean subQuerySharesInput(TupleExpr subQuery, Set<String> inputNames) {
+		if (subQuery == null || inputNames.isEmpty()) {
+			return false;
+		}
+		Set<String> subQueryNames = LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(subQuery));
+		return !subQueryNames.isEmpty() && !disjoint(inputNames, subQueryNames);
 	}
 
 	static List<TupleExpr> flattenFactors(TupleExpr tupleExpr) {

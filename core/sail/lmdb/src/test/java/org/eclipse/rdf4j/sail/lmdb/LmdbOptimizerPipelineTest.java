@@ -183,18 +183,27 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineRunsPushdownBeforeCascadesAndDoesNotAddLegacySketchByDefault() {
+	void lmdbPipelineRunsPushdownAndBaselineCaptureBeforeCascadesByDefault() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
+		int sketchInputBaselineIndex = indexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
+		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
+		int handoffBaselineIndex = lastIndexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
+		assertTrue(sketchInputBaselineIndex >= 0);
+		assertTrue(filterSimplifierIndex >= 0);
+		assertTrue(handoffBaselineIndex >= 0);
 		assertTrue(cascadesIndex >= 0);
 		assertTrue(filterIndex < cascadesIndex);
+		assertTrue(sketchInputBaselineIndex < filterSimplifierIndex);
+		assertTrue(filterSimplifierIndex < handoffBaselineIndex);
+		assertTrue(handoffBaselineIndex < cascadesIndex);
 		assertTrue(indexOf(optimizers, CompareOptimizer.class) < cascadesIndex);
 		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < cascadesIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
@@ -209,8 +218,10 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
 				LmdbFilterSimplifierOptimizer.class));
 		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
-		assertFalse(optimizers.stream().anyMatch(LmdbStandardPlanBaselineOptimizer.class::isInstance),
-				"Default fallback policy should avoid eager no-Cascades baseline cloning when Cascades has a winner");
+		assertTrue(optimizers.subList(handoffBaselineIndex + 1, cascadesIndex)
+				.stream()
+				.allMatch(ParentReferenceChecker.class::isInstance),
+				"Default fallback policy needs a clean LMDB no-Cascades baseline at the Cascades handoff");
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
@@ -503,6 +514,15 @@ class LmdbOptimizerPipelineTest {
 
 	private static int indexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
 		for (int i = 0; i < optimizers.size(); i++) {
+			if (optimizerType.isInstance(optimizers.get(i))) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static int lastIndexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
+		for (int i = optimizers.size() - 1; i >= 0; i--) {
 			if (optimizerType.isInstance(optimizers.get(i))) {
 				return i;
 			}

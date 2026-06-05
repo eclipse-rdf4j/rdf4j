@@ -81,20 +81,46 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=true"),
 					"Default fallback should capture the standard plan when Cascades returns an approximate winner\n"
 							+ diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesWinner=standard"),
-					"Default fallback should choose the cheaper standard plan over the approximate Cascades winner\n"
+			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
+					"Default fallback should keep the cheaper Cascades plan over the standard plan\n"
 							+ diagnostics);
-			boolean standardWinner = diagnostics.contains("optimizer.cascadesWinner=standard");
+			assertTrue(plan.contains("plannerId=lmdb-cascades"),
+					"PHARMA q7 should keep the LMDB Cascades physical plan\n" + plan);
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armComparator");
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armDrug");
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
-			if (!standardWinner) {
-				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armComparator");
-				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armDrug");
-				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
-			}
+			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armComparator");
+			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armDrug");
+			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
 		} finally {
 			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ7CascadesPlanUsesInputBoundNameLookup() throws Exception {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		try {
+			state.setup();
+			try {
+				OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+				String plan = snapshot.plan();
+				String diagnostics = snapshot.diagnostics();
+
+				assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
+						"Forced Cascades policy should expose the Cascades q7 access path\n" + diagnostics);
+				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
+			} finally {
+				state.tearDown();
+			}
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
 		}
 	}
 
@@ -119,8 +145,11 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
 					"Default fallback should keep Cascades when the standard plan does not materially reduce work\n"
 							+ diagnostics);
-			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-optional-rhs-anchored-lookup"),
-					"PHARMA q2 should keep the Cascades optional RHS lookup alternative\n" + plan);
+			assertTrue(plan.contains("optimizer.nullRejectingOptionalRewrite=source=filter-simplifier")
+					&& plan.contains("optDisease"),
+					"PHARMA q2 should prove the optional disease filter is null-rejecting\n" + plan);
+			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-inner-join-bound-lookup"),
+					"PHARMA q2 should use a mandatory inner bound lookup after the optional rewrite\n" + plan);
 			assertBefore(plan,
 					"value=http://example.com/theme/pharma/armDrug",
 					"value=http://example.com/theme/pharma/hasArm",
@@ -356,6 +385,14 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		int secondIndex = value.indexOf(second);
 		assertTrue(firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex,
 				message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

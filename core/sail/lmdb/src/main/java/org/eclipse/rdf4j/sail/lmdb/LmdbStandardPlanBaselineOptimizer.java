@@ -27,7 +27,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceClean
  * no-Cascades pipeline.
  */
 final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
-	private static final ThreadLocal<Map<TupleExpr, TupleExpr>> BASELINES = new ThreadLocal<>();
+	enum Kind {
+		SKETCH_INPUT,
+		STANDARD
+	}
+
+	private static final ThreadLocal<Map<TupleExpr, Baselines>> BASELINES = new ThreadLocal<>();
+
+	private final Kind kind;
+
+	LmdbStandardPlanBaselineOptimizer() {
+		this(Kind.STANDARD);
+	}
+
+	LmdbStandardPlanBaselineOptimizer(Kind kind) {
+		this.kind = kind == null ? Kind.STANDARD : kind;
+	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
@@ -37,35 +52,54 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+			Map<TupleExpr, Baselines> baselines = BASELINES.get();
 			if (baselines == null) {
 				baselines = new IdentityHashMap<>();
 				BASELINES.set(baselines);
 			}
-			baselines.put(tupleExpr, standardPlan);
+			Baselines captured = baselines.computeIfAbsent(tupleExpr, key -> new Baselines());
+			if (kind == Kind.SKETCH_INPUT) {
+				captured.sketchInputPlan = standardPlan;
+			} else {
+				captured.standardPlan = standardPlan;
+			}
 		} catch (RuntimeException ignored) {
-			Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+			Map<TupleExpr, Baselines> baselines = BASELINES.get();
 			if (baselines != null) {
-				baselines.remove(tupleExpr);
-				if (baselines.isEmpty()) {
-					BASELINES.remove();
-				}
+				removeBaseline(baselines, tupleExpr, kind);
 			}
 		}
 	}
 
 	static TupleExpr consumeBaseline(TupleExpr tupleExpr) {
+		return consumeBaseline(tupleExpr, Kind.STANDARD);
+	}
+
+	static TupleExpr consumeSketchInputBaseline(TupleExpr tupleExpr) {
+		return consumeBaseline(tupleExpr, Kind.SKETCH_INPUT);
+	}
+
+	private static TupleExpr consumeBaseline(TupleExpr tupleExpr, Kind kind) {
 		if (tupleExpr == null) {
 			return null;
 		}
-		Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+		Map<TupleExpr, Baselines> baselines = BASELINES.get();
 		if (baselines == null) {
 			return null;
 		}
-		TupleExpr baseline = baselines.remove(tupleExpr);
-		if (baselines.isEmpty()) {
-			BASELINES.remove();
+		Baselines captured = baselines.get(tupleExpr);
+		if (captured == null) {
+			return null;
 		}
+		TupleExpr baseline;
+		if (kind == Kind.SKETCH_INPUT) {
+			baseline = captured.sketchInputPlan;
+			captured.sketchInputPlan = null;
+		} else {
+			baseline = captured.standardPlan;
+			captured.standardPlan = null;
+		}
+		removeIfEmpty(baselines, tupleExpr, captured);
 		return baseline;
 	}
 
@@ -73,7 +107,7 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			return;
 		}
-		Map<TupleExpr, TupleExpr> baselines = BASELINES.get();
+		Map<TupleExpr, Baselines> baselines = BASELINES.get();
 		if (baselines == null) {
 			return;
 		}
@@ -81,5 +115,32 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 		if (baselines.isEmpty()) {
 			BASELINES.remove();
 		}
+	}
+
+	private static void removeBaseline(Map<TupleExpr, Baselines> baselines, TupleExpr tupleExpr, Kind kind) {
+		Baselines captured = baselines.get(tupleExpr);
+		if (captured == null) {
+			return;
+		}
+		if (kind == Kind.SKETCH_INPUT) {
+			captured.sketchInputPlan = null;
+		} else {
+			captured.standardPlan = null;
+		}
+		removeIfEmpty(baselines, tupleExpr, captured);
+	}
+
+	private static void removeIfEmpty(Map<TupleExpr, Baselines> baselines, TupleExpr tupleExpr, Baselines captured) {
+		if (captured.standardPlan == null && captured.sketchInputPlan == null) {
+			baselines.remove(tupleExpr);
+		}
+		if (baselines.isEmpty()) {
+			BASELINES.remove();
+		}
+	}
+
+	private static final class Baselines {
+		private TupleExpr standardPlan;
+		private TupleExpr sketchInputPlan;
 	}
 }
