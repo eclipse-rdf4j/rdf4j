@@ -19,11 +19,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.OptionalDouble;
 
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.ProductDistributionSketch;
 
-final class FastAgmsBindingSummary {
+final class FastAgmsBindingSummary implements DistributionSketch {
 
 	private static final int SERIAL_MAGIC = 0x4641474d; // FAGM
 	private static final int SERIAL_VERSION = 1;
@@ -127,6 +130,34 @@ final class FastAgmsBindingSummary {
 		return Math.max(0.0d, Math.min(rowCount, distinct));
 	}
 
+	@Override
+	public double distinctRows() {
+		return effectiveDistinct();
+	}
+
+	@Override
+	public OptionalDouble innerProduct(DistributionSketch other) {
+		if (other instanceof FastAgmsBindingSummary summary) {
+			return OptionalDouble.of(innerProduct(summary));
+		}
+		if (other instanceof ProductDistributionSketch product) {
+			return productInnerProduct(product);
+		}
+		return OptionalDouble.empty();
+	}
+
+	@Override
+	public OptionalDouble overlapDistinctRows(DistributionSketch other) {
+		if (other instanceof FastAgmsBindingSummary summary) {
+			FrequencySummaryOps.IntersectionStats stats = intersectProductStats(summary);
+			double distinct = stats.positiveDistinct();
+			if (Double.isFinite(distinct)) {
+				return OptionalDouble.of(Math.max(0.0d, distinct));
+			}
+		}
+		return OptionalDouble.empty();
+	}
+
 	double innerProduct(FastAgmsBindingSummary other) {
 		if (other == null) {
 			return 0.0d;
@@ -142,6 +173,26 @@ final class FastAgmsBindingSummary {
 			return 0.0d;
 		}
 		return Math.max(0.0d, estimate);
+	}
+
+	private OptionalDouble productInnerProduct(ProductDistributionSketch product) {
+		if (!isTuple()) {
+			return OptionalDouble.empty();
+		}
+		FastAgmsBindingSummary accumulator = this;
+		double positiveSum = rows();
+		for (DistributionSketch factor : product.factors()) {
+			if (!(factor instanceof FastAgmsBindingSummary summary) || !summary.isTuple()) {
+				return OptionalDouble.empty();
+			}
+			FrequencySummaryOps.IntersectionStats stats = accumulator.intersectProductStats(summary);
+			positiveSum = stats.positiveSum();
+			accumulator = stats.sketch();
+			if (accumulator == null) {
+				return OptionalDouble.of(0.0d);
+			}
+		}
+		return OptionalDouble.of(Math.max(0.0d, positiveSum));
 	}
 
 	boolean isEmpty() {

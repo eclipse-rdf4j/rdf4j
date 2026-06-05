@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.RandomAccess;
 import java.util.Set;
@@ -140,29 +141,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 	}
 
 	public static boolean sameValue(Value left, Value right) {
-		return stableIdentity(left).equals(stableIdentity(right));
-	}
-
-	private static String stableIdentity(Value value) {
-		if (value == null) {
-			return "null";
-		}
-		if (value instanceof Literal literal) {
-			String language = literal.getLanguage()
-					.orElse("");
-			String datatype = literal.getDatatype() == null ? "" : literal.getDatatype().stringValue();
-			return "L|" + literal.getLabel() + "|" + language + "|" + datatype;
-		}
-		if (value.isIRI()) {
-			return "I|" + value.stringValue();
-		}
-		if (value.isBNode()) {
-			return "B|" + value.stringValue();
-		}
-		if (value.isTripleTerm()) {
-			return "T|" + value.stringValue();
-		}
-		return value.getClass().getName() + "|" + value.stringValue();
+		return StableValueKey.of(left).equals(StableValueKey.of(right));
 	}
 
 	private static final class StableValueTupleMap extends AbstractMap<List<Value>, Double> {
@@ -210,13 +189,19 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 	private static final class StableValueTuple extends AbstractList<Value> implements RandomAccess {
 
 		private final List<Value> values;
-		private final List<String> identities;
+		private final StableValueKey[] identities;
+		private final int hash;
 
 		private StableValueTuple(List<Value> values) {
 			this.values = values == null ? List.of() : List.copyOf(values);
-			this.identities = this.values.stream()
-					.map(FiniteRelationEstimate::stableIdentity)
-					.toList();
+			this.identities = new StableValueKey[this.values.size()];
+			int computedHash = 1;
+			for (int i = 0; i < this.values.size(); i++) {
+				StableValueKey identity = StableValueKey.of(this.values.get(i));
+				identities[i] = identity;
+				computedHash = 31 * computedHash + identity.hashCode();
+			}
+			this.hash = computedHash;
 		}
 
 		@Override
@@ -231,7 +216,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 
 		@Override
 		public int hashCode() {
-			return identities.hashCode();
+			return hash;
 		}
 
 		@Override
@@ -239,19 +224,97 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			if (other == this) {
 				return true;
 			}
-			if (!(other instanceof List<?> otherValues) || otherValues.size() != identities.size()) {
+			if (!(other instanceof List<?> otherValues) || otherValues.size() != identities.length) {
 				return false;
 			}
 			if (other instanceof StableValueTuple stable) {
-				return identities.equals(stable.identities);
+				for (int i = 0; i < identities.length; i++) {
+					if (!identities[i].equals(stable.identities[i])) {
+						return false;
+					}
+				}
+				return true;
 			}
-			for (int i = 0; i < identities.size(); i++) {
+			for (int i = 0; i < identities.length; i++) {
 				Object value = otherValues.get(i);
-				if (!(value instanceof Value otherValue) || !identities.get(i).equals(stableIdentity(otherValue))) {
+				if (!(value instanceof Value otherValue) || !identities[i].equals(StableValueKey.of(otherValue))) {
 					return false;
 				}
 			}
 			return true;
+		}
+	}
+
+	private static final class StableValueKey {
+
+		private static final byte NULL = 0;
+		private static final byte LITERAL = 1;
+		private static final byte IRI = 2;
+		private static final byte BNODE = 3;
+		private static final byte TRIPLE = 4;
+		private static final byte OTHER = 5;
+
+		private final byte kind;
+		private final String lexicalValue;
+		private final String language;
+		private final String datatype;
+		private final String className;
+		private final int hash;
+
+		static StableValueKey of(Value value) {
+			if (value == null) {
+				return new StableValueKey(NULL, null, null, null, null);
+			}
+			if (value instanceof Literal literal) {
+				String language = literal.getLanguage()
+						.orElse("");
+				String datatype = literal.getDatatype() == null ? "" : literal.getDatatype().stringValue();
+				return new StableValueKey(LITERAL, literal.getLabel(), language, datatype, null);
+			}
+			if (value.isIRI()) {
+				return new StableValueKey(IRI, value.stringValue(), null, null, null);
+			}
+			if (value.isBNode()) {
+				return new StableValueKey(BNODE, value.stringValue(), null, null, null);
+			}
+			if (value.isTripleTerm()) {
+				return new StableValueKey(TRIPLE, value.stringValue(), null, null, null);
+			}
+			return new StableValueKey(OTHER, value.stringValue(), null, null, value.getClass().getName());
+		}
+
+		private StableValueKey(byte kind, String lexicalValue, String language, String datatype, String className) {
+			this.kind = kind;
+			this.lexicalValue = lexicalValue;
+			this.language = language;
+			this.datatype = datatype;
+			this.className = className;
+			int computedHash = Byte.hashCode(kind);
+			computedHash = 31 * computedHash + Objects.hashCode(lexicalValue);
+			computedHash = 31 * computedHash + Objects.hashCode(language);
+			computedHash = 31 * computedHash + Objects.hashCode(datatype);
+			computedHash = 31 * computedHash + Objects.hashCode(className);
+			this.hash = computedHash;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (other == this) {
+				return true;
+			}
+			if (!(other instanceof StableValueKey key)) {
+				return false;
+			}
+			return kind == key.kind
+					&& Objects.equals(lexicalValue, key.lexicalValue)
+					&& Objects.equals(language, key.language)
+					&& Objects.equals(datatype, key.datatype)
+					&& Objects.equals(className, key.className);
 		}
 	}
 }

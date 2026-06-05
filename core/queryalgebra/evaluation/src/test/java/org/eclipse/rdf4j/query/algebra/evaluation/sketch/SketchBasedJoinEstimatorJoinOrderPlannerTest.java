@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -248,6 +249,74 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.contains(componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P)),
 				requestedLookupMasks::toString);
 		assertEquals(1.0d, plan.getEstimatedFinalRows(), 1.0e-9d);
+	}
+
+	@Test
+	void fixedOrderPhysicalStateRowsMatchLogicalStateRowsAfterExtension() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI memberOf = VF.createIRI("urn:stateful-rows:memberOf");
+		IRI hasCode = VF.createIRI("urn:stateful-rows:hasCode");
+		for (int orgIndex = 0; orgIndex < 10; orgIndex++) {
+			Resource org = VF.createIRI("urn:stateful-rows:org:" + orgIndex);
+			store.add(VF.createStatement(org, hasCode, VF.createIRI("urn:stateful-rows:code:" + orgIndex)));
+			for (int personIndex = 0; personIndex < 10; personIndex++) {
+				store.add(VF.createStatement(VF.createIRI("urn:stateful-rows:person:" + orgIndex + ':' + personIndex),
+						memberOf, org));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		StatementPattern memberPattern = pattern("person", memberOf, "org");
+		StatementPattern codePattern = pattern("org", hasCode, "code");
+		SketchJoinOrderPlanner planner = SketchJoinOrderPlanner.fixedOrder(estimator,
+				SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, List.of(memberPattern, codePattern), Set.of(),
+				List.of());
+		Method seedPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("seedPlan", int.class, boolean.class);
+		seedPlan.setAccessible(true);
+		Object seed = seedPlan.invoke(planner, 0, false);
+		Method extendPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("extendPlan", seed.getClass(), int.class);
+		extendPlan.setAccessible(true);
+		Object extended = extendPlan.invoke(planner, seed, 1);
+
+		double logicalRows = statePlanEstimateRows(extended);
+		double physicalRows = statePlanPhysicalRows(extended);
+
+		assertEquals(logicalRows, physicalRows, 1.0e-9d,
+				"Physical PlanState must receive the candidate factor estimate, not the already-joined prefix rows");
+	}
+
+	@Test
+	void fixedOrderPhysicalStateDoesNotDoubleJoinFinitePrefixRows() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI memberOf = VF.createIRI("urn:stateful-finite-prefix:memberOf");
+		Resource orgA = VF.createIRI("urn:stateful-finite-prefix:org:a");
+		Resource orgB = VF.createIRI("urn:stateful-finite-prefix:org:b");
+		for (int i = 0; i < 10; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:stateful-finite-prefix:a:" + i), memberOf, orgA));
+			store.add(VF.createStatement(VF.createIRI("urn:stateful-finite-prefix:b:" + i), memberOf, orgB));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		BindingSetAssignment orgValues = singleVariableValues("org", List.of(orgA, orgA, orgB, orgB));
+		StatementPattern memberPattern = pattern("person", memberOf, "org");
+		SketchJoinOrderPlanner planner = SketchJoinOrderPlanner.fixedOrder(estimator,
+				SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, List.of(orgValues, memberPattern), Set.of(),
+				List.of());
+		Method seedPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("seedPlan", int.class, boolean.class);
+		seedPlan.setAccessible(true);
+		Object seed = seedPlan.invoke(planner, 0, false);
+		Method extendPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("extendPlan", seed.getClass(), int.class);
+		extendPlan.setAccessible(true);
+		Object extended = extendPlan.invoke(planner, seed, 1);
+
+		double logicalRows = statePlanEstimateRows(extended);
+		double physicalRows = statePlanPhysicalRows(extended);
+
+		assertEquals(40.0d, logicalRows, 1.0e-9d, "The fixed-order row-flow setup should join VALUES duplicates");
+		assertEquals(logicalRows, physicalRows, 1.0e-9d,
+				"Physical PlanState must not join the finite prefix a second time against prefix-expanded rows");
 	}
 
 	@Test
@@ -3693,6 +3762,24 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static double plannedCartesianWorkRows(JoinOrderPlanner.JoinOrderPlan plan) {
 		return plan.getSummaryDoubleMetrics()
 				.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+	}
+
+	private static double statePlanEstimateRows(Object statePlan) throws Exception {
+		Method estimateMethod = statePlan.getClass()
+				.getDeclaredMethod("estimate");
+		estimateMethod.setAccessible(true);
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = (SketchBasedJoinEstimator.TuplePlanEstimate) estimateMethod
+				.invoke(statePlan);
+		return estimate.outputRows();
+	}
+
+	private static double statePlanPhysicalRows(Object statePlan) throws Exception {
+		Method physicalStateMethod = statePlan.getClass()
+				.getDeclaredMethod("physicalState");
+		physicalStateMethod.setAccessible(true);
+		PlanState physicalState = (PlanState) physicalStateMethod.invoke(statePlan);
+		return physicalState.estimate()
+				.rows();
 	}
 
 	private record ValuesBridgeFixture(

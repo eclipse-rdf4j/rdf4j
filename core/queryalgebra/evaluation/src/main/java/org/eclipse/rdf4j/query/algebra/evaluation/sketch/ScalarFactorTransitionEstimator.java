@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
 /**
@@ -94,17 +97,39 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 				cartesianWorkRows, prefixCost, factorCost.getWorkRows(), estimateVector);
 	}
 
-	private static BagEstimate nextEstimate(PlanState prefixState,
-			JoinFactorCostModel.FactorCostEstimate factorCost, JoinFactorCostModel.EstimateVector estimateVector,
+	private static BagEstimate nextEstimate(PlanState prefixState, JoinFactorCostModel.FactorCostEstimate factorCost,
+			JoinFactorCostModel.EstimateVector estimateVector,
 			SketchBasedJoinEstimator.TuplePlanEstimate nextTupleEstimate) {
 		BagEstimate prefixEstimate = prefixState.estimate();
 		Map<String, Double> metrics = new LinkedHashMap<>(factorCost.getDoubleMetrics());
 		String source = factorCost.getStringMetrics().getOrDefault("plannedEstimateSource", DEFAULT_SOURCE);
+		if (nextTupleEstimate != null) {
+			BagEstimate factorEstimate = factorEstimate(nextTupleEstimate, estimateVector, source, metrics);
+			BagEstimate joined = EstimateMath.innerJoin(prefixEstimate, factorEstimate,
+					sharedVariables(prefixEstimate, factorEstimate));
+			return new BagEstimate(joined.rows(), estimateVector.workRows(), estimateVector.memoryRows(),
+					estimateVector.confidence(), source, joined.variables(), joined.finiteRelations(), metrics);
+		}
 		double rows = nextTupleEstimate == null ? estimateVector.rows() : nextTupleEstimate.outputRows();
 		Map<String, VariableEstimate> variables = nextTupleEstimate == null ? Map.of()
 				: nextTupleEstimate.variableEstimates();
 		return new BagEstimate(rows, estimateVector.workRows(), estimateVector.memoryRows(),
 				estimateVector.confidence(),
 				source, variables, prefixEstimate.finiteRelations(), metrics);
+	}
+
+	private static BagEstimate factorEstimate(SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate,
+			JoinFactorCostModel.EstimateVector estimateVector, String source, Map<String, Double> metrics) {
+		return new BagEstimate(tupleEstimate.outputRows(), estimateVector.workRows(), estimateVector.memoryRows(),
+				estimateVector.confidence(), source, tupleEstimate.variableEstimates(), Map.of(), metrics);
+	}
+
+	private static Set<String> sharedVariables(BagEstimate left, BagEstimate right) {
+		if (left.variables().isEmpty() || right.variables().isEmpty()) {
+			return Set.of();
+		}
+		Set<String> shared = new LinkedHashSet<>(left.variables().keySet());
+		shared.retainAll(right.variables().keySet());
+		return shared.isEmpty() ? Set.of() : Set.copyOf(shared);
 	}
 }

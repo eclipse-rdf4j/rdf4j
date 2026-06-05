@@ -447,7 +447,10 @@ public final class EstimateMath {
 			if (inLeft && inRight) {
 				double distinct = joinVars.contains(name) ? sharedDistinct
 						: Math.min(Math.max(leftVar.distinctRows(), rightVar.distinctRows()), rows);
-				variables.put(name, VariableEstimate.bound(rows, distinct));
+				DistributionSketch sketch = joinVars.contains(name)
+						? ProductDistributionSketch.join(leftVar.sketch(), rightVar.sketch(), distinct)
+						: null;
+				variables.put(name, new VariableEstimate(distinct, rows, 0.0d, sketch));
 			} else if (inLeft) {
 				variables.put(name, VariableEstimate.bound(rows, Math.min(leftVar.distinctRows(), rows)));
 			} else if (leftJoin) {

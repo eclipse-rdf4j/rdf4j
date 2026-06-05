@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.Arrays;
@@ -171,6 +173,23 @@ class BagEstimateMathTest {
 
 		assertEquals(250.0d, joined.rows(), 0.0d,
 				"Frequency-vector sketches should override the much coarser HLL/NDV fallback for single-variable joins");
+	}
+
+	@Test
+	void innerJoinExposesProductSketchForSharedVariable() {
+		DistributionSketch leftSketch = new TestSketch(100.0d, 250.0d, OptionalDouble.empty());
+		DistributionSketch rightSketch = new TestSketch(80.0d, 250.0d, OptionalDouble.empty());
+		BagEstimate left = sketched("left", 1_000.0d, "code", 100.0d, leftSketch);
+		BagEstimate right = sketched("right", 500.0d, "code", 80.0d, rightSketch);
+
+		BagEstimate joined = EstimateMath.innerJoin(left, right, Set.of("code"));
+		DistributionSketch joinedSketch = joined.variable("code").sketch();
+
+		assertNotNull(joinedSketch,
+				"A shared join variable should expose a joined distribution sketch for later costed joins");
+		assertNotSame(leftSketch, joinedSketch, "The output sketch must not be the stale left input frequency vector");
+		assertNotSame(rightSketch, joinedSketch,
+				"The output sketch must not be the stale right input frequency vector");
 	}
 
 	@Test

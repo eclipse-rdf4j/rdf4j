@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -124,6 +125,68 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 
 		assertEquals(20.0d, rows, 0.0d,
 				"Tuple finite anchors should preserve row correlation and exclude mixed branch-name/zone matches");
+	}
+
+	@Test
+	void finiteAnchorPrefixCacheReusesEquivalentFactorSets() {
+		IRI name = VF.createIRI("urn:library:name");
+		IRI locatedAt = VF.createIRI("urn:library:locatedAt");
+		CountingSketchStatementSource store = new CountingSketchStatementSource();
+		loadBranchCopies(store, name, locatedAt, 20, 50);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		BindingSetAssignment branchNames = finiteDomainRows(
+				valueRow("branchName", VF.createLiteral("Branch 1")),
+				valueRow("branchName", VF.createLiteral("Branch 2")));
+		StatementPattern branchName = new StatementPattern(Var.of("branch"), Var.of("name", name),
+				Var.of("branchName"));
+		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
+				Var.of("branch"));
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			double forward = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName),
+					locatedAtBranch, "branch");
+			int probesAfterForward = store.statementProbeCount();
+			double reordered = estimator.estimateSketchJoinSurfaceRows(List.of(branchName, branchNames),
+					locatedAtBranch, "branch");
+
+			assertEquals(forward, reordered, 0.0d);
+			assertEquals(probesAfterForward, store.statementProbeCount(),
+					"Equivalent finite-anchor prefix factor sets should reuse the cached exact prefix estimate");
+		}
+	}
+
+	@Test
+	void finiteAnchorPrefixCacheRemembersFailedExactOrder() {
+		IRI name = VF.createIRI("urn:library:name");
+		IRI locatedAt = VF.createIRI("urn:library:locatedAt");
+		IRI type = VF.createIRI("urn:library:type");
+		CountingSketchStatementSource store = new CountingSketchStatementSource();
+		Resource branch = VF.createIRI("urn:library:branch:1");
+		store.add(st(branch, name, VF.createLiteral("Branch 1")));
+		store.add(st(VF.createIRI("urn:library:copy:1"), locatedAt, branch));
+		store.add(st(VF.createIRI("urn:library:copy:2"), locatedAt, branch));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				config().withZeroIntersectionRowBudget(1));
+		estimator.rebuild();
+		BindingSetAssignment branchNames = finiteDomainRows(valueRow("branchName", VF.createLiteral("Branch 1")));
+		StatementPattern branchName = new StatementPattern(Var.of("branch"), Var.of("name", name),
+				Var.of("branchName"));
+		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
+				Var.of("branch"));
+		StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("type", type), Var.of("kind"));
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			double first = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName, locatedAtBranch),
+					copyType, "copy");
+			int probesAfterFirst = store.statementProbeCount();
+			double second = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName, locatedAtBranch),
+					copyType, "copy");
+
+			assertEquals(first, second, 0.0d);
+			assertEquals(probesAfterFirst, store.statementProbeCount(),
+					"Budgeted finite-prefix failures should be cached for the identical ordered prefix");
+		}
 	}
 
 	@Test
@@ -313,6 +376,21 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	private static Statement st(Resource subject, IRI predicate, Value object) {
 		return VF.createStatement(subject, predicate, object);
+	}
+
+	private static final class CountingSketchStatementSource extends StubSketchStatementSource {
+		private final AtomicInteger statementProbes = new AtomicInteger();
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			statementProbes.incrementAndGet();
+			return super.getStatements(subj, pred, obj, contexts);
+		}
+
+		int statementProbeCount() {
+			return statementProbes.get();
+		}
 	}
 
 	private static SketchBasedJoinEstimator.Config config() {

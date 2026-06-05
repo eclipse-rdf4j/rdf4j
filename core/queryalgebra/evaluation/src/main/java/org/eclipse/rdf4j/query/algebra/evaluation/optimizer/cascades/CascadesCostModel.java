@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -121,6 +122,8 @@ public interface CascadesCostModel {
 		private final IdentityHashMap<TupleExpr, LogicalProperties> logicalPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> logicalFingerprintCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> structuralFingerprintCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Set<String>> bindingNamesCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Set<String>> assuredBindingNamesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Map<Set<String>, StatisticsEstimate>> estimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, StatisticsEstimate>> physicalEstimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, PhysicalProperties>> deliveredPropertiesCache = new IdentityHashMap<>();
@@ -143,7 +146,8 @@ public interface CascadesCostModel {
 			}
 			return logicalPropertiesCache.computeIfAbsent(tupleExpr, expression -> {
 				StatisticsEstimate estimate = estimate(expression, Set.of());
-				return LogicalProperties.from(expression, estimate.rows(), estimate.qErrorInterval());
+				return new LogicalProperties(bindingNames(expression), assuredBindingNames(expression), null,
+						estimate.rows(), estimate.qErrorInterval());
 			});
 		}
 
@@ -157,8 +161,8 @@ public interface CascadesCostModel {
 
 		private String computeLogicalFingerprint(TupleExpr tupleExpr) {
 			String operator = tupleExpr.getClass().getSimpleName();
-			String bindings = sorted(tupleExpr.getBindingNames());
-			String assured = sorted(tupleExpr.getAssuredBindingNames());
+			String bindings = sorted(bindingNames(tupleExpr));
+			String assured = sorted(assuredBindingNames(tupleExpr));
 			if (tupleExpr instanceof StatementPattern pattern) {
 				return operator + ";scope=" + pattern.getScope()
 						+ ";signature=" + pattern.getSignature()
@@ -275,6 +279,29 @@ public interface CascadesCostModel {
 				return "<null>";
 			}
 			return value.getClass().getName() + ':' + value;
+		}
+
+		private Set<String> bindingNames(TupleExpr tupleExpr) {
+			return cachedNames(tupleExpr, bindingNamesCache, TupleExpr::getBindingNames);
+		}
+
+		private Set<String> assuredBindingNames(TupleExpr tupleExpr) {
+			return cachedNames(tupleExpr, assuredBindingNamesCache, TupleExpr::getAssuredBindingNames);
+		}
+
+		private Set<String> cachedNames(TupleExpr tupleExpr, IdentityHashMap<TupleExpr, Set<String>> cache,
+				java.util.function.Function<TupleExpr, Set<String>> source) {
+			if (tupleExpr == null) {
+				return Set.of();
+			}
+			return cache.computeIfAbsent(tupleExpr, expression -> immutableNameSnapshot(source.apply(expression)));
+		}
+
+		private static Set<String> immutableNameSnapshot(Set<String> names) {
+			if (names == null || names.isEmpty()) {
+				return Set.of();
+			}
+			return Collections.unmodifiableSet(new LinkedHashSet<>(names));
 		}
 
 		@Override
@@ -535,10 +562,10 @@ public interface CascadesCostModel {
 				return Set.of();
 			}
 			if (tupleExpr instanceof Join join && genericJoinRightCanSeeLeftBindings(join)) {
-				return join.getLeftArg().getAssuredBindingNames();
+				return visibleRightInputBindingNames(join.getLeftArg(), join.getRightArg());
 			}
 			if (tupleExpr instanceof LeftJoin leftJoin) {
-				return leftJoin.getLeftArg().getAssuredBindingNames();
+				return visibleRightInputBindingNames(leftJoin.getLeftArg(), leftJoin.getRightArg());
 			}
 			return Set.of();
 		}
@@ -549,6 +576,20 @@ public interface CascadesCostModel {
 					&& !TupleExprs.isVariableScopeChange(join.getRightArg())
 					&& !TupleExprs.containsSubquery(join.getRightArg())
 					&& !"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+		}
+
+		private Set<String> visibleRightInputBindingNames(TupleExpr leftArg, TupleExpr rightArg) {
+			Set<String> boundVars = CascadesRewriteSupport.assuredStreamBindingNames(leftArg);
+			if (boundVars.isEmpty() || rightArg == null) {
+				return boundVars;
+			}
+			Set<String> protectedNames = CascadesRewriteSupport.branchLocalBindOrValuesNames(rightArg);
+			if (protectedNames.isEmpty()) {
+				return boundVars;
+			}
+			Set<String> visible = new LinkedHashSet<>(boundVars);
+			visible.removeAll(protectedNames);
+			return visible.isEmpty() ? Set.of() : Set.copyOf(visible);
 		}
 
 		@Override
@@ -592,11 +633,10 @@ public interface CascadesCostModel {
 		}
 
 		private Set<String> boundVars(OptimizationGoal goal) {
-			Set<String> bound = new HashSet<>();
-			if (goal != null) {
-				bound.addAll(goal.requiredProperties().boundVars());
+			if (goal == null || goal.requiredProperties().boundVars().isEmpty()) {
+				return Set.of();
 			}
-			return bound.isEmpty() ? Set.of() : Set.copyOf(bound);
+			return goal.requiredProperties().boundVars();
 		}
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> factorCost(TupleExpr tupleExpr, Set<String> boundVars,
@@ -1484,7 +1524,7 @@ public interface CascadesCostModel {
 		private BagEstimate bagWithBindings(TupleExpr tupleExpr, double rows, double workRows, String source) {
 			BagEstimate bag = BagEstimate.heuristic(rows, source)
 					.withWorkRows(Math.max(rows, workRows), source + "-work");
-			for (String bindingName : tupleExpr.getBindingNames()) {
+			for (String bindingName : bindingNames(tupleExpr)) {
 				if (bindingName != null && !bindingName.isBlank() && !bindingName.startsWith("_const_")) {
 					bag = bag.withVariable(bindingName, VariableEstimate.bound(rows, Math.min(rows, rows)));
 				}
@@ -1497,7 +1537,7 @@ public interface CascadesCostModel {
 				return estimate;
 			}
 			BagEstimate bag = normalizeBagRows(estimate.bag(), estimate);
-			for (String bindingName : tupleExpr.getBindingNames()) {
+			for (String bindingName : bindingNames(tupleExpr)) {
 				if (bindingName == null || bindingName.isBlank() || bindingName.startsWith("_const_")) {
 					continue;
 				}

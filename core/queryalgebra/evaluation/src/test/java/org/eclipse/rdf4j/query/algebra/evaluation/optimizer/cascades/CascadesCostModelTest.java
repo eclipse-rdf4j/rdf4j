@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -49,7 +52,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.junit.jupiter.api.Test;
 
 class CascadesCostModelTest {
@@ -108,6 +113,30 @@ class CascadesCostModelTest {
 		assertEquals(1.0d, matching.rows(), 0.0d);
 		assertEquals(0.0d, disjoint.rows(), 0.0d,
 				"Parent costing must use child finite anchors retained in delivered binding profiles");
+	}
+
+	@Test
+	void physicalJoinCostCarriesJoinedSketchProfileAcrossWinnerBoundary() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr physicalJoin = new MemoExpr(10, 0, "Join", List.of(1, 2), "test", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "join-test");
+		DistributionSketch leftSketch = new TestSketch(40.0d, 17.0d);
+		DistributionSketch rightSketch = new TestSketch(30.0d, 17.0d);
+		Winner left = sketchedProfileWinner(1, join.getLeftArg(), "o", 100.0d, leftSketch);
+		Winner right = sketchedProfileWinner(2, join.getRightArg(), "o", 80.0d, rightSketch);
+
+		CostVector cost = model.localCost(physicalJoin, OptimizationGoal.root(), List.of(left, right));
+		PhysicalProperties delivered = model.deliveredProperties(physicalJoin, OptimizationGoal.root(),
+				List.of(left, right));
+		DistributionSketch joinedSketch = delivered.bindingProfile().variables().get("o").sketch();
+
+		assertEquals(17.0d, cost.rows(), 0.0d,
+				"Parent physical costing must consume child sketch profiles instead of rows-only heuristic bags");
+		assertNotNull(joinedSketch,
+				"A physical winner should deliver the joined sketch profile to its parent winner boundary");
+		assertNotSame(leftSketch, joinedSketch, "The delivered joined sketch must not be stale left input evidence");
+		assertNotSame(rightSketch, joinedSketch, "The delivered joined sketch must not be stale right input evidence");
 	}
 
 	@Test
@@ -623,6 +652,22 @@ class CascadesCostModelTest {
 				new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), List.of(), false, "");
 	}
 
+	private static Winner sketchedProfileWinner(int id, TupleExpr tupleExpr, String variable, double rows,
+			DistributionSketch sketch) {
+		BagEstimate bag = BagEstimate.exact(rows, "test-sketch-anchor")
+				.withVariable(variable, new VariableEstimate(sketch.distinctRows(), rows, 0.0d, sketch));
+		BindingProfile profile = BindingProfile.fromBag(tupleExpr, bag, Map.of());
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(tupleExpr.getBindingNames())
+				.bindingProfile(profile)
+				.build();
+		MemoExpr expression = new MemoExpr(id, id, tupleExpr.getClass().getSimpleName(), List.of(), "test", tupleExpr,
+				delivered, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "winner-" + id);
+		CostVector cost = CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d,
+				"test-sketch-anchor"));
+		return new Winner(expression, tupleExpr, delivered, cost, List.of(), false, "");
+	}
+
 	private static BindingProfile finiteProfile(String variable, Value value) {
 		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of(variable), List.of(List.of(value)),
 				"test-finite-anchor");
@@ -757,6 +802,14 @@ class CascadesCostModelTest {
 				return Optional.empty();
 			}
 			return Optional.of(StatisticsEstimate.heuristic(multiPatternRows, "test-multi-pattern"));
+		}
+	}
+
+	private record TestSketch(double distinctRows, double innerProduct) implements DistributionSketch {
+
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return OptionalDouble.of(innerProduct);
 		}
 	}
 

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -673,8 +674,17 @@ public final class StandardCascadesRules {
 	}
 
 	public static final class MinusAlternativeRule extends AbstractRule {
+		private final BiPredicate<Difference, OptimizationGoal> correlatedAntiExistsAllowed;
+
 		public MinusAlternativeRule() {
+			this((difference, goal) -> true);
+		}
+
+		public MinusAlternativeRule(BiPredicate<Difference, OptimizationGoal> correlatedAntiExistsAllowed) {
 			super("minus-alternatives", RuleKind.TRANSFORMATION, 55);
+			this.correlatedAntiExistsAllowed = correlatedAntiExistsAllowed == null
+					? (difference, goal) -> true
+					: correlatedAntiExistsAllowed;
 		}
 
 		@Override
@@ -778,6 +788,9 @@ public final class StandardCascadesRules {
 
 		private RuleApplication correlatedAntiExistsFilterAlternative(MemoExpr expression, Difference difference,
 				OptimizationGoal goal) {
+			if (!correlatedAntiExistsAllowed.test(difference, goal)) {
+				return null;
+			}
 			TupleExpr alternative = correlatedAntiExistsFilter(difference);
 			if (alternative == null) {
 				return null;

@@ -70,6 +70,17 @@ final class CascadesRewriteSupport {
 		return intersection(null, left, right);
 	}
 
+	static Set<String> assuredStreamBindingNames(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Set.of();
+		}
+		if (tupleExpr instanceof Union union) {
+			return intersection(assuredStreamBindingNames(union.getLeftArg()),
+					assuredStreamBindingNames(union.getRightArg()));
+		}
+		return plannerNames(tupleExpr.getAssuredBindingNames());
+	}
+
 	static Set<String> intersection(BindingUniverse universe, Set<String> left, Set<String> right) {
 		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
 		BindingMask intersection = mask(safeUniverse, left).intersect(mask(safeUniverse, right));

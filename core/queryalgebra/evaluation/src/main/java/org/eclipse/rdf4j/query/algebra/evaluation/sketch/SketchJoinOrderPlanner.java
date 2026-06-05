@@ -1565,8 +1565,9 @@ final class SketchJoinOrderPlanner {
 				maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix.costVector(), stepWorkRows,
 				physicalEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
+		SketchBasedJoinEstimator.TuplePlanEstimate factorStateEstimate = factors.get(candidate).estimate();
 		PlanState physicalState = factorTransitionState(prefix, candidate, physicalEstimate, stepWorkRows,
-				nextEstimate.outputRows(), costVector, nextEstimate);
+				nextEstimate.outputRows(), costVector, factorStateEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(candidate, mask, currentBoundVarMask);
 		StatePlan extended = new StatePlan(nextMask, prefix, candidate, candidate, physicalEstimate,
 				prefix.orderSize() + 1, nextEstimate, prefix.totalWork() + stepWorkRows, costVector,
@@ -3289,11 +3290,30 @@ final class SketchJoinOrderPlanner {
 			if (candidateVars == 0L || hasStructuralConnection(candidate, boundVarMask)) {
 				continue;
 			}
+			if (hasCurrentlyLegalBridgeBetween(plan.mask(), boundVarMask, candidateVars)) {
+				continue;
+			}
 			if (hasPendingBridgeBetween(plan.mask(), candidate, boundVarMask, candidateVars)) {
 				anchors |= bit(candidate);
 			}
 		}
 		return anchors;
+	}
+
+	private boolean hasCurrentlyLegalBridgeBetween(long prefixMask, long boundVarMask, long candidateVars) {
+		long bridges = factorUniverseMask & ~prefixMask & ~bindingSetAssignmentFactorMask;
+		while (bridges != 0L) {
+			int bridge = Long.numberOfTrailingZeros(bridges);
+			bridges &= bridges - 1L;
+			long bridgeVars = bindingVarMasks[bridge] & variableUniverseMask;
+			if ((bridgeVars & boundVarMask) == 0L || (bridgeVars & candidateVars) == 0L) {
+				continue;
+			}
+			if (isFactorActionLegal(bridge, boundVarMask)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean hasPendingBridgeBetween(long prefixMask, int candidate, long boundVarMask, long candidateVars) {
@@ -5080,10 +5100,6 @@ final class SketchJoinOrderPlanner {
 		if (!isFiniteNonNegative(distinctBindings) || distinctBindings <= 0.0d) {
 			distinctBindings = estimatedLookupDistinctRows(prefixEstimate, lookupVarMask, maxLookupRows);
 		}
-		double candidateCap = candidateLookupDistinctUpperBound(factorIndex, lookupVarMask, maxLookupRows);
-		if (isFiniteNonNegative(candidateCap) && candidateCap > 0.0d) {
-			distinctBindings = Math.min(distinctBindings, candidateCap);
-		}
 		double selectedPrefixCap = selectedPrefixLookupDistinctUpperBound(mask, lookupVarMask, maxLookupRows);
 		if (isFiniteNonNegative(selectedPrefixCap) && selectedPrefixCap > 0.0d) {
 			distinctBindings = Math.min(distinctBindings, selectedPrefixCap);
@@ -5100,33 +5116,6 @@ final class SketchJoinOrderPlanner {
 		distinctBindings = capDisconnectedEndpointBridgeLookupBindings(factorIndex, mask, lookupVarMask,
 				distinctBindings);
 		return distinctBindings;
-	}
-
-	private double candidateLookupDistinctUpperBound(int factorIndex, long lookupVarMask, double maxLookupRows) {
-		if (lookupVarMask == 0L || factorIndex < 0 || factorIndex >= factors.size()
-				|| !isFiniteNonNegative(maxLookupRows) || maxLookupRows <= 0.0d) {
-			return Double.NaN;
-		}
-		long candidateMask = bindingVarMasks[factorIndex];
-		if ((candidateMask & lookupVarMask) != lookupVarMask) {
-			return Double.NaN;
-		}
-		SketchBasedJoinEstimator.TuplePlanEstimate estimate = factors.get(factorIndex).estimate();
-		double rows = 1.0d;
-		long remaining = lookupVarMask;
-		while (remaining != 0L) {
-			int variableId = Long.numberOfTrailingZeros(remaining);
-			double variableRows = estimate.distinctBinding(variableId, variableNames);
-			if (!isFiniteNonNegative(variableRows) || variableRows <= 0.0d) {
-				return Double.NaN;
-			}
-			rows *= Math.max(1.0d, Math.min(variableRows, maxLookupRows));
-			if (!isFiniteNonNegative(rows)) {
-				return maxLookupRows;
-			}
-			remaining &= remaining - 1L;
-		}
-		return Math.min(rows, maxLookupRows);
 	}
 
 	private double selectedPrefixLookupDistinctUpperBound(StatePlan selectedPrefix, long lookupVarMask,

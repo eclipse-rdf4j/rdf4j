@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -240,6 +244,52 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void scalarTransitionComposesPrefixAndFactorBagsWhenTupleEstimateIsAvailable() throws Exception {
+		IRI memberOf = VF.createIRI("urn:memberOf");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		addRows(store, "person-a", memberOf, "org-a", 10);
+		addRows(store, "person-b", memberOf, "org-b", 10);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			StatementPattern factor = pattern("person", memberOf, "org");
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate = estimator.planEstimateForJoinOrdering(factor,
+					Set.of());
+			FiniteRelationEstimate orgPrefix = FiniteRelationEstimate.fromRows(List.of("org"),
+					List.of(List.of(VF.createIRI("urn:org-a")), List.of(VF.createIRI("urn:org-a")),
+							List.of(VF.createIRI("urn:org-b")), List.of(VF.createIRI("urn:org-b"))),
+					"prefix-orgs");
+			BagEstimate prefixBag = BagEstimate.exact(4.0d, "prefix")
+					.withFiniteRelation(orgPrefix);
+			BagEstimate factorBag = new BagEstimate(tupleEstimate.outputRows(), tupleEstimate.outputRows(), 0.0d,
+					1.0d, "factor", tupleEstimate.variableEstimates(), Map.of(), Map.of());
+			BagEstimate expected = EstimateMath.innerJoin(prefixBag, factorBag, Set.of("org"));
+			PlanState prefix = PlanState.initial(prefixBag, Set.of("org"),
+					Map.of("org", Set.of(VF.createIRI("urn:org-a"), VF.createIRI("urn:org-b"))));
+			JoinFactorCostModel.FactorCostEstimate factorCost = new JoinFactorCostModel.FactorCostEstimate(
+					tupleEstimate.outputRows(), tupleEstimate.outputRows());
+
+			TransitionEstimate transition = new ScalarFactorTransitionEstimator((requestedFactor, boundVars) -> Optional
+					.of(factorCost)).transition(prefix, AccessPathCandidate.forFactor(factor), factorCost,
+							JoinCostVector.of(tupleEstimate.outputRows(), tupleEstimate.outputRows(),
+									tupleEstimate.outputRows(), 0.0d, 0.0d),
+							tupleEstimate);
+
+			assertEquals(expected.rows(), transition.nextState().estimate().rows(), 1.0e-9d,
+					"Transition state must estimate the next prefix by joining the prefix bag with the factor bag");
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
 	void planStateCarriesTupleSketchEstimateForStatefulTransitions() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
@@ -291,6 +341,54 @@ class PlanStateTransitionAdapterTest {
 					.orElse(null);
 			assertTrue(hasSketchEvidence != null, "PlanState must expose per-variable sketch evidence");
 			assertEquals(Boolean.TRUE, hasSketchEvidence.invoke(state, "org"));
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void tuplePlanVariableEstimatesCarrySketchesIntoBagEstimateMath() throws Exception {
+		IRI leftPredicate = VF.createIRI("urn:leftMemberOf");
+		IRI rightPredicate = VF.createIRI("urn:rightMemberOf");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		addRows(store, "left-a", leftPredicate, "org-a", 10);
+		addRows(store, "left-b", leftPredicate, "org-b", 1);
+		addRows(store, "left-c", leftPredicate, "org-c", 1);
+		addRows(store, "left-d", leftPredicate, "org-d", 1);
+		addRows(store, "right-a", rightPredicate, "org-a", 1);
+		addRows(store, "right-b", rightPredicate, "org-b", 10);
+		addRows(store, "right-c", rightPredicate, "org-c", 1);
+		addRows(store, "right-d", rightPredicate, "org-d", 1);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			SketchBasedJoinEstimator.TuplePlanEstimate leftTuple = estimator
+					.planEstimateForJoinOrdering(pattern("left", leftPredicate, "org"), Set.of());
+			SketchBasedJoinEstimator.TuplePlanEstimate rightTuple = estimator
+					.planEstimateForJoinOrdering(pattern("right", rightPredicate, "org"), Set.of());
+			BagEstimate leftBag = new BagEstimate(leftTuple.outputRows(), leftTuple.outputRows(), 0.0d, 1.0d,
+					"left-tuple", leftTuple.variableEstimates(), Map.of(), Map.of());
+			BagEstimate rightBag = new BagEstimate(rightTuple.outputRows(), rightTuple.outputRows(), 0.0d, 1.0d,
+					"right-tuple", rightTuple.variableEstimates(), Map.of(), Map.of());
+
+			DistributionSketch leftSketch = leftBag.variable("org").sketch();
+			DistributionSketch rightSketch = rightBag.variable("org").sketch();
+			assertNotNull(leftSketch, "TuplePlanEstimate variable estimates must expose the left frequency sketch");
+			assertNotNull(rightSketch, "TuplePlanEstimate variable estimates must expose the right frequency sketch");
+			OptionalDouble sketchRows = leftSketch.innerProduct(rightSketch);
+			assertTrue(sketchRows.isPresent(), "BagEstimate join math needs a frequency-sketch inner product");
+
+			BagEstimate joined = EstimateMath.innerJoin(leftBag, rightBag, Set.of("org"));
+
+			assertEquals(sketchRows.getAsDouble(), joined.rows(), 1.0e-9d,
+					"BagEstimate inner join should consume the sketch propagated from TuplePlanEstimate");
 		} finally {
 			estimator.close();
 		}
@@ -370,6 +468,14 @@ class PlanStateTransitionAdapterTest {
 		QueryBindingSet row = binding(firstName, firstValue);
 		row.addBinding(secondName, VF.createLiteral(secondValue));
 		return row;
+	}
+
+	private static void addRows(StubSketchStatementSource store, String subjectPrefix, IRI predicate,
+			String objectSuffix, int count) {
+		for (int i = 0; i < count; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:" + subjectPrefix + ":" + i), predicate,
+					VF.createIRI("urn:" + objectSuffix)));
+		}
 	}
 
 	private static int componentMask(SketchBasedJoinEstimator.Component... components) {

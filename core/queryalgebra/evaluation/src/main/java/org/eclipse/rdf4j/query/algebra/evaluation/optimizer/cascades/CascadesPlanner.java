@@ -888,17 +888,18 @@ public final class CascadesPlanner {
 		}
 		if (inputCount == 2 && tupleExpr instanceof LeftJoin leftJoin) {
 			return List.of(inputGoal(goal, leftJoin.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, leftJoin.getRightArg(), leftJoin.getLeftArg().getAssuredBindingNames(), tupleExpr,
-							1));
+					inputGoal(goal, leftJoin.getRightArg(),
+							CascadesRewriteSupport.assuredStreamBindingNames(leftJoin.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Join join) {
 			return List.of(inputGoal(goal, join.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, join.getRightArg(), join.getLeftArg().getAssuredBindingNames(), tupleExpr, 1));
+					inputGoal(goal, join.getRightArg(),
+							CascadesRewriteSupport.assuredStreamBindingNames(join.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Difference difference) {
 			return List.of(inputGoal(goal, difference.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, difference.getRightArg(), difference.getLeftArg().getAssuredBindingNames(),
-							tupleExpr, 1));
+					inputGoal(goal, difference.getRightArg(),
+							CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Union union) {
 			return List.of(inputGoal(goal, union.getLeftArg(), Set.of(), tupleExpr, 0),

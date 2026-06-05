@@ -6298,7 +6298,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
 				VarPlanStats stats = entry.getValue();
 				double distinct = stats == null ? outputRows : clampTupleDistinct(stats.distinct, outputRows);
-				estimates.put(entry.getKey(), VariableEstimate.bound(outputRows, distinct));
+				FastAgmsBindingSummary sketch = stats == null || stats.sketch == null || stats.sketch.isEmpty()
+						? null
+						: stats.sketch;
+				estimates.put(entry.getKey(), new VariableEstimate(distinct, outputRows, 0.0d, sketch));
 			}
 			return estimates;
 		}
@@ -6846,6 +6849,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
 		private final Map<BindingSetAssignmentEstimateCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentEstimateCache = new HashMap<>();
 		private final Map<FiniteAnchorPrefixCacheKey, Optional<TuplePlanEstimate>> finiteAnchorPrefixEstimateCache = new HashMap<>();
+		private final Set<FiniteAnchorPrefixFailureCacheKey> finiteAnchorPrefixFailureCache = new HashSet<>();
 		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
 	}
 
@@ -6933,6 +6937,50 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		private FiniteAnchorPrefixCacheKey(List<TupleExpr> factors) {
 			this.factors = factors.toArray(TupleExpr[]::new);
+			int hash = this.factors.length;
+			for (TupleExpr factor : this.factors) {
+				hash += System.identityHashCode(factor);
+			}
+			this.hashCode = hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof FiniteAnchorPrefixCacheKey that) || factors.length != that.factors.length) {
+				return false;
+			}
+			boolean[] matched = new boolean[that.factors.length];
+			for (TupleExpr factor : factors) {
+				boolean found = false;
+				for (int i = 0; i < that.factors.length; i++) {
+					if (!matched[i] && factor == that.factors[i]) {
+						matched[i] = true;
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class FiniteAnchorPrefixFailureCacheKey {
+		private final TupleExpr[] factors;
+		private final int hashCode;
+
+		private FiniteAnchorPrefixFailureCacheKey(List<TupleExpr> factors) {
+			this.factors = factors.toArray(TupleExpr[]::new);
 			int hash = 1;
 			for (TupleExpr factor : this.factors) {
 				hash = 31 * hash + System.identityHashCode(factor);
@@ -6945,7 +6993,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof FiniteAnchorPrefixCacheKey that) || factors.length != that.factors.length) {
+			if (!(other instanceof FiniteAnchorPrefixFailureCacheKey that) || factors.length != that.factors.length) {
 				return false;
 			}
 			for (int i = 0; i < factors.length; i++) {
@@ -9543,8 +9591,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (cached != null) {
 			return cached.orElse(null);
 		}
+		FiniteAnchorPrefixFailureCacheKey failureKey = new FiniteAnchorPrefixFailureCacheKey(factors);
+		if (scope.finiteAnchorPrefixFailureCache.contains(failureKey)) {
+			return null;
+		}
 		TuplePlanEstimate estimate = finiteAnchorPrefixEstimateUncached(factors);
-		scope.finiteAnchorPrefixEstimateCache.put(key, Optional.ofNullable(estimate));
+		if (estimate != null) {
+			scope.finiteAnchorPrefixEstimateCache.put(key, Optional.of(estimate));
+		} else {
+			scope.finiteAnchorPrefixFailureCache.add(failureKey);
+		}
 		return estimate;
 	}
 
