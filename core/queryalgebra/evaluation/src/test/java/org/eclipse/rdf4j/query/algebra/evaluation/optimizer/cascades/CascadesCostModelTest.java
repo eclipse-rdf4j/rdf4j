@@ -141,6 +141,53 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void physicalLeafFactorEstimateBagFeedsDeliveredBindingProfile() throws Exception {
+		DistributionSketch sketch = new TestSketch(7.0d, 7.0d);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		BagEstimate bag = BagEstimate.exact(9.0d, "factor-sketch")
+				.withVariable("o", new VariableEstimate(7.0d, 9.0d, 0.0d, sketch));
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = factorEstimateWithBag(
+				new JoinFactorCostModel.FactorCostEstimate(11.0d, 9.0d), bag);
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> Optional.of(factorEstimate);
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, factorCostModel);
+		MemoExpr physicalLeaf = new MemoExpr(10, 0, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "leaf-test");
+
+		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, OptimizationGoal.root(), List.of());
+		VariableEstimate deliveredEstimate = delivered.bindingProfile().variables().get("o");
+
+		assertNotNull(deliveredEstimate, "Physical leaf factor bag evidence must become delivered binding profile");
+		assertSame(sketch, deliveredEstimate.sketch(),
+				"Sketch evidence from the factor estimate must survive the physical winner boundary");
+		assertEquals(9.0d, deliveredEstimate.boundRows(), 0.0d);
+	}
+
+	@Test
+	void opaquePhysicalLeafFactorEstimateBagFeedsDeliveredBindingProfile() throws Exception {
+		DistributionSketch sketch = new TestSketch(7.0d, 7.0d);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		BagEstimate bag = BagEstimate.exact(9.0d, "opaque-factor-sketch")
+				.withVariable("o", new VariableEstimate(7.0d, 9.0d, 0.0d, sketch));
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = factorEstimateWithBag(
+				new JoinFactorCostModel.FactorCostEstimate(11.0d, 9.0d), bag);
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> Optional.of(factorEstimate);
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, factorCostModel);
+		CostVector ruleCost = CostVector.ofRowsAndWork(9.0d, 11.0d,
+				QErrorInterval.heuristic(9.0d, 4.0d, "opaque-rule"));
+		MemoExpr physicalLeaf = new MemoExpr(10, 0, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, ruleCost, List.of(), "opaque-leaf-test");
+
+		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, OptimizationGoal.root(), List.of());
+		VariableEstimate deliveredEstimate = delivered.bindingProfile().variables().get("o");
+
+		assertNotNull(deliveredEstimate,
+				"Opaque physical leaf factor bag evidence must become delivered binding profile");
+		assertSame(sketch, deliveredEstimate.sketch(),
+				"Opaque leaf sketch evidence must survive the physical winner boundary");
+		assertEquals(9.0d, deliveredEstimate.boundRows(), 0.0d);
+	}
+
+	@Test
 	void feedbackCorrectionPreservesJoinedSketchProfile() {
 		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
 		CascadesCostModel model = model(provider);
@@ -739,6 +786,12 @@ class CascadesCostModelTest {
 		BagEstimate bag = BagEstimate.exact(1.0d, "test-finite-anchor")
 				.withFiniteRelation(relation);
 		return BindingProfile.fromBag(null, bag, Map.of());
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate factorEstimateWithBag(
+			JoinFactorCostModel.FactorCostEstimate estimate, BagEstimate bag) throws Exception {
+		Method withBag = JoinFactorCostModel.FactorCostEstimate.class.getMethod("withBag", BagEstimate.class);
+		return (JoinFactorCostModel.FactorCostEstimate) withBag.invoke(estimate, bag);
 	}
 
 	private static double evidenceProfileRows(BindingProfile profile) throws Exception {

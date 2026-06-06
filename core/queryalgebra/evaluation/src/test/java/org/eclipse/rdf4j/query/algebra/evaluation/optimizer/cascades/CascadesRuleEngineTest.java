@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -542,6 +543,23 @@ class CascadesRuleEngineTest {
 						&& bindingRows(join.getLeftArg(), "o") == 2
 						&& containsStatementPattern(join.getRightArg(), "s", "p", "o")),
 				"Expected safe IN filter to become VALUES join anchor");
+	}
+
+	@Test
+	void filterValuesAnchorTurnsSafeOrEqualityIntoValuesJoin() {
+		ValueExpr condition = new Or(
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("MED-1000")), Compare.CompareOp.EQ),
+				new Compare(new ValueConstant(VF.createLiteral("MED-1001")), new Var("o"), Compare.CompareOp.EQ));
+		Filter filter = new Filter(pattern("s", "p", "o"), condition);
+
+		List<RuleApplication> applications = apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join join
+						&& bindingRows(join.getLeftArg(), "o") == 2
+						&& containsStatementPattern(join.getRightArg(), "s", "p", "o")),
+				"Expected safe OR equality filter to become VALUES join anchor");
 	}
 
 	@Test

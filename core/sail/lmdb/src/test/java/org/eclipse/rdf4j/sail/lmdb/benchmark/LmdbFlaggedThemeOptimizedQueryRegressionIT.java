@@ -112,6 +112,10 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				Assertions.assertFalse(renderedQuery.contains("VALUES (?threshold ?w)"),
 						"Highly connected q10 must not use a finite threshold/weight anchor: weight values are "
 								+ "high-fanout and make anti-join work run once per candidate weight row\n" + plan);
+				Assertions.assertFalse(plan.contains("optimizer.guaranteeOption=finite-anchor:w"),
+						"Highly connected q10 must not split the high-fanout weight filter into a standalone "
+								+ "finite anchor: the weight lookup walks most of the predicate/object domain and "
+								+ "delays the selective anti-join\n" + plan);
 				assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
 						"<http://example.com/theme/connected/weight> ?w",
 						"Highly connected q10 should bind typed nodes before expanding outer weight fanout\n" + plan);

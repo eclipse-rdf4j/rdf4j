@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
@@ -226,6 +227,10 @@ final class LmdbCascadesRuleProvider {
 		if (transparentSinglePattern != null) {
 			return estimateAntiJoinCost(statistics, costModel, transparentSinglePattern, boundVars);
 		}
+		Optional<AntiJoinCost> exactEmpty = exactUncorrelatedEmptyAntiJoinCost(statistics, tupleExpr, boundVars);
+		if (exactEmpty.isPresent()) {
+			return exactEmpty;
+		}
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
 				boundVars);
 		if (estimate.isPresent()
@@ -236,6 +241,23 @@ final class LmdbCascadesRuleProvider {
 		double rows = statistics.getCardinality(tupleExpr);
 		if (LmdbJoinPlanSupport.isFiniteNonNegative(rows)) {
 			return Optional.of(new AntiJoinCost(rows, rows));
+		}
+		return Optional.empty();
+	}
+
+	private static Optional<AntiJoinCost> exactUncorrelatedEmptyAntiJoinCost(EvaluationStatistics statistics,
+			TupleExpr tupleExpr, Set<String> boundVars) {
+		if (statistics == null || tupleExpr == null) {
+			return Optional.empty();
+		}
+		Set<String> incomingBindings = new HashSet<>(LmdbJoinPlanSupport.plannerBindingNames(boundVars));
+		incomingBindings.retainAll(LmdbJoinPlanSupport.plannerBindingNames(tupleExpr.getBindingNames()));
+		if (!incomingBindings.isEmpty()) {
+			return Optional.empty();
+		}
+		double rows = statistics.getCardinality(tupleExpr);
+		if (rows == 0.0d) {
+			return Optional.of(new AntiJoinCost(0.0d, 0.0d));
 		}
 		return Optional.empty();
 	}
@@ -571,6 +593,10 @@ final class LmdbCascadesRuleProvider {
 					&& sp.getContextVar().hasValue()) {
 				builder.graphContext(sp.getContextVar().getValue().stringValue());
 			}
+			estimate.getBagEstimate()
+					.map(bag -> BindingProfile.fromBag(tupleExpr, bag, estimate.getDoubleMetrics()))
+					.filter(profile -> !profile.isAny())
+					.ifPresent(builder::bindingProfile);
 			return builder.build();
 		}
 
@@ -1454,7 +1480,8 @@ final class LmdbCascadesRuleProvider {
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.rows());
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.workRows());
 					return new JoinFactorCostModel.FactorCostEstimate(estimate.workRows(), estimate.rows(),
-							stringMetrics, doubleMetrics);
+							stringMetrics, doubleMetrics)
+									.withBag(estimate.bag());
 				}
 			}
 			stringMetrics.putIfAbsent(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-join-plan");
@@ -1515,6 +1542,7 @@ final class LmdbCascadesRuleProvider {
 		private static final int MAX_CANDIDATE_METRICS = 8;
 		private static final int FIXED_ORDER_PRESELECTION_FACTOR_THRESHOLD = 6;
 		private static final double SEMANTIC_REWRITE_RARE_FILTER_INVOCATION_ROWS = 32.0d;
+		private static final double SEMANTIC_REWRITE_MIN_WORK_IMPROVEMENT_RATIO = 0.90d;
 
 		private final JoinOrderPlanner joinOrderPlanner;
 
@@ -1645,6 +1673,9 @@ final class LmdbCascadesRuleProvider {
 			// move. Do not reject them just because their local access path is worse at the FILTER's old position.
 			if (original.isEmpty()) {
 				return true;
+			}
+			if (!semanticRewriteMateriallyBeats(candidate, original.get())) {
+				return false;
 			}
 			if (!rareFilterMakesSemanticRewriteMoreExpensive(candidate, original.get(), originalFilters,
 					satisfiedFilterIndex)) {
@@ -2275,12 +2306,27 @@ final class LmdbCascadesRuleProvider {
 		private boolean beats(CostedOption candidate, CostedOption incumbent) {
 			if (candidate.semanticRewrite()
 					&& !incumbent.semanticRewrite()
+					&& !semanticRewriteMateriallyBeats(candidate, incumbent)) {
+				return false;
+			}
+			if (candidate.semanticRewrite()
+					&& !incumbent.semanticRewrite()
 					&& cartesianWork(candidate.plan()) > 0.0d
 					&& optionFullWork(candidate.plan()) >= optionFullWork(incumbent.plan())) {
 				return false;
 			}
 			int comparison = Double.compare(candidate.comparableWork(), incumbent.comparableWork());
 			return comparison < 0 || comparison == 0 && candidate.preferOnTie() && !incumbent.preferOnTie();
+		}
+
+		private boolean semanticRewriteMateriallyBeats(CostedOption candidate, CostedOption incumbent) {
+			double candidateWork = candidate.comparableWork();
+			double incumbentWork = incumbent.comparableWork();
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)) {
+				return false;
+			}
+			return candidateWork <= incumbentWork * SEMANTIC_REWRITE_MIN_WORK_IMPROVEMENT_RATIO;
 		}
 
 		private TupleExpr materialize(CostedOption selected) {
@@ -2766,7 +2812,8 @@ final class LmdbCascadesRuleProvider {
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.rows());
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.workRows());
 					return new JoinFactorCostModel.FactorCostEstimate(estimate.workRows(), estimate.rows(),
-							stringMetrics, doubleMetrics);
+							stringMetrics, doubleMetrics)
+									.withBag(estimate.bag());
 				}
 			}
 			return new JoinFactorCostModel.FactorCostEstimate(joinPlan.getEstimatedTotalWork(),

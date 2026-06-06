@@ -129,6 +129,44 @@ class AASQueriesBenchmarkTest {
 		}
 	}
 
+	@Test
+	void cascadesQuery3StartsFromSelectiveRatedPowerBranch() throws Exception {
+		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
+		configureBenchmark(benchmark);
+		setField(benchmark, "productionLineCount", 3);
+		setField(benchmark, "driveUnitCount", 3);
+		setField(benchmark, "sensorCount", 3);
+		setField(benchmark, "query", "query3LineAggregates");
+		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
+		String previousPrintExplain = System.getProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY);
+		String previousPrintOptimizedPlan = System.getProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY);
+		PrintStream previousOut = System.out;
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+		try {
+			System.setProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, "false");
+			System.setProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, "true");
+			System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+			benchmark.setup();
+			state.setup(benchmark);
+
+			String output = out.toString(StandardCharsets.UTF_8);
+			int ratedPower = output.indexOf("value=\"ratedPower\"");
+			int relationshipSecond = output.indexOf("value=https://admin-shell.io/aas/3/second");
+			assertTrue(ratedPower >= 0, output);
+			assertTrue(relationshipSecond >= 0, output);
+			assertTrue(ratedPower < relationshipSecond,
+					"query3 should restrict the component-property branch before walking relationship edges:\n"
+							+ output);
+		} finally {
+			System.setOut(previousOut);
+			state.tearDown();
+			benchmark.tearDown();
+			restoreProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, previousPrintExplain);
+			restoreProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, previousPrintOptimizedPlan);
+		}
+	}
+
 	private static void configureBenchmark(AASQueriesBenchmark benchmark) throws ReflectiveOperationException {
 		setField(benchmark, "productionLineCount", 1);
 		setField(benchmark, "driveUnitCount", 1);

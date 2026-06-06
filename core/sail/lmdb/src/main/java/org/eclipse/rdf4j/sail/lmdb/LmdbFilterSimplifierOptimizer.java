@@ -272,7 +272,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				continue;
 			}
 			if (materializedAnchor == null) {
-				materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings);
+				materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings,
+						mandatoryOptionalAnchorBindings);
 			}
 			if (materializedAnchor != null) {
 				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
@@ -771,7 +772,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private BindingSetAssignment materializedSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment anchor,
-			Set<String> assuredBindings) {
+			Set<String> assuredBindings, Set<String> mandatoryOptionalAnchorBindings) {
 		if (anchor == null) {
 			return null;
 		}
@@ -779,6 +780,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return null;
 		}
 		String bindingName = anchor.getBindingNames().iterator().next();
+		if (!mandatoryOptionalAnchorBindings.contains(bindingName)
+				&& shouldKeepObjectFilterForCascadesCosting(filter, condition, bindingName)) {
+			return null;
+		}
 		if (assuredBindings.contains(bindingName)
 				&& !extensionElementNames(filter.getArg()).contains(bindingName)
 				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
@@ -790,6 +795,39 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return null;
 	}
 
+	private boolean shouldKeepObjectFilterForCascadesCosting(Filter filter, ValueExpr condition, String bindingName) {
+		StatementPattern pattern = localStatementPattern(filter, condition, bindingName);
+		if (pattern == null || !"object".equals(localPatternComponent(pattern, bindingName))) {
+			return false;
+		}
+		if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)) {
+			return false;
+		}
+		if (containsLeftJoinRightBinding(filter.getArg(), bindingName)) {
+			return false;
+		}
+		return containsMultipleStatementPatterns(filter);
+	}
+
+	private static boolean containsLeftJoinRightBinding(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr == null || bindingName == null) {
+			return false;
+		}
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin leftJoin) {
+				if (!leftJoin.getLeftArg().getBindingNames().contains(bindingName)
+						&& leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
+					contains[0] = true;
+					return;
+				}
+				super.meet(leftJoin);
+			}
+		});
+		return contains[0];
+	}
+
 	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment anchor, String bindingName) {
 		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
@@ -798,6 +836,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			if (!objectAnchor) {
 				return false;
 			}
+			if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)
+					&& allAnchorValuesAreSafeValues(anchor, bindingName)) {
+				return true;
+			}
 			Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
 			return guarantee.isPresent() && canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());
 		}
@@ -805,6 +847,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return false;
 		}
 		return LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+	}
+
+	private static boolean allAnchorValuesAreSafeValues(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(bindingSet.getValue(bindingName))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private BindingSetAssignment expandFiniteAnchor(Filter filter, ValueExpr condition,

@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -136,6 +137,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
 	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
 	private static final String LMDB_PHYSICAL_REFINEMENT = "costModel=lmdb, accessPathSelection=per-step";
+	private static final String CORRELATED_MINUS_ANTI_EXISTS_REWRITE_METRIC = "optimizer.correlatedMinusAntiExistsRewrite";
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
 	private static final String JOIN_TREE_SHAPE_PROPERTY = "rdf4j.optimizer.lmdb.joinTreeShape";
@@ -1537,13 +1539,15 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							leftJoin.getLeftArg().getAssuredBindingNames())) {
 				return null;
 			}
-			if (finiteLeftBindingsCoverOptionalProbeInput(leftJoin, optionalBindings)) {
+			boolean hasExactSafeOptionalAnchor = hasExactSafeOptionalSmallLiteralAnchor(filter.getCondition(),
+					optionalBindings);
+			if (!hasExactSafeOptionalAnchor && finiteLeftBindingsCoverOptionalProbeInput(leftJoin, optionalBindings)) {
 				return null;
 			}
-			if (containsNestedExistsFilter(leftJoin.getLeftArg())) {
+			if (!hasExactSafeOptionalAnchor && containsNestedExistsFilter(leftJoin.getLeftArg())) {
 				return null;
 			}
-			if (containsUnion(leftJoin.getLeftArg())) {
+			if (!hasExactSafeOptionalAnchor && containsUnion(leftJoin.getLeftArg())) {
 				return null;
 			}
 			TupleExpr replacement = rewriteNullRejectingOptionalFilterAfterDelayableExtension(filter, leftJoin);
@@ -1551,10 +1555,39 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				replacement = new Filter(new Join(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()),
 						filter.getCondition().clone());
 			}
-			replacement.setStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC,
-					LmdbNullRejectingOptionalSupport.rewriteMetric("sketch-join", optionalBindings));
+			markNullRejectingOptionalRewrite(replacement, optionalBindings);
 			filter.replaceWith(replacement);
 			return replacement;
+		}
+
+		private boolean hasExactSafeOptionalSmallLiteralAnchor(ValueExpr expression, Set<String> optionalBindings) {
+			for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(expression)) {
+				BindingAssignmentSignature signature = bindingAssignmentSignature(
+						LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition));
+				if (signature != null && optionalBindings.contains(signature.bindingName())
+						&& allAnchorValuesAreSafeValues(signature.values())) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private void markNullRejectingOptionalRewrite(TupleExpr replacement, Set<String> optionalBindings) {
+			replacement.setStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC,
+					LmdbNullRejectingOptionalSupport.rewriteMetric("sketch-join", optionalBindings));
+			markContainedNullRejectingOptionalFilter(replacement, optionalBindings);
+		}
+
+		private boolean markContainedNullRejectingOptionalFilter(TupleExpr tupleExpr, Set<String> optionalBindings) {
+			if (tupleExpr instanceof Filter filter) {
+				LmdbNullRejectingOptionalSupport.markRewrittenOptionalBindings(filter, "sketch-join",
+						optionalBindings);
+				return true;
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unary && !TupleExprs.isVariableScopeChange(unary)) {
+				return markContainedNullRejectingOptionalFilter(unary.getArg(), optionalBindings);
+			}
+			return false;
 		}
 
 		private boolean handleNegatedBoundOptionalFilter(Filter filter, LeftJoin leftJoin) {
@@ -2328,6 +2361,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 
 			Filter replacement = new Filter(leftArg.clone(), new Not(new Exists(rightArg.clone())));
+			LmdbRewriteProof proof = new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_CORRELATED_ANTI_EXISTS,
+					LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+					Set.of("sharedBindings=" + LmdbJoinPlanSupport.describeBindingNames(sharedBindingNames),
+							"leftAssuredSharedBindings",
+							"rhsScopeSafe"),
+					"MINUS with assured shared variables is implemented as a streaming correlated NOT EXISTS probe");
+			replacement.setStringMetricPlanned(CORRELATED_MINUS_ANTI_EXISTS_REWRITE_METRIC,
+					"rule=lmdb-correlated-minus-anti-exists, " + proof.metricFragment());
 			difference.replaceWith(replacement);
 			return replacement;
 		}
@@ -4045,8 +4086,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
 					if (anchor != null
 							&& LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter, condition)
-							&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor)) {
-						insertSmallLiteralFilterAnchor(collected.joinArgs, filter.getArg(), anchor);
+							&& canMaterializeSmallLiteralDeferredFilterAnchor(filter, condition, anchor)
+							&& insertSmallLiteralFilterAnchor(collected.joinArgs, filter.getArg(), anchor)) {
+						if (isExactSafeRewrittenOptionalAnchor(filter, anchor)) {
+							collected.exactCostingOnlyFilters.add(exactSatisfiedFilter(filter, condition,
+									collected.exactCostingOnlyFilters.size()));
+							continue;
+						}
 					}
 					remainingConditions.add(condition);
 				}
@@ -4060,6 +4106,28 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			collected.deferredFilters.clear();
 			collected.deferredFilters.addAll(remainingFilters);
+		}
+
+		private boolean canMaterializeSmallLiteralDeferredFilterAnchor(Filter filter, ValueExpr condition,
+				BindingSetAssignment anchor) {
+			return LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor)
+					|| isExactSafeRewrittenOptionalAnchor(filter, anchor);
+		}
+
+		private boolean isExactSafeRewrittenOptionalAnchor(Filter filter, BindingSetAssignment anchor) {
+			BindingAssignmentSignature signature = bindingAssignmentSignature(anchor);
+			return signature != null
+					&& LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, signature.bindingName())
+					&& allAnchorValuesAreSafeValues(signature.values());
+		}
+
+		private boolean allAnchorValuesAreSafeValues(List<Value> values) {
+			for (Value value : values) {
+				if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private void dropNonSelectiveFiltersCoveredByAssignments(CollectedJoinArgs collected) {
@@ -4633,7 +4701,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			double candidateComparableWork = guaranteeOptionComparableWork(candidate.get(), option.name());
 			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateComparableWork)
-					|| candidateComparableWork > CANONICAL_FINITE_ANCHOR_FASTPATH_MAX_WORK_ROWS) {
+					|| candidateComparableWork > CANONICAL_FINITE_ANCHOR_FASTPATH_MAX_WORK_ROWS
+					|| !preselectableFiniteAnchorAccess(candidate.get())) {
 				return Optional.empty();
 			}
 
@@ -4648,6 +4717,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			option.materializeSelectedRows();
 			return Optional.of(withGuaranteeOptionMetrics(candidate.get(), guaranteeChoices.generatedCount(),
 					option.name(), candidateSummaries));
+		}
+
+		private boolean preselectableFiniteAnchorAccess(JoinOrderPlanner.JoinOrderPlan candidate) {
+			double finiteAnchorAccessRows = finiteAnchorAccessRows(candidate);
+			return LmdbJoinPlanSupport.isFiniteNonNegative(finiteAnchorAccessRows)
+					&& finiteAnchorAccessRows <= SELECTIVE_FINITE_ANCHOR_MAX_ACCESS_ROWS;
 		}
 
 		private List<JoinOrderPlanner.FilterConstraint> plannerFilterConstraints(List<DeferredFilter> segmentFilters,
@@ -5956,7 +6031,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (assignmentNames.isEmpty()
 						|| assignmentNames.get().isEmpty()
 						|| !Collections.disjoint(assignmentNames.get(), protectedFiniteBindings)
-						|| !isSingleLiteralBindingAssignment(tupleExpr)) {
+						|| !isSingleFiniteBindingAssignment(tupleExpr)) {
 					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
 					i++;
 					continue;
@@ -6074,7 +6149,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return var.hasValue() || boundNames.contains(var.getName()) || assignmentNames.contains(var.getName());
 		}
 
-		private boolean isSingleLiteralBindingAssignment(TupleExpr tupleExpr) {
+		private boolean isSingleFiniteBindingAssignment(TupleExpr tupleExpr) {
 			if (!(tupleExpr instanceof BindingSetAssignment assignment)
 					|| assignment.getAssuredBindingNames().size() != 1
 					|| assignment.getBindingSets() == null) {
@@ -6084,34 +6159,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (BindingSet bindingSet : assignment.getBindingSets()) {
 				for (String bindingName : assignment.getAssuredBindingNames()) {
 					Value value = bindingSet.getValue(bindingName);
-					if (!(value instanceof Literal)) {
+					if (!(value instanceof IRI || value instanceof Literal)) {
 						return false;
 					}
 					sawValue = true;
 				}
 			}
 			return sawValue;
-		}
-
-		private boolean isSingletonLiteralBindingAssignment(TupleExpr tupleExpr) {
-			if (!(tupleExpr instanceof BindingSetAssignment assignment)
-					|| assignment.getAssuredBindingNames().size() != 1
-					|| assignment.getBindingSets() == null) {
-				return false;
-			}
-			int rows = 0;
-			for (BindingSet bindingSet : assignment.getBindingSets()) {
-				rows++;
-				if (rows > 1) {
-					return false;
-				}
-				for (String bindingName : assignment.getAssuredBindingNames()) {
-					if (!(bindingSet.getValue(bindingName) instanceof Literal)) {
-						return false;
-					}
-				}
-			}
-			return rows == 1;
 		}
 
 		private int assignmentDependentBoundLookupBlockEnd(List<TupleExpr> orderedArgs, int assignmentIndex,
@@ -6255,7 +6309,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> correlatedNotExistsFiniteBindingNames(List<TupleExpr> segment,
 				List<DeferredFilter> segmentFilters, List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
-			Set<String> finiteNames = finiteLiteralBindingNames(segment);
+			Set<String> finiteNames = finiteSafeBindingNames(segment);
 			if (finiteNames.isEmpty()) {
 				return Set.of();
 			}
@@ -6276,18 +6330,44 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							.ifPresent(referencedNames::addAll);
 				}
 			}
+			expandThroughConnectedPlannerFilters(referencedNames, plannerFilters);
 			boolean hasCorrelatedNotExistsFilter = hasCorrelatedNotExistsFilter(segmentFilters, plannerFilters);
 			finiteNames.retainAll(referencedNames);
 			if (finiteNames.isEmpty() && hasCorrelatedNotExistsFilter && referencedNames.isEmpty()) {
-				return finiteLiteralBindingNames(segment);
+				return finiteSafeBindingNames(segment);
 			}
 			return finiteNames;
 		}
 
-		private Set<String> finiteLiteralBindingNames(List<TupleExpr> segment) {
+		private void expandThroughConnectedPlannerFilters(Set<String> referencedNames,
+				List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
+			if (referencedNames.isEmpty()) {
+				return;
+			}
+			boolean changed;
+			do {
+				changed = false;
+				for (JoinOrderPlanner.FilterConstraint filter : plannerFilters) {
+					if (filter.isCostOnly()) {
+						continue;
+					}
+					Set<String> filterNames = new LinkedHashSet<>(filter.getRequiredVars());
+					filter.getCondition()
+							.map(DeferredFilter::conditionBindingNames)
+							.ifPresent(filterNames::addAll);
+					if (!filterNames.isEmpty()
+							&& !Collections.disjoint(filterNames, referencedNames)
+							&& referencedNames.addAll(filterNames)) {
+						changed = true;
+					}
+				}
+			} while (changed);
+		}
+
+		private Set<String> finiteSafeBindingNames(List<TupleExpr> segment) {
 			Set<String> finiteNames = new LinkedHashSet<>();
 			for (TupleExpr tupleExpr : segment) {
-				if (!isSingletonLiteralBindingAssignment(tupleExpr)) {
+				if (!isSingleFiniteBindingAssignment(tupleExpr)) {
 					continue;
 				}
 				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(
@@ -6321,7 +6401,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						tupleExpr);
 				if (assignmentNames.isPresent()
 						&& !Collections.disjoint(assignmentNames.get(), prefixNames)
-						&& isSingletonLiteralBindingAssignment(tupleExpr)) {
+						&& isSingleFiniteBindingAssignment(tupleExpr)) {
 					prefix.add(tupleExpr);
 				} else {
 					remaining.add(tupleExpr);
@@ -6345,7 +6425,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (assignmentNames.isEmpty() || Collections.disjoint(assignmentNames.get(), prefixNames)) {
 					continue;
 				}
-				if (!isSingleLiteralBindingAssignment(tupleExpr) || !seen.addAll(assignmentNames.get())) {
+				if (!isSingleFiniteBindingAssignment(tupleExpr) || !seen.addAll(assignmentNames.get())) {
 					return List.of();
 				}
 				prefix.add(tupleExpr);
@@ -7251,6 +7331,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 			} else {
 				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-synthetic");
+			}
+			String correlatedMinusRewrite = deferredFilter.sourceFilterStringMetric(
+					CORRELATED_MINUS_ANTI_EXISTS_REWRITE_METRIC);
+			if (correlatedMinusRewrite != null) {
+				filter.setStringMetricPlanned(CORRELATED_MINUS_ANTI_EXISTS_REWRITE_METRIC, correlatedMinusRewrite);
 			}
 			if (passEstimate.getEvidenceCount() >= 0L) {
 				filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,

@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 final class LmdbNullRejectingOptionalSupport {
 
 	static final String REWRITE_METRIC = "optimizer.nullRejectingOptionalRewrite";
+	private static final Object OPTIONAL_BINDINGS_METADATA_KEY = LmdbNullRejectingOptionalSupport.class.getName()
+			+ ".optionalBindings";
 
 	private LmdbNullRejectingOptionalSupport() {
 	}
@@ -54,16 +56,27 @@ final class LmdbNullRejectingOptionalSupport {
 			return null;
 		}
 		LeftJoin leftJoin = (LeftJoin) filter.getArg();
+		Set<String> optionalBindings = optionalDirectProducedBindingNames(leftJoin);
 		Filter replacement = new Filter(new Join(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()),
 				filter.getCondition().clone());
-		replacement.setStringMetricPlanned(REWRITE_METRIC,
-				rewriteMetric("filter-simplifier", optionalDirectProducedBindingNames(leftJoin)));
+		markRewrittenOptionalBindings(replacement, "filter-simplifier", optionalBindings);
 		return replacement;
 	}
 
 	static String rewriteMetric(String source, Set<String> optionalBindings) {
 		return "source=" + source + ", optionalBindings="
 				+ LmdbJoinPlanSupport.describeBindingNames(optionalBindings);
+	}
+
+	static void markRewrittenOptionalBindings(Filter filter, String source, Set<String> optionalBindings) {
+		Set<String> copiedBindings = optionalBindings.isEmpty() ? Set.of() : Set.copyOf(optionalBindings);
+		filter.setStringMetricPlanned(REWRITE_METRIC, rewriteMetric(source, copiedBindings));
+		filter.setQueryModelMetadata(OPTIONAL_BINDINGS_METADATA_KEY, copiedBindings);
+	}
+
+	static boolean isRewrittenOptionalBinding(Filter filter, String bindingName) {
+		Object metadata = filter.getQueryModelMetadata(OPTIONAL_BINDINGS_METADATA_KEY);
+		return metadata instanceof Set<?> optionalBindings && optionalBindings.contains(bindingName);
 	}
 
 	private static Set<String> optionalDirectProducedBindingNames(LeftJoin leftJoin) {

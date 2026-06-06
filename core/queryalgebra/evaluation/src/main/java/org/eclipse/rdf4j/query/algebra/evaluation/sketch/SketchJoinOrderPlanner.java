@@ -1369,11 +1369,46 @@ final class SketchJoinOrderPlanner {
 			if (isCheapSelectiveFilterFactor(anchor, initiallyBoundVarMask, anchorBound)) {
 				return true;
 			}
+			if (isCheapSelectiveStatementEndpointAnchor(anchor, endpointVars, delayedSeed)) {
+				return true;
+			}
 			if (hasCheapSelectiveFilterCandidate(anchorBound, endpointVars, bridge, anchor, delayedSeed)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	private boolean isCheapSelectiveStatementEndpointAnchor(int anchor, long endpointVars, int delayedSeed) {
+		if (isFilteredFactor(anchor) || statementPatternFactor(anchor) == null
+				|| (bindingVarMasks[anchor] & endpointVars & variableUniverseMask) == 0L) {
+			return false;
+		}
+		SketchBasedJoinEstimator.TuplePlanEstimate anchorEstimate = conditionedFactorEstimate(anchor,
+				initiallyBoundVarMask);
+		FactorPhysicalEstimate anchorPhysical = factorPhysicalEstimate(anchor, 0L, initiallyBoundVarMask,
+				anchorEstimate.outputRows(), null, JoinFactorCostModel.EstimationTier.CHEAP);
+		if (anchorPhysical == null || anchorPhysical.lookupComponents() < 2) {
+			return false;
+		}
+		SketchBasedJoinEstimator.TuplePlanEstimate delayedSeedEstimate = conditionedFactorEstimate(delayedSeed,
+				initiallyBoundVarMask);
+		FactorPhysicalEstimate delayedSeedPhysical = factorPhysicalEstimate(delayedSeed, 0L, initiallyBoundVarMask,
+				delayedSeedEstimate.outputRows(), null, JoinFactorCostModel.EstimationTier.CHEAP);
+		if (delayedSeedPhysical == null || anchorPhysical.lookupComponents() < delayedSeedPhysical.lookupComponents()) {
+			return false;
+		}
+		double anchorAccessRows = seedAccessRows(anchorPhysical);
+		double delayedSeedAccessRows = seedAccessRows(delayedSeedPhysical);
+		if (isFiniteNonNegative(anchorAccessRows)
+				&& isFiniteNonNegative(delayedSeedAccessRows)
+				&& anchorAccessRows * FILTERED_BROAD_SEED_LOOKUP_ANCHOR_ACCESS_RATIO <= delayedSeedAccessRows) {
+			return true;
+		}
+		return isFiniteNonNegative(anchorEstimate.outputRows())
+				&& isFiniteNonNegative(delayedSeedEstimate.outputRows())
+				&& anchorEstimate.outputRows() * FILTERED_BROAD_SEED_LOOKUP_ANCHOR_ACCESS_RATIO <= delayedSeedEstimate
+						.outputRows();
 	}
 
 	private boolean hasCheapSelectiveFilterCandidate(long anchorBound, long endpointVars, int bridge, int anchor,

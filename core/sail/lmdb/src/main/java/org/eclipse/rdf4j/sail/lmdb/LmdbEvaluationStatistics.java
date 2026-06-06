@@ -347,9 +347,12 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = Math.max(1.0d, rows);
 		}
-		return Optional.of(new StatisticsEstimate(rows,
+		StatisticsEstimate estimate = new StatisticsEstimate(rows,
 				QErrorInterval.heuristic(rows, factor.getEstimateVector().rowQErrorMax(), source), workRows, source,
-				metrics));
+				metrics);
+		return Optional.of(factor.getBagEstimate()
+				.map(estimate::withBag)
+				.orElse(estimate));
 	}
 
 	private boolean needsDecisionPageWalkFallback(TupleExpr tupleExpr, JoinFactorCostModel.CostContext context) {
@@ -385,7 +388,11 @@ class LmdbEvaluationStatistics
 		doubles.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factor.getOutputRows());
 		doubles.put(TelemetryMetricNames.PLANNED_WORK_ROWS, factor.getWorkRows());
 		doubles.put("optimizer.pageWalkRows", factor.getWorkRows());
-		return Optional.of(new FactorCostEstimate(factor.getWorkRows(), factor.getOutputRows(), strings, doubles));
+		FactorCostEstimate estimate = new FactorCostEstimate(factor.getWorkRows(), factor.getOutputRows(), strings,
+				doubles);
+		return Optional.of(factor.getBagEstimate()
+				.map(estimate::withBag)
+				.orElse(estimate));
 	}
 
 	@Override
@@ -1523,7 +1530,7 @@ class LmdbEvaluationStatistics
 			traceEstimate("revisit-repeated-physical-lookup-reject", factor, context, "reason=exact-output");
 			return false;
 		}
-		if (exactStatementLookupAlreadyCostsRepeatedInvocations(estimate)) {
+		if (exactStatementLookupAlreadyCostsRepeatedInvocations(estimate, context.getOuterPrefixRows())) {
 			traceEstimate("revisit-repeated-physical-lookup-reject", factor, context,
 					"reason=exact-statement-repeated-costed");
 			return false;
@@ -1687,10 +1694,14 @@ class LmdbEvaluationStatistics
 		}
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, robustWorkRows);
 
-		return new FactorCostEstimate(robustWorkRows, feedback.rows(), stringMetrics, doubleMetrics,
+		FactorCostEstimate estimate = new FactorCostEstimate(robustWorkRows, feedback.rows(), stringMetrics,
+				doubleMetrics,
 				baseEstimate.hasPhysicalAccessPath(), baseEstimate.isDirectLookup(),
 				baseEstimate.getLookupComponentMask(),
 				baseEstimate.getMissingLookupComponentMask(), baseEstimate.getAccessRowsBeforeFilter(), true, false);
+		return baseEstimate.getBagEstimate()
+				.map(estimate::withBag)
+				.orElse(estimate);
 	}
 
 	private double feedbackPhysicalWorkFloor(FactorCostEstimate baseEstimate) {
@@ -2156,7 +2167,7 @@ class LmdbEvaluationStatistics
 			}
 			return estimate;
 		}
-		if (exactStatementLookupAlreadyCostsRepeatedInvocations(estimate)) {
+		if (exactStatementLookupAlreadyCostsRepeatedInvocations(estimate, outerPrefixRows)) {
 			if (estimateTraceEnabled()) {
 				traceEstimate("nested-cost-keep-repeated-exact-statement", factor, context,
 						estimateTraceEstimate(estimate));
@@ -4056,6 +4067,23 @@ class LmdbEvaluationStatistics
 	}
 
 	private boolean exactStatementLookupAlreadyCostsRepeatedInvocations(FactorCostEstimate estimate) {
+		return exactStatementLookupAlreadyCostsRepeatedInvocations(estimate, Double.NaN);
+	}
+
+	private boolean exactStatementLookupAlreadyCostsRepeatedInvocations(FactorCostEstimate estimate,
+			double outerPrefixRows) {
+		if (!isExactStatementLookupAlreadyCosted(estimate)) {
+			return false;
+		}
+		if (!isPositiveFinite(outerPrefixRows) || outerPrefixRows <= 1.0d) {
+			return true;
+		}
+		double repeatedInvocations = estimate.getDoubleMetrics()
+				.getOrDefault("plannedRepeatedInvocations", Double.NaN);
+		return isPositiveFinite(repeatedInvocations) && repeatedInvocations >= outerPrefixRows;
+	}
+
+	private boolean isExactStatementLookupAlreadyCosted(FactorCostEstimate estimate) {
 		return estimate != null
 				&& estimate.isRepeatedInvocationsCosted()
 				&& estimate.isDirectLookup()
@@ -7691,7 +7719,8 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
 				estimate.qErrorInterval().confidence());
 		return Optional.of(new FactorCostEstimate(estimate.workRows(), estimate.rows(), stringMetrics,
-				doubleMetrics, true, false, 0, 0, estimate.rows()));
+				doubleMetrics, true, false, 0, 0, estimate.rows())
+						.withBag(estimate.bag()));
 	}
 
 	private FactorCostEstimate joinPlanFactorCostEstimate(JoinOrderPlan joinPlan, double outputRows) {

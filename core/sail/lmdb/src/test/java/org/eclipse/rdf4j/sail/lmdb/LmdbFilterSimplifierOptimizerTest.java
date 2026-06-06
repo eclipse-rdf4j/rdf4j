@@ -221,7 +221,6 @@ class LmdbFilterSimplifierOptimizerTest {
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
-
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
 		assertFalse(containsBindingSetAssignment(root.getArg()));
@@ -576,7 +575,8 @@ class LmdbFilterSimplifierOptimizerTest {
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(Join.class, retainedFilter.getArg());
 		assertFalse(containsLeftJoin(retainedFilter.getArg()));
-		assertInstanceOf(And.class, retainedFilter.getCondition());
+		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optDisease"));
+		assertInstanceOf(Exists.class, retainedFilter.getCondition());
 		String rewriteMetric = retainedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
 		assertTrue(rewriteMetric != null && rewriteMetric.contains("source=filter-simplifier"),
 				String.valueOf(rewriteMetric));
@@ -613,10 +613,10 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
-		assertFalse(containsLeftJoin(retainedFilter.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		TupleExpr optimized = root.getArg();
+		assertTrue(containsBindingSetAssignmentFor(optimized, "optName"));
+		assertFalse(containsLeftJoin(optimized));
+		assertFalse(containsFilter(optimized));
 	}
 
 	@Test
@@ -631,7 +631,8 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
+		assertInstanceOf(Join.class, retainedFilter.getArg());
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
 		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "optSeverity"));
 		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "severity"));
 	}
@@ -649,10 +650,11 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
-		assertTrue(containsStatementPatternWithObject(retainedFilter.getArg(), "optName"));
-		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+		TupleExpr optimized = root.getArg();
+		assertTrue(containsBindingSetAssignmentFor(optimized, "optName"));
+		assertTrue(containsStatementPatternWithObject(optimized, "optName"));
+		assertFalse(containsLeftJoin(optimized));
+		assertFalse(containsFilter(optimized));
 	}
 
 	@Test
@@ -666,10 +668,11 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
-		assertTrue(containsStatementPatternWithObject(retainedFilter.getArg(), "optName"));
-		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+		TupleExpr optimized = root.getArg();
+		assertTrue(containsBindingSetAssignmentFor(optimized, "optName"));
+		assertTrue(containsStatementPatternWithObject(optimized, "optName"));
+		assertFalse(containsLeftJoin(optimized));
+		assertFalse(containsFilter(optimized));
 	}
 
 	@Test
@@ -685,12 +688,12 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		Join topJoin = assertInstanceOf(Join.class, retainedFilter.getArg());
+		Join topJoin = assertInstanceOf(Join.class, root.getArg());
 		assertFalse(containsUnion(topJoin.getLeftArg()));
 		assertTrue(containsUnion(topJoin.getRightArg()));
 		assertTrue(containsBindingSetAssignmentFor(topJoin.getLeftArg(), "optName"));
 		assertFalse(containsBindingSetAssignmentFor(topJoin.getRightArg(), "optName"));
+		assertFalse(containsFilter(topJoin));
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {

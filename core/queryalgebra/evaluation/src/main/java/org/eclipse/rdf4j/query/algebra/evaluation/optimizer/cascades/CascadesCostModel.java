@@ -373,6 +373,16 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
 				Set<String> boundVars, List<Winner> inputWinners) {
+			return estimateForLocalCost(expression, tupleExpr, boundVars, inputWinners, false);
+		}
+
+		private StatisticsEstimate estimateForOutputProfile(MemoExpr expression, TupleExpr tupleExpr,
+				Set<String> boundVars, List<Winner> inputWinners) {
+			return estimateForLocalCost(expression, tupleExpr, boundVars, inputWinners, true);
+		}
+
+		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
+				Set<String> boundVars, List<Winner> inputWinners, boolean includePhysicalLeafFactor) {
 			Set<String> effectiveBoundVars = immutableBoundVars(boundVars);
 			if (cachePhysicalEstimate(expression, inputWinners)) {
 				Map<PhysicalInputKey, StatisticsEstimate> estimatesByInput = physicalEstimateCache
@@ -383,11 +393,12 @@ public interface CascadesCostModel {
 					return cached;
 				}
 				StatisticsEstimate estimate = computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars,
-						inputWinners);
+						inputWinners, includePhysicalLeafFactor);
 				estimatesByInput.put(key, estimate);
 				return estimate;
 			}
-			return computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars, inputWinners);
+			return computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars, inputWinners,
+					includePhysicalLeafFactor);
 		}
 
 		private boolean cachePhysicalEstimate(MemoExpr expression, List<Winner> inputWinners) {
@@ -399,7 +410,16 @@ public interface CascadesCostModel {
 		}
 
 		private StatisticsEstimate computeEstimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
-				Set<String> boundVars, List<Winner> inputWinners) {
+				Set<String> boundVars, List<Winner> inputWinners, boolean includePhysicalLeafFactor) {
+			if (includePhysicalLeafFactor
+					&& expression.physical()
+					&& expression.inputGroupIds().isEmpty()) {
+				Optional<JoinFactorCostModel.FactorCostEstimate> factorEstimate = factorCost(tupleExpr, boundVars,
+						null);
+				if (factorEstimate.isPresent()) {
+					return statisticsEstimateFromFactor(tupleExpr, factorEstimate.get());
+				}
+			}
 			if (expression.physical() && !expression.inputGroupIds().isEmpty()) {
 				if (tupleExpr instanceof LeftJoin leftJoin) {
 					return estimateConcretePhysicalLeftJoin(leftJoin, boundVars, inputWinners);
@@ -413,6 +433,32 @@ public interface CascadesCostModel {
 				}
 			}
 			return estimate(tupleExpr, boundVars);
+		}
+
+		private StatisticsEstimate statisticsEstimateFromFactor(TupleExpr tupleExpr,
+				JoinFactorCostModel.FactorCostEstimate factor) {
+			String source = factorEstimateSource(factor);
+			StatisticsEstimate estimate = EstimateVector.fromFactorVector(factor.getEstimateVector())
+					.toStatistics(source)
+					.withMetrics(factor.getDoubleMetrics());
+			BagEstimate bag = factor.getBagEstimate()
+					.map(factorBag -> factorBag.withRowsPreservingEvidence(estimate.rows(), estimate.workRows(),
+							estimate.qErrorInterval().confidence(), source, estimate.metrics(), true))
+					.orElseGet(() -> bagWithBindings(tupleExpr, estimate.rows(), estimate.workRows(), source)
+							.withMetrics(estimate.metrics()));
+			return estimate.withBag(bag);
+		}
+
+		private String factorEstimateSource(JoinFactorCostModel.FactorCostEstimate factor) {
+			Map<String, String> metrics = factor.getStringMetrics();
+			String source = metrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (source == null || source.isBlank()) {
+				source = metrics.get("plannedBaseEstimateSource");
+			}
+			if (source == null || source.isBlank()) {
+				source = metrics.get("plannedInnerJoinRightBaseEstimateSource");
+			}
+			return source == null || source.isBlank() ? "join-factor-estimate" : source;
 		}
 
 		private CostVector composeOperatorCost(CostVector inputCost, CostVector operatorCost) {
@@ -567,7 +613,7 @@ public interface CascadesCostModel {
 				return BindingProfile.ANY;
 			}
 			try {
-				StatisticsEstimate estimate = estimateForLocalCost(expression, tupleExpr, boundVars(goal),
+				StatisticsEstimate estimate = estimateForOutputProfile(expression, tupleExpr, boundVars(goal),
 						inputWinners);
 				return BindingProfile.fromEstimate(tupleExpr, estimate);
 			} catch (RuntimeException e) {

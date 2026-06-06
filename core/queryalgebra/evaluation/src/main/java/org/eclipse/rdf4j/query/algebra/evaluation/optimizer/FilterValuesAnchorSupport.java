@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -44,6 +45,9 @@ public final class FilterValuesAnchorSupport {
 		if (condition instanceof ListMemberOperator) {
 			return listValuesAnchor((ListMemberOperator) condition);
 		}
+		if (condition instanceof Or or) {
+			return orValuesAnchor(or);
+		}
 		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
 			return singleValueAnchor(compare.getLeftArg(), compare.getRightArg());
 		}
@@ -51,6 +55,36 @@ public final class FilterValuesAnchorSupport {
 			return singleValueAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
 		}
 		return null;
+	}
+
+	private static BindingSetAssignment orValuesAnchor(Or or) {
+		BindingSetAssignment left = safeValuesAnchor(or.getLeftArg());
+		BindingSetAssignment right = safeValuesAnchor(or.getRightArg());
+		if (left == null || right == null || !left.getBindingNames().equals(right.getBindingNames())
+				|| left.getBindingNames().size() != 1) {
+			return null;
+		}
+		String bindingName = left.getBindingNames().iterator().next();
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		if (!collectAnchorValues(left, bindingName, values) || !collectAnchorValues(right, bindingName, values)) {
+			return null;
+		}
+		return valuesAnchor(bindingName, values);
+	}
+
+	private static boolean collectAnchorValues(BindingSetAssignment assignment, String bindingName,
+			LinkedHashSet<Value> values) {
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value == null || !isSafeValuesAnchorValue(value)) {
+				return false;
+			}
+			values.add(value);
+			if (values.size() > MAX_VALUES) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static BindingSetAssignment listValuesAnchor(ListMemberOperator operator) {

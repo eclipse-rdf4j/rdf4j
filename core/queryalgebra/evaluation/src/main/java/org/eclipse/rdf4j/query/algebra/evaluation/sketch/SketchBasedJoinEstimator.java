@@ -10527,10 +10527,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private StatementPattern patternForAccessPrefix(StatementPattern pattern, int patternConstantComponentMask,
 			int prefixComponentMask) {
-		if ((patternConstantComponentMask & ~prefixComponentMask) == 0) {
-			return pattern;
-		}
 		StatementPattern accessPattern = pattern.clone();
+		boolean changed = false;
 		for (Component component : COMPONENT_VALUES) {
 			if ((prefixComponentMask & (1 << component.ordinal())) != 0) {
 				continue;
@@ -10538,13 +10536,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			Var var = varForComponent(accessPattern, component);
 			if (var != null && var.hasValue()) {
 				accessPattern.replaceChildNode(var, unboundCopy(var));
+				changed = true;
+			} else if (var != null && var.getName() != null && !var.getName().startsWith("_const_")) {
+				accessPattern.replaceChildNode(var, accessPrefixIndependentCopy(var, component));
+				changed = true;
 			}
 		}
-		return accessPattern;
+		return changed ? accessPattern : pattern;
 	}
 
 	private Var unboundCopy(Var var) {
 		return Var.of(var.getName(), null, var.isAnonymous(), false);
+	}
+
+	private Var accessPrefixIndependentCopy(Var var, Component component) {
+		return Var.of(var.getName() + "_access_" + component.name().toLowerCase(Locale.ROOT), null,
+				var.isAnonymous(), false);
 	}
 
 	private LookupAnalysis analyzeLookupBindings(StatementPattern pattern, ValueExpr condition,

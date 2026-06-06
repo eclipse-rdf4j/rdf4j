@@ -100,6 +100,10 @@ final class DeferredFilter {
 		return estimate;
 	}
 
+	String sourceFilterStringMetric(String metricName) {
+		return sourceFilter == null ? null : sourceFilter.getStringMetricPlanned(metricName);
+	}
+
 	static Set<String> conditionBindingNames(ValueExpr condition) {
 		if (condition == null) {
 			return Set.of();

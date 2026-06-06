@@ -25,6 +25,7 @@ import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -506,6 +507,7 @@ public interface JoinFactorCostModel {
 		private final boolean repeatedInvocationsCosted;
 		private final boolean exactOutputRows;
 		private final EstimateVector estimateVector;
+		private final BagEstimate bagEstimate;
 
 		public FactorCostEstimate(double workRows, double outputRows) {
 			this(workRows, outputRows, Map.of(), Map.of());
@@ -544,6 +546,15 @@ public interface JoinFactorCostModel {
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
 				boolean nestedInvocationCosted, boolean exactOutputRows) {
+			this(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath, directLookup,
+					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter, nestedInvocationCosted,
+					exactOutputRows, null);
+		}
+
+		private FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
+				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
+				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
+				boolean nestedInvocationCosted, boolean exactOutputRows, BagEstimate bagEstimate) {
 			this.workRows = workRows;
 			this.outputRows = outputRows;
 			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
@@ -577,6 +588,7 @@ public interface JoinFactorCostModel {
 							exactOutputRows),
 					confidence,
 					evidenceCount(this.doubleMetrics));
+			this.bagEstimate = bagEstimate;
 		}
 
 		public double getWorkRows() {
@@ -625,6 +637,32 @@ public interface JoinFactorCostModel {
 
 		public EstimateVector getEstimateVector() {
 			return estimateVector;
+		}
+
+		public Optional<BagEstimate> getBagEstimate() {
+			return Optional.ofNullable(bagEstimate);
+		}
+
+		public FactorCostEstimate withBag(BagEstimate bagEstimate) {
+			BagEstimate normalized = normalizeBagEstimate(bagEstimate);
+			if (normalized == this.bagEstimate) {
+				return this;
+			}
+			return new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath,
+					directLookup, lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter,
+					repeatedInvocationsCosted, exactOutputRows, normalized);
+		}
+
+		private BagEstimate normalizeBagEstimate(BagEstimate bagEstimate) {
+			if (bagEstimate == null) {
+				return null;
+			}
+			Map<String, Double> metrics = new HashMap<>(bagEstimate.metrics());
+			metrics.putAll(doubleMetrics);
+			String source = stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+					bagEstimate.source());
+			return bagEstimate.withRowsPreservingEvidence(outputRows, workRows, estimateVector.confidence(), source,
+					metrics, true);
 		}
 
 		private static double metric(Map<String, Double> metrics, String name, double fallback) {

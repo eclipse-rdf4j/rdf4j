@@ -245,6 +245,44 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void highFanoutGeneratedFiniteAnchorDoesNotPreselectByDiscountedAssignmentWork() {
+		BindingSetAssignment threshold = values("threshold", "3");
+		StatementPattern nodeType = statementPattern("node", "type", "nodeType");
+		StatementPattern nodeWeight = statementPattern("node", "weight", "w");
+		StatementPattern connectsTo = statementPattern("node", "connectsTo", "n2");
+		StatementPattern neighborWeight = statementPattern("n2", "weight", "w2");
+		Filter lowNeighborFilter = new Filter(new Join(connectsTo, neighborWeight),
+				new Compare(new Var("w2"), new Var("threshold"), Compare.CompareOp.LT));
+		ListMemberOperator weightFilter = new ListMemberOperator();
+		weightFilter.addArgument(new Var("w"));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(1)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(2)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(3)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(4)));
+		QueryRoot root = new QueryRoot(new Filter(new Join(threshold, new Join(nodeType, nodeWeight)),
+				and(new Not(new Exists(lowNeighborFilter)), weightFilter)));
+
+		HighFanoutGeneratedAnchorPlanningStatistics statistics = new HighFanoutGeneratedAnchorPlanningStatistics();
+		DeferredFilter deferredWeightFilter = new DeferredFilter(weightFilter, Set.of("w"),
+				JoinOrderPlanner.FILTER_COST_CHEAP,
+				0, nodeWeight, Set.of(nodeWeight), null);
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(
+				List.of(threshold, nodeType, nodeWeight), List.of(deferredWeightFilter), statistics);
+		assertEquals(List.of("finite-anchor:w"), analysis.finiteAnchorOptions()
+				.stream()
+				.map(GuaranteePlanOptionProvider.PlanOption::name)
+				.toList());
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertFalse(containsBindingSetAssignment(root.getArg(), "w"),
+				"High-fanout generated filter anchors must not be preselected just because planning-time "
+						+ "assignment work is discounted: " + root.getArg());
+		assertTrue(containsSmallLiteralFilter(root.getArg(), "w"),
+				"The high-fanout weight filter should remain a runtime filter so the anti-exists guard can run "
+						+ "before weight fanout: " + root.getArg());
+	}
+
+	@Test
 	void materializedFiniteAnchorRowsStayLazyDuringGuaranteeAnalysis() {
 		BindingSetAssignment targets = values("target", "Alice", "Bob");
 		StatementPattern name = statementPattern("person", "name", "name");
@@ -587,6 +625,28 @@ class LmdbSketchJoinOptimizerTest {
 				.anyMatch(pattern -> "optName".equals(pattern.getObjectVar().getName())));
 		assertTrue(containsBindingSetAssignment(args.get(1), "optName"));
 		assertEquals("optName", assertInstanceOf(StatementPattern.class, args.get(2)).getObjectVar().getName());
+	}
+
+	@Test
+	void rewritesOptionalLiteralAnchorAfterNestedExistsLeftProbe() {
+		BindingSetAssignment users = values("v", "user12", "user13");
+		StatementPattern typedUser = statementPattern("v", "type", "person");
+		StatementPattern incomingFollow = statementPattern("u", "follows", "v");
+		Filter selfLoopAntiProbe = new Filter(new Join(users, new Join(typedUser, incomingFollow)),
+				new Not(new Exists(statementPattern("v", "follows", "v"))));
+		StatementPattern optionalName = statementPattern("v", "name", "optName");
+		ListMemberOperator nameFilter = new ListMemberOperator();
+		nameFilter.addArgument(new Var("optName"));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user12")));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user13")));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(selfLoopAntiProbe, optionalName), nameFilter));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.selectiveSmallLiteralFilters(), false).optimize(root, null,
+				null);
+
+		assertFalse(containsLeftJoin(root.getArg()));
+		assertTrue(containsBindingSetAssignment(root.getArg(), "optName"));
+		assertFalse(containsSmallLiteralFilter(root.getArg(), "optName"));
 	}
 
 	@Test
@@ -960,6 +1020,44 @@ class LmdbSketchJoinOptimizerTest {
 		return false;
 	}
 
+	private static boolean containsSmallLiteralFilter(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof Filter filter) {
+			for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
+				BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+				if (anchor != null && anchor.getBindingNames().contains(bindingName)
+						|| listMemberFilterBinds(condition, bindingName)) {
+					return true;
+				}
+			}
+			return containsSmallLiteralFilter(filter.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsSmallLiteralFilter(((Extension) tupleExpr).getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsSmallLiteralFilter(union.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(union.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsSmallLiteralFilter(join.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(join.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsSmallLiteralFilter(leftJoin.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(leftJoin.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
+	private static boolean listMemberFilterBinds(ValueExpr condition, String bindingName) {
+		if (!(condition instanceof ListMemberOperator list) || list.getArguments().isEmpty()) {
+			return false;
+		}
+		ValueExpr firstArgument = list.getArguments()
+				.getFirst();
+		return firstArgument instanceof Var var && bindingName.equals(var.getName()) && !var.hasValue();
+	}
+
 	private static void assertScopedBranchBeforeValues(TupleExpr tupleExpr) {
 		assertTrue(containsFilter(tupleExpr));
 		TupleExpr joinRoot = tupleExpr instanceof Filter ? ((Filter) tupleExpr).getArg() : tupleExpr;
@@ -1021,6 +1119,84 @@ class LmdbSketchJoinOptimizerTest {
 		}
 	}
 
+	private static final class HighFanoutGeneratedAnchorPlanningStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel, LmdbPredicateObjectDomainSource {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			return Optional.of(originalPlan(args));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+			return Optional.of(finiteAnchorPlan(orderedArgs));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new FilterPassEstimate(0.01d, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.finiteValues(List.of(
+					VF.createLiteral(0),
+					VF.createLiteral(1),
+					VF.createLiteral(2),
+					VF.createLiteral(3),
+					VF.createLiteral(4),
+					VF.createLiteral(5),
+					VF.createLiteral(6))));
+		}
+
+		private static JoinOrderPlan originalPlan(List<TupleExpr> args) {
+			return new JoinOrderPlan(new ArrayList<>(args), 95.0d, 201_260.0d, List.of(), Map.of(),
+					Map.of(
+							"plannedCostRowQErrorMax", 1.0d,
+							"plannedCostWorkQErrorMax", 1.0d,
+							"plannedCostConfidence", 1.0d,
+							"plannedCostEvidenceCount", 1.0d),
+					List.of(
+							new PlanStep(Set.of(), 1.0d, 1.0d, 2.0d),
+							new PlanStep(Set.of("threshold"), 95.0d, 95.0d, 201_258.0d)));
+		}
+
+		private static JoinOrderPlan finiteAnchorPlan(List<TupleExpr> orderedArgs) {
+			return new JoinOrderPlan(new ArrayList<>(orderedArgs), 3.0d, 750_376.0d, List.of(), Map.of(), Map.of(),
+					List.of(
+							new PlanStep(Set.of("threshold"), 4.0d, 4.0d, 750_330.0d,
+									Map.of("optimizer.guaranteeOption", "finite-anchor:w"), Map.of()),
+							new PlanStep(Set.of("threshold", "w"), 356_400.0d, 356_400.0d, 40.0d,
+									Map.of(
+											TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+											"lmdb-finite-binding-lookup",
+											TelemetryMetricNames.PLANNED_INDEX_NAME, "posc",
+											TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "[P, O]"),
+									Map.of(
+											TelemetryMetricNames.PLANNED_ACCESS_ROWS, 89_102.0d,
+											TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 89_102.0d,
+											"plannedSurfaceRows", 3.0d)),
+							new PlanStep(Set.of("threshold", "w", "node"), 3.0d, 3.0d, 6.0d)));
+		}
+	}
+
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner,
 			JoinFactorCostModel {
 
@@ -1034,6 +1210,7 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean lowPassFilteredAntiProbeLacksWorkProof;
 		private boolean highPassFilteredAntiProbeCheaper;
 		private boolean transparentExtensionSelfLoopAntiProbe;
+		private boolean selectiveSmallLiteralFilters;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -1086,6 +1263,13 @@ class LmdbSketchJoinOptimizerTest {
 		static PlanningStatistics transparentExtensionSelfLoopAntiProbe() {
 			PlanningStatistics statistics = new PlanningStatistics(null);
 			statistics.transparentExtensionSelfLoopAntiProbe = true;
+			return statistics;
+		}
+
+		static PlanningStatistics selectiveSmallLiteralFilters() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.supportsJoinEstimation = true;
+			statistics.selectiveSmallLiteralFilters = true;
 			return statistics;
 		}
 
@@ -1187,6 +1371,14 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
 			}
 			return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			if (selectiveSmallLiteralFilters) {
+				return new FilterPassEstimate(0.01d, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+			}
+			return super.estimateFilterPass(filter);
 		}
 
 		private static boolean isConnectsToPattern(TupleExpr factor) {

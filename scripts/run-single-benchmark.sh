@@ -5,10 +5,13 @@ usage() {
         cat <<USAGE
 Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodName> [options]
        $0 --theme-plan-run --theme-query <THEME:INDEX> [options]
+       $0 --aas-run [--aas-query <queryName>] [options]
 
 Options:
   --theme-plan-run                  Shortcut for ThemeQueryPlanRunBenchmark.runQuery
   --theme-query <THEME:INDEX>       Add themeName/z_queryIndex params, e.g. SOCIAL_MEDIA:5
+  --aas-run                         Shortcut for AASQueriesBenchmark.runQuery
+  --aas-query <queryName>           Add AAS query param, e.g. query3LineAggregates
   --clean                           Force a clean rebuild before packaging
   --no-build, --skip-build          Skip Maven packaging and run an existing benchmark jar
   --dry-run                         Print the Maven and JMH commands without executing them
@@ -38,6 +41,8 @@ benchmark_class=""
 benchmark_method=""
 theme_plan_run=false
 theme_query=""
+aas_run=false
+aas_query=""
 clean_build=false
 no_build=false
 dry_run=false
@@ -69,6 +74,15 @@ while [[ $# -gt 0 ]]; do
                 ;;
         --theme-query)
                 theme_query="$2"
+                shift 2
+                ;;
+        --aas-run)
+                aas_run=true
+                shift
+                ;;
+        --aas-query)
+                aas_query="$2"
+                aas_run=true
                 shift 2
                 ;;
         --clean)
@@ -161,6 +175,28 @@ while [[ $# -gt 0 ]]; do
         esac
 done
 
+has_jvm_property() {
+        local property="$1"
+        local arg
+        for arg in "${jvm_args[@]}"; do
+                if [[ "${arg}" == "-D${property}="* ]]; then
+                        return 0
+                fi
+        done
+        return 1
+}
+
+has_jvm_arg_prefix() {
+        local prefix="$1"
+        local arg
+        for arg in "${jvm_args[@]}"; do
+                if [[ "${arg}" == "${prefix}"* ]]; then
+                        return 0
+                fi
+        done
+        return 1
+}
+
 if ${theme_plan_run}; then
         if [[ -z "${module}" ]]; then
                 module="core/sail/lmdb"
@@ -176,6 +212,33 @@ if ${theme_plan_run}; then
         fi
         if ! ${measurement_overridden}; then
                 measurement_iterations=2
+        fi
+fi
+
+if ${aas_run}; then
+        if [[ -z "${module}" ]]; then
+                module="core/sail/lmdb"
+        fi
+        if [[ -z "${benchmark_class}" ]]; then
+                benchmark_class="org.eclipse.rdf4j.sail.lmdb.benchmark.AASQueriesBenchmark"
+        fi
+        if [[ -z "${benchmark_method}" ]]; then
+                benchmark_method="runQuery"
+        fi
+        if ! ${warmup_overridden}; then
+                warmup_iterations=2
+        fi
+        if ! ${measurement_overridden}; then
+                measurement_iterations=2
+        fi
+        if ! has_jvm_arg_prefix "-Xmx"; then
+                jvm_args+=("-Xmx8G")
+        fi
+        if ! has_jvm_property "rdf4j.lmdb.aasQueriesBenchmark.printExplain"; then
+                jvm_args+=("-Drdf4j.lmdb.aasQueriesBenchmark.printExplain=false")
+        fi
+        if ! has_jvm_property "rdf4j.lmdb.aasQueriesBenchmark.printOptimizedPlan"; then
+                jvm_args+=("-Drdf4j.lmdb.aasQueriesBenchmark.printOptimizedPlan=true")
         fi
 fi
 
@@ -196,6 +259,10 @@ if [[ -n "${theme_query}" ]]; then
         fi
         benchmark_params+=("themeName=${theme_query_theme}")
         benchmark_params+=("z_queryIndex=${theme_query_index}")
+fi
+
+if [[ -n "${aas_query}" ]]; then
+        benchmark_params+=("query=${aas_query}")
 fi
 
 if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
