@@ -121,12 +121,13 @@ public interface CascadesCostModel {
 		private final EvaluationStatistics statistics;
 		private final JoinFactorCostModel factorCostModel;
 		private final RdfStatisticsProvider rdfStatisticsProvider;
+		private final BindingUniverse bindingUniverse = BindingUniverse.create();
 		private final IdentityHashMap<TupleExpr, LogicalProperties> logicalPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> logicalFingerprintCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> structuralFingerprintCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Set<String>> bindingNamesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Set<String>> assuredBindingNamesCache = new IdentityHashMap<>();
-		private final IdentityHashMap<TupleExpr, Map<Set<String>, StatisticsEstimate>> estimateCache = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Map<BindingMask, StatisticsEstimate>> estimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, StatisticsEstimate>> physicalEstimateCache = new IdentityHashMap<>();
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, PhysicalProperties>> deliveredPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Map<DecisionRefinementKey, Optional<StatisticsEstimate>>> decisionRefinementCache = new IdentityHashMap<>();
@@ -383,21 +384,21 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
 				Set<String> boundVars, List<Winner> inputWinners, boolean includePhysicalLeafFactor) {
-			Set<String> effectiveBoundVars = immutableBoundVars(boundVars);
+			BoundVarsKey effectiveBoundVars = boundVarsKey(boundVars);
 			if (cachePhysicalEstimate(expression, inputWinners)) {
 				Map<PhysicalInputKey, StatisticsEstimate> estimatesByInput = physicalEstimateCache
 						.computeIfAbsent(expression, ignored -> new LinkedHashMap<>());
-				PhysicalInputKey key = new PhysicalInputKey(effectiveBoundVars, inputWinners);
+				PhysicalInputKey key = new PhysicalInputKey(effectiveBoundVars.mask(), inputWinners);
 				StatisticsEstimate cached = estimatesByInput.get(key);
 				if (cached != null) {
 					return cached;
 				}
-				StatisticsEstimate estimate = computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars,
-						inputWinners, includePhysicalLeafFactor);
+				StatisticsEstimate estimate = computeEstimateForLocalCost(expression, tupleExpr,
+						effectiveBoundVars.names(), inputWinners, includePhysicalLeafFactor);
 				estimatesByInput.put(key, estimate);
 				return estimate;
 			}
-			return computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars, inputWinners,
+			return computeEstimateForLocalCost(expression, tupleExpr, effectiveBoundVars.names(), inputWinners,
 					includePhysicalLeafFactor);
 		}
 
@@ -500,13 +501,14 @@ public interface CascadesCostModel {
 
 		private Optional<StatisticsEstimate> providerDecisionRefinement(TupleExpr tupleExpr, Set<String> boundVars,
 				StatisticsEstimate baseEstimate, CostVector currentCost, CostVector incumbentCost) {
-			DecisionRefinementKey key = new DecisionRefinementKey(immutableBoundVars(boundVars), currentCost,
-					incumbentCost);
+			BoundVarsKey boundVarsKey = boundVarsKey(boundVars);
+			DecisionRefinementKey key = new DecisionRefinementKey(boundVarsKey.mask(), currentCost, incumbentCost);
 			Map<DecisionRefinementKey, Optional<StatisticsEstimate>> estimatesByDecision = decisionRefinementCache
 					.computeIfAbsent(tupleExpr, ignored -> new LinkedHashMap<>());
 			return estimatesByDecision.computeIfAbsent(key,
 					ignored -> rdfStatisticsProvider.refineForDecision(
-							new RdfStatisticsProvider.EstimationDecision(tupleExpr, key.boundVars(), baseEstimate,
+							new RdfStatisticsProvider.EstimationDecision(tupleExpr, boundVarsKey.names(),
+									baseEstimate,
 									currentCost, incumbentCost, "cascades-winner-comparison")));
 		}
 
@@ -570,7 +572,7 @@ public interface CascadesCostModel {
 			if (expression == null || !expression.physical()) {
 				return null;
 			}
-			return new PhysicalInputKey(boundVars(goal), inputWinners);
+			return new PhysicalInputKey(boundVarsKey(boundVars(goal)).mask(), inputWinners);
 		}
 
 		private PhysicalProperties computeDeliveredProperties(MemoExpr expression, OptimizationGoal goal,
@@ -755,63 +757,68 @@ public interface CascadesCostModel {
 			if (tupleExpr == null) {
 				return StatisticsEstimate.exact(0.0d, "empty");
 			}
-			Set<String> effectiveBoundVars = immutableBoundVars(boundVars);
-			Map<Set<String>, StatisticsEstimate> estimatesByBoundVars = estimateCache.computeIfAbsent(tupleExpr,
+			BoundVarsKey effectiveBoundVars = boundVarsKey(boundVars);
+			Map<BindingMask, StatisticsEstimate> estimatesByBoundVars = estimateCache.computeIfAbsent(tupleExpr,
 					ignored -> new LinkedHashMap<>());
-			StatisticsEstimate cached = estimatesByBoundVars.get(effectiveBoundVars);
+			StatisticsEstimate cached = estimatesByBoundVars.get(effectiveBoundVars.mask());
 			if (cached != null) {
 				return cached;
 			}
 			StatisticsEstimate estimate;
 			if (tupleExpr instanceof Join join) {
-				estimate = applyFeedback(tupleExpr, estimateJoin(join, effectiveBoundVars));
-				estimatesByBoundVars.put(effectiveBoundVars, estimate);
+				estimate = applyFeedback(tupleExpr, estimateJoin(join, effectiveBoundVars.names()));
+				estimatesByBoundVars.put(effectiveBoundVars.mask(), estimate);
 				return estimate;
 			}
 			Optional<StatisticsEstimate> providerEstimate = providerEstimate(tupleExpr, effectiveBoundVars);
 			if (providerEstimate.isPresent()) {
 				estimate = applyFeedback(tupleExpr, withBindingStats(tupleExpr, providerEstimate.get()));
-				estimatesByBoundVars.put(effectiveBoundVars, estimate);
+				estimatesByBoundVars.put(effectiveBoundVars.mask(), estimate);
 				return estimate;
 			}
 			if (tupleExpr instanceof QueryRoot root) {
-				estimate = estimateUnary(root, effectiveBoundVars, "query-root");
+				estimate = estimateUnary(root, effectiveBoundVars.names(), "query-root");
 			} else if (tupleExpr instanceof StatementPattern pattern) {
-				estimate = estimateStatementPattern(pattern, effectiveBoundVars);
+				estimate = estimateStatementPattern(pattern, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Filter filter) {
-				estimate = estimateFilter(filter, effectiveBoundVars);
+				estimate = estimateFilter(filter, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof LeftJoin leftJoin) {
-				estimate = estimateLeftJoin(leftJoin, effectiveBoundVars);
+				estimate = estimateLeftJoin(leftJoin, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Difference difference) {
-				estimate = estimateDifference(difference, effectiveBoundVars);
+				estimate = estimateDifference(difference, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Union union) {
-				estimate = estimateUnion(union, effectiveBoundVars);
+				estimate = estimateUnion(union, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Projection projection) {
-				estimate = estimateProjection(projection, effectiveBoundVars);
+				estimate = estimateProjection(projection, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Extension extension) {
-				estimate = estimateExtension(extension, effectiveBoundVars);
+				estimate = estimateExtension(extension, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Group group) {
-				estimate = estimateGroup(group, effectiveBoundVars);
+				estimate = estimateGroup(group, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Slice slice) {
-				estimate = estimateSlice(slice, effectiveBoundVars);
+				estimate = estimateSlice(slice, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Order order) {
-				estimate = estimateOrder(order, effectiveBoundVars);
+				estimate = estimateOrder(order, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Distinct distinct) {
-				estimate = estimateDistinct(distinct, effectiveBoundVars);
+				estimate = estimateDistinct(distinct, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof Reduced reduced) {
-				estimate = estimateDistinct(reduced, effectiveBoundVars);
+				estimate = estimateDistinct(reduced, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof BindingSetAssignment assignment) {
 				estimate = estimateBindingSetAssignment(assignment);
 			} else if (tupleExpr instanceof ArbitraryLengthPath path) {
-				estimate = estimateArbitraryLengthPath(path, effectiveBoundVars);
+				estimate = estimateArbitraryLengthPath(path, effectiveBoundVars.names());
 			} else if (tupleExpr instanceof ZeroLengthPath path) {
 				estimate = estimateZeroLengthPath(path);
 			} else {
 				estimate = fallbackEstimate(tupleExpr, "operator-" + tupleExpr.getClass().getSimpleName());
 			}
 			estimate = applyFeedback(tupleExpr, estimate);
-			estimatesByBoundVars.put(effectiveBoundVars, estimate);
+			estimatesByBoundVars.put(effectiveBoundVars.mask(), estimate);
 			return estimate;
+		}
+
+		private BoundVarsKey boundVarsKey(Set<String> boundVars) {
+			Set<String> names = immutableBoundVars(boundVars);
+			return new BoundVarsKey(bindingUniverse.maskOf(names), names);
 		}
 
 		private static Set<String> immutableBoundVars(Set<String> boundVars) {
@@ -821,24 +828,23 @@ public interface CascadesCostModel {
 			return Set.copyOf(boundVars);
 		}
 
-		private record DecisionRefinementKey(Set<String> boundVars, CostVector currentCost,
+		private record BoundVarsKey(BindingMask mask, Set<String> names) {
+		}
+
+		private record DecisionRefinementKey(BindingMask boundVars, CostVector currentCost,
 				CostVector incumbentCost) {
 		}
 
-		private record ProviderEstimateKey(String fingerprint, Set<String> boundVars) {
-
-			private ProviderEstimateKey {
-				boundVars = immutableBoundVars(boundVars);
-			}
+		private record ProviderEstimateKey(String fingerprint, BindingMask boundVars) {
 		}
 
 		private static final class PhysicalInputKey {
-			private final Set<String> boundVars;
+			private final BindingMask boundVars;
 			private final List<Winner> inputWinners;
 			private final int hash;
 
-			private PhysicalInputKey(Set<String> boundVars, List<Winner> inputWinners) {
-				this.boundVars = immutableBoundVars(boundVars);
+			private PhysicalInputKey(BindingMask boundVars, List<Winner> inputWinners) {
+				this.boundVars = boundVars == null ? BindingMask.EMPTY : boundVars;
 				this.inputWinners = inputWinners == null || inputWinners.isEmpty() ? List.of()
 						: List.copyOf(inputWinners);
 				int result = this.boundVars.hashCode();
@@ -873,18 +879,22 @@ public interface CascadesCostModel {
 			}
 		}
 
-		private Optional<StatisticsEstimate> providerEstimate(TupleExpr tupleExpr, Set<String> boundVars) {
+		private Optional<StatisticsEstimate> providerEstimate(TupleExpr tupleExpr, BoundVarsKey boundVars) {
 			if (tupleExpr == null) {
 				return Optional.empty();
 			}
-			ProviderEstimateKey key = new ProviderEstimateKey(structuralFingerprint(tupleExpr), boundVars);
+			ProviderEstimateKey key = new ProviderEstimateKey(structuralFingerprint(tupleExpr), boundVars.mask());
 			Optional<StatisticsEstimate> cached = providerEstimateCache.get(key);
 			if (cached != null) {
 				return cached;
 			}
-			Optional<StatisticsEstimate> estimate = computeProviderEstimate(tupleExpr, immutableBoundVars(boundVars));
+			Optional<StatisticsEstimate> estimate = computeProviderEstimate(tupleExpr, boundVars.names());
 			providerEstimateCache.put(key, estimate);
 			return estimate;
+		}
+
+		private Optional<StatisticsEstimate> providerEstimate(TupleExpr tupleExpr, Set<String> boundVars) {
+			return providerEstimate(tupleExpr, boundVarsKey(boundVars));
 		}
 
 		private Optional<StatisticsEstimate> computeProviderEstimate(TupleExpr tupleExpr, Set<String> boundVars) {

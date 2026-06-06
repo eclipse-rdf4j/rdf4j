@@ -188,7 +188,7 @@ public final class CascadesPlanProvenanceAnnotator {
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
 
 		setStringIfMissing(node, TelemetryMetricNames.PLANNER_ID, plannerId);
-		setStringIfMissingOrFallbackSource(node, TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
 		setStringIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, COVERED_BY_PARENT_WINNER);
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID, decisionId + ":covered");
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
@@ -382,14 +382,6 @@ public final class CascadesPlanProvenanceAnnotator {
 		if (isBlank(current)
 				|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(current)
 				|| FALLBACK_NO_WINNER.equals(current)) {
-			node.setStringMetricPlanned(metricName, value);
-		}
-	}
-
-	private static void setStringIfMissingOrFallbackSource(QueryModelNode node, String metricName, String value) {
-		String current = node.getStringMetricPlanned(metricName);
-		if (isBlank(current) || CASCADES_FALLBACK_SOURCE.equals(current)
-				|| LMDB_CASCADES_FALLBACK_SOURCE.equals(current)) {
 			node.setStringMetricPlanned(metricName, value);
 		}
 	}

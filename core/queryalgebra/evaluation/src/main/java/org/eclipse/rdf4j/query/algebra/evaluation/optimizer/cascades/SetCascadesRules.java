@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -61,7 +60,7 @@ public final class SetCascadesRules {
 			return expression.logical()
 					&& expression.tupleExpr()instanceof LeftJoin leftJoin
 					&& leftJoin.getLeftArg()instanceof Union leftUnion
-					&& canDistributeLeftUnionOptional(leftJoin, leftUnion);
+					&& canDistributeLeftUnionOptional(leftJoin, leftUnion, universe(memo));
 		}
 
 		@Override
@@ -90,7 +89,7 @@ public final class SetCascadesRules {
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
 					&& expression.tupleExpr()instanceof LeftJoin leftJoin
-					&& rightUnionDistributionAlternative(leftJoin) != null;
+					&& rightUnionDistributionAlternative(leftJoin, universe(memo)) != null;
 		}
 
 		@Override
@@ -99,7 +98,7 @@ public final class SetCascadesRules {
 				return List.of();
 			}
 			LeftJoin leftJoin = (LeftJoin) expression.tupleExpr();
-			TupleExpr alternative = rightUnionDistributionAlternative(leftJoin);
+			TupleExpr alternative = rightUnionDistributionAlternative(leftJoin, universe(context));
 			RuleProof proof = proof(semanticScope(goal),
 					Set.of("finiteBaseCoversDiscriminatorValues", "mutuallyExclusiveRightBranches",
 							"compatibleProducedBindings"),
@@ -109,7 +108,8 @@ public final class SetCascadesRules {
 		}
 	}
 
-	private static boolean canDistributeLeftUnionOptional(LeftJoin leftJoin, Union leftUnion) {
+	private static boolean canDistributeLeftUnionOptional(LeftJoin leftJoin, Union leftUnion,
+			BindingUniverse universe) {
 		TupleExpr leftBranch = leftUnion.getLeftArg();
 		TupleExpr rightBranch = leftUnion.getRightArg();
 		TupleExpr optionalArg = leftJoin.getRightArg();
@@ -122,32 +122,34 @@ public final class SetCascadesRules {
 				|| containsNestedExistsFilter(optionalArg)) {
 			return false;
 		}
-		Set<String> optionalNames = names(optionalArg.getBindingNames());
-		Set<String> leftSharedNames = new LinkedHashSet<>(names(leftBranch.getBindingNames()));
-		leftSharedNames.retainAll(optionalNames);
-		Set<String> rightSharedNames = new LinkedHashSet<>(names(rightBranch.getBindingNames()));
-		rightSharedNames.retainAll(optionalNames);
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask optionalNames = CascadesRewriteSupport.mask(safeUniverse, optionalArg.getBindingNames());
+		BindingMask leftSharedNames = CascadesRewriteSupport.mask(safeUniverse, leftBranch.getBindingNames())
+				.intersect(optionalNames);
+		BindingMask rightSharedNames = CascadesRewriteSupport.mask(safeUniverse, rightBranch.getBindingNames())
+				.intersect(optionalNames);
 		if (leftSharedNames.isEmpty() || !leftSharedNames.equals(rightSharedNames)) {
 			return false;
 		}
 		if (leftJoin.hasCondition()) {
 			Set<String> conditionNames = names(VarNameCollector.process(leftJoin.getCondition()));
-			return optionalConditionVisible(leftBranch, optionalNames, conditionNames)
-					&& optionalConditionVisible(rightBranch, optionalNames, conditionNames);
+			return optionalConditionVisible(leftBranch, optionalNames, conditionNames, safeUniverse)
+					&& optionalConditionVisible(rightBranch, optionalNames, conditionNames, safeUniverse);
 		}
 		return true;
 	}
 
-	private static TupleExpr rightUnionDistributionAlternative(LeftJoin leftJoin) {
+	private static TupleExpr rightUnionDistributionAlternative(LeftJoin leftJoin, BindingUniverse universe) {
 		if (leftJoin.hasCondition() || !(leftJoin.getRightArg() instanceof Union)) {
 			return null;
 		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
 		Set<String> baseNames = names(leftJoin.getLeftArg().getBindingNames());
 		List<OptionalBranch> branches = collectOptionalUnionBranches(leftJoin.getRightArg(), null);
 		String discriminatorName = mutuallyExclusiveBaseDiscriminatorName(branches, baseNames);
 		if (discriminatorName == null
 				|| !finiteAssignmentCoversDiscriminatorValues(leftJoin.getLeftArg(), branches, discriminatorName)
-				|| !rightUnionOptionalBranchesAreSafe(leftJoin, branches, baseNames)) {
+				|| !rightUnionOptionalBranchesAreSafe(leftJoin, branches, baseNames, safeUniverse)) {
 			return null;
 		}
 		TupleExpr distributed = null;
@@ -236,21 +238,23 @@ public final class SetCascadesRules {
 	}
 
 	private static boolean rightUnionOptionalBranchesAreSafe(LeftJoin leftJoin, List<OptionalBranch> branches,
-			Set<String> baseNames) {
+			Set<String> baseNames, BindingUniverse universe) {
 		if (containsUnsupportedOptionalUnionDistributionArg(leftJoin.getLeftArg())
 				|| containsNestedExistsFilter(leftJoin.getLeftArg())) {
 			return false;
 		}
-		Set<String> producedNames = null;
+		BindingMask baseMask = CascadesRewriteSupport.mask(universe, baseNames);
+		BindingMask producedNames = null;
 		for (OptionalBranch branch : branches) {
 			if (branch.condition() == null
-					|| !branchConditionIsLocalToBaseAndBranch(branch, baseNames)
+					|| !branchConditionIsLocalToBaseAndBranch(branch, baseNames, universe)
 					|| containsUnsupportedOptionalUnionDistributionArg(branch.tupleExpr())
 					|| containsNestedExistsFilter(branch.tupleExpr())) {
 				return false;
 			}
-			Set<String> branchProducedNames = new LinkedHashSet<>(names(branch.tupleExpr().getBindingNames()));
-			branchProducedNames.removeAll(baseNames);
+			BindingMask branchProducedNames = CascadesRewriteSupport
+					.mask(universe, branch.tupleExpr().getBindingNames())
+					.minus(baseMask);
 			if (producedNames == null) {
 				producedNames = branchProducedNames;
 			} else if (!producedNames.equals(branchProducedNames)) {
@@ -260,10 +264,12 @@ public final class SetCascadesRules {
 		return producedNames != null;
 	}
 
-	private static boolean branchConditionIsLocalToBaseAndBranch(OptionalBranch branch, Set<String> baseNames) {
-		Set<String> visibleNames = new HashSet<>(baseNames);
-		visibleNames.addAll(names(branch.tupleExpr().getBindingNames()));
-		return visibleNames.containsAll(names(VarNameCollector.process(branch.condition())));
+	private static boolean branchConditionIsLocalToBaseAndBranch(OptionalBranch branch, Set<String> baseNames,
+			BindingUniverse universe) {
+		BindingMask visibleNames = CascadesRewriteSupport.mask(universe, baseNames)
+				.union(CascadesRewriteSupport.mask(universe, branch.tupleExpr().getBindingNames()));
+		return visibleNames.containsAll(CascadesRewriteSupport.mask(universe,
+				names(VarNameCollector.process(branch.condition()))));
 	}
 
 	private static Map<String, Value> baseConstantEqualities(ValueExpr condition, Set<String> baseNames) {
@@ -314,11 +320,11 @@ public final class SetCascadesRules {
 		return clone;
 	}
 
-	private static boolean optionalConditionVisible(TupleExpr leftBranch, Set<String> optionalNames,
-			Set<String> conditionNames) {
-		Set<String> visibleNames = new HashSet<>(names(leftBranch.getBindingNames()));
-		visibleNames.addAll(optionalNames);
-		return visibleNames.containsAll(conditionNames);
+	private static boolean optionalConditionVisible(TupleExpr leftBranch, BindingMask optionalNames,
+			Set<String> conditionNames, BindingUniverse universe) {
+		BindingMask visibleNames = CascadesRewriteSupport.mask(universe, leftBranch.getBindingNames())
+				.union(optionalNames);
+		return visibleNames.containsAll(CascadesRewriteSupport.mask(universe, conditionNames));
 	}
 
 	private static boolean containsUnsupportedOptionalUnionDistributionArg(TupleExpr tupleExpr) {
@@ -375,6 +381,14 @@ public final class SetCascadesRules {
 
 	private static Set<String> names(Set<String> names) {
 		return CascadesRewriteSupport.plannerNames(names);
+	}
+
+	private static BindingUniverse universe(Memo memo) {
+		return memo == null ? BindingUniverse.create() : memo.universe();
+	}
+
+	private static BindingUniverse universe(RuleContext context) {
+		return context == null ? BindingUniverse.create() : context.universe();
 	}
 
 	private static String semanticScope(OptimizationGoal goal) {

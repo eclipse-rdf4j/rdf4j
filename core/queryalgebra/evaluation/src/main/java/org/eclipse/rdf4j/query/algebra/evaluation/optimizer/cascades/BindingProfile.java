@@ -130,10 +130,18 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				&& variables.keySet().containsAll(required.variables.keySet())
 				&& finiteRelations.keySet().containsAll(required.finiteRelations.keySet())
 				&& sketchRelations.keySet().containsAll(required.sketchRelations.keySet())
-				&& evidenceProfile.sketches().keySet().containsAll(required.evidenceProfile.sketches().keySet())
+				&& satisfiesEvidenceProfile(required.evidenceProfile)
 				&& jointDistinctRows.keySet().containsAll(required.jointDistinctRows.keySet())
 				&& sketchVars.containsAll(required.sketchVars)
 				&& overlapEvidence.keySet().containsAll(required.overlapEvidence.keySet());
+	}
+
+	private boolean satisfiesEvidenceProfile(EvidenceProfile required) {
+		return required == null
+				|| (evidenceProfile.sketches().keySet().containsAll(required.sketches().keySet())
+						&& evidenceProfile.supportingSketches()
+								.keySet()
+								.containsAll(required.supportingSketches().keySet()));
 	}
 
 	public BindingProfile mergedWith(BindingProfile other) {

@@ -74,6 +74,24 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& bindingProfile.satisfies(required.bindingProfile);
 	}
 
+	public boolean satisfies(PhysicalProperties required, BindingUniverse universe) {
+		if (universe == null) {
+			return satisfies(required);
+		}
+		if (required == null) {
+			required = ANY;
+		}
+		return satisfiesOrdering(required.ordering)
+				&& containsAll(universe, distinctVars, required.distinctVars)
+				&& satisfiesAccessPath(required.accessPath)
+				&& containsAll(universe, boundVars, required.boundVars)
+				&& containsAll(universe, required.boundVars, inputBoundVars)
+				&& satisfiesMaterialization(required.materialization)
+				&& satisfiesGraphContext(required.graphContext)
+				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
+				&& bindingProfile.satisfies(required.bindingProfile);
+	}
+
 	public List<String> missingRequirements(PhysicalProperties required) {
 		if (required == null) {
 			required = ANY;
@@ -92,6 +110,44 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			missing.add("boundVars");
 		}
 		if (!required.boundVars.containsAll(inputBoundVars)) {
+			missing.add("inputBoundVars");
+		}
+		if (!satisfiesMaterialization(required.materialization)) {
+			missing.add("materialization");
+		}
+		if (!satisfiesGraphContext(required.graphContext)) {
+			missing.add("graphContext");
+		}
+		if (!satisfiesDuplicateBehavior(required.duplicateBehavior)) {
+			missing.add("duplicateBehavior");
+		}
+		if (!bindingProfile.satisfies(required.bindingProfile)) {
+			missing.add("bindingProfile");
+		}
+		return missing.isEmpty() ? List.of() : List.copyOf(missing);
+	}
+
+	public List<String> missingRequirements(PhysicalProperties required, BindingUniverse universe) {
+		if (universe == null) {
+			return missingRequirements(required);
+		}
+		if (required == null) {
+			required = ANY;
+		}
+		List<String> missing = new ArrayList<>(9);
+		if (!satisfiesOrdering(required.ordering)) {
+			missing.add("ordering");
+		}
+		if (!containsAll(universe, distinctVars, required.distinctVars)) {
+			missing.add("distinctVars");
+		}
+		if (!satisfiesAccessPath(required.accessPath)) {
+			missing.add("accessPath");
+		}
+		if (!containsAll(universe, boundVars, required.boundVars)) {
+			missing.add("boundVars");
+		}
+		if (!containsAll(universe, required.boundVars, inputBoundVars)) {
 			missing.add("inputBoundVars");
 		}
 		if (!satisfiesMaterialization(required.materialization)) {
@@ -214,6 +270,16 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 
 	private boolean satisfiesDuplicateBehavior(DuplicateBehavior required) {
 		return required == null || required == DuplicateBehavior.ANY || duplicateBehavior == required;
+	}
+
+	private static boolean containsAll(BindingUniverse universe, Set<String> names, Set<String> required) {
+		if (required == null || required.isEmpty()) {
+			return true;
+		}
+		if (names == null || names.size() < required.size()) {
+			return false;
+		}
+		return universe.maskOf(names).containsAll(universe.maskOf(required));
 	}
 
 	private static Builder builderFrom(PhysicalProperties properties) {

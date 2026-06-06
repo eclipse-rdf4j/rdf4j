@@ -169,11 +169,15 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 	}
 
 	public boolean excludes(PhysicalProperties properties) {
+		return excludes(properties, null);
+	}
+
+	public boolean excludes(PhysicalProperties properties, BindingUniverse universe) {
 		if (properties == null || excludedProperties.isEmpty()) {
 			return false;
 		}
 		for (PhysicalProperties excluded : excludedProperties) {
-			if (properties.satisfies(excluded) || excluded.satisfies(properties)) {
+			if (properties.satisfies(excluded, universe) || excluded.satisfies(properties, universe)) {
 				return true;
 			}
 		}

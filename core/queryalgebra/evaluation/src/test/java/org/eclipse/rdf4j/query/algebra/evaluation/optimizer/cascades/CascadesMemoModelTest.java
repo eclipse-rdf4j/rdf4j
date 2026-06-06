@@ -306,6 +306,27 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void bindingProfileSatisfiesSeesSupportingProfileSketchKeys() {
+		VariableSetKey key = VariableSetKey.of(Set.of("branch", "copy"));
+		SketchEvidence supporting = new SketchEvidence(key, new TestSketch(20.0d), 20.0d, 20.0d,
+				EvidenceQuality.COMPOSED_SKETCH, "required-supporting")
+						.asSupporting("required-supporting");
+		EvidenceProfile profile = new EvidenceProfile(20.0d, 20.0d, 0.0d, 1.0d, "required-supporting",
+				Map.of("branch", VariableEstimate.bound(20.0d, 20.0d),
+						"copy", VariableEstimate.bound(20.0d, 20.0d)),
+				Map.of(), Map.of(), Map.of(key, supporting), Map.of());
+		BindingProfile required = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				BindingProfile.ANY_ENDPOINT_MODE, profile);
+		BindingProfile delivered = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				BindingProfile.ANY_ENDPOINT_MODE, profile);
+
+		assertFalse(BindingProfile.ANY.satisfies(required),
+				"An empty profile must not satisfy required supporting evidence carried only by EvidenceProfile");
+		assertTrue(delivered.satisfies(required),
+				"BindingProfile.satisfies must see embedded supporting EvidenceProfile sketch keys");
+	}
+
+	@Test
 	void bindingProfileEndpointModeCanBeRequiredAsPhysicalProperty() {
 		BindingProfile requiredEndpoint = new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
 				"toEnd");
@@ -453,6 +474,33 @@ class CascadesMemoModelTest {
 		join.getLeftArg()
 				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 						"lmdb-cascades-fallback");
+		join.getLeftArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+						"fallback_no_winner");
+		CostVector parentCost = new CostVector(100.0d, 200.0d, 0.0d, 0.0d, 0.0d, 2.0d, 2.0d, 2.0d, 2.0d,
+				10.0d, 0.5d, 7.0d);
+		EstimateSnapshot parentEstimate = new EstimateSnapshot("test-planner", "opaque-provider",
+				"alternative_ranking", 100.0d, 200.0d, parentCost, Map.of(), Map.of());
+		RuleProof proof = new RuleProof("opaque-provider", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("opaque"), "opaque provider owns its subtree");
+		PlanProvenance provenance = new PlanProvenance(10, 11, "Join", "opaque-provider",
+				RuleKind.IMPLEMENTATION, List.of(), parentEstimate, parentCost, PhysicalProperties.ANY,
+				PhysicalProperties.builder().accessPath("opaque-provider").boundVars(join.getBindingNames()).build(),
+				List.of(), List.of(proof), false, "");
+
+		CascadesPlanProvenanceAnnotator.annotate(join, provenance, "test-planner");
+
+		assertEquals("covered_by_parent_winner",
+				join.getLeftArg().getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
+		assertEquals("opaque-provider",
+				join.getLeftArg().getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	@Test
+	void coveredDescendantsReplaceSampledFallbackSourceWithParentWinnerSource() {
+		Join join = new Join(pattern("s", "p", "o"), pattern("o", "p2", "x"));
+		join.getLeftArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "sampled");
 		join.getLeftArg()
 				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 						"fallback_no_winner");

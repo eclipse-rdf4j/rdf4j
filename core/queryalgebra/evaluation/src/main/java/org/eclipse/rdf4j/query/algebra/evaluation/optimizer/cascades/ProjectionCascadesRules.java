@@ -37,13 +37,14 @@ public final class ProjectionCascadesRules {
 
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			BindingUniverse universe = universe(memo);
 			return expression.logical()
 					&& expression.tupleExpr()instanceof Projection projection
 					&& safeProjection(projection)
 					&& projection.getArg()instanceof Filter filter
 					&& !filter.isVariableScopeChange()
-					&& CascadesRewriteSupport.plannerNames(filter.getArg().getBindingNames())
-							.containsAll(conditionNames(filter.getCondition()));
+					&& CascadesRewriteSupport.containsAll(universe, filter.getArg().getBindingNames(),
+							conditionNames(filter.getCondition()));
 		}
 
 		@Override
@@ -84,11 +85,13 @@ public final class ProjectionCascadesRules {
 			}
 			Projection projection = (Projection) expression.tupleExpr();
 			Difference difference = (Difference) projection.getArg();
+			BindingUniverse universe = universe(context);
 			Set<String> projected = projectionNames(projection);
 			Set<String> leftNames = CascadesRewriteSupport.plannerNames(difference.getLeftArg().getBindingNames());
-			Set<String> shared = CascadesRewriteSupport.intersection(leftNames,
+			Set<String> shared = CascadesRewriteSupport.intersection(universe, leftNames,
 					difference.getRightArg().getBindingNames());
-			Set<String> leftNeeded = new HashSet<>(CascadesRewriteSupport.intersection(projected, leftNames));
+			Set<String> leftNeeded = new HashSet<>(CascadesRewriteSupport.intersection(universe, projected,
+					leftNames));
 			leftNeeded.addAll(shared);
 			Projection alternative = projection.clone();
 			alternative.setArg(new Difference(CascadesRewriteSupport.project(difference.getLeftArg(), leftNeeded),
@@ -110,7 +113,7 @@ public final class ProjectionCascadesRules {
 					&& expression.tupleExpr()instanceof Projection projection
 					&& safeProjection(projection)
 					&& projection.getArg()instanceof LeftJoin leftJoin
-					&& knownConditionVars(leftJoin);
+					&& knownConditionVars(leftJoin, universe(memo));
 		}
 
 		@Override
@@ -120,18 +123,21 @@ public final class ProjectionCascadesRules {
 			}
 			Projection projection = (Projection) expression.tupleExpr();
 			LeftJoin leftJoin = (LeftJoin) projection.getArg();
+			BindingUniverse universe = universe(context);
 			Set<String> projected = projectionNames(projection);
 			Set<String> leftNames = CascadesRewriteSupport.plannerNames(leftJoin.getLeftArg().getBindingNames());
 			Set<String> rightNames = CascadesRewriteSupport.plannerNames(leftJoin.getRightArg().getBindingNames());
-			Set<String> shared = CascadesRewriteSupport.intersection(leftNames, rightNames);
+			Set<String> shared = CascadesRewriteSupport.intersection(universe, leftNames, rightNames);
 			Set<String> conditionNames = conditionNames(leftJoin.getCondition());
 
-			Set<String> leftNeeded = new HashSet<>(CascadesRewriteSupport.intersection(projected, leftNames));
+			Set<String> leftNeeded = new HashSet<>(CascadesRewriteSupport.intersection(universe, projected,
+					leftNames));
 			leftNeeded.addAll(shared);
-			leftNeeded.addAll(CascadesRewriteSupport.intersection(conditionNames, leftNames));
-			Set<String> rightNeeded = new HashSet<>(CascadesRewriteSupport.intersection(projected, rightNames));
+			leftNeeded.addAll(CascadesRewriteSupport.intersection(universe, conditionNames, leftNames));
+			Set<String> rightNeeded = new HashSet<>(CascadesRewriteSupport.intersection(universe, projected,
+					rightNames));
 			rightNeeded.addAll(shared);
-			rightNeeded.addAll(CascadesRewriteSupport.intersection(conditionNames, rightNames));
+			rightNeeded.addAll(CascadesRewriteSupport.intersection(universe, conditionNames, rightNames));
 
 			Projection alternative = projection.clone();
 			alternative.setArg(new LeftJoin(CascadesRewriteSupport.project(leftJoin.getLeftArg(), leftNeeded),
@@ -150,14 +156,14 @@ public final class ProjectionCascadesRules {
 				&& CascadesRewriteSupport.identityProjectionNames(projection) != null;
 	}
 
-	private static boolean knownConditionVars(LeftJoin leftJoin) {
+	private static boolean knownConditionVars(LeftJoin leftJoin, BindingUniverse universe) {
 		Set<String> conditionNames = conditionNames(leftJoin.getCondition());
 		if (conditionNames.isEmpty()) {
 			return true;
 		}
-		Set<String> visible = new HashSet<>(leftJoin.getLeftArg().getBindingNames());
-		visible.addAll(leftJoin.getRightArg().getBindingNames());
-		return CascadesRewriteSupport.plannerNames(visible).containsAll(conditionNames);
+		BindingMask visible = CascadesRewriteSupport.mask(universe, leftJoin.getLeftArg().getBindingNames())
+				.union(CascadesRewriteSupport.mask(universe, leftJoin.getRightArg().getBindingNames()));
+		return visible.containsAll(CascadesRewriteSupport.mask(universe, conditionNames));
 	}
 
 	private static Set<String> projectionNames(Projection projection) {
@@ -166,6 +172,14 @@ public final class ProjectionCascadesRules {
 
 	private static Set<String> conditionNames(ValueExpr condition) {
 		return CascadesRewriteSupport.plannerNames(condition == null ? Set.of() : VarNameCollector.process(condition));
+	}
+
+	private static BindingUniverse universe(Memo memo) {
+		return memo == null ? BindingUniverse.create() : memo.universe();
+	}
+
+	private static BindingUniverse universe(RuleContext context) {
+		return context == null ? BindingUniverse.create() : context.universe();
 	}
 
 	private static String semanticScope(OptimizationGoal goal) {

@@ -48,7 +48,8 @@ public final class FilterCascadesRules {
 					|| filter.isVariableScopeChange()) {
 				return false;
 			}
-			BindingSetAssignment assignment = safeAnchor(filter.getCondition(), filter.getArg(), Set.of());
+			BindingSetAssignment assignment = safeAnchor(filter.getCondition(), filter.getArg(), BindingMask.EMPTY,
+					universe(memo));
 			return assignment != null;
 		}
 
@@ -58,7 +59,8 @@ public final class FilterCascadesRules {
 				return List.of();
 			}
 			Filter filter = (Filter) expression.tupleExpr();
-			BindingSetAssignment assignment = safeAnchor(filter.getCondition(), filter.getArg(), Set.of());
+			BindingSetAssignment assignment = safeAnchor(filter.getCondition(), filter.getArg(), BindingMask.EMPTY,
+					universe(context));
 			RuleProof proof = proof(semanticScope(goal), Set.of("finiteValuesAnchor", "argumentAssuresFilterVar"),
 					"a safe RDF-term equality filter can become a finite VALUES join anchor");
 			return List.of(RuleApplication.transformation(expression.groupId(),
@@ -77,7 +79,7 @@ public final class FilterCascadesRules {
 					|| filter.isVariableScopeChange()) {
 				return false;
 			}
-			return !convertedConjuncts(filter).anchors().isEmpty();
+			return !convertedConjuncts(filter, universe(memo)).anchors().isEmpty();
 		}
 
 		@Override
@@ -86,7 +88,7 @@ public final class FilterCascadesRules {
 				return List.of();
 			}
 			Filter filter = (Filter) expression.tupleExpr();
-			ConvertedConjuncts converted = convertedConjuncts(filter);
+			ConvertedConjuncts converted = convertedConjuncts(filter, universe(context));
 			TupleExpr anchored = prependAnchors(filter.getArg(), converted.anchors());
 			TupleExpr alternative = converted.residualConjuncts().isEmpty()
 					? anchored
@@ -107,7 +109,7 @@ public final class FilterCascadesRules {
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
 					&& expression.tupleExpr()instanceof Filter filter
-					&& transparentProjection(filter) != null;
+					&& transparentProjection(filter, universe(memo)) != null;
 		}
 
 		@Override
@@ -116,7 +118,7 @@ public final class FilterCascadesRules {
 				return List.of();
 			}
 			Filter filter = (Filter) expression.tupleExpr();
-			Projection projection = transparentProjection(filter);
+			Projection projection = transparentProjection(filter, universe(context));
 			Projection alternative = projection.clone();
 			alternative.setArg(new Filter(projection.getArg().clone(), filter.getCondition().clone()));
 			RuleProof proof = proof(semanticScope(goal), Set.of("identityProjection", "filterVarsPreserved",
@@ -136,7 +138,7 @@ public final class FilterCascadesRules {
 			return expression.logical()
 					&& expression.tupleExpr()instanceof Filter filter
 					&& filter.getArg()instanceof LeftJoin leftJoin
-					&& safeLeftJoinLeftFilter(filter, leftJoin);
+					&& safeLeftJoinLeftFilter(filter, leftJoin, universe(memo));
 		}
 
 		@Override
@@ -168,7 +170,7 @@ public final class FilterCascadesRules {
 					&& filter.getArg()instanceof Extension extension
 					&& !filter.isVariableScopeChange()
 					&& !extension.isVariableScopeChange()
-					&& !CascadesRewriteSupport.intersects(conditionNames(filter.getCondition()),
+					&& !CascadesRewriteSupport.intersects(universe(memo), conditionNames(filter.getCondition()),
 							extensionNames(extension));
 		}
 
@@ -187,16 +189,21 @@ public final class FilterCascadesRules {
 		}
 	}
 
-	private static ConvertedConjuncts convertedConjuncts(Filter filter) {
+	private static ConvertedConjuncts convertedConjuncts(Filter filter, BindingUniverse universe) {
 		List<BindingSetAssignment> anchors = new ArrayList<>();
 		List<ValueExpr> residual = new ArrayList<>();
-		Set<String> convertedNames = new HashSet<>();
-		Set<String> existingAnchorNames = existingAnchorNames(filter.getArg());
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask convertedNames = BindingMask.EMPTY;
+		BindingMask existingAnchorNames = existingAnchorNames(filter.getArg(), safeUniverse);
 		for (ValueExpr conjunct : CascadesRewriteSupport.splitConjuncts(filter.getCondition())) {
-			BindingSetAssignment assignment = safeAnchor(conjunct, filter.getArg(), existingAnchorNames);
-			if (assignment == null || !convertedNames.addAll(assignment.getBindingNames())) {
+			BindingSetAssignment assignment = safeAnchor(conjunct, filter.getArg(), existingAnchorNames,
+					safeUniverse);
+			BindingMask assignmentNames = assignment == null ? BindingMask.EMPTY
+					: CascadesRewriteSupport.mask(safeUniverse, assignment.getBindingNames());
+			if (assignment == null || assignmentNames.minus(convertedNames).isEmpty()) {
 				residual.add(conjunct);
 			} else {
+				convertedNames = convertedNames.union(assignmentNames);
 				anchors.add(assignment);
 			}
 		}
@@ -204,15 +211,16 @@ public final class FilterCascadesRules {
 	}
 
 	private static BindingSetAssignment safeAnchor(ValueExpr condition, TupleExpr arg,
-			Set<String> existingAnchorNames) {
+			BindingMask existingAnchorNames, BindingUniverse universe) {
 		BindingSetAssignment assignment = FilterValuesAnchorSupport.safeValuesAnchor(condition);
 		if (assignment == null || arg == null) {
 			return null;
 		}
-		Set<String> bindingNames = CascadesRewriteSupport.plannerNames(assignment.getBindingNames());
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask bindingNames = CascadesRewriteSupport.mask(safeUniverse, assignment.getBindingNames());
 		if (bindingNames.isEmpty()
-				|| !CascadesRewriteSupport.plannerNames(arg.getAssuredBindingNames()).containsAll(bindingNames)
-				|| !CascadesRewriteSupport.intersection(existingAnchorNames, bindingNames).isEmpty()) {
+				|| !CascadesRewriteSupport.mask(safeUniverse, arg.getAssuredBindingNames()).containsAll(bindingNames)
+				|| existingAnchorNames.intersects(bindingNames)) {
 			return null;
 		}
 		return assignment;
@@ -226,15 +234,16 @@ public final class FilterCascadesRules {
 		return result;
 	}
 
-	private static Set<String> existingAnchorNames(TupleExpr tupleExpr) {
-		Set<String> names = new HashSet<>();
+	private static BindingMask existingAnchorNames(TupleExpr tupleExpr, BindingUniverse universe) {
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask[] names = { BindingMask.EMPTY };
 		if (tupleExpr == null) {
-			return names;
+			return names[0];
 		}
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(BindingSetAssignment assignment) {
-				names.addAll(CascadesRewriteSupport.plannerNames(assignment.getBindingNames()));
+				names[0] = names[0].union(CascadesRewriteSupport.mask(safeUniverse, assignment.getBindingNames()));
 			}
 
 			@Override
@@ -249,42 +258,48 @@ public final class FilterCascadesRules {
 				}
 			}
 		});
-		return names;
+		return names[0];
 	}
 
-	private static Projection transparentProjection(Filter filter) {
+	private static Projection transparentProjection(Filter filter, BindingUniverse universe) {
 		if (filter == null
 				|| filter.isVariableScopeChange()
 				|| !(filter.getArg()instanceof Projection projection)
 				|| projection.isSubquery()) {
 			return null;
 		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
 		Set<String> projectedNames = CascadesRewriteSupport.identityProjectionNames(projection);
-		if (projectedNames == null || !projectedNames.containsAll(conditionNames(filter.getCondition()))) {
+		if (projectedNames == null
+				|| !CascadesRewriteSupport.mask(safeUniverse, projectedNames)
+						.containsAll(
+								CascadesRewriteSupport.mask(safeUniverse, conditionNames(filter.getCondition())))) {
 			return null;
 		}
 		return projection;
 	}
 
-	private static boolean safeLeftJoinLeftFilter(Filter filter, LeftJoin leftJoin) {
+	private static boolean safeLeftJoinLeftFilter(Filter filter, LeftJoin leftJoin, BindingUniverse universe) {
 		if (filter == null
 				|| leftJoin == null
 				|| filter.isVariableScopeChange()
 				|| leftJoin.isVariableScopeChange()) {
 			return false;
 		}
-		Set<String> filterNames = conditionNames(filter.getCondition());
-		Set<String> leftAssured = CascadesRewriteSupport.plannerNames(leftJoin.getLeftArg().getAssuredBindingNames());
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask filterNames = CascadesRewriteSupport.mask(safeUniverse, conditionNames(filter.getCondition()));
+		BindingMask leftAssured = CascadesRewriteSupport.mask(safeUniverse,
+				leftJoin.getLeftArg().getAssuredBindingNames());
 		if (!leftAssured.containsAll(filterNames)) {
 			return false;
 		}
 		if (!leftJoin.hasCondition()) {
 			return true;
 		}
-		Set<String> nullableRight = new HashSet<>(
-				CascadesRewriteSupport.plannerNames(leftJoin.getRightArg().getBindingNames()));
-		nullableRight.removeAll(leftAssured);
-		return !CascadesRewriteSupport.intersects(conditionNames(leftJoin.getCondition()), nullableRight);
+		BindingMask nullableRight = CascadesRewriteSupport.mask(safeUniverse, leftJoin.getRightArg().getBindingNames())
+				.minus(leftAssured);
+		return !CascadesRewriteSupport.mask(safeUniverse, conditionNames(leftJoin.getCondition()))
+				.intersects(nullableRight);
 	}
 
 	private static Set<String> extensionNames(Extension extension) {
@@ -300,6 +315,14 @@ public final class FilterCascadesRules {
 
 	private static Set<String> conditionNames(ValueExpr condition) {
 		return CascadesRewriteSupport.plannerNames(condition == null ? Set.of() : VarNameCollector.process(condition));
+	}
+
+	private static BindingUniverse universe(Memo memo) {
+		return memo == null ? BindingUniverse.create() : memo.universe();
+	}
+
+	private static BindingUniverse universe(RuleContext context) {
+		return context == null ? BindingUniverse.create() : context.universe();
 	}
 
 	private static String semanticScope(OptimizationGoal goal) {

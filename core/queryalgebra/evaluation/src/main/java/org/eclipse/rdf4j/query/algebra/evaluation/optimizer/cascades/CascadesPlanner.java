@@ -470,14 +470,15 @@ public final class CascadesPlanner {
 			return Optional.empty();
 		}
 		PhysicalProperties delivered = costModel.deliveredProperties(expression, goal, inputWinners);
-		if (!delivered.satisfies(goal.requiredProperties())) {
+		if (!delivered.satisfies(goal.requiredProperties(), memo.universe())) {
 			state.recordRejected(expression.groupId(), ruleId, "missing-physical-property", CostVector.ZERO,
-					goal.requiredProperties(), delivered);
+					goal.requiredProperties(), delivered,
+					delivered.missingRequirements(goal.requiredProperties(), memo.universe()));
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "missing-physical-property",
 					CostVector.ZERO, expression.tupleExpr());
 			return Optional.empty();
 		}
-		if (goal.excludes(delivered)) {
+		if (goal.excludes(delivered, memo.universe())) {
 			state.recordRejected(expression.groupId(), ruleId, "excluded-physical-property", CostVector.ZERO,
 					goal.requiredProperties(), delivered);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "excluded-physical-property",
@@ -718,7 +719,7 @@ public final class CascadesPlanner {
 			return InputFrontierResult.complete(List.of());
 		}
 		List<List<Winner>> frontiers = new ArrayList<>(Collections.nCopies(expression.inputGroupIds().size(), null));
-		List<OptimizationGoal> inputGoals = inputGoals(expression, goal);
+		List<OptimizationGoal> inputGoals = inputGoals(memo, expression, goal);
 		for (int i : inputOptimizationOrder(expression)) {
 			Integer inputGroupId = expression.inputGroupIds().get(i);
 			OptimizationGoal inputGoal = inputGoals.get(i);
@@ -880,30 +881,36 @@ public final class CascadesPlanner {
 		}
 	}
 
-	private List<OptimizationGoal> inputGoals(MemoExpr expression, OptimizationGoal goal) {
+	private List<OptimizationGoal> inputGoals(Memo memo, MemoExpr expression, OptimizationGoal goal) {
 		int inputCount = expression.inputGroupIds().size();
 		TupleExpr tupleExpr = expression.tupleExpr();
 		if (inputCount == 1 && tupleExpr instanceof UnaryTupleOperator unary) {
-			return List.of(inputGoal(goal, unary.getArg(), Set.of(), tupleExpr, 0));
+			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, unary.getArg(), Set.of(),
+					tupleExpr, 0));
 		}
 		if (inputCount == 2 && tupleExpr instanceof LeftJoin leftJoin) {
-			return List.of(inputGoal(goal, leftJoin.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, leftJoin.getRightArg(),
+			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, leftJoin.getLeftArg(),
+					Set.of(), tupleExpr, 0),
+					inputGoal(memo, expression.inputGroupIds().get(1), goal, leftJoin.getRightArg(),
 							CascadesRewriteSupport.assuredStreamBindingNames(leftJoin.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Join join) {
-			return List.of(inputGoal(goal, join.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, join.getRightArg(),
+			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, join.getLeftArg(),
+					Set.of(), tupleExpr, 0),
+					inputGoal(memo, expression.inputGroupIds().get(1), goal, join.getRightArg(),
 							CascadesRewriteSupport.assuredStreamBindingNames(join.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Difference difference) {
-			return List.of(inputGoal(goal, difference.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, difference.getRightArg(),
+			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, difference.getLeftArg(),
+					Set.of(), tupleExpr, 0),
+					inputGoal(memo, expression.inputGroupIds().get(1), goal, difference.getRightArg(),
 							CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg()), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Union union) {
-			return List.of(inputGoal(goal, union.getLeftArg(), Set.of(), tupleExpr, 0),
-					inputGoal(goal, union.getRightArg(), Set.of(), tupleExpr, 1));
+			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, union.getLeftArg(),
+					Set.of(), tupleExpr, 0),
+					inputGoal(memo, expression.inputGroupIds().get(1), goal, union.getRightArg(),
+							Set.of(), tupleExpr, 1));
 		}
 		List<OptimizationGoal> goals = new ArrayList<>(inputCount);
 		for (int i = 0; i < inputCount; i++) {
@@ -912,11 +919,11 @@ public final class CascadesPlanner {
 		return goals;
 	}
 
-	private OptimizationGoal inputGoal(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars,
-			TupleExpr parent, int inputIndex) {
+	private OptimizationGoal inputGoal(Memo memo, int inputGroupId, OptimizationGoal goal, TupleExpr input,
+			Set<String> contextualBoundVars, TupleExpr parent, int inputIndex) {
 		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
-		Set<String> candidateBoundVars = childBoundVars(safeGoal, input, contextualBoundVars);
-		Set<String> boundVars = visibleChildBoundVars(parent, input, candidateBoundVars);
+		Set<String> candidateBoundVars = childBoundVars(memo, inputGroupId, safeGoal, input, contextualBoundVars);
+		Set<String> boundVars = visibleChildBoundVars(memo, parent, input, candidateBoundVars);
 		if (boundVars.size() != candidateBoundVars.size()) {
 			telemetry.plannerEvent("input-goal-hidden-bindings parent=" + nodeSummary(parent)
 					+ " input=" + nodeSummary(input)
@@ -939,20 +946,19 @@ public final class CascadesPlanner {
 		return tupleExpr.getClass().getSimpleName() + tupleExpr.getBindingNames();
 	}
 
-	private static Set<String> visibleChildBoundVars(TupleExpr parent, TupleExpr input,
+	private static Set<String> visibleChildBoundVars(Memo memo, TupleExpr parent, TupleExpr input,
 			Set<String> candidateBoundVars) {
 		if (candidateBoundVars == null || candidateBoundVars.isEmpty()) {
 			return Set.of();
 		}
-		Set<String> protectedNames = new LinkedHashSet<>();
-		protectedNames.addAll(scopeProtectedBindingNames(parent));
-		protectedNames.addAll(scopeProtectedBindingNames(input));
-		if (protectedNames.isEmpty()) {
+		BindingUniverse universe = memo == null ? BindingUniverse.create() : memo.universe();
+		BindingMask protectedMask = CascadesRewriteSupport.mask(universe, scopeProtectedBindingNames(parent))
+				.union(CascadesRewriteSupport.mask(universe, scopeProtectedBindingNames(input)));
+		if (protectedMask.isEmpty()) {
 			return candidateBoundVars;
 		}
-		Set<String> visible = new LinkedHashSet<>(candidateBoundVars);
-		visible.removeAll(protectedNames);
-		return visible.isEmpty() ? Set.of() : Set.copyOf(visible);
+		BindingMask visible = CascadesRewriteSupport.mask(universe, candidateBoundVars).minus(protectedMask);
+		return universe.names(visible);
 	}
 
 	private static Set<String> hiddenChildBoundVars(Set<String> candidateBoundVars, Set<String> visibleBoundVars) {
@@ -996,30 +1002,41 @@ public final class CascadesPlanner {
 		return OptimizationGoal.RowGoal.ALL;
 	}
 
-	private Set<String> childBoundVars(OptimizationGoal goal, TupleExpr input, Set<String> contextualBoundVars) {
+	private Set<String> childBoundVars(Memo memo, int inputGroupId, OptimizationGoal goal, TupleExpr input,
+			Set<String> contextualBoundVars) {
 		if (input == null) {
 			return Set.of();
 		}
-		Set<String> inputBindings = input.getBindingNames();
+		BindingUniverse universe = memo == null ? BindingUniverse.create() : memo.universe();
+		BindingMask inputBindings = inputBindingMask(memo, inputGroupId, input, universe);
 		if (inputBindings.isEmpty()) {
 			return Set.of();
 		}
-		Set<String> boundVars = new LinkedHashSet<>();
+		BindingMask boundVars = BindingMask.EMPTY;
 		if (goal != null) {
-			for (String boundVar : goal.requiredProperties().boundVars()) {
-				if (inputBindings.contains(boundVar)) {
-					boundVars.add(boundVar);
-				}
-			}
+			boundVars = boundVars.union(CascadesRewriteSupport.mask(universe, goal.requiredProperties().boundVars())
+					.intersect(inputBindings));
 		}
 		if (contextualBoundVars != null) {
-			for (String contextualBoundVar : contextualBoundVars) {
-				if (inputBindings.contains(contextualBoundVar)) {
-					boundVars.add(contextualBoundVar);
+			boundVars = boundVars.union(CascadesRewriteSupport.mask(universe, contextualBoundVars)
+					.intersect(inputBindings));
+		}
+		return universe.names(boundVars);
+	}
+
+	private static BindingMask inputBindingMask(Memo memo, int inputGroupId, TupleExpr input,
+			BindingUniverse universe) {
+		if (memo != null && inputGroupId >= 0) {
+			try {
+				BindingShape shape = memo.group(inputGroupId).bindingShape();
+				if (shape != null) {
+					return shape.possible();
 				}
+			} catch (IndexOutOfBoundsException ignored) {
+				// Fall back to the tuple expression boundary below.
 			}
 		}
-		return boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+		return CascadesRewriteSupport.mask(universe, input == null ? Set.of() : input.getBindingNames());
 	}
 
 	private static String primaryRuleId(MemoExpr expression) {
@@ -1130,9 +1147,15 @@ public final class CascadesPlanner {
 
 		void recordRejected(int groupId, String ruleId, String reason, CostVector cost,
 				PhysicalProperties requiredProperties, PhysicalProperties deliveredProperties) {
+			recordRejected(groupId, ruleId, reason, cost, requiredProperties, deliveredProperties, List.of());
+		}
+
+		void recordRejected(int groupId, String ruleId, String reason, CostVector cost,
+				PhysicalProperties requiredProperties, PhysicalProperties deliveredProperties,
+				List<String> missingProperties) {
 			rejectedAlternativesByGroup.computeIfAbsent(groupId, ignored -> new ArrayList<>())
 					.add(new RejectedAlternative(groupId, ruleId, reason, cost, requiredProperties,
-							deliveredProperties, List.of()));
+							deliveredProperties, missingProperties));
 		}
 
 		List<RejectedAlternative> rejectionsFor(int groupId) {
