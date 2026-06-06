@@ -594,6 +594,24 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void aliasProjectionRenamesTupleEvidence() {
+		DistributionSketch tupleSketch = new TestSketch(2.0d, 3.0d, OptionalDouble.empty());
+		BagEstimate input = finite("input", List.of("enc", "code"),
+				List.of(row("e1", "A"), row("e1", "A"), row("e2", "B")))
+						.withSketchRelation(Set.of("enc", "code"), tupleSketch);
+
+		BagEstimate aliased = EstimateMath.extendAlias(input, "code", "alias");
+		BagEstimate projected = EstimateMath.project(aliased, Set.of("enc", "alias"));
+
+		FiniteRelationEstimate relation = projected.finiteRelation(Set.of("enc", "alias"))
+				.orElseThrow(() -> new AssertionError("Projection alias should rename exact tuple evidence"));
+		assertEquals(2.0d, relation.distinctRows(Set.of("enc", "alias")), 0.0d);
+		assertEquals(2.0d, relation.frequencyBy(Set.of("enc", "alias")).get(row("e1", "A")), 0.0d);
+		assertSame(tupleSketch, projected.sketchRelation(Set.of("enc", "alias"))
+				.orElseThrow(() -> new AssertionError("Projection alias should rename tuple sketch evidence")));
+	}
+
+	@Test
 	void extensionAddsConstantVariableWithoutChangingRows() {
 		BagEstimate input = finite("input", List.of("enc"), List.of(row("e1"), row("e2")));
 
