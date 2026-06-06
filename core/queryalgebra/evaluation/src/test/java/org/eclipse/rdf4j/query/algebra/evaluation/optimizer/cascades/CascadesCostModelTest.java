@@ -884,6 +884,11 @@ class CascadesCostModelTest {
 		public OptionalDouble innerProduct(DistributionSketch other) {
 			return OptionalDouble.of(innerProduct);
 		}
+
+		@Override
+		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+			return OptionalDouble.of(innerProduct);
+		}
 	}
 
 	private static final class SketchedFeedbackProvider implements RdfStatisticsProvider {

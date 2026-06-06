@@ -196,9 +196,9 @@ final class PlanState {
 		for (String variable : normalizedBoundVars) {
 			variables.put(variable, nextVariableEstimate(variables.get(variable), nextEstimate.rows()));
 		}
-		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
-				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
-				nextEstimate.sketchRelations(), nextEstimate.metrics());
+		return nextEstimate.evidenceProfile()
+				.withVariables(variables, nextEstimate.source())
+				.toBagEstimate();
 	}
 
 	private static VariableEstimate nextVariableEstimate(VariableEstimate existing, double rows) {

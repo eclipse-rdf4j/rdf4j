@@ -110,9 +110,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.ProductDistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -6350,9 +6352,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		private static EvidenceProfile evidenceProfile(double rows, Map<String, VarPlanStats> varStats) {
 			Map<String, VariableEstimate> variables = variableEstimates(rows, varStats);
-			Map<VariableSetKey, DistributionSketch> sketchRelations = tupleSketchRelations(rows, varStats);
-			return EvidenceProfile.of(rows, rows, 0.0d, 1.0d, "tuple-plan-estimate", variables, Map.of(),
-					sketchRelations, Map.of());
+			return new EvidenceProfile(rows, rows, 0.0d, 1.0d, "tuple-plan-estimate", variables, Map.of(),
+					variableSketchEvidence(rows, varStats), syntheticProductEvidence(rows, varStats), Map.of());
 		}
 
 		private static Map<String, VariableEstimate> variableEstimates(double rows,
@@ -6372,7 +6373,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return estimates;
 		}
 
-		private static Map<VariableSetKey, DistributionSketch> tupleSketchRelations(double rows,
+		private static Map<VariableSetKey, SketchEvidence> variableSketchEvidence(double rows,
+				Map<String, VarPlanStats> varStats) {
+			if (varStats.isEmpty()) {
+				return Map.of();
+			}
+			Map<VariableSetKey, SketchEvidence> sketches = new LinkedHashMap<>();
+			for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+				VarPlanStats stats = entry.getValue();
+				if (stats == null || stats.sketch == null || stats.sketch.isEmpty()) {
+					continue;
+				}
+				VariableSetKey key = VariableSetKey.of(Set.of(entry.getKey()));
+				sketches.put(key, new SketchEvidence(key, stats.sketch, rows,
+						clampTupleDistinct(stats.distinct, rows), EvidenceQuality.VARIABLE_SKETCH,
+						"tuple-plan-estimate"));
+			}
+			return sketches.isEmpty() ? Map.of() : Map.copyOf(sketches);
+		}
+
+		private static Map<VariableSetKey, SketchEvidence> syntheticProductEvidence(double rows,
 				Map<String, VarPlanStats> varStats) {
 			if (varStats.size() < 2) {
 				return Map.of();
@@ -6394,7 +6414,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (sketchCount < 2 || product == null) {
 				return Map.of();
 			}
-			return Map.of(VariableSetKey.of(names), product);
+			VariableSetKey key = VariableSetKey.of(names);
+			SketchEvidence evidence = new SketchEvidence(key, product, rows, product.distinctRows(),
+					EvidenceQuality.COMPOSED_SKETCH, "tuple-plan-product")
+							.asSupporting("tuple-plan-product");
+			return Map.of(key, evidence);
 		}
 
 		String summary() {

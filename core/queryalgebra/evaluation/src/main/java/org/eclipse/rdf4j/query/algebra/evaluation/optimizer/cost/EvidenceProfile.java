@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -146,6 +147,11 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				supportingSketches, metrics);
 	}
 
+	public EvidenceProfile withVariables(Map<String, VariableEstimate> variables, String source) {
+		return new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches,
+				supportingSketches, metrics);
+	}
+
 	public EvidenceComposition composeInnerJoin(EvidenceProfile right, Set<String> sharedVars) {
 		Set<String> joinVars = safeSet(sharedVars);
 		EvidenceScalar scalar = innerJoinScalar(right, joinVars);
@@ -226,6 +232,44 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				Map.of(), filteredSketches, filteredSupporting, metrics);
 	}
 
+	public EvidenceProfile distinct(Set<String> distinctVars) {
+		Set<String> vars = safeSet(distinctVars);
+		double distinctRows = vars.isEmpty() ? rows
+				: relationContaining(vars)
+						.map(relation -> relation.distinctRows(vars))
+						.orElse(Math.min(rows, productDistinct(vars)));
+		Map<String, VariableEstimate> distinctVariables = projectedBoundVariables(vars, distinctRows);
+		Map<VariableSetKey, FiniteRelationEstimate> distinctFinite = distinctFiniteRelation(vars, "distinct")
+				.map(relation -> Map.of(relation.variableSetKey(), relation))
+				.orElse(Map.of());
+		return new EvidenceProfile(distinctRows, workRows + rows, distinctRows, confidence, "distinct",
+				distinctVariables, distinctFinite, Map.of(), staleSupportingSketches(distinctRows, "distinct"),
+				metrics);
+	}
+
+	public EvidenceProfile group(Set<String> groupVars) {
+		Set<String> vars = safeSet(groupVars);
+		double groupedRows;
+		if (vars.isEmpty()) {
+			groupedRows = rows > 0.0d ? 1.0d : 0.0d;
+		} else {
+			groupedRows = relationContaining(vars)
+					.map(relation -> relation.distinctRows(vars))
+					.orElseGet(() -> vars.stream()
+							.map(this::variable)
+							.mapToDouble(VariableEstimate::distinctRows)
+							.filter(value -> value > 0.0d)
+							.min()
+							.orElse(Math.min(rows, 1.0d)));
+		}
+		Map<String, VariableEstimate> groupedVariables = projectedBoundVariables(vars, groupedRows);
+		Map<VariableSetKey, FiniteRelationEstimate> groupedFinite = distinctFiniteRelation(vars, "group")
+				.map(relation -> Map.of(relation.variableSetKey(), relation))
+				.orElse(Map.of());
+		return new EvidenceProfile(groupedRows, workRows + rows, groupedRows, confidence, "group", groupedVariables,
+				groupedFinite, Map.of(), staleSupportingSketches(groupedRows, "group"), metrics);
+	}
+
 	public EvidenceProfile slice(long offset, long limit) {
 		double skipped = Math.max(0L, offset);
 		double remaining = Math.max(0.0d, rows - skipped);
@@ -254,24 +298,55 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (isEmpty()) {
 			return right;
 		}
-		return EstimateMath.union(toBagEstimate(), right.toBagEstimate())
-				.evidenceProfile();
+		double unionRows = rows + right.rows;
+		Map<String, VariableEstimate> unionVariables = unionVariables(right);
+		Map<VariableSetKey, FiniteRelationEstimate> unionFinite = unionFiniteRelations(right);
+		Map<VariableSetKey, SketchEvidence> support = new LinkedHashMap<>(
+				staleSupportingSketches(unionRows, "union-left"));
+		support.putAll(right.staleSupportingSketches(unionRows, "union-right"));
+		return new EvidenceProfile(unionRows, workRows + right.workRows, memoryRows + right.memoryRows,
+				Math.min(confidence, right.confidence), "union", unionVariables, unionFinite, Map.of(), support,
+				Map.of());
 	}
 
 	public EvidenceProfile leftJoin(EvidenceProfile right, Set<String> sharedVars) {
 		if (right == null || right.isEmpty()) {
 			return this;
 		}
-		return EstimateMath.leftJoin(toBagEstimate(), right.toBagEstimate(), sharedVars)
-				.evidenceProfile();
+		Set<String> joinVars = safeSet(sharedVars);
+		double joinRows = composeInnerJoin(right, joinVars).scalar().rows();
+		double matchedLeftRows = matchedLeftRows(right, joinVars);
+		double unmatchedLeftRows = Math.max(0.0d, rows - matchedLeftRows);
+		double leftJoinRows = joinRows + unmatchedLeftRows;
+		Map<String, VariableEstimate> leftJoinVariables = joinedVariables(right, leftJoinRows, joinRows,
+				unmatchedLeftRows, joinVars, true);
+		Map<VariableSetKey, SketchEvidence> support = new LinkedHashMap<>(
+				staleSupportingSketches(leftJoinRows, "left-join-left"));
+		support.putAll(right.staleSupportingSketches(leftJoinRows, "left-join-right"));
+		return new EvidenceProfile(leftJoinRows, workRows + right.workRows + Math.max(rows, leftJoinRows), 0.0d,
+				Math.min(confidence, right.confidence), "left-join", leftJoinVariables, Map.of(), Map.of(), support,
+				Map.of());
 	}
 
 	public EvidenceProfile difference(EvidenceProfile right, Set<String> sharedVars) {
 		if (right == null || right.isEmpty()) {
 			return this;
 		}
-		return EstimateMath.difference(toBagEstimate(), right.toBagEstimate(), sharedVars)
-				.evidenceProfile();
+		Set<String> joinVars = safeSet(sharedVars);
+		if (joinVars.isEmpty()) {
+			return withWorkRows(workRows + right.workRows, memoryRows, "minus-no-shared-vars");
+		}
+		double matchedLeftRows = matchedLeftRows(right, joinVars);
+		double differenceRows = Math.max(0.0d, rows - matchedLeftRows);
+		Map<String, VariableEstimate> differenceVariables = new LinkedHashMap<>();
+		for (Map.Entry<String, VariableEstimate> entry : variables.entrySet()) {
+			VariableEstimate variable = entry.getValue().withBoundRows(differenceRows);
+			differenceVariables.put(entry.getKey(), new VariableEstimate(variable.distinctRows(), variable.boundRows(),
+					variable.nullableRows(), null));
+		}
+		return new EvidenceProfile(differenceRows, workRows + right.workRows + rows, 0.0d,
+				Math.min(confidence, right.confidence), "minus", differenceVariables, Map.of(), Map.of(),
+				staleSupportingSketches(differenceRows, "minus"), Map.of());
 	}
 
 	public BagEstimate toBagEstimate() {
@@ -293,7 +368,24 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (relationSketch.isPresent()) {
 			return relationSketch.get();
 		}
+		Optional<EvidenceScalar> supportingSketch = supportingSketchEvidence(joinVars)
+				.flatMap(leftSketch -> right.supportingSketchEvidence(joinVars)
+						.map(leftSketch::estimateInnerProduct))
+				.filter(EvidenceScalar::usable)
+				.map(scalar -> new EvidenceScalar(scalar.rows(), EvidenceQuality.COMPOSED_SKETCH,
+						"supporting-sketch-inner-product", scalar.metrics()));
+		if (supportingSketch.isPresent()) {
+			return supportingSketch.get();
+		}
 		return EvidenceScalar.of(fallbackJoinRows(right, joinVars), EvidenceQuality.HEURISTIC, "product-distinct");
+	}
+
+	private Optional<SketchEvidence> supportingSketchEvidence(Set<String> names) {
+		SketchEvidence evidence = supportingSketches.get(VariableSetKey.of(names));
+		if (evidence == null || evidence.stale() || evidence.sketch() == null) {
+			return Optional.empty();
+		}
+		return Optional.of(evidence);
 	}
 
 	private Optional<Double> exactJoinRows(EvidenceProfile right, Set<String> joinVars) {
@@ -372,6 +464,174 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		return supporting.isEmpty() ? Map.of() : Map.copyOf(supporting);
 	}
 
+	private Map<String, VariableEstimate> projectedBoundVariables(Set<String> vars, double outputRows) {
+		if (vars.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, VariableEstimate> output = new LinkedHashMap<>();
+		for (String var : vars) {
+			output.put(var, VariableEstimate.bound(outputRows, Math.min(outputRows, variable(var).distinctRows())));
+		}
+		return output;
+	}
+
+	private Optional<FiniteRelationEstimate> distinctFiniteRelation(Set<String> vars, String provenance) {
+		if (vars.isEmpty()) {
+			return Optional.empty();
+		}
+		return relationContaining(vars).map(relation -> {
+			List<String> orderedVars = relation.variables()
+					.stream()
+					.filter(vars::contains)
+					.toList();
+			List<List<Value>> distinctRows = new ArrayList<>();
+			for (List<Value> row : relation.frequencyBy(orderedVars).keySet()) {
+				distinctRows.add(row);
+			}
+			return FiniteRelationEstimate.fromRows(orderedVars, distinctRows, provenance + "-finite-relation");
+		});
+	}
+
+	private Map<String, VariableEstimate> unionVariables(EvidenceProfile right) {
+		Map<String, VariableEstimate> output = new LinkedHashMap<>();
+		Set<String> names = new LinkedHashSet<>();
+		names.addAll(variables.keySet());
+		names.addAll(right.variables.keySet());
+		for (String name : names) {
+			boolean inLeft = variables.containsKey(name);
+			boolean inRight = right.variables.containsKey(name);
+			if (inLeft && inRight) {
+				output.put(name, unionVariable(variable(name), right.variable(name)));
+			} else if (inLeft) {
+				VariableEstimate left = variable(name);
+				output.put(name, new VariableEstimate(left.distinctRows(), left.boundRows(),
+						left.nullableRows() + right.rows, null));
+			} else {
+				VariableEstimate rightVariable = right.variable(name);
+				output.put(name, new VariableEstimate(rightVariable.distinctRows(), rightVariable.boundRows(),
+						rows + rightVariable.nullableRows(), null));
+			}
+		}
+		return output;
+	}
+
+	private static VariableEstimate unionVariable(VariableEstimate left, VariableEstimate right) {
+		if (right == null) {
+			return stripSketch(left);
+		}
+		if (left == null) {
+			return stripSketch(right);
+		}
+		double boundRows = left.boundRows() + right.boundRows();
+		double nullableRows = left.nullableRows() + right.nullableRows();
+		double distinctRows = left.distinctRows() + right.distinctRows();
+		OptionalDouble overlap = overlapDistinctRows(left.sketch(), right.sketch());
+		if (overlap.isPresent()) {
+			double overlapRows = clampRows(overlap.getAsDouble(), 0.0d,
+					Math.min(left.distinctRows(), right.distinctRows()));
+			distinctRows = Math.max(Math.max(left.distinctRows(), right.distinctRows()),
+					left.distinctRows() + right.distinctRows() - overlapRows);
+		}
+		return new VariableEstimate(distinctRows, boundRows, nullableRows, null);
+	}
+
+	private Map<VariableSetKey, FiniteRelationEstimate> unionFiniteRelations(EvidenceProfile right) {
+		Set<VariableSetKey> keys = new LinkedHashSet<>();
+		keys.addAll(finiteRelations.keySet());
+		keys.addAll(right.finiteRelations.keySet());
+		if (keys.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, FiniteRelationEstimate> relations = new LinkedHashMap<>();
+		for (VariableSetKey key : keys) {
+			List<String> names = key.names();
+			boolean leftCanContributeBoundTuples = bindsAll(names);
+			boolean rightCanContributeBoundTuples = right.bindsAll(names);
+			Optional<Map<List<Value>, Double>> leftFrequencies = normalizedFrequencies(names);
+			Optional<Map<List<Value>, Double>> rightFrequencies = right.normalizedFrequencies(names);
+			if ((leftCanContributeBoundTuples && leftFrequencies.isEmpty())
+					|| (rightCanContributeBoundTuples && rightFrequencies.isEmpty())) {
+				continue;
+			}
+			Map<List<Value>, Double> merged = new LinkedHashMap<>();
+			leftFrequencies.ifPresent(frequencies -> mergeFrequencies(merged, frequencies));
+			rightFrequencies.ifPresent(frequencies -> mergeFrequencies(merged, frequencies));
+			if (!merged.isEmpty()) {
+				FiniteRelationEstimate relation = FiniteRelationEstimate.fromFrequencies(names, merged,
+						"union-finite-relation");
+				relations.put(relation.variableSetKey(), relation);
+			}
+		}
+		return relations.isEmpty() ? Map.of() : Map.copyOf(relations);
+	}
+
+	private boolean bindsAll(Collection<String> names) {
+		for (String name : names) {
+			if (!variables.containsKey(name) || variable(name).boundRows() <= 0.0d) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private Optional<Map<List<Value>, Double>> normalizedFrequencies(List<String> names) {
+		return relationContaining(Set.copyOf(names))
+				.map(relation -> relation.frequencyBy(names));
+	}
+
+	private static void mergeFrequencies(Map<List<Value>, Double> target, Map<List<Value>, Double> source) {
+		for (Map.Entry<List<Value>, Double> entry : source.entrySet()) {
+			target.merge(FiniteRelationEstimate.tupleKey(entry.getKey()), entry.getValue(), Double::sum);
+		}
+	}
+
+	private double matchedLeftRows(EvidenceProfile right, Set<String> joinVars) {
+		if (joinVars.isEmpty()) {
+			return 0.0d;
+		}
+		Optional<Map<List<Value>, Double>> leftFrequencies = frequencies(joinVars);
+		Optional<Map<List<Value>, Double>> rightFrequencies = right.frequencies(joinVars);
+		if (leftFrequencies.isPresent() && rightFrequencies.isPresent()) {
+			return leftFrequencies.get()
+					.entrySet()
+					.stream()
+					.filter(entry -> rightFrequencies.get().containsKey(entry.getKey()))
+					.mapToDouble(Map.Entry::getValue)
+					.sum();
+		}
+		double leftDistinct = Math.max(1.0d, tupleDistinct(joinVars));
+		OptionalDouble sketchOverlap = singleVariableOverlapDistinct(right, joinVars);
+		if (sketchOverlap.isPresent()) {
+			if (right.rows <= 0.0d) {
+				return 0.0d;
+			}
+			double matchedDistinct = clampRows(sketchOverlap.getAsDouble(), 0.0d,
+					Math.min(leftDistinct, Math.min(right.rows, Math.max(0.0d, right.tupleDistinct(joinVars)))));
+			return rows * Math.min(1.0d, matchedDistinct / leftDistinct);
+		}
+		if (rightFrequencies.isPresent()) {
+			double matchRatio = Math.min(1.0d, rightFrequencies.get().size() / leftDistinct);
+			return rows * matchRatio;
+		}
+		double rightDistinct = right.tupleDistinct(joinVars);
+		double coveredRightDistinct = estimatedCoveredDistinct(right.rows, Math.max(leftDistinct, rightDistinct));
+		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
+		return rows * matchRatio;
+	}
+
+	private Optional<Map<List<Value>, Double>> frequencies(Set<String> vars) {
+		return relationContaining(vars)
+				.map(relation -> relation.frequencyBy(vars));
+	}
+
+	private OptionalDouble singleVariableOverlapDistinct(EvidenceProfile right, Set<String> joinVars) {
+		if (joinVars.size() != 1) {
+			return OptionalDouble.empty();
+		}
+		String variable = joinVars.iterator().next();
+		return overlapDistinctRows(variable(variable).sketch(), right.variable(variable).sketch());
+	}
+
 	private Map<String, VariableEstimate> joinedVariables(EvidenceProfile right, double joinedRows,
 			double rightBoundRows, double rightNullableRows, Set<String> joinVars, boolean leftJoin) {
 		Map<String, VariableEstimate> output = new LinkedHashMap<>();
@@ -388,7 +648,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 			if (inLeft && inRight) {
 				double distinct = joinVars.contains(name) ? sharedDistinct
 						: Math.min(Math.max(leftVar.distinctRows(), rightVar.distinctRows()), joinedRows);
-				DistributionSketch sketch = joinVars.contains(name)
+				DistributionSketch sketch = !leftJoin && joinVars.contains(name)
 						? ProductDistributionSketch.join(leftVar.sketch(), rightVar.sketch(), distinct, joinedRows)
 						: null;
 				output.put(name, new VariableEstimate(distinct, joinedRows, 0.0d, sketch));
@@ -396,7 +656,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				output.put(name, VariableEstimate.bound(joinedRows, Math.min(leftVar.distinctRows(), joinedRows)));
 			} else if (leftJoin) {
 				output.put(name, new VariableEstimate(Math.min(rightVar.distinctRows(), rightBoundRows), rightBoundRows,
-						rightNullableRows, rightVar.sketch()));
+						rightNullableRows, null));
 			} else {
 				output.put(name, VariableEstimate.bound(joinedRows, Math.min(rightVar.distinctRows(), joinedRows)));
 			}
@@ -527,6 +787,46 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 
 	private static Set<String> safeSet(Set<String> vars) {
 		return vars == null || vars.isEmpty() ? Set.of() : Set.copyOf(vars);
+	}
+
+	private static VariableEstimate stripSketch(VariableEstimate variable) {
+		if (variable == null) {
+			return VariableEstimate.empty();
+		}
+		return new VariableEstimate(variable.distinctRows(), variable.boundRows(), variable.nullableRows(), null);
+	}
+
+	private static OptionalDouble overlapDistinctRows(DistributionSketch left, DistributionSketch right) {
+		if (left == null || right == null) {
+			return OptionalDouble.empty();
+		}
+		return finiteNonNegative(left.overlapDistinctRows(right));
+	}
+
+	private static OptionalDouble finiteNonNegative(OptionalDouble value) {
+		if (value.isEmpty() || !Double.isFinite(value.getAsDouble()) || value.getAsDouble() < 0.0d) {
+			return OptionalDouble.empty();
+		}
+		return value;
+	}
+
+	private static double clampRows(double value, double min, double max) {
+		if (!Double.isFinite(value)) {
+			return max;
+		}
+		return Math.max(min, Math.min(max, value));
+	}
+
+	private static double estimatedCoveredDistinct(double rows, double domainDistinct) {
+		if (rows <= 0.0d || domainDistinct <= 0.0d) {
+			return 0.0d;
+		}
+		if (domainDistinct <= 1.0d) {
+			return 1.0d;
+		}
+		double missExponent = rows * Math.log1p(-1.0d / domainDistinct);
+		double covered = domainDistinct * -Math.expm1(missExponent);
+		return Math.max(0.0d, Math.min(Math.min(rows, domainDistinct), covered));
 	}
 
 	private static double multiplyRows(double left, double right) {

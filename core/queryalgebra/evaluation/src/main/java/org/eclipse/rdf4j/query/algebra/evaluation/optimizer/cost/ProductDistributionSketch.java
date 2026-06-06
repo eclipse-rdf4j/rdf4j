@@ -117,13 +117,13 @@ public final class ProductDistributionSketch implements DistributionSketch {
 
 	private OptionalDouble delegatedProductInnerProduct(ProductDistributionSketch other) {
 		for (DistributionSketch factor : factors) {
-			OptionalDouble rows = factor.innerProduct(other);
+			OptionalDouble rows = factor.highQualityInnerProduct(other);
 			if (usable(rows)) {
 				return rows;
 			}
 		}
 		for (DistributionSketch factor : other.factors) {
-			OptionalDouble rows = factor.innerProduct(this);
+			OptionalDouble rows = factor.highQualityInnerProduct(this);
 			if (usable(rows)) {
 				return rows;
 			}

@@ -37,7 +37,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -280,6 +283,26 @@ class CascadesMemoModelTest {
 				"The left embedded profile must survive a BindingProfile merge");
 		assertSame(rightSketch, merged.variable("rightOnly").sketch(),
 				"The right embedded profile must survive a BindingProfile merge");
+	}
+
+	@Test
+	void bindingProfileSatisfiesSeesCurrentProfileSketchKeys() {
+		VariableSetKey key = VariableSetKey.of(Set.of("s", "o"));
+		SketchEvidence evidence = new SketchEvidence(key, new TestSketch(10.0d), 10.0d, 10.0d,
+				EvidenceQuality.TUPLE_SKETCH, "required-current");
+		EvidenceProfile profile = new EvidenceProfile(10.0d, 10.0d, 0.0d, 1.0d, "required-current",
+				Map.of("s", VariableEstimate.bound(10.0d, 10.0d),
+						"o", VariableEstimate.bound(10.0d, 10.0d)),
+				Map.of(), Map.of(key, evidence), Map.of(), Map.of());
+		BindingProfile required = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				BindingProfile.ANY_ENDPOINT_MODE, profile);
+		BindingProfile delivered = new BindingProfile(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+				BindingProfile.ANY_ENDPOINT_MODE, profile);
+
+		assertFalse(BindingProfile.ANY.satisfies(required),
+				"An empty profile must not satisfy required current evidence carried only by EvidenceProfile");
+		assertTrue(delivered.satisfies(required),
+				"BindingProfile.satisfies must see embedded current EvidenceProfile sketch keys");
 	}
 
 	@Test

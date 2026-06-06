@@ -46,30 +46,15 @@ public final class EstimateMath {
 	}
 
 	public static BagEstimate leftJoin(BagEstimate left, BagEstimate right, Set<String> sharedVars) {
-		Set<String> joinVars = safeSet(sharedVars);
-		double joinRows = innerJoinRows(left, right, joinVars);
-		double matchedLeftRows = matchedLeftRows(left, right, joinVars);
-		double unmatchedLeftRows = Math.max(0.0d, left.rows() - matchedLeftRows);
-		double rows = joinRows + unmatchedLeftRows;
-		Map<String, VariableEstimate> variables = joinedVariables(left, right, rows, joinRows, unmatchedLeftRows,
-				joinVars, true);
-		return new BagEstimate(rows, left.workRows() + right.workRows() + Math.max(left.rows(), rows), 0.0d,
-				Math.min(left.confidence(), right.confidence()), "left-join", variables, Map.of(), Map.of());
+		return left.evidenceProfile()
+				.leftJoin(right.evidenceProfile(), sharedVars)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate difference(BagEstimate left, BagEstimate right, Set<String> sharedVars) {
-		Set<String> joinVars = safeSet(sharedVars);
-		if (joinVars.isEmpty()) {
-			return left.withWorkRows(left.workRows() + right.workRows(), "minus-no-shared-vars");
-		}
-		double matchedLeftRows = matchedLeftRows(left, right, joinVars);
-		double rows = Math.max(0.0d, left.rows() - matchedLeftRows);
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-		for (Map.Entry<String, VariableEstimate> entry : left.variables().entrySet()) {
-			variables.put(entry.getKey(), entry.getValue().withBoundRows(rows));
-		}
-		return new BagEstimate(rows, left.workRows() + right.workRows() + left.rows(), 0.0d,
-				Math.min(left.confidence(), right.confidence()), "minus", variables, Map.of(), Map.of());
+		return left.evidenceProfile()
+				.difference(right.evidenceProfile(), sharedVars)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate filter(BagEstimate input, double passRatio, String source) {
@@ -79,46 +64,21 @@ public final class EstimateMath {
 	}
 
 	public static BagEstimate group(BagEstimate input, Set<String> groupVars) {
-		Set<String> vars = safeSet(groupVars);
-		double rows;
-		if (vars.isEmpty()) {
-			rows = input.rows() > 0.0d ? 1.0d : 0.0d;
-		} else {
-			rows = input.relationContaining(vars)
-					.map(relation -> relation.distinctRows(vars))
-					.orElseGet(() -> vars.stream()
-							.map(input::variable)
-							.mapToDouble(VariableEstimate::distinctRows)
-							.filter(value -> value > 0.0d)
-							.min()
-							.orElse(Math.min(input.rows(), 1.0d)));
-		}
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-		for (String var : vars) {
-			variables.put(var, VariableEstimate.bound(rows, Math.min(rows, input.variable(var).distinctRows())));
-		}
-		return new BagEstimate(rows, input.workRows() + input.rows(), rows, input.confidence(), "group", variables,
-				Map.of(), Map.of());
+		return input.evidenceProfile()
+				.group(groupVars)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate distinct(BagEstimate input, Set<String> distinctVars) {
-		Set<String> vars = safeSet(distinctVars);
-		double rows = vars.isEmpty() ? input.rows()
-				: input.relationContaining(vars)
-						.map(relation -> relation.distinctRows(vars))
-						.orElse(Math.min(input.rows(), productDistinct(input, vars)));
-		return project(input, vars)
-				.withRows(rows, "distinct")
-				.withWorkRows(input.workRows() + input.rows(), "distinct-work")
-				.withMemoryRows(rows, "distinct-memory");
+		return input.evidenceProfile()
+				.distinct(distinctVars)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate union(BagEstimate left, BagEstimate right) {
-		double rows = left.rows() + right.rows();
-		Map<String, VariableEstimate> variables = unionVariables(left, right);
-		Map<VariableSetKey, FiniteRelationEstimate> relations = unionFiniteRelations(left, right);
-		return new BagEstimate(rows, left.workRows() + right.workRows(), left.memoryRows() + right.memoryRows(),
-				Math.min(left.confidence(), right.confidence()), "union", variables, relations, Map.of());
+		return left.evidenceProfile()
+				.union(right.evidenceProfile())
+				.toBagEstimate();
 	}
 
 	public static BagEstimate project(BagEstimate input, Set<String> projectedVars) {

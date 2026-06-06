@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -300,6 +301,122 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void distinctMovesTupleSketchesToStaleSupportingEvidence() {
+		VariableSetKey key = VariableSetKey.of(Set.of("a", "b"));
+		BagEstimate input = BagEstimate.exact(100.0d, "input")
+				.withVariable("a", VariableEstimate.bound(100.0d, 40.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 40.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(40.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate distinct = EstimateMath.distinct(input, Set.of("a", "b"));
+		SketchEvidence support = distinct.evidenceProfile().supportingSketches().get(key);
+
+		assertTrue(distinct.sketchRelation(Set.of("a", "b")).isEmpty(),
+				"DISTINCT changes frequency mass, so the pre-distinct tuple sketch cannot remain current");
+		assertNotNull(support, "The pre-distinct tuple sketch should survive as support evidence");
+		assertFalse(support.current());
+		assertTrue(support.stale());
+	}
+
+	@Test
+	void groupDoesNotExposePreGroupFrequencySketchesAsCurrent() {
+		VariableSetKey key = VariableSetKey.of(Set.of("a", "b"));
+		BagEstimate input = BagEstimate.exact(100.0d, "input")
+				.withVariable("a", VariableEstimate.bound(100.0d, 40.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 40.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(40.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate grouped = EstimateMath.group(input, Set.of("a", "b"));
+		SketchEvidence support = grouped.evidenceProfile().supportingSketches().get(key);
+
+		assertTrue(grouped.sketchRelation(Set.of("a", "b")).isEmpty(),
+				"GROUP collapses duplicates, so the input tuple sketch cannot remain current");
+		assertNotNull(support, "The input tuple sketch should remain available only as stale support");
+		assertTrue(support.stale());
+	}
+
+	@Test
+	void unionKeepsBranchSketchesOnlyAsStaleSupportingEvidence() {
+		VariableSetKey leftKey = VariableSetKey.of(Set.of("a", "b"));
+		VariableSetKey rightKey = VariableSetKey.of(Set.of("b", "c"));
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(30.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"),
+						new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate union = EstimateMath.union(left, right);
+
+		assertTrue(union.sketchRelation(Set.of("a", "b")).isEmpty());
+		assertTrue(union.sketchRelation(Set.of("b", "c")).isEmpty());
+		assertTrue(union.evidenceProfile().supportingSketches().containsKey(leftKey),
+				"UNION branch tuple evidence should survive only as support");
+		assertTrue(union.evidenceProfile().supportingSketches().containsKey(rightKey),
+				"UNION branch tuple evidence should survive only as support");
+		assertTrue(union.evidenceProfile().supportingSketches().get(leftKey).stale());
+		assertTrue(union.evidenceProfile().supportingSketches().get(rightKey).stale());
+	}
+
+	@Test
+	void leftJoinAndDifferenceDoNotExposeUnsafeCurrentSketches() {
+		VariableSetKey leftKey = VariableSetKey.of(Set.of("a", "b"));
+		VariableSetKey rightKey = VariableSetKey.of(Set.of("b", "c"));
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(30.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"),
+						new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate leftJoin = EstimateMath.leftJoin(left, right, Set.of("b"));
+		BagEstimate difference = EstimateMath.difference(left, right, Set.of("b"));
+
+		assertTrue(leftJoin.sketchRelation(Set.of("a", "b")).isEmpty());
+		assertTrue(leftJoin.sketchRelation(Set.of("b", "c")).isEmpty());
+		assertTrue(leftJoin.evidenceProfile().supportingSketches().containsKey(leftKey));
+		assertTrue(leftJoin.evidenceProfile().supportingSketches().containsKey(rightKey));
+		assertTrue(difference.sketchRelation(Set.of("a", "b")).isEmpty());
+		assertTrue(difference.evidenceProfile().supportingSketches().containsKey(leftKey));
+	}
+
+	@Test
+	void supportingExactKeyEvidenceCanBeUsedOnlyAsComposedQuality() {
+		VariableSetKey key = VariableSetKey.of(Set.of("code", "enc"));
+		SketchEvidence leftEvidence = new SketchEvidence(key,
+				new RowMassSketch(20.0d, 100.0d, OptionalDouble.of(7.0d), OptionalDouble.empty()), 100.0d, 20.0d,
+				EvidenceQuality.COMPOSED_SKETCH, "left-support");
+		SketchEvidence rightEvidence = new SketchEvidence(key,
+				new RowMassSketch(20.0d, 80.0d, OptionalDouble.of(7.0d), OptionalDouble.empty()), 80.0d, 20.0d,
+				EvidenceQuality.COMPOSED_SKETCH, "right-support");
+		EvidenceProfile left = new EvidenceProfile(100.0d, 100.0d, 0.0d, 0.8d, "left",
+				Map.of("code", VariableEstimate.bound(100.0d, 100.0d),
+						"enc", VariableEstimate.bound(100.0d, 100.0d)),
+				Map.of(), Map.of(), Map.of(key, leftEvidence), Map.of());
+		EvidenceProfile right = new EvidenceProfile(80.0d, 80.0d, 0.0d, 0.8d, "right",
+				Map.of("code", VariableEstimate.bound(80.0d, 80.0d),
+						"enc", VariableEstimate.bound(80.0d, 80.0d)),
+				Map.of(), Map.of(), Map.of(key, rightEvidence), Map.of());
+
+		EvidenceComposition composition = left.composeInnerJoin(right, Set.of("code", "enc"));
+
+		assertEquals(7.0d, composition.scalar().rows(), 0.0d,
+				"Compatible support evidence should be usable before product-distinct fallback");
+		assertEquals(EvidenceQuality.COMPOSED_SKETCH, composition.scalar().quality(),
+				"Supporting evidence must remain lower quality than exact/current tuple evidence");
+	}
+
+	@Test
 	void evidenceProfileApiExposesQualityTaggedComposition() throws Exception {
 		Class<?> qualityClass = Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality");
@@ -564,6 +681,11 @@ class BagEstimateMathTest {
 		}
 
 		@Override
+		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+			return innerProduct;
+		}
+
+		@Override
 		public OptionalDouble overlapDistinctRows(DistributionSketch other) {
 			return overlapDistinctRows;
 		}
@@ -579,6 +701,11 @@ class BagEstimateMathTest {
 
 		@Override
 		public OptionalDouble innerProduct(DistributionSketch other) {
+			return innerProduct;
+		}
+
+		@Override
+		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
 			return innerProduct;
 		}
 

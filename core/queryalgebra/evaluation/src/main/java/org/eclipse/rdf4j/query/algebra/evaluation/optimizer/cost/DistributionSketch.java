@@ -30,7 +30,7 @@ public interface DistributionSketch {
 	}
 
 	default OptionalDouble highQualityInnerProduct(DistributionSketch other) {
-		return innerProduct(other);
+		return OptionalDouble.empty();
 	}
 
 	default OptionalDouble overlapDistinctRows(DistributionSketch other) {

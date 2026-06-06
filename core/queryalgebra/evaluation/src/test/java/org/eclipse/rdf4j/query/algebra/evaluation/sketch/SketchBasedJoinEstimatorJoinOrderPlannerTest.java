@@ -2269,12 +2269,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.getMethod("rows");
 		Method sketches = profile.getClass()
 				.getMethod("sketches");
+		Method supportingSketches = profile.getClass()
+				.getMethod("supportingSketches");
 
 		assertEquals(estimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
-		assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
-				"Cyclic subtree estimates must expose tuple/set sketches so bridge planning can avoid scalar-only costs");
-		assertTrue(hasMultiVariableSketch(profile),
-				"Cyclic subtree estimates must expose a joined multi-variable tuple/set sketch key");
+		assertFalse(hasMultiVariableSketch((Map<?, ?>) sketches.invoke(profile)),
+				"Synthetic product evidence must not be current tuple/set evidence");
+		assertTrue(hasMultiVariableSketch((Map<?, ?>) supportingSketches.invoke(profile)),
+				"Cyclic subtree estimates must retain multi-variable support evidence for bridge planning");
 	}
 
 	@Test
@@ -4095,6 +4097,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			Method sketchesMethod = profile.getClass()
 					.getMethod("sketches");
 			Map<?, ?> sketches = (Map<?, ?>) sketchesMethod.invoke(profile);
+			return hasMultiVariableSketch(sketches);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private static boolean hasMultiVariableSketch(Map<?, ?> sketches) {
+		try {
 			for (Object key : sketches.keySet()) {
 				Method names = key.getClass()
 						.getMethod("names");

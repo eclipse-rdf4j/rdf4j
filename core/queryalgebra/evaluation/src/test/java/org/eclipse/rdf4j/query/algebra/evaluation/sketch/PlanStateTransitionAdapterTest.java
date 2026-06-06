@@ -40,8 +40,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -224,6 +228,41 @@ class PlanStateTransitionAdapterTest {
 		VariableEstimate value = next.estimate().variable("value");
 		assertEquals(3.0d, value.boundRows(), 1.0e-9d);
 		assertEquals(3.0d, value.distinctRows(), 1.0e-9d);
+	}
+
+	@Test
+	void advancePreservesSupportingSketchesThroughBoundVariableNormalization() {
+		StatementPattern factor = pattern("seed", PREDICATE, "value");
+		VariableSetKey key = VariableSetKey.of(Set.of("seed", "bridge"));
+		PlanState prefix = PlanState.initial(BagEstimate.exact(2.0d, "outer")
+				.withVariable("seed", VariableEstimate.bound(2.0d, 1.0d)), Set.of("seed"), Map.of());
+		BagEstimate transitionEstimate = supportingEvidenceEstimate(4.0d, key);
+
+		PlanState next = prefix.advance(AccessPathCandidate.forFactor(factor),
+				new JoinFactorCostModel.FactorCostEstimate(5.0d, 4.0d), transitionEstimate,
+				JoinCostVector.of(5.0d, 4.0d, 4.0d, 0.0d, 0.0d));
+
+		assertEquals(4.0d, next.estimate().rows(), 1.0e-9d);
+		assertEquals(4.0d, next.estimate().variable("seed").boundRows(), 1.0e-9d);
+		assertTrue(next.estimate().evidenceProfile().supportingSketches().containsKey(key),
+				"PlanState bound-variable normalization must not rebuild through legacy current sketches only");
+	}
+
+	@Test
+	void filterTransitionPreservesSupportingSketches() {
+		VariableSetKey key = VariableSetKey.of(Set.of("value", "bridge"));
+		BagEstimate prefixEstimate = BagEstimate.exact(10.0d, "outer")
+				.withVariable("value", VariableEstimate.bound(10.0d, 6.0d));
+		PlanState prefix = PlanState.initial(prefixEstimate, Set.of("value"), Map.of());
+		BagEstimate filteredEstimate = supportingEvidenceEstimate(3.0d, key);
+
+		PlanState next = prefix.withEstimateAndCost(filteredEstimate,
+				JoinCostVector.of(12.0d, 3.0d, 10.0d, 0.0d, 0.0d), Map.of(), Map.of());
+
+		assertEquals(3.0d, next.estimate().rows(), 1.0e-9d);
+		assertEquals(3.0d, next.estimate().variable("value").boundRows(), 1.0e-9d);
+		assertTrue(next.estimate().evidenceProfile().supportingSketches().containsKey(key),
+				"Filter/estimate-only transitions must preserve supporting bridge sketches");
 	}
 
 	@Test
@@ -415,7 +454,7 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
-	void tuplePlanEstimateExposesEvidenceProfileForBridgeTransitions() throws Exception {
+	void tuplePlanEstimateDoesNotExposeSyntheticProductAsCurrentTupleSketch() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		for (int i = 0; i < 16; i++) {
@@ -438,17 +477,16 @@ class PlanStateTransitionAdapterTest {
 			Method evidenceProfile = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredMethod(
 					"evidenceProfile");
 			evidenceProfile.setAccessible(true);
-			Object profile = evidenceProfile.invoke(tupleEstimate);
-			Method rows = profile.getClass()
-					.getMethod("rows");
-			Method sketches = profile.getClass()
-					.getMethod("sketches");
+			EvidenceProfile profile = (EvidenceProfile) evidenceProfile.invoke(tupleEstimate);
+			SketchEvidence supporting = firstMultiVariableSketch(profile.supportingSketches());
 
-			assertEquals(tupleEstimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
-			assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
-					"TuplePlanEstimate must expose tuple/set sketch evidence, not only per-variable surfaces");
-			assertTrue(hasMultiVariableSketch(profile),
-					"TuplePlanEstimate must expose a real multi-variable tuple/set sketch key for bridge planning");
+			assertEquals(tupleEstimate.outputRows(), profile.rows(), 1.0e-9d);
+			assertFalse(hasMultiVariableSketch(profile),
+					"Synthetic product evidence must not masquerade as current tuple/set evidence");
+			assertNotNull(supporting, "Synthetic product evidence should survive as bridge support evidence");
+			assertFalse(supporting.current());
+			assertEquals(EvidenceQuality.COMPOSED_SKETCH, supporting.quality(),
+					"Synthetic product evidence must be lower quality than exact tuple sketch evidence");
 		} finally {
 			estimator.close();
 		}
@@ -596,10 +634,24 @@ class PlanStateTransitionAdapterTest {
 		return (Optional<?>) sketchEvidence.invoke(profile, variables);
 	}
 
+	private static BagEstimate supportingEvidenceEstimate(double rows, VariableSetKey key) {
+		SketchEvidence evidence = new SketchEvidence(key, new TestDistributionSketch(rows, rows), rows, rows,
+				EvidenceQuality.COMPOSED_SKETCH, "transition-support").asSupporting("transition-support");
+		return new EvidenceProfile(rows, rows, 0.0d, 0.8d, "transition-support",
+				Map.of("value", VariableEstimate.bound(rows, rows), "bridge", VariableEstimate.bound(rows, rows),
+						"seed", VariableEstimate.bound(rows, Math.min(rows, 1.0d))),
+				Map.of(), Map.of(), Map.of(key, evidence), Map.of())
+						.toBagEstimate();
+	}
+
 	private static boolean hasMultiVariableSketch(Object profile) throws Exception {
 		Method sketchesMethod = profile.getClass()
 				.getMethod("sketches");
 		Map<?, ?> sketches = (Map<?, ?>) sketchesMethod.invoke(profile);
+		return hasMultiVariableSketch(sketches);
+	}
+
+	private static boolean hasMultiVariableSketch(Map<?, ?> sketches) throws Exception {
 		for (Object key : sketches.keySet()) {
 			Method names = key.getClass()
 					.getMethod("names");
@@ -608,6 +660,22 @@ class PlanStateTransitionAdapterTest {
 			}
 		}
 		return false;
+	}
+
+	private static SketchEvidence firstMultiVariableSketch(Map<VariableSetKey, SketchEvidence> sketches) {
+		for (Map.Entry<VariableSetKey, SketchEvidence> entry : sketches.entrySet()) {
+			if (entry.getKey().names().size() > 1) {
+				return entry.getValue();
+			}
+		}
+		return null;
+	}
+
+	private record TestDistributionSketch(double distinctRows, double rows) implements DistributionSketch {
+		@Override
+		public OptionalDouble totalRows() {
+			return OptionalDouble.of(rows);
+		}
 	}
 
 	private static double[] entry(long key, double weight) {

@@ -35,6 +35,13 @@ or has no way to tag scalar fallback quality. The same tests must pass after imp
 - [x] (2026-06-06 01:48+02:00) Split current and supporting sketch evidence in `EvidenceProfile`.
 - [x] (2026-06-06 01:48+02:00) Tightened red tests for tuple/set evidence and stale current evidence.
 - [x] (2026-06-06 01:48+02:00) Migrated operator transforms and Cascades/sketch-planner bridges to the durable profile.
+- [x] (2026-06-06 03:35+02:00) Started completion pass after review found remaining stale-current and support-loss gaps.
+- [x] (2026-06-06 03:35+02:00) Ran root quick clean install successfully before completion-pass edits and saved compact evidence to `initial-evidence.txt`.
+- [x] (2026-06-06 04:43+02:00) Added red tests for distinct/group/union/optional/minus current-vs-supporting evidence.
+- [x] (2026-06-06 04:43+02:00) Added red tests for `PlanState` support preservation and synthetic tuple-plan product quality.
+- [x] (2026-06-06 04:43+02:00) Migrated remaining semantic transforms to `EvidenceProfile`.
+- [x] (2026-06-06 04:43+02:00) Preserved supporting evidence through planner and Cascades bridges.
+- [x] (2026-06-06 04:43+02:00) Ran copyright check, formatter/resource processing, focused suites, and `core/queryalgebra/evaluation` module verification successfully.
 
 ## Surprises & Discoveries
 
@@ -57,6 +64,22 @@ or has no way to tag scalar fallback quality. The same tests must pass after imp
 
 - Observation: The follow-up module verify passed after durable profile ownership and bridge migration.
   Evidence: `mvnf` reported `tests=1012, failures=0, errors=0, skipped=0`.
+
+- Observation: A completion review showed that evidence can still be stored but not safely used.
+  Evidence: `EstimateMath.distinct` preserves current sketches through `withRows`, `PlanState.withBoundVariableRows`
+  rebuilds from legacy `sketchRelations`, `TuplePlanEstimate.tupleSketchRelations` exports synthetic product evidence
+  as current tuple evidence, and `EvidenceProfile.union/leftJoin/difference` delegate back to legacy-map rebuilds.
+
+- Observation: Root quick clean install passed before this completion pass.
+  Evidence: `maven-build.log` ended with `BUILD SUCCESS` and total time `30.372 s`.
+
+- Observation: The completion pass proved the stale-current/support-loss issues before fixes.
+  Evidence: `BagEstimateMathTest` first failed with `Tests run: 36, Failures: 5`, `PlanStateTransitionAdapterTest`
+  first failed with `Tests run: 19, Failures: 3`, and `CascadesMemoModelTest` first failed with
+  `Tests run: 23, Failures: 1`.
+
+- Observation: Final module verification passed after semantic profile transforms and bridge fixes.
+  Evidence: `mvnf` reported `tests=1020, failures=0, errors=0, skipped=0`.
 
 ## Decision Log
 
