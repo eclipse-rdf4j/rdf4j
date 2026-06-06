@@ -29,6 +29,12 @@ or has no way to tag scalar fallback quality. The same tests must pass after imp
 - [x] (2026-06-06 00:40+02:00) Migrated Cascades `BindingProfile`, winner overlay, feedback, normalization, and provider filter paths to rebase through profiles.
 - [x] (2026-06-06 00:41+02:00) Migrated `TuplePlanEstimate`, `PlanState`, filter transitions, and scalar factor adapter bridge paths to carry evidence profiles.
 - [x] (2026-06-06 00:45+02:00) Ran copyright check, formatter, focused tests, and `core/queryalgebra/evaluation` module verification successfully.
+- [x] (2026-06-06 01:20+02:00) Started follow-up implementation pass after review found remaining profile flattening and bridge propagation gaps.
+- [x] (2026-06-06 01:20+02:00) Ran root quick clean install successfully before follow-up edits and saved compact evidence to `initial-evidence.txt`.
+- [x] (2026-06-06 01:48+02:00) Converted `BagEstimate` from profile view to durable profile owner.
+- [x] (2026-06-06 01:48+02:00) Split current and supporting sketch evidence in `EvidenceProfile`.
+- [x] (2026-06-06 01:48+02:00) Tightened red tests for tuple/set evidence and stale current evidence.
+- [x] (2026-06-06 01:48+02:00) Migrated operator transforms and Cascades/sketch-planner bridges to the durable profile.
 
 ## Surprises & Discoveries
 
@@ -43,6 +49,14 @@ or has no way to tag scalar fallback quality. The same tests must pass after imp
 
 - Observation: The final module verify passed after the profile and bridge migration.
   Evidence: `mvnf` reported `tests=1008, failures=0, errors=0, skipped=0`.
+
+- Observation: A follow-up review showed that profile ownership is still incomplete.
+  Evidence: `BagEstimate.evidenceProfile()` reconstructs a fresh profile from lossy maps, `TuplePlanEstimate`
+  stores only per-variable stats, `BindingProfile.mergedWith()` selects one embedded profile, and several
+  non-inner-join operators still round-trip through old `BagEstimate` constructors.
+
+- Observation: The follow-up module verify passed after durable profile ownership and bridge migration.
+  Evidence: `mvnf` reported `tests=1012, failures=0, errors=0, skipped=0`.
 
 ## Decision Log
 

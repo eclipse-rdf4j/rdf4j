@@ -263,6 +263,26 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void bindingProfileMergeCombinesEmbeddedEvidenceProfiles() {
+		DistributionSketch leftSketch = new TestSketch(10.0d);
+		DistributionSketch rightSketch = new TestSketch(7.0d);
+		BagEstimate leftBag = BagEstimate.exact(10.0d, "left-profile")
+				.withVariable("leftOnly", new VariableEstimate(10.0d, 10.0d, 0.0d, leftSketch));
+		BagEstimate rightBag = BagEstimate.exact(7.0d, "right-profile")
+				.withVariable("rightOnly", new VariableEstimate(7.0d, 7.0d, 0.0d, rightSketch));
+		BindingProfile left = BindingProfile.fromBag(null, leftBag, Map.of());
+		BindingProfile right = BindingProfile.fromBag(null, rightBag, Map.of());
+
+		BagEstimate merged = left.mergedWith(right)
+				.toBagEstimate(17.0d, 17.0d, 0.0d, 1.0d, "merged", Map.of());
+
+		assertSame(leftSketch, merged.variable("leftOnly").sketch(),
+				"The left embedded profile must survive a BindingProfile merge");
+		assertSame(rightSketch, merged.variable("rightOnly").sketch(),
+				"The right embedded profile must survive a BindingProfile merge");
+	}
+
+	@Test
 	void bindingProfileEndpointModeCanBeRequiredAsPhysicalProperty() {
 		BindingProfile requiredEndpoint = new BindingProfile(Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
 				"toEnd");

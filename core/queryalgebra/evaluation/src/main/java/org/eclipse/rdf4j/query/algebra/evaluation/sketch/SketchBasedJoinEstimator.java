@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -107,9 +108,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.ProductDistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -5981,6 +5986,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
 	}
 
+	private TuplePlanEstimate joinedTuplePlanEstimate(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinStepEstimate step) {
+		Set<String> sharedVars = new LinkedHashSet<>(left.varStats.keySet());
+		sharedVars.retainAll(right.varStats.keySet());
+		EvidenceProfile joinedProfile = left.evidenceProfile()
+				.composeInnerJoin(right.evidenceProfile(), sharedVars)
+				.profile()
+				.rebaseRows(step.outputRows, step.outputRows, 1.0d, "tuple-plan-join", Map.of(),
+						RebaseMode.DROP_EXACT_RELATIONS);
+		return new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats, joinedProfile);
+	}
+
 	TuplePlanEstimate withOutputRowsForJoinOrdering(TuplePlanEstimate estimate, double outputRows) {
 		double rows = Math.max(0.0d, outputRows);
 		if (Double.compare(rows, estimate.outputRows) == 0) {
@@ -6263,13 +6280,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private final double outputRows;
 		private final double localFilterMultiplier;
 		private final Map<String, VarPlanStats> varStats;
+		private final EvidenceProfile evidenceProfile;
 
 		private TuplePlanEstimate(double baseRows, double outputRows, double localFilterMultiplier,
 				Map<String, VarPlanStats> varStats) {
+			this(baseRows, outputRows, localFilterMultiplier, varStats, null);
+		}
+
+		private TuplePlanEstimate(double baseRows, double outputRows, double localFilterMultiplier,
+				Map<String, VarPlanStats> varStats, EvidenceProfile evidenceProfile) {
 			this.baseRows = baseRows;
 			this.outputRows = outputRows;
 			this.localFilterMultiplier = localFilterMultiplier;
 			this.varStats = freezeVarStats(varStats);
+			this.evidenceProfile = evidenceProfile == null ? evidenceProfile(outputRows, this.varStats)
+					: evidenceProfile;
 		}
 
 		double outputRows() {
@@ -6308,8 +6333,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		EvidenceProfile evidenceProfile() {
-			return EvidenceProfile.of(outputRows, outputRows, 0.0d, 1.0d, "tuple-plan-estimate",
-					variableEstimates(), Map.of(), Map.of(), Map.of());
+			return evidenceProfile;
 		}
 
 		boolean hasSketchEvidence(String variableName) {
@@ -6322,6 +6346,55 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return 0.0d;
 			}
 			return Math.min(distinct, rows);
+		}
+
+		private static EvidenceProfile evidenceProfile(double rows, Map<String, VarPlanStats> varStats) {
+			Map<String, VariableEstimate> variables = variableEstimates(rows, varStats);
+			Map<VariableSetKey, DistributionSketch> sketchRelations = tupleSketchRelations(rows, varStats);
+			return EvidenceProfile.of(rows, rows, 0.0d, 1.0d, "tuple-plan-estimate", variables, Map.of(),
+					sketchRelations, Map.of());
+		}
+
+		private static Map<String, VariableEstimate> variableEstimates(double rows,
+				Map<String, VarPlanStats> varStats) {
+			if (varStats.isEmpty()) {
+				return Map.of();
+			}
+			Map<String, VariableEstimate> estimates = new LinkedHashMap<>(varStats.size());
+			for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+				VarPlanStats stats = entry.getValue();
+				double distinct = stats == null ? rows : clampTupleDistinct(stats.distinct, rows);
+				FastAgmsBindingSummary sketch = stats == null || stats.sketch == null || stats.sketch.isEmpty()
+						? null
+						: stats.sketch;
+				estimates.put(entry.getKey(), new VariableEstimate(distinct, rows, 0.0d, sketch));
+			}
+			return estimates;
+		}
+
+		private static Map<VariableSetKey, DistributionSketch> tupleSketchRelations(double rows,
+				Map<String, VarPlanStats> varStats) {
+			if (varStats.size() < 2) {
+				return Map.of();
+			}
+			List<String> names = new ArrayList<>(varStats.size());
+			DistributionSketch product = null;
+			int sketchCount = 0;
+			for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+				VarPlanStats stats = entry.getValue();
+				if (stats == null || stats.sketch == null || stats.sketch.isEmpty()) {
+					continue;
+				}
+				names.add(entry.getKey());
+				sketchCount++;
+				product = product == null ? stats.sketch
+						: ProductDistributionSketch.join(product, stats.sketch, rows,
+								rows);
+			}
+			if (sketchCount < 2 || product == null) {
+				return Map.of();
+			}
+			return Map.of(VariableSetKey.of(names), product);
 		}
 
 		String summary() {
@@ -8172,7 +8245,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
 		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
-				: new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+				: joinedTuplePlanEstimate(leftEstimate, rightEstimate, step);
 	}
 
 	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
@@ -8189,7 +8262,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
 		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
-				: new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+				: joinedTuplePlanEstimate(leftEstimate, rightEstimate, step);
 	}
 
 	private TuplePlanEstimate estimateLeftJoinTupleExprPlan(TuplePlanEstimate leftEstimate,

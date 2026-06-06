@@ -155,7 +155,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		Map<String, Double> mergedOverlap = new LinkedHashMap<>(overlapEvidence);
 		other.overlapEvidence.forEach(mergedOverlap::putIfAbsent);
 		String mergedEndpoint = ANY_ENDPOINT_MODE.equals(endpointMode) ? other.endpointMode : endpointMode;
-		EvidenceProfile mergedEvidence = evidenceProfile.isEmpty() ? other.evidenceProfile : evidenceProfile;
+		EvidenceProfile mergedEvidence = evidenceProfile.mergeWith(other.evidenceProfile, "binding-profile-merge");
 		return new BindingProfile(mergedVariables, mergedFinite, mergedSketchRelations, mergedJoint, mergedSketchVars,
 				mergedOverlap, mergedEndpoint, mergedEvidence);
 	}

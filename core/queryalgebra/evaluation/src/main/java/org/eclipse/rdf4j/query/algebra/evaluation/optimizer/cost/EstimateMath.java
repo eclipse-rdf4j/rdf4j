@@ -140,24 +140,15 @@ public final class EstimateMath {
 	}
 
 	public static BagEstimate slice(BagEstimate input, long offset, long limit) {
-		double skipped = Math.max(0L, offset);
-		double remaining = Math.max(0.0d, input.rows() - skipped);
-		double rows = limit >= 0L ? Math.min(limit, remaining) : remaining;
-		double consumed = limit >= 0L ? Math.min(input.rows(), skipped + limit) : input.rows();
-		double scale = input.rows() == 0.0d ? 0.0d : rows / input.rows();
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>();
-		for (Map.Entry<String, VariableEstimate> entry : input.variables().entrySet()) {
-			variables.put(entry.getKey(), entry.getValue().scale(scale));
-		}
-		return new BagEstimate(rows, input.workRows() + consumed, input.memoryRows(), input.confidence(), "slice",
-				variables, Map.of(), input.metrics());
+		return input.evidenceProfile()
+				.slice(offset, limit)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate order(BagEstimate input) {
-		double n = input.rows();
-		double sortWork = n * (Math.log(Math.max(2.0d, n)) / Math.log(2.0d));
-		return new BagEstimate(input.rows(), input.workRows() + sortWork, n, input.confidence(), "order",
-				input.variables(), input.finiteRelations(), input.sketchRelations(), input.metrics());
+		return input.evidenceProfile()
+				.order()
+				.toBagEstimate();
 	}
 
 	private static double innerJoinRows(BagEstimate left, BagEstimate right, Set<String> joinVars) {

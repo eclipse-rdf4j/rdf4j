@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -245,6 +246,60 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void bagEstimateOwnsDurableEvidenceProfile() {
+		BagEstimate bag = sketched("left", 100.0d, "code", 10.0d,
+				new RowMassSketch(10.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		assertSame(bag.evidenceProfile(), bag.evidenceProfile(),
+				"BagEstimate must own one durable EvidenceProfile instead of rebuilding a lossy view per call");
+	}
+
+	@Test
+	void innerJoinRetainsSideRelationSketchesAsSupportingEvidenceOnly() throws Exception {
+		DistributionSketch leftRelationSketch = new RowMassSketch(30.0d, 100.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		DistributionSketch rightRelationSketch = new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"), leftRelationSketch);
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"), rightRelationSketch);
+
+		BagEstimate joined = EstimateMath.innerJoin(left, right, Set.of("b"));
+		Map<?, ?> supportingSketches = supportingSketches(joined.evidenceProfile());
+
+		assertTrue(joined.sketchRelation(Set.of("a", "b")).isEmpty(),
+				"The unconditioned left tuple sketch must not be current evidence after joining only on ?b");
+		assertTrue(joined.sketchRelation(Set.of("b", "c")).isEmpty(),
+				"The unconditioned right tuple sketch must not be current evidence after joining only on ?b");
+		assertTrue(supportingSketches.containsKey(VariableSetKey.of(Set.of("a", "b"))),
+				"The left tuple sketch should still be retained as non-current supporting evidence");
+		assertTrue(supportingSketches.containsKey(VariableSetKey.of(Set.of("b", "c"))),
+				"The right tuple sketch should still be retained as non-current supporting evidence");
+	}
+
+	@Test
+	void rowChangingSliceRetainsTupleSketchOnlyAsSupportingEvidence() throws Exception {
+		BagEstimate input = BagEstimate.exact(100.0d, "input")
+				.withVariable("a", VariableEstimate.bound(100.0d, 40.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 40.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(40.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate sliced = EstimateMath.slice(input, 0L, 10L);
+		Map<?, ?> supportingSketches = supportingSketches(sliced.evidenceProfile());
+
+		assertTrue(sliced.sketchRelation(Set.of("a", "b")).isEmpty(),
+				"LIMIT/OFFSET changes row mass, so the original tuple sketch cannot remain current evidence");
+		assertTrue(supportingSketches.containsKey(VariableSetKey.of(Set.of("a", "b"))),
+				"The original tuple sketch should remain available only as lower-confidence supporting evidence");
+	}
+
+	@Test
 	void evidenceProfileApiExposesQualityTaggedComposition() throws Exception {
 		Class<?> qualityClass = Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality");
@@ -267,6 +322,9 @@ class BagEstimateMathTest {
 		assertNotNull(profileClass.getMethod("union", profileClass));
 		assertNotNull(profileClass.getMethod("leftJoin", profileClass, Set.class));
 		assertNotNull(profileClass.getMethod("difference", profileClass, Set.class));
+		assertNotNull(profileClass.getMethod("supportingSketches"));
+		assertNotNull(profileClass.getMethod("allSketches"));
+		assertNotNull(profileClass.getMethod("mergeWith", profileClass, String.class));
 		assertNotNull(evidenceProfile.invoke(BagEstimate.heuristic(1.0d, "test")));
 	}
 
@@ -472,6 +530,12 @@ class BagEstimateMathTest {
 
 	private static Literal literal(String value) {
 		return SimpleValueFactory.getInstance().createLiteral(value);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<?, ?> supportingSketches(EvidenceProfile profile) throws Exception {
+		return (Map<?, ?>) EvidenceProfile.class.getMethod("supportingSketches")
+				.invoke(profile);
 	}
 
 	private record HashUnsafeValue(String value) implements Value {

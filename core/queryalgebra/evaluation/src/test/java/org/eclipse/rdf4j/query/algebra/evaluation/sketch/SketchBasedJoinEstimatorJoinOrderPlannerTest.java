@@ -283,7 +283,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		double physicalRows = statePlanPhysicalRows(extended);
 
 		assertEquals(logicalRows, physicalRows, 1.0e-9d,
-				"Physical PlanState must receive the candidate factor estimate, not the already-joined prefix rows");
+				"Physical PlanState must receive the same post-transition row estimate as the logical StatePlan");
 	}
 
 	@Test
@@ -316,7 +316,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertEquals(40.0d, logicalRows, 1.0e-9d, "The fixed-order row-flow setup should join VALUES duplicates");
 		assertEquals(logicalRows, physicalRows, 1.0e-9d,
-				"Physical PlanState must not join the finite prefix a second time against prefix-expanded rows");
+				"Physical PlanState must stay row-consistent with the finite-prefix StatePlan");
 	}
 
 	@Test
@@ -2273,6 +2273,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(estimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
 		assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
 				"Cyclic subtree estimates must expose tuple/set sketches so bridge planning can avoid scalar-only costs");
+		assertTrue(hasMultiVariableSketch(profile),
+				"Cyclic subtree estimates must expose a joined multi-variable tuple/set sketch key");
 	}
 
 	@Test
@@ -4083,6 +4085,24 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			Field field = SketchBasedJoinEstimator.class.getDeclaredField("estimateCache");
 			field.setAccessible(true);
 			return ((Map<?, ?>) field.get(estimator)).size();
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private static boolean hasMultiVariableSketch(Object profile) {
+		try {
+			Method sketchesMethod = profile.getClass()
+					.getMethod("sketches");
+			Map<?, ?> sketches = (Map<?, ?>) sketchesMethod.invoke(profile);
+			for (Object key : sketches.keySet()) {
+				Method names = key.getClass()
+						.getMethod("names");
+				if (((List<?>) names.invoke(key)).size() > 1) {
+					return true;
+				}
+			}
+			return false;
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
 		}

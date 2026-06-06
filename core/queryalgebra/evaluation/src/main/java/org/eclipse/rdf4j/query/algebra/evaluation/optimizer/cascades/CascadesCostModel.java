@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
@@ -1264,9 +1265,11 @@ public interface CascadesCostModel {
 				BagEstimate profiled = profile.toBagEstimate(base.rows(), base.workRows(), base.memoryRows(),
 						base.confidence(), source, mergedMetrics);
 				variables.putAll(profiled.variables());
-				return new BagEstimate(profiled.rows(), profiled.workRows(), profiled.memoryRows(),
+				return new EvidenceProfile(profiled.rows(), profiled.workRows(), profiled.memoryRows(),
 						profiled.confidence(), profiled.source(), variables, profiled.finiteRelations(),
-						profiled.sketchRelations(), profiled.metrics());
+						profiled.evidenceProfile().sketches(), profiled.evidenceProfile().supportingSketches(),
+						profiled.metrics())
+								.toBagEstimate();
 			}
 			return new BagEstimate(base.rows(), base.workRows(), base.memoryRows(), base.confidence(), source,
 					variables,

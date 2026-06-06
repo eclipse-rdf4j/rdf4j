@@ -24,7 +24,8 @@ import org.eclipse.rdf4j.model.Value;
 
 public record EvidenceProfile(double rows, double workRows, double memoryRows, double confidence, String source,
 		Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
-		Map<VariableSetKey, SketchEvidence> sketches, Map<String, Double> metrics) {
+		Map<VariableSetKey, SketchEvidence> sketches, Map<VariableSetKey, SketchEvidence> supportingSketches,
+		Map<String, Double> metrics) {
 
 	private static final double ROW_EPSILON = 0.000001d;
 
@@ -36,12 +37,20 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		source = source == null || source.isBlank() ? "unknown" : source;
 		variables = immutableVariables(variables);
 		finiteRelations = immutableFiniteRelations(finiteRelations);
-		sketches = immutableSketches(sketches);
+		sketches = immutableSketches(sketches, true);
+		supportingSketches = immutableSketches(supportingSketches, false);
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
 	}
 
+	public EvidenceProfile(double rows, double workRows, double memoryRows, double confidence, String source,
+			Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+			Map<VariableSetKey, SketchEvidence> sketches, Map<String, Double> metrics) {
+		this(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches, Map.of(), metrics);
+	}
+
 	public static EvidenceProfile empty() {
-		return new EvidenceProfile(0.0d, 0.0d, 0.0d, 0.0d, "empty", Map.of(), Map.of(), Map.of(), Map.of());
+		return new EvidenceProfile(0.0d, 0.0d, 0.0d, 0.0d, "empty", Map.of(), Map.of(), Map.of(), Map.of(),
+				Map.of());
 	}
 
 	public static EvidenceProfile of(double rows, double workRows, double memoryRows, double confidence, String source,
@@ -70,12 +79,12 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 			}
 		}
 		return new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, evidence,
-				metrics);
+				Map.of(), metrics);
 	}
 
 	public boolean isEmpty() {
 		return rows == 0.0d && variables.isEmpty() && finiteRelations.isEmpty() && sketches.isEmpty()
-				&& metrics.isEmpty();
+				&& supportingSketches.isEmpty() && metrics.isEmpty();
 	}
 
 	public Optional<FiniteRelationEstimate> finiteRelation(Set<String> names) {
@@ -99,6 +108,44 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		return relations.isEmpty() ? Map.of() : Map.copyOf(relations);
 	}
 
+	public Map<VariableSetKey, SketchEvidence> allSketches() {
+		if (sketches.isEmpty() && supportingSketches.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, SketchEvidence> all = new LinkedHashMap<>(supportingSketches);
+		all.putAll(sketches);
+		return Map.copyOf(all);
+	}
+
+	public EvidenceProfile mergeWith(EvidenceProfile other, String source) {
+		if (other == null || other.isEmpty()) {
+			return this;
+		}
+		if (isEmpty()) {
+			return other;
+		}
+		Map<String, VariableEstimate> mergedVariables = new LinkedHashMap<>(variables);
+		other.variables.forEach(mergedVariables::putIfAbsent);
+		Map<VariableSetKey, FiniteRelationEstimate> mergedFinite = new LinkedHashMap<>(finiteRelations);
+		other.finiteRelations.forEach(mergedFinite::putIfAbsent);
+		Map<VariableSetKey, SketchEvidence> mergedCurrent = new LinkedHashMap<>(sketches);
+		other.sketches.forEach(mergedCurrent::putIfAbsent);
+		Map<VariableSetKey, SketchEvidence> mergedSupporting = new LinkedHashMap<>(supportingSketches);
+		other.supportingSketches.forEach(mergedSupporting::putIfAbsent);
+		Map<String, Double> mergedMetrics = new LinkedHashMap<>(metrics);
+		other.metrics.forEach(mergedMetrics::putIfAbsent);
+		double mergedRows = Math.max(rows, other.rows);
+		double mergedWorkRows = Math.max(workRows, other.workRows);
+		double mergedMemoryRows = Math.max(memoryRows, other.memoryRows);
+		return new EvidenceProfile(mergedRows, mergedWorkRows, mergedMemoryRows, Math.min(confidence, other.confidence),
+				source, mergedVariables, mergedFinite, mergedCurrent, mergedSupporting, mergedMetrics);
+	}
+
+	public EvidenceProfile withWorkRows(double workRows, double memoryRows, String source) {
+		return new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches,
+				supportingSketches, metrics);
+	}
+
 	public EvidenceComposition composeInnerJoin(EvidenceProfile right, Set<String> sharedVars) {
 		Set<String> joinVars = safeSet(sharedVars);
 		EvidenceScalar scalar = innerJoinScalar(right, joinVars);
@@ -106,9 +153,11 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		Map<String, VariableEstimate> joinedVariables = joinedVariables(right, joinedRows, joinedRows, 0.0d, joinVars,
 				false);
 		Map<VariableSetKey, SketchEvidence> joinedSketches = joinedSketches(right, joinVars, joinedRows);
+		Map<VariableSetKey, SketchEvidence> joinedSupporting = joinedSupportingSketches(right, joinedSketches.keySet(),
+				joinedRows, "inner-join-supporting");
 		EvidenceProfile joined = new EvidenceProfile(joinedRows, workRows + right.workRows + joinedRows, 0.0d,
 				Math.min(confidence, right.confidence), "inner-join", joinedVariables, Map.of(), joinedSketches,
-				Map.of());
+				joinedSupporting, Map.of());
 		return new EvidenceComposition(joined, scalar.usable() ? scalar
 				: EvidenceScalar.of(joinedRows, EvidenceQuality.HEURISTIC, "product-distinct"));
 	}
@@ -123,8 +172,12 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		for (Map.Entry<VariableSetKey, SketchEvidence> entry : sketches.entrySet()) {
 			normalizedSketches.put(entry.getKey(), entry.getValue().rebaseRows(safeRows, source));
 		}
+		Map<VariableSetKey, SketchEvidence> normalizedSupporting = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, SketchEvidence> entry : supportingSketches.entrySet()) {
+			normalizedSupporting.put(entry.getKey(), entry.getValue().rebaseRows(safeRows, source));
+		}
 		return new EvidenceProfile(safeRows, workRows, memoryRows, confidence, source, normalizedVariables,
-				normalizedFinite, normalizedSketches, metrics);
+				normalizedFinite, normalizedSketches, normalizedSupporting, metrics);
 	}
 
 	public EvidenceProfile project(Set<String> projectedVars) {
@@ -147,8 +200,14 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				projectedSketches.put(entry.getKey(), entry.getValue());
 			}
 		}
+		Map<VariableSetKey, SketchEvidence> projectedSupporting = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, SketchEvidence> entry : supportingSketches.entrySet()) {
+			if (vars.containsAll(entry.getKey().names())) {
+				projectedSupporting.put(entry.getKey(), entry.getValue());
+			}
+		}
 		return new EvidenceProfile(rows, workRows, memoryRows, confidence, "projection", projectedVariables,
-				projectedFinite, projectedSketches, metrics);
+				projectedFinite, projectedSketches, projectedSupporting, metrics);
 	}
 
 	public EvidenceProfile filter(double passRatio, String source) {
@@ -160,8 +219,32 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		}
 		Map<VariableSetKey, SketchEvidence> filteredSketches = Math.abs(safeRatio - 1.0d) < 0.000000001d ? sketches
 				: Map.of();
+		Map<VariableSetKey, SketchEvidence> filteredSupporting = Math.abs(safeRatio - 1.0d) < 0.000000001d
+				? supportingSketches
+				: staleSupportingSketches(filteredRows, source);
 		return new EvidenceProfile(filteredRows, workRows + rows, memoryRows, confidence, source, filteredVariables,
-				Map.of(), filteredSketches, metrics);
+				Map.of(), filteredSketches, filteredSupporting, metrics);
+	}
+
+	public EvidenceProfile slice(long offset, long limit) {
+		double skipped = Math.max(0L, offset);
+		double remaining = Math.max(0.0d, rows - skipped);
+		double slicedRows = limit >= 0L ? Math.min(limit, remaining) : remaining;
+		double consumed = limit >= 0L ? Math.min(rows, skipped + limit) : rows;
+		double scale = rows == 0.0d ? 0.0d : slicedRows / rows;
+		Map<String, VariableEstimate> slicedVariables = new LinkedHashMap<>();
+		for (Map.Entry<String, VariableEstimate> entry : variables.entrySet()) {
+			slicedVariables.put(entry.getKey(), entry.getValue().scale(scale));
+		}
+		return new EvidenceProfile(slicedRows, workRows + consumed, memoryRows, confidence, "slice", slicedVariables,
+				Map.of(), Map.of(), staleSupportingSketches(slicedRows, "slice"), metrics);
+	}
+
+	public EvidenceProfile order() {
+		double n = rows;
+		double sortWork = n * (Math.log(Math.max(2.0d, n)) / Math.log(2.0d));
+		return new EvidenceProfile(rows, workRows + sortWork, n, confidence, "order", variables, finiteRelations,
+				sketches, supportingSketches, metrics);
 	}
 
 	public EvidenceProfile union(EvidenceProfile right) {
@@ -192,8 +275,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 	}
 
 	public BagEstimate toBagEstimate() {
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
-				sketchRelationMap(), metrics);
+		return BagEstimate.fromEvidenceProfile(this);
 	}
 
 	private EvidenceScalar innerJoinScalar(EvidenceProfile right, Set<String> joinVars) {
@@ -257,6 +339,37 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		VariableSetKey key = VariableSetKey.of(joinVars);
 		return Map.of(key, new SketchEvidence(key, joinedSketch, joinedRows, joinedSketch.distinctRows(),
 				EvidenceQuality.COMPOSED_SKETCH, "inner-join"));
+	}
+
+	private Map<VariableSetKey, SketchEvidence> joinedSupportingSketches(EvidenceProfile right,
+			Set<VariableSetKey> currentKeys, double joinedRows, String provenance) {
+		Map<VariableSetKey, SketchEvidence> supporting = new LinkedHashMap<>();
+		copySupportingForJoin(supporting, allSketches(), currentKeys, joinedRows, provenance);
+		copySupportingForJoin(supporting, right.allSketches(), currentKeys, joinedRows, provenance);
+		return supporting.isEmpty() ? Map.of() : Map.copyOf(supporting);
+	}
+
+	private static void copySupportingForJoin(Map<VariableSetKey, SketchEvidence> target,
+			Map<VariableSetKey, SketchEvidence> source, Set<VariableSetKey> currentKeys, double rows,
+			String provenance) {
+		for (Map.Entry<VariableSetKey, SketchEvidence> entry : source.entrySet()) {
+			if (currentKeys.contains(entry.getKey())) {
+				continue;
+			}
+			target.putIfAbsent(entry.getKey(), entry.getValue()
+					.rebaseRows(rows, provenance)
+					.asSupporting(provenance));
+		}
+	}
+
+	private Map<VariableSetKey, SketchEvidence> staleSupportingSketches(double rows, String provenance) {
+		Map<VariableSetKey, SketchEvidence> supporting = new LinkedHashMap<>();
+		for (Map.Entry<VariableSetKey, SketchEvidence> entry : allSketches().entrySet()) {
+			supporting.put(entry.getKey(), entry.getValue()
+					.rebaseRows(rows, provenance)
+					.asStaleSupporting(provenance));
+		}
+		return supporting.isEmpty() ? Map.of() : Map.copyOf(supporting);
 	}
 
 	private Map<String, VariableEstimate> joinedVariables(EvidenceProfile right, double joinedRows,
@@ -396,14 +509,17 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		return copy.isEmpty() ? Map.of() : Map.copyOf(copy);
 	}
 
-	private static Map<VariableSetKey, SketchEvidence> immutableSketches(Map<VariableSetKey, SketchEvidence> sketches) {
+	private static Map<VariableSetKey, SketchEvidence> immutableSketches(Map<VariableSetKey, SketchEvidence> sketches,
+			boolean current) {
 		if (sketches == null || sketches.isEmpty()) {
 			return Map.of();
 		}
 		Map<VariableSetKey, SketchEvidence> copy = new LinkedHashMap<>();
 		for (Map.Entry<VariableSetKey, SketchEvidence> entry : sketches.entrySet()) {
 			if (entry.getKey() != null && entry.getValue() != null) {
-				copy.put(entry.getKey(), entry.getValue());
+				SketchEvidence evidence = current ? entry.getValue().asCurrent(entry.getValue().provenance())
+						: entry.getValue().asSupporting(entry.getValue().provenance());
+				copy.put(entry.getKey(), evidence);
 			}
 		}
 		return copy.isEmpty() ? Map.of() : Map.copyOf(copy);

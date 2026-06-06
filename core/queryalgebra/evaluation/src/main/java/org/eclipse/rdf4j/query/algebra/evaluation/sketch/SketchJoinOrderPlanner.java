@@ -1566,9 +1566,8 @@ final class SketchJoinOrderPlanner {
 				maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix.costVector(), stepWorkRows,
 				physicalEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
-		SketchBasedJoinEstimator.TuplePlanEstimate factorStateEstimate = factors.get(candidate).estimate();
 		PlanState physicalState = factorTransitionState(prefix, candidate, physicalEstimate, stepWorkRows,
-				nextEstimate.outputRows(), costVector, factorStateEstimate);
+				nextEstimate.outputRows(), costVector, nextEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(candidate, mask, currentBoundVarMask);
 		StatePlan extended = new StatePlan(nextMask, prefix, candidate, candidate, physicalEstimate,
 				prefix.orderSize() + 1, nextEstimate, prefix.totalWork() + stepWorkRows, costVector,

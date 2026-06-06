@@ -16,7 +16,12 @@ import java.util.OptionalDouble;
 import java.util.Set;
 
 public record SketchEvidence(VariableSetKey key, DistributionSketch sketch, double rows, double distinctRows,
-		EvidenceQuality quality, String provenance) {
+		EvidenceQuality quality, String provenance, boolean current, boolean stale) {
+
+	public SketchEvidence(VariableSetKey key, DistributionSketch sketch, double rows, double distinctRows,
+			EvidenceQuality quality, String provenance) {
+		this(key, sketch, rows, distinctRows, quality, provenance, true, false);
+	}
 
 	public SketchEvidence {
 		if (key == null) {
@@ -37,7 +42,20 @@ public record SketchEvidence(VariableSetKey key, DistributionSketch sketch, doub
 	}
 
 	public SketchEvidence rebaseRows(double rows, String provenance) {
-		return new SketchEvidence(key, sketch, rows, Math.min(distinctRows, Math.max(1.0d, rows)), quality, provenance);
+		return new SketchEvidence(key, sketch, rows, Math.min(distinctRows, Math.max(1.0d, rows)), quality, provenance,
+				current, stale);
+	}
+
+	public SketchEvidence asCurrent(String provenance) {
+		return new SketchEvidence(key, sketch, rows, distinctRows, quality, provenance, true, false);
+	}
+
+	public SketchEvidence asSupporting(String provenance) {
+		return new SketchEvidence(key, sketch, rows, distinctRows, quality, provenance, false, stale);
+	}
+
+	public SketchEvidence asStaleSupporting(String provenance) {
+		return new SketchEvidence(key, sketch, rows, distinctRows, quality, provenance, false, true);
 	}
 
 	public EvidenceScalar estimateInnerProduct(SketchEvidence other) {

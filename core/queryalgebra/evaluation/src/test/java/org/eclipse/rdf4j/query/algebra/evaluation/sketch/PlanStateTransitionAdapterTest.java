@@ -313,7 +313,7 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
-	void scalarTransitionComposesPrefixAndFactorBagsWhenTupleEstimateIsAvailable() throws Exception {
+	void scalarTransitionUsesPostTransitionTupleProfileWhenAvailable() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		addRows(store, "person-a", memberOf, "org-a", 10);
@@ -337,9 +337,6 @@ class PlanStateTransitionAdapterTest {
 					"prefix-orgs");
 			BagEstimate prefixBag = BagEstimate.exact(4.0d, "prefix")
 					.withFiniteRelation(orgPrefix);
-			BagEstimate factorBag = new BagEstimate(tupleEstimate.outputRows(), tupleEstimate.outputRows(), 0.0d,
-					1.0d, "factor", tupleEstimate.variableEstimates(), Map.of(), Map.of());
-			BagEstimate expected = EstimateMath.innerJoin(prefixBag, factorBag, Set.of("org"));
 			PlanState prefix = PlanState.initial(prefixBag, Set.of("org"),
 					Map.of("org", Set.of(VF.createIRI("urn:org-a"), VF.createIRI("urn:org-b"))));
 			JoinFactorCostModel.FactorCostEstimate factorCost = new JoinFactorCostModel.FactorCostEstimate(
@@ -351,8 +348,10 @@ class PlanStateTransitionAdapterTest {
 									tupleEstimate.outputRows(), 0.0d, 0.0d),
 							tupleEstimate);
 
-			assertEquals(expected.rows(), transition.nextState().estimate().rows(), 1.0e-9d,
-					"Transition state must estimate the next prefix by joining the prefix bag with the factor bag");
+			assertEquals(tupleEstimate.outputRows(), transition.nextState().estimate().rows(), 1.0e-9d,
+					"Transition state must use the supplied post-transition tuple profile without recomposing it");
+			assertEquals(transition.planCost().finalRows(), transition.nextState().estimate().rows(), 1.0e-9d,
+					"PlanState and JoinCostVector must agree on post-transition rows");
 		} finally {
 			estimator.close();
 		}
@@ -448,6 +447,8 @@ class PlanStateTransitionAdapterTest {
 			assertEquals(tupleEstimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
 			assertFalse(((Map<?, ?>) sketches.invoke(profile)).isEmpty(),
 					"TuplePlanEstimate must expose tuple/set sketch evidence, not only per-variable surfaces");
+			assertTrue(hasMultiVariableSketch(profile),
+					"TuplePlanEstimate must expose a real multi-variable tuple/set sketch key for bridge planning");
 		} finally {
 			estimator.close();
 		}
@@ -593,6 +594,20 @@ class PlanStateTransitionAdapterTest {
 		Method sketchEvidence = profile.getClass()
 				.getMethod("sketchEvidence", Set.class);
 		return (Optional<?>) sketchEvidence.invoke(profile, variables);
+	}
+
+	private static boolean hasMultiVariableSketch(Object profile) throws Exception {
+		Method sketchesMethod = profile.getClass()
+				.getMethod("sketches");
+		Map<?, ?> sketches = (Map<?, ?>) sketchesMethod.invoke(profile);
+		for (Object key : sketches.keySet()) {
+			Method names = key.getClass()
+					.getMethod("names");
+			if (((List<?>) names.invoke(key)).size() > 1) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static double[] entry(long key, double weight) {

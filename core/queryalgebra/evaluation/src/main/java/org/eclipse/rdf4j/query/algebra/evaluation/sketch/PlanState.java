@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
@@ -177,11 +177,11 @@ final class PlanState {
 		Map<VariableSetKey, FiniteRelationEstimate> finiteRelations = new LinkedHashMap<>(
 				nextEstimate.finiteRelations());
 		finiteRelations.putAll(tupleBag.finiteRelations());
-		Map<VariableSetKey, DistributionSketch> sketchRelations = new LinkedHashMap<>(nextEstimate.sketchRelations());
-		sketchRelations.putAll(tupleBag.sketchRelations());
-		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
-				nextEstimate.confidence(), nextEstimate.source(), variables, finiteRelations, sketchRelations,
-				nextEstimate.metrics());
+		return new EvidenceProfile(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
+				nextEstimate.confidence(), nextEstimate.source(), variables, finiteRelations,
+				tupleBag.evidenceProfile().sketches(), tupleBag.evidenceProfile().supportingSketches(),
+				nextEstimate.metrics())
+						.toBagEstimate();
 	}
 
 	private static BagEstimate withBoundVariableRows(BagEstimate nextEstimate, Set<String> normalizedBoundVars,

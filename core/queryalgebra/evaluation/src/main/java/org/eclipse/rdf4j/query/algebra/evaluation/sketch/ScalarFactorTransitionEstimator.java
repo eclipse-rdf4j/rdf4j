@@ -12,15 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
@@ -105,12 +102,9 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 		Map<String, Double> metrics = new LinkedHashMap<>(factorCost.getDoubleMetrics());
 		String source = factorCost.getStringMetrics().getOrDefault("plannedEstimateSource", DEFAULT_SOURCE);
 		if (nextTupleEstimate != null) {
-			BagEstimate factorEstimate = factorEstimate(nextTupleEstimate, estimateVector, source, metrics);
-			BagEstimate joined = EstimateMath.innerJoin(prefixEstimate, factorEstimate,
-					sharedVariables(prefixEstimate, factorEstimate));
-			return joined.evidenceProfile()
-					.rebaseRows(joined.rows(), estimateVector.workRows(), estimateVector.confidence(), source,
-							metrics, RebaseMode.PRESERVE_EXACT_RELATIONS)
+			return nextTupleEstimate.evidenceProfile()
+					.rebaseRows(nextTupleEstimate.outputRows(), estimateVector.workRows(),
+							estimateVector.confidence(), source, metrics, RebaseMode.PRESERVE_EXACT_RELATIONS)
 					.toBagEstimate();
 		}
 		double rows = nextTupleEstimate == null ? estimateVector.rows() : nextTupleEstimate.outputRows();
@@ -119,22 +113,5 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 		return new BagEstimate(rows, estimateVector.workRows(), estimateVector.memoryRows(),
 				estimateVector.confidence(),
 				source, variables, prefixEstimate.finiteRelations(), prefixEstimate.sketchRelations(), metrics);
-	}
-
-	private static BagEstimate factorEstimate(SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate,
-			JoinFactorCostModel.EstimateVector estimateVector, String source, Map<String, Double> metrics) {
-		return tupleEstimate.evidenceProfile()
-				.rebaseRows(tupleEstimate.outputRows(), estimateVector.workRows(), estimateVector.confidence(), source,
-						metrics, RebaseMode.PRESERVE_EXACT_RELATIONS)
-				.toBagEstimate();
-	}
-
-	private static Set<String> sharedVariables(BagEstimate left, BagEstimate right) {
-		if (left.variables().isEmpty() || right.variables().isEmpty()) {
-			return Set.of();
-		}
-		Set<String> shared = new LinkedHashSet<>(left.variables().keySet());
-		shared.retainAll(right.variables().keySet());
-		return shared.isEmpty() ? Set.of() : Set.copyOf(shared);
 	}
 }
