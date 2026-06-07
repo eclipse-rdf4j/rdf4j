@@ -86,6 +86,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
 	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
 	private static final String CASCADES_CANDIDATE_PLAN = "optimizer.cascadesCandidatePlan";
+	private static final String CASCADES_TRACE_JSON = "optimizer.cascadesTraceJson";
 	private static final String GENERIC_PHYSICAL_RULE = "generic-physical-implementation";
 	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
@@ -1124,6 +1125,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (telemetry != null && !telemetry.trace().isEmpty()) {
 			tupleExpr.setStringMetricPlanned("optimizer.cascadesTrace", String.join(" || ", telemetry.trace()));
+			tupleExpr.setStringMetricPlanned(CASCADES_TRACE_JSON, telemetry.toJson());
 		}
 		if (telemetry != null) {
 			plan.tupleExpr()

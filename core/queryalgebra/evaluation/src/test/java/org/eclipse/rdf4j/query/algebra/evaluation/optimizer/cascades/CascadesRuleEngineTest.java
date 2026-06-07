@@ -242,6 +242,38 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void structuredTelemetryCapturesMatchedAndSkippedRules() throws Exception {
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new TestImplementationRule("matching-implementation", 1.0d))
+				.add(new NeverMatchingRule("never-match"))
+				.build();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(64);
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				telemetry);
+
+		planner.optimize(pattern("s", "p", "o"), OptimizationGoal.root());
+
+		Map<String, Object> trace = structuredTrace(telemetry);
+		List<Map<String, Object>> ruleEvaluations = traceList(trace, "ruleEvaluations");
+		assertTrue(ruleEvaluations.stream()
+				.anyMatch(event -> "matching-implementation".equals(event.get("ruleId"))
+						&& "matched".equals(event.get("status"))),
+				"Expected structured trace to record the rule that matched: " + trace);
+		assertTrue(ruleEvaluations.stream()
+				.anyMatch(event -> "never-match".equals(event.get("ruleId"))
+						&& "not_matched".equals(event.get("status"))),
+				"Expected structured trace to record rules that were not run because they did not match: " + trace);
+
+		List<Map<String, Object>> alternatives = traceList(trace, "alternatives");
+		assertTrue(alternatives.stream()
+				.anyMatch(event -> "matching-implementation".equals(event.get("ruleId"))
+						&& "considered".equals(event.get("status"))),
+				"Expected structured trace to record considered alternatives: " + trace);
+		assertFalse(traceList(trace, "winners").isEmpty(),
+				"Expected structured trace to record the chosen winner: " + trace);
+	}
+
+	@Test
 	void missingInputWinnerTraceIdentifiesFailedInputGoal() {
 		Projection projection = new Projection(pattern("s", "p", "o"), projection("o"), false);
 		RuleRegistry registry = RuleRegistry.builder()
@@ -1478,6 +1510,20 @@ class CascadesRuleEngineTest {
 				.toList();
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> structuredTrace(CascadesTelemetry.Recording telemetry) throws Exception {
+		return (Map<String, Object>) CascadesTelemetry.Recording.class
+				.getMethod("structuredTrace")
+				.invoke(telemetry);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> traceList(Map<String, Object> trace, String key) {
+		Object value = trace.get(key);
+		assertTrue(value instanceof List, () -> "Expected trace field " + key + " to be a list: " + trace);
+		return (List<Map<String, Object>>) value;
+	}
+
 	private static ProjectionElemList projection(String... names) {
 		ProjectionElemList list = new ProjectionElemList();
 		for (String name : names) {
@@ -1732,6 +1778,29 @@ class CascadesRuleEngineTest {
 		public RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			return new RuleProof(id, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS, Set.of("test"),
 					"test alternative");
+		}
+	}
+
+	private record NeverMatchingRule(String id) implements CascadesRule {
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return false;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			return List.of();
 		}
 	}
 

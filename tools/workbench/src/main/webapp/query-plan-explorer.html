@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RDF4J LMDB Query Plan Explorer</title>
+    <link rel="stylesheet" href="styles/query-plan-explorer.css">
+</head>
+<body>
+<main class="qpe-shell">
+    <header class="qpe-hero">
+        <div>
+            <p>LMDB Cascades</p>
+            <h1>Query Plan Explorer</h1>
+        </div>
+        <div class="qpe-topology" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+        </div>
+    </header>
+
+    <section class="qpe-input-band" aria-label="Snapshot input">
+        <div class="qpe-file-row">
+            <label class="qpe-file">
+                <span>Snapshot JSON</span>
+                <input id="qpe-file" type="file" accept="application/json,.json">
+            </label>
+            <button id="qpe-load" type="button">Load</button>
+            <button id="qpe-demo" type="button">Demo</button>
+            <button id="qpe-clear" type="button">Clear</button>
+        </div>
+        <textarea id="qpe-json" spellcheck="false" placeholder="Paste QueryPlanSnapshot JSON with optimizerTrace or optimizer.cascadesTraceJson"></textarea>
+    </section>
+
+    <section id="qpe-summary" class="qpe-summary" aria-label="Trace summary"></section>
+
+    <section class="qpe-workspace">
+        <aside class="qpe-panel qpe-panel--filters">
+            <h2>Rules</h2>
+            <label>
+                <span>Status</span>
+                <select id="qpe-status-filter"></select>
+            </label>
+            <label>
+                <span>Rule or expression</span>
+                <input id="qpe-rule-filter" type="search" autocomplete="off">
+            </label>
+            <div id="qpe-rules" class="qpe-table-wrap"></div>
+        </aside>
+
+        <section class="qpe-main-grid">
+            <section class="qpe-panel">
+                <h2>Alternatives</h2>
+                <div id="qpe-alternatives" class="qpe-alt-grid"></div>
+            </section>
+
+            <section class="qpe-panel">
+                <h2>Comparison</h2>
+                <div id="qpe-comparison"></div>
+            </section>
+
+            <section class="qpe-panel">
+                <h2>Winners</h2>
+                <div id="qpe-winners" class="qpe-winner-grid"></div>
+            </section>
+
+            <section class="qpe-panel qpe-panel--timeline">
+                <h2>Timeline</h2>
+                <ol id="qpe-timeline"></ol>
+            </section>
+        </section>
+    </section>
+</main>
+<script src="scripts/query-plan-explorer.js"></script>
+<script src="scripts/query-plan-explorer-page.js"></script>
+<script>
+    window.workbench.queryPlanExplorer.init();
+</script>
+</body>
+</html>
