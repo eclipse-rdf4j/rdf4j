@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
 
 /**
  * Cascades memo. Groups are keyed by logical equivalence, not by factor masks.
@@ -81,8 +82,9 @@ public final class Memo {
 		}
 		LogicalProperties properties = costModel.logicalProperties(tupleExpr);
 		BindingShape bindingShape = BindingShape.from(tupleExpr, universe);
+		LeoMemoFeedback feedback = memoFeedback(tupleExpr, bindingShape);
 		int groupId = groups.size();
-		MemoGroup group = new MemoGroup(groupId, properties, bindingShape);
+		MemoGroup group = new MemoGroup(groupId, properties, bindingShape, feedback);
 		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, tupleExpr, inputs, metadata, logicalKey);
 		group.addExpression(expression, logicalKey);
 		groups.add(group);
@@ -117,9 +119,19 @@ public final class Memo {
 			return Optional.empty();
 		}
 		group.mergeBindingShape(BindingShape.from(alternative, universe));
+		group.mergeLeoFeedback(memoFeedback(alternative, group.bindingShape()));
 		groupByLogicalExpression.putIfAbsent(structuralKey, groupId);
 		groupByNodeIdentity.put(alternative, groupId);
 		return Optional.of(expression);
+	}
+
+	private LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingShape bindingShape) {
+		try {
+			return costModel.leoSurfaceProvider()
+					.memoFeedback(tupleExpr, universe, bindingShape);
+		} catch (RuntimeException e) {
+			return LeoMemoFeedback.empty();
+		}
 	}
 
 	public Optional<MemoExpr> addPhysicalAlternative(int groupId, TupleExpr alternative, PhysicalProperties delivered,

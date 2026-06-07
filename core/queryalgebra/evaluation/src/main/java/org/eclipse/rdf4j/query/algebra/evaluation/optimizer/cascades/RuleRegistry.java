@@ -75,10 +75,27 @@ public final class RuleRegistry {
 			}
 		}
 		applicable.sort(Comparator.comparingInt((CascadesRule rule) -> rule.phase().priority())
-				.thenComparing(Comparator.comparingInt((CascadesRule rule) -> rule.promise(expression, goal, memo))
+				.thenComparing(Comparator.comparingInt((CascadesRule rule) -> adjustedPromise(rule, expression, goal,
+						memo))
 						.reversed())
 				.thenComparing(CascadesRule::id));
 		return applicable;
+	}
+
+	private static int adjustedPromise(CascadesRule rule, MemoExpr expression, OptimizationGoal goal, Memo memo) {
+		int promise = rule.promise(expression, goal, memo);
+		if (memo == null || expression == null) {
+			return promise;
+		}
+		int delta = memo.group(expression.groupId()).leoFeedback().priorityDelta(rule.id());
+		long adjusted = (long) promise + delta;
+		if (adjusted > Integer.MAX_VALUE) {
+			return Integer.MAX_VALUE;
+		}
+		if (adjusted < Integer.MIN_VALUE) {
+			return Integer.MIN_VALUE;
+		}
+		return (int) adjusted;
 	}
 
 	public List<CascadesRule> rules() {

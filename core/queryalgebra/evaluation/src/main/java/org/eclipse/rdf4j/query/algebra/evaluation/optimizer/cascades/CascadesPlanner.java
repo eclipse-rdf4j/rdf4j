@@ -488,7 +488,10 @@ public final class CascadesPlanner {
 		incumbent = memo.bestWinner(winnerKey);
 		CostVector cost = composePhysicalCost(costModel.localCost(expression, goal, inputWinners),
 				expression.ruleCost());
-		boolean decisionSensitive = decisionSensitive(incumbent.orElse(null), cost);
+		boolean budgetedInitialChoice = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+				&& incumbent.isEmpty()
+				&& !goal.estimationTier().allowsExactEstimates();
+		boolean decisionSensitive = budgetedInitialChoice || decisionSensitive(incumbent.orElse(null), cost);
 		if (decisionSensitive) {
 			markPlanChangingFeedbackThreshold(incumbent.orElse(null));
 		}

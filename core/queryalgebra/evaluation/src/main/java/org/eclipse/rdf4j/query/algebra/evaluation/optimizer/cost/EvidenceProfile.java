@@ -152,6 +152,32 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				supportingSketches, metrics);
 	}
 
+	public EvidenceProfile alias(String sourceName, String targetName) {
+		if (sourceName == null || sourceName.isBlank() || targetName == null || targetName.isBlank()
+				|| sourceName.equals(targetName)) {
+			return this;
+		}
+		Map<String, VariableEstimate> aliasedVariables = new LinkedHashMap<>(variables);
+		VariableEstimate sourceVariable = variable(sourceName);
+		if (sourceVariable.boundRows() <= 0.0d && sourceVariable.distinctRows() <= 0.0d
+				&& sourceVariable.sketch() == null) {
+			aliasedVariables.put(targetName, VariableEstimate.bound(rows, rows));
+		} else {
+			aliasedVariables.put(targetName, sourceVariable.withBoundRows(rows));
+		}
+		Map<VariableSetKey, FiniteRelationEstimate> aliasedFinite = new LinkedHashMap<>(finiteRelations);
+		for (FiniteRelationEstimate relation : finiteRelations.values()) {
+			renamedFiniteRelation(relation, sourceName, targetName)
+					.ifPresent(renamed -> aliasedFinite.putIfAbsent(renamed.variableSetKey(), renamed));
+		}
+		Map<VariableSetKey, SketchEvidence> aliasedSketches = renamedSketches(sketches, sourceName, targetName,
+				"alias-sketch");
+		Map<VariableSetKey, SketchEvidence> aliasedSupporting = renamedSketches(supportingSketches, sourceName,
+				targetName, "alias-supporting");
+		return new EvidenceProfile(rows, workRows, memoryRows, confidence, "alias", aliasedVariables, aliasedFinite,
+				aliasedSketches, aliasedSupporting, metrics);
+	}
+
 	public EvidenceComposition composeInnerJoin(EvidenceProfile right, Set<String> sharedVars) {
 		Set<String> joinVars = safeSet(sharedVars);
 		EvidenceScalar scalar = innerJoinScalar(right, joinVars);
@@ -368,6 +394,18 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (relationSketch.isPresent()) {
 			return relationSketch.get();
 		}
+		Optional<EvidenceScalar> mixedSketch = sketchEvidence(joinVars)
+				.flatMap(leftSketch -> right.supportingSketchEvidence(joinVars)
+						.map(leftSketch::estimateInnerProduct))
+				.or(() -> supportingSketchEvidence(joinVars)
+						.flatMap(leftSketch -> right.sketchEvidence(joinVars)
+								.map(leftSketch::estimateInnerProduct)))
+				.filter(EvidenceScalar::usable)
+				.map(scalar -> new EvidenceScalar(scalar.rows(), EvidenceQuality.COMPOSED_SKETCH,
+						"mixed-sketch-inner-product", scalar.metrics()));
+		if (mixedSketch.isPresent()) {
+			return mixedSketch.get();
+		}
 		Optional<EvidenceScalar> supportingSketch = supportingSketchEvidence(joinVars)
 				.flatMap(leftSketch -> right.supportingSketchEvidence(joinVars)
 						.map(leftSketch::estimateInnerProduct))
@@ -417,8 +455,8 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (joinVars.isEmpty()) {
 			return Map.of();
 		}
-		Optional<SketchEvidence> leftSketch = sketchEvidence(joinVars);
-		Optional<SketchEvidence> rightSketch = right.sketchEvidence(joinVars);
+		Optional<SketchEvidence> leftSketch = joinSketchEvidence(joinVars);
+		Optional<SketchEvidence> rightSketch = right.joinSketchEvidence(joinVars);
 		if (leftSketch.isEmpty() || rightSketch.isEmpty()) {
 			return Map.of();
 		}
@@ -431,6 +469,11 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		VariableSetKey key = VariableSetKey.of(joinVars);
 		return Map.of(key, new SketchEvidence(key, joinedSketch, joinedRows, joinedSketch.distinctRows(),
 				EvidenceQuality.COMPOSED_SKETCH, "inner-join"));
+	}
+
+	private Optional<SketchEvidence> joinSketchEvidence(Set<String> names) {
+		Optional<SketchEvidence> current = sketchEvidence(names);
+		return current.isPresent() ? current : supportingSketchEvidence(names);
 	}
 
 	private Map<VariableSetKey, SketchEvidence> joinedSupportingSketches(EvidenceProfile right,
@@ -462,6 +505,42 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 					.asStaleSupporting(provenance));
 		}
 		return supporting.isEmpty() ? Map.of() : Map.copyOf(supporting);
+	}
+
+	private static Optional<FiniteRelationEstimate> renamedFiniteRelation(FiniteRelationEstimate relation,
+			String sourceName, String targetName) {
+		if (relation == null || !relation.variables().contains(sourceName)
+				|| relation.variables().contains(targetName)) {
+			return Optional.empty();
+		}
+		List<String> renamedVariables = relation.variables()
+				.stream()
+				.map(name -> sourceName.equals(name) ? targetName : name)
+				.toList();
+		return Optional.of(FiniteRelationEstimate.fromFrequencies(renamedVariables, relation.frequencies(),
+				relation.source() + "-alias"));
+	}
+
+	private static Map<VariableSetKey, SketchEvidence> renamedSketches(Map<VariableSetKey, SketchEvidence> source,
+			String sourceName, String targetName, String provenance) {
+		if (source == null || source.isEmpty()) {
+			return Map.of();
+		}
+		Map<VariableSetKey, SketchEvidence> renamed = new LinkedHashMap<>(source);
+		for (SketchEvidence evidence : source.values()) {
+			if (evidence == null || !evidence.key().names().contains(sourceName)
+					|| evidence.key().names().contains(targetName)) {
+				continue;
+			}
+			VariableSetKey renamedKey = VariableSetKey.of(evidence.key()
+					.names()
+					.stream()
+					.map(name -> sourceName.equals(name) ? targetName : name)
+					.toList());
+			renamed.putIfAbsent(renamedKey, new SketchEvidence(renamedKey, evidence.sketch(), evidence.rows(),
+					evidence.distinctRows(), evidence.quality(), provenance, evidence.current(), evidence.stale()));
+		}
+		return renamed.isEmpty() ? Map.of() : Map.copyOf(renamed);
 	}
 
 	private Map<String, VariableEstimate> projectedBoundVariables(Set<String> vars, double outputRows) {

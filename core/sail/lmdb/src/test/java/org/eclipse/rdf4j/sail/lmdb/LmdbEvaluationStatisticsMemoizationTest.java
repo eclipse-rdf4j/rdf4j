@@ -2193,6 +2193,67 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void minusBoundProbeCostAccountsRepeatedLookupInvocations() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(
+				Var.of("med"),
+				Var.of("type", vf.createIRI("urn:test:Medication")),
+				Var.of("typeObject"));
+		StatementPattern right = new StatementPattern(
+				Var.of("med"),
+				Var.of("dosage", vf.createIRI("urn:test:dosage")),
+				Var.of("dose"));
+		Difference minus = new Difference(left, right);
+
+		SketchBasedJoinEstimator.AccessShape leftShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(leftShape.pattern()).thenReturn(left);
+		when(leftShape.filterMultiplier()).thenReturn(1.0d);
+		when(leftShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(leftShape.joinBoundComponentMask()).thenReturn(0);
+		when(leftShape.estimateAccessRows(anyInt())).thenReturn(16_000.0d);
+		when(leftShape.estimateAccessRows(predicateBit)).thenReturn(16_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(left, Set.of())).thenReturn(16_000.0d);
+		when(estimator.accessShapeForJoinOrdering(left, Set.of())).thenReturn(leftShape);
+
+		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(rightShape.pattern()).thenReturn(right);
+		when(rightShape.filterMultiplier()).thenReturn(1.0d);
+		when(rightShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(rightShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(rightShape.estimateAccessRows(anyInt())).thenReturn(48_000.0d);
+		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(48_000.0d);
+		when(rightShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(right, Set.of("med"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(right, Set.of("med"))).thenReturn(rightShape);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics
+				.estimateFactorCost(minus, JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, Double.NaN, true))
+				.orElseThrow();
+
+		Double repeatedInvocations = estimate.getDoubleMetrics().get("plannedRepeatedInvocations");
+		assertNotNull(repeatedInvocations,
+				"MINUS bound-probe estimates should expose repeated RHS invocations: "
+						+ estimate.getDoubleMetrics());
+		assertEquals(16_000.0d, repeatedInvocations, 0.0d);
+		assertTrue(estimate.getWorkRows() >= 32_000.0d,
+				"MINUS bound-probe cost must include one RHS probe per left row, not one representative lookup: "
+						+ estimate.getDoubleMetrics());
+	}
+
+	@Test
 	void nonExactDirectLookupUsesLookupDomainAverageAboveSingletonProbe() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		TripleStore tripleStore = mock(TripleStore.class);
@@ -2613,7 +2674,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Extension");
 			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Filter");
 			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Group");
-			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "LeftJoin");
+			assertOptionalPlannedOrLegallyRewritten(plan);
 			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Union");
 			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Join");
 			assertOptimizedTupleNodeAnnotated(plan, "StatementPattern");
@@ -3350,6 +3411,16 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-cascades"),
 				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
 		assertNoRecomputedOrExactEstimates(plan);
+	}
+
+	private static void assertOptionalPlannedOrLegallyRewritten(String plan) {
+		if (plan.lines().anyMatch(candidate -> isTupleNodeLine(candidate, "LeftJoin"))) {
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "LeftJoin");
+			return;
+		}
+		assertTrue(plan.contains("optimizer.nullRejectingOptionalRewrite="),
+				"Expected missing LeftJoin to be explained by null-rejecting optional rewrite\n" + plan);
+		assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Join");
 	}
 
 	private static void assertNoLegacyEstimates(String line) {

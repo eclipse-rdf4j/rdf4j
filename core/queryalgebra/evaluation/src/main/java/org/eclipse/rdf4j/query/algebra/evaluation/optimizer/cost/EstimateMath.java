@@ -92,11 +92,9 @@ public final class EstimateMath {
 	}
 
 	public static BagEstimate extendAlias(BagEstimate input, String sourceVariable, String targetVariable) {
-		VariableEstimate source = input.variable(sourceVariable);
-		if (source.boundRows() <= 0.0d && source.distinctRows() <= 0.0d) {
-			return input.withVariable(targetVariable, VariableEstimate.bound(input.rows(), input.rows()));
-		}
-		return input.withVariable(targetVariable, source.withBoundRows(input.rows()));
+		return input.evidenceProfile()
+				.alias(sourceVariable, targetVariable)
+				.toBagEstimate();
 	}
 
 	public static BagEstimate slice(BagEstimate input, long offset, long limit) {

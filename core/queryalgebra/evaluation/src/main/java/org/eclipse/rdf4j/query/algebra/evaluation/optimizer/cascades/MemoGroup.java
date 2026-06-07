@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
 
 /**
  * Memo group: a set of logically equivalent expressions, independent of join-factor masks.
@@ -30,19 +31,25 @@ public final class MemoGroup {
 	private final int id;
 	private LogicalProperties logicalProperties;
 	private BindingShape bindingShape;
+	private LeoMemoFeedback leoFeedback;
 	private final List<MemoExpr> expressions = new ArrayList<>();
 	private final Set<String> expressionKeys = new HashSet<>();
 	private final Map<WinnerKey, WinnerFrontier> winnersByGoal = new HashMap<>();
 	private final Set<WinnerKey> failures = new HashSet<>();
 
 	MemoGroup(int id, LogicalProperties logicalProperties) {
-		this(id, logicalProperties, BindingShape.empty());
+		this(id, logicalProperties, BindingShape.empty(), LeoMemoFeedback.empty());
 	}
 
 	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape) {
+		this(id, logicalProperties, bindingShape, LeoMemoFeedback.empty());
+	}
+
+	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape, LeoMemoFeedback leoFeedback) {
 		this.id = id;
 		this.logicalProperties = logicalProperties == null ? LogicalProperties.EMPTY : logicalProperties;
 		this.bindingShape = bindingShape == null ? BindingShape.empty() : bindingShape;
+		this.leoFeedback = leoFeedback == null ? LeoMemoFeedback.empty() : leoFeedback;
 	}
 
 	public int id() {
@@ -55,6 +62,10 @@ public final class MemoGroup {
 
 	public BindingShape bindingShape() {
 		return bindingShape;
+	}
+
+	public LeoMemoFeedback leoFeedback() {
+		return leoFeedback;
 	}
 
 	void mergeLogicalProperties(LogicalProperties properties) {
@@ -73,6 +84,13 @@ public final class MemoGroup {
 		if (bindingShape.possible().isEmpty() && bindingShape.assured().isEmpty()) {
 			bindingShape = shape;
 		}
+	}
+
+	void mergeLeoFeedback(LeoMemoFeedback feedback) {
+		if (feedback == null || feedback.isEmpty()) {
+			return;
+		}
+		leoFeedback = leoFeedback.merge(feedback);
 	}
 
 	boolean containsExpressionKey(String structuralKey) {

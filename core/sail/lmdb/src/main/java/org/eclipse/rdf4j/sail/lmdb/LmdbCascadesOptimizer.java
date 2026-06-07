@@ -261,8 +261,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private StandardPlanCandidate sketchRefinedStandardPlanCandidate(TupleExpr standardPlan, Dataset dataset,
 			BindingSet bindings) {
-		if (standardPlan == null || statistics == null || Boolean.getBoolean(
-				LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY)) {
+		if (standardPlan == null || statistics == null
+				|| !Boolean.getBoolean(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY)
+				|| Boolean.getBoolean(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY)) {
 			return emptyStandardPlanCandidate();
 		}
 		try {
@@ -1154,6 +1155,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		TupleExpr replacement = standardPlan.tupleExpr();
 		if (standardPlanFullAnnotationsEnabled()) {
 			annotateStandardPlanWinnerTree(replacement, standardPlan);
+		} else {
+			annotateStandardPlanWinnerOwnershipTree(replacement, standardPlan.origin());
 		}
 		replaceRootIfSafe(tupleExpr, replacement);
 		if (standardPlanFullAnnotationsEnabled() && tupleExpr != replacement) {
@@ -1179,6 +1182,32 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				node.visitChildren(this);
 			}
 		});
+	}
+
+	private void annotateStandardPlanWinnerOwnershipTree(TupleExpr tupleExpr, String origin) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					annotateStandardPlanOwnershipNode(tuple, origin);
+				}
+				node.visitChildren(this);
+			}
+		});
+	}
+
+	private void annotateStandardPlanOwnershipNode(TupleExpr tupleExpr, String origin) {
+		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
+		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, STANDARD_PLAN_SOURCE);
+		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, STANDARD_PLAN_USAGE);
+		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
+		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesWinner", STANDARD_PLAN_WINNER);
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanOrigin",
+				origin == null ? "unknown" : origin);
 	}
 
 	private boolean standardPlanFullAnnotationsEnabled() {

@@ -33,6 +33,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -319,6 +321,120 @@ class LmdbCascadesOptimizerTest {
 				"Optional anchored lookup is a costed RDF4J LeftJoin alternative, not a separate executable subtree; "
 						+ "Cascades must still plan and install child winners");
 		assertEquals("lmdb-optional-anchor-decomposed", application.metadata());
+	}
+
+	@Test
+	void materializedMinusAntiSemiIsCostedPhysicalAlternative() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-materialized-minus-anti-semi".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Difference minus = new Difference(pattern(), pattern());
+		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null)).getFirst();
+
+		assertEquals("lmdb-materialized-minus-anti-semi", application.metadata());
+		assertTrue(application.opaque(),
+				"Materialized MINUS owns its full subtree; Cascades must not re-plan RHS with correlated child goals");
+		assertEquals(PhysicalProperties.Materialization.MATERIALIZED,
+				application.deliveredProperties().materialization());
+		assertTrue(application.localCost().workRows() > 0.0d, application.localCost().toString());
+	}
+
+	@Test
+	void materializedMinusAntiSemiDoesNotRequireOuterInputBindings() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-materialized-minus-anti-semi".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Difference minus = new Difference(pattern(), pattern());
+		MemoExpr expression = new MemoExpr(1, 7, "Difference", List.of(), "", minus, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("s")).build());
+
+		RuleApplication application = rule.apply(expression, goal, new RuleContext(null, null, null, null))
+				.getFirst();
+
+		assertTrue(application.deliveredProperties().inputBoundVars().isEmpty(),
+				"A materialized MINUS RHS cache is built once for the plan and must not require outer bindings: "
+						+ application.deliveredProperties());
+	}
+
+	@Test
+	void materializedMinusPlannerAdmissionDoesNotInheritCorrelatedRhsInputBindings() {
+		SubjectLookupStatistics statistics = new SubjectLookupStatistics();
+		Difference minus = new Difference(
+				new StatementPattern(new Var("med"), new Var("code"), new Var("codeValue")),
+				new Filter(new StatementPattern(new Var("med"), new Var("dosage"), new Var("dose")),
+						new Bound(new Var("dose"))));
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(1024);
+
+		new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner(
+				CascadesCostModel.from(statistics), LmdbCascadesRuleProvider.rules(statistics), telemetry)
+						.optimize(minus, OptimizationGoal.root(minus, PhysicalProperties.ANY));
+
+		String trace = String.join("\n", telemetry.trace());
+		assertTrue(trace.contains("rule=lmdb-materialized-minus-anti-semi"), trace);
+		assertFalse(trace.contains("rule=lmdb-materialized-minus-anti-semi reason=missing-physical-property"),
+				trace);
+		assertTrue(trace.contains("costed group=") && trace.contains("rule=lmdb-materialized-minus-anti-semi"),
+				trace);
+	}
+
+	@Test
+	void materializedExistsSemiIsCostedPhysicalAlternative() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-materialized-exists-semi".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Filter existsFilter = new Filter(
+				new StatementPattern(new Var("person"), new Var("type"), new Var("personType")),
+				new Exists(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org"))));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(), "", existsFilter, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null)).getFirst();
+
+		assertEquals("lmdb-materialized-exists-semi", application.metadata());
+		assertTrue(application.opaque(),
+				"Materialized EXISTS owns the filter arg and RHS cache; Cascades should cost it as one physical choice");
+		assertEquals(PhysicalProperties.Materialization.MATERIALIZED,
+				application.deliveredProperties().materialization());
+		assertEquals("materializedExists", application.deliveredProperties().accessPath());
+		assertTrue(application.localCost().workRows() > 0.0d, application.localCost().toString());
+	}
+
+	@Test
+	void materializedExistsSemiRejectsHiddenOuterFilterDependency() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-materialized-exists-semi".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Filter subquery = new Filter(new StatementPattern(new Var("org"), new Var("label"), new Var("label")),
+				new Compare(Var.of("outer"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("active")),
+						Compare.CompareOp.EQ));
+		Filter existsFilter = new Filter(
+				new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new Exists(subquery));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(), "", existsFilter, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		assertFalse(rule.matches(expression, OptimizationGoal.root(),
+				new Memo(CascadesCostModel.from(new RecordingStatistics()))));
 	}
 
 	@Test
@@ -1012,6 +1128,24 @@ class LmdbCascadesOptimizerTest {
 			return Optional.of(new FactorCostEstimate(50.0d, 10.0d,
 					Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"), robustMetrics(), true, true,
 					0, 0, 12.0d));
+		}
+	}
+
+	private static final class SubjectLookupStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+		private static final int SUBJECT_COMPONENT_MASK = 1;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return estimateFactorCost(factor,
+					JoinFactorCostModel.CostContext.of(currentlyBoundVars, Double.NaN, Double.NaN, false));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				JoinFactorCostModel.CostContext context) {
+			return Optional.of(new FactorCostEstimate(20.0d, 5.0d,
+					Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
+					Map.of(), true, true, SUBJECT_COMPONENT_MASK, 0, 5.0d));
 		}
 	}
 

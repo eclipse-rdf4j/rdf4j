@@ -64,6 +64,40 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void firstOperatorFeedbackSampleUsesConservativeConfidence(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join observed = join("s", "x", "o");
+		complete(observed, 400, 100, 120);
+		observed.setJoinLeftBindingsConsumedActual(100);
+		observed.setJoinRightBindingsConsumedActual(400);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("s", "x", "o"), 100, 400, 100,
+				120);
+		assertNotNull(estimate);
+		assertTrue(estimate.confidence() <= 0.35d,
+				"A single feedback sample should not be trusted like a stable surface");
+		assertTrue(estimate.rowQErrorMax() >= 4.0d);
+	}
+
+	@Test
+	void alphaEquivalentOperatorShapeReusesFeedbackAcrossVariableNames(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join observed = join("a", "b", "c");
+		complete(observed, 100, 10, 20);
+		observed.setJoinLeftBindingsConsumedActual(50);
+		observed.setJoinRightBindingsConsumedActual(100);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("x", "y", "z"), 200, 100, 10,
+				20);
+		assertNotNull(estimate, "Alpha-equivalent operator shape should reuse learned feedback");
+		assertTrue(estimate.rows() > 100.0d, "Join feedback should scale by learned output-per-left");
+	}
+
+	@Test
 	void equivalentJoinSurfaceReusesFeedbackAcrossJoinTreeOrientation(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Join observed = leftDeepThreeWayPath();
@@ -100,7 +134,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void boundVariableContextChangesKey(@TempDir Path tempDir) throws Exception {
+	void disconnectedJoinContextChangesKey(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Join observed = join("s", "x", "o");
 		complete(observed, 100, 10, 20);
@@ -109,8 +143,8 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNull(stats.estimate(join("s", "y", "o"), 200, 100, 10, 20),
-				"Different shared/bound context must not reuse operator feedback");
+		assertNull(stats.estimate(new Join(sp("s", P1, "x"), sp("y", P2, "o")), 200, 100, 10, 20),
+				"Disconnected join context must not reuse connected-join operator feedback");
 	}
 
 	@Test

@@ -177,7 +177,7 @@ public final class CascadesPlanProvenanceAnnotator {
 
 	private static void annotateCoveredNode(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
 		String currentUsage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
-		if (!missingOrFallbackUsage(currentUsage)) {
+		if (!missingOrFallbackUsage(currentUsage) && !needsCoveredWinnerCompletion(node)) {
 			return;
 		}
 		EstimateSnapshot estimate = provenance.estimate();
@@ -188,7 +188,7 @@ public final class CascadesPlanProvenanceAnnotator {
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
 
 		setStringIfMissing(node, TelemetryMetricNames.PLANNER_ID, plannerId);
-		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.source());
+		setEstimateSourceIfMissingOrGeneric(node, estimate.source());
 		setStringIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, COVERED_BY_PARENT_WINNER);
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID, decisionId + ":covered");
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
@@ -209,6 +209,14 @@ public final class CascadesPlanProvenanceAnnotator {
 		setDoubleIfMissing(node, PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax());
 		setDoubleIfMissing(node, PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax());
 		setDoubleIfMissing(node, "plannedCascadesEvidenceCount", cost.evidenceCount());
+	}
+
+	private static boolean needsCoveredWinnerCompletion(QueryModelNode node) {
+		return isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID))
+				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID))
+				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE))
+				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE))
+				|| fallbackCostRequired(node, false);
 	}
 
 	private static void annotateFallbackNode(TupleExpr node, String plannerId, String source, String usage,
@@ -383,6 +391,13 @@ public final class CascadesPlanProvenanceAnnotator {
 				|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(current)
 				|| FALLBACK_NO_WINNER.equals(current)) {
 			node.setStringMetricPlanned(metricName, value);
+		}
+	}
+
+	private static void setEstimateSourceIfMissingOrGeneric(QueryModelNode node, String value) {
+		String current = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (!isSpecificSource(current)) {
+			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, value);
 		}
 	}
 

@@ -15,6 +15,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -70,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** Registers LMDB physical alternatives for the generic Cascades engine. */
@@ -136,6 +139,8 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbRowPreservingSubplanAccessPathRule(statistics))
 				.add(new LmdbDistinctCursorSkipRule(statistics))
 				.add(new LmdbInnerJoinBoundLookupRule(statistics))
+				.add(new LmdbMaterializedMinusAntiSemiRule(statistics))
+				.add(new LmdbMaterializedExistsSemiRule(statistics))
 				.add(new LmdbCorrelatedMinusAntiExistsRule(statistics))
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
@@ -3384,6 +3389,266 @@ final class LmdbCascadesRuleProvider {
 									"lmdb-correlated-anti-exists-input"),
 							estimate.getWorkRows(), "lmdb-correlated-anti-exists-input", estimate.getDoubleMetrics()))
 					.orElseGet(() -> StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-anti-exists-input"));
+		}
+	}
+
+	private static final class LmdbMaterializedMinusAntiSemiRule extends LmdbRule {
+		LmdbMaterializedMinusAntiSemiRule(EvaluationStatistics statistics) {
+			super("lmdb-materialized-minus-anti-semi", RuleKind.IMPLEMENTATION, 92, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& expression.tupleExpr()instanceof Difference difference
+					&& difference.getLeftArg() != null
+					&& difference.getRightArg() != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Difference difference = (Difference) expression.tupleExpr();
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedMinus(difference, goal);
+			if (estimate.isEmpty()) {
+				return List.of();
+			}
+			CostVector cost = cost(estimate.get());
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(difference.getBindingNames())
+					.inputBoundVars(Set.of())
+					.accessPath("materializedMinus")
+					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("materializedMinus");
+			facts.add("rhsCachedWithinEvaluation");
+			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"MINUS is implemented as the existing RDF4J materialized RHS anti-semi iterator");
+			return List.of(RuleApplication.opaquePhysical(expression.groupId(), difference.clone(), delivered, cost,
+					proof, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost)));
+		}
+
+		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateMaterializedMinus(Difference difference,
+				OptimizationGoal goal) {
+			Set<String> boundVars = goalBoundVars(goal);
+			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = estimate(difference.getLeftArg(),
+					boundVars, false);
+			Optional<JoinFactorCostModel.FactorCostEstimate> rightEstimate = estimate(difference.getRightArg(),
+					boundVars, false);
+			if (leftEstimate.isEmpty() || rightEstimate.isEmpty()) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.FactorCostEstimate left = leftEstimate.get();
+			JoinFactorCostModel.FactorCostEstimate right = rightEstimate.get();
+			double leftRows = left.getOutputRows();
+			double rightRows = right.getOutputRows();
+			double leftWorkRows = left.getWorkRows();
+			double rightWorkRows = right.getWorkRows();
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(leftRows)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(rightRows)) {
+				return Optional.empty();
+			}
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(leftWorkRows)) {
+				leftWorkRows = leftRows;
+			}
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(rightWorkRows)) {
+				rightWorkRows = rightRows;
+			}
+			double outputRows = leftRows;
+			double estimatedOutputRows = statistics.getCardinality(difference);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(estimatedOutputRows)) {
+				outputRows = Math.min(leftRows, estimatedOutputRows);
+			}
+			double rhsBuildRows = rightRows;
+			double leftProbeRows = leftRows;
+			double workRows = leftWorkRows + rightWorkRows + rhsBuildRows + leftProbeRows;
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+				return Optional.empty();
+			}
+			workRows = Math.max(workRows, outputRows);
+
+			Map<String, String> stringMetrics = new HashMap<>(right.getStringMetrics());
+			String leftSource = left.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (leftSource != null) {
+				stringMetrics.put("plannedMinusLeftBaseEstimateSource", leftSource);
+			}
+			String rightSource = right.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (rightSource != null) {
+				stringMetrics.put("plannedMinusRightBaseEstimateSource", rightSource);
+			}
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+					"lmdb-materialized-minus-anti-semi");
+			stringMetrics.put("plannedMinusExecution", "materialized-rhs");
+
+			Map<String, Double> doubleMetrics = new HashMap<>(right.getDoubleMetrics());
+			doubleMetrics.put("plannedMinusLeftRows", leftRows);
+			doubleMetrics.put("plannedMinusLeftWorkRows", leftWorkRows);
+			doubleMetrics.put("plannedMinusRightRows", rightRows);
+			doubleMetrics.put("plannedMinusRightWorkRows", rightWorkRows);
+			doubleMetrics.put("plannedMinusRhsBuildRows", rhsBuildRows);
+			doubleMetrics.put("plannedMinusProbeRows", leftProbeRows);
+			doubleMetrics.put("plannedMinusOutputRows", outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, stringMetrics,
+					doubleMetrics));
+		}
+	}
+
+	private static final class LmdbMaterializedExistsSemiRule extends LmdbRule {
+		LmdbMaterializedExistsSemiRule(EvaluationStatistics statistics) {
+			super("lmdb-materialized-exists-semi", RuleKind.IMPLEMENTATION, 93, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& expression.tupleExpr()instanceof Filter filter
+					&& materializedExistsSemiJoinSafe(filter);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedExists(filter, goal);
+			if (estimate.isEmpty()) {
+				return List.of();
+			}
+			CostVector cost = cost(estimate.get());
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(filter.getBindingNames())
+					.inputBoundVars(inputBoundVarsForExpression(filter, goal))
+					.accessPath("materializedExists")
+					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("materializedExists");
+			facts.add("rhsCachedWithinEvaluation");
+			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"Safe FILTER EXISTS is implemented as a materialized RHS semi-join");
+			return List.of(RuleApplication.opaquePhysical(expression.groupId(), filter.clone(), delivered, cost,
+					proof, "lmdb-materialized-exists-semi", snapshot(estimate.get(), cost)));
+		}
+
+		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateMaterializedExists(Filter filter,
+				OptimizationGoal goal) {
+			Exists exists = (Exists) filter.getCondition();
+			Set<String> boundVars = goalBoundVars(goal);
+			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = estimate(filter.getArg(), boundVars, false);
+			Optional<JoinFactorCostModel.FactorCostEstimate> rightEstimate = estimate(exists.getSubQuery(), boundVars,
+					false);
+			if (leftEstimate.isEmpty() || rightEstimate.isEmpty()) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.FactorCostEstimate left = leftEstimate.get();
+			JoinFactorCostModel.FactorCostEstimate right = rightEstimate.get();
+			double leftRows = left.getOutputRows();
+			double rightRows = right.getOutputRows();
+			double leftWorkRows = finiteOrRows(left.getWorkRows(), leftRows);
+			double rightWorkRows = finiteOrRows(right.getWorkRows(), rightRows);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(leftRows)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(rightRows)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(leftWorkRows)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(rightWorkRows)) {
+				return Optional.empty();
+			}
+			double outputRows = leftRows;
+			double estimatedOutputRows = statistics.getCardinality(filter);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(estimatedOutputRows)) {
+				outputRows = Math.min(leftRows, estimatedOutputRows);
+			}
+			double rhsBuildRows = rightRows;
+			double leftProbeRows = leftRows;
+			double workRows = leftWorkRows + rightWorkRows + rhsBuildRows + leftProbeRows;
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+				return Optional.empty();
+			}
+			workRows = Math.max(workRows, outputRows);
+
+			Map<String, String> stringMetrics = new HashMap<>(right.getStringMetrics());
+			String leftSource = left.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (leftSource != null) {
+				stringMetrics.put("plannedExistsLeftBaseEstimateSource", leftSource);
+			}
+			String rightSource = right.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (rightSource != null) {
+				stringMetrics.put("plannedExistsRightBaseEstimateSource", rightSource);
+			}
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-materialized-exists-semi");
+			stringMetrics.put("plannedExistsExecution", "materialized-rhs");
+
+			Map<String, Double> doubleMetrics = new HashMap<>(right.getDoubleMetrics());
+			doubleMetrics.put("plannedExistsLeftRows", leftRows);
+			doubleMetrics.put("plannedExistsLeftWorkRows", leftWorkRows);
+			doubleMetrics.put("plannedExistsRightRows", rightRows);
+			doubleMetrics.put("plannedExistsRightWorkRows", rightWorkRows);
+			doubleMetrics.put("plannedExistsRhsBuildRows", rhsBuildRows);
+			doubleMetrics.put("plannedExistsProbeRows", leftProbeRows);
+			doubleMetrics.put("plannedExistsOutputRows", outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, stringMetrics,
+					doubleMetrics));
+		}
+
+		private double finiteOrRows(double value, double rows) {
+			return LmdbJoinPlanSupport.isFiniteNonNegative(value) ? value : rows;
+		}
+
+		private boolean materializedExistsSemiJoinSafe(Filter filter) {
+			if (filter.isVariableScopeChange() || !(filter.getCondition()instanceof Exists exists)) {
+				return false;
+			}
+			TupleExpr subQuery = exists.getSubQuery();
+			return subQuery != null
+					&& !containsVariableScopeChange(subQuery)
+					&& !containsSubQueryValueOperator(subQuery)
+					&& subqueryVarReferencesAreOutputs(subQuery);
+		}
+
+		private boolean subqueryVarReferencesAreOutputs(TupleExpr subQuery) {
+			Set<String> referencedNames = VarNameCollector.process(subQuery);
+			return referencedNames.isEmpty() || subQuery.getBindingNames().containsAll(referencedNames);
+		}
+
+		private boolean containsVariableScopeChange(TupleExpr subQuery) {
+			Deque<TupleExpr> queue = new ArrayDeque<>();
+			queue.add(subQuery);
+			while (!queue.isEmpty()) {
+				TupleExpr current = queue.removeFirst();
+				if (TupleExprs.isVariableScopeChange(current)) {
+					return true;
+				}
+				queue.addAll(TupleExprs.getChildren(current));
+			}
+			return false;
+		}
+
+		private boolean containsSubQueryValueOperator(TupleExpr subQuery) {
+			final boolean[] contains = { false };
+			subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+					contains[0] = true;
+				}
+			});
+			return contains[0];
 		}
 	}
 

@@ -1962,9 +1962,6 @@ class LmdbEvaluationStatistics
 		if (sharedBindings.isEmpty()) {
 			return Optional.empty();
 		}
-		if (!plannerBindingNames(context.getCurrentlyBoundVars()).containsAll(sharedBindings)) {
-			return Optional.empty();
-		}
 
 		Optional<FactorCostEstimate> leftEstimate = estimateFactorCost(leftArg, context);
 		if (leftEstimate.isEmpty()) {
@@ -2447,6 +2444,7 @@ class LmdbEvaluationStatistics
 	private boolean isBoundSingletonDirectLookup(FactorCostEstimate estimate, int derivedJoinBoundComponentMask,
 			double perInvocationRows, int domainLookupComponentMask) {
 		return estimate.isDirectLookup()
+				&& estimate.hasExactOutputRows()
 				&& derivedJoinBoundComponentMask != 0
 				&& domainLookupComponentMask != 0
 				&& isFiniteNonNegative(perInvocationRows)
@@ -2914,7 +2912,9 @@ class LmdbEvaluationStatistics
 		if (tier.isDecisionDriven()) {
 			return false;
 		}
-		return estimateFilterPass(filter).getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED;
+		FilterPassEstimate passEstimate = estimateFilterPass(filter);
+		return passEstimate != null
+				&& passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED;
 	}
 
 	private Optional<FactorCostEstimate> estimateRowPreservingSubplanFactorCost(TupleExpr factor,
@@ -3517,12 +3517,14 @@ class LmdbEvaluationStatistics
 			}
 			return Optional.empty();
 		}
-		if (completeBaseBoundLookupAlreadyCoversContextLookup(factor, context, baseEstimate)) {
+		boolean baseLookupCoversContext = completeBaseBoundLookupAlreadyCoversContextLookup(factor, context,
+				baseEstimate);
+		if (baseEstimate.hasExactOutputRows() && baseLookupCoversContext) {
 			traceEstimate("bound-product-reject", factor, context, "reason=complete-base-bound-lookup");
 			return Optional.empty();
 		}
 		BoundJoinProductEstimate productEstimate = estimateBoundJoinProduct(context.getPrefixFactors(), factor,
-				context.getOuterPrefixRows());
+				context.getOuterPrefixRows(), !baseLookupCoversContext);
 		if (productEstimate == null || !isPositiveFinite(productEstimate.productRows())
 				|| !isPositiveFinite(productEstimate.prefixRows())) {
 			if (estimateTraceEnabled()) {
@@ -5522,6 +5524,11 @@ class LmdbEvaluationStatistics
 
 	BoundJoinProductEstimate estimateBoundJoinProduct(List<TupleExpr> leftFactors, TupleExpr rightArg,
 			double knownLeftRows) {
+		return estimateBoundJoinProduct(leftFactors, rightArg, knownLeftRows, true);
+	}
+
+	BoundJoinProductEstimate estimateBoundJoinProduct(List<TupleExpr> leftFactors, TupleExpr rightArg,
+			double knownLeftRows, boolean allowExactSurfaces) {
 		if (sketchBasedJoinEstimator == null || leftFactors == null || leftFactors.isEmpty() || rightArg == null) {
 			return null;
 		}
@@ -5532,7 +5539,8 @@ class LmdbEvaluationStatistics
 		}
 		return duplicateCorrectedBoundJoinRows(normalizedLeftFactors.factors(), rightFactors.getFirst(),
 				alignedKnownPrefixRows("bound-product-prefix-lossy", rightFactors.getFirst(), knownLeftRows,
-						normalizedLeftFactors));
+						normalizedLeftFactors),
+				allowExactSurfaces);
 	}
 
 	OptionalBridgeProductEstimate estimateOptionalBridgeProduct(TupleExpr leftArg, TupleExpr rightArg) {
@@ -6073,6 +6081,11 @@ class LmdbEvaluationStatistics
 
 	private BoundJoinProductEstimate duplicateCorrectedBoundJoinRows(List<TupleExpr> leftFactors,
 			TupleExpr rightFactor, double knownLeftRows) {
+		return duplicateCorrectedBoundJoinRows(leftFactors, rightFactor, knownLeftRows, true);
+	}
+
+	private BoundJoinProductEstimate duplicateCorrectedBoundJoinRows(List<TupleExpr> leftFactors,
+			TupleExpr rightFactor, double knownLeftRows, boolean allowExactSurfaces) {
 		double prefixRows = duplicateCorrectionPrefixRows(leftFactors, knownLeftRows, rightFactor);
 		if (!isPositiveFinite(prefixRows)) {
 			return null;
@@ -6087,7 +6100,8 @@ class LmdbEvaluationStatistics
 		boolean rightIntroducesNoNewBindings = !introducesNewBinding(rightFactor, allLeftBindingNames);
 		BoundJoinProductEstimate fullPrefixEstimate = null;
 		for (String sharedBindingName : leftBindingNames) {
-			boolean forceExactPrefixRightSurface = shouldForceExactBoundJoinProductSurface(prefixRows);
+			boolean forceExactPrefixRightSurface = allowExactSurfaces
+					&& shouldForceExactBoundJoinProductSurface(prefixRows);
 			FiniteBranchSurfaceEstimate prefixSurface = duplicateCorrectionPrefixSurfaceEstimate(leftFactors,
 					sharedBindingName, forceExactPrefixRightSurface);
 			FiniteBranchSurfaceEstimate prefixRightSurface = finiteBranchSurfaceEstimate(leftFactors, rightFactor,
@@ -6110,7 +6124,7 @@ class LmdbEvaluationStatistics
 					rightIntroducesNoNewBindings);
 		}
 		BoundJoinProductEstimate bridgeEstimate = bridgeFactorBoundJoinRows(leftFactors, rightFactor, prefixRows,
-				leftBindingNames);
+				leftBindingNames, allowExactSurfaces);
 		BoundJoinProductEstimate bestEstimate = selectBoundJoinEstimate(fullPrefixEstimate, bridgeEstimate,
 				rightIntroducesNoNewBindings, rightFactor);
 		if (bestEstimate != null && rightIntroducesNoNewBindings && bestEstimate.productRows() > prefixRows) {
@@ -6198,6 +6212,11 @@ class LmdbEvaluationStatistics
 
 	private BoundJoinProductEstimate bridgeFactorBoundJoinRows(List<TupleExpr> leftFactors, TupleExpr rightFactor,
 			double prefixRows, Set<String> sharedBindingNames) {
+		return bridgeFactorBoundJoinRows(leftFactors, rightFactor, prefixRows, sharedBindingNames, true);
+	}
+
+	private BoundJoinProductEstimate bridgeFactorBoundJoinRows(List<TupleExpr> leftFactors, TupleExpr rightFactor,
+			double prefixRows, Set<String> sharedBindingNames, boolean allowExactSurfaces) {
 		BoundJoinProductEstimate bestEstimate = null;
 		for (String sharedBindingName : sharedBindingNames) {
 			for (TupleExpr leftFactor : leftFactors) {
@@ -6205,7 +6224,8 @@ class LmdbEvaluationStatistics
 					continue;
 				}
 				FiniteBranchSurfaceEstimate bridgeSurface = duplicateCorrectionPrefixSurfaceEstimate(
-						List.of(leftFactor), sharedBindingName, shouldForceExactBoundJoinProductSurface(prefixRows));
+						List.of(leftFactor), sharedBindingName,
+						allowExactSurfaces && shouldForceExactBoundJoinProductSurface(prefixRows));
 				double bridgeSurfaceRows = bridgeSurface.rows();
 				double bridgeDenominatorRows = bridgeSurfaceRows;
 				if (!isPositiveFinite(bridgeDenominatorRows)) {

@@ -284,6 +284,62 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void innerJoinUsesMixedCurrentAndSupportingSketchEvidence() {
+		DistributionSketch leftRelationSketch = new RowMassSketch(30.0d, 100.0d, OptionalDouble.of(13.0d),
+				OptionalDouble.empty());
+		DistributionSketch rightRelationSketch = new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		DistributionSketch currentRelationSketch = new RowMassSketch(12.0d, 40.0d, OptionalDouble.of(13.0d),
+				OptionalDouble.empty());
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"), leftRelationSketch);
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"), rightRelationSketch);
+		BagEstimate current = BagEstimate.exact(40.0d, "current")
+				.withVariable("a", VariableEstimate.bound(40.0d, 12.0d))
+				.withVariable("b", VariableEstimate.bound(40.0d, 12.0d))
+				.withSketchRelation(Set.of("a", "b"), currentRelationSketch);
+
+		BagEstimate prefix = EstimateMath.innerJoin(left, right, Set.of("b"));
+		BagEstimate joined = EstimateMath.innerJoin(prefix, current, Set.of("a", "b"));
+
+		assertEquals(13.0d, joined.rows(), 0.0d,
+				"A later join should consume retained supporting tuple sketches together with fresh current sketches");
+	}
+
+	@Test
+	void innerJoinPromotesMixedSketchJoinEvidenceToCurrentRelationSketch() {
+		DistributionSketch leftRelationSketch = new RowMassSketch(30.0d, 100.0d, OptionalDouble.of(13.0d),
+				OptionalDouble.empty());
+		DistributionSketch rightRelationSketch = new RowMassSketch(25.0d, 80.0d, OptionalDouble.empty(),
+				OptionalDouble.empty());
+		DistributionSketch currentRelationSketch = new RowMassSketch(12.0d, 40.0d, OptionalDouble.of(13.0d),
+				OptionalDouble.empty());
+		BagEstimate left = BagEstimate.exact(100.0d, "left")
+				.withVariable("a", VariableEstimate.bound(100.0d, 30.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 30.0d))
+				.withSketchRelation(Set.of("a", "b"), leftRelationSketch);
+		BagEstimate right = BagEstimate.exact(80.0d, "right")
+				.withVariable("b", VariableEstimate.bound(80.0d, 25.0d))
+				.withVariable("c", VariableEstimate.bound(80.0d, 25.0d))
+				.withSketchRelation(Set.of("b", "c"), rightRelationSketch);
+		BagEstimate current = BagEstimate.exact(40.0d, "current")
+				.withVariable("a", VariableEstimate.bound(40.0d, 12.0d))
+				.withVariable("b", VariableEstimate.bound(40.0d, 12.0d))
+				.withSketchRelation(Set.of("a", "b"), currentRelationSketch);
+
+		BagEstimate prefix = EstimateMath.innerJoin(left, right, Set.of("b"));
+		BagEstimate joined = EstimateMath.innerJoin(prefix, current, Set.of("a", "b"));
+
+		assertTrue(joined.sketchRelation(Set.of("a", "b")).isPresent(),
+				"A join costed from mixed sketch evidence should deliver a current composed tuple sketch to parents");
+	}
+
+	@Test
 	void rowChangingSliceRetainsTupleSketchOnlyAsSupportingEvidence() throws Exception {
 		BagEstimate input = BagEstimate.exact(100.0d, "input")
 				.withVariable("a", VariableEstimate.bound(100.0d, 40.0d))
@@ -606,7 +662,7 @@ class BagEstimateMathTest {
 		FiniteRelationEstimate relation = projected.finiteRelation(Set.of("enc", "alias"))
 				.orElseThrow(() -> new AssertionError("Projection alias should rename exact tuple evidence"));
 		assertEquals(2.0d, relation.distinctRows(Set.of("enc", "alias")), 0.0d);
-		assertEquals(2.0d, relation.frequencyBy(Set.of("enc", "alias")).get(row("e1", "A")), 0.0d);
+		assertEquals(2.0d, relation.frequencyBy(List.of("enc", "alias")).get(row("e1", "A")), 0.0d);
 		assertSame(tupleSketch, projected.sketchRelation(Set.of("enc", "alias"))
 				.orElseThrow(() -> new AssertionError("Projection alias should rename tuple sketch evidence")));
 	}

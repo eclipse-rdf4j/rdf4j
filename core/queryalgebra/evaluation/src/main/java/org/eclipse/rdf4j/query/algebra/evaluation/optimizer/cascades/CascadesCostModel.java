@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -79,6 +80,10 @@ public interface CascadesCostModel {
 	LogicalProperties logicalProperties(TupleExpr tupleExpr);
 
 	String logicalFingerprint(TupleExpr tupleExpr);
+
+	default LeoSurfaceProvider leoSurfaceProvider() {
+		return LeoSurfaceProvider.empty();
+	}
 
 	CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners);
 

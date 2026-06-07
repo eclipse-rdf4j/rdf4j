@@ -47,6 +47,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -58,7 +60,7 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_PROPERTY_PATH = "learned_property_path";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 6;
+	private static final int PERSIST_VERSION = 8;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -513,36 +515,28 @@ final class LmdbOperatorFeedbackStats {
 		if (node == null || !isSupportedOperator(node)) {
 			return null;
 		}
-		String operatorType = node.getClass().getSimpleName();
-		String fingerprint = tupleExprKey(node);
-		if (fingerprint == null) {
-			return null;
-		}
-		if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
-			return new OperatorKey(operatorType, fingerprint, pathEndpointMode(node, executionMode), "",
-					sortedBindings(plannerBindingNames(node.getBindingNames())));
-		}
+		String effectiveExecutionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+				? pathEndpointMode(node, executionMode)
+				: executionMode;
+		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode);
+		return new OperatorKey("leo:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
+				"mode=" + leoKey.executionMode(), displayBindings(node));
+	}
+
+	private String displayBindings(TupleExpr node) {
 		if (node instanceof BinaryTupleOperator binary) {
 			Set<String> leftBindings = plannerBindingNames(binary.getLeftArg().getBindingNames());
 			Set<String> rightBindings = plannerBindingNames(binary.getRightArg().getBindingNames());
 			Set<String> sharedBindings = new HashSet<>(leftBindings);
 			sharedBindings.retainAll(rightBindings);
-			if (node instanceof Join) {
-				Set<String> allBindings = plannerBindingNames(node.getBindingNames());
-				return new OperatorKey(operatorType, fingerprint, sortedBindings(allBindings), "", "");
-			}
-			if (node instanceof Union) {
-				List<String> branchBindings = new ArrayList<>(2);
-				branchBindings.add(sortedBindings(leftBindings));
-				branchBindings.add(sortedBindings(rightBindings));
-				Collections.sort(branchBindings);
-				return new OperatorKey(operatorType, fingerprint, String.join(";", branchBindings), "",
-						sortedBindings(plannerBindingNames(node.getBindingNames())));
-			}
-			return new OperatorKey(operatorType, fingerprint, sortedBindings(leftBindings),
-					sortedBindings(rightBindings), sortedBindings(sharedBindings));
+			return "leftBindings=" + sortedBindings(leftBindings)
+					+ ", rightBindings=" + sortedBindings(rightBindings)
+					+ ", sharedBindings=" + sortedBindings(sharedBindings);
 		}
-		return new OperatorKey(operatorType, fingerprint, "", "", "");
+		if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
+			return "outputBindings=" + sortedBindings(plannerBindingNames(node.getBindingNames()));
+		}
+		return "";
 	}
 
 	private String pathEndpointMode(TupleExpr node, String executionMode) {
@@ -859,7 +853,7 @@ final class LmdbOperatorFeedbackStats {
 		if (sampleCount <= 0L) {
 			return 0.0d;
 		}
-		return Math.min(0.95d, 0.75d + Math.min(0.20d, (sampleCount - 1L) * 0.05d));
+		return Math.min(0.90d, 0.35d + Math.max(0L, sampleCount - 1L) * 0.075d);
 	}
 
 	private static void writeString(DataOutputStream out, String value) throws IOException {
@@ -889,7 +883,7 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private record OperatorKey(String operatorType, String fingerprint, String leftBindings, String rightBindings,
-			String sharedBindings) {
+			String sharedBindings, String displayBindings) {
 
 		void writeTo(DataOutputStream out) throws IOException {
 			writeString(out, operatorType);
@@ -897,10 +891,40 @@ final class LmdbOperatorFeedbackStats {
 			writeString(out, leftBindings);
 			writeString(out, rightBindings);
 			writeString(out, sharedBindings);
+			writeString(out, displayBindings);
 		}
 
 		static OperatorKey readFrom(DataInputStream in) throws IOException {
-			return new OperatorKey(readString(in), readString(in), readString(in), readString(in), readString(in));
+			return new OperatorKey(readString(in), readString(in), readString(in), readString(in), readString(in),
+					readString(in));
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof OperatorKey key
+					&& Objects.equals(operatorType, key.operatorType)
+					&& Objects.equals(fingerprint, key.fingerprint)
+					&& Objects.equals(leftBindings, key.leftBindings)
+					&& Objects.equals(rightBindings, key.rightBindings)
+					&& Objects.equals(sharedBindings, key.sharedBindings);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(operatorType, fingerprint, leftBindings, rightBindings, sharedBindings);
+		}
+
+		@Override
+		public String toString() {
+			String suffix = displayBindings == null || displayBindings.isBlank() ? ""
+					: ", " + displayBindings;
+			return "OperatorKey[operatorType=" + operatorType
+					+ ", fingerprint=" + fingerprint
+					+ ", leftBindings=" + leftBindings
+					+ ", rightBindings=" + rightBindings
+					+ ", sharedBindings=" + sharedBindings
+					+ suffix
+					+ "]";
 		}
 	}
 
@@ -923,6 +947,7 @@ final class LmdbOperatorFeedbackStats {
 		private long workQErrorSampleCount;
 		private double workQErrorSum;
 		private double workQErrorMax;
+		private LeoConfidenceModel confidenceModel = LeoConfidenceModel.empty();
 
 		void add(OperatorObservation observation) {
 			sampleCount++;
@@ -939,6 +964,8 @@ final class LmdbOperatorFeedbackStats {
 			rightBranchRowsSum += nonNegative(observation.rightBranchRows());
 			recordRowQError(observation);
 			recordWorkQError(observation);
+			confidenceModel = confidenceModel.observe(observation.plannedRows(), observation.actualRows(),
+					observation.plannedWorkRows(), observation.actualWorkRows(), sampleCount);
 		}
 
 		private void recordRowQError(OperatorObservation observation) {
@@ -982,9 +1009,12 @@ final class LmdbOperatorFeedbackStats {
 				return null;
 			}
 
-			double confidence = confidence(sampleCount);
-			double rows = blend(baseRows, learnedRows, confidence);
-			double workRows = blend(baseWorkRows, learnedWorkRows, confidence);
+			double confidence = confidenceModel.sampleCount() > 0L ? confidenceModel.confidence()
+					: confidence(sampleCount);
+			double correctionConfidence = correctionBlendConfidence(confidence, sampleCount, rowQErrorMax,
+					workQErrorMax);
+			double rows = blend(baseRows, learnedRows, correctionConfidence);
+			double workRows = blend(baseWorkRows, learnedWorkRows, correctionConfidence);
 			if (!isFiniteNonNegative(workRows)) {
 				workRows = Math.max(rows, finiteOr(baseWorkRows, rows));
 			}
@@ -1002,6 +1032,17 @@ final class LmdbOperatorFeedbackStats {
 			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence,
 					feedbackKey, rowQErrorMean, finiteQErrorMax(rowQErrorMax), workQErrorMean,
 					finiteQErrorMax(workQErrorMax), uncertaintyRows);
+		}
+
+		private double correctionBlendConfidence(double confidence, long sampleCount, double rowQErrorMax,
+				double workQErrorMax) {
+			double boundedConfidence = Math.max(0.0d, Math.min(0.95d, confidence));
+			double qError = Math.max(finiteQErrorMax(rowQErrorMax), finiteQErrorMax(workQErrorMax));
+			if (qError <= 1.0d || sampleCount <= 0L) {
+				return boundedConfidence;
+			}
+			double qErrorBoost = Math.min(0.40d, Math.log10(qError) * 0.15d);
+			return Math.min(0.80d, Math.max(boundedConfidence, confidence(sampleCount) + qErrorBoost));
 		}
 
 		private double qErrorMean(double qErrorSum, long qErrorSampleCount) {
