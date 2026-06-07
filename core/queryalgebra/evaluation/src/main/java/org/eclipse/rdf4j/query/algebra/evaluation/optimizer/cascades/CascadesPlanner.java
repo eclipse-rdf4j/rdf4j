@@ -907,7 +907,7 @@ public final class CascadesPlanner {
 			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, difference.getLeftArg(),
 					Set.of(), tupleExpr, 0),
 					inputGoal(memo, expression.inputGroupIds().get(1), goal, difference.getRightArg(),
-							CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg()), tupleExpr, 1));
+							differenceRightContextualBoundVars(expression, difference), tupleExpr, 1));
 		}
 		if (inputCount == 2 && tupleExpr instanceof Union union) {
 			return List.of(inputGoal(memo, expression.inputGroupIds().get(0), goal, union.getLeftArg(),
@@ -920,6 +920,17 @@ public final class CascadesPlanner {
 			goals.add(goal.withRequiredProperties(PhysicalProperties.ANY).withoutRowGoal());
 		}
 		return goals;
+	}
+
+	private Set<String> differenceRightContextualBoundVars(MemoExpr expression, Difference difference) {
+		if (expression != null
+				&& expression.physical()
+				&& expression.deliveredProperties() != null
+				&& expression.deliveredProperties()
+						.materialization() == PhysicalProperties.Materialization.MATERIALIZED) {
+			return Set.of();
+		}
+		return CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg());
 	}
 
 	private OptimizationGoal inputGoal(Memo memo, int inputGroupId, OptimizationGoal goal, TupleExpr input,

@@ -31,7 +31,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -82,6 +84,10 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String COUNT_BINDING_NAME = "count";
 	private static final int QUERY_TIMEOUT_SECONDS = 60;
+	private static final String QUERY_VARIANT_FILTER = "filter";
+	private static final String QUERY_VARIANT_VALUES_TOP_TYPE_CODE = "values-top-type-code";
+	private static final String QUERY_VARIANT_TYPE_VALUES_CODE = "type-values-code";
+	private static final String QUERY_VARIANT_VALUES_CODE_TYPE = "values-code-type";
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
@@ -101,17 +107,17 @@ public class ThemeQueryPlanRunBenchmark {
 	public static class BaseState {
 
 		@Param({
-				"0",
-				"1",
-				"2",
-				"3",
-				"4",
-				"5",
-				"6",
+//				"0",
+//				"1",
+//				"2",
+//				"3",
+//				"4",
+//				"5",
+//				"6",
 				"7",
-				"8",
-				"9",
-				"10",
+//				"8",
+//				"9",
+//				"10",
 //			"11",
 //			"12"
 		})
@@ -136,6 +142,9 @@ public class ThemeQueryPlanRunBenchmark {
 		@Param({ "fastagms" })
 		public String sketchEstimatorStrategy;
 
+		@Param({ QUERY_VARIANT_FILTER })
+		public String queryVariant;
+
 		private SailRepository repository;
 		protected LmdbStore store;
 		private LmdbStoreConfig storeConfig;
@@ -148,7 +157,8 @@ public class ThemeQueryPlanRunBenchmark {
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			theme = Theme.valueOf(themeName);
-			query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			query = queryForVariant(theme, z_queryIndex, queryVariant);
+			//query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 			expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
@@ -396,6 +406,14 @@ public class ThemeQueryPlanRunBenchmark {
 					+ queryDescription() + "\n"
 					+ tupleQuery.explain(Explanation.Level.Telemetry) + "\n";
 			System.out.print(renderedPlan);
+			var optimizedQuery = connection.prepareTupleQuery(query);
+			optimizedQuery.setIncludeInferred(false);
+			optimizedQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+			Explanation optimized = optimizedQuery.explain(Explanation.Level.Optimized);
+			String renderedSparql = "\n### Rendered Optimized SPARQL - Trial teardown ###\n"
+					+ queryDescription() + "\n"
+					+ new TupleExprIRRenderer().render((TupleExpr) optimized.tupleExpr()) + "\n";
+			System.out.print(renderedSparql);
 			System.out.flush();
 		}
 
@@ -424,12 +442,13 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private File optimizedPlanFile() {
-			return new File(STORE_DIRECTORY, "plans/" + themeName + "-q" + z_queryIndex + "-runQuery-optimized.txt");
+			return new File(STORE_DIRECTORY,
+					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-optimized.txt");
 		}
 
 		private File optimizedDiagnosticsFile() {
 			return new File(STORE_DIRECTORY,
-					"plans/" + themeName + "-q" + z_queryIndex + "-runQuery-diagnostics.txt");
+					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-diagnostics.txt");
 		}
 
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {
@@ -487,8 +506,97 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private String queryDescription() {
-			return themeName + " query " + z_queryIndex + " ("
+			String description = themeName + " query " + z_queryIndex + " ("
 					+ ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex).getName() + ")";
+			String variant = queryVariantOrDefault(queryVariant);
+			if (!QUERY_VARIANT_FILTER.equals(variant)) {
+				description += " [" + variant + "]";
+			}
+			return description;
+		}
+
+		private String variantFileSuffix() {
+			String variant = queryVariantOrDefault(queryVariant);
+			if (QUERY_VARIANT_FILTER.equals(variant)) {
+				return "";
+			}
+			return "-" + variant.replaceAll("[^A-Za-z0-9._-]", "_");
+		}
+
+		private static String queryForVariant(Theme theme, int queryIndex, String queryVariant) {
+			String variant = queryVariantOrDefault(queryVariant);
+			if (QUERY_VARIANT_FILTER.equals(variant)) {
+				return ThemeQueryCatalog.queryFor(theme, queryIndex);
+			}
+			if (theme == Theme.MEDICAL_RECORDS && queryIndex == 7) {
+				if (QUERY_VARIANT_VALUES_TOP_TYPE_CODE.equals(variant)) {
+					return medicalQ7ValuesTopTypeCodeQuery();
+				}
+				if (QUERY_VARIANT_TYPE_VALUES_CODE.equals(variant)) {
+					return medicalQ7TypeValuesCodeQuery();
+				}
+				if (QUERY_VARIANT_VALUES_CODE_TYPE.equals(variant)) {
+					return medicalQ7ValuesCodeTypeQuery();
+				}
+			}
+			throw new IllegalArgumentException("Unsupported ThemeQueryPlanRunBenchmark queryVariant=" + queryVariant
+					+ " for " + theme + " q" + queryIndex);
+		}
+
+		private static String queryVariantOrDefault(String queryVariant) {
+			if (queryVariant == null || queryVariant.isBlank()) {
+				return QUERY_VARIANT_FILTER;
+			}
+			String normalized = queryVariant.trim();
+			if ("catalog".equals(normalized) || "medical-q7-filter".equals(normalized)) {
+				return QUERY_VARIANT_FILTER;
+			}
+			if ("values".equals(normalized) || "medical-q7-values".equals(normalized)) {
+				return QUERY_VARIANT_VALUES_TOP_TYPE_CODE;
+			}
+			return normalized;
+		}
+
+		private static String medicalQ7ValuesTopTypeCodeQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"  ?med a med:Medication .",
+					"  ?med med:code ?code .",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+					"  MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), \"x\")) }",
+					"}");
+		}
+
+		private static String medicalQ7TypeValuesCodeQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  ?med a med:Medication .",
+					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"  ?med med:code ?code .",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+					"  MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), \"x\")) }",
+					"}");
+		}
+
+		private static String medicalQ7ValuesCodeTypeQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"  ?med med:code ?code .",
+					"  ?med a med:Medication .",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+					"  MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), \"x\")) }",
+					"}");
 		}
 	}
 

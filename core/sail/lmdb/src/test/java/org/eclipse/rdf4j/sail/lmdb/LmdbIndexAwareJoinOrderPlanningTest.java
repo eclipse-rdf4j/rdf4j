@@ -710,6 +710,50 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void explicitMedicalCodeValuesDoesNotScanTypeBeforeCodeLookup(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadMedicalQ7FiniteAnchorData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalQ7ExplicitValuesQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			List<String> mandatoryOrder = collectMedicalQ7MandatoryLeafOrder(optimized);
+			assertTrue(mandatoryOrder.contains("values:code"), "Expected explicit code VALUES in plan:\n"
+					+ optimizedPlan);
+			assertTrue(mandatoryOrder.contains("predicate:code"), "Expected code lookup in plan:\n" + optimizedPlan);
+			assertTrue(mandatoryOrder.contains("type:Medication"), "Expected medication type guard in plan:\n"
+					+ optimizedPlan);
+			int valuesIndex = mandatoryOrder.indexOf("values:code");
+			int codeIndex = mandatoryOrder.indexOf("predicate:code");
+			int typeIndex = mandatoryOrder.indexOf("type:Medication");
+			assertTrue(codeIndex < typeIndex,
+					"Explicit finite code anchor should bind ?med through med:code before broad Medication type scan. "
+							+ "leafOrder=" + mandatoryOrder + "\n" + optimizedPlan);
+			assertFalse(valuesIndex + 1 == typeIndex,
+					"VALUES ?code must not be placed directly before the unrelated Medication type scan. leafOrder="
+							+ mandatoryOrder + "\n" + optimizedPlan);
+			assertFalse(optimizedPlan
+					.contains("lmdb-materialized-minus-anti-semi:missing-physical-property:missing=inputBoundVars"),
+					"Materialized MINUS RHS is an independent hash-build input, not a correlated RHS lookup. "
+							+ "It must not be rejected for missing left-side input bindings.\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void boundedIntegerRangeFilterBecomesSemanticValuesRewrite(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
@@ -1103,6 +1147,25 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	private static void loadMedicalQ7FiniteAnchorData(SailRepository repository) {
+		IRI hasMedication = VF.createIRI("http://example.com/theme/medical/hasMedication");
+		IRI dosage = VF.createIRI("http://example.com/theme/medical/dosage");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < SELECTIVE_MEDICATION_COUNT; i++) {
+				Resource medication = VF.createIRI("urn:test:q7-medication:" + i);
+				Resource patient = VF.createIRI("urn:test:q7-patient:" + i);
+				connection.add(medication, RDF_TYPE, MED_MEDICATION);
+				connection.add(medication, MED_CODE, VF.createLiteral("MED-" + i));
+				connection.add(patient, hasMedication, medication);
+				if ((i & 1) == 0) {
+					connection.add(medication, dosage, VF.createLiteral(i + "x daily"));
+				}
+			}
+			connection.commit();
+		}
+	}
+
 	private static void loadSyntheticMedicalValueRangeData(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -1433,6 +1496,21 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"}");
 	}
 
+	private static String medicalQ7ExplicitValuesQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+				"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+				"  ?med a med:Medication .",
+				"  ?med med:code ?code .",
+				"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+				"  MINUS {",
+				"    ?med med:dosage ?dose .",
+				"    FILTER(CONTAINS(LCASE(STR(?dose)), \"x\"))",
+				"  }",
+				"}");
+	}
+
 	private static String libraryValuesVariableNameQuery() {
 		return String.join("\n",
 				"PREFIX lib: <http://example.com/theme/library/>",
@@ -1627,6 +1705,32 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
 			collectStatementPatterns(unaryTupleOperator.getArg(), patterns);
 		}
+	}
+
+	private static List<String> collectMedicalQ7MandatoryLeafOrder(TupleExpr optimized) {
+		List<String> leaves = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (node.getBindingNames().contains("code")) {
+					leaves.add("values:code");
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar().getValue()instanceof IRI predicate) {
+					if (RDF_TYPE.equals(predicate) && MED_MEDICATION.equals(node.getObjectVar().getValue())) {
+						leaves.add("type:Medication");
+					} else if (MED_CODE.equals(predicate)) {
+						leaves.add("predicate:code");
+					}
+				}
+				super.meet(node);
+			}
+		});
+		return leaves;
 	}
 
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {

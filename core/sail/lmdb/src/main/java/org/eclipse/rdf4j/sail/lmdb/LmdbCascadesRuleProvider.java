@@ -3665,13 +3665,14 @@ final class LmdbCascadesRuleProvider {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Difference difference = (Difference) expression.tupleExpr();
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedMinus(difference, goal);
+			Difference alternative = difference.clone();
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedMinus(alternative, goal);
 			if (estimate.isEmpty()) {
 				return List.of();
 			}
 			CostVector cost = cost(estimate.get());
 			PhysicalProperties delivered = PhysicalProperties.builder()
-					.boundVars(difference.getBindingNames())
+					.boundVars(alternative.getBindingNames())
 					.inputBoundVars(Set.of())
 					.accessPath("materializedMinus")
 					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
@@ -3683,7 +3684,7 @@ final class LmdbCascadesRuleProvider {
 			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"MINUS is implemented as the existing RDF4J materialized RHS anti-semi iterator");
-			return List.of(RuleApplication.opaquePhysical(expression.groupId(), difference.clone(), delivered, cost,
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost,
 					proof, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost)));
 		}
 
@@ -3720,7 +3721,7 @@ final class LmdbCascadesRuleProvider {
 			}
 			double rhsBuildRows = rightRows;
 			double leftProbeRows = leftRows;
-			double workRows = leftWorkRows + rightWorkRows + rhsBuildRows + leftProbeRows;
+			double workRows = rhsBuildRows + leftProbeRows;
 			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
 				return Optional.empty();
 			}
@@ -3775,14 +3776,15 @@ final class LmdbCascadesRuleProvider {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter filter = (Filter) expression.tupleExpr();
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedExists(filter, goal);
+			Filter alternative = filter.clone();
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedExists(alternative, goal);
 			if (estimate.isEmpty()) {
 				return List.of();
 			}
 			CostVector cost = cost(estimate.get());
 			PhysicalProperties delivered = PhysicalProperties.builder()
-					.boundVars(filter.getBindingNames())
-					.inputBoundVars(inputBoundVarsForExpression(filter, goal))
+					.boundVars(alternative.getBindingNames())
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
 					.accessPath("materializedExists")
 					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
@@ -3793,7 +3795,7 @@ final class LmdbCascadesRuleProvider {
 			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"Safe FILTER EXISTS is implemented as a materialized RHS semi-join");
-			return List.of(RuleApplication.opaquePhysical(expression.groupId(), filter.clone(), delivered, cost,
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost,
 					proof, "lmdb-materialized-exists-semi", snapshot(estimate.get(), cost)));
 		}
 
@@ -3826,7 +3828,7 @@ final class LmdbCascadesRuleProvider {
 			}
 			double rhsBuildRows = rightRows;
 			double leftProbeRows = leftRows;
-			double workRows = leftWorkRows + rightWorkRows + rhsBuildRows + leftProbeRows;
+			double workRows = rhsBuildRows + leftProbeRows;
 			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
 				return Optional.empty();
 			}
