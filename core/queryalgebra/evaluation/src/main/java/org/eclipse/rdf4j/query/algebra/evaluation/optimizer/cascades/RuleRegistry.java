@@ -68,9 +68,19 @@ public final class RuleRegistry {
 	}
 
 	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+		return applicableRules(expression, goal, memo, CascadesTelemetry.NO_OP);
+	}
+
+	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
+			CascadesTelemetry telemetry) {
+		CascadesTelemetry safeTelemetry = telemetry == null ? CascadesTelemetry.NO_OP : telemetry;
 		List<CascadesRule> applicable = new ArrayList<>();
 		for (CascadesRule rule : rules) {
-			if (rule.matches(expression, goal, memo)) {
+			boolean matched = rule.matches(expression, goal, memo);
+			int promise = matched ? adjustedPromise(rule, expression, goal, memo) : 0;
+			safeTelemetry.ruleEvaluated(expression, rule, goal, matched, promise,
+					matched ? "matched" : "not_matched");
+			if (matched) {
 				applicable.add(rule);
 			}
 		}

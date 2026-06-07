@@ -680,6 +680,29 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void cascadesTraceMaterializesStructuredJson() {
+		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		String previousTrace = System.getProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);
+		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
+		try {
+			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
+			QueryRoot root = new QueryRoot(connectedChainJoin(4));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			String traceJson = root.getStringMetricPlanned("optimizer.cascadesTraceJson");
+			assertTrue(traceJson != null);
+			assertTrue(traceJson.contains("\"ruleEvaluations\""), traceJson);
+			assertTrue(traceJson.contains("\"alternatives\""), traceJson);
+			assertTrue(traceJson.contains("\"winners\""), traceJson);
+		} finally {
+			restoreMode(previousMode);
+			restoreTrace(previousTrace);
+		}
+	}
+
+	@Test
 	void traceMaterializesBoundedCascadesCandidatePlan() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		String previousTrace = System.getProperty(LmdbCascadesOptimizer.TRACE_PROPERTY);

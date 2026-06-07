@@ -21,6 +21,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -236,6 +237,59 @@ class QueryPlanCaptureTest {
 	}
 
 	@Test
+	void capturesStructuredOptimizerTraceJson() throws Exception {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		String traceJson = """
+				{
+				  "formatVersion": "1",
+				  "ruleEvaluations": [
+				    {
+				      "ruleId": "matching-implementation",
+				      "status": "matched"
+				    }
+				  ],
+				  "alternatives": [
+				    {
+				      "ruleId": "matching-implementation",
+				      "status": "considered"
+				    }
+				  ],
+				  "winners": [
+				    {
+				      "groupId": 0,
+				      "ruleId": "matching-implementation"
+				    }
+				  ],
+				  "events": []
+				}
+				""";
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Optimized) {
+				tupleExpr.setStringMetricPlanned("optimizer.cascadesTraceJson", traceJson);
+			}
+			explanations.put(level, toExplanation(tupleExpr, level));
+		}
+
+		QueryPlanSnapshot snapshot = capture.capture(QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("structured-trace")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build(), () -> stubTupleQueryFor(explanations));
+
+		Map<String, Object> optimizerTrace = optimizerTrace(snapshot);
+		assertEquals("1", optimizerTrace.get("formatVersion"));
+		List<Map<String, Object>> ruleEvaluations = traceList(optimizerTrace, "ruleEvaluations");
+		assertEquals("matching-implementation", ruleEvaluations.getFirst().get("ruleId"));
+		assertEquals("matched", ruleEvaluations.getFirst().get("status"));
+		assertFalse(traceList(optimizerTrace, "alternatives").isEmpty());
+		assertFalse(traceList(optimizerTrace, "winners").isEmpty());
+	}
+
+	@Test
 	void estimateAccuracyUsesRepeatedInvocationRowsWhenPresent() {
 		String explanationJson = """
 				{
@@ -370,6 +424,20 @@ class QueryPlanCaptureTest {
 		}
 		tupleExpr.visit(converter);
 		return new ExplanationImpl(converter.getGenericPlanNode(), false, tupleExpr);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> optimizerTrace(QueryPlanSnapshot snapshot) throws Exception {
+		return (Map<String, Object>) QueryPlanSnapshot.class
+				.getMethod("getOptimizerTrace")
+				.invoke(snapshot);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> traceList(Map<String, Object> trace, String key) {
+		Object value = trace.get(key);
+		assertTrue(value instanceof List, () -> "Expected trace field " + key + " to be a list: " + trace);
+		return (List<Map<String, Object>>) value;
 	}
 
 	private static Object primitiveDefault(Class<?> primitiveType) {

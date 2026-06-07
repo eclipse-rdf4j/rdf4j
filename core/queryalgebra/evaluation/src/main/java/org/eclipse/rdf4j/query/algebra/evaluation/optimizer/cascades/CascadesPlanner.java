@@ -158,7 +158,7 @@ public final class CascadesPlanner {
 			if (!expression.logical()) {
 				continue;
 			}
-			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
+			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo, telemetry)) {
 				if (rule.kind() == RuleKind.TRANSFORMATION) {
 					return true;
 				}
@@ -222,7 +222,7 @@ public final class CascadesPlanner {
 
 	private List<CascadesRule> implementationSeedRules(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 		List<CascadesRule> rules = new ArrayList<>();
-		for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
+		for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo, telemetry)) {
 			if (rule.kind() == RuleKind.IMPLEMENTATION) {
 				rules.add(rule);
 			}
@@ -320,7 +320,7 @@ public final class CascadesPlanner {
 				return;
 			}
 			MemoExpr expression = group.mutableExpressionsView().get(index++);
-			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
+			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo, telemetry)) {
 				applyRule(memo, expression, rule, goal, context, state);
 				if (state.approximate && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
 						&& memo.bestWinner(goal.key(groupId)).isEmpty()) {
@@ -345,15 +345,18 @@ public final class CascadesPlanner {
 		String firedKey = expression.id() + ":" + rule.id() + ":" + goal.requiredProperties() + ":"
 				+ goal.semanticScope() + ":" + goal.costPolicy();
 		if (!state.ruleFired.add(firedKey)) {
+			telemetry.ruleOutcome(expression, rule, goal, "skipped_duplicate", firedKey);
 			return false;
 		}
 		if (chargeBudget && !state.consumeMinor("applyRule:" + rule.id())) {
 			state.markApproximate("budget applying rule " + rule.id());
+			telemetry.ruleOutcome(expression, rule, goal, "skipped_budget", "minor budget exhausted");
 			return false;
 		}
 		List<RuleApplication> applications = rule.apply(expression, goal, context);
 		if (applications == null || applications.isEmpty()) {
 			state.recordPatternExploration(expression.structuralKey());
+			telemetry.ruleOutcome(expression, rule, goal, "no_output", "rule returned no applications");
 			return false;
 		}
 		boolean addedOpaqueAlternative = false;
@@ -379,6 +382,7 @@ public final class CascadesPlanner {
 				}
 			}
 		}
+		telemetry.ruleOutcome(expression, rule, goal, "applied", "applications=" + applications.size());
 		return addedOpaqueAlternative;
 	}
 

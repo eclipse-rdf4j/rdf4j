@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -32,6 +33,14 @@ public interface CascadesTelemetry {
 
 	default void estimateDecision(int memoGroupId, String ruleId, double baseEstimateRows, double adjustedEstimateRows,
 			QErrorInterval interval, PhysicalProperties physicalGoal) {
+	}
+
+	default void ruleEvaluated(MemoExpr expression, CascadesRule rule, OptimizationGoal goal, boolean matched,
+			int promise, String status) {
+	}
+
+	default void ruleOutcome(MemoExpr expression, CascadesRule rule, OptimizationGoal goal, String status,
+			String reason) {
 	}
 
 	default void ruleFired(int memoGroupId, String ruleId, RuleProof proof) {
@@ -71,7 +80,10 @@ public interface CascadesTelemetry {
 		private static final Logger logger = LoggerFactory.getLogger(CascadesTelemetry.class);
 		private final int limit;
 		private final List<String> trace = new ArrayList<>();
+		private final List<Map<String, Object>> events = new ArrayList<>();
+		private final Map<String, Map<String, Object>> ruleCatalog = new LinkedHashMap<>();
 		private final Map<Integer, String> chosenWinnerByGroup = new ConcurrentHashMap<>();
+		private int nextEventIndex;
 
 		public Recording() {
 			this(DEFAULT_LIMIT);
@@ -91,12 +103,60 @@ public interface CascadesTelemetry {
 					+ " qError=" + (interval == null ? "unknown" : interval.qError())
 					+ " confidence=" + (interval == null ? "unknown" : interval.confidence())
 					+ " goal=" + physicalGoal);
+			appendEvent(event("estimate")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("baseRows", baseEstimateRows)
+					.put("adjustedRows", adjustedEstimateRows)
+					.put("qError", interval == null ? "unknown" : interval.qError())
+					.put("confidence", interval == null ? "unknown" : interval.confidence())
+					.put("goal", safe(physicalGoal)));
+		}
+
+		@Override
+		public synchronized void ruleEvaluated(MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
+				boolean matched, int promise, String status) {
+			rememberRule(rule);
+			appendEvent(event("ruleEvaluation")
+					.put("groupId", expression == null ? -1 : expression.groupId())
+					.put("expressionId", expression == null ? -1 : expression.id())
+					.put("operator", expression == null ? "" : expression.operator())
+					.put("ruleId", rule == null ? "unknown" : rule.id())
+					.put("kind", rule == null ? "" : safe(rule.kind()))
+					.put("phase", rule == null ? "" : safe(rule.phase()))
+					.put("matched", matched)
+					.put("status", safe(status))
+					.put("promise", promise)
+					.put("requiredProperties", goal == null ? "" : safe(goal.requiredProperties()))
+					.put("semanticScope", goal == null ? "" : safe(goal.semanticScope()))
+					.put("costPolicy", goal == null ? "" : safe(goal.costPolicy()))
+					.put("searchMode", goal == null ? "" : safe(goal.searchMode())));
+		}
+
+		@Override
+		public synchronized void ruleOutcome(MemoExpr expression, CascadesRule rule, OptimizationGoal goal,
+				String status, String reason) {
+			rememberRule(rule);
+			appendEvent(event("ruleOutcome")
+					.put("groupId", expression == null ? -1 : expression.groupId())
+					.put("expressionId", expression == null ? -1 : expression.id())
+					.put("operator", expression == null ? "" : expression.operator())
+					.put("ruleId", rule == null ? "unknown" : rule.id())
+					.put("kind", rule == null ? "" : safe(rule.kind()))
+					.put("phase", rule == null ? "" : safe(rule.phase()))
+					.put("status", safe(status))
+					.put("reason", safe(reason))
+					.put("requiredProperties", goal == null ? "" : safe(goal.requiredProperties())));
 		}
 
 		@Override
 		public synchronized void ruleFired(int memoGroupId, String ruleId, RuleProof proof) {
 			append("rule group=" + memoGroupId + " rule=" + ruleId + " proof={"
 					+ (proof == null ? "" : proof.metricFragment()) + "}");
+			appendEvent(event("ruleFired")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("proof", proof == null ? "" : proof.metricFragment()));
 		}
 
 		@Override
@@ -109,6 +169,16 @@ public interface CascadesTelemetry {
 					+ " localCost=" + localCost
 					+ " metadata=" + safe(metadata)
 					+ " plan=" + plan(plan));
+			rememberRule(ruleId, kind, null);
+			appendEvent(event("alternative")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("kind", safe(kind))
+					.put("status", "considered")
+					.put("deliveredProperties", safe(deliveredProperties))
+					.put("localCost", cost(localCost))
+					.put("metadata", safe(metadata))
+					.put("plan", plan(plan)));
 		}
 
 		@Override
@@ -121,6 +191,14 @@ public interface CascadesTelemetry {
 					+ " delivered=" + deliveredProperties
 					+ " cost=" + cost
 					+ " plan=" + plan(plan));
+			appendEvent(event("alternative")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("status", "costed")
+					.put("requiredProperties", safe(requiredProperties))
+					.put("deliveredProperties", safe(deliveredProperties))
+					.put("cost", cost(cost))
+					.put("plan", plan(plan)));
 		}
 
 		@Override
@@ -130,6 +208,12 @@ public interface CascadesTelemetry {
 					+ " rule=" + ruleId
 					+ " cost=" + cost
 					+ " plan=" + plan(plan));
+			appendEvent(event("alternative")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("status", "accepted")
+					.put("cost", cost(cost))
+					.put("plan", plan(plan)));
 		}
 
 		@Override
@@ -141,6 +225,18 @@ public interface CascadesTelemetry {
 					+ " approximate=" + winner.approximate();
 			chosenWinnerByGroup.put(key.groupId(), line);
 			append(line);
+			appendEvent(event("winner")
+					.put("groupId", key.groupId())
+					.put("requiredProperties", safe(key.requiredProperties()))
+					.put("semanticScope", safe(key.semanticScope()))
+					.put("costPolicy", safe(key.costPolicy()))
+					.put("expressionId", winner.expression().id())
+					.put("operator", winner.expression().operator())
+					.put("ruleId", primaryRuleId(winner))
+					.put("cost", cost(winner.cost()))
+					.put("deliveredProperties", safe(winner.deliveredProperties()))
+					.put("approximate", winner.approximate())
+					.put("reason", safe(winner.reason())));
 		}
 
 		@Override
@@ -156,21 +252,50 @@ public interface CascadesTelemetry {
 					+ " reason=" + reason
 					+ " cost=" + cost
 					+ " plan=" + plan(plan));
+			appendEvent(event("alternative")
+					.put("groupId", memoGroupId)
+					.put("ruleId", safe(ruleId))
+					.put("status", "discarded")
+					.put("reason", safe(reason))
+					.put("cost", cost(cost))
+					.put("plan", plan(plan)));
 		}
 
 		@Override
 		public synchronized void plannerEvent(String event) {
 			append("planner " + safe(event));
+			appendEvent(event("planner")
+					.put("message", safe(event)));
 		}
 
 		@Override
 		public synchronized void executionActual(QueryModelNode node, long rows, long work) {
 			append("actual node=" + (node == null ? "<null>" : node.getSignature()) + " rows=" + rows + " work="
 					+ work);
+			appendEvent(event("actual")
+					.put("node", node == null ? "<null>" : node.getSignature())
+					.put("rows", rows)
+					.put("work", work));
 		}
 
 		public synchronized List<String> trace() {
 			return List.copyOf(trace);
+		}
+
+		public synchronized Map<String, Object> structuredTrace() {
+			Map<String, Object> snapshot = new LinkedHashMap<>();
+			snapshot.put("formatVersion", "1");
+			snapshot.put("eventCount", events.size());
+			snapshot.put("ruleCatalog", copiedValues(ruleCatalog));
+			snapshot.put("ruleEvaluations", eventsByCategory("ruleEvaluation"));
+			snapshot.put("alternatives", eventsByCategory("alternative"));
+			snapshot.put("winners", eventsByCategory("winner"));
+			snapshot.put("events", copiedEvents(events));
+			return snapshot;
+		}
+
+		public synchronized String toJson() {
+			return CascadesTraceJson.toJson(structuredTrace());
 		}
 
 		public Map<Integer, String> chosenWinnerByGroup() {
@@ -183,6 +308,87 @@ public interface CascadesTelemetry {
 			}
 			trace.add(line);
 			logger.debug("Cascades {}", line);
+		}
+
+		private TraceEvent event(String category) {
+			return new TraceEvent(category, nextEventIndex++);
+		}
+
+		private void appendEvent(TraceEvent event) {
+			if (events.size() >= limit) {
+				events.remove(0);
+			}
+			events.add(event.values);
+		}
+
+		private void rememberRule(CascadesRule rule) {
+			if (rule == null) {
+				return;
+			}
+			rememberRule(rule.id(), rule.kind(), rule.phase());
+		}
+
+		private void rememberRule(String ruleId, RuleKind kind, RulePhase phase) {
+			if (ruleId == null || ruleId.isBlank()) {
+				return;
+			}
+			ruleCatalog.computeIfAbsent(ruleId, ignored -> {
+				Map<String, Object> rule = new LinkedHashMap<>();
+				rule.put("id", ruleId);
+				rule.put("kind", safe(kind));
+				rule.put("phase", safe(phase));
+				return rule;
+			});
+		}
+
+		private List<Map<String, Object>> eventsByCategory(String category) {
+			List<Map<String, Object>> filtered = new ArrayList<>();
+			for (Map<String, Object> event : events) {
+				if (category.equals(event.get("category"))) {
+					filtered.add(new LinkedHashMap<>(event));
+				}
+			}
+			return List.copyOf(filtered);
+		}
+
+		private List<Map<String, Object>> copiedEvents(List<Map<String, Object>> source) {
+			List<Map<String, Object>> copy = new ArrayList<>(source.size());
+			for (Map<String, Object> event : source) {
+				copy.add(new LinkedHashMap<>(event));
+			}
+			return List.copyOf(copy);
+		}
+
+		private List<Map<String, Object>> copiedValues(Map<String, Map<String, Object>> source) {
+			List<Map<String, Object>> copy = new ArrayList<>(source.size());
+			for (Map<String, Object> value : source.values()) {
+				copy.add(new LinkedHashMap<>(value));
+			}
+			return List.copyOf(copy);
+		}
+
+		private Map<String, Object> cost(CostVector cost) {
+			Map<String, Object> values = new LinkedHashMap<>();
+			if (cost == null) {
+				return values;
+			}
+			values.put("rows", cost.rows());
+			values.put("workRows", cost.workRows());
+			values.put("memoryRows", cost.memoryRows());
+			values.put("seeks", cost.seeks());
+			values.put("pageWalkRows", cost.pageWalkRows());
+			values.put("objectiveScore", cost.objectiveScore());
+			values.put("qError", cost.qError());
+			values.put("confidence", cost.confidence());
+			values.put("evidenceCount", cost.evidenceCount());
+			return values;
+		}
+
+		private String primaryRuleId(Winner winner) {
+			if (winner == null || winner.proofs().isEmpty()) {
+				return "unknown";
+			}
+			return winner.proofs().getFirst().ruleId();
 		}
 
 		private String rows(double rows) {
@@ -212,6 +418,24 @@ public interface CascadesTelemetry {
 
 		private String safe(String text) {
 			return text == null ? "" : text;
+		}
+
+		private String safe(Object value) {
+			return value == null ? "" : value.toString();
+		}
+
+		private static final class TraceEvent {
+			private final Map<String, Object> values = new LinkedHashMap<>();
+
+			private TraceEvent(String category, int eventIndex) {
+				values.put("eventIndex", eventIndex);
+				values.put("category", category);
+			}
+
+			private TraceEvent put(String key, Object value) {
+				values.put(key, value);
+				return this;
+			}
 		}
 	}
 }
