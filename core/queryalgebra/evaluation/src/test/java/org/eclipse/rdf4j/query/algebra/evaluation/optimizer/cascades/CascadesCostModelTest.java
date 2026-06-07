@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class CascadesCostModelTest {
@@ -434,6 +435,24 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void decisionRefinementDoesNotOverridePhysicalCompositeInputWinnerRows() {
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null,
+				new ConstantDecisionProvider(1_000_000.0d));
+		Group group = new Group(pattern("s", "p1", "o"), List.of("s", "o"), List.of());
+		MemoExpr expression = new MemoExpr(1, 7, "Group", List.of(2), "", group, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(winner(2, group.getArg(), 22.0d));
+		CostVector current = model.localCost(expression, OptimizationGoal.root(), inputWinners);
+
+		CostVector refined = model.refineCostForDecision(expression,
+				OptimizationGoal.root().withEstimationTier(EstimationTier.DECISION_EXACT), inputWinners, current,
+				CostVector.ofRowsAndWork(23.0d, 23.0d, QErrorInterval.exact(23.0d, "incumbent")));
+
+		assertEquals(current, refined,
+				"Decision refinement must not discard the concrete child-winner estimate for physical composites");
+	}
+
+	@Test
 	void localCostUsesStandardOptimizationEstimatorTier() {
 		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel();
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
@@ -463,6 +482,20 @@ class CascadesCostModelTest {
 				"Physical unary estimates are already based on the child winner and must not count it twice");
 		assertTrue(factorCostModel.estimationTiers.isEmpty(),
 				"Composite tuple algebra operators must use operator formulas, not join-factor access estimates");
+	}
+
+	@Test
+	void localCostClampsGroupToChildWinnerRowsWhenBindingProfileIsStale() {
+		CascadesCostModel model = model(new TrackingProvider());
+		Group group = new Group(pattern("s", "p1", "o"), List.of("s", "o"), List.of());
+		MemoExpr expression = new MemoExpr(1, 7, "Group", List.of(2), "", group, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner childWinner = staleProfileWinner(2, group.getArg(), 22.0d, 1_000_000.0d);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(childWinner));
+
+		assertEquals(22.0d, cost.rows(), 0.0d,
+				"Physical unary GROUP costing must cap stale child binding-profile evidence at the child winner rows");
 	}
 
 	@Test
@@ -692,6 +725,47 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void genericPhysicalJoinRepricesParameterizedRightInputAgainstLeftPrefix() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("org", "p1", "department");
+		StatementPattern right = pattern("org", "employee", "employee");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 30.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("org"))));
+
+		assertEquals(1, factorCostModel.nestedCalls,
+				"Parameterized physical JOIN RHS inputs must be re-costed against the concrete left prefix");
+		assertEquals(Set.of("org"), factorCostModel.lastContext.getCurrentlyBoundVars());
+		assertEquals(30.0d, factorCostModel.lastContext.getOuterPrefixRows(), 0.0d);
+		assertEquals(300.0d, cost.rows(), 0.0d,
+				"Nested RHS output rows must price the concrete inner iterator, not one standalone lookup");
+	}
+
+	@Test
+	void genericPhysicalJoinBuildPlanRestampsParameterizedRightAccessPath() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("org", "p1", "department");
+		StatementPattern right = pattern("org", "employee", "employee");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(winner(2, left, 30.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("org")));
+
+		Join plan = (Join) model.buildPlan(expression, inputWinners);
+		StatementPattern plannedRight = (StatementPattern) plan.getRightArg();
+
+		assertEquals("directLookup",
+				plannedRight.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+				"Physical JOIN plan assembly must preserve the access path costed with left-prefix bindings");
+	}
+
+	@Test
 	void genericPhysicalEstimateReusesParameterizedRightInputCosting() {
 		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
 		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
@@ -777,6 +851,23 @@ class CascadesCostModelTest {
 				delivered, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "winner-" + id);
 		CostVector cost = CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d,
 				"test-sketch-anchor"));
+		return new Winner(expression, tupleExpr, delivered, cost, List.of(), false, "");
+	}
+
+	private static Winner staleProfileWinner(int id, TupleExpr tupleExpr, double costRows, double profileRows) {
+		BagEstimate staleBag = BagEstimate.exact(profileRows, "test-stale-profile");
+		for (String bindingName : tupleExpr.getBindingNames()) {
+			staleBag = staleBag.withVariable(bindingName, VariableEstimate.bound(profileRows, profileRows));
+		}
+		BindingProfile profile = BindingProfile.fromBag(tupleExpr, staleBag, Map.of());
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(tupleExpr.getBindingNames())
+				.bindingProfile(profile)
+				.build();
+		MemoExpr expression = new MemoExpr(id, id, tupleExpr.getClass().getSimpleName(), List.of(), "test", tupleExpr,
+				delivered, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "winner-" + id);
+		CostVector cost = CostVector.ofRowsAndWork(costRows, costRows, QErrorInterval.heuristic(costRows, 4.0d,
+				"test-winner"));
 		return new Winner(expression, tupleExpr, delivered, cost, List.of(), false, "");
 	}
 
@@ -875,7 +966,8 @@ class CascadesCostModelTest {
 			nestedCalls++;
 			lastContext = context;
 			return Optional.of(new FactorCostEstimate(330.0d, 300.0d,
-					Map.of("plannedEstimateSource", "test-nested-bound-lookup"),
+					Map.of("plannedEstimateSource", "test-nested-bound-lookup",
+							TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
 					Map.of("plannedRepeatedInvocations", 30.0d, "plannedLookupDomainAverageOutputRows", 300.0d),
 					true, true, 1, 0, 1.0d, true));
 		}
@@ -997,6 +1089,14 @@ class CascadesCostModelTest {
 		public Optional<StatisticsEstimate> refineForDecision(EstimationDecision decision) {
 			refineCalls.incrementAndGet();
 			return Optional.of(StatisticsEstimate.exact(3.0d, "test-decision-refine"));
+		}
+	}
+
+	private record ConstantDecisionProvider(double rows) implements RdfStatisticsProvider {
+
+		@Override
+		public Optional<StatisticsEstimate> refineForDecision(EstimationDecision decision) {
+			return Optional.of(StatisticsEstimate.exact(rows, "test-decision-refine"));
 		}
 	}
 

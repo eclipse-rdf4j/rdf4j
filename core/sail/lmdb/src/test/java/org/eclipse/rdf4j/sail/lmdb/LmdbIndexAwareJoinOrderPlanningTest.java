@@ -166,17 +166,22 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
 				Union union = findFirst(optimized, Union.class);
 				List<StatementPattern> generatorPatterns = new ArrayList<>();
-				collectStatementPatterns(union.getRightArg(), generatorPatterns);
+				collectStatementPatterns(generatorUnionBranch(union), generatorPatterns);
 				List<String> generatorPredicates = generatorPatterns.stream()
 						.map(LmdbIndexAwareJoinOrderPlanningTest::predicateValue)
 						.toList();
 				int feedsIndex = generatorPredicates.indexOf(GRID_FEEDS.stringValue());
 				int nameIndex = generatorPredicates.indexOf(GRID_NAME.stringValue());
 
-				assertTrue(feedsIndex >= 0, "Expected generator branch to contain grid:feeds");
-				assertTrue(nameIndex >= 0, "Expected generator branch to contain grid:name");
+				assertTrue(feedsIndex >= 0,
+						"Expected generator branch to contain grid:feeds. predicates=" + generatorPredicates
+								+ "\n" + explanation);
+				assertTrue(nameIndex >= 0,
+						"Expected generator branch to contain grid:name. predicates=" + generatorPredicates + "\n"
+								+ explanation);
 				assertTrue(feedsIndex < nameIndex,
-						"Optimized electrical-grid explanation should keep grid:feeds before grid:name");
+						"Optimized electrical-grid explanation should keep grid:feeds before grid:name. predicates="
+								+ generatorPredicates + "\n" + explanation);
 			}
 		} finally {
 			repository.shutDown();
@@ -1520,6 +1525,24 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		return statementPattern.getPredicateVar().getValue().stringValue();
 	}
 
+	private static TupleExpr generatorUnionBranch(Union union) {
+		if (containsTypePattern(union.getLeftArg(), GRID_GENERATOR)) {
+			return union.getLeftArg();
+		}
+		if (containsTypePattern(union.getRightArg(), GRID_GENERATOR)) {
+			return union.getRightArg();
+		}
+		throw new AssertionError("Expected UNION to contain generator branch:\n" + union);
+	}
+
+	private static boolean containsTypePattern(TupleExpr tupleExpr, IRI type) {
+		List<StatementPattern> patterns = new ArrayList<>();
+		collectStatementPatterns(tupleExpr, patterns);
+		return patterns.stream()
+				.anyMatch(pattern -> RDF_TYPE.equals(pattern.getPredicateVar().getValue())
+						&& type.equals(pattern.getObjectVar().getValue()));
+	}
+
 	private static List<String> collectSocialMediaQ4MandatoryLeafOrder(TupleExpr optimized) {
 		List<String> leaves = new ArrayList<>();
 		TupleExpr mandatoryRoot = optimized;
@@ -1590,6 +1613,11 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		if (tupleExpr instanceof Join join) {
 			collectStatementPatterns(join.getLeftArg(), patterns);
 			collectStatementPatterns(join.getRightArg(), patterns);
+			return;
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			collectStatementPatterns(leftJoin.getLeftArg(), patterns);
+			collectStatementPatterns(leftJoin.getRightArg(), patterns);
 			return;
 		}
 		if (tupleExpr instanceof Filter filter) {

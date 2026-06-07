@@ -67,7 +67,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
 			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
 	private static final String SAMPLED_FILTER_QUERY = "SELECT * WHERE { ?s <urn:test:name> ?name . "
-			+ "FILTER(?name IN (\"u0\", \"u1\")) }";
+			+ "FILTER(?name > \"u1\") }";
 
 	@Test
 	void customEvaluationStrategyFactoryDisablesSketchEstimatorAndKeepsPageCardinality(@TempDir File dataDir)

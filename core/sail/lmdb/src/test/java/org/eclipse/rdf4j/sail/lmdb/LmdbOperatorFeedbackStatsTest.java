@@ -374,11 +374,11 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void costFeedbackWaitsForPlannedRepeatedInvocations(@TempDir Path tempDir) throws Exception {
+	void costFeedbackWaitsForPlannedOperatorRepeatedInvocations(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
-		observed.setDoubleMetricPlanned("plannedRepeatedInvocations", 2.0d);
+		observed.setDoubleMetricPlanned("plannedOperatorRepeatedInvocations", 2.0d);
 
 		stats.recordOperatorOutcome(observed);
 

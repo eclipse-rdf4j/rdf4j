@@ -150,6 +150,26 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void scalarTransitionPreservesFactorBagSketchEvidence() {
+		StatementPattern factor = pattern("person", PREDICATE, "org");
+		FastAgmsBindingSummary orgSketch = fastAgmsSummary(entry(1L, 3.0d), entry(2L, 2.0d));
+		BagEstimate factorBag = sketchedBag("factor-sketch", "org", orgSketch)
+				.withVariable("person", VariableEstimate.bound(5.0d, 5.0d));
+		JoinFactorCostModel.FactorCostEstimate factorCost = new JoinFactorCostModel.FactorCostEstimate(6.0d,
+				5.0d, Map.of("plannedEstimateSource", "tuple-sketch-factor"), Map.of()).withBag(factorBag);
+		PlanState prefix = PlanState.initial(BagEstimate.exact(1.0d, "outer"), Set.of(), Map.of());
+
+		TransitionEstimate transition = new ScalarFactorTransitionEstimator((requestedFactor, boundVars) -> Optional
+				.of(factorCost)).transition(prefix, AccessPathCandidate.forFactor(factor))
+						.orElseThrow();
+
+		assertSame(orgSketch, transition.nextState().estimate().variable("org").sketch(),
+				"Scalar fallback transitions must carry the factor bag's variable sketch into the next state");
+		assertTrue(transition.nextState().estimate().evidenceProfile().sketchEvidence(Set.of("org")).isPresent(),
+				"Factor sketch evidence must remain visible to later BagEstimate join composition");
+	}
+
+	@Test
 	void bindingSetAssignmentTransitionAddsFiniteBindingValuesToState() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(binding("code", "DX-200"), binding("code", "DX-201"),

@@ -53,24 +53,32 @@ class LmdbCascadesContractTest {
 
 	@Test
 	void coveredWinnerChildrenDoNotEnableCostFeedback(@TempDir Path tempDir) {
-		LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(tempDir.resolve("join-estimator.rjes"));
-		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
-				null);
-		StatementPattern left = pattern("s", "p1", "o");
-		Union coveredUnion = new Union(pattern("s", "p2", "a"), pattern("s", "p3", "b"));
-		Join parent = new Join(left, coveredUnion);
-		stampEstimate(parent, 100.0d, 200.0d);
-		stampEstimate(coveredUnion, 10.0d, 20.0d);
-		coveredUnion.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-				COVERED_BY_PARENT_WINNER);
-		coveredUnion.setStringMetricPlanned("optimizer.cascadesCoveredByWinner", "winner:g1:e1");
+		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		try {
+			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(
+					tempDir.resolve("join-estimator.rjes"));
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
+					null);
+			StatementPattern left = pattern("s", "p1", "o");
+			Union coveredUnion = new Union(pattern("s", "p2", "a"), pattern("s", "p3", "b"));
+			Join parent = new Join(left, coveredUnion);
+			stampEstimate(parent, 100.0d, 200.0d);
+			stampEstimate(coveredUnion, 10.0d, 20.0d);
+			coveredUnion.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+					COVERED_BY_PARENT_WINNER);
+			coveredUnion.setStringMetricPlanned("optimizer.cascadesCoveredByWinner", "winner:g1:e1");
 
-		new LmdbCascadesExplainFinalizer(statistics, false).optimize(parent, null, EmptyBindingSet.getInstance());
+			new LmdbCascadesExplainFinalizer(statistics, false).optimize(parent, null, EmptyBindingSet.getInstance());
 
-		assertTrue(parent.isCostFeedbackTrackingEnabled(), "The selected parent winner should still collect feedback");
-		assertFalse(coveredUnion.isCostFeedbackTrackingEnabled(),
-				"Covered implementation children may be executed repeatedly under the parent winner and must not "
-						+ "collect independent operator feedback");
+			assertTrue(parent.isCostFeedbackTrackingEnabled(),
+					"The selected parent winner should still collect feedback");
+			assertFalse(coveredUnion.isCostFeedbackTrackingEnabled(),
+					"Covered implementation children may be executed repeatedly under the parent winner and must not "
+							+ "collect independent operator feedback");
+		} finally {
+			restoreFeedbackTracking(previous);
+		}
 	}
 
 	@Test
@@ -242,6 +250,14 @@ class LmdbCascadesContractTest {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		} else {
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+		}
+	}
+
+	private static void restoreFeedbackTracking(String previous) {
+		if (previous == null) {
+			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		} else {
+			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
 		}
 	}
 }

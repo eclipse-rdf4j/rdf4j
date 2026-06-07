@@ -3326,7 +3326,7 @@ final class SketchJoinOrderPlanner {
 			if (candidateVars == 0L || hasStructuralConnection(candidate, boundVarMask)) {
 				continue;
 			}
-			if (hasCurrentlyLegalBridgeBetween(plan.mask(), boundVarMask, candidateVars)) {
+			if (hasCurrentlyLegalBridgeBetween(plan, boundVarMask, candidateVars)) {
 				continue;
 			}
 			if (hasPendingBridgeBetween(plan.mask(), candidate, boundVarMask, candidateVars)) {
@@ -3336,8 +3336,8 @@ final class SketchJoinOrderPlanner {
 		return anchors;
 	}
 
-	private boolean hasCurrentlyLegalBridgeBetween(long prefixMask, long boundVarMask, long candidateVars) {
-		long bridges = factorUniverseMask & ~prefixMask & ~bindingSetAssignmentFactorMask;
+	private boolean hasCurrentlyLegalBridgeBetween(StatePlan plan, long boundVarMask, long candidateVars) {
+		long bridges = factorUniverseMask & ~plan.mask() & ~bindingSetAssignmentFactorMask;
 		while (bridges != 0L) {
 			int bridge = Long.numberOfTrailingZeros(bridges);
 			bridges &= bridges - 1L;
@@ -3346,6 +3346,30 @@ final class SketchJoinOrderPlanner {
 				continue;
 			}
 			if (isFactorActionLegal(bridge, boundVarMask)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean improvesCurrentlyLegalBridgeLookup(StatePlan plan, long boundVarMask, long candidateVars) {
+		long bridges = factorUniverseMask & ~plan.mask() & ~bindingSetAssignmentFactorMask;
+		while (bridges != 0L) {
+			int bridge = Long.numberOfTrailingZeros(bridges);
+			bridges &= bridges - 1L;
+			long bridgeVars = bindingVarMasks[bridge] & variableUniverseMask;
+			if ((bridgeVars & boundVarMask) == 0L || (bridgeVars & candidateVars) == 0L
+					|| !isFactorActionLegal(bridge, boundVarMask)) {
+				continue;
+			}
+			FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(bridge, plan.mask(), boundVarMask,
+					factorOutputRows[bridge], plan.estimate(), JoinFactorCostModel.EstimationTier.CHEAP, plan);
+			if (isExactStatementDirectLookup(physicalEstimate)) {
+				continue;
+			}
+			long missingLookupVars = missingExactLookupVariableMask(bridge,
+					physicalEstimate == null ? 0 : physicalEstimate.lookupComponentMask(), boundVarMask);
+			if ((missingLookupVars & candidateVars) != 0L) {
 				return true;
 			}
 		}

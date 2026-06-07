@@ -1422,6 +1422,52 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void exactFiniteSurfaceHasPriorityWhenExactSurfacesAreEnabled() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern personOrg = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern orgEmployee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:employee")),
+				new Var("employeeType", vf.createIRI("urn:test:Employee")));
+		List<TupleExpr> prefixFactors = List.of(personOrg);
+		when(estimator.cardinality(any(List.class))).thenReturn(100.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(10.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(25.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(1_000.0d);
+		when(estimator.estimateSketchJoinSurfaceUpperBoundRows(any(List.class), any(String.class)))
+				.thenReturn(1_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(String.class)))
+				.thenReturn(1_000.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(2_000.0d);
+		when(estimator.estimateSketchJoinSurfaceUpperBoundRows(any(List.class), any(TupleExpr.class),
+				any(String.class)))
+						.thenReturn(2_000.0d);
+		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(TupleExpr.class),
+				any(String.class)))
+						.thenReturn(2_000.0d);
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+					.estimateBoundJoinProduct(prefixFactors, orgEmployee, 100.0d, true);
+
+			assertNotNull(estimate);
+			assertTrue(estimate.exactRows(), "Exact finite surfaces should mark the product as exact");
+			assertEquals(10.0d, estimate.prefixSurfaceRows(), 0.0d);
+			assertEquals(25.0d, estimate.prefixRightSurfaceRows(), 0.0d);
+		}
+	}
+
+	@Test
 	void finiteBranchSurfaceRowsAreScopedByStructuralKey() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);

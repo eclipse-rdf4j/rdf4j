@@ -95,7 +95,7 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 			""";
 
 	@Test
-//	@EnabledIfSystemProperty(named = ENABLE_PROPERTY, matches = "true")
+	@EnabledIfSystemProperty(named = ENABLE_PROPERTY, matches = "true")
 	void compareQuery2PlannerModes(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);

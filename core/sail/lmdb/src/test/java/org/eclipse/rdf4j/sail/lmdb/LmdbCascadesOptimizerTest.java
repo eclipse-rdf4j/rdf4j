@@ -846,6 +846,23 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void standardPlanWinnerDoesNotHideSubtreeCandidate() throws Exception {
+		Join standardJoin = new Join(
+				new StatementPattern(new Var("work"), new Var("about"), new Var("topic")),
+				new StatementPattern(new Var("topic"), new Var("mainEntityOfPage"), new Var("page")));
+		standardJoin.setStringMetricPlanned("optimizer.cascadesWinner", "standard");
+		standardJoin.setStringMetricPlanned("optimizer.cascadesStandardPlanOrigin", "lmdb-no-cascades");
+		QueryRoot root = new QueryRoot(standardJoin);
+		List<Object> candidates = new ArrayList<>();
+
+		collectSubtreeCandidates(root, candidates);
+
+		assertTrue(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == standardJoin),
+				"A standard-plan fallback winner is not a successful Cascades plan and must remain eligible "
+						+ "for subtree replanning");
+	}
+
+	@Test
 	void plannedConditionSubqueryDoesNotBecomeSubtreeCandidate() throws Exception {
 		TupleExpr plannedExistsJoin = new Join(
 				new StatementPattern(new Var("v"), iri("follows"), new Var("u")),
@@ -943,6 +960,74 @@ class LmdbCascadesOptimizerTest {
 				approximatePlan),
 				"A legal approximate Cascades winner must still beat standard fallback when the standard plan is "
 						+ "materially more expensive");
+	}
+
+	@Test
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	void fallbackStandardPlanNeedsRobustAdvantageOverLegalApproximateCascadesPlan() throws Exception {
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
+		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
+		Class<?> candidateClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanCandidate");
+		Object autoMode = Enum.valueOf((Class<Enum>) modeClass.asSubclass(Enum.class), "AUTO");
+		Object fallbackPolicy = Enum.valueOf((Class<Enum>) policyClass.asSubclass(Enum.class), "FALLBACK");
+		Constructor<?> candidateConstructor = candidateClass
+				.getDeclaredConstructor(LmdbCascadesOptimizer.class, TupleExpr.class, String.class);
+		candidateConstructor.setAccessible(true);
+		Object standardPlan = candidateConstructor.newInstance(optimizer, pattern(), "test-standard");
+		var costField = candidateClass.getDeclaredField("cost");
+		costField.setAccessible(true);
+		costField.set(standardPlan, new CostVector(24.0d, 115.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d, 4.0d, 4.0d,
+				72.0d, 0.25d, 0.0d));
+		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
+				new CostVector(4.0d, 132.0d, 0.0d, 0.0d, 0.0d, 1.5d, 2.0d, 1.5d, 2.0d, 4.0d, 0.80d, 3.0d),
+				List.of(), true, "budgeted search incomplete");
+		CascadesPlan approximatePlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
+				1, OptimizationGoal.root(), Optional.of(winner), true, List.of("approximate=budget"));
+		Method standardPlanWins = LmdbCascadesOptimizer.class.getDeclaredMethod("standardPlanWins", modeClass,
+				policyClass, candidateClass, CascadesPlan.class);
+		standardPlanWins.setAccessible(true);
+
+		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, fallbackPolicy, standardPlan,
+				approximatePlan),
+				"Fallback standard plan estimates have no direct evidence and must not replace a legal Cascades "
+						+ "winner on a close raw-work margin");
+	}
+
+	@Test
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	void fallbackStandardPlanDoesNotCompareWorkForLegalApproximateCascadesPlan() throws Exception {
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
+		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
+		Class<?> candidateClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanCandidate");
+		Object autoMode = Enum.valueOf((Class<Enum>) modeClass.asSubclass(Enum.class), "AUTO");
+		Object fallbackPolicy = Enum.valueOf((Class<Enum>) policyClass.asSubclass(Enum.class), "FALLBACK");
+		Constructor<?> candidateConstructor = candidateClass
+				.getDeclaredConstructor(LmdbCascadesOptimizer.class, TupleExpr.class, String.class);
+		candidateConstructor.setAccessible(true);
+		Object standardPlan = candidateConstructor.newInstance(optimizer, pattern(), "test-standard");
+		var costField = candidateClass.getDeclaredField("cost");
+		costField.setAccessible(true);
+		costField.set(standardPlan, CostVector.ofRowsAndWork(10.0d, 50.0d, QErrorInterval.exact(10.0d,
+				"test-standard")));
+		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
+				CostVector.ofRowsAndWork(10.0d, 110.0d, QErrorInterval.exact(10.0d, "test-cascades")), List.of(),
+				true, "budgeted search incomplete");
+		CascadesPlan approximatePlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
+				1, OptimizationGoal.root(), Optional.of(winner), true, List.of("approximate=budget"));
+		Method standardPlanWins = LmdbCascadesOptimizer.class.getDeclaredMethod("standardPlanWins", modeClass,
+				policyClass, candidateClass, CascadesPlan.class);
+		standardPlanWins.setAccessible(true);
+
+		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, fallbackPolicy, standardPlan,
+				approximatePlan),
+				"Fallback policy must not compare raw work to replace a legal approximate Cascades winner; use a "
+						+ "compare policy for that");
 	}
 
 	@Test

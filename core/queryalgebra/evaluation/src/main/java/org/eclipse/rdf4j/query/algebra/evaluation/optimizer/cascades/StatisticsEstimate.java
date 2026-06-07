@@ -53,8 +53,23 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 	public static StatisticsEstimate fromBag(BagEstimate bag, String method) {
 		BagEstimate safe = bag == null ? BagEstimate.heuristic(1.0d, method) : bag;
 		String effectiveMethod = method == null || method.isBlank() ? safe.source() : method;
+		Map<String, Double> metrics = metricsWithBagEvidence(safe);
 		return new StatisticsEstimate(safe.rows(), QErrorInterval.heuristic(safe.rows(), 4.0d, effectiveMethod),
-				safe.workRows(), effectiveMethod, safe.metrics(), safe);
+				safe.workRows(), effectiveMethod, metrics, safe.withMetrics(metrics));
+	}
+
+	private static Map<String, Double> metricsWithBagEvidence(BagEstimate bag) {
+		Map<String, Double> metrics = bag.metrics();
+		if (metrics.containsKey("optimizer.vectorEvidenceCount")) {
+			return metrics;
+		}
+		double evidenceCount = bag.finiteRelations().size() + bag.evidenceProfile().allSketches().size();
+		if (evidenceCount <= 0.0d) {
+			return metrics;
+		}
+		Map<String, Double> copy = new LinkedHashMap<>(metrics);
+		copy.put("optimizer.vectorEvidenceCount", evidenceCount);
+		return copy;
 	}
 
 	public StatisticsEstimate withBag(BagEstimate bag) {

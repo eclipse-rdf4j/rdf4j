@@ -394,6 +394,19 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void groupRowsNeverExceedInputRowsWhenDistinctEstimatesAreStale() {
+		FiniteRelationEstimate staleRelation = FiniteRelationEstimate.fromRows(List.of("a", "b"),
+				List.of(row("a1", "b1"), row("a2", "b2"), row("a3", "b3")), "stale-profile");
+		BagEstimate input = new BagEstimate(2.0d, 2.0d, 0.0d, 0.25d, "input", Map.of(),
+				Map.of(staleRelation.variableSetKey(), staleRelation), Map.of(), Map.of());
+
+		BagEstimate grouped = EstimateMath.group(input, Set.of("a", "b"));
+
+		assertEquals(2.0d, grouped.rows(), 0.0d,
+				"GROUP BY can collapse rows but must never expand beyond the input cardinality");
+	}
+
+	@Test
 	void unionKeepsBranchSketchesOnlyAsStaleSupportingEvidence() {
 		VariableSetKey leftKey = VariableSetKey.of(Set.of("a", "b"));
 		VariableSetKey rightKey = VariableSetKey.of(Set.of("b", "c"));

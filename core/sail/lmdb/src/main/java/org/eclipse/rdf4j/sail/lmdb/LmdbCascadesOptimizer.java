@@ -103,7 +103,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final int DEFAULT_TRACE_LIMIT = 512;
 	private static final int CANDIDATE_PLAN_TEXT_LIMIT = 16_384;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
-	private static final double DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT = 1.05d;
+	private static final double DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT = 1.20d;
 
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -199,7 +199,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 						.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(tupleExpr, provenance,
 								LmdbCascadesExplainFinalizer.PLANNER_ID));
 			}
-			if (mode.replacesAlgebra() && !standardWinner) {
+			if (mode.replacesAlgebra() && (!standardWinner
+					|| shouldRepairStandardFallbackSubtrees(standardPlanPolicy, plan))) {
 				optimizeSubtrees(tupleExpr, planner, searchGoal);
 			}
 			annotateObjectGuarantees(tupleExpr);
@@ -335,7 +336,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return policy.fallbacks();
 		}
 		if (mode != Mode.EXACT && cascadesPlan.approximate()) {
-			return standardPlanWinsByWork(candidate, cascadesPlan);
+			return policy.compares() && standardPlanWinsByWork(candidate, cascadesPlan);
 		}
 		if (!policy.compares()) {
 			return false;
@@ -352,8 +353,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return false;
 		}
 		CostVector cascadesCost = cascadesPlan.cost();
-		double standardWork = standardCost.workRows();
-		double cascadesWork = cascadesCost.workRows();
+		double standardWork = fallbackComparisonWork(standardCost);
+		double cascadesWork = fallbackComparisonWork(cascadesCost);
 		if (!Double.isFinite(standardWork) || standardWork >= Double.MAX_VALUE) {
 			return false;
 		}
@@ -363,6 +364,27 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
 				DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT);
 		return standardWork * Math.max(1.0d, minImprovement) <= cascadesWork;
+	}
+
+	private boolean shouldRepairStandardFallbackSubtrees(StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
+		if (policy == null || !policy.fallbacks() || policy.compares()) {
+			return false;
+		}
+		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
+			return true;
+		}
+		return cascadesPlan.approximate() && hasEmergencyFallbackProvenance(cascadesPlan);
+	}
+
+	private double fallbackComparisonWork(CostVector cost) {
+		if (cost == null) {
+			return Double.MAX_VALUE;
+		}
+		double score = cost.objectiveScore();
+		if (Double.isFinite(score) && score >= 0.0d && score < Double.MAX_VALUE) {
+			return score;
+		}
+		return cost.workRows();
 	}
 
 	private boolean standardPlanWinsByCost(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
@@ -759,7 +781,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return false;
 		}
 		return hasNonFallbackMetric(tupleExpr, CASCADES_RULE)
-				|| hasNonFallbackMetric(tupleExpr, CASCADES_WINNER)
+				|| hasNonStandardNonFallbackMetric(tupleExpr, CASCADES_WINNER)
 				|| hasNonFallbackMetric(tupleExpr, CASCADES_COVERED_BY_WINNER);
 	}
 
@@ -775,6 +797,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static boolean hasNonFallbackMetric(TupleExpr tupleExpr, String metric) {
 		String value = tupleExpr.getStringMetricPlanned(metric);
 		return value != null && !value.isBlank() && !value.startsWith(EMERGENCY_FALLBACK_RULE);
+	}
+
+	private static boolean hasNonStandardNonFallbackMetric(TupleExpr tupleExpr, String metric) {
+		String value = tupleExpr.getStringMetricPlanned(metric);
+		return value != null && !value.isBlank()
+				&& !STANDARD_PLAN_WINNER.equals(value)
+				&& !value.startsWith(EMERGENCY_FALLBACK_RULE);
 	}
 
 	private static boolean hasNonGenericNonFallbackMetric(TupleExpr tupleExpr, String metric) {

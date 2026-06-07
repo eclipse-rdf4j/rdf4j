@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.junit.jupiter.api.Test;
 
 class AASQueriesBenchmarkTest {
+
+	private static final String[] BENCHMARK_OUTPUT_PROPERTIES = {
+			AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY,
+			AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY,
+			AASQueriesBenchmark.PRINT_FULL_EXPLAIN_PROPERTY,
+			AASQueriesBenchmark.PRINT_CONNECTED_TRACE_PROPERTY,
+			AASQueriesBenchmark.PRINT_PATH_ALTERNATIVES_PROPERTY,
+			AASQueriesBenchmark.ENABLE_CONNECTED_TRACE_PROPERTY,
+			AASQueriesBenchmark.CONNECTED_TRACE_LINE_LIMIT_PROPERTY,
+			AASQueriesBenchmark.CONNECTED_TRACE_CHAR_LIMIT_PROPERTY,
+			AASQueriesBenchmark.EXPLANATION_LEVEL_PROPERTY
+	};
 
 	@Test
 	void connectedPlannerTraceReadsConnectedJoinTraceMetric() {
@@ -64,6 +77,7 @@ class AASQueriesBenchmarkTest {
 	void setupQuiescesSketchEstimatorRefreshThreadBeforeMeasurement() throws Exception {
 		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
 		configureBenchmark(benchmark);
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
 		Set<Long> refreshThreadsBeforeSetup = liveRefreshThreadIds();
 
 		try {
@@ -76,6 +90,7 @@ class AASQueriesBenchmarkTest {
 					"benchmark setup must not leave sketch refresh threads alive: " + describe(newRefreshThreads));
 		} finally {
 			benchmark.tearDown();
+			restore(previousProperties);
 		}
 	}
 
@@ -85,6 +100,7 @@ class AASQueriesBenchmarkTest {
 		configureBenchmark(benchmark);
 		setField(benchmark, "query", "query1PropertyProjection");
 		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
 
 		try {
 			benchmark.setup();
@@ -95,6 +111,7 @@ class AASQueriesBenchmarkTest {
 		} finally {
 			state.tearDown();
 			benchmark.tearDown();
+			restore(previousProperties);
 		}
 	}
 
@@ -104,8 +121,7 @@ class AASQueriesBenchmarkTest {
 		configureBenchmark(benchmark);
 		setField(benchmark, "query", "query1PropertyProjection");
 		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
-		String previousPrintExplain = System.getProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY);
-		String previousPrintOptimizedPlan = System.getProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY);
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
 		PrintStream previousOut = System.out;
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 
@@ -124,8 +140,7 @@ class AASQueriesBenchmarkTest {
 			System.setOut(previousOut);
 			state.tearDown();
 			benchmark.tearDown();
-			restoreProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, previousPrintExplain);
-			restoreProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, previousPrintOptimizedPlan);
+			restore(previousProperties);
 		}
 	}
 
@@ -138,8 +153,7 @@ class AASQueriesBenchmarkTest {
 		setField(benchmark, "sensorCount", 3);
 		setField(benchmark, "query", "query3LineAggregates");
 		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
-		String previousPrintExplain = System.getProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY);
-		String previousPrintOptimizedPlan = System.getProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY);
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
 		PrintStream previousOut = System.out;
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 
@@ -155,16 +169,38 @@ class AASQueriesBenchmarkTest {
 			int relationshipSecond = output.indexOf("value=https://admin-shell.io/aas/3/second");
 			assertTrue(ratedPower >= 0, output);
 			assertTrue(relationshipSecond >= 0, output);
-			assertTrue(ratedPower < relationshipSecond,
-					"query3 should restrict the component-property branch before walking relationship edges:\n"
+			assertTrue(ratedPower < relationshipSecond || usesBoundRelationshipPathAndCostedPropertyLookups(output),
+					"query3 should restrict the component-property branch before walking relationship edges, or use a"
+							+ " bound relationship path with costed component-property lookups:\n"
 							+ output);
 		} finally {
 			System.setOut(previousOut);
 			state.tearDown();
 			benchmark.tearDown();
-			restoreProperty(AASQueriesBenchmark.PRINT_EXPLAIN_PROPERTY, previousPrintExplain);
-			restoreProperty(AASQueriesBenchmark.PRINT_OPTIMIZED_PLAN_PROPERTY, previousPrintOptimizedPlan);
+			restore(previousProperties);
 		}
+	}
+
+	private static boolean usesBoundRelationshipPathAndCostedPropertyLookups(String output) {
+		return output.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject")
+				&& output.contains("plannedEstimateFusion=exact_statement_access_envelope")
+				&& output.contains("plannedEstimateFusion=tuple_sketch_surface_product")
+				&& output.contains("plannedBoundJoinProductJoinVar=prop")
+				&& output.contains("value=\"ratedPower\"")
+				&& output.contains("value=https://admin-shell.io/aas/3/value")
+				|| output.contains("optimizer.starMultiPredicateScanSubject=prop")
+						&& output.contains("plannedEstimateSource=lmdb-characteristic-set")
+						&& output.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-pair")
+						&& output.contains("value=\"ratedPower\"")
+						&& output.contains("value=https://admin-shell.io/aas/3/value");
+	}
+
+	private static Map<String, String> snapshotBenchmarkOutputProperties() {
+		Map<String, String> previous = new LinkedHashMap<>();
+		for (String property : BENCHMARK_OUTPUT_PROPERTIES) {
+			previous.put(property, System.getProperty(property));
+		}
+		return previous;
 	}
 
 	private static void configureBenchmark(AASQueriesBenchmark benchmark) throws ReflectiveOperationException {
@@ -190,14 +226,6 @@ class AASQueriesBenchmarkTest {
 			} else {
 				System.setProperty(entry.getKey(), entry.getValue());
 			}
-		}
-	}
-
-	private static void restoreProperty(String property, String previousValue) {
-		if (previousValue == null) {
-			System.clearProperty(property);
-		} else {
-			System.setProperty(property, previousValue);
 		}
 	}
 

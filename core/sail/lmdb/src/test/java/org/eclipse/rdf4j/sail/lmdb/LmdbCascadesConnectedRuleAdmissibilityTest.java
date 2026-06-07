@@ -125,6 +125,30 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
+	void projectionWrappingScopedSubqueryDoesNotSuppressGenericImplementation() {
+		Projection leftScope = projection(new Join(
+				new StatementPattern(new Var("left"), new Var("p1", P1), new Var("shared")),
+				new StatementPattern(new Var("shared"), new Var("p2", P2), new Var("leftValue"))),
+				"left", "shared");
+		leftScope.setVariableScopeChange(true);
+		Projection rightScope = projection(new Join(
+				new StatementPattern(new Var("shared"), new Var("p1", P1), new Var("rightValue")),
+				new StatementPattern(new Var("rightValue"), new Var("p2", P2), new Var("right"))),
+				"shared", "right");
+		rightScope.setVariableScopeChange(true);
+		TupleExpr island = new Join(projection(leftScope, "left", "shared"),
+				projection(rightScope, "shared", "right"));
+
+		List<String> rules = applicableRuleIds(island);
+
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island),
+				"Scoped subquery projections are not reorderable connected factors");
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
+	}
+
+	@Test
 	void constantValuedVarsAreNotRuntimeConnectivity() {
 		StatementPattern left = new StatementPattern(new Var("shared", VF.createIRI("urn:entity")),
 				new Var("leftPredicate", P1), new Var("leftObject", VF.createIRI("urn:left")));

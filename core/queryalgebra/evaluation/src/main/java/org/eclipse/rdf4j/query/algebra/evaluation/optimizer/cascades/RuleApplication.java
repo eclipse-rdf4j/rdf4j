@@ -29,7 +29,7 @@ public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind
 		localCost = localCost == null ? CostVector.ZERO : localCost;
 		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
 		metadata = metadata == null ? "" : metadata;
-		estimate = estimate == null ? EstimateSnapshot.cascades(localCost) : estimate.withCost(localCost);
+		estimate = estimate == null ? EstimateSnapshot.cascades(localCost) : estimate.withRuleCost(localCost);
 	}
 
 	public static RuleApplication transformation(int targetGroupId, TupleExpr alternative, RuleProof proof) {

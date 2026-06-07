@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -69,6 +70,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	private static final int EXACT_DP_FACTOR_LIMIT = 20;
 	private static final int DEFAULT_TRACE_LIMIT = 24_000;
 	private static final int MAX_DISCONNECTED_FINITE_ANCHOR_ROWS = 64;
+	private static final int MAX_CONNECTED_DP_STATES_PER_MASK = 4;
 
 	private LmdbCascadesConnectedJoinPlanner() {
 	}
@@ -146,7 +148,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 								+ " hasEndpointBinder=" + pathHasEndpointBinder[i] : ""));
 			}
 		}
-		State[] best = new State[1 << factorCount];
+		@SuppressWarnings("unchecked")
+		List<State>[] best = new List[1 << factorCount];
 
 		for (int factorIndex : runtimeFactorIndices) {
 			if (!admissibleSeed(factors.get(factorIndex), initial, pathHasEndpointBinder[factorIndex])) {
@@ -169,75 +172,92 @@ final class LmdbCascadesConnectedJoinPlanner {
 			int mask = 1 << factorIndex;
 			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)),
 					initialMask.union(factorVarMasks.get(factorIndex)));
-			State incumbent = best[mask];
-			best[mask] = better(incumbent, state);
+			List<State> incumbent = best[mask];
+			best[mask] = addBestState(incumbent, state);
 			if (trace.enabled()) {
 				trace.add("seed accept " + stepSummary(step, factors) + " incumbent="
-						+ stateSummary(incumbent, factors) + " winner=" + (best[mask] == state));
+						+ statesSummary(incumbent, factors) + " retained=" + best[mask].contains(state));
 			}
 		}
 
 		for (int mask = 1; mask <= fullMask; mask++) {
-			State state = best[mask];
-			if (state == null) {
+			List<State> states = best[mask];
+			if (states == null || states.isEmpty()) {
 				continue;
 			}
-			if (trace.enabled()) {
-				trace.add("prefix " + stateSummary(state, factors));
-			}
-			List<TupleExpr> prefixFactors = state.prefixFactors(factors);
-			for (int factorIndex : runtimeFactorIndices) {
-				int bit = 1 << factorIndex;
-				if ((mask & bit) != 0) {
-					continue;
-				}
-				boolean disconnectedByVars = !state.boundMask().intersects(factorVarMasks.get(factorIndex));
-				IntPredicate prefixContains = prefixMaskContains(mask);
-				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
-						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex,
-								state.boundMask(), factorVarMasks);
-				String extensionRejection = connectedExtensionRejection(factors, prefixContains, factorIndex,
-						state.boundVars(), factorVars, state.boundMask(), factorVarMasks, bridgeEnabledFiniteAnchor);
-				if (extensionRejection != null) {
-					if (trace.enabled()) {
-						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
-								+ extensionRejection + " factor="
-								+ factorSummary(factors.get(factorIndex)));
-					}
-					continue;
-				}
-				Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
-						prefixFactors, costModel, fallbackStatistics, estimationTier,
-						disconnectedByVars && !bridgeEnabledFiniteAnchor);
-				if (step == null) {
-					if (trace.enabled()) {
-						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-								+ " reason=no-estimate factor=" + factorSummary(factors.get(factorIndex)));
-					}
-					continue;
-				}
-				PathAlternative cheaperEndpoint = cheaperKnownEndpointPathAlternative(factors, factorIndex, state, step,
-						best, costModel, fallbackStatistics, estimationTier);
-				if (cheaperEndpoint != null) {
-					if (trace.enabled()) {
-						trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-								+ " reason=path-dominated-by-cheaper-endpoint-alternative "
-								+ cheaperEndpoint.mode() + " prefix=" + cheaperEndpoint.prefix().order()
-								+ " totalWork=" + compactDouble(cheaperEndpoint.totalWorkRows())
-								+ " currentWork=" + compactDouble(state.workRows() + step.workRows())
-								+ " factor=" + factorSummary(factors.get(factorIndex)));
-					}
-					continue;
-				}
-				State next = state.append(mask | bit, factorIndex, step,
-						union(state.boundVars(), factorVars.get(factorIndex)),
-						state.boundMask().union(factorVarMasks.get(factorIndex)));
-				State incumbent = best[next.mask()];
-				best[next.mask()] = better(incumbent, next);
+			for (State state : states) {
 				if (trace.enabled()) {
-					trace.add("extend accept prefix=" + state.order() + " + " + stepSummary(step, factors)
-							+ " incumbent=" + stateSummary(incumbent, factors) + " winner="
-							+ (best[next.mask()] == next));
+					trace.add("prefix " + stateSummary(state, factors));
+				}
+				List<TupleExpr> prefixFactors = state.prefixFactors(factors);
+				for (int factorIndex : runtimeFactorIndices) {
+					int bit = 1 << factorIndex;
+					if ((mask & bit) != 0) {
+						continue;
+					}
+					boolean disconnectedByVars = !state.boundMask().intersects(factorVarMasks.get(factorIndex));
+					IntPredicate prefixContains = prefixMaskContains(mask);
+					boolean bridgeEnabledFiniteAnchor = disconnectedByVars
+							&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex,
+									state.boundMask(), factorVarMasks);
+					String extensionRejection = connectedExtensionRejection(factors, prefixContains, factorIndex,
+							state.boundVars(), factorVars, state.boundMask(), factorVarMasks,
+							bridgeEnabledFiniteAnchor);
+					if (extensionRejection != null) {
+						if (trace.enabled()) {
+							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
+									+ extensionRejection + " factor="
+									+ factorSummary(factors.get(factorIndex)));
+						}
+						continue;
+					}
+					Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
+							prefixFactors, costModel, fallbackStatistics, estimationTier,
+							disconnectedByVars && !bridgeEnabledFiniteAnchor);
+					if (step == null) {
+						if (trace.enabled()) {
+							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+									+ " reason=no-estimate factor=" + factorSummary(factors.get(factorIndex)));
+						}
+						continue;
+					}
+					PendingDirectAlternative cheaperDirect = cheaperPendingDirectEndpointAlternative(factors,
+							factorIndex, state, mask, step, costModel, fallbackStatistics, estimationTier);
+					if (cheaperDirect != null) {
+						if (trace.enabled()) {
+							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+									+ " reason=path-delayed-for-cheaper-direct-endpoint-statement direct=f"
+									+ cheaperDirect.factorIndex() + " directWork="
+									+ compactDouble(cheaperDirect.step().workRows()) + " pathWork="
+									+ compactDouble(step.workRows()) + " factor="
+									+ factorSummary(factors.get(factorIndex)));
+						}
+						continue;
+					}
+					PathAlternative cheaperEndpoint = cheaperKnownEndpointPathAlternative(factors, factorIndex, state,
+							step,
+							best, costModel, fallbackStatistics, estimationTier);
+					if (cheaperEndpoint != null) {
+						if (trace.enabled()) {
+							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+									+ " reason=path-dominated-by-cheaper-endpoint-alternative "
+									+ cheaperEndpoint.mode() + " prefix=" + cheaperEndpoint.prefix().order()
+									+ " totalWork=" + compactDouble(cheaperEndpoint.totalWorkRows())
+									+ " currentWork=" + compactDouble(state.workRows() + step.workRows())
+									+ " factor=" + factorSummary(factors.get(factorIndex)));
+						}
+						continue;
+					}
+					State next = state.append(mask | bit, factorIndex, step,
+							union(state.boundVars(), factorVars.get(factorIndex)),
+							state.boundMask().union(factorVarMasks.get(factorIndex)));
+					List<State> incumbent = best[next.mask()];
+					best[next.mask()] = addBestState(incumbent, next);
+					if (trace.enabled()) {
+						trace.add("extend accept prefix=" + state.order() + " + " + stepSummary(step, factors)
+								+ " incumbent=" + statesSummary(incumbent, factors) + " retained="
+								+ best[next.mask()].contains(next));
+					}
 				}
 			}
 		}
@@ -245,7 +265,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (trace.enabled()) {
 			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace, estimationTier);
 		}
-		State full = best[fullMask];
+		State full = bestState(best[fullMask]);
 		if (full == null) {
 			trace.add("reject no-full-connected-state");
 			return Optional.empty();
@@ -502,8 +522,70 @@ final class LmdbCascadesConnectedJoinPlanner {
 				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
 	}
 
+	private static PendingDirectAlternative cheaperPendingDirectEndpointAlternative(List<TupleExpr> factors,
+			int factorIndex, State currentPrefix, int prefixMask, Step pathStep, JoinFactorCostModel costModel,
+			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
+		if (factors == null || currentPrefix == null || pathStep == null || !path(factors.get(factorIndex))) {
+			return null;
+		}
+		Set<String> boundEndpoints = boundPathEndpointNames(factors.get(factorIndex), currentPrefix.boundVars());
+		if (boundEndpoints.isEmpty()) {
+			return null;
+		}
+		PendingDirectAlternative best = null;
+		for (int candidateIndex = 0; candidateIndex < factors.size(); candidateIndex++) {
+			if (candidateIndex == factorIndex || (prefixMask & (1 << candidateIndex)) != 0
+					|| !constantPredicateStatementOnAny(factors.get(candidateIndex), boundEndpoints)) {
+				continue;
+			}
+			Step directStep = estimateStep(factors, candidateIndex, currentPrefix.boundVars(), currentPrefix.rows(),
+					true, currentPrefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
+			if (directStep == null || directStep.compareTo(pathStep) >= 0) {
+				continue;
+			}
+			PendingDirectAlternative candidate = new PendingDirectAlternative(candidateIndex, directStep);
+			if (best == null || candidate.compareTo(best) < 0) {
+				best = candidate;
+			}
+		}
+		return best;
+	}
+
+	private static Set<String> boundPathEndpointNames(TupleExpr tupleExpr, Set<String> boundVars) {
+		Set<String> endpoints = pathEndpointNames(tupleExpr);
+		Set<String> plannerBoundVars = plannerNames(boundVars);
+		if (endpoints.isEmpty() || plannerBoundVars.isEmpty()) {
+			return Set.of();
+		}
+		LinkedHashSet<String> boundEndpoints = new LinkedHashSet<>();
+		for (String endpoint : endpoints) {
+			if (plannerBoundVars.contains(endpoint)) {
+				boundEndpoints.add(endpoint);
+			}
+		}
+		return boundEndpoints.isEmpty() ? Set.of() : Set.copyOf(boundEndpoints);
+	}
+
+	private static boolean constantPredicateStatementOnAny(TupleExpr tupleExpr, Set<String> names) {
+		if (!(tupleExpr instanceof StatementPattern pattern) || names == null || names.isEmpty()
+				|| pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()) {
+			return false;
+		}
+		String subjectName = plannerVarName(pattern.getSubjectVar());
+		String objectName = plannerVarName(pattern.getObjectVar());
+		return subjectName != null && names.contains(subjectName) || objectName != null && names.contains(objectName);
+	}
+
+	private static String plannerVarName(Var var) {
+		if (var == null || var.hasValue() || var.isConstant()) {
+			return null;
+		}
+		String name = var.getName();
+		return name == null || name.startsWith("_const_") ? null : name;
+	}
+
 	private static PathAlternative cheaperKnownEndpointPathAlternative(List<TupleExpr> factors, int factorIndex,
-			State currentPrefix, Step currentStep, State[] best, JoinFactorCostModel costModel,
+			State currentPrefix, Step currentStep, List<State>[] best, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		if (factors == null || factorIndex < 0 || factorIndex >= factors.size() || currentPrefix == null
 				|| currentStep == null || best == null) {
@@ -523,26 +605,28 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		int factorBit = 1 << factorIndex;
 		PathAlternative bestAlternative = null;
-		for (State alternativePrefix : best) {
-			if (alternativePrefix == null || alternativePrefix == currentPrefix
-					|| (alternativePrefix.mask() & factorBit) != 0
-					|| !pathHasBoundEndpoint(factor, alternativePrefix.boundVars())) {
-				continue;
+		for (List<State> alternatives : best) {
+			for (State alternativePrefix : states(alternatives)) {
+				if (alternativePrefix == currentPrefix
+						|| (alternativePrefix.mask() & factorBit) != 0
+						|| !pathHasBoundEndpoint(factor, alternativePrefix.boundVars())) {
+					continue;
+				}
+				String alternativeMode = pathEndpointMode(factor, alternativePrefix.boundVars());
+				if (currentMode.equals(alternativeMode) || "fullScan".equals(alternativeMode)) {
+					continue;
+				}
+				Step alternativeStep = estimateStep(factors, factorIndex, alternativePrefix.boundVars(),
+						alternativePrefix.rows(), true, alternativePrefix.prefixFactors(factors), costModel,
+						fallbackStatistics, estimationTier);
+				if (alternativeStep == null) {
+					continue;
+				}
+				PathAlternative alternative = new PathAlternative(alternativeMode, alternativePrefix, alternativeStep,
+						alternativePrefix.workRows() + alternativeStep.workRows(),
+						Math.max(alternativePrefix.maxRows(), alternativeStep.outputRows()));
+				bestAlternative = better(bestAlternative, alternative);
 			}
-			String alternativeMode = pathEndpointMode(factor, alternativePrefix.boundVars());
-			if (currentMode.equals(alternativeMode) || "fullScan".equals(alternativeMode)) {
-				continue;
-			}
-			Step alternativeStep = estimateStep(factors, factorIndex, alternativePrefix.boundVars(),
-					alternativePrefix.rows(), true, alternativePrefix.prefixFactors(factors), costModel,
-					fallbackStatistics, estimationTier);
-			if (alternativeStep == null) {
-				continue;
-			}
-			PathAlternative alternative = new PathAlternative(alternativeMode, alternativePrefix, alternativeStep,
-					alternativePrefix.workRows() + alternativeStep.workRows(),
-					Math.max(alternativePrefix.maxRows(), alternativeStep.outputRows()));
-			bestAlternative = better(bestAlternative, alternative);
 		}
 		if (bestAlternative == null || !Double.isFinite(bestAlternative.totalWorkRows())) {
 			return null;
@@ -550,7 +634,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return bestAlternative.totalWorkRows() * 1.10d < currentTotalWorkRows ? bestAlternative : null;
 	}
 
-	private static void tracePathAlternatives(List<TupleExpr> factors, State[] best, List<Set<String>> factorVars,
+	private static void tracePathAlternatives(List<TupleExpr> factors, List<State>[] best, List<Set<String>> factorVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
 			EstimationTier estimationTier) {
 		if (factors == null || best == null || factorVars == null || trace == null || !trace.enabled()) {
@@ -565,28 +649,29 @@ final class LmdbCascadesConnectedJoinPlanner {
 			PathAlternative toEnd = null;
 			PathAlternative between = null;
 			int factorBit = 1 << factorIndex;
-			for (State prefix : best) {
-				if (prefix == null || (prefix.mask() & factorBit) != 0
-						|| !pathHasBoundEndpoint(factor, prefix.boundVars())) {
-					continue;
-				}
-				String mode = pathEndpointMode(factor, prefix.boundVars());
-				if (!"fromStart".equals(mode) && !"toEnd".equals(mode) && !"between".equals(mode)) {
-					continue;
-				}
-				Step step = estimateStep(factors, factorIndex, prefix.boundVars(), prefix.rows(), true,
-						prefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
-				if (step == null) {
-					continue;
-				}
-				PathAlternative candidate = new PathAlternative(mode, prefix, step,
-						prefix.workRows() + step.workRows(), Math.max(prefix.maxRows(), step.outputRows()));
-				if ("fromStart".equals(mode)) {
-					fromStart = better(fromStart, candidate);
-				} else if ("toEnd".equals(mode)) {
-					toEnd = better(toEnd, candidate);
-				} else {
-					between = better(between, candidate);
+			for (List<State> prefixes : best) {
+				for (State prefix : states(prefixes)) {
+					if ((prefix.mask() & factorBit) != 0 || !pathHasBoundEndpoint(factor, prefix.boundVars())) {
+						continue;
+					}
+					String mode = pathEndpointMode(factor, prefix.boundVars());
+					if (!"fromStart".equals(mode) && !"toEnd".equals(mode) && !"between".equals(mode)) {
+						continue;
+					}
+					Step step = estimateStep(factors, factorIndex, prefix.boundVars(), prefix.rows(), true,
+							prefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
+					if (step == null) {
+						continue;
+					}
+					PathAlternative candidate = new PathAlternative(mode, prefix, step,
+							prefix.workRows() + step.workRows(), Math.max(prefix.maxRows(), step.outputRows()));
+					if ("fromStart".equals(mode)) {
+						fromStart = better(fromStart, candidate);
+					} else if ("toEnd".equals(mode)) {
+						toEnd = better(toEnd, candidate);
+					} else {
+						between = better(between, candidate);
+					}
 				}
 			}
 			trace.pathAlternatives(factorIndex, factor, fromStart, toEnd, between);
@@ -677,6 +762,42 @@ final class LmdbCascadesConnectedJoinPlanner {
 				return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
 			});
 		}
+	}
+
+	private static List<State> states(List<State> states) {
+		return states == null || states.isEmpty() ? List.of() : states;
+	}
+
+	private static State bestState(List<State> states) {
+		return states == null || states.isEmpty() ? null : states.getFirst();
+	}
+
+	private static List<State> addBestState(List<State> incumbents, State candidate) {
+		if (candidate == null) {
+			return states(incumbents);
+		}
+		List<State> next = new ArrayList<>(states(incumbents));
+		for (int i = 0; i < next.size(); i++) {
+			State incumbent = next.get(i);
+			if (incumbent.order().equals(candidate.order())) {
+				if (candidate.compareTo(incumbent) < 0) {
+					next.set(i, candidate);
+				}
+				next.sort(State::compareTo);
+				return trimStates(next);
+			}
+		}
+		next.add(candidate);
+		next.sort(State::compareTo);
+		return trimStates(next);
+	}
+
+	private static List<State> trimStates(List<State> states) {
+		if (states == null || states.isEmpty()) {
+			return List.of();
+		}
+		int limit = Math.min(MAX_CONNECTED_DP_STATES_PER_MASK, states.size());
+		return List.copyOf(states.subList(0, limit));
 	}
 
 	private static State better(State incumbent, State candidate) {
@@ -1100,6 +1221,16 @@ final class LmdbCascadesConnectedJoinPlanner {
 				+ " maxRows=" + compactDouble(state.maxRows()) + " bound=" + state.boundVars();
 	}
 
+	private static String statesSummary(List<State> states, List<TupleExpr> factors) {
+		if (states == null || states.isEmpty()) {
+			return "<none>";
+		}
+		return states.stream()
+				.map(state -> stateSummary(state, factors))
+				.toList()
+				.toString();
+	}
+
 	private static String stepSummary(Step step, List<TupleExpr> factors) {
 		if (step == null) {
 			return "<null-step>";
@@ -1318,6 +1449,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 				return comparison;
 			}
 			return orderSummary(prefix.order()).compareTo(orderSummary(other.prefix.order()));
+		}
+	}
+
+	private record PendingDirectAlternative(int factorIndex, Step step)
+			implements Comparable<PendingDirectAlternative> {
+		@Override
+		public int compareTo(PendingDirectAlternative other) {
+			if (other == null) {
+				return -1;
+			}
+			int comparison = step.compareTo(other.step);
+			if (comparison != 0) {
+				return comparison;
+			}
+			return Integer.compare(factorIndex, other.factorIndex);
 		}
 	}
 

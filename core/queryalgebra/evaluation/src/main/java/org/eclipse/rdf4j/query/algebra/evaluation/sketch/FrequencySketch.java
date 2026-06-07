@@ -20,4 +20,9 @@ interface FrequencySketch {
 	void update(long key, long weight);
 
 	double innerProduct(FrequencySketch other);
+
+	default JoinFrequencyEstimate estimateInnerProduct(FrequencySketch other) {
+		double rows = innerProduct(other);
+		return new JoinFrequencyEstimate(rows, rows, 1.0d, "frequency-sketch-inner-product", 1.0d);
+	}
 }

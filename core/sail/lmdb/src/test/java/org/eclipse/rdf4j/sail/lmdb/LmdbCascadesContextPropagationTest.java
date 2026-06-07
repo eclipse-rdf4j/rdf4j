@@ -45,6 +45,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanProvenanceAnnotator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
@@ -243,6 +245,58 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
+	void unionLeftRowPreservingRightUsesSiblingBoundLookup() {
+		RowPreservingAccessPathStatistics statistics = new RowPreservingAccessPathStatistics();
+		Union left = new Union(
+				new StatementPattern(new Var("arm"), new Var("armComparator"), new Var("comp")),
+				new StatementPattern(new Var("arm"), new Var("armDrug"), new Var("comp")));
+		Extension right = new Extension(
+				new StatementPattern(new Var("comp"), new Var("namePredicate"), new Var("optName")),
+				new ExtensionElem(new Var("optName"), "optCompName"));
+		Join join = new Join(left, right);
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(statistics),
+				LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+						.optimize(join, OptimizationGoal.root());
+		TupleExpr selected = plan.tupleExpr()
+				.orElseThrow();
+		CascadesPlanProvenanceAnnotator.annotate(selected, plan.provenance()
+				.orElseThrow(), "lmdb-cascades");
+		StatementPattern namePattern = statementPatternWithPredicateName(selected, "namePredicate");
+
+		assertEquals("directLookup", namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+				() -> "The row-preserving RHS should be planned with the ?comp binding produced by the UNION left "
+						+ "sibling:\n" + selected);
+	}
+
+	@Test
+	void scopedUnionLeavesRowPreservingRightUsesSiblingBoundLookup() {
+		RowPreservingAccessPathStatistics statistics = new RowPreservingAccessPathStatistics();
+		StatementPattern comparator = new StatementPattern(new Var("arm"), new Var("armComparator"), new Var("comp"));
+		comparator.setVariableScopeChange(true);
+		StatementPattern drug = new StatementPattern(new Var("arm"), new Var("armDrug"), new Var("comp"));
+		drug.setVariableScopeChange(true);
+		Union left = new Union(comparator, drug);
+		Extension right = new Extension(
+				new StatementPattern(new Var("comp"), new Var("namePredicate"), new Var("optName")),
+				new ExtensionElem(new Var("optName"), "optCompName"));
+		Join join = new Join(left, right);
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(statistics),
+				LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+						.optimize(join, OptimizationGoal.root());
+		TupleExpr selected = plan.tupleExpr()
+				.orElseThrow();
+		CascadesPlanProvenanceAnnotator.annotate(selected, plan.provenance()
+				.orElseThrow(), "lmdb-cascades");
+		StatementPattern namePattern = statementPatternWithPredicateName(selected, "namePredicate");
+
+		assertEquals("directLookup", namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+				() -> "Safe scoped leaf statement patterns should still expose their assured ?comp binding to the "
+						+ "row-preserving RHS:\n" + selected);
+	}
+
+	@Test
 	void endpointBoundPathPlanDoesNotSpeculativelyReplanConnectedComplements() {
 		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
 				"true");
@@ -430,6 +484,21 @@ class LmdbCascadesContextPropagationTest {
 		return found.get(0);
 	}
 
+	private static StatementPattern statementPatternWithPredicateName(TupleExpr tupleExpr, String predicateName) {
+		List<StatementPattern> matches = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar() != null && predicateName.equals(node.getPredicateVar()
+						.getName())) {
+					matches.add(node);
+				}
+			}
+		});
+		assertEquals(1, matches.size(), () -> tupleExpr.toString());
+		return matches.getFirst();
+	}
+
 	private static final class RecordingJoinOrderStatistics extends EvaluationStatistics implements JoinOrderPlanner {
 		private final List<JoinOrderCall> calls = new ArrayList<>();
 
@@ -543,6 +612,57 @@ class LmdbCascadesContextPropagationTest {
 			int lookupMask = relBound ? SUBJECT_COMPONENT | PREDICATE_COMPONENT : PREDICATE_COMPONENT;
 			return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, true,
 					relBound, lookupMask, 0, outputRows));
+		}
+	}
+
+	private static final class RowPreservingAccessPathStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+		private static final int SUBJECT_COMPONENT = 1;
+		private static final int PREDICATE_COMPONENT = 2;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return estimate(factor, currentlyBoundVars == null ? Set.of() : currentlyBoundVars);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+		}
+
+		private Optional<FactorCostEstimate> estimate(TupleExpr factor, Set<String> currentlyBoundVars) {
+			StatementPattern pattern = rowPreservingStatement(factor);
+			if (pattern == null && factor instanceof StatementPattern statementPattern) {
+				pattern = statementPattern;
+			}
+			if (pattern == null || pattern.getPredicateVar() == null) {
+				return Optional.empty();
+			}
+			boolean compBound = currentlyBoundVars.contains("comp");
+			boolean namePattern = "namePredicate".equals(pattern.getPredicateVar()
+					.getName());
+			boolean direct = namePattern && compBound;
+			double rows = namePattern && !direct ? 10_000.0d : 1.0d;
+			double work = namePattern && !direct ? 10_000.0d : 1.0d;
+			Map<String, String> stringMetrics = new HashMap<>();
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "recording-row-preserving-access");
+			stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, direct ? "directLookup" : "prefixScan");
+			stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, direct ? "[S, P]" : "[P]");
+			Map<String, Double> doubleMetrics = Map.of(
+					TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows,
+					TelemetryMetricNames.PLANNED_WORK_ROWS, work,
+					TelemetryMetricNames.PLANNED_ACCESS_ROWS, rows,
+					TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, work);
+			int lookupMask = direct ? SUBJECT_COMPONENT | PREDICATE_COMPONENT : PREDICATE_COMPONENT;
+			return Optional.of(new FactorCostEstimate(work, rows, stringMetrics, doubleMetrics, true, direct,
+					lookupMask, 0, rows));
+		}
+
+		private static StatementPattern rowPreservingStatement(TupleExpr factor) {
+			if (factor instanceof Extension extension && extension.getArg()instanceof StatementPattern pattern) {
+				return pattern;
+			}
+			return null;
 		}
 	}
 

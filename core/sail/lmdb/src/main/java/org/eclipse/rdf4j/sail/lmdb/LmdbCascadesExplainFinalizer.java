@@ -133,7 +133,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return true;
 		}
 		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
-			if (protectedCostFeedbackSource(child)) {
+			if (!coveredByParentWinner(child) && protectedCostFeedbackSource(child)) {
 				return true;
 			}
 		}

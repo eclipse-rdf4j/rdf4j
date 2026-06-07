@@ -849,14 +849,21 @@ final class LmdbCascadesRuleProvider {
 			}
 			Set<String> initialBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
 			List<TupleExpr> ordered = connectedGreedyOrder(factors, initialBoundVars);
-			if (sameOrder(factors, ordered)) {
-				return List.of();
+			List<RuleApplication> applications = new ArrayList<>();
+			if (!sameOrder(factors, ordered)) {
+				TupleExpr alternative = leftDeepJoin(ordered);
+				RuleProof proof = proof(semanticScope(goal), Set.of("cascadesNative", "legacySketchPlanner=false",
+						"connectedPrefix", "factors=" + factors.size()),
+						"Cascades seeds a connected left-deep join order from LMDB factor costs without invoking the legacy sketch join-order provider");
+				applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
 			}
-			TupleExpr alternative = leftDeepJoin(ordered);
-			RuleProof proof = proof(semanticScope(goal), Set.of("cascadesNative", "legacySketchPlanner=false",
-					"connectedPrefix", "factors=" + factors.size()),
-					"Cascades seeds a connected left-deep join order from LMDB factor costs without invoking the legacy sketch join-order provider");
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+			for (TupleExpr alternative : connectedPathComplementJoinTrees(factors, initialBoundVars)) {
+				RuleProof proof = proof(semanticScope(goal), Set.of("cascadesNative", "legacySketchPlanner=false",
+						"pathComplement", "hashJoin", "factors=" + factors.size()),
+						"Cascades preserves a path-endpoint complement alternative so a selective endpoint can bind a property path before the opposite component is joined");
+				applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+			}
+			return applications.isEmpty() ? List.of() : List.copyOf(applications);
 		}
 
 		private List<TupleExpr> connectedGreedyOrder(List<TupleExpr> factors, Set<String> initialBoundVars) {
@@ -929,6 +936,153 @@ final class LmdbCascadesRuleProvider {
 				}
 			}
 			return true;
+		}
+
+		private List<TupleExpr> connectedPathComplementJoinTrees(List<TupleExpr> factors,
+				Set<String> initialBoundVars) {
+			if (factors == null || factors.size() < 3) {
+				return List.of();
+			}
+			List<TupleExpr> alternatives = new ArrayList<>();
+			Set<String> seen = new HashSet<>();
+			for (TupleExpr factor : factors) {
+				if (!(factor instanceof ArbitraryLengthPath path)) {
+					continue;
+				}
+				pathComplementJoinTree(factors, path, true, initialBoundVars)
+						.ifPresent(alternative -> addUniqueAlternative(alternatives, seen, alternative));
+				pathComplementJoinTree(factors, path, false, initialBoundVars)
+						.ifPresent(alternative -> addUniqueAlternative(alternatives, seen, alternative));
+			}
+			return alternatives.isEmpty() ? List.of() : List.copyOf(alternatives);
+		}
+
+		private void addUniqueAlternative(List<TupleExpr> alternatives, Set<String> seen, TupleExpr alternative) {
+			String key = alternative == null ? "" : alternative.toString();
+			if (!key.isBlank() && seen.add(key)) {
+				alternatives.add(alternative);
+			}
+		}
+
+		private Optional<TupleExpr> pathComplementJoinTree(List<TupleExpr> factors, ArbitraryLengthPath path,
+				boolean bindSubjectEndpoint, Set<String> initialBoundVars) {
+			String subjectName = plannerVarName(path.getSubjectVar());
+			String objectName = plannerVarName(path.getObjectVar());
+			if (subjectName == null || objectName == null) {
+				return Optional.empty();
+			}
+			String boundEndpoint = bindSubjectEndpoint ? subjectName : objectName;
+			String complementEndpoint = bindSubjectEndpoint ? objectName : subjectName;
+			List<TupleExpr> remaining = withoutFactor(factors, path);
+			List<TupleExpr> pathSideFactors = connectedComponent(remaining, boundEndpoint);
+			List<TupleExpr> complementFactors = connectedComponent(remaining, complementEndpoint);
+			if (pathSideFactors.isEmpty() || complementFactors.isEmpty()
+					|| !disjoint(pathSideFactors, complementFactors)
+					|| pathSideFactors.size() + complementFactors.size() != remaining.size()) {
+				return Optional.empty();
+			}
+			List<TupleExpr> pathSideOrder = connectedGreedyOrder(pathSideFactors,
+					boundVarsFor(pathSideFactors, initialBoundVars));
+			if (!plannerVarNames(pathSideOrder).contains(boundEndpoint)) {
+				return Optional.empty();
+			}
+			List<TupleExpr> complementOrder = connectedGreedyOrder(complementFactors,
+					boundVarsFor(complementFactors, initialBoundVars));
+			if (!plannerVarNames(complementOrder).contains(complementEndpoint)) {
+				return Optional.empty();
+			}
+			List<TupleExpr> pathSideWithPath = new ArrayList<>(pathSideOrder.size() + 1);
+			pathSideWithPath.addAll(pathSideOrder);
+			pathSideWithPath.add(path);
+			TupleExpr pathSide = leftDeepJoin(pathSideWithPath);
+			TupleExpr complementSide = leftDeepJoin(complementOrder);
+			Join join = new Join(pathSide, complementSide);
+			join.setStringMetricPlanned(OPTIMIZER_CONNECTED_ENUMERATION, CONNECTED_ENUMERATION_CSG_CMP);
+			join.setStringMetricPlanned(OPTIMIZER_JOIN_ALGORITHM_HINT, JOIN_ALGORITHM_HASH);
+			join.setStringMetricPlanned("optimizer.connectedComplementEndpoint", complementEndpoint);
+			join.setStringMetricPlanned("optimizer.connectedComplementPathEndpoint",
+					bindSubjectEndpoint ? "subject" : "object");
+			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+			return Optional.of(join);
+		}
+
+		private List<TupleExpr> withoutFactor(List<TupleExpr> factors, TupleExpr excluded) {
+			List<TupleExpr> retained = new ArrayList<>(factors.size());
+			for (TupleExpr factor : factors) {
+				if (factor != excluded) {
+					retained.add(factor);
+				}
+			}
+			return List.copyOf(retained);
+		}
+
+		private List<TupleExpr> connectedComponent(List<TupleExpr> factors, String seedVar) {
+			LinkedHashSet<String> componentVars = new LinkedHashSet<>();
+			componentVars.add(seedVar);
+			Set<TupleExpr> selected = Collections.newSetFromMap(new IdentityHashMap<>());
+			boolean changed;
+			do {
+				changed = false;
+				for (TupleExpr factor : factors) {
+					if (selected.contains(factor)) {
+						continue;
+					}
+					Set<String> factorVars = plannerVarNames(factor);
+					if (intersects(componentVars, factorVars)) {
+						selected.add(factor);
+						componentVars.addAll(factorVars);
+						changed = true;
+					}
+				}
+			} while (changed);
+			if (selected.isEmpty()) {
+				return List.of();
+			}
+			List<TupleExpr> component = new ArrayList<>(selected.size());
+			for (TupleExpr factor : factors) {
+				if (selected.contains(factor)) {
+					component.add(factor);
+				}
+			}
+			return List.copyOf(component);
+		}
+
+		private boolean disjoint(List<TupleExpr> left, List<TupleExpr> right) {
+			return Collections.disjoint(left, right);
+		}
+
+		private Set<String> boundVarsFor(List<TupleExpr> factors, Set<String> boundVars) {
+			if (factors == null || factors.isEmpty() || boundVars == null || boundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> factorVars = plannerVarNames(factors);
+			LinkedHashSet<String> retained = new LinkedHashSet<>();
+			for (String boundVar : boundVars) {
+				if (factorVars.contains(boundVar)) {
+					retained.add(boundVar);
+				}
+			}
+			return retained.isEmpty() ? Set.of() : Set.copyOf(retained);
+		}
+
+		private Set<String> plannerVarNames(List<TupleExpr> tupleExprs) {
+			LinkedHashSet<String> names = new LinkedHashSet<>();
+			for (TupleExpr tupleExpr : tupleExprs) {
+				names.addAll(plannerVarNames(tupleExpr));
+			}
+			return names.isEmpty() ? Set.of() : Set.copyOf(names);
+		}
+
+		private Set<String> plannerVarNames(TupleExpr tupleExpr) {
+			return runtimeBindingNames(tupleExpr);
+		}
+
+		private String plannerVarName(Var var) {
+			if (var == null || var.hasValue() || var.isConstant()) {
+				return null;
+			}
+			String name = var.getName();
+			return name == null || name.startsWith("_const_") ? null : name;
 		}
 
 		private Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
@@ -3216,7 +3370,9 @@ final class LmdbCascadesRuleProvider {
 					&& expression.tupleExpr()instanceof Join join
 					&& !TupleExprs.isVariableScopeChange(join)
 					&& !TupleExprs.isVariableScopeChange(join.getRightArg())
-					&& !TupleExprs.containsSubquery(join.getRightArg());
+					&& !TupleExprs.containsSubquery(join.getRightArg())
+					&& !leftPathEndpointBoundByRight(join)
+					&& !leftBroadStatementPatternSubjectAnchoredByRight(join);
 		}
 
 		@Override
@@ -3321,6 +3477,106 @@ final class LmdbCascadesRuleProvider {
 			Set<String> anchored = new LinkedHashSet<>(join.getLeftArg().getAssuredBindingNames());
 			anchored.retainAll(join.getRightArg().getBindingNames());
 			return anchored.isEmpty() ? Set.of() : Set.copyOf(anchored);
+		}
+
+		private boolean leftPathEndpointBoundByRight(Join join) {
+			if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
+				return false;
+			}
+			Set<String> rightNames = LmdbJoinPlanSupport.runtimeBindingNames(join.getRightArg());
+			if (rightNames.isEmpty()) {
+				return false;
+			}
+			return pathEndpointNames(join.getLeftArg()).stream()
+					.anyMatch(rightNames::contains);
+		}
+
+		private boolean leftBroadStatementPatternSubjectAnchoredByRight(Join join) {
+			StatementPattern left = singleStatementPattern(join == null ? null : join.getLeftArg());
+			if (left == null || !constantPredicate(left) || left.getSubjectVar() == null
+					|| left.getSubjectVar().hasValue() || left.getSubjectVar().isConstant()
+					|| left.getObjectVar() == null || left.getObjectVar().hasValue()
+					|| left.getObjectVar().isConstant()) {
+				return false;
+			}
+			String subjectName = left.getSubjectVar().getName();
+			if (subjectName == null || subjectName.startsWith("_const_")) {
+				return false;
+			}
+			return containsExactSubjectAnchor(join.getRightArg(), subjectName);
+		}
+
+		private StatementPattern singleStatementPattern(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				return statementPattern;
+			}
+			return rowPreservingAccessPathStatement(tupleExpr);
+		}
+
+		private boolean containsExactSubjectAnchor(TupleExpr tupleExpr, String subjectName) {
+			if (tupleExpr == null || subjectName == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern node) {
+					if (found[0]) {
+						return;
+					}
+					if (sameNamedVar(node.getSubjectVar(), subjectName)
+							&& constantPredicate(node)
+							&& node.getObjectVar() != null
+							&& node.getObjectVar().hasValue()) {
+						found[0] = true;
+						return;
+					}
+					super.meet(node);
+				}
+			});
+			return found[0];
+		}
+
+		private boolean sameNamedVar(Var var, String name) {
+			return var != null && !var.hasValue() && !var.isConstant() && name.equals(var.getName());
+		}
+
+		private boolean constantPredicate(StatementPattern statementPattern) {
+			Var predicate = statementPattern == null ? null : statementPattern.getPredicateVar();
+			return predicate != null && predicate.hasValue();
+		}
+
+		private Set<String> pathEndpointNames(TupleExpr tupleExpr) {
+			if (tupleExpr == null) {
+				return Set.of();
+			}
+			LinkedHashSet<String> endpointNames = new LinkedHashSet<>();
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(ArbitraryLengthPath node) {
+					addPathEndpointName(endpointNames, node.getSubjectVar());
+					addPathEndpointName(endpointNames, node.getObjectVar());
+					super.meet(node);
+				}
+
+				@Override
+				public void meet(ZeroLengthPath node) {
+					addPathEndpointName(endpointNames, node.getSubjectVar());
+					addPathEndpointName(endpointNames, node.getObjectVar());
+					super.meet(node);
+				}
+			});
+			return endpointNames.isEmpty() ? Set.of() : Set.copyOf(endpointNames);
+		}
+
+		private void addPathEndpointName(Set<String> endpointNames, Var var) {
+			if (var == null || var.hasValue() || var.isConstant()) {
+				return;
+			}
+			String name = var.getName();
+			if (name != null && !name.startsWith("_const_")) {
+				endpointNames.add(name);
+			}
 		}
 	}
 

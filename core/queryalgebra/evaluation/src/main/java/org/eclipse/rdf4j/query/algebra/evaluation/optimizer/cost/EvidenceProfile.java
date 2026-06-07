@@ -264,6 +264,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				: relationContaining(vars)
 						.map(relation -> relation.distinctRows(vars))
 						.orElse(Math.min(rows, productDistinct(vars)));
+		distinctRows = clampRows(distinctRows, 0.0d, finiteNonNegative(rows));
 		Map<String, VariableEstimate> distinctVariables = projectedBoundVariables(vars, distinctRows);
 		Map<VariableSetKey, FiniteRelationEstimate> distinctFinite = distinctFiniteRelation(vars, "distinct")
 				.map(relation -> Map.of(relation.variableSetKey(), relation))
@@ -288,6 +289,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 							.min()
 							.orElse(Math.min(rows, 1.0d)));
 		}
+		groupedRows = clampRows(groupedRows, 0.0d, finiteNonNegative(rows));
 		Map<String, VariableEstimate> groupedVariables = projectedBoundVariables(vars, groupedRows);
 		Map<VariableSetKey, FiniteRelationEstimate> groupedFinite = distinctFiniteRelation(vars, "group")
 				.map(relation -> Map.of(relation.variableSetKey(), relation))
@@ -455,13 +457,14 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (joinVars.isEmpty()) {
 			return Map.of();
 		}
-		Optional<SketchEvidence> leftSketch = joinSketchEvidence(joinVars);
-		Optional<SketchEvidence> rightSketch = right.joinSketchEvidence(joinVars);
-		if (leftSketch.isEmpty() || rightSketch.isEmpty()) {
+		Optional<SketchEvidencePair> sketchPair = currentSketchPair(right, joinVars)
+				.or(() -> mixedPromotableSketchPair(right, joinVars));
+		if (sketchPair.isEmpty()) {
 			return Map.of();
 		}
-		DistributionSketch joinedSketch = ProductDistributionSketch.join(leftSketch.get().sketch(),
-				rightSketch.get().sketch(), Math.min(tupleDistinct(joinVars), right.tupleDistinct(joinVars)),
+		SketchEvidencePair pair = sketchPair.get();
+		DistributionSketch joinedSketch = ProductDistributionSketch.join(pair.left().sketch(), pair.right().sketch(),
+				Math.min(tupleDistinct(joinVars), right.tupleDistinct(joinVars)),
 				joinedRows);
 		if (joinedSketch == null) {
 			return Map.of();
@@ -471,9 +474,32 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				EvidenceQuality.COMPOSED_SKETCH, "inner-join"));
 	}
 
-	private Optional<SketchEvidence> joinSketchEvidence(Set<String> names) {
-		Optional<SketchEvidence> current = sketchEvidence(names);
-		return current.isPresent() ? current : supportingSketchEvidence(names);
+	private Optional<SketchEvidencePair> currentSketchPair(EvidenceProfile right, Set<String> joinVars) {
+		return sketchEvidence(joinVars)
+				.flatMap(leftSketch -> right.sketchEvidence(joinVars)
+						.map(rightSketch -> new SketchEvidencePair(leftSketch, rightSketch)));
+	}
+
+	private Optional<SketchEvidencePair> mixedPromotableSketchPair(EvidenceProfile right, Set<String> joinVars) {
+		Optional<SketchEvidencePair> leftCurrent = sketchEvidence(joinVars)
+				.flatMap(leftSketch -> right.supportingSketchEvidence(joinVars)
+						.filter(EvidenceProfile::canPromoteSupportingSketch)
+						.map(rightSketch -> new SketchEvidencePair(leftSketch, rightSketch)));
+		if (leftCurrent.isPresent()) {
+			return leftCurrent;
+		}
+		return supportingSketchEvidence(joinVars)
+				.filter(EvidenceProfile::canPromoteSupportingSketch)
+				.flatMap(leftSketch -> right.sketchEvidence(joinVars)
+						.map(rightSketch -> new SketchEvidencePair(leftSketch, rightSketch)));
+	}
+
+	private static boolean canPromoteSupportingSketch(SketchEvidence evidence) {
+		return evidence != null && evidence.quality()
+				.ordinal() <= EvidenceQuality.TUPLE_SKETCH.ordinal();
+	}
+
+	private record SketchEvidencePair(SketchEvidence left, SketchEvidence right) {
 	}
 
 	private Map<VariableSetKey, SketchEvidence> joinedSupportingSketches(EvidenceProfile right,
@@ -735,7 +761,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				output.put(name, VariableEstimate.bound(joinedRows, Math.min(leftVar.distinctRows(), joinedRows)));
 			} else if (leftJoin) {
 				output.put(name, new VariableEstimate(Math.min(rightVar.distinctRows(), rightBoundRows), rightBoundRows,
-						rightNullableRows, null));
+						rightNullableRows, rightVar.sketch()));
 			} else {
 				output.put(name, VariableEstimate.bound(joinedRows, Math.min(rightVar.distinctRows(), joinedRows)));
 			}

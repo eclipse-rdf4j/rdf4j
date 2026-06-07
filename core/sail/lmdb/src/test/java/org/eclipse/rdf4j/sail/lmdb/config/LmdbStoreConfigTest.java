@@ -337,7 +337,7 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "fastagms", "tuple", "joinsketch" })
+	@ValueSource(strings = { "fastagms", "tuple", "joinsketch", "countmin", "countmin-dual" })
 	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
 		testParseAndExport(
 				SKETCH_ESTIMATOR_STRATEGY,

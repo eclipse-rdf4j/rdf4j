@@ -51,6 +51,12 @@ public record EstimateSnapshot(String plannerId, String source, String usage, do
 
 	public EstimateSnapshot withCost(CostVector newCost) {
 		CostVector safeCost = newCost == null ? cost : newCost;
+		return new EstimateSnapshot(plannerId, source, usage, safeCost.rows(), safeCost.workRows(), safeCost,
+				stringMetrics, doubleMetrics);
+	}
+
+	public EstimateSnapshot withRuleCost(CostVector newCost) {
+		CostVector safeCost = newCost == null ? cost : newCost;
 		if (costOnlyEstimate()) {
 			return new EstimateSnapshot(plannerId, source, usage, safeCost.rows(), safeCost.workRows(), safeCost,
 					stringMetrics, doubleMetrics);

@@ -450,7 +450,8 @@ public final class CascadesPlanProvenanceAnnotator {
 		return !isBlank(source)
 				&& !"cascades".equals(source)
 				&& !"cascades-fallback".equals(source)
-				&& !"lmdb-cascades-fallback".equals(source);
+				&& !"lmdb-cascades-fallback".equals(source)
+				&& !"sampled".equals(source);
 	}
 
 	private static String decisionId(PlanProvenance provenance) {

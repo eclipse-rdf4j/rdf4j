@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
@@ -107,11 +110,31 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 							estimateVector.confidence(), source, metrics, RebaseMode.PRESERVE_EXACT_RELATIONS)
 					.toBagEstimate();
 		}
-		double rows = nextTupleEstimate == null ? estimateVector.rows() : nextTupleEstimate.outputRows();
-		Map<String, VariableEstimate> variables = nextTupleEstimate == null ? Map.of()
-				: nextTupleEstimate.variableEstimates();
+		Optional<BagEstimate> factorBag = factorCost.getBagEstimate();
+		if (factorBag.isPresent()) {
+			BagEstimate composed = composeFactorEvidence(prefixEstimate, factorBag.get(), prefixState.boundVars(),
+					source);
+			return composed.evidenceProfile()
+					.rebaseRows(estimateVector.rows(), estimateVector.workRows(), estimateVector.confidence(),
+							source, metrics, RebaseMode.PRESERVE_EXACT_RELATIONS)
+					.toBagEstimate();
+		}
+		double rows = estimateVector.rows();
+		Map<String, VariableEstimate> variables = Map.of();
 		return new BagEstimate(rows, estimateVector.workRows(), estimateVector.memoryRows(),
 				estimateVector.confidence(),
 				source, variables, prefixEstimate.finiteRelations(), prefixEstimate.sketchRelations(), metrics);
+	}
+
+	private static BagEstimate composeFactorEvidence(BagEstimate prefixEstimate, BagEstimate factorEstimate,
+			Set<String> boundVars, String source) {
+		Set<String> sharedVars = new LinkedHashSet<>(boundVars);
+		sharedVars.retainAll(factorEstimate.variables().keySet());
+		if (!sharedVars.isEmpty()) {
+			return EstimateMath.innerJoin(prefixEstimate, factorEstimate, sharedVars);
+		}
+		return prefixEstimate.evidenceProfile()
+				.mergeWith(factorEstimate.evidenceProfile(), source)
+				.toBagEstimate();
 	}
 }

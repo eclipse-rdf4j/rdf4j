@@ -55,6 +55,8 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbOperatorFeedbackStats {
 
+	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
+
 	static final String LEARNED_OPERATOR = "learned_operator";
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 	static final String LEARNED_PROPERTY_PATH = "learned_property_path";
@@ -69,6 +71,7 @@ final class LmdbOperatorFeedbackStats {
 
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
+	private static final String PLANNED_OPERATOR_REPEATED_INVOCATIONS = "plannedOperatorRepeatedInvocations";
 	private static final String PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
@@ -140,21 +143,28 @@ final class LmdbOperatorFeedbackStats {
 
 	private synchronized void recordOperatorOutcome(TupleExpr node, boolean completedRoot) {
 		if (!supportsOperatorFeedback(node) || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
+			trace("record-skip-incomplete", node, null, completionDetails(node, completedRoot));
 			return;
 		}
 		if (node.isCostFeedbackTrackingEnabled() && node.isCostFeedbackCompletedActual()
 				&& !shouldReportCostFeedback(node)) {
+			trace("record-skip-threshold", node, null, "");
 			return;
 		}
 		OperatorKey key = keyFor(node, null);
 		if (key == null) {
+			trace("record-skip-key", node, null, "");
 			return;
 		}
 		OperatorObservation observation = observationFor(node);
 		if (observation == null) {
+			trace("record-skip-observation", node, key, "");
 			return;
 		}
 		learnedByOperator.computeIfAbsent(key, ignored -> new LearnedOperatorCounts()).add(observation);
+		trace("record", node, key, "actualRows=" + observation.actualRows() + ", plannedRows="
+				+ observation.plannedRows() + ", actualWorkRows=" + observation.actualWorkRows()
+				+ ", plannedWorkRows=" + observation.plannedWorkRows());
 		evictOldestIfNeeded();
 		dirty = true;
 	}
@@ -167,26 +177,69 @@ final class LmdbOperatorFeedbackStats {
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
 			double baseWorkRows, String executionMode) {
 		if (learnedByOperator.isEmpty()) {
+			trace("estimate-skip-empty", node, null, "");
 			return null;
 		}
 		OperatorKey key = keyFor(node, executionMode);
 		if (key == null) {
+			trace("estimate-skip-key", node, null, "executionMode=" + executionMode);
 			return null;
 		}
 		LearnedOperatorCounts counts = learnedByOperator.get(key);
 		if (counts == null || counts.sampleCount <= 0L) {
+			trace("estimate-miss", node, key, "executionMode=" + executionMode + ", size=" + learnedByOperator.size());
 			return null;
 		}
 		OperatorEstimate estimate = counts.estimate(node, leftRows, rightRows, baseRows, baseWorkRows,
 				key.toString());
 		if (estimate == null || !isFiniteNonNegative(estimate.rows()) || !isFiniteNonNegative(estimate.workRows())) {
+			trace("estimate-invalid", node, key, "executionMode=" + executionMode);
 			return null;
 		}
+		trace("estimate-hit", node, key, "executionMode=" + executionMode + ", rows=" + estimate.rows()
+				+ ", workRows=" + estimate.workRows() + ", source=" + estimate.source());
 		return estimate;
 	}
 
 	synchronized int size() {
 		return learnedByOperator.size();
+	}
+
+	private static void trace(String event, TupleExpr node, OperatorKey key, String details) {
+		if (!Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY)) {
+			return;
+		}
+		StringBuilder message = new StringBuilder(256);
+		message.append("[lmdb-operator-feedback-trace] event=")
+				.append(event)
+				.append(" node=")
+				.append(node == null ? "<null>" : node.getClass().getSimpleName());
+		if (key != null) {
+			message.append(" key=").append(key);
+		}
+		if (details != null && !details.isEmpty()) {
+			message.append(" details={").append(details).append('}');
+		}
+		System.err.println(message);
+	}
+
+	private static String completionDetails(TupleExpr node, boolean completedRoot) {
+		if (node == null) {
+			return "completedRoot=" + completedRoot;
+		}
+		return "completedRoot=" + completedRoot
+				+ ", tracking=" + node.isCostFeedbackTrackingEnabled()
+				+ ", feedbackCompleted=" + node.isCostFeedbackCompletedActual()
+				+ ", feedbackActualRows=" + node.getCostFeedbackActualRows()
+				+ ", resultSizeActual=" + node.getResultSizeActual()
+				+ ", outputRowsActual=" + longMetric(node, TelemetryMetricNames.OUTPUT_ROWS_ACTUAL)
+				+ ", closeCount=" + node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL)
+				+ ", hasNextCalls=" + node.getHasNextCallCountActual()
+				+ ", hasNextTrueCalls=" + node.getHasNextTrueCountActual()
+				+ ", plannedRepeatedInvocations=" + node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS)
+				+ ", plannedOperatorRepeatedInvocations="
+				+ node.getDoubleMetricPlanned(PLANNED_OPERATOR_REPEATED_INVOCATIONS)
+				+ ", feedbackCloseCount=" + node.getCostFeedbackCloseCountActual();
 	}
 
 	synchronized void persistIfDirty() {
@@ -407,18 +460,20 @@ final class LmdbOperatorFeedbackStats {
 			return false;
 		}
 		if (node.isCostFeedbackCompletedActual() && isFiniteNonNegative(actualRows(node))) {
-			double plannedRepeatedInvocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
-			return !isFiniteNonNegative(plannedRepeatedInvocations)
-					|| plannedRepeatedInvocations <= 1.0d
-					|| node.getCostFeedbackCloseCountActual() >= Math.max(1L, Math.round(plannedRepeatedInvocations));
+			double plannedOperatorRepeatedInvocations = node
+					.getDoubleMetricPlanned(PLANNED_OPERATOR_REPEATED_INVOCATIONS);
+			return !isFiniteNonNegative(plannedOperatorRepeatedInvocations)
+					|| plannedOperatorRepeatedInvocations <= 1.0d
+					|| node.getCostFeedbackCloseCountActual() >= Math.max(1L,
+							Math.round(plannedOperatorRepeatedInvocations));
 		}
 		long closeCount = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 		if (closeCount <= 0L) {
 			return false;
 		}
-		double plannedRepeatedInvocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
-		if (isFiniteNonNegative(plannedRepeatedInvocations) && plannedRepeatedInvocations > 1.0d
-				&& closeCount < Math.max(1L, Math.round(plannedRepeatedInvocations))) {
+		double plannedOperatorRepeatedInvocations = node.getDoubleMetricPlanned(PLANNED_OPERATOR_REPEATED_INVOCATIONS);
+		if (isFiniteNonNegative(plannedOperatorRepeatedInvocations) && plannedOperatorRepeatedInvocations > 1.0d
+				&& closeCount < Math.max(1L, Math.round(plannedOperatorRepeatedInvocations))) {
 			return false;
 		}
 		long hasNextCalls = node.getHasNextCallCountActual();

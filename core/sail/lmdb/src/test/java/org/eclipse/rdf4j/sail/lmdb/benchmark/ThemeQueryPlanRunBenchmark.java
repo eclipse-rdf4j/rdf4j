@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -118,19 +119,22 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({
 				"MEDICAL_RECORDS",
-				"SOCIAL_MEDIA",
-				"LIBRARY",
-				"ENGINEERING",
-				"HIGHLY_CONNECTED",
-				"TRAIN",
-				"ELECTRICAL_GRID",
-				"PHARMA",
-				"SPARSE"
+//				"SOCIAL_MEDIA",
+//				"LIBRARY",
+//				"ENGINEERING",
+//				"HIGHLY_CONNECTED",
+//				"TRAIN",
+//				"ELECTRICAL_GRID",
+//				"PHARMA",
+//				"SPARSE"
 		})
 		public String themeName;
 
 		@Param({ "true" })
 		public boolean sketchEstimatorEnabled;
+
+		@Param({ "fastagms" })
+		public String sketchEstimatorStrategy;
 
 		private SailRepository repository;
 		protected LmdbStore store;
@@ -163,16 +167,20 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@TearDown(Level.Trial)
 		public void tearDown() {
-			if (connection != null) {
-				connection.close();
-				connection = null;
+			try {
+				printTelemetryPlanAtTrialTeardown();
+			} finally {
+				if (connection != null) {
+					connection.close();
+					connection = null;
+				}
+				if (repository != null) {
+					repository.shutDown();
+					repository = null;
+				}
+				store = null;
+				storeConfig = null;
 			}
-			if (repository != null) {
-				repository.shutDown();
-				repository = null;
-			}
-			store = null;
-			storeConfig = null;
 		}
 
 		private void ensureDataLoadedAndValidated() throws IOException {
@@ -241,6 +249,7 @@ public class ThemeQueryPlanRunBenchmark {
 		private LmdbStoreConfig createStoreConfig() {
 			LmdbStoreConfig config = ConfigUtil.createConfig();
 			config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
+			config.setSketchEstimatorStrategy(sketchEstimatorStrategyOrDefault());
 			return config;
 		}
 
@@ -330,7 +339,23 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private File storeDirectory() {
-			return new File(STORE_DIRECTORY, "complete");
+			String strategy = storeConfig == null ? sketchEstimatorStrategyOrDefault()
+					: storeConfig.getSketchEstimatorStrategy();
+			if (strategy == null || strategy.isBlank()) {
+				strategy = "fastagms";
+			}
+			if ("fastagms".equals(strategy)) {
+				return new File(STORE_DIRECTORY, "complete");
+			}
+			return new File(STORE_DIRECTORY, "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_"));
+		}
+
+		private String sketchEstimatorStrategyOrDefault() {
+			String strategy = sketchEstimatorStrategy;
+			if (strategy == null || strategy.isBlank()) {
+				strategy = "fastagms";
+			}
+			return strategy;
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan() {
@@ -357,6 +382,20 @@ public class ThemeQueryPlanRunBenchmark {
 			if (!plan.optimizedDiagnostics().isBlank()) {
 				System.out.println("Optimized diagnostics file: " + optimizedDiagnosticsFile().getAbsolutePath());
 			}
+			System.out.flush();
+		}
+
+		private void printTelemetryPlanAtTrialTeardown() {
+			if (connection == null || query == null) {
+				return;
+			}
+			var tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setIncludeInferred(false);
+			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+			String renderedPlan = "\n### Telemetry Query - Trial teardown ###\n"
+					+ queryDescription() + "\n"
+					+ tupleQuery.explain(Explanation.Level.Telemetry) + "\n";
+			System.out.print(renderedPlan);
 			System.out.flush();
 		}
 

@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -59,6 +57,9 @@ public class AASGenerator {
 	private static final String CONCEPT_MAX_TEMP = "urn:cd:maxTemp";
 	private static final String CONCEPT_MIN_TEMP = "urn:cd:minTemp";
 	private static final String CONCEPT_LINE_CONSISTS = "urn:cd:lineConsistsOfComponent";
+
+	private long generatedIdSequence;
+	private long generatedValueSequence;
 
 	/**
 	 * Generates AAS data and commits it to the provided repository connection.
@@ -440,15 +441,26 @@ public class AASGenerator {
 		return VF.createIRI(iri);
 	}
 
-	private static IRI genId() {
-		return iri("https://company.com/.well-known/genid/aas/N" + UUID.randomUUID().toString().replace("-", ""));
+	private IRI genId() {
+		generatedIdSequence++;
+		return iri("https://company.com/.well-known/genid/aas/N"
+				+ Long.toUnsignedString(generatedIdSequence, Character.MAX_RADIX));
 	}
 
-	private static double randomDouble(double min, double max) {
-		return ThreadLocalRandom.current().nextDouble(min, max);
+	private double randomDouble(double min, double max) {
+		return min + (max - min) * nextUnitInterval();
 	}
 
-	private static int randomInt(int minInclusive, int maxExclusive) {
-		return ThreadLocalRandom.current().nextInt(minInclusive, maxExclusive);
+	private int randomInt(int minInclusive, int maxExclusive) {
+		int range = maxExclusive - minInclusive;
+		return minInclusive + (int) Math.floor(nextUnitInterval() * range);
+	}
+
+	private double nextUnitInterval() {
+		long value = generatedValueSequence++ + 0x9E3779B97F4A7C15L;
+		value = (value ^ (value >>> 30)) * 0xBF58476D1CE4E5B9L;
+		value = (value ^ (value >>> 27)) * 0x94D049BB133111EBL;
+		value = value ^ (value >>> 31);
+		return (value >>> 11) * 0x1.0p-53;
 	}
 }

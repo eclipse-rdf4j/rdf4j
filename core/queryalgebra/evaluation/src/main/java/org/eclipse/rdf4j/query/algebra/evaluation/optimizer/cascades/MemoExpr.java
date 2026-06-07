@@ -34,7 +34,7 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		kind = kind == null ? RuleKind.TRANSFORMATION : kind;
 		ruleCost = ruleCost == null ? CostVector.ZERO : ruleCost;
 		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
-		estimate = estimate == null ? EstimateSnapshot.cascades(ruleCost) : estimate.withCost(ruleCost);
+		estimate = estimate == null ? EstimateSnapshot.cascades(ruleCost) : estimate.withRuleCost(ruleCost);
 		structuralKey = structuralKey == null || structuralKey.isBlank()
 				? structuralKey(operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, kind)
 				: structuralKey;

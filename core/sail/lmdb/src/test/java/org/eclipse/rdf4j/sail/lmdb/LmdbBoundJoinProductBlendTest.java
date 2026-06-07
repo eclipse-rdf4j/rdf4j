@@ -14,12 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -34,6 +36,20 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -79,6 +95,45 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
+	void connectedPageWalkSignalDoesNotHarmonicallyReplaceUsableSketchProduct() throws Exception {
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, null, null);
+		Object productEstimate = boundJoinProductEstimate(223_700.0d, 41_900.0d, 41_700.0d, 222_500.0d,
+				"patient", false);
+		JoinFactorCostModel.FactorCostEstimate baseEstimate = new JoinFactorCostModel.FactorCostEstimate(
+				83_800.0d,
+				83_800.0d,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-connected-join-sample"),
+				Map.of(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 2.0d),
+				true,
+				true,
+				SUBJECT_PREDICATE_LOOKUP_MASK,
+				0,
+				2.0d,
+				false,
+				false);
+
+		Object blend = invokeBlend(statistics, productEstimate, 223_700.0d, 223_700.0d, 41_900.0d, 5.34d,
+				5.34d, baseEstimate);
+
+		assertNull(blend, "A usable tuple-sketch product must not be replaced by page-walk harmonic blending.");
+	}
+
+	@Test
+	void accessEnvelopeRaisesUnderestimatedSketchProductWithoutHarmonicBlend() throws Exception {
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, null, null);
+		Object productEstimate = boundJoinProductEstimate(1.58d, 3.0d, 41_700.0d, 21_900.0d, "enc", false);
+		JoinFactorCostModel.FactorCostEstimate baseEstimate = directSubjectPredicateProbeEstimate();
+
+		Object blend = invokeBlend(statistics, productEstimate, 1.58d, 25_000.0d, 25_000.0d, 1.0d, 1.0d,
+				baseEstimate);
+
+		assertNotNull(blend, "Repeated direct lookup work should protect against near-singleton sketch products.");
+		assertEquals("access_path_transition_envelope", stringRecordValue(blend, "fusion"));
+		assertEquals(25_000.0d, doubleRecordValue(blend, "outputRows"), 0.0d);
+		assertEquals(25_000.0d, doubleRecordValue(blend, "workRows"), 0.0d);
+	}
+
+	@Test
 	void exactStatementEnvelopeIsNotCostedAsPerInvocationWork() throws Exception {
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, sketchEstimator(), null, null);
 		JoinFactorCostModel.FactorCostEstimate estimate = exactStatementEnvelopeEstimate();
@@ -92,6 +147,202 @@ class LmdbBoundJoinProductBlendTest {
 				"An exact statement envelope already accounts for the repeated probe envelope.");
 		assertEquals(estimate.getOutputRows(), nestedEstimate.getOutputRows(),
 				"Nested accounting must not replace selective exact-statement output with lookup-domain rows.");
+	}
+
+	@Test
+	void nestedInvocationCostingPreservesSketchBagEvidence() throws Exception {
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, sketchEstimator(), null, null);
+		TestSketch sketch = new TestSketch(3.0d, 5.0d);
+		JoinFactorCostModel.FactorCostEstimate estimate = new JoinFactorCostModel.FactorCostEstimate(
+				2.0d,
+				2.0d,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "test-sketch-base"),
+				Map.of(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 2.0d),
+				true,
+				true,
+				SUBJECT_PREDICATE_LOOKUP_MASK,
+				0,
+				2.0d,
+				false,
+				false).withBag(sketchBag(2.0d, "drug", sketch));
+		CostContext context = CostContext.forOptimization(Set.of("drug"), 10.0d, 10.0d, true, true,
+				Map.of(), List.of());
+
+		JoinFactorCostModel.FactorCostEstimate nestedEstimate = invokeAccountNestedInvocationWork(statistics,
+				pharmaDrugTypePattern(), estimate, context);
+
+		assertSketchBag(nestedEstimate, "drug", sketch);
+		assertEquals(nestedEstimate.getOutputRows(), nestedEstimate.getBagEstimate()
+				.orElseThrow()
+				.rows(), 0.0d);
+	}
+
+	@Test
+	void connectedPageWalkBlendPreservesSketchBagEvidence() throws Exception {
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, sketchEstimator(), null, null);
+		TestSketch sketch = new TestSketch(11.0d, 13.0d);
+		StatementPattern factor = new StatementPattern(Var.of("left"), Var.of("predicate"), Var.of("join"));
+		JoinFactorCostModel.FactorCostEstimate estimate = new JoinFactorCostModel.FactorCostEstimate(
+				100.0d,
+				100.0d,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "test-sketch-base",
+						"plannedEstimateFusion", "tuple_sketch_surface_product"),
+				Map.of("plannedConnectedJoinRows", 10_000.0d,
+						"plannedConnectedJoinWorkRows", 10_000.0d,
+						"plannedRepeatedInvocations", 100.0d,
+						TelemetryMetricNames.PLANNED_ACCESS_ROWS, 1.0d,
+						TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 1.0d),
+				true,
+				true,
+				SUBJECT_PREDICATE_LOOKUP_MASK,
+				0,
+				1.0d,
+				true,
+				false).withBag(sketchBag(100.0d, "join", sketch));
+		CostContext context = CostContext.forOptimization(Set.of("join"), 100.0d, 100.0d, true, true,
+				Map.of(), List.of());
+
+		JoinFactorCostModel.FactorCostEstimate blended = invokeFuseConnectedPageWalkEstimate(statistics, factor,
+				context, estimate);
+
+		assertEquals("connected_page_walk_geometric_blend",
+				blended.getStringMetrics().get("plannedEstimateFusion"));
+		assertSketchBag(blended, "join", sketch);
+		assertEquals(blended.getOutputRows(), blended.getBagEstimate()
+				.orElseThrow()
+				.rows(), 0.0d);
+	}
+
+	@Test
+	void parameterizedPhysicalLeftJoinUsesRightFactorBagEvidence() {
+		TestSketch rightSketch = new TestSketch(7.0d, 9.0d);
+		BagAwareParameterizedStatistics statistics = new BagAwareParameterizedStatistics(rightSketch);
+		CascadesCostModel model = CascadesCostModel.from(statistics);
+		StatementPattern left = new StatementPattern(Var.of("org"), Var.of("leftPredicate"), Var.of("department"));
+		StatementPattern right = new StatementPattern(Var.of("org"), Var.of("rightPredicate"), Var.of("employee"));
+		org.eclipse.rdf4j.query.algebra.LeftJoin leftJoin = new org.eclipse.rdf4j.query.algebra.LeftJoin(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "LeftJoin", List.of(2, 3), "generic", leftJoin,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(profileWinner(2, left, sketchBag(30.0d, "org",
+				new TestSketch(30.0d, 3.0d))),
+				parameterizedWinner(3, right, Set.of("org")));
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(), inputWinners);
+
+		assertNotNull(delivered.bindingProfile().variables().get("employee").sketch(),
+				"Parameterized physical LeftJoin must compose the RHS factor bag, not a synthetic bindings-only bag");
+		assertEquals(rightSketch, delivered.bindingProfile().variables().get("employee").sketch());
+	}
+
+	@Test
+	void pageWalkFallbackDoesNotReplaceUsableSketchSurface() throws Exception {
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, sketchEstimator(), null, null);
+
+		double selectedRows = invokeSelectJoinSurfaceRows(statistics, 100.0d, Double.NaN, Double.NaN, 80.0d);
+
+		assertEquals(100.0d, selectedRows, 0.0d,
+				"Pairwise page-walk fallback must not harmonically blend or replace usable sketch rows");
+	}
+
+	@Test
+	void boundJoinProductCarriesCountMinSurfaceEvidence() {
+		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
+		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:left");
+		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:right");
+		Value sharedObject = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:shared");
+		source.add(st("urn:count-min:lmdb:left-1", leftPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb:left-2", leftPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb:right-1", rightPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb:right-2", rightPredicate, sharedObject));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null);
+		StatementPattern left = new StatementPattern(Var.of("left"), Var.of("leftPredicate", leftPredicate),
+				Var.of("join"));
+		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
+				Var.of("join"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics.estimateBoundJoinProduct(List.of(left),
+				right, 2.0d, false);
+
+		assertNotNull(estimate);
+		assertNotNull(estimate.countMinEvidence());
+		assertEquals("countmin-sketch-surface", estimate.countMinEvidence().source());
+		assertEquals(0.25d, estimate.countMinEvidence().confidence(), 0.0d);
+		assertTrue(estimate.countMinEvidence().upperBoundRows() >= 4.0d);
+	}
+
+	@Test
+	void statementPatternStatisticsCarriesSketchBagEvidence() {
+		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:lmdb:statement-pattern:memberOf");
+		Value sharedObject = SimpleValueFactory.getInstance().createIRI("urn:lmdb:statement-pattern:shared");
+		source.add(st("urn:lmdb:statement-pattern:left-1", predicate, sharedObject));
+		source.add(st("urn:lmdb:statement-pattern:left-2", predicate, sharedObject));
+		source.add(st("urn:lmdb:statement-pattern:left-3", predicate,
+				SimpleValueFactory.getInstance().createIRI("urn:lmdb:statement-pattern:other")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null);
+		StatementPattern pattern = new StatementPattern(Var.of("person"), Var.of("predicate", predicate),
+				Var.of("org"));
+
+		StatisticsEstimate estimate = statistics.statementPattern(pattern, Set.of())
+				.orElseThrow();
+
+		assertTrue(estimate.bag().hasBindingEvidence(),
+				"LMDB statement estimates must expose the sketch-backed bag to Cascades");
+		assertNotNull(estimate.bag().variable("org").sketch(),
+				"Statement variable sketches must survive the LMDB provider boundary");
+		assertTrue(estimate.bag().evidenceProfile().sketchEvidence(Set.of("org")).isPresent());
+	}
+
+	@Test
+	void exactCalibratedCountMinSurfaceDoesNotReplaceExactFactorCostSource() {
+		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
+		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:left");
+		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:right");
+		Value sharedObject = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:shared");
+		source.add(st("urn:count-min:lmdb-cost:left-1", leftPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb-cost:left-2", leftPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb-cost:right-1", rightPredicate, sharedObject));
+		source.add(st("urn:count-min:lmdb-cost:right-2", rightPredicate, sharedObject));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null);
+		StatementPattern left = new StatementPattern(Var.of("left"), Var.of("leftPredicate", leftPredicate),
+				Var.of("join"));
+		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
+				Var.of("join"));
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(right, CostContext.forOptimization(Set.of("join"), 2.0d, 2.0d, true,
+							true, Map.of(), List.of(left)))
+					.orElseThrow();
+
+			assertEquals("lmdb-bound-join-product",
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals("countmin-dual", estimate.getStringMetrics().get("plannedSketchStrategy"));
+			assertEquals("countmin-sketch-surface",
+					estimate.getStringMetrics().get("plannedSketchEstimateSource"));
+			assertEquals(0.75d, estimate.getDoubleMetrics().get("plannedSketchConfidence"), 0.0d);
+			assertTrue(estimate.getDoubleMetrics().get("plannedSketchUpperBoundRows") >= 4.0d);
+			assertTrue(estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER) >= estimate
+					.getOutputRows());
+		}
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate directSubjectPredicateProbeEstimate() {
@@ -177,6 +428,27 @@ class LmdbBoundJoinProductBlendTest {
 		return (JoinFactorCostModel.FactorCostEstimate) method.invoke(statistics, factor, estimate, context);
 	}
 
+	private static JoinFactorCostModel.FactorCostEstimate invokeFuseConnectedPageWalkEstimate(
+			LmdbEvaluationStatistics statistics, StatementPattern factor,
+			CostContext context,
+			JoinFactorCostModel.FactorCostEstimate estimate)
+			throws Exception {
+		Method method = LmdbEvaluationStatistics.class.getDeclaredMethod("fuseConnectedPageWalkEstimate",
+				org.eclipse.rdf4j.query.algebra.TupleExpr.class,
+				CostContext.class,
+				JoinFactorCostModel.FactorCostEstimate.class);
+		method.setAccessible(true);
+		return (JoinFactorCostModel.FactorCostEstimate) method.invoke(statistics, factor, context, estimate);
+	}
+
+	private static double invokeSelectJoinSurfaceRows(LmdbEvaluationStatistics statistics, double sketchRows,
+			double sketchUpperBoundRows, double exactRows, double pairwiseFallbackRows) throws Exception {
+		Method method = LmdbEvaluationStatistics.class.getDeclaredMethod("selectJoinSurfaceRows",
+				double.class, double.class, double.class, double.class);
+		method.setAccessible(true);
+		return (double) method.invoke(statistics, sketchRows, sketchUpperBoundRows, exactRows, pairwiseFallbackRows);
+	}
+
 	private static StatementPattern pharmaDrugTypePattern() {
 		IRI drugType = SimpleValueFactory.getInstance().createIRI("http://example.com/theme/pharma/Drug");
 		return new StatementPattern(Var.of("drug"), Var.of("_const_type", RDF.TYPE),
@@ -186,6 +458,107 @@ class LmdbBoundJoinProductBlendTest {
 	private static SketchBasedJoinEstimator sketchEstimator() {
 		return new SketchBasedJoinEstimator(new EmptySketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults());
+	}
+
+	private static Statement st(String subject, IRI predicate, Value object) {
+		return SimpleValueFactory.getInstance()
+				.createStatement(SimpleValueFactory.getInstance().createIRI(subject), predicate, object);
+	}
+
+	private static BagEstimate sketchBag(double rows, String variable, DistributionSketch sketch) {
+		return BagEstimate.exact(rows, "test-sketch-bag")
+				.withVariable(variable, new VariableEstimate(sketch.distinctRows(), rows, 0.0d, sketch))
+				.withSketchRelation(Set.of(variable), sketch);
+	}
+
+	private static void assertSketchBag(JoinFactorCostModel.FactorCostEstimate estimate, String variable,
+			DistributionSketch sketch) {
+		BagEstimate bag = estimate.getBagEstimate()
+				.orElseThrow();
+		assertTrue(bag.hasBindingEvidence(), "Expected derived estimate to retain bag evidence");
+		assertEquals(sketch, bag.variable(variable).sketch());
+	}
+
+	private static Winner profileWinner(int groupId, org.eclipse.rdf4j.query.algebra.TupleExpr plan, BagEstimate bag) {
+		BindingProfile profile = BindingProfile.fromBag(plan, bag, Map.of());
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(plan.getBindingNames())
+				.bindingProfile(profile)
+				.build();
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass()
+				.getSimpleName(), List.of(), "test", plan, delivered, RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of(), "winner-" + groupId);
+		CostVector cost = CostVector.ofRowsAndWork(bag.rows(), bag.workRows(), QErrorInterval.heuristic(bag.rows(),
+				4.0d, "test-winner"));
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private static Winner parameterizedWinner(int groupId, org.eclipse.rdf4j.query.algebra.TupleExpr plan,
+			Set<String> inputBoundVars) {
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(plan.getBindingNames())
+				.inputBoundVars(inputBoundVars)
+				.build();
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass()
+				.getSimpleName(), List.of(), "test", plan, delivered, RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of(), "winner-" + groupId);
+		CostVector cost = CostVector.ofRowsAndWork(1.0d, 1.0d, QErrorInterval.heuristic(1.0d,
+				4.0d, "test-winner"));
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private record TestSketch(double distinctRows, double innerProduct) implements DistributionSketch {
+	}
+
+	private static final class BagAwareParameterizedStatistics extends LmdbEvaluationStatistics {
+		private final DistributionSketch rightSketch;
+
+		private BagAwareParameterizedStatistics(DistributionSketch rightSketch) {
+			super(null, null, null, null, null, null);
+			this.rightSketch = rightSketch;
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(org.eclipse.rdf4j.query.algebra.TupleExpr factor,
+				CostContext context) {
+			if (!(factor instanceof StatementPattern) || context == null || !context.isNestedIteratorInvocation()) {
+				return Optional.empty();
+			}
+			BagEstimate bag = sketchBag(300.0d, "employee", rightSketch);
+			return Optional.of(new FactorCostEstimate(330.0d, 300.0d,
+					Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "test-right-factor-bag"),
+					Map.of("plannedRepeatedInvocations", 30.0d),
+					true, true, SUBJECT_PREDICATE_LOOKUP_MASK, 0, 1.0d, true, false)
+							.withBag(bag));
+		}
+	}
+
+	private static final class SimpleSketchStatementSource implements SketchStatementSource {
+
+		private final List<Statement> statements = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+		private void add(Statement statement) {
+			statements.add(statement);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			List<Statement> matches = new java.util.ArrayList<>();
+			for (Statement statement : statements) {
+				if (subject != null && !subject.equals(statement.getSubject())) {
+					continue;
+				}
+				if (predicate != null && !predicate.equals(statement.getPredicate())) {
+					continue;
+				}
+				if (object != null && !object.equals(statement.getObject())) {
+					continue;
+				}
+				matches.add(statement);
+			}
+			return new CloseableIteratorIteration<>(matches.iterator());
+		}
 	}
 
 	private static final class EmptySketchStatementSource implements SketchStatementSource {

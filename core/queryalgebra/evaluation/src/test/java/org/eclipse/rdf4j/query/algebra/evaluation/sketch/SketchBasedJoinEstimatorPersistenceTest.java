@@ -259,6 +259,41 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void countMinDualLazyLoadRestoresCountMinSideState(@TempDir Path tempDir) throws Exception {
+		Resource s1 = VF.createIRI("urn:count-min-lazy:s1");
+		Resource s2 = VF.createIRI("urn:count-min-lazy:s2");
+		IRI p = VF.createIRI("urn:count-min-lazy:p");
+		Value o = VF.createIRI("urn:count-min-lazy:o");
+
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(s1, p, o));
+		sourceStore.add(st(s2, p, o));
+
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL);
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		assertTrue(countMinSketchCount(writer) > 0, "COUNT_MIN_DUAL writer should build side-state sketches");
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+		assertEquals(0, countMinSketchCount(reader), "Lazy startup should not heap-load Count-Min side state");
+
+		JoinFrequencyEstimate estimate = reader.estimateCountMinJoinOn(SketchBasedJoinEstimator.Component.O,
+				SketchBasedJoinEstimator.Component.P, p.stringValue(), SketchBasedJoinEstimator.Component.P,
+				p.stringValue());
+
+		assertNotNull(estimate, "Lazy COUNT_MIN_DUAL reads should restore persisted Count-Min side state");
+		assertTrue(estimate.upperBoundRows() >= 4.0d);
+		assertTrue(countMinSketchCount(reader) > 0,
+				"Lazy COUNT_MIN_DUAL reads should restore persisted Count-Min side state");
+	}
+
+	@Test
 	void strategyMismatchSnapshotIsIgnoredInsteadOfRead(@TempDir Path tempDir) throws Exception {
 		Resource subject = VF.createIRI("urn:strategy-mismatch:s");
 		IRI predicate = VF.createIRI("urn:strategy-mismatch:p");
@@ -1378,6 +1413,21 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Field sketchesField = joinSketches.getClass().getDeclaredField("sketches");
 		sketchesField.setAccessible(true);
 		Object[] sketches = (Object[]) sketchesField.get(joinSketches);
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int countMinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object countMinSketches = privateFieldValue(current, "countMinSketches");
+		Field sketchesField = countMinSketches.getClass().getDeclaredField("sketches");
+		sketchesField.setAccessible(true);
+		Object[] sketches = (Object[]) sketchesField.get(countMinSketches);
 		int count = 0;
 		for (Object sketch : sketches) {
 			if (sketch != null) {

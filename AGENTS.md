@@ -318,7 +318,10 @@ mvn -B -ntp \
     '
 ```
 
-* Always run the same root clean install before any `verify` or test runs.
+* Always run the same root clean install before any direct/manual `verify` or test runs.
+  When using `mvnf`, a separate pre-test root install is typically redundant because `mvnf`
+  already performs the required root `-Pquick` install before verify. Still run the initial
+  root clean install when a conversation first starts.
 * If you need install without clean, keep the same flags and output filter, but replace `clean install` with `install`.
 * If you need install for just one module and its dependencies, keep the same flags and output filter, but add `-pl <module> -am` before `-Pquick`. Use `clean install` or `install` as needed.
   * Root install without clean: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick install`.

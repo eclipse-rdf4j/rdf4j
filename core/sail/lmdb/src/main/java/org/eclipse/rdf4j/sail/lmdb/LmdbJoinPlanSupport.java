@@ -503,7 +503,9 @@ final class LmdbJoinPlanSupport {
 
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
 		return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsExtension(tupleExpr)
-				|| TupleExprs.containsSubquery(tupleExpr);
+				|| TupleExprs.containsSubquery(tupleExpr)
+				|| "hash".equals(tupleExpr.getStringMetricPlanned("optimizer.joinAlgorithmHint"))
+				|| "phase1_csg_cmp".equals(tupleExpr.getStringMetricPlanned("optimizer.connectedEnumeration"));
 	}
 
 	static boolean isValidPassRatio(double passRatio) {

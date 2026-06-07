@@ -108,6 +108,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceQuality;
@@ -237,7 +238,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	public enum SketchStrategy {
 		FAST_AGMS("fastagms"),
 		TUPLE("tuple"),
-		JOIN_SKETCH("joinsketch");
+		JOIN_SKETCH("joinsketch"),
+		COUNT_MIN("countmin"),
+		COUNT_MIN_DUAL("countmin-dual");
 
 		private final String configValue;
 
@@ -258,7 +261,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					.replace("_", "")
 					.toLowerCase(Locale.ROOT);
 			for (SketchStrategy strategy : values()) {
-				if (strategy.configValue.equals(normalized)) {
+				String normalizedStrategy = strategy.configValue.trim()
+						.replace("-", "")
+						.replace("_", "")
+						.toLowerCase(Locale.ROOT);
+				if (normalizedStrategy.equals(normalized)) {
 					return strategy;
 				}
 			}
@@ -514,8 +521,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int SKETCH_PAYLOAD_FORMAT_TUPLE = -1;
 	private static final int SKETCH_PAYLOAD_FORMAT_FAST_AGMS = 1;
 	private static final int SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH = 2;
+	private static final int SKETCH_PAYLOAD_FORMAT_COUNT_MIN = 3;
 	private static final int JOIN_SKETCH_PAYLOAD_MAGIC = 0x4a53504c; // JSPL
 	private static final int JOIN_SKETCH_PAYLOAD_VERSION = 1;
+	private static final int COUNT_MIN_PAYLOAD_MAGIC = 0x434d504c; // CMPL
+	private static final int COUNT_MIN_PAYLOAD_VERSION = 1;
 	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
 	private static final int TARGET_SKETCH_PART_FILES = 128;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
@@ -3572,10 +3582,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (joinSketch != null) {
 			joinSketch.update(firstValue, 1L);
 		}
+		CountMinFrequencySketch countMinSketch = countMinSketchForWrite(state, recType, entryId);
+		if (countMinSketch != null) {
+			countMinSketch.update(firstValue, 1L);
+		}
 		for (int i = 1; i < valueCount; i++) {
 			frequencyUpdateRaw(sketch, overflowValues[i - 1], delta);
 			if (joinSketch != null) {
 				joinSketch.update(overflowValues[i - 1], 1L);
+			}
+			if (countMinSketch != null) {
+				countMinSketch.update(overflowValues[i - 1], 1L);
 			}
 		}
 		markDirtyAndTouchResidentSketch(slot, entryId);
@@ -3765,12 +3782,55 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
+	public SketchStrategy getSketchStrategy() {
+		return sketchStrategy;
+	}
+
 	public double estimateJoinOn(Component j, Component a, String av,
 			Component b, String bv) {
 		State snap = current;
 		synchronized (snap) {
 			return joinSingles(snap, j, a, av, b, bv);
 		}
+	}
+
+	JoinFrequencyEstimate estimateCountMinJoinOn(Component j, Component a, String av,
+			Component b, String bv) {
+		flushPendingIncremental();
+		State snap = current;
+		synchronized (snap) {
+			return countMinJoinSingles(snap, j, a, av, b, bv);
+		}
+	}
+
+	public JoinFrequencyEstimate estimateCountMinJoinSurface(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
+			return null;
+		}
+		TupleExpr left = singleCountMinSurfaceJoinFactor(prefixFactors, joinVarName);
+		return left == null ? null : estimateCountMinPairwiseJoinSurface(left, factor, joinVarName);
+	}
+
+	public JoinFrequencyEstimate estimateCountMinJoinSurface(List<TupleExpr> factors, String joinVarName) {
+		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
+			return null;
+		}
+		TupleExpr left = null;
+		TupleExpr right = null;
+		for (TupleExpr factor : factors) {
+			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			if (left == null) {
+				left = factor;
+			} else if (right == null) {
+				right = factor;
+			} else {
+				return null;
+			}
+		}
+		return left == null || right == null ? null : estimateCountMinPairwiseJoinSurface(left, right, joinVarName);
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -4369,8 +4429,105 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return roundJoinEstimate(joinSketchRows);
 			}
 		}
+		if (sketchStrategy == SketchStrategy.COUNT_MIN && da == null && db == null) {
+			JoinFrequencyEstimate countMinEstimate = countMinJoinSingles(st, j, a, av, b, bv);
+			if (countMinEstimate != null && Double.isFinite(countMinEstimate.upperBoundRows())) {
+				return roundJoinEstimate(countMinEstimate.upperBoundRows());
+			}
+		}
 
 		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+	}
+
+	private JoinFrequencyEstimate countMinJoinSingles(State state, Component join,
+			Component a, String av, Component b, String bv) {
+		return countMinJoinSingles(state, join, a, av, join, b, bv);
+	}
+
+	private JoinFrequencyEstimate countMinJoinSingles(State state, Component leftJoin, Component leftFixed,
+			String leftFixedValue, Component rightJoin, Component rightFixed, String rightFixedValue) {
+		if (!usesCountMinSketches(state.sketchStrategy) || leftJoin == leftFixed || rightJoin == rightFixed) {
+			return null;
+		}
+		int idxA = hash(leftFixed, leftFixedValue), idxB = hash(rightFixed, rightFixedValue);
+		SketchAddress leftAdd = singleComplementAddress(false, leftFixed, leftJoin, idxA);
+		SketchAddress rightAdd = singleComplementAddress(false, rightFixed, rightJoin, idxB);
+		SketchAddress leftDelete = singleComplementAddress(true, leftFixed, leftJoin, idxA);
+		SketchAddress rightDelete = singleComplementAddress(true, rightFixed, rightJoin, idxB);
+		getSketchForRead(state, leftAdd);
+		getSketchForRead(state, rightAdd);
+		if (countMinSketchForRead(state, leftDelete) != null || countMinSketchForRead(state, rightDelete) != null) {
+			return null;
+		}
+		CountMinFrequencySketch left = countMinSketchForRead(state, leftAdd);
+		CountMinFrequencySketch right = countMinSketchForRead(state, rightAdd);
+		if (left == null || right == null) {
+			return null;
+		}
+		return left.estimateInnerProduct(right);
+	}
+
+	private TupleExpr singleCountMinSurfaceJoinFactor(List<TupleExpr> factors, String joinVarName) {
+		TupleExpr singleJoinFactor = null;
+		for (TupleExpr prefixFactor : factors) {
+			if (prefixFactor == null || !prefixFactor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			if (singleJoinFactor != null) {
+				return null;
+			}
+			singleJoinFactor = prefixFactor;
+		}
+		return singleJoinFactor;
+	}
+
+	private JoinFrequencyEstimate estimateCountMinPairwiseJoinSurface(TupleExpr left, TupleExpr right,
+			String joinVarName) {
+		CountMinSurfaceInput leftInput = countMinSurfaceInput(left, joinVarName);
+		CountMinSurfaceInput rightInput = countMinSurfaceInput(right, joinVarName);
+		if (leftInput == null || rightInput == null) {
+			return null;
+		}
+		flushPendingIncremental();
+		State snap = current;
+		synchronized (snap) {
+			return countMinJoinSingles(snap, leftInput.joinComponent(), leftInput.fixedComponent(),
+					leftInput.fixedValue(), rightInput.joinComponent(), rightInput.fixedComponent(),
+					rightInput.fixedValue());
+		}
+	}
+
+	private CountMinSurfaceInput countMinSurfaceInput(TupleExpr factor, String joinVarName) {
+		PatternEstimateInput input = asSketchCompatibleInput(factor);
+		if (input == null || input.filterMultiplier != 1.0d) {
+			return null;
+		}
+		StatementPattern pattern = input.pattern();
+		Var joinVar = findUnboundVarByName(pattern, joinVarName);
+		if (joinVar == null) {
+			return null;
+		}
+		Component joinComponent = getComponent(pattern, joinVar);
+		Component fixedComponent = null;
+		String fixedValue = null;
+		for (Component component : COMPONENT_VALUES) {
+			if (component == joinComponent) {
+				continue;
+			}
+			Var var = varForComponent(pattern, component);
+			if (!hasBoundValue(var)) {
+				continue;
+			}
+			if (fixedComponent != null) {
+				return null;
+			}
+			fixedComponent = component;
+			fixedValue = getValueOrNull(var);
+		}
+		return fixedComponent == null ? null : new CountMinSurfaceInput(joinComponent, fixedComponent, fixedValue);
+	}
+
+	private record CountMinSurfaceInput(Component joinComponent, Component fixedComponent, String fixedValue) {
 	}
 
 	private double estimateJoinSketchNetInnerProduct(State state, SketchAddress leftAdd, SketchAddress rightAdd,
@@ -4436,6 +4593,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		final StateComponents<SingleBuild> delSingles;
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 		final JoinSketchByEntry joinSketches = new JoinSketchByEntry();
+		final CountMinSketchByEntry countMinSketches = new CountMinSketchByEntry();
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
 				boolean contextPairSketchesEnabled, SketchStrategy sketchStrategy) {
@@ -4500,6 +4658,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			pairs.values().forEach(PairBuild::clear);
 			delPairs.values().forEach(PairBuild::clear);
 			joinSketches.clear();
+			countMinSketches.clear();
 		}
 
 		private int bucketCount(Component component) {
@@ -4619,6 +4778,46 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		private void set(int entryId, JoinFrequencySketch sketch) {
+			ensureCapacity(entryId + 1);
+			sketches[entryId] = sketch;
+		}
+
+		private void clear() {
+			Arrays.fill(sketches, null);
+		}
+
+		private void ensureCapacity(int minCapacity) {
+			if (minCapacity <= sketches.length) {
+				return;
+			}
+			int next = sketches.length;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			sketches = Arrays.copyOf(sketches, next);
+		}
+	}
+
+	private static final class CountMinSketchByEntry {
+
+		private CountMinFrequencySketch[] sketches = new CountMinFrequencySketch[256];
+
+		private CountMinFrequencySketch get(int entryId) {
+			return entryId >= 0 && entryId < sketches.length ? sketches[entryId] : null;
+		}
+
+		private CountMinFrequencySketch getOrCreate(int entryId) {
+			ensureCapacity(entryId + 1);
+			CountMinFrequencySketch sketch = sketches[entryId];
+			if (sketch == null) {
+				sketch = new CountMinFrequencySketch(CountMinFrequencySketch.DEFAULT_ROWS,
+						CountMinFrequencySketch.DEFAULT_BUCKETS, FAST_AGMS_SEED);
+				sketches[entryId] = sketch;
+			}
+			return sketch;
+		}
+
+		private void set(int entryId, CountMinFrequencySketch sketch) {
 			ensureCapacity(entryId + 1);
 			sketches[entryId] = sketch;
 		}
@@ -5303,6 +5502,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	TuplePlanEstimate planEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+	}
+
+	public Optional<BagEstimate> bagEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate estimate = estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+		if (estimate == null) {
+			return Optional.empty();
+		}
+		return Optional.of(estimate.evidenceProfile()
+				.toBagEstimate());
+	}
+
+	public Optional<BagEstimate> conditionedBagEstimateForJoinOrdering(TupleExpr tupleExpr,
+			String[] sourceVariableNames, long sourceBoundVarMask) {
+		TuplePlanEstimate estimate = conditionedFactorEstimateForJoinOrdering(tupleExpr, sourceVariableNames,
+				sourceBoundVarMask);
+		if (estimate == null) {
+			return Optional.empty();
+		}
+		return Optional.of(estimate.evidenceProfile()
+				.toBagEstimate());
 	}
 
 	TuplePlanEstimate factorEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -9361,6 +9580,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return estimateJoinSurfaceRows(prefixFactors, factor, joinVarName, false);
 	}
 
+	public JoinFrequencyEstimate estimateSketchJoinSurface(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		JoinFrequencyEstimate countMinEstimate = estimateCountMinJoinSurface(prefixFactors, factor, joinVarName);
+		if (countMinEstimate != null) {
+			return countMinEstimate;
+		}
+		return sketchSurfaceEstimate(estimateSketchJoinSurfaceStats(prefixFactors, factor, joinVarName),
+				"tuple_sketch_surface_product");
+	}
+
 	public double estimateSketchJoinSurfaceUpperBoundRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String joinVarName) {
 		SummaryStats stats = estimateSketchJoinSurfaceStats(prefixFactors, factor, joinVarName);
@@ -9499,6 +9728,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public double estimateSketchJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
 		return estimateJoinSurfaceRows(factors, joinVarName, false);
+	}
+
+	public JoinFrequencyEstimate estimateSketchJoinSurface(List<TupleExpr> factors, String joinVarName) {
+		JoinFrequencyEstimate countMinEstimate = estimateCountMinJoinSurface(factors, joinVarName);
+		if (countMinEstimate != null) {
+			return countMinEstimate;
+		}
+		return sketchSurfaceEstimate(estimateSketchJoinSurfaceStats(factors, joinVarName),
+				"tuple_sketch_surface_prefix");
 	}
 
 	public double estimateSketchJoinSurfaceUpperBoundRows(List<TupleExpr> factors, String joinVarName) {
@@ -9660,6 +9898,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		PrefixSurfaceStats prefixStats = estimatePrefixSurfaceStats(factors, joinVarName);
 		return prefixStats == null ? null : prefixStats.stats();
+	}
+
+	private JoinFrequencyEstimate sketchSurfaceEstimate(SummaryStats stats, String source) {
+		if (stats == null) {
+			return null;
+		}
+		double upperBoundRows = normalizeRows(stats.upperBoundRows);
+		double calibratedRows = normalizeRows(stats.rows);
+		double calibrationFactor = upperBoundRows > 0.0d ? Math.min(1.0d, calibratedRows / upperBoundRows) : 1.0d;
+		double confidence = stats.upperBoundOnly ? 0.35d : 0.65d;
+		return new JoinFrequencyEstimate(upperBoundRows, calibratedRows, confidence, source, calibrationFactor);
 	}
 
 	private PrefixSurfaceStats estimatePrefixSurfaceStats(List<TupleExpr> factors, String joinVarName) {
@@ -12150,6 +12399,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return state.joinSketches.getOrCreate(entryId);
 	}
 
+	private CountMinFrequencySketch countMinSketchForRead(State state, SketchAddress address) {
+		if (!usesCountMinSketches(state.sketchStrategy)) {
+			return null;
+		}
+		if (address.recType == REC_GLOBAL_COMPONENT) {
+			return null;
+		}
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.find(address);
+		}
+		return state.countMinSketches.get(entryId);
+	}
+
+	private CountMinFrequencySketch countMinSketchForWrite(State state, byte recType, int entryId) {
+		if (!usesCountMinSketches(state.sketchStrategy)) {
+			return null;
+		}
+		if (recType == REC_GLOBAL_COMPONENT || entryId < 0) {
+			return null;
+		}
+		return state.countMinSketches.getOrCreate(entryId);
+	}
+
+	private static boolean usesCountMinSketches(SketchStrategy sketchStrategy) {
+		return sketchStrategy == SketchStrategy.COUNT_MIN || sketchStrategy == SketchStrategy.COUNT_MIN_DUAL;
+	}
+
 	private FastAgmsBindingSummary getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y, int entryId) {
@@ -12517,6 +12794,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			throws IOException {
 		try {
 			byte[] summaryPayload = sketch.toByteArray();
+			if (usesCountMinSketches(state.sketchStrategy)) {
+				CountMinFrequencySketch countMinSketch = entryId >= 0 ? state.countMinSketches.get(entryId) : null;
+				byte[] countMinPayload = countMinSketch == null ? new byte[0] : countMinSketch.toByteArray();
+				ByteArrayOutputStream bytes = new ByteArrayOutputStream(summaryPayload.length + countMinPayload.length
+						+ Integer.BYTES * 4);
+				try (DataOutputStream out = new DataOutputStream(bytes)) {
+					out.writeInt(COUNT_MIN_PAYLOAD_MAGIC);
+					out.writeInt(COUNT_MIN_PAYLOAD_VERSION);
+					out.writeInt(summaryPayload.length);
+					out.write(summaryPayload);
+					out.writeInt(countMinPayload.length);
+					out.write(countMinPayload);
+				}
+				return bytes.toByteArray();
+			}
 			if (state.sketchStrategy != SketchStrategy.JOIN_SKETCH) {
 				return summaryPayload;
 			}
@@ -12541,6 +12833,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private FastAgmsBindingSummary readSketchFromStore(State state, SketchEstimatorPersistenceStore store,
 			PersistedSketchRef persistedSketchRef, SketchAddress address, byte slot, int entryId) throws IOException {
 		SketchEstimatorPersistenceStore.Ref storeRef = persistedSketchRef.storeRef(slot);
+		if (usesCountMinSketches(state.sketchStrategy)) {
+			return store.readFramedPayload(storeRef, payloadFormat(state),
+					payload -> readCountMinPayload(state, entryId, payload));
+		}
 		if (state.sketchStrategy == SketchStrategy.JOIN_SKETCH) {
 			return store.readFramedPayload(storeRef, payloadFormat(state),
 					payload -> readJoinSketchPayload(state, entryId, payload));
@@ -12555,6 +12851,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		return store.readFramedPayload(storeRef, payloadFormat(state),
 				payload -> FastAgmsBindingSummary.wrapTuple(payload, state.k));
+	}
+
+	private FastAgmsBindingSummary readCountMinPayload(State state, int entryId, MemorySegment payload)
+			throws IOException {
+		try (DataInputStream in = new DataInputStream(
+				new ByteArrayInputStream(payload.toArray(ValueLayout.JAVA_BYTE)))) {
+			int magic = in.readInt();
+			if (magic != COUNT_MIN_PAYLOAD_MAGIC) {
+				throw new IOException("Unsupported Count-Min payload magic: " + magic);
+			}
+			int version = in.readInt();
+			if (version != COUNT_MIN_PAYLOAD_VERSION) {
+				throw new IOException("Unsupported Count-Min payload version: " + version);
+			}
+			byte[] summaryPayload = readBoundedPayload(in, "FastAGMS summary");
+			FastAgmsBindingSummary summary = FastAgmsBindingSummary.fromByteArray(summaryPayload);
+			byte[] countMinPayload = readBoundedPayload(in, "Count-Min");
+			if (countMinPayload.length > 0 && entryId >= 0) {
+				state.countMinSketches.set(entryId, CountMinFrequencySketch.fromByteArray(countMinPayload));
+			}
+			if (in.available() != 0) {
+				throw new IOException("Count-Min envelope payload has trailing bytes: " + in.available());
+			}
+			return summary;
+		}
 	}
 
 	private FastAgmsBindingSummary readJoinSketchPayload(State state, int entryId, MemorySegment payload)
@@ -12596,6 +12917,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return switch (state.sketchStrategy) {
 		case TUPLE -> SKETCH_PAYLOAD_FORMAT_TUPLE;
 		case JOIN_SKETCH -> SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH;
+		case COUNT_MIN, COUNT_MIN_DUAL -> SKETCH_PAYLOAD_FORMAT_COUNT_MIN;
 		case FAST_AGMS -> SKETCH_PAYLOAD_FORMAT_FAST_AGMS;
 		};
 	}

@@ -15,7 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
+import java.util.OptionalDouble;
+import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.junit.jupiter.api.Test;
 
 class CascadesEstimateVectorTest {
@@ -87,5 +91,29 @@ class CascadesEstimateVectorTest {
 		assertEquals(0.60d, roundTripped.confidence());
 		assertEquals(4.0d, roundTripped.evidenceCount());
 		assertEquals(5.0d, roundTripped.pageWalkRows());
+	}
+
+	@Test
+	void fromBagCountsSketchRelationsAsEvidence() {
+		BagEstimate bag = BagEstimate.heuristic(20.0d, "sketch-bag")
+				.withSketchRelation(Set.of("x"), new TestSketch(10.0d, 20.0d));
+
+		EstimateVector vector = StatisticsEstimate.fromBag(bag, "sketch-provider").vector();
+
+		assertEquals(1.0d, vector.evidenceCount());
+		assertEquals(1.0d, vector.metrics().get("optimizer.vectorEvidenceCount"));
+	}
+
+	private record TestSketch(double distinctRows, double innerProduct) implements DistributionSketch {
+
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return OptionalDouble.of(innerProduct);
+		}
+
+		@Override
+		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+			return OptionalDouble.of(innerProduct);
+		}
 	}
 }

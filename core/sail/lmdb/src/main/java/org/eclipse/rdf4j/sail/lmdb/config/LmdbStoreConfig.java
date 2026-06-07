@@ -894,8 +894,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		case "fastagms" -> "fastagms";
 		case "tuple" -> "tuple";
 		case "joinsketch" -> "joinsketch";
+		case "countmin" -> "countmin";
+		case "countmindual" -> "countmin-dual";
 		default -> throw new SailConfigException(
-				"Sketch estimator strategy value required: fastagms, tuple, or joinsketch; found " + value);
+				"Sketch estimator strategy value required: fastagms, tuple, joinsketch, countmin, or countmin-dual; found "
+						+ value);
 		};
 	}
 }

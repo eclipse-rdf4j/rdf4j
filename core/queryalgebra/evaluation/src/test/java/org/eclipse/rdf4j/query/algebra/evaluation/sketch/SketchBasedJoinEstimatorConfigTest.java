@@ -126,6 +126,50 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
+	void countMinStrategiesAllocateCountMinSideState() throws Exception {
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : List.of(
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN,
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)) {
+			StubSketchStatementSource localStore = new StubSketchStatementSource();
+			localStore.add(st(s1, p1, o1));
+			localStore.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o2")));
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(strategy)
+							.withThrottleEveryN(1)
+							.withThrottleMillis(0));
+
+			rebuild(estimator);
+
+			assertTrue(countMinSketchCount(estimator) > 0, strategy + " should allocate Count-Min side state");
+		}
+	}
+
+	@Test
+	void countMinDualExposesJoinEvidenceWithoutChangingDefaultEstimatePath() throws Exception {
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		Value object = VF.createIRI("urn:o:shared");
+		localStore.add(st(s1, p1, object));
+		localStore.add(st(VF.createIRI("urn:s2"), p1, object));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		Object estimate = invokeCountMinJoinEvidence(estimator, SketchBasedJoinEstimator.Component.O,
+				SketchBasedJoinEstimator.Component.P, p1.stringValue(), SketchBasedJoinEstimator.Component.P,
+				p1.stringValue());
+
+		assertEquals("countmin-sketch-surface", invokeString(estimate, "source"));
+		assertEquals(invokeDouble(estimate, "upperBoundRows"), invokeDouble(estimate, "calibratedRows"), 0.0d);
+		assertTrue(invokeDouble(estimate, "upperBoundRows") >= 4.0d);
+		assertTrue(invokeDouble(estimate, "confidence") < 0.5d);
+	}
+
+	@Test
 	void systemPropertyOverridesSketchStrategy() throws Exception {
 		PropertyState properties = PropertyState.capture(SKETCH_STRATEGY_PROPERTY);
 		try {
@@ -633,6 +677,41 @@ class SketchBasedJoinEstimatorConfigTest {
 			}
 		}
 		return count;
+	}
+
+	private static int countMinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object countMinSketches = objectField(state, "countMinSketches");
+		Object[] sketches = (Object[]) objectField(countMinSketches, "sketches");
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static Object invokeCountMinJoinEvidence(SketchBasedJoinEstimator estimator,
+			SketchBasedJoinEstimator.Component join, SketchBasedJoinEstimator.Component a, String av,
+			SketchBasedJoinEstimator.Component b, String bv) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("estimateCountMinJoinOn",
+				SketchBasedJoinEstimator.Component.class, SketchBasedJoinEstimator.Component.class, String.class,
+				SketchBasedJoinEstimator.Component.class, String.class);
+		method.setAccessible(true);
+		return method.invoke(estimator, join, a, av, b, bv);
+	}
+
+	private static double invokeDouble(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (double) method.invoke(target);
+	}
+
+	private static String invokeString(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (String) method.invoke(target);
 	}
 
 	private static Object component(Object stateComponents, String component) throws Exception {
