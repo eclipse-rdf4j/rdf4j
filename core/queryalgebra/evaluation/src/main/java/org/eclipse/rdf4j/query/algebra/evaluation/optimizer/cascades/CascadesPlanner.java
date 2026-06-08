@@ -168,20 +168,7 @@ public final class CascadesPlanner {
 	}
 
 	private boolean seededNativeWinner(Winner winner) {
-		return winner != null
-				&& (localNativePhysicalExpression(winner.expression()) || hasNativeImplementationProof(winner));
-	}
-
-	private boolean hasNativeImplementationProof(Winner winner) {
-		if (winner == null || winner.proofs() == null) {
-			return false;
-		}
-		for (RuleProof proof : winner.proofs()) {
-			if (proof.kind() == RuleKind.IMPLEMENTATION && nativeImplementationRule(proof.ruleId())) {
-				return true;
-			}
-		}
-		return false;
+		return winner != null && localNativePhysicalExpression(winner.expression());
 	}
 
 	private boolean nativeImplementationRule(String ruleId) {

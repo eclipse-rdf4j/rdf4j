@@ -54,6 +54,38 @@ public interface JoinFactorCostModel {
 		return estimateFactorCost(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
 	}
 
+	default Optional<FilterCostEstimate> estimateFilterCost(JoinOrderPlanner.FilterConstraint filter,
+			CostContext context) {
+		return Optional.empty();
+	}
+
+	record FilterCostEstimate(double workRows, double outputRows, double passRatio,
+			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics, boolean exactOutputRows) {
+
+		public FilterCostEstimate(double workRows, double outputRows, double passRatio) {
+			this(workRows, outputRows, passRatio, Map.of(), Map.of(), false);
+		}
+
+		public FilterCostEstimate {
+			workRows = finiteNonNegative(workRows, 0.0d);
+			outputRows = finiteNonNegative(outputRows, Double.NaN);
+			passRatio = passRatio(passRatio, outputRows);
+			stringMetrics = stringMetrics == null || stringMetrics.isEmpty() ? Map.of() : Map.copyOf(stringMetrics);
+			doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty() ? Map.of() : Map.copyOf(doubleMetrics);
+		}
+
+		private static double finiteNonNegative(double value, double fallback) {
+			return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+		}
+
+		private static double passRatio(double passRatio, double outputRows) {
+			if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
+				return passRatio;
+			}
+			return Double.isFinite(outputRows) && outputRows == 0.0d ? 0.0d : Double.NaN;
+		}
+	}
+
 	record EstimateVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
 			double rowQErrorMean, double rowQErrorMax, double workQErrorMean, double workQErrorMax,
 			double uncertaintyRows, double confidence, double evidenceCount) {

@@ -187,6 +187,42 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	@Test
+	void medicalQ7FilterInBenchmarkPlanKeepsValuesLookupWithSelectiveAntiFilter() throws Exception {
+		ThemeQueryBenchmark benchmark = newBenchmark(Theme.MEDICAL_RECORDS, 7);
+
+		benchmark.setup();
+		try {
+			String query = medicalQ7FilterInQuery();
+			assertEquals(expectedBenchmarkResult(Theme.MEDICAL_RECORDS, 7),
+					benchmark.executeCountQuery(query, expectedBenchmarkResult(Theme.MEDICAL_RECORDS, 7), 120));
+			String renderedQuery = benchmark.renderOptimizedQuery(query);
+			String plan = benchmark.explainOptimizedPlan(query);
+
+			assertTrue(renderedQuery.contains("VALUES ?code { \"MED-1000\" \"MED-1001\" }"),
+					"q7 FILTER IN should be satisfied by a movable VALUES relation\n" + renderedQuery + "\n"
+							+ plan);
+			assertFalse(renderedQuery.contains("FILTER (?code IN (\"MED-1000\", \"MED-1001\"))"),
+					"q7 should not keep the materialized IN filter after selecting the finite code anchor\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(renderedQuery.contains("FILTER NOT EXISTS"),
+					"q7 should keep the selective bound dosage anti-filter; materialized MINUS scans the dosage "
+							+ "side and loses the anchored anti-probe shape\n" + renderedQuery + "\n" + plan);
+			assertFalse(renderedQuery.contains("MINUS"),
+					"q7 should not rewrite the selective dosage anti-filter back to materialized MINUS\n"
+							+ renderedQuery + "\n" + plan);
+			assertBefore(renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"?med <http://example.com/theme/medical/code> ?code",
+					"VALUES ?code should feed the med:code lookup\n" + renderedQuery + "\n" + plan);
+			assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
+					"FILTER EXISTS",
+					"q7 should apply the finite code lookup before the patient EXISTS probe\n" + renderedQuery
+							+ "\n" + plan);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
 	private static void deleteBenchmarkStore() throws Exception {
 		Path store = Path.of("target", "lmdb-theme-query-benchmark");
 		if (!Files.exists(store)) {
@@ -1055,6 +1091,21 @@ class ThemeQueryBenchmarkSmokeIT {
 		int firstIndex = value.indexOf(first);
 		int secondIndex = value.indexOf(second);
 		assertTrue(firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex, message);
+	}
+
+	private static String medicalQ7FilterInQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+				"  ?med a med:Medication .",
+				"  ?med med:code ?code .",
+				"  FILTER(?code IN (\"MED-1000\", \"MED-1001\"))",
+				"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+				"  MINUS {",
+				"    ?med med:dosage ?dose .",
+				"    FILTER(CONTAINS(LCASE(STR(?dose)), \"x\"))",
+				"  }",
+				"}");
 	}
 
 }

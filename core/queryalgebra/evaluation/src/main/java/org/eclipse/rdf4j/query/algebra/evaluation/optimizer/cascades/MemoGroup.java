@@ -21,7 +21,13 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Memo group: a set of logically equivalent expressions, independent of join-factor masks.
@@ -214,7 +220,8 @@ public final class MemoGroup {
 			for (int i = 0; i < entries.size(); i++) {
 				Winner existing = entries.get(i);
 				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
-						&& !baselineBlocksRuleAlternative(existing, winner)) {
+						&& !baselineBlocksRuleAlternative(existing, winner)
+						&& !finiteAnchorBoundInputAlternative(existing, winner)) {
 					return -1;
 				}
 				if (existing.cost().compareTo(winner.cost()) <= 0) {
@@ -247,6 +254,65 @@ public final class MemoGroup {
 
 		private static boolean baselineBlocksRuleAlternative(Winner existing, Winner candidate) {
 			return isBaseline(existing) && !isBaseline(candidate);
+		}
+
+		private static boolean finiteAnchorBoundInputAlternative(Winner existing, Winner candidate) {
+			if (candidate == null || candidate.deliveredProperties() == null
+					|| candidate.deliveredProperties().inputBoundVars().isEmpty()) {
+				return false;
+			}
+			return containsFiniteAnchor(candidate) && containsMaterializedListMemberFilter(existing);
+		}
+
+		private static boolean containsFiniteAnchor(Winner winner) {
+			return containsNode(winnerTupleExpr(winner), BindingSetAssignment.class);
+		}
+
+		private static boolean containsMaterializedListMemberFilter(Winner winner) {
+			TupleExpr tupleExpr = winnerTupleExpr(winner);
+			if (tupleExpr == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter node) {
+					if (containsNode(node.getCondition(), ListMemberOperator.class)) {
+						found[0] = true;
+						return;
+					}
+					super.meet(node);
+				}
+			});
+			return found[0];
+		}
+
+		private static TupleExpr winnerTupleExpr(Winner winner) {
+			if (winner == null) {
+				return null;
+			}
+			if (winner.plan() != null) {
+				return winner.plan();
+			}
+			return winner.expression() == null ? null : winner.expression().tupleExpr();
+		}
+
+		private static boolean containsNode(QueryModelNode root, Class<? extends QueryModelNode> nodeType) {
+			if (root == null || nodeType == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (nodeType.isInstance(node)) {
+						found[0] = true;
+						return;
+					}
+					super.meetNode(node);
+				}
+			});
+			return found[0];
 		}
 
 		private static boolean isBaseline(Winner winner) {

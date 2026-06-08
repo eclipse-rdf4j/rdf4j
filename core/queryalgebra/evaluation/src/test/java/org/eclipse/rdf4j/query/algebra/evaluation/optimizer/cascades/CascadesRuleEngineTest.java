@@ -1311,6 +1311,29 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void minusWithNewScopeLocalRhsFilterCanBecomeNegatedExistsFilterAlternative() {
+		StatementPattern medicationType = pattern("med", "type", "Medication");
+		StatementPattern medicationCode = pattern("med", "code", "code");
+		StatementPattern dosage = pattern("med", "dosage", "dose");
+		FunctionCall doseFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("dose")),
+				new ValueConstant(VF.createLiteral("x")));
+		Filter scopedDosageFilter = new Filter(dosage, doseFilter);
+		scopedDosageFilter.setVariableScopeChange(true);
+		Difference minus = new Difference(new Join(medicationType, medicationCode), scopedDosageFilter);
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusAlternativeRule(), minus);
+
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative()instanceof Filter filter
+						&& filter.getCondition()instanceof Not not
+						&& not.getArg() instanceof Exists
+						&& filter.getArg() instanceof Join
+						&& !containsDifference(filter.getArg())),
+				"Expected a scoped RHS filter with local-only condition vars to remain safe for NOT EXISTS: "
+						+ applications);
+	}
+
+	@Test
 	void minusWithAssuredSharedVarsCanCorrelateSafeRhsJoinAsNegatedExists() {
 		StatementPattern requirementName = pattern("requirement", "name", "name");
 		StatementPattern requirementType = pattern("requirement", "type", "Requirement");

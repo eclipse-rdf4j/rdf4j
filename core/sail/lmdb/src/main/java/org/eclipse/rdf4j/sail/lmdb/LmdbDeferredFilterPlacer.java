@@ -622,9 +622,70 @@ final class LmdbDeferredFilterPlacer {
 			end++;
 		}
 		if (isNonSelectiveCorrelatedExistsFilter(filter)) {
+			end = expandCorrelatedExistsWindowOverFiniteAnchorLookups(factors, filter, end);
 			end = expandCorrelatedExistsWindowOverBridgeFactors(factors, filter, end);
 		}
 		return end;
+	}
+
+	private int expandCorrelatedExistsWindowOverFiniteAnchorLookups(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		Set<String> reachedNames = plannerBindingNames(filter.requiredVars);
+		if (reachedNames.isEmpty()) {
+			return targetIndex;
+		}
+		int end = targetIndex;
+		for (int i = targetIndex + 1; i < factors.size();) {
+			FiniteAnchorRun anchorRun = finiteAnchorRun(factors, i);
+			if (anchorRun == null) {
+				break;
+			}
+			int lookupIndex = anchorRun.endIndex + 1;
+			if (lookupIndex >= factors.size()
+					|| !isLookupJoinedByFiniteAnchorAndCorrelation(factors.get(lookupIndex), reachedNames,
+							anchorRun.bindingNames)) {
+				break;
+			}
+			end = lookupIndex;
+			reachedNames.addAll(anchorRun.bindingNames);
+			reachedNames.addAll(plannerBindingNames(factors.get(lookupIndex).bindingNames));
+			i = lookupIndex + 1;
+		}
+		return end;
+	}
+
+	private FiniteAnchorRun finiteAnchorRun(List<SegmentFactor> factors, int startIndex) {
+		Set<String> bindingNames = new HashSet<>();
+		int endIndex = startIndex;
+		for (int i = startIndex; i < factors.size(); i++) {
+			SegmentFactor factor = factors.get(i);
+			if (!LmdbJoinPlanSupport.isBindingOnlyFactor(factor) || containsExistsFilter(factor.tupleExpr)) {
+				break;
+			}
+			Set<String> factorNames = plannerBindingNames(factor.bindingNames);
+			if (factorNames.isEmpty()) {
+				break;
+			}
+			bindingNames.addAll(factorNames);
+			endIndex = i;
+		}
+		return bindingNames.isEmpty() ? null : new FiniteAnchorRun(endIndex, bindingNames);
+	}
+
+	private boolean isLookupJoinedByFiniteAnchorAndCorrelation(SegmentFactor factor, Set<String> reachedNames,
+			Set<String> finiteAnchorNames) {
+		Set<String> factorNames = plannerBindingNames(factor.bindingNames);
+		if (factorNames.isEmpty()
+				|| Collections.disjoint(factorNames, reachedNames)
+				|| Collections.disjoint(factorNames, finiteAnchorNames)
+				|| factor.containedPatterns.size() != 1) {
+			return false;
+		}
+		Set<String> boundNames = new HashSet<>(reachedNames);
+		boundNames.addAll(finiteAnchorNames);
+		StatementPattern pattern = factor.containedPatterns.iterator()
+				.next();
+		return LmdbJoinPlanSupport.isBoundLookupPattern(pattern, boundNames);
 	}
 
 	private int expandCorrelatedExistsWindowOverBridgeFactors(List<SegmentFactor> factors, DeferredFilter filter,
@@ -670,6 +731,9 @@ final class LmdbDeferredFilterPlacer {
 		double passRatio = filter.passEstimate()
 				.getPlanningPassRatio();
 		return !LmdbJoinPlanSupport.isValidPassRatio(passRatio) || passRatio >= 0.95d;
+	}
+
+	private record FiniteAnchorRun(int endIndex, Set<String> bindingNames) {
 	}
 
 	private int expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(List<SegmentFactor> factors,

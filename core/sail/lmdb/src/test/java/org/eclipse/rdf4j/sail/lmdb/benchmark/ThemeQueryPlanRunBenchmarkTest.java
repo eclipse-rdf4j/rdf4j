@@ -60,6 +60,15 @@ class ThemeQueryPlanRunBenchmarkTest {
 			assertTrue(telemetryIndex >= 0, output);
 			assertTrue(renderedIndex > telemetryIndex, output);
 			assertTrue(output.substring(renderedIndex).contains("SELECT"), output);
+			assertTrue(output.contains("Rendered optimized SPARQL file:"), output);
+			String renderedFilePath = output.lines()
+					.filter(line -> line.startsWith("Rendered optimized SPARQL file:"))
+					.map(line -> line.substring("Rendered optimized SPARQL file:".length()).trim())
+					.findFirst()
+					.orElseThrow();
+			File renderedFile = new File(renderedFilePath);
+			assertTrue(renderedFile.isFile(), "Expected rendered SPARQL file: " + renderedFile + "\n" + output);
+			assertTrue(java.nio.file.Files.readString(renderedFile.toPath()).contains("SELECT"));
 		} finally {
 			System.setOut(previousOut);
 			if (state.connection != null) {
@@ -83,6 +92,19 @@ class ThemeQueryPlanRunBenchmarkTest {
 	}
 
 	@Test
+	void medicalQ7FilterInVariantUsesEquivalentFiniteFilterSyntax() throws Exception {
+		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("queryForVariant", Theme.class,
+				int.class, String.class);
+		method.setAccessible(true);
+
+		String query = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "filter-in");
+
+		assertTrue(query.contains("FILTER(?code IN (\"MED-1000\", \"MED-1001\"))"), query);
+		assertFalse(query.contains("VALUES ?code { \"MED-1000\" \"MED-1001\" }"), query);
+		assertTrue(query.contains("MINUS"), query);
+	}
+
+	@Test
 	void medicalQ7PlacementVariantsRenderRequestedInputOrder() throws Exception {
 		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("queryForVariant", Theme.class,
 				int.class, String.class);
@@ -91,10 +113,13 @@ class ThemeQueryPlanRunBenchmarkTest {
 		String valuesTop = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "values-top-type-code");
 		String typeFirst = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "type-values-code");
 		String codeFirst = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "values-code-type");
+		String antiBeforeValues = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "type-anti-values-code");
 
 		assertOrder(valuesTop, "VALUES ?code", "?med a med:Medication", "?med med:code ?code");
 		assertOrder(typeFirst, "?med a med:Medication", "VALUES ?code", "?med med:code ?code");
 		assertOrder(codeFirst, "VALUES ?code", "?med med:code ?code", "?med a med:Medication");
+		assertOrder(antiBeforeValues, "?med a med:Medication", "FILTER NOT EXISTS", "VALUES ?code");
+		assertOrder(antiBeforeValues, "FILTER NOT EXISTS", "VALUES ?code", "?med med:code ?code");
 	}
 
 	private static void setTheme(ThemeQueryPlanRunBenchmark.BaseState state, Theme theme)

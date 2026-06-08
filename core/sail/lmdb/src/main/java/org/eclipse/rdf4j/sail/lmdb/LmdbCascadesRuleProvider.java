@@ -26,6 +26,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -35,8 +39,11 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -115,14 +122,14 @@ final class LmdbCascadesRuleProvider {
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
 				.add(new StandardCascadesRules.SafeScopeChangeRemovalRule())
+				.add(new StandardCascadesRules.MinusJoinPrefixPushdownRule())
 				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
 				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
-				.add(new StandardCascadesRules.MinusAlternativeRule(
-						(difference, goal) -> correlatedMinusRewriteIsCheaper(statistics, difference, goal)))
+				.add(new StandardCascadesRules.MinusAlternativeRule((difference, goal) -> true))
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
 		if (cascadesConnectedJoinProviderAvailable) {
 			builder.add(new FilterCascadesRules.FilterValuesAnchorRule())
@@ -145,8 +152,7 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
-								(cascadesConnectedJoinProviderAvailable
-										&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(tupleExpr))
+								cascadesConnectedJoinProviderAvailable
 										|| (legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner),
 								false)))
 				.add(new StandardCascadesRules.DistinctEnforcerRule())
@@ -428,6 +434,23 @@ final class LmdbCascadesRuleProvider {
 		return LmdbSketchJoinOptimizer.plannerAlgorithmForSegment(factorCount);
 	}
 
+	private static boolean isNestedFilterSegmentChild(TupleExpr tupleExpr) {
+		QueryModelNode parent = tupleExpr == null ? null : tupleExpr.getParentNode();
+		while (parent != null) {
+			if (parent instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)
+					&& LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+				return true;
+			}
+			if (parent instanceof TupleExpr parentTuple && !TupleExprs.isVariableScopeChange(parentTuple)
+					&& (parentTuple instanceof Join || parentTuple instanceof Filter)) {
+				parent = parent.getParentNode();
+				continue;
+			}
+			return false;
+		}
+		return false;
+	}
+
 	private static final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 		LmdbConnectedHypergraphJoinImplementationRule(EvaluationStatistics statistics) {
 			super(LmdbCascadesConnectedJoinPlanner.RULE_ID, RuleKind.IMPLEMENTATION, 130, statistics);
@@ -439,6 +462,7 @@ final class LmdbCascadesRuleProvider {
 					&& costModel != null
 					&& expression.tupleExpr() instanceof Join
 					&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())
+					&& !isNestedFilterSegmentChild(expression.tupleExpr())
 					&& LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 1;
 		}
 
@@ -656,7 +680,7 @@ final class LmdbCascadesRuleProvider {
 			return inputBoundVars.isEmpty() ? Set.of() : Set.copyOf(inputBoundVars);
 		}
 
-		private Set<String> statementPatternInputBoundVars(StatementPattern pattern, int lookupComponentMask,
+		Set<String> statementPatternInputBoundVars(StatementPattern pattern, int lookupComponentMask,
 				Set<String> goalBoundVars) {
 			if (lookupComponentMask == 0) {
 				return Set.of();
@@ -1749,9 +1773,14 @@ final class LmdbCascadesRuleProvider {
 			for (GuaranteePlanOptionProvider.PlanOption option : analysis.finiteAnchorOptions()) {
 				List<DeferredFilter> optionFilters = withoutSatisfiedFilter(deferredFilters,
 						option.satisfiedFilterIndex());
+				JoinOrderPlanner.Algorithm optionAlgorithm = algorithmForSize(goal, option.factors().size());
 				Optional<CostedOption> candidate = costOption(option.name(), option.factors(), optionFilters,
-						boundVars, algorithmForSize(goal, option.factors().size()),
-						option::materializeSelectedRows, false, goal, option.semanticRewrite());
+						boundVars, optionAlgorithm, option::materializeSelectedRows, false, goal,
+						option.semanticRewrite());
+				if (option.semanticRewrite()) {
+					candidate = costSemanticPrefixOption(option, optionFilters, boundVars, optionAlgorithm, goal,
+							candidate, original, deferredFilters);
+				}
 				if (candidate.isEmpty()) {
 					candidates.add(OptionCandidate.invalid(option.name(), "no-valid-plan"));
 					continue;
@@ -1833,8 +1862,11 @@ final class LmdbCascadesRuleProvider {
 			if (original.isEmpty()) {
 				return true;
 			}
-			if (!semanticRewriteMateriallyBeats(candidate, original.get())) {
+			if (!semanticRewriteCanCompete(candidate, original.get())) {
 				return false;
+			}
+			if (semanticPrefixRewrite(candidate)) {
+				return true;
 			}
 			if (!rareFilterMakesSemanticRewriteMoreExpensive(candidate, original.get(), originalFilters,
 					satisfiedFilterIndex)) {
@@ -2005,6 +2037,285 @@ final class LmdbCascadesRuleProvider {
 			double selectedComparableWork = comparableWork;
 			return plan.map(joinOrderPlan -> new CostedOption(name, joinOrderPlan, filters, materializer,
 					preferOnTie, boundVars, selectedDetails, selectedComparableWork, semanticRewrite));
+		}
+
+		private Optional<CostedOption> costSemanticPrefixOption(GuaranteePlanOptionProvider.PlanOption option,
+				List<DeferredFilter> optionFilters, Set<String> boundVars, JoinOrderPlanner.Algorithm algorithm,
+				OptimizationGoal goal, Optional<CostedOption> current, Optional<CostedOption> original,
+				List<DeferredFilter> originalFilters) {
+			if (original.isEmpty() || option.satisfiedFilterIndex() < 0
+					|| option.satisfiedFilterIndex() >= originalFilters.size()) {
+				return current;
+			}
+			List<JoinOrderPlanner.FilterConstraint> plannerFilters = LmdbJoinPlanSupport
+					.toPlannerFilterConstraints(optionFilters);
+			CostedOption best = current.orElse(null);
+			List<String> prefixAlternatives = new ArrayList<>();
+			for (SemanticPrefixOrder order : semanticPrefixFiniteAnchorOrders(option.name(), option.factors(),
+					original.get().plan(), originalFilters.get(option.satisfiedFilterIndex()), originalFilters)) {
+				Optional<JoinOrderPlanner.JoinOrderPlan> plan = joinOrderPlanner.estimateJoinOrder(order.order(),
+						new HashSet<>(boundVars), algorithm, plannerFilters);
+				if (plan.isEmpty()) {
+					continue;
+				}
+				double comparableWork = guaranteeOptionComparableWork(plan.get(), option.name());
+				prefixAlternatives.add(order.details() + ":cmp=" + formatMetric(comparableWork)
+						+ ":total=" + formatMetric(plan.get().getEstimatedTotalWork())
+						+ ":order=" + semanticPrefixOrderSummary(plan.get().getOrderedArgs())
+						+ ":steps=" + semanticPrefixStepSummary(plan.get()));
+				CostedOption prefixCandidate = new CostedOption(option.name(), plan.get(), optionFilters,
+						option::materializeSelectedRows, true, boundVars, order.details(), comparableWork, true);
+				if (best == null || prefixCandidate.comparableWork() <= best.comparableWork()) {
+					best = prefixCandidate;
+				}
+			}
+			if (best != null && !prefixAlternatives.isEmpty()) {
+				best = best.withDetails(best.details() + " prefixFilters="
+						+ semanticPrefixFilterSummary(originalFilters, finiteAnchorBindingName(option.name()))
+						+ " prefixFactors=" + semanticPrefixFactorSummary(option.factors())
+						+ " prefixAlternatives=" + prefixAlternatives);
+			}
+			return Optional.ofNullable(best);
+		}
+
+		private String semanticPrefixFactorSummary(List<TupleExpr> factors) {
+			List<String> summary = new ArrayList<>(factors.size());
+			for (TupleExpr factor : factors) {
+				summary.add(semanticPrefixPatternSummary(factor) + ":" + factor.getBindingNames());
+			}
+			return summary.toString();
+		}
+
+		private String finiteAnchorBindingName(String optionName) {
+			if (optionName == null || !optionName.startsWith("finite-anchor:")) {
+				return null;
+			}
+			String bindingName = optionName.substring("finite-anchor:".length());
+			return bindingName.isBlank() ? null : bindingName;
+		}
+
+		private String semanticPrefixFilterSummary(List<DeferredFilter> originalFilters,
+				String generatedAnchorBinding) {
+			List<String> summary = new ArrayList<>(originalFilters.size());
+			for (DeferredFilter filter : originalFilters) {
+				summary.add("required=" + filter.requiredVars
+						+ ":anchorRequired=" + filter.requiredVars.contains(generatedAnchorBinding)
+						+ ":notExists=" + conditionContainsNotExists(filter.condition)
+						+ ":patternLocalBase=" + semanticPrefixPatternSummary(filter.patternLocalBase));
+			}
+			return summary.toString();
+		}
+
+		private String semanticPrefixPatternSummary(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				return statementPatternPredicateSummary(statementPattern);
+			}
+			return tupleExpr == null ? "null" : tupleExpr.getSignature();
+		}
+
+		private String semanticPrefixOrderSummary(List<TupleExpr> orderedArgs) {
+			List<String> summary = new ArrayList<>(orderedArgs.size());
+			for (TupleExpr arg : orderedArgs) {
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(arg);
+				if (assignmentNames.isPresent()) {
+					summary.add("VALUES" + assignmentNames.get());
+				} else if (arg instanceof StatementPattern statementPattern) {
+					summary.add(statementPatternPredicateSummary(statementPattern));
+				} else {
+					summary.add(arg.getSignature());
+				}
+			}
+			return summary.toString();
+		}
+
+		private String semanticPrefixStepSummary(JoinOrderPlanner.JoinOrderPlan plan) {
+			List<String> summary = new ArrayList<>(plan.getSteps().size());
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				StringBuilder builder = new StringBuilder(64);
+				builder.append("work=")
+						.append(formatMetric(step.getStepWorkRows()))
+						.append(",rows=")
+						.append(formatMetric(step.getPrefixOutputRows()));
+				double metricFinalRows = step.getDoubleMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, Double.NaN);
+				if (LmdbJoinPlanSupport.isFiniteNonNegative(metricFinalRows)) {
+					builder.append(",metricFinal=")
+							.append(formatMetric(metricFinalRows));
+				}
+				double appliedPassRatio = step.getDoubleMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, Double.NaN);
+				if (LmdbJoinPlanSupport.isValidPassRatio(appliedPassRatio)) {
+					builder.append(",appliedPass=")
+							.append(appliedPassRatio);
+				}
+				if (!step.getAppliedFilterIndexes().isEmpty()) {
+					builder.append(",filters=")
+							.append(step.getAppliedFilterIndexes());
+				}
+				String unlockedFilters = step.getStringMetrics()
+						.get(TelemetryMetricNames.UNLOCKED_FILTERS);
+				if (unlockedFilters != null && !unlockedFilters.isEmpty()) {
+					builder.append(",unlocked=")
+							.append(unlockedFilters);
+				}
+				String source = step.getStringMetrics()
+						.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+				if (source != null) {
+					builder.append(",source=")
+							.append(source);
+				}
+				summary.add(builder.toString());
+			}
+			return summary.toString();
+		}
+
+		private String statementPatternPredicateSummary(StatementPattern statementPattern) {
+			Value predicate = statementPattern.getPredicateVar() == null ? null
+					: statementPattern.getPredicateVar()
+							.getValue();
+			if (predicate instanceof IRI iri) {
+				return iri.getLocalName();
+			}
+			return "StatementPattern";
+		}
+
+		private List<SemanticPrefixOrder> semanticPrefixFiniteAnchorOrders(String optionName, List<TupleExpr> factors,
+				JoinOrderPlanner.JoinOrderPlan originalPlan, DeferredFilter satisfiedFilter,
+				List<DeferredFilter> originalFilters) {
+			if (satisfiedFilter.patternLocalBase == null) {
+				return List.of();
+			}
+			List<TupleExpr> generatedAnchors = generatedFiniteAnchors(optionName, factors);
+			if (generatedAnchors.isEmpty()) {
+				return List.of();
+			}
+			List<SemanticPrefixOrder> orders = new ArrayList<>();
+			semanticBaselinePrefixOrder(factors, originalPlan, satisfiedFilter, generatedAnchors)
+					.ifPresent(order -> orders.add(new SemanticPrefixOrder(order, "costing=semantic-prefix")));
+			orders.addAll(semanticSelectiveFilterPrefixOrders(factors, satisfiedFilter, originalFilters,
+					generatedAnchors, finiteAnchorBindingName(optionName)));
+			return List.copyOf(orders);
+		}
+
+		private Optional<List<TupleExpr>> semanticBaselinePrefixOrder(List<TupleExpr> factors,
+				JoinOrderPlanner.JoinOrderPlan originalPlan, DeferredFilter satisfiedFilter,
+				List<TupleExpr> generatedAnchors) {
+			List<TupleExpr> originalOrder = originalPlan.getOrderedArgs();
+			List<TupleExpr> ordered = new ArrayList<>(factors.size());
+			boolean insertedGeneratedAnchor = false;
+			for (TupleExpr originalArg : originalOrder) {
+				if (!insertedGeneratedAnchor && originalArg == satisfiedFilter.patternLocalBase) {
+					ordered.addAll(generatedAnchors);
+					insertedGeneratedAnchor = true;
+				}
+				if (containsIdentity(factors, originalArg)) {
+					ordered.add(originalArg);
+				}
+			}
+			if (!insertedGeneratedAnchor) {
+				return Optional.empty();
+			}
+			for (TupleExpr factor : factors) {
+				if (!containsIdentity(ordered, factor)) {
+					ordered.add(factor);
+				}
+			}
+			return containsSameFactorsByIdentity(ordered, factors) ? Optional.of(List.copyOf(ordered))
+					: Optional.empty();
+		}
+
+		private List<SemanticPrefixOrder> semanticSelectiveFilterPrefixOrders(List<TupleExpr> factors,
+				DeferredFilter satisfiedFilter, List<DeferredFilter> originalFilters,
+				List<TupleExpr> generatedAnchors, String generatedAnchorBinding) {
+			List<SemanticPrefixOrder> orders = new ArrayList<>();
+			for (DeferredFilter filter : originalFilters) {
+				if (filter == satisfiedFilter || !correlatedNotExistsPrefix(filter, generatedAnchorBinding)) {
+					continue;
+				}
+				for (TupleExpr factor : factors) {
+					if (factor == satisfiedFilter.patternLocalBase
+							|| LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(factor).isPresent()
+							|| !factor.getBindingNames().containsAll(filter.requiredVars)) {
+						continue;
+					}
+					List<TupleExpr> ordered = semanticOrderWithPrefix(List.of(factor), generatedAnchors,
+							satisfiedFilter.patternLocalBase, factors);
+					if (containsSameFactorsByIdentity(ordered, factors)) {
+						orders.add(new SemanticPrefixOrder(ordered,
+								"costing=semantic-prefix prefix=selective-not-exists"));
+					}
+				}
+			}
+			return orders;
+		}
+
+		private boolean correlatedNotExistsPrefix(DeferredFilter filter, String generatedAnchorBinding) {
+			if (filter.requiredVars.isEmpty()
+					|| generatedAnchorBinding == null
+					|| filter.requiredVars.contains(generatedAnchorBinding)
+					|| !conditionContainsNotExists(filter.condition)) {
+				return false;
+			}
+			return true;
+		}
+
+		private List<TupleExpr> semanticOrderWithPrefix(List<TupleExpr> prefix, List<TupleExpr> generatedAnchors,
+				TupleExpr localBase, List<TupleExpr> factors) {
+			List<TupleExpr> ordered = new ArrayList<>(factors.size());
+			for (TupleExpr tupleExpr : prefix) {
+				if (containsIdentity(factors, tupleExpr) && !containsIdentity(ordered, tupleExpr)) {
+					ordered.add(tupleExpr);
+				}
+			}
+			for (TupleExpr anchor : generatedAnchors) {
+				if (!containsIdentity(ordered, anchor)) {
+					ordered.add(anchor);
+				}
+			}
+			if (containsIdentity(factors, localBase) && !containsIdentity(ordered, localBase)) {
+				ordered.add(localBase);
+			}
+			for (TupleExpr factor : factors) {
+				if (!containsIdentity(ordered, factor)) {
+					ordered.add(factor);
+				}
+			}
+			return List.copyOf(ordered);
+		}
+
+		private List<TupleExpr> generatedFiniteAnchors(String optionName, List<TupleExpr> factors) {
+			List<TupleExpr> anchors = new ArrayList<>(1);
+			for (TupleExpr factor : factors) {
+				if (LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(factor).isPresent()
+						&& optionName.equals(factor.getStringMetricPlanned("optimizer.guaranteeOption"))) {
+					anchors.add(factor);
+				}
+			}
+			return anchors;
+		}
+
+		private boolean containsSameFactorsByIdentity(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (TupleExpr tupleExpr : left) {
+				if (!containsIdentity(right, tupleExpr)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean containsIdentity(List<TupleExpr> tupleExprs, TupleExpr candidate) {
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (tupleExpr == candidate) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private record SemanticPrefixOrder(List<TupleExpr> order, String details) {
 		}
 
 		private boolean finiteAnchorFixedPlanBeats(JoinOrderPlanner.JoinOrderPlan candidate,
@@ -2437,7 +2748,14 @@ final class LmdbCascadesRuleProvider {
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> estimateSingleFactor(TupleExpr factor,
 				List<DeferredFilter> filters, OptimizationGoal goal) {
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(factor, goal, false);
+			TupleExpr estimateTarget = factor;
+			if (filters != null && !filters.isEmpty()) {
+				estimateTarget = factor.clone();
+				for (DeferredFilter filter : filters) {
+					estimateTarget = new Filter(estimateTarget, filter.condition.clone());
+				}
+			}
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(estimateTarget, goal, false);
 			if (estimate.isEmpty()) {
 				return Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.of(factor), 1.0d,
 						Math.max(1.0d, 1.0d + filters.size())));
@@ -2465,7 +2783,7 @@ final class LmdbCascadesRuleProvider {
 		private boolean beats(CostedOption candidate, CostedOption incumbent) {
 			if (candidate.semanticRewrite()
 					&& !incumbent.semanticRewrite()
-					&& !semanticRewriteMateriallyBeats(candidate, incumbent)) {
+					&& !semanticRewriteCanCompete(candidate, incumbent)) {
 				return false;
 			}
 			if (candidate.semanticRewrite()
@@ -2476,6 +2794,103 @@ final class LmdbCascadesRuleProvider {
 			}
 			int comparison = Double.compare(candidate.comparableWork(), incumbent.comparableWork());
 			return comparison < 0 || comparison == 0 && candidate.preferOnTie() && !incumbent.preferOnTie();
+		}
+
+		private boolean semanticRewriteCanCompete(CostedOption candidate, CostedOption incumbent) {
+			if (semanticPrefixRewrite(candidate)) {
+				double candidateWork = candidate.comparableWork();
+				double incumbentWork = incumbent.comparableWork();
+				return LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
+						&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)
+						&& candidateWork <= incumbentWork;
+			}
+			if (removesMaterializedListMemberFilter(candidate, incumbent)) {
+				double candidateWork = candidate.comparableWork();
+				double incumbentWork = incumbent.comparableWork();
+				return LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
+						&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)
+						&& candidateWork <= incumbentWork;
+			}
+			return semanticRewriteMateriallyBeats(candidate, incumbent);
+		}
+
+		private boolean semanticPrefixRewrite(CostedOption candidate) {
+			return candidate.details().contains("costing=semantic-prefix");
+		}
+
+		private boolean removesMaterializedListMemberFilter(CostedOption candidate, CostedOption incumbent) {
+			if (candidate == null || incumbent == null || !candidate.semanticRewrite()) {
+				return false;
+			}
+			String bindingName = finiteAnchorBindingName(candidate.name());
+			if (bindingName == null) {
+				return false;
+			}
+			boolean incumbentHasListMember = containsListMemberFilterFor(incumbent.filters(), bindingName)
+					|| containsListMemberFilterFor(incumbent.plan(), bindingName);
+			boolean candidateHasListMember = containsListMemberFilterFor(candidate.filters(), bindingName)
+					|| containsListMemberFilterFor(candidate.plan(), bindingName);
+			return incumbentHasListMember && !candidateHasListMember;
+		}
+
+		private boolean containsListMemberFilterFor(List<DeferredFilter> filters, String bindingName) {
+			if (filters == null || filters.isEmpty() || bindingName == null) {
+				return false;
+			}
+			for (DeferredFilter filter : filters) {
+				if (conditionContainsListMemberFor(filter.condition, bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean conditionContainsListMemberFor(ValueExpr condition, String bindingName) {
+			if (condition instanceof ListMemberOperator listMember) {
+				List<ValueExpr> arguments = listMember.getArguments();
+				return !arguments.isEmpty()
+						&& arguments.getFirst()instanceof Var var
+						&& bindingName.equals(var.getName())
+						&& !var.hasValue();
+			}
+			if (condition instanceof And and) {
+				return conditionContainsListMemberFor(and.getLeftArg(), bindingName)
+						|| conditionContainsListMemberFor(and.getRightArg(), bindingName);
+			}
+			if (condition instanceof Or or) {
+				return conditionContainsListMemberFor(or.getLeftArg(), bindingName)
+						|| conditionContainsListMemberFor(or.getRightArg(), bindingName);
+			}
+			return false;
+		}
+
+		private boolean containsListMemberFilterFor(JoinOrderPlanner.JoinOrderPlan plan, String bindingName) {
+			if (plan == null || bindingName == null) {
+				return false;
+			}
+			for (TupleExpr arg : plan.getOrderedArgs()) {
+				if (containsListMemberFilterFor(arg, bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean containsListMemberFilterFor(TupleExpr tupleExpr, String bindingName) {
+			if (tupleExpr == null || bindingName == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(ListMemberOperator node) {
+					if (conditionContainsListMemberFor(node, bindingName)) {
+						found[0] = true;
+					}
+					super.meet(node);
+				}
+			});
+			return found[0];
 		}
 
 		private boolean semanticRewriteMateriallyBeats(CostedOption candidate, CostedOption incumbent) {
@@ -2639,8 +3054,7 @@ final class LmdbCascadesRuleProvider {
 
 		private TupleExpr wrapFilters(TupleExpr root, List<DeferredFilter> filters, String placement) {
 			TupleExpr result = root;
-			List<DeferredFilter> ordered = new ArrayList<>(filters);
-			ordered.sort((left, right) -> Integer.compare(left.originalIndex, right.originalIndex));
+			List<DeferredFilter> ordered = LmdbJoinPlanSupport.sortDeferredFilters(filters);
 			for (DeferredFilter deferredFilter : ordered) {
 				Filter filter = new Filter(result, deferredFilter.condition.clone());
 				LmdbFilterSimplifierOptimizer.annotateIdFilters(filter);
@@ -2663,8 +3077,30 @@ final class LmdbCascadesRuleProvider {
 			Map<String, Double> doubles = new LinkedHashMap<>(plan.getSummaryDoubleMetrics());
 			copyRepresentativeStepMetrics(plan, strings, doubles);
 			strings.putAll(guaranteeMetrics);
-			return new JoinFactorCostModel.FactorCostEstimate(plan.getEstimatedTotalWork(),
+			double workRows = selectedPlanWorkRows(plan);
+			doubles.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			doubles.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			return new JoinFactorCostModel.FactorCostEstimate(workRows,
 					plan.getEstimatedFinalRows(), strings, doubles);
+		}
+
+		private double selectedPlanWorkRows(JoinOrderPlanner.JoinOrderPlan plan) {
+			double workRows = plan.getEstimatedTotalWork();
+			double stepWorkRows = 0.0d;
+			boolean hasStepWork = false;
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				if (step == null || !LmdbJoinPlanSupport.isFiniteNonNegative(step.getStepWorkRows())) {
+					continue;
+				}
+				stepWorkRows += Math.max(0.0d, step.getStepWorkRows());
+				hasStepWork = true;
+			}
+			if (hasStepWork && LmdbJoinPlanSupport.isFiniteNonNegative(stepWorkRows)) {
+				workRows = LmdbJoinPlanSupport.isFiniteNonNegative(workRows)
+						? Math.max(workRows, stepWorkRows)
+						: stepWorkRows;
+			}
+			return LmdbJoinPlanSupport.isFiniteNonNegative(workRows) ? workRows : plan.getEstimatedFinalRows();
 		}
 
 		private Map<String, String> guaranteeOptionMetricMap(int generatedOptions, String selectedOption,
@@ -2862,6 +3298,11 @@ final class LmdbCascadesRuleProvider {
 			public double comparableWork() {
 				double work = comparableWork;
 				return Double.isFinite(work) && work >= 0.0d ? work : Double.POSITIVE_INFINITY;
+			}
+
+			CostedOption withDetails(String details) {
+				return new CostedOption(name, plan, filters, materializer, preferOnTie, boundVars, details,
+						comparableWork, semanticRewrite);
 			}
 		}
 
@@ -3149,8 +3590,14 @@ final class LmdbCascadesRuleProvider {
 			RuleApplication base = RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
 					"lmdb-access", snapshot(estimate.get(), cost));
-			Optional<RuleApplication> inputBound = requestedInputBoundAccessPath(expression, goal, estimate.get());
-			return inputBound.map(application -> List.of(base, application)).orElseGet(() -> List.of(base));
+			Optional<RuleApplication> finiteValues = finiteFilterValuesAccessPath(expression, goal, context);
+			Optional<RuleApplication> inputBound = requestedInputBoundAccessPath(expression, goal, estimate.get(),
+					context);
+			List<RuleApplication> applications = new ArrayList<>(3);
+			applications.add(base);
+			finiteValues.ifPresent(applications::add);
+			inputBound.ifPresent(applications::add);
+			return List.copyOf(applications);
 		}
 
 		private boolean isAccessPathCandidate(TupleExpr tupleExpr) {
@@ -3164,8 +3611,183 @@ final class LmdbCascadesRuleProvider {
 			return false;
 		}
 
+		private Optional<RuleApplication> finiteFilterValuesAccessPath(MemoExpr expression, OptimizationGoal goal,
+				RuleContext context) {
+			if (!(expression.tupleExpr()instanceof Filter filter)
+					|| filter.isVariableScopeChange()
+					|| !(filter.getArg()instanceof StatementPattern pattern)) {
+				return Optional.empty();
+			}
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+			if (anchor == null
+					|| anchor.getBindingNames().isEmpty()
+					|| !filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())
+					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())) {
+				return Optional.empty();
+			}
+			Set<String> goalBoundVars = goalBoundVars(goal);
+			TupleExpr alternative = new Join(anchor, filter.getArg().clone());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateFiniteFilterValuesLookup(filter,
+					pattern, anchor, goalBoundVars, goal, false);
+			if (estimate.isEmpty()) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-values status=reject reason=no-estimate group=" + expression.groupId()
+						+ " expr=" + expression.id()
+						+ " anchorBindings=" + anchor.getBindingNames());
+				return Optional.empty();
+			}
+			TupleExpr stampedAlternative = alternative.clone();
+			if (stampedAlternative instanceof Join join && join.getRightArg()instanceof StatementPattern statement) {
+				stampAccessPathMetrics(statement, estimate.get());
+			}
+			int lookupComponentMask = requestedLookupComponentMask(pattern, goalBoundVars);
+			Set<String> inputBoundVars = statementPatternInputBoundVars(pattern, lookupComponentMask, goalBoundVars);
+			PhysicalProperties delivered = delivered(stampedAlternative, estimate.get(), goal)
+					.withAccessPath("finiteFilterValuesLookup")
+					.withInputBoundVars(inputBoundVars);
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("lmdbCostModel", "finiteValuesAnchor", "filterInValuesEquivalent",
+							"anchorBindings=" + anchor.getBindingNames()),
+					"LMDB implements a safe finite RDF-term filter as a VALUES anchor feeding the statement lookup");
+			CostVector cost = cost(estimate.get());
+			trace(context, "lmdb-rule id=" + id()
+					+ " finite-filter-values status=applied group=" + expression.groupId()
+					+ " expr=" + expression.id()
+					+ " rows=" + estimate.get().getOutputRows()
+					+ " workRows=" + estimate.get().getWorkRows()
+					+ " inputBoundVars=" + inputBoundVars);
+			return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), stampedAlternative,
+					delivered, cost, proof, "lmdb-finite-filter-values-access", snapshot(estimate.get(), cost)));
+		}
+
+		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateFiniteFilterValuesLookup(Filter filter,
+				StatementPattern pattern, BindingSetAssignment anchor, Set<String> goalBoundVars,
+				OptimizationGoal goal, boolean inputBoundFallback) {
+			Map<String, Set<Value>> finiteValues = finiteBindingValues(anchor);
+			if (finiteValues.isEmpty()) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.CostContext finiteContext = JoinFactorCostModel.CostContext
+					.forOptimization(goalBoundVars, Double.NaN, Double.NaN, false, true, finiteValues,
+							List.of(anchor))
+					.withEstimationTier(goal == null ? JoinFactorCostModel.EstimationTier.STANDARD
+							: goal.estimationTier());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel
+					.estimateFactorCost(filter, finiteContext)
+					.filter(this::usesFiniteBindingLookup);
+			if (estimate.isEmpty() && inputBoundFallback) {
+				estimate = estimateInputBoundStatementWithValues(pattern, anchor, goalBoundVars, goal);
+			}
+			return estimate.map(base -> asFiniteFilterValuesEstimate(base, anchor));
+		}
+
+		private boolean usesFiniteBindingLookup(JoinFactorCostModel.FactorCostEstimate estimate) {
+			if (estimate == null) {
+				return false;
+			}
+			return "lmdb-finite-binding-lookup".equals(estimate.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		}
+
+		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateInputBoundStatementWithValues(
+				StatementPattern pattern, BindingSetAssignment anchor, Set<String> goalBoundVars,
+				OptimizationGoal goal) {
+			if (pattern == null || goalBoundVars == null || goalBoundVars.isEmpty()) {
+				return Optional.empty();
+			}
+			int lookupComponentMask = requestedLookupComponentMask(pattern, goalBoundVars);
+			if (lookupComponentMask == 0 || !usesGoalBoundLookupVariable(pattern, lookupComponentMask, goalBoundVars)) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.CostContext inputBoundContext = JoinFactorCostModel.CostContext
+					.forOptimization(goalBoundVars, Double.NaN, Double.NaN, false, true, Map.of(), List.of(anchor))
+					.withEstimationTier(goal == null ? JoinFactorCostModel.EstimationTier.STANDARD
+							: goal.estimationTier())
+					.withRequestedAccessPath("inputBoundLookup", lookupComponentMask, 0, true);
+			return costModel.estimateFactorCost(pattern, inputBoundContext);
+		}
+
+		private JoinFactorCostModel.FactorCostEstimate asFiniteFilterValuesEstimate(
+				JoinFactorCostModel.FactorCostEstimate base, BindingSetAssignment anchor) {
+			double anchorRows = Math.max(1.0d, anchorRows(anchor));
+			double workRows = base.getWorkRows();
+			if (Double.isFinite(workRows) && workRows >= 0.0d) {
+				workRows += anchorRows;
+			}
+			Map<String, String> stringMetrics = new HashMap<>(base.getStringMetrics());
+			String baseSource = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (baseSource != null) {
+				stringMetrics.put("plannedFiniteFilterValuesBaseSource", baseSource);
+			}
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-finite-filter-values-access");
+			stringMetrics.put("plannedFilterEvaluationCost", "values-anchor");
+
+			Map<String, Double> doubleMetrics = new HashMap<>(base.getDoubleMetrics());
+			doubleMetrics.remove("plannedMaterializedFilterWorkRows");
+			doubleMetrics.put("plannedFiniteFilterValuesRows", anchorRows);
+			if (Double.isFinite(workRows) && workRows >= 0.0d) {
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			}
+			JoinFactorCostModel.FactorCostEstimate adjusted = new JoinFactorCostModel.FactorCostEstimate(workRows,
+					base.getOutputRows(), stringMetrics, doubleMetrics, base.hasPhysicalAccessPath(),
+					base.isDirectLookup(), base.getLookupComponentMask(), base.getMissingLookupComponentMask(),
+					base.getAccessRowsBeforeFilter(), base.isRepeatedInvocationsCosted(), base.hasExactOutputRows());
+			return base.getBagEstimate()
+					.map(adjusted::withBag)
+					.orElse(adjusted);
+		}
+
+		private Map<String, Set<Value>> finiteBindingValues(BindingSetAssignment anchor) {
+			if (anchor == null || anchor.getBindingNames() == null || anchor.getBindingNames().isEmpty()) {
+				return Map.of();
+			}
+			Map<String, LinkedHashSet<Value>> mutable = new LinkedHashMap<>();
+			for (String bindingName : anchor.getBindingNames()) {
+				if (bindingName != null && !bindingName.isBlank()) {
+					mutable.put(bindingName, new LinkedHashSet<>());
+				}
+			}
+			for (BindingSet bindingSet : anchor.getBindingSets()) {
+				for (String bindingName : mutable.keySet()) {
+					Value value = bindingSet.getValue(bindingName);
+					if (value == null) {
+						return Map.of();
+					}
+					mutable.get(bindingName)
+							.add(value);
+				}
+			}
+			Map<String, Set<Value>> finiteValues = new LinkedHashMap<>();
+			for (Map.Entry<String, LinkedHashSet<Value>> entry : mutable.entrySet()) {
+				if (entry.getValue().isEmpty()) {
+					return Map.of();
+				}
+				finiteValues.put(entry.getKey(), Set.copyOf(entry.getValue()));
+			}
+			return finiteValues.isEmpty() ? Map.of() : Map.copyOf(finiteValues);
+		}
+
+		private double anchorRows(BindingSetAssignment anchor) {
+			if (anchor == null || anchor.getBindingSets() == null) {
+				return 0.0d;
+			}
+			int rows = 0;
+			for (BindingSet ignored : anchor.getBindingSets()) {
+				rows++;
+			}
+			return rows;
+		}
+
 		private Optional<RuleApplication> requestedInputBoundAccessPath(MemoExpr expression, OptimizationGoal goal,
-				JoinFactorCostModel.FactorCostEstimate baseEstimate) {
+				JoinFactorCostModel.FactorCostEstimate baseEstimate, RuleContext context) {
+			if (expression.tupleExpr()instanceof Filter filter) {
+				Optional<RuleApplication> finiteFilter = requestedFiniteFilterInputBoundAccessPath(expression, goal,
+						filter, context);
+				if (finiteFilter.isPresent()) {
+					return finiteFilter;
+				}
+			}
 			if (!(expression.tupleExpr()instanceof StatementPattern pattern) || goal == null) {
 				return Optional.empty();
 			}
@@ -3194,6 +3816,67 @@ final class LmdbCascadesRuleProvider {
 			return Optional.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
 					"lmdb-input-bound-access", snapshot(estimate.get(), cost)));
+		}
+
+		private Optional<RuleApplication> requestedFiniteFilterInputBoundAccessPath(MemoExpr expression,
+				OptimizationGoal goal, Filter filter, RuleContext context) {
+			if (goal == null || filter == null || filter.isVariableScopeChange()
+					|| !(filter.getArg()instanceof StatementPattern pattern)) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-input-bound status=reject reason=not-statement-filter");
+				return Optional.empty();
+			}
+			Set<String> goalBoundVars = goalBoundVars(goal);
+			if (goalBoundVars.isEmpty()) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-input-bound status=reject reason=no-goal-bound-vars");
+				return Optional.empty();
+			}
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+			if (anchor == null
+					|| anchor.getBindingNames().isEmpty()
+					|| !filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())
+					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-input-bound status=reject reason=no-safe-anchor goalBoundVars="
+						+ goalBoundVars + " condition=" + filter.getCondition().getClass().getSimpleName()
+						+ " arg=" + filter.getArg().getClass().getSimpleName());
+				return Optional.empty();
+			}
+			int lookupComponentMask = requestedLookupComponentMask(pattern, goalBoundVars);
+			if (lookupComponentMask == 0 || !usesGoalBoundLookupVariable(pattern, lookupComponentMask, goalBoundVars)) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-input-bound status=reject reason=no-goal-bound-lookup goalBoundVars="
+						+ goalBoundVars + " lookupComponents=" + componentMaskString(lookupComponentMask));
+				return Optional.empty();
+			}
+			TupleExpr alternative = new Join(anchor, filter.getArg().clone());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateFiniteFilterValuesLookup(filter,
+					pattern, anchor, goalBoundVars, goal, true);
+			if (estimate.isEmpty()) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " finite-filter-input-bound status=reject reason=no-estimate goalBoundVars="
+						+ goalBoundVars);
+				return Optional.empty();
+			}
+			TupleExpr stampedAlternative = alternative.clone();
+			if (stampedAlternative instanceof Join join && join.getRightArg()instanceof StatementPattern statement) {
+				stampAccessPathMetrics(statement, estimate.get());
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("lmdbCostModel", "finiteValuesAnchor", "requestedInputBoundAccessPath",
+							"lookupComponents=" + componentMaskString(lookupComponentMask)),
+					"LMDB implements a safe finite RDF-term filter as a VALUES anchor feeding an input-bound lookup");
+			CostVector cost = cost(estimate.get());
+			PhysicalProperties delivered = delivered(stampedAlternative, estimate.get(), goal)
+					.withAccessPath("finiteFilterInputBoundLookup");
+			trace(context, "lmdb-rule id=" + id()
+					+ " finite-filter-input-bound status=applied goalBoundVars=" + goalBoundVars
+					+ " rows=" + estimate.get().getOutputRows()
+					+ " workRows=" + estimate.get().getWorkRows());
+			return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), stampedAlternative,
+					delivered, cost, proof, "lmdb-finite-filter-input-bound-access",
+					snapshot(estimate.get(), cost)));
 		}
 
 	}
@@ -3593,8 +4276,7 @@ final class LmdbCascadesRuleProvider {
 			return expression.logical()
 					&& statisticsProvider != null
 					&& expression.tupleExpr()instanceof Difference difference
-					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null
-					&& correlatedMinusRewriteIsCheaper(statistics, difference, goal);
+					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null;
 		}
 
 		@Override
@@ -3615,8 +4297,7 @@ final class LmdbCascadesRuleProvider {
 			double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
 					Math.max(1.0d, estimate.rows()));
 			CostVector cost = estimate.vector()
-					.toCostVector()
-					.withWorkRows(probeWorkRows);
+					.toCostVector();
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(alternative.getBindingNames())
 					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
@@ -3665,6 +4346,13 @@ final class LmdbCascadesRuleProvider {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Difference difference = (Difference) expression.tupleExpr();
+			if (requiresParentBindings(difference, goal)) {
+				trace(context, "lmdb-rule id=" + id()
+						+ " status=reject reason=input-bound-materialized-minus group=" + expression.groupId()
+						+ " expr=" + expression.id()
+						+ " boundVars=" + goalBoundVars(goal));
+				return List.of();
+			}
 			Difference alternative = difference.clone();
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateMaterializedMinus(alternative, goal);
 			if (estimate.isEmpty()) {
@@ -3686,6 +4374,22 @@ final class LmdbCascadesRuleProvider {
 					"MINUS is implemented as the existing RDF4J materialized RHS anti-semi iterator");
 			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost,
 					proof, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost)));
+		}
+
+		private boolean requiresParentBindings(Difference difference, OptimizationGoal goal) {
+			Set<String> boundVars = goalBoundVars(goal);
+			if (boundVars.isEmpty() || difference == null) {
+				return false;
+			}
+			Set<String> visibleBindings = new LinkedHashSet<>(difference.getBindingNames());
+			visibleBindings.addAll(difference.getLeftArg() == null
+					? Set.of()
+					: difference.getLeftArg().getBindingNames());
+			visibleBindings.addAll(difference.getRightArg() == null
+					? Set.of()
+					: difference.getRightArg().getBindingNames());
+			visibleBindings.retainAll(boundVars);
+			return !visibleBindings.isEmpty();
 		}
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateMaterializedMinus(Difference difference,

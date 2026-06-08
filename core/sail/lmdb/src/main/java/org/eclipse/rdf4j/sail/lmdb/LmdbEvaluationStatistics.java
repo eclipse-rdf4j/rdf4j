@@ -28,13 +28,18 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -59,8 +64,12 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -83,6 +92,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,6 +130,8 @@ class LmdbEvaluationStatistics
 	private static final double BRIDGE_DOMAIN_AVERAGE_CONFIRMATION_MAX_RATIO = 1.25d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_DISTINCT_ROWS = 1_024.0d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_MIN_FANOUT = 64.0d;
+	private static final double CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS = 100_000.0d;
+	private static final long CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS = 1_000_000L;
 	private static final String BOUND_JOIN_PRODUCT_SOURCE = "lmdb-bound-join-product";
 	private static final String INNER_JOIN_BOUND_LOOKUP_SOURCE = "lmdb-inner-bound-lookup";
 	private static final String OPTIONAL_BOUND_LOOKUP_SOURCE = "lmdb-optional-bound-lookup";
@@ -150,6 +162,8 @@ class LmdbEvaluationStatistics
 	private static final String PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS = "plannedOperatorFeedbackRobustWorkRows";
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 	private static final String PLANNED_OPERATOR_REPEATED_INVOCATIONS = "plannedOperatorRepeatedInvocations";
+	private static final String PLANNED_MATERIALIZED_FILTER_WORK_ROWS = "plannedMaterializedFilterWorkRows";
+	private static final double MATERIALIZED_LIST_MEMBER_MIN_WORK_PER_ROW = 12.0d;
 	private static final String PLANNED_BRIDGE_CORRECTION_SOURCE = "plannedBridgeCorrectionSource";
 	private static final String PLANNED_BRIDGE_CORRECTION_JOIN_VAR = "plannedBridgeCorrectionJoinVar";
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
@@ -643,9 +657,37 @@ class LmdbEvaluationStatistics
 		var vector = inputEstimate.vector()
 				.filter(passEstimate.getPlanningPassRatio(), interval,
 						"lmdb-filter");
-		StatisticsEstimate filteredEstimate = StatisticsEstimate.fromVector(vector, "lmdb-filter");
+		StatisticsEstimate filteredEstimate = accountMaterializedFilterEvaluationWork(condition, inputEstimate,
+				StatisticsEstimate.fromVector(vector, "lmdb-filter"));
 		return correlatedAntiExistsFilterEstimate(input, condition, inputEstimate, filteredEstimate, boundVars)
 				.or(() -> Optional.of(filteredEstimate));
+	}
+
+	private StatisticsEstimate accountMaterializedFilterEvaluationWork(ValueExpr condition,
+			StatisticsEstimate inputEstimate, StatisticsEstimate filteredEstimate) {
+		if (inputEstimate == null || filteredEstimate == null) {
+			return filteredEstimate;
+		}
+		double rowsEvaluated = inputEstimate.metrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, inputEstimate.rows());
+		if (!isFiniteNonNegative(rowsEvaluated)) {
+			rowsEvaluated = inputEstimate.rows();
+		}
+		double filterWorkRows = materializedFilterEvaluationWorkRows(condition, Math.max(inputEstimate.rows(),
+				rowsEvaluated));
+		if (!isFiniteNonNegative(filterWorkRows) || filterWorkRows == 0.0d) {
+			return filteredEstimate;
+		}
+		double workRows = filteredEstimate.workRows() + filterWorkRows;
+		Map<String, Double> metrics = new HashMap<>(filteredEstimate.metrics());
+		metrics.put(PLANNED_MATERIALIZED_FILTER_WORK_ROWS, filterWorkRows);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		BagEstimate bag = filteredEstimate.bag()
+				.withWorkRows(workRows, "lmdb-filter-materialized-list-member")
+				.withMetrics(metrics);
+		return new StatisticsEstimate(filteredEstimate.rows(), filteredEstimate.qErrorInterval(), workRows,
+				filteredEstimate.method(), metrics, bag);
 	}
 
 	private Optional<StatisticsEstimate> correlatedAntiExistsFilterEstimate(TupleExpr input, ValueExpr condition,
@@ -658,6 +700,12 @@ class LmdbEvaluationStatistics
 		sharedBindings.retainAll(plannerBindingNames(antiProbe.getBindingNames()));
 		if (sharedBindings.isEmpty()) {
 			return Optional.empty();
+		}
+		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(input, antiProbe,
+				inputEstimate.rows(), sharedBindings);
+		if (exactEstimate != null) {
+			return Optional.of(correlatedAntiExistsExactStatisticsEstimate(inputEstimate, filteredEstimate,
+					exactEstimate));
 		}
 		Set<String> incomingBindings = plannerBindingNames(boundVars);
 		JoinFactorCostModel.CostContext baseContext = JoinFactorCostModel.CostContext.forOptimization(
@@ -677,15 +725,29 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(workRows)) {
 			return Optional.empty();
 		}
+		double outputRows = filteredEstimate.rows();
+		double antiMatchedRows = Double.NaN;
+		double probeOutputRows = antiProbeEstimate.get().getOutputRows();
+		if (isFiniteNonNegative(probeOutputRows)) {
+			antiMatchedRows = Math.min(inputEstimate.rows(), probeOutputRows);
+			outputRows = Math.min(outputRows, Math.max(0.0d, inputEstimate.rows() - antiMatchedRows));
+		}
 
 		Map<String, Double> metrics = new HashMap<>(filteredEstimate.metrics());
 		metrics.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+		metrics.put("plannedAntiExistsProbeOutputRows", probeOutputRows);
+		if (isFiniteNonNegative(antiMatchedRows)) {
+			metrics.put("plannedAntiExistsMatchedRows", antiMatchedRows);
+		}
 		metrics.put("plannedAntiExistsInputRows", inputEstimate.rows());
 		metrics.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
 		BagEstimate bag = filteredEstimate.bag()
+				.withRows(outputRows, "lmdb-correlated-anti-exists-filter")
 				.withWorkRows(workRows, "lmdb-correlated-anti-exists-filter")
 				.withMetrics(metrics);
-		return Optional.of(new StatisticsEstimate(filteredEstimate.rows(), filteredEstimate.qErrorInterval(),
+		QErrorInterval interval = QErrorInterval.heuristic(outputRows,
+				filteredEstimate.qErrorInterval().qError(), "lmdb-correlated-anti-exists-filter");
+		return Optional.of(new StatisticsEstimate(outputRows, interval,
 				workRows, "lmdb-correlated-anti-exists-filter", metrics, bag));
 	}
 
@@ -694,6 +756,337 @@ class LmdbEvaluationStatistics
 			return exists.getSubQuery();
 		}
 		return null;
+	}
+
+	private StatementPattern correlatedAntiExistsPrefixPattern(List<TupleExpr> prefixFactors,
+			Set<String> antiProbeBindings) {
+		if (prefixFactors == null || prefixFactors.isEmpty()
+				|| antiProbeBindings == null || antiProbeBindings.isEmpty()) {
+			return null;
+		}
+		for (TupleExpr prefixFactor : prefixFactors) {
+			StatementPattern pattern = simpleStatementPattern(prefixFactor);
+			if (pattern == null) {
+				continue;
+			}
+			Set<String> sharedBindings = plannerBindingNames(pattern.getAssuredBindingNames());
+			sharedBindings.retainAll(antiProbeBindings);
+			if (sharedBindings.size() == 1) {
+				return pattern;
+			}
+		}
+		return null;
+	}
+
+	private StatementPattern simpleStatementPattern(TupleExpr tupleExpr) {
+		TupleExpr current = tupleExpr;
+		while (current instanceof Filter filter) {
+			current = filter.getArg();
+		}
+		return current instanceof StatementPattern statementPattern ? statementPattern : null;
+	}
+
+	private StatisticsEstimate correlatedAntiExistsExactStatisticsEstimate(StatisticsEstimate inputEstimate,
+			StatisticsEstimate filteredEstimate, CorrelatedAntiExistsExactEstimate exactEstimate) {
+		double workRows = filteredEstimate.workRows() + exactEstimate.probeWorkRows();
+		Map<String, Double> metrics = new HashMap<>(filteredEstimate.metrics());
+		metrics.put("plannedAntiExistsProbeWorkRows", exactEstimate.probeWorkRows());
+		metrics.put("plannedAntiExistsProbeOutputRows", exactEstimate.probeOutputRows());
+		metrics.put("plannedAntiExistsMatchedRows", exactEstimate.matchedRows());
+		metrics.put("plannedAntiExistsInputRows", inputEstimate.rows());
+		metrics.put("plannedAntiExistsSharedBindingCount", 1.0d);
+		metrics.put("plannedAntiExistsExactInputRows", exactEstimate.inputRows());
+		metrics.put("plannedAntiExistsExactProbeRows", exactEstimate.probeOutputRows());
+		metrics.put("plannedAntiExistsExactProbeLookupRows", exactEstimate.probeLookupRows());
+		metrics.put("plannedAntiExistsExactRhsRowsScanned", exactEstimate.rhsRowsScanned());
+		metrics.put("plannedAntiExistsExactWorkRows", exactEstimate.probeWorkRows());
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		BagEstimate bag = filteredEstimate.bag()
+				.withRows(exactEstimate.outputRows(), "lmdb-correlated-anti-exists-exact-probe")
+				.withWorkRows(workRows, "lmdb-correlated-anti-exists-exact-probe")
+				.withMetrics(metrics);
+		QErrorInterval interval = QErrorInterval.heuristic(exactEstimate.outputRows(),
+				filteredEstimate.qErrorInterval().qError(), "lmdb-correlated-anti-exists-exact-probe");
+		return new StatisticsEstimate(exactEstimate.outputRows(), interval,
+				workRows, "lmdb-correlated-anti-exists-exact-probe", metrics, bag);
+	}
+
+	private CorrelatedAntiExistsExactEstimate estimateExactCorrelatedAntiExists(TupleExpr input, TupleExpr antiProbe,
+			double inputRows, Set<String> sharedBindings) {
+		if (tripleStore == null || valueStore == null || !(input instanceof StatementPattern inputPattern)
+				|| !isFiniteNonNegative(inputRows)
+				|| inputRows > CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS
+				|| sharedBindings == null || sharedBindings.size() != 1) {
+			return null;
+		}
+		CorrelatedAntiProbePattern antiPattern = correlatedAntiProbePattern(antiProbe);
+		if (antiPattern == null) {
+			return null;
+		}
+		String sharedBinding = sharedBindings.iterator().next();
+		Component inputSharedComponent = singleVariableComponent(inputPattern, sharedBinding);
+		Component antiSharedComponent = singleVariableComponent(antiPattern.pattern(), sharedBinding);
+		if (inputSharedComponent == null || antiSharedComponent == null
+				|| !conditionUsesOnlyPatternBindings(antiPattern.condition(), antiPattern.pattern())) {
+			return null;
+		}
+		DefaultEvaluationStrategy strategy = exactFilterEvaluationStrategy();
+		QueryValueEvaluationStep condition = antiPattern.condition() == null
+				? null
+				: prepareExactFilterCondition(strategy, antiPattern.condition());
+		if (antiPattern.condition() != null && condition == null) {
+			return null;
+		}
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			PatternIds inputIds = patternIds(inputPattern, null, LmdbValue.UNKNOWN_ID);
+			if (inputIds == null || inputIds.zeroRows()) {
+				return null;
+			}
+			Map<Long, Boolean> antiMatches = new HashMap<>();
+			long inputRowsScanned = 0L;
+			long matchedRows = 0L;
+			long rhsRowsScanned = 0L;
+			long probeLookupRows = 0L;
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator records = tripleStore.getTriples(txn, inputIds.subjectId(),
+						inputIds.predicateId(), inputIds.objectId(), inputIds.contextId(), explicit)) {
+					long[] row;
+					while ((row = records.next()) != null) {
+						if (!matchesRepeatedVariableEquality(inputPattern, row)) {
+							continue;
+						}
+						inputRowsScanned++;
+						if (inputRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS) {
+							return null;
+						}
+						long sharedId = row[inputSharedComponent.ordinal()];
+						Boolean matched = antiMatches.get(sharedId);
+						if (matched == null) {
+							CorrelatedAntiProbeResult result = exactAntiProbeMatches(txn, antiPattern.pattern(),
+									condition, strategy, sharedBinding, sharedId);
+							if (result == null) {
+								return null;
+							}
+							rhsRowsScanned += result.rhsRowsScanned();
+							probeLookupRows++;
+							if (probeLookupRows + rhsRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS) {
+								return null;
+							}
+							matched = result.matched();
+							antiMatches.put(sharedId, matched);
+						}
+						if (matched) {
+							matchedRows++;
+						}
+					}
+				}
+			}
+			if (inputRowsScanned == 0L) {
+				return new CorrelatedAntiExistsExactEstimate(0.0d, 0.0d, 0.0d, probeLookupRows,
+						rhsRowsScanned, probeLookupRows + rhsRowsScanned);
+			}
+			double outputRows = Math.max(0.0d, inputRowsScanned - matchedRows);
+			double probeOutputRows = matchedRows;
+			double probeWorkRows = Math.max(probeLookupRows, probeLookupRows + rhsRowsScanned);
+			return new CorrelatedAntiExistsExactEstimate(inputRowsScanned, matchedRows, outputRows,
+					probeLookupRows, rhsRowsScanned, Math.max(probeWorkRows, probeOutputRows));
+		} catch (IOException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	private CorrelatedAntiProbeResult exactAntiProbeMatches(Txn txn, StatementPattern pattern,
+			QueryValueEvaluationStep condition, DefaultEvaluationStrategy strategy, String sharedBinding,
+			long sharedId) throws IOException {
+		PatternIds ids = patternIds(pattern, sharedBinding, sharedId);
+		if (ids == null) {
+			return null;
+		}
+		if (ids.zeroRows()) {
+			return new CorrelatedAntiProbeResult(false, 0L);
+		}
+		long rhsRowsScanned = 0L;
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (RecordIterator records = tripleStore.getTriples(txn, ids.subjectId(), ids.predicateId(),
+					ids.objectId(), ids.contextId(), explicit)) {
+				long[] row;
+				while ((row = records.next()) != null) {
+					if (!matchesRepeatedVariableEquality(pattern, row)) {
+						continue;
+					}
+					rhsRowsScanned++;
+					if (condition == null || exactFilterConditionMatches(condition, strategy, pattern, row)) {
+						return new CorrelatedAntiProbeResult(true, rhsRowsScanned);
+					}
+				}
+			}
+		}
+		return new CorrelatedAntiProbeResult(false, rhsRowsScanned);
+	}
+
+	private CorrelatedAntiProbePattern correlatedAntiProbePattern(TupleExpr antiProbe) {
+		if (antiProbe instanceof StatementPattern pattern) {
+			return new CorrelatedAntiProbePattern(pattern, null);
+		}
+		if (antiProbe instanceof Filter filter && filter.getArg()instanceof StatementPattern pattern) {
+			return new CorrelatedAntiProbePattern(pattern, filter.getCondition());
+		}
+		return null;
+	}
+
+	private boolean exactFilterConditionMatches(QueryValueEvaluationStep condition, DefaultEvaluationStrategy strategy,
+			StatementPattern pattern, long[] row) throws IOException {
+		BindingSet bindingSet = toBindingSet(pattern, row);
+		try {
+			return strategy.isTrue(condition, bindingSet);
+		} catch (ValueExprEvaluationException e) {
+			return false;
+		} catch (QueryEvaluationException e) {
+			return false;
+		}
+	}
+
+	private QueryValueEvaluationStep prepareExactFilterCondition(DefaultEvaluationStrategy strategy,
+			ValueExpr condition) {
+		try {
+			return strategy.precompile(condition, new QueryEvaluationContext.Minimal(null, valueStore, null));
+		} catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	private DefaultEvaluationStrategy exactFilterEvaluationStrategy() {
+		return new DefaultEvaluationStrategy(new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws QueryEvaluationException {
+				return TripleSource.EMPTY_ITERATION;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj,
+					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+				return TripleSource.EMPTY_ITERATION;
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return valueStore;
+			}
+		}, null);
+	}
+
+	private boolean conditionUsesOnlyPatternBindings(ValueExpr condition, StatementPattern pattern) {
+		if (condition == null) {
+			return true;
+		}
+		Set<String> bindingNames = plannerBindingNames(pattern.getBindingNames());
+		boolean[] supported = { true };
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!supported[0] || var.hasValue() || var.getName() == null) {
+					return;
+				}
+				if (!bindingNames.contains(var.getName())) {
+					supported[0] = false;
+				}
+			}
+
+			@Override
+			public void meet(Exists exists) {
+				supported[0] = false;
+			}
+		});
+		return supported[0];
+	}
+
+	private BindingSet toBindingSet(StatementPattern pattern, long[] row) throws IOException {
+		MapBindingSet bindingSet = new MapBindingSet(4);
+		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleStore.SUBJ_IDX]);
+		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleStore.PRED_IDX]);
+		addBinding(bindingSet, pattern.getObjectVar(), row[TripleStore.OBJ_IDX]);
+		addBinding(bindingSet, pattern.getContextVar(), row[TripleStore.CONTEXT_IDX]);
+		return bindingSet;
+	}
+
+	private void addBinding(MapBindingSet bindingSet, Var var, long valueId) throws IOException {
+		if (var == null || var.hasValue() || var.getName() == null || bindingSet.hasBinding(var.getName())
+				|| valueId == 0L) {
+			return;
+		}
+		bindingSet.addBinding(var.getName(), valueStore.getValue(valueId));
+	}
+
+	private PatternIds patternIds(StatementPattern pattern, String boundVarName, long boundVarId) throws IOException {
+		long subjectId = patternComponentId(pattern.getSubjectVar(), Component.S, boundVarName, boundVarId);
+		if (subjectId == Long.MIN_VALUE) {
+			return PatternIds.ZERO_ROWS;
+		}
+		long predicateId = patternComponentId(pattern.getPredicateVar(), Component.P, boundVarName, boundVarId);
+		if (predicateId == Long.MIN_VALUE) {
+			return PatternIds.ZERO_ROWS;
+		}
+		long objectId = patternComponentId(pattern.getObjectVar(), Component.O, boundVarName, boundVarId);
+		if (objectId == Long.MIN_VALUE) {
+			return PatternIds.ZERO_ROWS;
+		}
+		long contextId = patternComponentId(pattern.getContextVar(), Component.C, boundVarName, boundVarId);
+		if (contextId == Long.MIN_VALUE) {
+			return PatternIds.ZERO_ROWS;
+		}
+		return new PatternIds(subjectId, predicateId, objectId, contextId);
+	}
+
+	private long patternComponentId(Var var, Component component, String boundVarName, long boundVarId)
+			throws IOException {
+		if (var == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		if (var.hasValue()) {
+			Value value = var.getValue();
+			if (!isValidLookupValue(component, value)) {
+				return Long.MIN_VALUE;
+			}
+			long id = valueStore.getId(value);
+			return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
+		}
+		if (boundVarName != null && boundVarName.equals(var.getName())) {
+			return boundVarId;
+		}
+		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private Component singleVariableComponent(StatementPattern pattern, String variableName) {
+		Component match = null;
+		for (Component component : Component.values()) {
+			Var var = componentVar(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null || !var.getName().equals(variableName)) {
+				continue;
+			}
+			if (match != null) {
+				return null;
+			}
+			match = component;
+		}
+		return match;
+	}
+
+	private boolean matchesRepeatedVariableEquality(StatementPattern pattern, long[] row) {
+		Map<String, Long> bindingsByName = new HashMap<>(4);
+		return matchesRepeatedVariable(pattern.getSubjectVar(), row[TripleStore.SUBJ_IDX], bindingsByName)
+				&& matchesRepeatedVariable(pattern.getPredicateVar(), row[TripleStore.PRED_IDX], bindingsByName)
+				&& matchesRepeatedVariable(pattern.getObjectVar(), row[TripleStore.OBJ_IDX], bindingsByName)
+				&& matchesRepeatedVariable(pattern.getContextVar(), row[TripleStore.CONTEXT_IDX], bindingsByName);
+	}
+
+	private boolean matchesRepeatedVariable(Var var, long valueId, Map<String, Long> bindingsByName) {
+		if (var == null || var.hasValue() || var.getName() == null) {
+			return true;
+		}
+		Long existing = bindingsByName.putIfAbsent(var.getName(), valueId);
+		return existing == null || existing.longValue() == valueId;
 	}
 
 	private TupleExpr leftDeepJoin(List<TupleExpr> orderedFactors) {
@@ -1440,6 +1833,64 @@ class LmdbEvaluationStatistics
 	}
 
 	@Override
+	public Optional<JoinFactorCostModel.FilterCostEstimate> estimateFilterCost(
+			JoinOrderPlanner.FilterConstraint filter, JoinFactorCostModel.CostContext context) {
+		if (filter == null || context == null || !filter.hasNestedTupleExpression() || !filter.isNotExists()) {
+			return Optional.empty();
+		}
+		ValueExpr condition = filter.getCondition()
+				.orElse(null);
+		TupleExpr antiProbe = antiExistsProbe(condition);
+		if (antiProbe == null) {
+			return Optional.empty();
+		}
+		double inputRows = context.getOuterPrefixRows();
+		if (!isFiniteNonNegative(inputRows) || inputRows == 0.0d) {
+			return Optional.empty();
+		}
+		Set<String> antiBindings = plannerBindingNames(antiProbe.getBindingNames());
+		StatementPattern inputPattern = correlatedAntiExistsPrefixPattern(context.getPrefixFactors(), antiBindings);
+		if (inputPattern == null) {
+			return Optional.empty();
+		}
+		Set<String> sharedBindings = plannerBindingNames(inputPattern.getAssuredBindingNames());
+		sharedBindings.retainAll(antiBindings);
+		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(inputPattern, antiProbe,
+				inputRows, sharedBindings);
+		if (exactEstimate == null || !isFiniteNonNegative(exactEstimate.inputRows())
+				|| exactEstimate.inputRows() == 0.0d) {
+			return Optional.empty();
+		}
+		double passRatio = Math.clamp(exactEstimate.outputRows() / exactEstimate.inputRows(), 0.0d, 1.0d);
+		double outputRows = inputRows * passRatio;
+		boolean exactOutputRows = Math.abs(inputRows - exactEstimate.inputRows()) <= 0.5d;
+		if (exactOutputRows) {
+			outputRows = exactEstimate.outputRows();
+		}
+		Map<String, String> stringMetrics = Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+				"lmdb-correlated-anti-exists-filter-exact");
+		Map<String, Double> doubleMetrics = new HashMap<>();
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE, exactOutputRows ? 1.0d : 0.85d);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, exactOutputRows ? 1.0d : 0.85d);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, exactEstimate.probeWorkRows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, exactEstimate.probeWorkRows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		doubleMetrics.put("plannedAntiExistsProbeWorkRows", exactEstimate.probeWorkRows());
+		doubleMetrics.put("plannedAntiExistsProbeOutputRows", exactEstimate.probeOutputRows());
+		doubleMetrics.put("plannedAntiExistsMatchedRows", exactEstimate.matchedRows());
+		doubleMetrics.put("plannedAntiExistsInputRows", inputRows);
+		doubleMetrics.put("plannedAntiExistsExactInputRows", exactEstimate.inputRows());
+		doubleMetrics.put("plannedAntiExistsExactProbeRows", exactEstimate.probeOutputRows());
+		doubleMetrics.put("plannedAntiExistsExactProbeLookupRows", exactEstimate.probeLookupRows());
+		doubleMetrics.put("plannedAntiExistsExactRhsRowsScanned", exactEstimate.rhsRowsScanned());
+		doubleMetrics.put("plannedAntiExistsExactWorkRows", exactEstimate.probeWorkRows());
+		return Optional.of(new JoinFactorCostModel.FilterCostEstimate(exactEstimate.probeWorkRows(), outputRows,
+				passRatio, stringMetrics, doubleMetrics, exactOutputRows));
+	}
+
+	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, JoinFactorCostModel.CostContext context) {
 		if (sketchBasedJoinEstimator == null) {
 			traceEstimate("request-page-walk", factor, context, "reason=no-sketch-estimator");
@@ -1585,7 +2036,8 @@ class LmdbEvaluationStatistics
 							+ ", distinctLookup=" + estimateTraceRows(distinctLookupBindings));
 			return false;
 		}
-		double lookupDomainWorkRows = lookupDomainRepeatedWorkRows(lookupDomainOutputRows, repeatedInvocations);
+		double lookupDomainWorkRows = lookupDomainRepeatedWorkRows(lookupDomainOutputRows, repeatedInvocations,
+				estimate);
 		boolean outputRaisesEstimate = !isFiniteNonNegative(estimate.getOutputRows())
 				|| lookupDomainOutputRows > estimate.getOutputRows();
 		boolean workRaisesEstimate = isFiniteNonNegative(lookupDomainWorkRows)
@@ -1963,6 +2415,7 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put("plannedInnerJoinRightRows", rightRows);
 		doubleMetrics.put("plannedInnerJoinRightWorkRows", rightWorkRows);
 		doubleMetrics.put("plannedInnerJoinOutputRows", outputRows);
+		propagateMaterializedFilterWorkRowsPerInvocation(doubleMetrics, left, right);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
@@ -2048,6 +2501,7 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put("plannedOptionalBridgeProductRows", optionalBridgeRows);
 		}
 		doubleMetrics.put("plannedOptionalOutputRows", outputRows);
+		propagateMaterializedFilterWorkRowsPerInvocation(doubleMetrics, left, right);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
@@ -2132,6 +2586,7 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put("plannedMinusRightRows", rightRows);
 		doubleMetrics.put("plannedMinusRightWorkRows", rightWorkRows);
 		doubleMetrics.put("plannedMinusOutputRows", outputRows);
+		propagateMaterializedFilterWorkRowsPerInvocation(doubleMetrics, left, right);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
@@ -2242,7 +2697,7 @@ class LmdbEvaluationStatistics
 			if (isDirectLookup(estimate) || !hasDuplicateLookupKeyInvocations(repeatedInvocations,
 					distinctLookupBindings)) {
 				double lookupDomainWorkRows = lookupDomainRepeatedWorkRows(lookupDomainOutputRows,
-						repeatedInvocations);
+						repeatedInvocations, estimate);
 				if (isFiniteNonNegative(lookupDomainWorkRows)) {
 					nestedWorkRows = lookupDomainWorkRows;
 				}
@@ -2330,12 +2785,70 @@ class LmdbEvaluationStatistics
 		return isFiniteNonNegative(prefixRows) ? prefixRows : Double.NaN;
 	}
 
-	private double lookupDomainRepeatedWorkRows(double lookupDomainOutputRows, double repeatedInvocations) {
+	private double lookupDomainRepeatedWorkRows(double lookupDomainOutputRows, double repeatedInvocations,
+			FactorCostEstimate estimate) {
 		if (!isFiniteNonNegative(lookupDomainOutputRows) || !isFiniteNonNegative(repeatedInvocations)) {
 			return Double.NaN;
 		}
 		double workRows = lookupDomainOutputRows + repeatedInvocations;
+		double materializedFilterWorkRows = repeatedMaterializedFilterWorkRows(estimate, repeatedInvocations);
+		if (isFiniteNonNegative(materializedFilterWorkRows)) {
+			workRows += materializedFilterWorkRows;
+		}
 		return isFiniteNonNegative(workRows) ? workRows : Double.NaN;
+	}
+
+	private double repeatedMaterializedFilterWorkRows(FactorCostEstimate estimate, double repeatedInvocations) {
+		double materializedFilterWorkRows = materializedFilterWorkRowsPerInvocation(estimate);
+		if (!isFiniteNonNegative(materializedFilterWorkRows) || materializedFilterWorkRows == 0.0d
+				|| !isFiniteNonNegative(repeatedInvocations)) {
+			return 0.0d;
+		}
+		double repeatedWorkRows = materializedFilterWorkRows * repeatedInvocations;
+		return isFiniteNonNegative(repeatedWorkRows) ? repeatedWorkRows : 0.0d;
+	}
+
+	private double perInvocationAccessAndMaterializedFilterWorkRows(FactorCostEstimate estimate,
+			double accessWorkRows) {
+		if (!isFiniteNonNegative(accessWorkRows)) {
+			return accessWorkRows;
+		}
+		double materializedFilterWorkRows = materializedFilterWorkRowsPerInvocation(estimate);
+		if (!isFiniteNonNegative(materializedFilterWorkRows) || materializedFilterWorkRows == 0.0d) {
+			return accessWorkRows;
+		}
+		double workRows = accessWorkRows + materializedFilterWorkRows;
+		return isFiniteNonNegative(workRows) ? workRows : accessWorkRows;
+	}
+
+	private double materializedFilterWorkRowsPerInvocation(FactorCostEstimate estimate) {
+		if (estimate == null) {
+			return 0.0d;
+		}
+		double materializedFilterWorkRows = metric(estimate.getDoubleMetrics(),
+				PLANNED_MATERIALIZED_FILTER_WORK_ROWS);
+		if (!isFiniteNonNegative(materializedFilterWorkRows) || materializedFilterWorkRows == 0.0d) {
+			return 0.0d;
+		}
+		double repeatedInvocations = metric(estimate.getDoubleMetrics(), PLANNED_REPEATED_INVOCATIONS);
+		if (estimate.isRepeatedInvocationsCosted() && isFiniteNonNegative(repeatedInvocations)
+				&& repeatedInvocations > 1.0d && materializedFilterWorkRows > repeatedInvocations) {
+			double perInvocationRows = materializedFilterWorkRows / repeatedInvocations;
+			return isFiniteNonNegative(perInvocationRows) ? perInvocationRows : 0.0d;
+		}
+		return materializedFilterWorkRows;
+	}
+
+	private void propagateMaterializedFilterWorkRowsPerInvocation(Map<String, Double> doubleMetrics,
+			FactorCostEstimate left, FactorCostEstimate right) {
+		if (doubleMetrics == null) {
+			return;
+		}
+		double workRows = materializedFilterWorkRowsPerInvocation(left)
+				+ materializedFilterWorkRowsPerInvocation(right);
+		if (isFiniteNonNegative(workRows) && workRows > 0.0d) {
+			doubleMetrics.put(PLANNED_MATERIALIZED_FILTER_WORK_ROWS, workRows);
+		}
 	}
 
 	private double repeatedOutputRows(FactorCostEstimate estimate, double repeatedInvocations) {
@@ -2755,8 +3268,10 @@ class LmdbEvaluationStatistics
 				return finiteLookupEstimate;
 			}
 		}
-		return attachSketchBagEstimate(factor, boundVars,
-				estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, requestedAccessPath));
+		Optional<FactorCostEstimate> estimate = estimateLmdbFactorCost(outputRows, accessShape, collectMetrics,
+				requestedAccessPath);
+		estimate = accountMaterializedFilterEvaluationWork(factor, estimate, collectMetrics);
+		return attachSketchBagEstimate(factor, boundVars, estimate);
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
@@ -2853,8 +3368,61 @@ class LmdbEvaluationStatistics
 				return finiteLookupEstimate;
 			}
 		}
-		return attachConditionedSketchBagEstimate(factor, variableNames, boundVarMask,
-				estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, requestedAccessPath));
+		Optional<FactorCostEstimate> estimate = estimateLmdbFactorCost(outputRows, accessShape, collectMetrics,
+				requestedAccessPath);
+		estimate = accountMaterializedFilterEvaluationWork(factor, estimate, collectMetrics);
+		return attachConditionedSketchBagEstimate(factor, variableNames, boundVarMask, estimate);
+	}
+
+	private Optional<FactorCostEstimate> accountMaterializedFilterEvaluationWork(TupleExpr factor,
+			Optional<FactorCostEstimate> estimate, boolean collectMetrics) {
+		if (estimate.isEmpty() || !(factor instanceof Filter filter)) {
+			return estimate;
+		}
+		double rowsEvaluated = estimate.get()
+				.getAccessRowsBeforeFilter();
+		if (!isFiniteNonNegative(rowsEvaluated)) {
+			rowsEvaluated = estimate.get()
+					.getOutputRows();
+		}
+		double filterWorkRows = materializedFilterEvaluationWorkRows(filter.getCondition(), rowsEvaluated);
+		if (!isFiniteNonNegative(filterWorkRows) || filterWorkRows == 0.0d) {
+			return estimate;
+		}
+		FactorCostEstimate base = estimate.get();
+		double workRows = base.getWorkRows() + filterWorkRows;
+		Map<String, String> stringMetrics = base.getStringMetrics();
+		Map<String, Double> doubleMetrics = new HashMap<>(base.getDoubleMetrics());
+		doubleMetrics.put(PLANNED_MATERIALIZED_FILTER_WORK_ROWS, filterWorkRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		if (collectMetrics) {
+			Map<String, String> mutableStrings = new HashMap<>(stringMetrics);
+			mutableStrings.put("plannedFilterEvaluationCost", "materialized-list-member");
+			stringMetrics = mutableStrings;
+		}
+		FactorCostEstimate adjusted = new FactorCostEstimate(workRows, base.getOutputRows(), stringMetrics,
+				doubleMetrics, base.hasPhysicalAccessPath(), base.isDirectLookup(), base.getLookupComponentMask(),
+				base.getMissingLookupComponentMask(), base.getAccessRowsBeforeFilter(),
+				base.isRepeatedInvocationsCosted(), base.hasExactOutputRows());
+		return Optional.of(base.getBagEstimate()
+				.map(adjusted::withBag)
+				.orElse(adjusted));
+	}
+
+	private double materializedFilterEvaluationWorkRows(ValueExpr condition, double rowsEvaluated) {
+		if (!isFiniteNonNegative(rowsEvaluated) || condition == null) {
+			return 0.0d;
+		}
+		if (condition instanceof ListMemberOperator listMemberOperator) {
+			double argumentWork = Math.max(2.0d, listMemberOperator.getArguments().size()) * 2.0d;
+			return rowsEvaluated * Math.max(MATERIALIZED_LIST_MEMBER_MIN_WORK_PER_ROW, argumentWork);
+		}
+		if (condition instanceof And and) {
+			return materializedFilterEvaluationWorkRows(and.getLeftArg(), rowsEvaluated)
+					+ materializedFilterEvaluationWorkRows(and.getRightArg(), rowsEvaluated);
+		}
+		return 0.0d;
 	}
 
 	private Optional<FactorCostEstimate> attachSketchBagEstimate(TupleExpr factor, Set<String> boundVars,
@@ -2907,6 +3475,8 @@ class LmdbEvaluationStatistics
 		if (sharedBindings.isEmpty()) {
 			return Optional.empty();
 		}
+		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(filter.getArg(),
+				antiProbe, inputRows, sharedBindings);
 		JoinFactorCostModel.CostContext baseContext = JoinFactorCostModel.CostContext.forOptimization(
 				plannerBindingNames(boundVars), inputRows, Double.NaN, true, collectMetrics,
 				finiteBindingValues == null ? Map.of() : finiteBindingValues, List.of(filter.getArg()))
@@ -2915,10 +3485,12 @@ class LmdbEvaluationStatistics
 		JoinFactorCostModel.CostContext rightContext = optionalRightCostContext(baseContext, filter.getArg(),
 				antiProbe, inputRows, sharedBindings);
 		Optional<FactorCostEstimate> antiProbeEstimate = estimateFactorCost(antiProbe, rightContext);
-		if (antiProbeEstimate.isEmpty() || !antiProbeEstimate.get().isRepeatedInvocationsCosted()) {
+		if (exactEstimate == null
+				&& (antiProbeEstimate.isEmpty() || !antiProbeEstimate.get().isRepeatedInvocationsCosted())) {
 			return Optional.empty();
 		}
-		double probeWorkRows = antiProbeEstimate.get().getWorkRows();
+		double probeWorkRows = exactEstimate == null ? antiProbeEstimate.get().getWorkRows()
+				: exactEstimate.probeWorkRows();
 		if (!isFiniteNonNegative(probeWorkRows)) {
 			return Optional.empty();
 		}
@@ -2927,6 +3499,18 @@ class LmdbEvaluationStatistics
 		if (passEstimate != null && isFiniteNonNegative(passEstimate.getPlanningPassRatio())) {
 			outputRows = inputRows * passEstimate.getPlanningPassRatio();
 		}
+		double probeOutputRows = antiProbeEstimate.map(FactorCostEstimate::getOutputRows)
+				.orElse(Double.NaN);
+		double antiMatchedRows = Double.NaN;
+		if (exactEstimate != null) {
+			probeWorkRows = exactEstimate.probeWorkRows();
+			probeOutputRows = exactEstimate.probeOutputRows();
+			antiMatchedRows = exactEstimate.matchedRows();
+			outputRows = exactEstimate.outputRows();
+		} else if (isFiniteNonNegative(probeOutputRows)) {
+			antiMatchedRows = Math.min(inputRows, probeOutputRows);
+			outputRows = Math.min(outputRows, Math.max(0.0d, inputRows - antiMatchedRows));
+		}
 		if (!isFiniteNonNegative(outputRows)) {
 			return Optional.empty();
 		}
@@ -2934,7 +3518,6 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(inputWorkRows)) {
 			inputWorkRows = inputRows;
 		}
-		double probeOutputRows = antiProbeEstimate.get().getOutputRows();
 		double workRows = inputWorkRows + Math.max(probeWorkRows,
 				isFiniteNonNegative(probeOutputRows) ? probeOutputRows : 0.0d);
 		if (!isFiniteNonNegative(workRows)) {
@@ -2957,8 +3540,22 @@ class LmdbEvaluationStatistics
 			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
 			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 			mutableDoubles.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+			if (isFiniteNonNegative(probeOutputRows)) {
+				mutableDoubles.put("plannedAntiExistsProbeOutputRows", probeOutputRows);
+			}
+			if (isFiniteNonNegative(antiMatchedRows)) {
+				mutableDoubles.put("plannedAntiExistsMatchedRows", antiMatchedRows);
+			}
 			mutableDoubles.put("plannedAntiExistsInputRows", inputRows);
+			mutableDoubles.put("plannedAntiExistsInputWorkRows", inputWorkRows);
 			mutableDoubles.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
+			if (exactEstimate != null) {
+				mutableDoubles.put("plannedAntiExistsExactInputRows", exactEstimate.inputRows());
+				mutableDoubles.put("plannedAntiExistsExactProbeRows", exactEstimate.probeOutputRows());
+				mutableDoubles.put("plannedAntiExistsExactProbeLookupRows", exactEstimate.probeLookupRows());
+				mutableDoubles.put("plannedAntiExistsExactRhsRowsScanned", exactEstimate.rhsRowsScanned());
+				mutableDoubles.put("plannedAntiExistsExactWorkRows", exactEstimate.probeWorkRows());
+			}
 			if (passEstimate != null) {
 				mutableDoubles.put(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
 						passEstimate.getPlanningPassRatio());
@@ -2967,7 +3564,10 @@ class LmdbEvaluationStatistics
 			}
 			doubleMetrics = mutableDoubles;
 		}
-		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics));
+		FactorCostEstimate antiFilterEstimate = new FactorCostEstimate(workRows, outputRows, stringMetrics,
+				doubleMetrics, input.hasPhysicalAccessPath(), input.isDirectLookup(), input.getLookupComponentMask(),
+				input.getMissingLookupComponentMask(), input.getAccessRowsBeforeFilter(), false, false);
+		return Optional.of(preserveBagEstimate(input, antiFilterEstimate));
 	}
 
 	private SketchBasedJoinEstimator.AccessShape accessShapeForJoinOrdering(TupleExpr factor, Set<String> boundVars,
@@ -3602,6 +4202,10 @@ class LmdbEvaluationStatistics
 			traceEstimate("bound-product-reject", factor, context, "reason=binding-set-assignment");
 			return Optional.empty();
 		}
+		if (context.getOuterPrefixRows() == 0.0d) {
+			traceEstimate("bound-product-reject", factor, context, "reason=empty-prefix");
+			return Optional.empty();
+		}
 		if (finiteBindingValuesAffectBoundJoinProduct(factor, context)) {
 			if (estimateTraceEnabled()) {
 				traceEstimate("bound-product-reject", factor, context,
@@ -3669,7 +4273,8 @@ class LmdbEvaluationStatistics
 				: isPositiveFinite(baseAccessRows)
 						? Math.max(baseAccessRows, productAccessRows)
 						: productAccessRows;
-		double workRows = repeatedInvocations * accessWorkRows;
+		double workRows = repeatedInvocations
+				* perInvocationAccessAndMaterializedFilterWorkRows(baseEstimate, accessWorkRows);
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = outputRows;
 		}
@@ -4236,7 +4841,7 @@ class LmdbEvaluationStatistics
 				&& !duplicateProductRaisesEnvelope
 				&& isPositiveFinite(accessEnvelopeRows)
 				&& isPositiveFinite(accessEnvelopeWorkRows)) {
-			double envelopeWorkRows = Math.max(accessEnvelopeRows, accessEnvelopeWorkRows);
+			double envelopeWorkRows = Math.max(workRows, Math.max(accessEnvelopeRows, accessEnvelopeWorkRows));
 			double envelopeOutputRows = Math.min(productRows, accessEnvelopeRows);
 			if (!isPositiveFinite(envelopeOutputRows)) {
 				envelopeOutputRows = accessEnvelopeRows;
@@ -4260,7 +4865,7 @@ class LmdbEvaluationStatistics
 		if (!duplicateProductRaisesEnvelope
 				&& isPositiveFinite(accessEnvelopeRows)
 				&& accessEnvelopeRows > productRows) {
-			double envelopeWorkRows = Math.max(accessEnvelopeRows, accessEnvelopeWorkRows);
+			double envelopeWorkRows = Math.max(workRows, Math.max(accessEnvelopeRows, accessEnvelopeWorkRows));
 			double envelopeAccessRows = Math.max(1.0d, accessEnvelopeRows / repeatedInvocations);
 			if (!isPositiveFinite(envelopeAccessRows)) {
 				envelopeAccessRows = accessRows;
@@ -8881,6 +9486,30 @@ class LmdbEvaluationStatistics
 			if (delta > 0L) {
 				doubleMetrics.put(metricName, (double) delta);
 			}
+		}
+	}
+
+	private record CorrelatedAntiExistsExactEstimate(double inputRows, double matchedRows, double outputRows,
+			double probeLookupRows, double rhsRowsScanned, double probeWorkRows) {
+
+		private double probeOutputRows() {
+			return matchedRows;
+		}
+	}
+
+	private record CorrelatedAntiProbePattern(StatementPattern pattern, ValueExpr condition) {
+	}
+
+	private record CorrelatedAntiProbeResult(boolean matched, long rhsRowsScanned) {
+	}
+
+	private record PatternIds(long subjectId, long predicateId, long objectId, long contextId) {
+
+		private static final PatternIds ZERO_ROWS = new PatternIds(Long.MIN_VALUE, Long.MIN_VALUE,
+				Long.MIN_VALUE, Long.MIN_VALUE);
+
+		private boolean zeroRows() {
+			return this == ZERO_ROWS;
 		}
 	}
 

@@ -320,6 +320,10 @@ final class LmdbJoinPlanSupport {
 	static List<DeferredFilter> sortDeferredFilters(List<DeferredFilter> deferredFilters) {
 		ArrayList<DeferredFilter> sorted = new ArrayList<>(deferredFilters);
 		sorted.sort((left, right) -> {
+			int bySelectivePassRatio = compareSelectivePassRatio(left, right);
+			if (bySelectivePassRatio != 0) {
+				return bySelectivePassRatio;
+			}
 			int byCost = Integer.compare(left.conditionCost, right.conditionCost);
 			if (byCost != 0) {
 				return byCost;
@@ -329,9 +333,47 @@ final class LmdbJoinPlanSupport {
 			if (leftContainsExists != rightContainsExists) {
 				return leftContainsExists ? 1 : -1;
 			}
+			if (leftContainsExists) {
+				boolean leftNotExists = isNotExistsFilter(left.condition);
+				boolean rightNotExists = isNotExistsFilter(right.condition);
+				if (leftNotExists != rightNotExists) {
+					return leftNotExists ? -1 : 1;
+				}
+			}
 			return Integer.compare(left.originalIndex, right.originalIndex);
 		});
 		return sorted;
+	}
+
+	private static boolean isNotExistsFilter(ValueExpr condition) {
+		NestedTupleExpression nestedTupleExpression = nestedTupleExpression(condition);
+		return nestedTupleExpression != null && nestedTupleExpression.notExists();
+	}
+
+	private static int compareSelectivePassRatio(DeferredFilter left, DeferredFilter right) {
+		double leftPassRatio = planningPassRatio(left);
+		double rightPassRatio = planningPassRatio(right);
+		boolean leftSelective = isValidPassRatio(leftPassRatio) && leftPassRatio < 1.0d;
+		boolean rightSelective = isValidPassRatio(rightPassRatio) && rightPassRatio < 1.0d;
+		if (leftSelective && rightSelective) {
+			return Double.compare(leftPassRatio, rightPassRatio);
+		}
+		if (leftSelective != rightSelective) {
+			return leftSelective ? -1 : 1;
+		}
+		return 0;
+	}
+
+	private static double planningPassRatio(DeferredFilter filter) {
+		if (filter == null) {
+			return Double.NaN;
+		}
+		EvaluationStatistics.FilterPassEstimate estimate = filter.passEstimate();
+		if (estimate == null) {
+			return Double.NaN;
+		}
+		double passRatio = estimate.getPlanningPassRatio();
+		return isValidPassRatio(passRatio) ? passRatio : Double.NaN;
 	}
 
 	static List<Set<StatementPattern>> remainingPatternsAfterFactors(List<TupleExpr> orderedJoinArgs) {
@@ -710,6 +752,9 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static int filterConditionCost(ValueExpr condition) {
+		if (condition instanceof ListMemberOperator) {
+			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
+		}
 		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
 			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
 		}

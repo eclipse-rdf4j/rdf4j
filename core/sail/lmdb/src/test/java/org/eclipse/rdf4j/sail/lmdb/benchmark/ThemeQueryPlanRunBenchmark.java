@@ -88,6 +88,8 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String QUERY_VARIANT_VALUES_TOP_TYPE_CODE = "values-top-type-code";
 	private static final String QUERY_VARIANT_TYPE_VALUES_CODE = "type-values-code";
 	private static final String QUERY_VARIANT_VALUES_CODE_TYPE = "values-code-type";
+	private static final String QUERY_VARIANT_FILTER_IN = "filter-in";
+	private static final String QUERY_VARIANT_TYPE_ANTI_VALUES_CODE = "type-anti-values-code";
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
@@ -158,7 +160,7 @@ public class ThemeQueryPlanRunBenchmark {
 		public void setup() throws IOException {
 			theme = Theme.valueOf(themeName);
 			query = queryForVariant(theme, z_queryIndex, queryVariant);
-			//query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			// query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 			expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
@@ -413,7 +415,9 @@ public class ThemeQueryPlanRunBenchmark {
 			String renderedSparql = "\n### Rendered Optimized SPARQL - Trial teardown ###\n"
 					+ queryDescription() + "\n"
 					+ new TupleExprIRRenderer().render((TupleExpr) optimized.tupleExpr()) + "\n";
+			writeRenderedSparqlAtTrialTeardown(renderedSparql);
 			System.out.print(renderedSparql);
+			System.out.println("Rendered optimized SPARQL file: " + renderedSparqlFile().getAbsolutePath());
 			System.out.flush();
 		}
 
@@ -426,6 +430,10 @@ public class ThemeQueryPlanRunBenchmark {
 				return;
 			}
 			writeTextFile(optimizedDiagnosticsFile(), diagnostics, "optimized diagnostics");
+		}
+
+		private void writeRenderedSparqlAtTrialTeardown(String renderedSparql) {
+			writeTextFile(renderedSparqlFile(), renderedSparql, "rendered optimized SPARQL");
 		}
 
 		private void writeTextFile(File file, String text, String description) {
@@ -449,6 +457,11 @@ public class ThemeQueryPlanRunBenchmark {
 		private File optimizedDiagnosticsFile() {
 			return new File(STORE_DIRECTORY,
 					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-diagnostics.txt");
+		}
+
+		private File renderedSparqlFile() {
+			return new File(STORE_DIRECTORY,
+					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-rendered.sparql");
 		}
 
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {
@@ -529,6 +542,9 @@ public class ThemeQueryPlanRunBenchmark {
 				return ThemeQueryCatalog.queryFor(theme, queryIndex);
 			}
 			if (theme == Theme.MEDICAL_RECORDS && queryIndex == 7) {
+				if (QUERY_VARIANT_FILTER_IN.equals(variant)) {
+					return medicalQ7FilterInQuery();
+				}
 				if (QUERY_VARIANT_VALUES_TOP_TYPE_CODE.equals(variant)) {
 					return medicalQ7ValuesTopTypeCodeQuery();
 				}
@@ -537,6 +553,9 @@ public class ThemeQueryPlanRunBenchmark {
 				}
 				if (QUERY_VARIANT_VALUES_CODE_TYPE.equals(variant)) {
 					return medicalQ7ValuesCodeTypeQuery();
+				}
+				if (QUERY_VARIANT_TYPE_ANTI_VALUES_CODE.equals(variant)) {
+					return medicalQ7TypeAntiValuesCodeQuery();
 				}
 			}
 			throw new IllegalArgumentException("Unsupported ThemeQueryPlanRunBenchmark queryVariant=" + queryVariant
@@ -554,7 +573,28 @@ public class ThemeQueryPlanRunBenchmark {
 			if ("values".equals(normalized) || "medical-q7-values".equals(normalized)) {
 				return QUERY_VARIANT_VALUES_TOP_TYPE_CODE;
 			}
+			if ("in".equals(normalized) || "medical-q7-filter-in".equals(normalized)) {
+				return QUERY_VARIANT_FILTER_IN;
+			}
+			if ("type-not-exists-values-code".equals(normalized)
+					|| "medical-q7-type-anti-values-code".equals(normalized)) {
+				return QUERY_VARIANT_TYPE_ANTI_VALUES_CODE;
+			}
 			return normalized;
+		}
+
+		private static String medicalQ7FilterInQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  ?med a med:Medication .",
+					"  ?med med:code ?code .",
+					"  FILTER(?code IN (\"MED-1000\", \"MED-1001\"))",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+					"  MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), \"x\")) }",
+					"}");
 		}
 
 		private static String medicalQ7ValuesTopTypeCodeQuery() {
@@ -596,6 +636,24 @@ public class ThemeQueryPlanRunBenchmark {
 					"  ?med a med:Medication .",
 					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
 					"  MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), \"x\")) }",
+					"}");
+		}
+
+		private static String medicalQ7TypeAntiValuesCodeQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  ?med a med:Medication .",
+					"  FILTER NOT EXISTS {",
+					"    {",
+					"      ?med med:dosage ?dose .",
+					"      FILTER (CONTAINS(LCASE(STR(?dose)), \"x\"))",
+					"    }",
+					"  }",
+					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"  ?med med:code ?code .",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
 					"}");
 		}
 	}

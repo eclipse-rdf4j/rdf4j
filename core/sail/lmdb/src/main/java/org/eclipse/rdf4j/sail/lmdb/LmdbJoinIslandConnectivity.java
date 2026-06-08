@@ -89,10 +89,20 @@ final class LmdbJoinIslandConnectivity {
 		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)) {
 			return false;
 		}
+		if (lmdbJoinProviderAvailable && nestedFilterJoinSegmentCanOwn(tupleExpr)) {
+			return false;
+		}
 		if (pureCorrelatedNotExistsFilter(tupleExpr)) {
 			return false;
 		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
+	}
+
+	private static boolean nestedFilterJoinSegmentCanOwn(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter) || TupleExprs.isVariableScopeChange(filter)) {
+			return false;
+		}
+		return LmdbJoinPlanSupport.containsExists(filter.getCondition()) && joinProviderCanOwn(filter.getArg());
 	}
 
 	private static boolean pureCorrelatedNotExistsFilter(TupleExpr tupleExpr) {

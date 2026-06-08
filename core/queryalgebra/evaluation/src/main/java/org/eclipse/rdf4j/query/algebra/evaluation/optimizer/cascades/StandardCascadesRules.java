@@ -295,6 +295,100 @@ public final class StandardCascadesRules {
 		}
 	}
 
+	public static final class MinusJoinPrefixPushdownRule extends AbstractRule {
+		public MinusJoinPrefixPushdownRule() {
+			super("minus-join-prefix-pushdown", RuleKind.TRANSFORMATION, 84);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Difference difference
+					&& minusJoinInput(difference.getLeftArg()) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Difference difference = (Difference) expression.tupleExpr();
+			MinusJoinInput input = minusJoinInput(difference.getLeftArg());
+			if (input == null || !isSimpleCorrelatableMinusRhs(difference.getRightArg())) {
+				return List.of();
+			}
+			Set<String> shared = safeAssuredMinusSharedVars(difference);
+			if (shared.isEmpty()) {
+				return List.of();
+			}
+			List<RuleApplication> applications = new ArrayList<>(2);
+			addMinusJoinPrefixPushdown(applications, expression, goal, input, difference.getRightArg(), shared,
+					true);
+			addMinusJoinPrefixPushdown(applications, expression, goal, input, difference.getRightArg(), shared,
+					false);
+			return applications;
+		}
+
+		private void addMinusJoinPrefixPushdown(List<RuleApplication> applications, MemoExpr expression,
+				OptimizationGoal goal, MinusJoinInput input, TupleExpr minusRight, Set<String> shared,
+				boolean pushIntoLeft) {
+			TupleExpr prefix = pushIntoLeft ? input.join().getLeftArg() : input.join().getRightArg();
+			TupleExpr suffix = pushIntoLeft ? input.join().getRightArg() : input.join().getLeftArg();
+			if (!canPushMinusIntoJoinPrefix(prefix, suffix, minusRight, shared)) {
+				return;
+			}
+			TupleExpr pushedMinus = new Difference(prefix.clone(), minusRight.clone());
+			Join alternativeJoin = pushIntoLeft
+					? new Join(pushedMinus, suffix.clone())
+					: new Join(suffix.clone(), pushedMinus);
+			alternativeJoin.setMergeJoin(input.join().isMergeJoin());
+			TupleExpr alternative = input.wrap(alternativeJoin);
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("sharedVarsAssuredByPrefix", "prefixSide=" + (pushIntoLeft ? "left" : "right"),
+							"shared=" + shared, "rhsScopeSafe"),
+					"MINUS can be evaluated at the earliest join prefix that assures all RHS-shared variables");
+			applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+
+		private boolean canPushMinusIntoJoinPrefix(TupleExpr prefix, TupleExpr suffix, TupleExpr minusRight,
+				Set<String> shared) {
+			if (prefix == null || suffix == null || minusRight == null || barrier(prefix) || barrier(suffix)) {
+				return false;
+			}
+			Set<String> prefixAssured = plannerNames(prefix.getAssuredBindingNames());
+			if (!prefixAssured.containsAll(shared)) {
+				return false;
+			}
+			Set<String> suffixRhsShared = plannerNames(suffix.getBindingNames());
+			suffixRhsShared.retainAll(plannerNames(minusRight.getBindingNames()));
+			return prefixAssured.containsAll(suffixRhsShared);
+		}
+
+		private MinusJoinInput minusJoinInput(TupleExpr leftArg) {
+			if (leftArg instanceof Join join && !barrier(join)) {
+				return new MinusJoinInput(join, null);
+			}
+			if (!(leftArg instanceof Filter filter)
+					|| TupleExprs.isVariableScopeChange(filter)
+					|| !(filter.getArg()instanceof Join join)
+					|| barrier(join)) {
+				return null;
+			}
+			Set<String> conditionNames = conditionNames(filter.getCondition(),
+					filter.getArg().getAssuredBindingNames());
+			if (!plannerNames(filter.getArg().getAssuredBindingNames()).containsAll(conditionNames)) {
+				return null;
+			}
+			return new MinusJoinInput(join, filter.getCondition());
+		}
+
+		private record MinusJoinInput(Join join, ValueExpr filterCondition) {
+			TupleExpr wrap(TupleExpr tupleExpr) {
+				if (filterCondition == null) {
+					return tupleExpr;
+				}
+				return new Filter(tupleExpr, filterCondition.clone());
+			}
+		}
+	}
+
 	public static final class FilterUnionDistributionRule extends AbstractRule {
 		public FilterUnionDistributionRule() {
 			super("filter-union-distribution", RuleKind.TRANSFORMATION, 78);
@@ -701,9 +795,10 @@ public final class StandardCascadesRules {
 				applications.add(vacuousMinus);
 			}
 			applications.addAll(redundantPatternMinusFilterAlternatives(expression, difference, goal));
-			RuleApplication antiExistsFilter = correlatedAntiExistsFilterAlternative(expression, difference, goal);
-			if (antiExistsFilter != null) {
-				applications.add(antiExistsFilter);
+			List<RuleApplication> antiExistsFilters = correlatedAntiExistsFilterAlternatives(expression, difference,
+					goal);
+			if (!antiExistsFilters.isEmpty()) {
+				applications.addAll(antiExistsFilters);
 			}
 			if (difference.getLeftArg()instanceof Union union && !union.isVariableScopeChange()) {
 				RuleProof proof = proof(semanticScope(goal), Set.of("leftUnionBranchesCompatible", "rhsScopeSafe"),
@@ -786,21 +881,35 @@ public final class StandardCascadesRules {
 			return applications;
 		}
 
-		private RuleApplication correlatedAntiExistsFilterAlternative(MemoExpr expression, Difference difference,
+		private List<RuleApplication> correlatedAntiExistsFilterAlternatives(MemoExpr expression, Difference difference,
 				OptimizationGoal goal) {
 			if (!correlatedAntiExistsAllowed.test(difference, goal)) {
-				return null;
+				return List.of();
 			}
 			TupleExpr alternative = correlatedAntiExistsFilter(difference);
 			if (alternative == null) {
-				return null;
+				return List.of();
 			}
 			Set<String> shared = safeAssuredMinusSharedVars(difference);
 
 			RuleProof proof = proof(semanticScope(goal),
 					Set.of("sharedVarsAssured", "correlatedAntiExists", "shared=" + shared),
 					"MINUS with assured shared variables can be costed as an equivalent negated EXISTS filter");
-			return RuleApplication.transformation(expression.groupId(), alternative, proof);
+			List<RuleApplication> applications = new ArrayList<>(2);
+			applications.add(RuleApplication.transformation(expression.groupId(), alternative, proof));
+
+			PushedFilter pushed = pushedFilterToSmallestAssuredInput(difference.getLeftArg(),
+					new Not(new Exists(difference.getRightArg().clone())), shared);
+			if (pushed != null && pushed.pushedBelowRoot()) {
+				RuleProof pushedProof = proof(semanticScope(goal),
+						Set.of("sharedVarsAssured", "correlatedAntiExists", "shared=" + shared,
+								"pushedToEarliestAssuredInput"),
+						"Correlated anti-exists filter can be evaluated at the earliest left input that assures "
+								+ "the MINUS shared variables");
+				applications.add(RuleApplication.transformation(expression.groupId(), pushed.tupleExpr(),
+						pushedProof));
+			}
+			return applications;
 		}
 	}
 
@@ -1437,7 +1546,7 @@ public final class StandardCascadesRules {
 		return FilterConditionCostModel.conditionCostClass(condition) >= JoinOrderPlanner.FILTER_COST_EXPENSIVE;
 	}
 
-	private record PushedFilter(TupleExpr tupleExpr, boolean crossedScopeBarrier) {
+	private record PushedFilter(TupleExpr tupleExpr, boolean crossedScopeBarrier, boolean pushedBelowRoot) {
 	}
 
 	private static Set<String> identityProjectionNames(Projection projection) {
@@ -1469,15 +1578,24 @@ public final class StandardCascadesRules {
 			PushedFilter pushedLeft = pushedFilterToSmallestAssuredInput(join.getLeftArg(), condition, conditionVars);
 			if (pushedLeft != null) {
 				return new PushedFilter(new Join(pushedLeft.tupleExpr(), join.getRightArg().clone()),
-						pushedLeft.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getRightArg()));
+						pushedLeft.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getRightArg()),
+						true);
 			}
 			PushedFilter pushedRight = pushedFilterToSmallestAssuredInput(join.getRightArg(), condition, conditionVars);
 			if (pushedRight != null) {
 				return new PushedFilter(new Join(join.getLeftArg().clone(), pushedRight.tupleExpr()),
-						pushedRight.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getLeftArg()));
+						pushedRight.crossedScopeBarrier() || TupleExprs.isVariableScopeChange(join.getLeftArg()),
+						true);
 			}
 		}
-		return new PushedFilter(new Filter(tupleExpr.clone(), condition.clone()), false);
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			PushedFilter pushedArg = pushedFilterToSmallestAssuredInput(filter.getArg(), condition, conditionVars);
+			if (pushedArg != null) {
+				return new PushedFilter(new Filter(pushedArg.tupleExpr(), filter.getCondition().clone()),
+						pushedArg.crossedScopeBarrier(), true);
+			}
+		}
+		return new PushedFilter(new Filter(tupleExpr.clone(), condition.clone()), false, false);
 	}
 
 	private static ValueExpr combineConjuncts(List<ValueExpr> conjuncts) {
