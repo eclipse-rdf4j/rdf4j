@@ -42,6 +42,8 @@ import org.lwjgl.system.MemoryStack;
  * Manager for LMDB transactions.
  */
 class TxnManager {
+	record TxnRef(Txn txn) {
+	}
 
 	private static final int READERS_FULL_RETRIES = 500;
 	private static final long READERS_FULL_WAIT_MILLIS = 10L;
@@ -56,11 +58,12 @@ class TxnManager {
 	private final long env;
 	private volatile int poolIndex = -1;
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
-	private final ThreadLocal<Txn> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
+	private final ThreadLocal<TxnRef> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
 		try {
 			Txn txn = createReadTxn();
-			cleaner.register(txn, txn::close);
-			return txn;
+			TxnRef ref = new TxnRef(txn);
+			cleaner.register(ref, txn::close);
+			return ref;
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
@@ -173,7 +176,7 @@ class TxnManager {
 	 */
 	void closeReadTxn() throws IOException {
 		try {
-			threadLocalReadTxn.get().close();
+			threadLocalReadTxn.get().txn.close();
 			threadLocalReadTxn.remove();
 		} catch (UncheckedIOException e) {
 			throw e.getCause();
@@ -188,7 +191,7 @@ class TxnManager {
 	 */
 	Txn getReadTxn() throws IOException {
 		try {
-			return threadLocalReadTxn.get();
+			return threadLocalReadTxn.get().txn;
 		} catch (UncheckedIOException e) {
 			throw e.getCause();
 		}

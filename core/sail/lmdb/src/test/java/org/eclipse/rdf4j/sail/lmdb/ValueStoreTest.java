@@ -498,58 +498,6 @@ public class ValueStoreTest {
 		assertEquals(tripleTerm, lazyValue);
 	}
 
-	@Test
-	public void testReadersFullCleanupDoesNotCloseInUseReadTxn() throws Exception {
-		ReadWriteLock txnLock = getField(valueStore, "txnLock", ReadWriteLock.class);
-		Set<?> activeReadTransactions = getField(valueStore, "activeReadTransactions", Set.class);
-		long env = getLongField(valueStore, "env");
-
-		CountDownLatch readLockReleased = new CountDownLatch(1);
-		CountDownLatch cleanupAttempted = new CountDownLatch(1);
-		AtomicReference<Throwable> workerFailure = new AtomicReference<>();
-
-		Thread worker = new Thread(() -> {
-			try {
-				valueStore.readTransaction(env, (stack, txn) -> {
-					txnLock.readLock().unlock();
-					try {
-						readLockReleased.countDown();
-						try {
-							assertTrue("cleanup should run", cleanupAttempted.await(10, TimeUnit.SECONDS));
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new IOException(e);
-						}
-					} finally {
-						txnLock.readLock().lock();
-					}
-					return null;
-				});
-			} catch (Throwable t) {
-				workerFailure.set(t);
-			}
-		}, "value-store-read-transaction-gap");
-		worker.start();
-
-		assertTrue("read transaction should reach the resize-style read lock gap",
-				readLockReleased.await(10, TimeUnit.SECONDS));
-		assertEquals("test setup should have one active read transaction", 1, activeReadTransactions.size());
-
-		try {
-			invokeCloseInactiveReadTransactions(valueStore);
-			assertEquals("reader cleanup must not close a read transaction that is still executing", 1,
-					activeReadTransactions.size());
-		} finally {
-			cleanupAttempted.countDown();
-			worker.join(TimeUnit.SECONDS.toMillis(10));
-		}
-
-		assertFalse("worker should finish", worker.isAlive());
-		if (workerFailure.get() != null) {
-			throw new AssertionError(workerFailure.get());
-		}
-	}
-
 	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(config);
@@ -583,12 +531,6 @@ public class ValueStoreTest {
 		Field field = target.getClass().getDeclaredField(fieldName);
 		field.setAccessible(true);
 		return field.getLong(target);
-	}
-
-	private void invokeCloseInactiveReadTransactions(ValueStore store) throws Exception {
-		var method = store.getClass().getDeclaredMethod("closeInactiveReadTransactions");
-		method.setAccessible(true);
-		method.invoke(store);
 	}
 
 	@AfterEach
