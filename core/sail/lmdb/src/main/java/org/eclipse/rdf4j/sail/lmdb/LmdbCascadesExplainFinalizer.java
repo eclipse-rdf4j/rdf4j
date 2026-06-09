@@ -68,6 +68,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 					this::fallbackCost);
 			annotateDisconnectedCartesianFallback(tupleExpr);
 		}
+		capRepeatedDirectLookupJoinRows(tupleExpr);
 		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
 		annotateCostFeedback(tupleExpr);
 	}
@@ -171,6 +172,46 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return rows;
 		}
 		return tupleExpr.getCostEstimate();
+	}
+
+	private static void capRepeatedDirectLookupJoinRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				capRepeatedDirectLookupJoinRows(node);
+				super.meet(node);
+			}
+		});
+	}
+
+	private static void capRepeatedDirectLookupJoinRows(Join join) {
+		if (!(join.getRightArg()instanceof StatementPattern rightPattern)
+				|| !"directLookup".equals(
+						rightPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			return;
+		}
+		double repeatedInvocations = rightPattern.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		double accessRows = rightPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		double joinRows = join.getResultSizeEstimate();
+		double rightRows = rightPattern.getResultSizeEstimate();
+		if (!isFiniteNonNegative(repeatedInvocations)
+				|| repeatedInvocations <= 1.0d
+				|| !isFiniteNonNegative(accessRows)
+				|| accessRows > 1.0d
+				|| !isFiniteNonNegative(joinRows)
+				|| !isFiniteNonNegative(rightRows)
+				|| rightRows <= 0.0d
+				|| joinRows <= rightRows * 100.0d) {
+			return;
+		}
+		join.setResultSizeEstimate(rightRows);
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rightRows);
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rightRows);
+		join.setStringMetricPlanned("optimizer.repeatedDirectLookupOutputCap",
+				"direct_lookup_rows_already_repeated");
 	}
 
 	private static boolean isFiniteNonNegative(double value) {

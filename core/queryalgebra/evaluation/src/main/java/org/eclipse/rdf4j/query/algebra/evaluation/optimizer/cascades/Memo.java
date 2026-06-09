@@ -105,6 +105,10 @@ public final class Memo {
 	}
 
 	public Optional<MemoExpr> addLogicalAlternative(int groupId, TupleExpr alternative) {
+		return addLogicalAlternative(groupId, alternative, List.of());
+	}
+
+	public Optional<MemoExpr> addLogicalAlternative(int groupId, TupleExpr alternative, List<RuleProof> proofs) {
 		Objects.requireNonNull(alternative, "alternative");
 		MemoGroup group = group(groupId);
 		List<Integer> inputs = internInputs(alternative, false);
@@ -114,7 +118,7 @@ public final class Memo {
 			return Optional.empty();
 		}
 		MemoExpr expression = MemoExpr.logical(nextExpressionId++, groupId, alternative, inputs, metadata,
-				structuralKey);
+				proofs, structuralKey);
 		if (!group.addExpression(expression, structuralKey)) {
 			return Optional.empty();
 		}

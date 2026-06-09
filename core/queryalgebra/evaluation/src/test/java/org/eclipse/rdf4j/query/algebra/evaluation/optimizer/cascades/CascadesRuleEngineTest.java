@@ -643,6 +643,31 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void filterValuesAnchorKeepsObjectFilterAcrossMultiPatternJoin() {
+		Filter filter = new Filter(new Join(pattern("s", "p", "o"), pattern("s", "type", "type")),
+				listMember("o", "urn:v1", "urn:v2"));
+
+		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter).isEmpty(),
+				"Object-position finite filters over multi-pattern joins must remain local for costing");
+		assertTrue(apply(new FilterCascadesRules.FilterConjunctValuesAnchorRule(), filter).isEmpty(),
+				"Object-position finite conjuncts over multi-pattern joins must remain local for costing");
+		assertFalse(standardRulesContainValuesAnchor(filter, "o"),
+				"Compiled standard rules must also keep object-position finite filters local for costing");
+	}
+
+	@Test
+	void filterValuesAnchorKeepsLiteralObjectFilterLocal() {
+		Filter filter = new Filter(pattern("s", "p", "o"), literalListMember("o", "Book 1", "Book 2"));
+
+		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter).isEmpty(),
+				"Literal object-position filters need statement-local costing before finite anchor materialization");
+		assertTrue(apply(new FilterCascadesRules.FilterConjunctValuesAnchorRule(), filter).isEmpty(),
+				"Literal object-position conjuncts need statement-local costing before finite anchor materialization");
+		assertFalse(standardRulesContainValuesAnchor(filter, "o"),
+				"Compiled standard rules must also keep literal object-position filters local for costing");
+	}
+
+	@Test
 	void projectionFilterPushdownKeepsConditionVars() {
 		Projection projection = new Projection(new Filter(pattern("s", "p", "o"), new Bound(new Var("o"))),
 				projection("s"), false);
@@ -1582,6 +1607,13 @@ class CascadesRuleEngineTest {
 				.toList();
 	}
 
+	private static boolean standardRulesContainValuesAnchor(TupleExpr tupleExpr, String bindingName) {
+		return applyStandardRules(tupleExpr)
+				.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> bindingRows(alternative, bindingName) >= 0);
+	}
+
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> structuredTrace(CascadesTelemetry.Recording telemetry) throws Exception {
 		return (Map<String, Object>) CascadesTelemetry.Recording.class
@@ -1613,6 +1645,15 @@ class CascadesRuleEngineTest {
 		operator.addArgument(new Var(variableName));
 		for (String iriValue : iriValues) {
 			operator.addArgument(new ValueConstant(VF.createIRI(iriValue)));
+		}
+		return operator;
+	}
+
+	private static ListMemberOperator literalListMember(String variableName, String... literalValues) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(variableName));
+		for (String literalValue : literalValues) {
+			operator.addArgument(new ValueConstant(VF.createLiteral(literalValue)));
 		}
 		return operator;
 	}

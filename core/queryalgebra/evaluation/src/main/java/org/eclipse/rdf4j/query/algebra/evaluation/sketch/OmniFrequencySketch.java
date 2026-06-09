@@ -12,33 +12,59 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
+import java.util.List;
 
-import org.apache.datasketches.hash.MurmurHash3;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketchEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketchPredicate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketches;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.UpdateOmniSketch;
 
 @Experimental
 final class OmniFrequencySketch implements FrequencySketch {
 
-	private final OmniSketch sketch;
+	private static final int SERIAL_MAGIC = 0x4f46534b; // OFSK
+	private static final int SERIAL_VERSION = 1;
+
+	private final UpdateOmniSketch sketch;
 	private final WeightedSupportSample supportSample;
-	private final int supportSampleCount;
-	private final int cellSampleCount;
-	private final long seed;
 
 	OmniFrequencySketch(int rows, int buckets, int supportSampleCount, long seed) {
-		this(rows, buckets, supportSampleCount, Math.min(8, supportSampleCount), seed);
+		this(rows, buckets, supportSampleCount, 0, seed);
 	}
 
 	OmniFrequencySketch(int rows, int buckets, int supportSampleCount, int cellSampleCount, long seed) {
-		if (supportSampleCount <= 0 || cellSampleCount < 0) {
-			throw new IllegalArgumentException("supportSampleCount must be positive");
+		if (rows <= 0 || buckets < 2 || supportSampleCount <= 0) {
+			throw new IllegalArgumentException("invalid OmniSketch configuration");
 		}
-		this.sketch = new OmniSketch(buckets, rows, cellSampleCount, seed);
+		int nominalEntries = cellSampleCount > 0 ? cellSampleCount : supportSampleCount;
+		this.sketch = OmniSketch.builder()
+				.setWidth(nextPowerOfTwo(buckets))
+				.setNumRows(rows)
+				.setNominalEntries(nominalEntries)
+				.setSeed(seed)
+				.build();
 		this.supportSample = new WeightedSupportSample(supportSampleCount);
-		this.supportSampleCount = supportSampleCount;
-		this.cellSampleCount = cellSampleCount;
-		this.seed = seed;
+	}
+
+	private OmniFrequencySketch(OmniSketch source, WeightedSupportSample supportSample) {
+		this.sketch = OmniSketch.builder()
+				.setLgWidth(source.getLgWidth())
+				.setNumRows(source.getNumRows())
+				.setNominalEntries(source.getNominalEntries())
+				.setSeed(source.getSeed())
+				.build();
+		this.sketch.merge(source);
+		this.supportSample = supportSample;
 	}
 
 	@Override
@@ -49,9 +75,9 @@ final class OmniFrequencySketch implements FrequencySketch {
 		if (weight < 0L) {
 			throw new IllegalArgumentException("OmniSketch accepts non-negative update weights only");
 		}
-		long valueHash = nonNegativeHash(key, seed);
-		sketch.updateHashWithCount(valueHash, valueHash, weight);
-		supportSample.addHashWithCount(valueHash, weight);
+		long hash = nonNegativeHash(key);
+		sketch.updateHash(hash, hash);
+		supportSample.addHashWithCount(hash, weight);
 	}
 
 	@Override
@@ -59,125 +85,132 @@ final class OmniFrequencySketch implements FrequencySketch {
 		if (!(other instanceof OmniFrequencySketch that)) {
 			throw new IllegalArgumentException("OmniSketch inner product requires another OmniSketch");
 		}
-		if (!compatible(that)) {
-			throw new IllegalArgumentException("OmniSketches are not compatible");
+		if (supportSample.isComplete() && that.supportSample.isComplete()) {
+			return Math.max(0.0d, supportSample.retainedInnerProduct(that.supportSample));
 		}
-
 		double theta = Math.min(supportSample.theta(), that.supportSample.theta());
 		if (theta <= 0.0d) {
 			return 0.0d;
 		}
-		if (supportComplete() && that.supportComplete()) {
-			return exactSupportProduct(that);
-		}
-		if (supportComplete()) {
-			return productFromCompleteSupport(this, that);
-		}
-		if (that.supportComplete()) {
-			return productFromCompleteSupport(that, this);
-		}
+		return Math.max(0.0d, supportSample.retainedInnerProduct(that.supportSample) / theta);
+	}
 
-		long[] left = supportSample.samples();
-		long[] right = that.supportSample.samples();
-		int leftOffset = 0;
-		int rightOffset = 0;
-		double retainedProduct = 0.0d;
-		while (leftOffset < left.length && rightOffset < right.length) {
-			long leftHash = left[leftOffset];
-			long rightHash = right[rightOffset];
-			if (leftHash == rightHash) {
-				retainedProduct += (double) supportSample.countAt(leftOffset) * that.supportSample.countAt(rightOffset);
-				leftOffset++;
-				rightOffset++;
-			} else if (leftHash < rightHash) {
-				leftOffset++;
-			} else {
-				rightOffset++;
+	double estimate() {
+		return Math.max(0.0d, sketch.getEstimate());
+	}
+
+	double retainedIdentifiers() {
+		return supportSample.sampleCount();
+	}
+
+	double retainedIntersection(OmniFrequencySketch other) {
+		return supportSample.retainedDistinctIntersection(other.supportSample);
+	}
+
+	@SuppressWarnings("unused")
+	private OmniSketchEstimate intersectionEstimate(OmniFrequencySketch other) {
+		return OmniSketches.intersection(
+				List.of(sketch, other.sketch),
+				List.of(OmniSketchPredicate.all(), OmniSketchPredicate.all()));
+	}
+
+	byte[] toByteArray() throws IOException {
+		byte[] sketchPayload = sketch.compact().toByteArray();
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream(sketchPayload.length
+				+ Integer.BYTES * 4
+				+ supportSample.serializedBytes());
+		try (DataOutputStream out = new DataOutputStream(bytes)) {
+			out.writeInt(SERIAL_MAGIC);
+			out.writeInt(SERIAL_VERSION);
+			out.writeInt(sketchPayload.length);
+			out.write(sketchPayload);
+			supportSample.writeTo(out);
+		}
+		return bytes.toByteArray();
+	}
+
+	static OmniFrequencySketch fromByteArray(byte[] bytes) throws IOException {
+		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
+			int magic = in.readInt();
+			if (magic != SERIAL_MAGIC) {
+				return new OmniFrequencySketch(OmniSketch.heapify(bytes),
+						new WeightedSupportSample(OmniSketch.heapify(bytes).getNominalEntries()));
 			}
-		}
-		return Math.max(0.0d, retainedProduct / theta);
-	}
-
-	private boolean compatible(OmniFrequencySketch other) {
-		return sketch.width() == other.sketch.width()
-				&& sketch.depth() == other.sketch.depth()
-				&& sketch.seed() == other.sketch.seed()
-				&& seed == other.seed;
-	}
-
-	private boolean supportComplete() {
-		return supportSample.sampleCount() < supportSampleCount;
-	}
-
-	private double exactSupportProduct(OmniFrequencySketch other) {
-		return Math.max(0.0d, supportSample.retainedInnerProduct(other.supportSample));
-	}
-
-	private static double productFromCompleteSupport(OmniFrequencySketch complete, OmniFrequencySketch other) {
-		double product = 0.0d;
-		if (other.usePointProbesForMissingSupport()) {
-			for (int i = 0; i < complete.supportSample.sampleCount(); i++) {
-				long hash = complete.supportSample.hashAt(i);
-				product += (double) complete.supportSample.countAt(i) * other.countFromSupportOrPointProbe(hash);
+			int version = in.readInt();
+			if (version != SERIAL_VERSION) {
+				throw new IOException("Unsupported OmniFrequencySketch payload version: " + version);
 			}
-			return Math.max(0.0d, product);
-		}
-		for (int i = 0; i < complete.supportSample.sampleCount(); i++) {
-			long hash = complete.supportSample.hashAt(i);
-			long otherCount = other.supportSample.countForHash(hash);
-			if (otherCount > 0L) {
-				product += (double) complete.supportSample.countAt(i) * otherCount;
+			int sketchLength = in.readInt();
+			if (sketchLength <= 0 || sketchLength > bytes.length) {
+				throw new IOException("Invalid OmniSketch payload length: " + sketchLength);
 			}
+			byte[] sketchPayload = new byte[sketchLength];
+			in.readFully(sketchPayload);
+			WeightedSupportSample supportSample = WeightedSupportSample.readFrom(in);
+			if (in.available() != 0) {
+				throw new IOException("OmniFrequencySketch payload has trailing bytes: " + in.available());
+			}
+			return new OmniFrequencySketch(OmniSketch.heapify(sketchPayload), supportSample);
 		}
-		return Math.max(0.0d, product / other.supportSample.theta());
 	}
 
-	private boolean usePointProbesForMissingSupport() {
-		return sketch.recordCount() <= sketch.width();
-	}
-
-	private long countFromSupportOrPointProbe(long hash) {
-		long retainedCount = supportSample.countForHash(hash);
-		return retainedCount > 0L ? retainedCount : sketch.estimateCountHash(hash);
+	static OmniFrequencySketch fromMemorySegment(MemorySegment segment) throws IOException {
+		return fromByteArray(segment.toArray(ValueLayout.JAVA_BYTE));
 	}
 
 	static long estimatedBytes(int rows, int buckets, int supportSampleCount) {
-		return estimatedBytes(rows, buckets, supportSampleCount, Math.min(8, supportSampleCount));
+		return estimatedBytes(rows, buckets, supportSampleCount, 0);
 	}
 
 	static long estimatedBytes(int rows, int buckets, int supportSampleCount, int cellSampleCount) {
-		long cellSampleBytes = (long) rows * buckets * cellSampleCount * Long.BYTES;
-		long cellCountBytes = (long) rows * buckets * Long.BYTES;
+		int width = nextPowerOfTwo(Math.max(2, buckets));
+		int nominalEntries = cellSampleCount > 0 ? cellSampleCount : supportSampleCount;
+		long cellOverheadBytes = 48L;
+		long sketchBytes = (long) rows * width * (cellOverheadBytes + (long) nominalEntries * Long.BYTES);
 		long supportBytes = (long) supportSampleCount * Long.BYTES * 2L;
-		return cellSampleBytes + cellCountBytes + supportBytes;
+		return sketchBytes + supportBytes;
 	}
 
-	private static long nonNegativeHash(long key, long seed) {
-		long[] hash = MurmurHash3.hash(key, seed ^ 0x4f1bbcdc7a5c37b9L);
-		long positive = hash[0] & Long.MAX_VALUE;
-		return positive == Long.MAX_VALUE ? Long.MAX_VALUE - 1L : positive;
+	private static int nextPowerOfTwo(int value) {
+		int highest = Integer.highestOneBit(value);
+		return highest == value ? value : highest << 1;
+	}
+
+	private static long nonNegativeHash(long key) {
+		long hash = key & Long.MAX_VALUE;
+		return hash == Long.MAX_VALUE ? Long.MAX_VALUE - 1L : hash;
 	}
 
 	@Override
 	public String toString() {
-		return "OmniFrequencySketch[rows=" + sketch.depth()
-				+ ", buckets=" + sketch.width()
-				+ ", supportSampleCount=" + supportSampleCount
-				+ ", cellSampleCount=" + cellSampleCount
-				+ ", bytes~=" + estimatedBytes(sketch.depth(), sketch.width(), supportSampleCount, cellSampleCount)
-				+ ", supportSample=" + supportSample
+		return "OmniFrequencySketch[rows=" + sketch.getNumRows()
+				+ ", width=" + sketch.getWidth()
+				+ ", nominalEntries=" + sketch.getNominalEntries()
+				+ ", compactBytes=" + sketch.getCompactBytes()
+				+ ", retainedSupport=" + supportSample.sampleCount()
 				+ "]";
 	}
 
 	private static final class WeightedSupportSample {
 
-		private final long[] hashes;
-		private final long[] counts;
+		private static final int INITIAL_SAMPLE_CAPACITY = 4;
+
+		private final int maxSampleCount;
+		private long[] hashes;
+		private long[] counts;
 		private int sampleCount;
 
 		private WeightedSupportSample(int maxSampleCount) {
-			this.hashes = new long[maxSampleCount];
-			this.counts = new long[maxSampleCount];
+			this.maxSampleCount = maxSampleCount;
+			this.hashes = new long[Math.min(maxSampleCount, INITIAL_SAMPLE_CAPACITY)];
+			this.counts = new long[hashes.length];
+		}
+
+		private WeightedSupportSample(int maxSampleCount, long[] hashes, long[] counts, int sampleCount) {
+			this.maxSampleCount = maxSampleCount;
+			this.hashes = hashes;
+			this.counts = counts;
+			this.sampleCount = sampleCount;
 		}
 
 		private void addHashWithCount(long hash, long count) {
@@ -187,36 +220,24 @@ final class OmniFrequencySketch implements FrequencySketch {
 				return;
 			}
 			pos = -pos - 1;
-			if (sampleCount < hashes.length) {
+			if (sampleCount < maxSampleCount) {
+				ensureCapacity(sampleCount + 1);
 				insert(pos, hash, count, sampleCount - pos);
 				sampleCount++;
 				return;
 			}
-			if (pos >= hashes.length) {
+			if (pos >= maxSampleCount) {
 				return;
 			}
-			insert(pos, hash, count, hashes.length - pos - 1);
+			insert(pos, hash, count, maxSampleCount - pos - 1);
+		}
+
+		private boolean isComplete() {
+			return sampleCount < maxSampleCount;
 		}
 
 		private int sampleCount() {
 			return sampleCount;
-		}
-
-		private long[] samples() {
-			return Arrays.copyOf(hashes, sampleCount);
-		}
-
-		private long hashAt(int index) {
-			return hashes[index];
-		}
-
-		private long countAt(int index) {
-			return counts[index];
-		}
-
-		private long countForHash(long hash) {
-			int pos = Arrays.binarySearch(hashes, 0, sampleCount, hash);
-			return pos >= 0 ? counts[pos] : 0L;
 		}
 
 		private double retainedInnerProduct(WeightedSupportSample other) {
@@ -239,13 +260,71 @@ final class OmniFrequencySketch implements FrequencySketch {
 			return product;
 		}
 
+		private double retainedDistinctIntersection(WeightedSupportSample other) {
+			int leftOffset = 0;
+			int rightOffset = 0;
+			int intersection = 0;
+			while (leftOffset < sampleCount && rightOffset < other.sampleCount) {
+				long leftHash = hashes[leftOffset];
+				long rightHash = other.hashes[rightOffset];
+				if (leftHash == rightHash) {
+					intersection++;
+					leftOffset++;
+					rightOffset++;
+				} else if (leftHash < rightHash) {
+					leftOffset++;
+				} else {
+					rightOffset++;
+				}
+			}
+			return intersection;
+		}
+
 		private double theta() {
-			if (sampleCount < hashes.length) {
+			if (isComplete()) {
 				return 1.0d;
 			}
 			long maxRetainedHash = hashes[sampleCount - 1];
 			double theta = (double) (maxRetainedHash + 1L) / Long.MAX_VALUE;
 			return Math.max(1.0d / Long.MAX_VALUE, Math.min(1.0d, theta));
+		}
+
+		private int serializedBytes() {
+			return Integer.BYTES * 2 + sampleCount * Long.BYTES * 2;
+		}
+
+		private void writeTo(DataOutputStream out) throws IOException {
+			out.writeInt(maxSampleCount);
+			out.writeInt(sampleCount);
+			for (int i = 0; i < sampleCount; i++) {
+				out.writeLong(hashes[i]);
+				out.writeLong(counts[i]);
+			}
+		}
+
+		private static WeightedSupportSample readFrom(DataInputStream in) throws IOException {
+			int capacity = in.readInt();
+			int sampleCount = in.readInt();
+			if (capacity <= 0 || sampleCount < 0 || sampleCount > capacity) {
+				throw new IOException("Invalid Omni support sample size: capacity=" + capacity + ", count="
+						+ sampleCount);
+			}
+			long[] hashes = new long[capacity];
+			long[] counts = new long[capacity];
+			for (int i = 0; i < sampleCount; i++) {
+				hashes[i] = in.readLong();
+				counts[i] = in.readLong();
+			}
+			return new WeightedSupportSample(capacity, hashes, counts, sampleCount);
+		}
+
+		private void ensureCapacity(int required) {
+			if (required <= hashes.length) {
+				return;
+			}
+			int newLength = Math.min(maxSampleCount, Math.max(required, hashes.length * 2));
+			hashes = Arrays.copyOf(hashes, newLength);
+			counts = Arrays.copyOf(counts, newLength);
 		}
 
 		private void insert(int pos, long hash, long count, int moved) {
@@ -255,11 +334,6 @@ final class OmniFrequencySketch implements FrequencySketch {
 			}
 			hashes[pos] = hash;
 			counts[pos] = count;
-		}
-
-		@Override
-		public String toString() {
-			return Arrays.toString(samples());
 		}
 	}
 }

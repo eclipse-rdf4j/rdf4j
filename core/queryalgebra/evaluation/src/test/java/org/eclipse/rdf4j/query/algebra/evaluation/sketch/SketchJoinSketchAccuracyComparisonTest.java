@@ -40,46 +40,6 @@ class SketchJoinSketchAccuracyComparisonTest {
 	private static final int EXACT_TUPLE_SKETCH_K = 4096;
 
 	@Test
-	void omniSketchUsesDuplicateAwareWeights() {
-		OmniFrequencySketch left = new OmniFrequencySketch(4, 128, 64, SEED);
-		OmniFrequencySketch right = new OmniFrequencySketch(4, 128, 64, SEED);
-		left.update(11L, 3L);
-		left.update(17L, 2L);
-		left.update(19L, 100L);
-		right.update(11L, 5L);
-		right.update(17L, 7L);
-		right.update(23L, 100L);
-
-		assertEquals(29.0d, left.innerProduct(right), 0.0d,
-				"OmniSketch frequency adapter must estimate duplicate-aware inner products, not distinct overlap");
-	}
-
-	@Test
-	void omniSketchCompleteSupportCountsIgnoreBucketCollisions() {
-		OmniFrequencySketch left = new OmniFrequencySketch(4, 1, 16, SEED);
-		OmniFrequencySketch right = new OmniFrequencySketch(4, 1, 16, SEED);
-		left.update(11L, 3L);
-		left.update(17L, 100L);
-		right.update(11L, 5L);
-
-		assertEquals(15.0d, left.innerProduct(right), 0.0d,
-				"complete support must use retained key multiplicities, not collided cell totals");
-	}
-
-	@Test
-	void omniSketchEnumeratesCompleteSideInsteadOfResamplingIt() {
-		OmniFrequencySketch left = new OmniFrequencySketch(4, 4096, 1, SEED);
-		OmniFrequencySketch right = new OmniFrequencySketch(4, 4096, 256, SEED);
-		for (int i = 0; i < 128; i++) {
-			left.update(i, 1L);
-			right.update(i, 1L);
-		}
-
-		assertEquals(128.0d, left.innerProduct(right), 0.0d,
-				"complete support on one side should avoid sampling variance for duplicate-aware products");
-	}
-
-	@Test
 	void joinSketchBeatsFastAgmsAndTupleSketchOnSkewedSubjectStar() {
 		IRI hasEncounter = VF.createIRI("urn:join-sketch:hasEncounter");
 		IRI hasIdentifier = VF.createIRI("urn:join-sketch:hasIdentifier");
@@ -130,6 +90,34 @@ class SketchJoinSketchAccuracyComparisonTest {
 
 		assertTrue(relativeError(estimate, truth) <= 0.05d,
 				() -> "JoinSketch-backed estimator should be close to truth. truth=" + truth + ", estimate="
+						+ estimate);
+	}
+
+	@Test
+	void omniStrategyEstimatesCompositeKeyJoinSurface() {
+		IRI prescribedDrug = VF.createIRI("urn:omni-sketch:estimator:prescribedDrug");
+		IRI billedDrug = VF.createIRI("urn:omni-sketch:estimator:billedDrug");
+		List<Statement> statements = skewedCompositeKeyJoin(prescribedDrug, billedDrug);
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.addAll(statements);
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(strategy));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("encounter"),
+				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"),
+				Var.of("billedDrug", billedDrug), Var.of("drug"));
+		long truth = compare(statements, left, right, List.of("encounter", "drug")).truth;
+
+		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, right), "encounter");
+
+		assertEquals("omni", estimator.getSketchStrategy().configValue());
+		assertTrue(estimate != null, "OMNI should expose sketch join-surface evidence");
+		assertEquals("omni-sketch-surface", estimate.source());
+		assertTrue(relativeError(estimate.calibratedRows(), truth) <= 0.10d,
+				() -> "OMNI composite-key estimate should be close to truth. truth=" + truth + ", estimate="
 						+ estimate);
 	}
 

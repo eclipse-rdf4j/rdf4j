@@ -81,12 +81,21 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void defaultSketchStrategyIsFastAgms() throws Exception {
+	void defaultSketchStrategyIsOmni() throws Exception {
 		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, defaults);
 
-		assertEquals(SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS, defaults.sketchStrategy);
-		assertEquals(SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS, objectField(estimator, "sketchStrategy"));
+		assertEquals("omni", defaults.sketchStrategy.configValue());
+		assertEquals("omni",
+				((SketchBasedJoinEstimator.SketchStrategy) objectField(estimator, "sketchStrategy")).configValue());
+	}
+
+	@Test
+	void omniConfigValueSelectsOmniStrategy() {
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+
+		assertEquals("omni", strategy.configValue());
 	}
 
 	@Test
@@ -143,6 +152,25 @@ class SketchBasedJoinEstimatorConfigTest {
 
 			assertTrue(countMinSketchCount(estimator) > 0, strategy + " should allocate Count-Min side state");
 		}
+	}
+
+	@Test
+	void omniStrategyAllocatesOmniSideState() throws Exception {
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		localStore.add(st(s1, p1, o1));
+		localStore.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o2")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(strategy)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		assertEquals("omni", estimator.getSketchStrategy().configValue());
+		assertTrue(omniSketchCount(estimator) > 0, "OMNI should allocate Omni side state");
 	}
 
 	@Test
@@ -683,6 +711,19 @@ class SketchBasedJoinEstimatorConfigTest {
 		Object state = objectField(estimator, "current");
 		Object countMinSketches = objectField(state, "countMinSketches");
 		Object[] sketches = (Object[]) objectField(countMinSketches, "sketches");
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object omniSketches = objectField(state, "omniSketches");
+		Object[] sketches = (Object[]) objectField(omniSketches, "sketches");
 		int count = 0;
 		for (Object sketch : sketches) {
 			if (sketch != null) {

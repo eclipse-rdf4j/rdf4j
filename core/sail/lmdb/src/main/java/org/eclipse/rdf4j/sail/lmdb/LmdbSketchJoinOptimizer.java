@@ -7525,14 +7525,53 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void stampPrefixEstimate(QueryModelNode node, PlannedPrefixEstimate estimate) {
-			if (LmdbJoinPlanSupport.isFiniteNonNegative(estimate.outputRows())) {
-				node.setResultSizeEstimate(estimate.outputRows());
+			stampPrefixEstimate(node, estimate.outputRows(), estimate.cumulativeWorkRows());
+		}
+
+		private void stampPrefixEstimate(Join join, PlannedPrefixEstimate estimate) {
+			double outputRows = estimate.outputRows();
+			double repeatedLookupRows = repeatedNestedLookupOutputRows(join.getLeftArg(), join.getRightArg());
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(repeatedLookupRows)) {
+				outputRows = LmdbJoinPlanSupport.isFiniteNonNegative(outputRows)
+						? Math.min(outputRows, repeatedLookupRows)
+						: repeatedLookupRows;
 			}
-			if (LmdbJoinPlanSupport.isFiniteNonNegative(estimate.cumulativeWorkRows())) {
-				node.setCostEstimate(estimate.cumulativeWorkRows());
+			stampPrefixEstimate(join, outputRows, estimate.cumulativeWorkRows());
+		}
+
+		private void stampPrefixEstimate(QueryModelNode node, double outputRows, double cumulativeWorkRows) {
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(outputRows)) {
+				node.setResultSizeEstimate(outputRows);
+			}
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(cumulativeWorkRows)) {
+				node.setCostEstimate(cumulativeWorkRows);
 				node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
-						estimate.cumulativeWorkRows());
+						cumulativeWorkRows);
 			}
+		}
+
+		private double repeatedNestedLookupOutputRows(TupleExpr left, TupleExpr right) {
+			double rightRows = right.getResultSizeEstimate();
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(rightRows)) {
+				return Double.NaN;
+			}
+			Set<String> leftNames = plannerBindingNames(left.getBindingNames());
+			Set<String> rightNames = plannerBindingNames(right.getBindingNames());
+			if (right instanceof StatementPattern) {
+				if (!rightNames.isEmpty()
+						&& !Collections.disjoint(leftNames, rightNames)
+						&& "directLookup".equals(
+								right.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))
+						&& directLookupRowsAlreadyRepeated(right, leftNames, rightNames)) {
+					return rightRows;
+				}
+				return Double.NaN;
+			}
+			if (isNestedLookupSubtree(right, leftNames, rightNames)
+					&& nestedLookupRowsAlreadyRepeated(right, leftNames, rightNames)) {
+				return rightRows;
+			}
+			return Double.NaN;
 		}
 
 		private void stampFilterEstimate(Filter filter, TupleExpr root, double passRatio) {

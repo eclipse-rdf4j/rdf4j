@@ -17,6 +17,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
@@ -262,6 +264,15 @@ public final class RuleDsl {
 		};
 	}
 
+	public static RuleGuard localCostingObjectAnchor(String inputCaptureName, String scalarCaptureName) {
+		return capture -> objectAnchorShouldRemainLocalForCosting(capture.ir(), capture.node(inputCaptureName),
+				ScalarFacts.finiteAnchorVariable(capture.scalar(scalarCaptureName)),
+				capture.scalar(scalarCaptureName),
+				ScalarFacts.finiteAnchorValues(capture.scalar(scalarCaptureName)))
+						? RuleGuard.GuardResult.fail("object-position finite filter remains local for costing")
+						: RuleGuard.GuardResult.ok("objectAnchorCanMaterialize(" + scalarCaptureName + ")");
+	}
+
 	public static RuleGuard conjunction(String scalarCaptureName) {
 		return capture -> capture.scalarFacts(scalarCaptureName).isConjunction()
 				? RuleGuard.GuardResult.ok("conjunction(" + scalarCaptureName + ")")
@@ -300,7 +311,10 @@ public final class RuleDsl {
 				BindingSymbol variable = ScalarFacts.finiteAnchorVariable(conjunct);
 				BindingMask variableMask = BindingShape.maskOfSymbol(capture.ir().universe(), variable);
 				if ((facts.isFiniteEqualityAnchor() || facts.isFiniteInAnchor())
-						&& input.bindings().assured().containsAll(variableMask)) {
+						&& input.bindings().assured().containsAll(variableMask)
+						&& !objectAnchorShouldRemainLocalForCosting(capture.ir(), input, variable,
+								conjunct,
+								ScalarFacts.finiteAnchorValues(conjunct))) {
 					return RuleGuard.GuardResult.ok("valuesAnchorConjunct(" + scalarCaptureName + ")");
 				}
 			}
@@ -474,17 +488,73 @@ public final class RuleDsl {
 		if (!(filter.attr()instanceof IrAttr.Condition condition) || filter.inputs().isEmpty()) {
 			return false;
 		}
-		BindingMask inputAssured = ir.node(filter.inputs().get(0)).bindings().assured();
+		IrNode input = ir.node(filter.inputs().get(0));
+		BindingMask inputAssured = input.bindings().assured();
 		for (ScalarExpr conjunct : ScalarFacts.splitConjuncts(condition.expression())) {
 			ScalarFacts facts = ScalarFacts.of(ir.universe(), conjunct);
 			BindingSymbol variable = ScalarFacts.finiteAnchorVariable(conjunct);
 			BindingMask variableMask = BindingShape.maskOfSymbol(ir.universe(), variable);
 			if ((facts.isFiniteEqualityAnchor() || facts.isFiniteInAnchor())
-					&& inputAssured.containsAll(variableMask)) {
+					&& inputAssured.containsAll(variableMask)
+					&& !objectAnchorShouldRemainLocalForCosting(ir, input, variable,
+							conjunct,
+							ScalarFacts.finiteAnchorValues(conjunct))) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	static boolean objectAnchorShouldRemainLocalForCosting(PlanIr ir, IrNode input, BindingSymbol variable,
+			ScalarExpr expression, List<Value> values) {
+		if (ir == null || input == null || variable == null || values == null || values.isEmpty()) {
+			return false;
+		}
+		StatementPatternSearch search = statementPatternSearch(ir, input, variable);
+		if (search.matchCount != 1 || !search.objectMatch) {
+			return false;
+		}
+		return expression instanceof ScalarExpr.In && values.stream().allMatch(Literal.class::isInstance)
+				|| search.statementPatternCount >= 2;
+	}
+
+	private static StatementPatternSearch statementPatternSearch(PlanIr ir, IrNode node, BindingSymbol variable) {
+		StatementPatternSearch search = new StatementPatternSearch(variable);
+		collectStatementPatternSearch(ir, node, search);
+		return search;
+	}
+
+	private static void collectStatementPatternSearch(PlanIr ir, IrNode node, StatementPatternSearch search) {
+		if (node.semantics().scopeBarrier()) {
+			return;
+		}
+		if (node.op() == IrOp.STATEMENT_PATTERN && node.attr()instanceof IrAttr.StatementPatternAttr pattern) {
+			search.statementPatternCount++;
+			if (search.variable != null) {
+				if (search.variable.equals(pattern.subject().symbol())
+						|| search.variable.equals(pattern.predicate().symbol())
+						|| search.variable.equals(pattern.object().symbol())
+						|| pattern.context() != null && search.variable.equals(pattern.context().symbol())) {
+					search.matchCount++;
+					search.objectMatch = search.objectMatch || search.variable.equals(pattern.object().symbol());
+				}
+			}
+			return;
+		}
+		for (IrNodeId input : node.inputs()) {
+			collectStatementPatternSearch(ir, ir.node(input), search);
+		}
+	}
+
+	private static final class StatementPatternSearch {
+		private final BindingSymbol variable;
+		private int statementPatternCount;
+		private int matchCount;
+		private boolean objectMatch;
+
+		private StatementPatternSearch(BindingSymbol variable) {
+			this.variable = variable;
+		}
 	}
 
 	private static IrNode minusJoinInput(PlanIr ir, IrNode left) {

@@ -130,8 +130,8 @@ public class ThemeQueryPlanRunBenchmark {
 		public int z_queryIndex;
 
 		@Param({
-//				"MEDICAL_RECORDS",
-				"SOCIAL_MEDIA",
+				"MEDICAL_RECORDS",
+//				"SOCIAL_MEDIA",
 //				"LIBRARY",
 //				"ENGINEERING",
 //				"HIGHLY_CONNECTED",
@@ -145,7 +145,7 @@ public class ThemeQueryPlanRunBenchmark {
 		@Param({ "true" })
 		public boolean sketchEstimatorEnabled;
 
-		@Param({ "fastagms" })
+		@Param({ "omni" })
 		public String sketchEstimatorStrategy;
 
 		@Param({ QUERY_VARIANT_FILTER })

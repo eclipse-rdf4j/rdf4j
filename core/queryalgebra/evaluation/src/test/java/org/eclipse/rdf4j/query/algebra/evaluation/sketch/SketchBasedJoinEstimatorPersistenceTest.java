@@ -294,6 +294,44 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void omniStrategyLazyLoadRestoresOmniSideState(@TempDir Path tempDir) throws Exception {
+		Resource s1 = VF.createIRI("urn:omni-lazy:s1");
+		Resource s2 = VF.createIRI("urn:omni-lazy:s2");
+		Resource s3 = VF.createIRI("urn:omni-lazy:s3");
+		IRI p1 = VF.createIRI("urn:omni-lazy:p1");
+		IRI p2 = VF.createIRI("urn:omni-lazy:p2");
+		Value o1 = VF.createIRI("urn:omni-lazy:o1");
+		Value o2 = VF.createIRI("urn:omni-lazy:o2");
+
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(s1, p1, o1));
+		sourceStore.add(st(s2, p1, o1));
+		sourceStore.add(st(s1, p2, o2));
+		sourceStore.add(st(s3, p2, o2));
+
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		assertTrue(omniSketchCount(writer) > 0, "OMNI writer should build side-state sketches");
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+		assertEquals(0, omniSketchCount(reader), "Lazy startup should not heap-load Omni side state");
+
+		assertEquals(1.0d,
+				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
+						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+				0.0d);
+		assertTrue(omniSketchCount(reader) > 0,
+				"Lazy OMNI reads should restore persisted Omni side state");
+	}
+
+	@Test
 	void strategyMismatchSnapshotIsIgnoredInsteadOfRead(@TempDir Path tempDir) throws Exception {
 		Resource subject = VF.createIRI("urn:strategy-mismatch:s");
 		IRI predicate = VF.createIRI("urn:strategy-mismatch:p");
@@ -1428,6 +1466,21 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Field sketchesField = countMinSketches.getClass().getDeclaredField("sketches");
 		sketchesField.setAccessible(true);
 		Object[] sketches = (Object[]) sketchesField.get(countMinSketches);
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniSketches = privateFieldValue(current, "omniSketches");
+		Field sketchesField = omniSketches.getClass().getDeclaredField("sketches");
+		sketchesField.setAccessible(true);
+		Object[] sketches = (Object[]) sketchesField.get(omniSketches);
 		int count = 0;
 		for (Object sketch : sketches) {
 			if (sketch != null) {

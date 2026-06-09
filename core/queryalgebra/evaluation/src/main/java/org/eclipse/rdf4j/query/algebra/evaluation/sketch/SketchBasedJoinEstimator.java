@@ -239,6 +239,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		FAST_AGMS("fastagms"),
 		TUPLE("tuple"),
 		JOIN_SKETCH("joinsketch"),
+		OMNI("omni"),
 		COUNT_MIN("countmin"),
 		COUNT_MIN_DUAL("countmin-dual");
 
@@ -522,10 +523,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int SKETCH_PAYLOAD_FORMAT_FAST_AGMS = 1;
 	private static final int SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH = 2;
 	private static final int SKETCH_PAYLOAD_FORMAT_COUNT_MIN = 3;
+	private static final int SKETCH_PAYLOAD_FORMAT_OMNI = 4;
 	private static final int JOIN_SKETCH_PAYLOAD_MAGIC = 0x4a53504c; // JSPL
 	private static final int JOIN_SKETCH_PAYLOAD_VERSION = 1;
 	private static final int COUNT_MIN_PAYLOAD_MAGIC = 0x434d504c; // CMPL
 	private static final int COUNT_MIN_PAYLOAD_VERSION = 1;
+	private static final int OMNI_PAYLOAD_MAGIC = 0x4f4d504c; // OMPL
+	private static final int OMNI_PAYLOAD_VERSION = 1;
 	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
 	private static final int TARGET_SKETCH_PART_FILES = 128;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
@@ -548,6 +552,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int JOIN_SKETCH_HEAVY_BUCKETS = 16;
 	private static final long JOIN_SKETCH_HEAVY_THRESHOLD = 12L;
 	private static final long JOIN_SKETCH_SEED = 0x51E7C0DEL;
+	private static final int OMNI_SKETCH_ROWS = 1;
+	private static final int OMNI_SKETCH_BUCKETS = 2;
+	private static final int OMNI_SKETCH_SUPPORT_SAMPLE_COUNT = 2048;
+	private static final int OMNI_SKETCH_CELL_SAMPLE_COUNT = 64;
+	private static final long OMNI_SKETCH_SEED = 0x51E7C0DEL;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -555,6 +564,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final byte REC_PAIR_COMP1 = 4;
 	private static final byte REC_PAIR_COMP2 = 5;
 	private static final byte REC_GLOBAL_COMPONENT = 6;
+	private static final byte REC_SINGLE_PAIR_CPL = 7;
 	private static final int DELETE_KEY_PREFIX_MASK = 1 << 8;
 	private static final int COMPONENT_S_INDEX = Component.S.ordinal();
 	private static final int COMPONENT_P_INDEX = Component.P.ordinal();
@@ -563,6 +573,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int[] SINGLE_TRIPLE_KEY_PREFIXES = buildComponentKeyPrefixes(REC_SINGLE_TRIPLE);
 	private static final int[] GLOBAL_COMPONENT_KEY_PREFIXES = buildComponentKeyPrefixes(REC_GLOBAL_COMPONENT);
 	private static final int[][] SINGLE_COMPLEMENT_KEY_PREFIXES = buildComponentPairKeyPrefixes(REC_SINGLE_CPL);
+	private static final int[][] SINGLE_PAIR_COMPLEMENT_KEY_PREFIXES = buildSinglePairComplementKeyPrefixes();
 	private static final int[] PAIR_TRIPLE_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_TRIPLE);
 	private static final int[] PAIR_COMP1_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_COMP1);
 	private static final int[] PAIR_COMP2_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_COMP2);
@@ -592,6 +603,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 		}
 		return prefixes;
+	}
+
+	private static int[][] buildSinglePairComplementKeyPrefixes() {
+		int[][] prefixes = new int[COMPONENT_VALUES.length][COMPONENT_MASK_COUNT];
+		for (Component fixed : COMPONENT_VALUES) {
+			for (Component first : COMPONENT_VALUES) {
+				if (first == fixed) {
+					continue;
+				}
+				for (Component second : COMPONENT_VALUES) {
+					if (second == fixed || second == first) {
+						continue;
+					}
+					int pairCode = componentPairCode(first, second);
+					prefixes[fixed.ordinal()][pairCode] = packKeyPrefix(REC_SINGLE_PAIR_CPL, false,
+							(byte) fixed.ordinal(), (byte) pairCode);
+				}
+			}
+		}
+		return prefixes;
+	}
+
+	private static int componentPairCode(Component first, Component second) {
+		int firstBit = 1 << first.ordinal();
+		int secondBit = 1 << second.ordinal();
+		if (firstBit == secondBit) {
+			throw new IllegalArgumentException("component pair requires two distinct components");
+		}
+		return firstBit | secondBit;
 	}
 
 	private static int[] buildPairKeyPrefixes(byte recType) {
@@ -3573,6 +3613,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.findOrAdd(storedKeyPrefix, x, y);
 		}
+		if (recType == REC_SINGLE_PAIR_CPL) {
+			OmniFrequencySketch omniSketch = omniSketchForWrite(state, recType, entryId);
+			if (omniSketch == null) {
+				return;
+			}
+			omniSketch.update(firstValue, 1L);
+			for (int i = 1; i < valueCount; i++) {
+				omniSketch.update(overflowValues[i - 1], 1L);
+			}
+			markDirtyAndTouchResidentSketch(slot, entryId);
+			return;
+		}
 		boolean useDeleteSketch = recType != REC_GLOBAL_COMPONENT && isDelete;
 		double delta = recType == REC_GLOBAL_COMPONENT ? signedDelta(isDelete) : 1.0d;
 		FastAgmsBindingSummary sketch = getSketchForWrite(state, recType, useDeleteSketch, axisA, axisB, x, y,
@@ -3582,6 +3634,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (joinSketch != null) {
 			joinSketch.update(firstValue, 1L);
 		}
+		OmniFrequencySketch omniSketch = omniSketchForWrite(state, recType, entryId);
+		if (omniSketch != null) {
+			omniSketch.update(firstValue, 1L);
+		}
 		CountMinFrequencySketch countMinSketch = countMinSketchForWrite(state, recType, entryId);
 		if (countMinSketch != null) {
 			countMinSketch.update(firstValue, 1L);
@@ -3590,6 +3646,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			frequencyUpdateRaw(sketch, overflowValues[i - 1], delta);
 			if (joinSketch != null) {
 				joinSketch.update(overflowValues[i - 1], 1L);
+			}
+			if (omniSketch != null) {
+				omniSketch.update(overflowValues[i - 1], 1L);
 			}
 			if (countMinSketch != null) {
 				countMinSketch.update(overflowValues[i - 1], 1L);
@@ -3725,6 +3784,38 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_S_INDEX] | deleteMask, ci, 0, thetaHs);
 		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_P_INDEX] | deleteMask, ci, 0, thetaHp);
 		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_O_INDEX] | deleteMask, ci, 0, thetaHo);
+
+		accumulateSinglePairComplement(updates, Component.S, si, Component.P, Component.O,
+				pairValueHash(thetaHp, thetaHo), deleteMask);
+		accumulateSinglePairComplement(updates, Component.S, si, Component.P, Component.C,
+				pairValueHash(thetaHp, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.S, si, Component.O, Component.C,
+				pairValueHash(thetaHo, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.P, pi, Component.S, Component.O,
+				pairValueHash(thetaHs, thetaHo), deleteMask);
+		accumulateSinglePairComplement(updates, Component.P, pi, Component.S, Component.C,
+				pairValueHash(thetaHs, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.P, pi, Component.O, Component.C,
+				pairValueHash(thetaHo, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.O, oi, Component.S, Component.P,
+				pairValueHash(thetaHs, thetaHp), deleteMask);
+		accumulateSinglePairComplement(updates, Component.O, oi, Component.S, Component.C,
+				pairValueHash(thetaHs, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.O, oi, Component.P, Component.C,
+				pairValueHash(thetaHp, thetaHc), deleteMask);
+		accumulateSinglePairComplement(updates, Component.C, ci, Component.S, Component.P,
+				pairValueHash(thetaHs, thetaHp), deleteMask);
+		accumulateSinglePairComplement(updates, Component.C, ci, Component.S, Component.O,
+				pairValueHash(thetaHs, thetaHo), deleteMask);
+		accumulateSinglePairComplement(updates, Component.C, ci, Component.P, Component.O,
+				pairValueHash(thetaHp, thetaHo), deleteMask);
+	}
+
+	private static void accumulateSinglePairComplement(BatchUpdateAccumulator updates, Component fixed,
+			int fixedIndex, Component firstJoin, Component secondJoin, long pairHash, int deleteMask) {
+		int pairCode = componentPairCode(firstJoin, secondJoin);
+		updates.add(SINGLE_PAIR_COMPLEMENT_KEY_PREFIXES[fixed.ordinal()][pairCode] | deleteMask, fixedIndex, 0,
+				pairHash);
 	}
 
 	private static void accumulatePair(BatchUpdateAccumulator updates, Pair pair, boolean isDelete, long key,
@@ -4398,6 +4489,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return 0.0;
 		}
 
+		if (sketchStrategy == SketchStrategy.OMNI && da == null && db == null) {
+			double omniRows = estimateOmniSketchNetInnerProduct(st, pairComplementAddress(false, a, j, keyA),
+					pairComplementAddress(false, b, j, keyB), pairComplementAddress(true, a, j, keyA),
+					pairComplementAddress(true, b, j, keyB));
+			if (Double.isFinite(omniRows)) {
+				return roundJoinEstimate(omniRows);
+			}
+		}
 		if (sketchStrategy == SketchStrategy.JOIN_SKETCH && da == null && db == null) {
 			double joinSketchRows = estimateJoinSketchNetInnerProduct(st, pairComplementAddress(false, a, j, keyA),
 					pairComplementAddress(false, b, j, keyB), pairComplementAddress(true, a, j, keyA),
@@ -4425,6 +4524,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return 0.0;
 		}
 
+		if (sketchStrategy == SketchStrategy.OMNI && da == null && db == null) {
+			double omniRows = estimateOmniSketchNetInnerProduct(st, singleComplementAddress(false, a, j, idxA),
+					singleComplementAddress(false, b, j, idxB), singleComplementAddress(true, a, j, idxA),
+					singleComplementAddress(true, b, j, idxB));
+			if (Double.isFinite(omniRows)) {
+				return roundJoinEstimate(omniRows);
+			}
+		}
 		if (sketchStrategy == SketchStrategy.JOIN_SKETCH && da == null && db == null) {
 			double joinSketchRows = estimateJoinSketchNetInnerProduct(st, singleComplementAddress(false, a, j, idxA),
 					singleComplementAddress(false, b, j, idxB), singleComplementAddress(true, a, j, idxA),
@@ -4592,6 +4699,135 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private record CountMinSurfaceInput(Component joinComponent, Component fixedComponent, String fixedValue) {
 	}
 
+	private JoinFrequencyEstimate estimateOmniJoinSurface(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		if (prefixFactors == null || factor == null) {
+			return null;
+		}
+		List<TupleExpr> factors = new ArrayList<>(prefixFactors.size() + 1);
+		factors.addAll(prefixFactors);
+		factors.add(factor);
+		return estimateOmniJoinSurface(factors, joinVarName);
+	}
+
+	private JoinFrequencyEstimate estimateOmniJoinSurface(List<TupleExpr> factors, String joinVarName) {
+		if (!isReady() || sketchStrategy != SketchStrategy.OMNI || factors == null || joinVarName == null) {
+			return null;
+		}
+		TupleExpr left = null;
+		TupleExpr right = null;
+		for (TupleExpr factor : factors) {
+			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			if (left == null) {
+				left = factor;
+			} else if (right == null) {
+				right = factor;
+			} else {
+				return null;
+			}
+		}
+		if (left == null || right == null) {
+			return null;
+		}
+		return estimateOmniPairwiseJoinSurface(left, right, joinVarName);
+	}
+
+	private JoinFrequencyEstimate estimateOmniPairwiseJoinSurface(TupleExpr left, TupleExpr right,
+			String joinVarName) {
+		PatternEstimateInput leftInput = asSketchCompatibleInput(left);
+		PatternEstimateInput rightInput = asSketchCompatibleInput(right);
+		if (leftInput == null || rightInput == null || leftInput.filterMultiplier != 1.0d
+				|| rightInput.filterMultiplier != 1.0d) {
+			return null;
+		}
+		List<String> sharedVars = sharedUnboundVars(leftInput.pattern, rightInput.pattern);
+		if (sharedVars.size() < 2 || !sharedVars.contains(joinVarName)) {
+			return null;
+		}
+		if (sharedVars.size() > 2) {
+			return null;
+		}
+		OmniSurfaceInput leftSurface = omniSurfaceInput(leftInput.pattern, sharedVars);
+		OmniSurfaceInput rightSurface = omniSurfaceInput(rightInput.pattern, sharedVars);
+		if (leftSurface == null || rightSurface == null || leftSurface.pairCode() != rightSurface.pairCode()) {
+			return null;
+		}
+		flushPendingIncremental();
+		State snap = current;
+		OmniJoinStats omniStats;
+		synchronized (snap) {
+			omniStats = estimateOmniSketchNetIntersection(snap, leftSurface.addAddress(), rightSurface.addAddress(),
+					leftSurface.deleteAddress(), rightSurface.deleteAddress());
+		}
+		if (omniStats == null || !Double.isFinite(omniStats.sharedIdentifiers())) {
+			return null;
+		}
+		double rows = omniStats.sharedIdentifiers();
+		double normalizedRows = normalizeRows(rows);
+		return new JoinFrequencyEstimate(normalizedRows, normalizedRows, 0.75d, "omni-sketch-surface", 1.0d);
+	}
+
+	private List<String> sharedUnboundVars(StatementPattern left, StatementPattern right) {
+		List<String> shared = new ArrayList<>(2);
+		Set<String> rightNames = new HashSet<>();
+		for (Var var : right.getVarList()) {
+			if (var != null && !var.hasValue() && var.getName() != null) {
+				rightNames.add(var.getName());
+			}
+		}
+		for (Var var : left.getVarList()) {
+			if (var == null || var.hasValue() || var.getName() == null || !rightNames.contains(var.getName())
+					|| shared.contains(var.getName())) {
+				continue;
+			}
+			shared.add(var.getName());
+		}
+		return shared;
+	}
+
+	private OmniSurfaceInput omniSurfaceInput(StatementPattern pattern, List<String> sharedVars) {
+		Component firstJoin = findPatternComponentByVarName(pattern, sharedVars.get(0));
+		Component secondJoin = findPatternComponentByVarName(pattern, sharedVars.get(1));
+		if (firstJoin == null || secondJoin == null || firstJoin == secondJoin) {
+			return null;
+		}
+		Component fixed = null;
+		String fixedValue = null;
+		for (Component component : COMPONENT_VALUES) {
+			if (component == firstJoin || component == secondJoin) {
+				continue;
+			}
+			Var var = varForComponent(pattern, component);
+			if (!hasBoundValue(var)) {
+				continue;
+			}
+			if (fixed != null) {
+				return null;
+			}
+			fixed = component;
+			fixedValue = getValueOrNull(var);
+		}
+		if (fixed == null || fixedValue == null) {
+			return null;
+		}
+		int pairCode = componentPairCode(firstJoin, secondJoin);
+		int fixedIndex = hash(fixed, fixedValue);
+		return new OmniSurfaceInput(fixed, pairCode, fixedIndex);
+	}
+
+	private record OmniSurfaceInput(Component fixed, int pairCode, int fixedIndex) {
+
+		private SketchAddress addAddress() {
+			return singlePairComplementAddress(false, fixed, pairCode, fixedIndex);
+		}
+
+		private SketchAddress deleteAddress() {
+			return singlePairComplementAddress(true, fixed, pairCode, fixedIndex);
+		}
+	}
+
 	private double estimateJoinSketchNetInnerProduct(State state, SketchAddress leftAdd, SketchAddress rightAdd,
 			SketchAddress leftDelete, SketchAddress rightDelete) {
 		JoinFrequencySketch la = joinSketchForRead(state, leftAdd);
@@ -4610,6 +4846,39 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private static double joinSketchInnerProduct(JoinFrequencySketch left, JoinFrequencySketch right) {
 		return left == null || right == null ? 0.0d : left.innerProduct(right);
+	}
+
+	private double estimateOmniSketchNetInnerProduct(State state, SketchAddress leftAdd, SketchAddress rightAdd,
+			SketchAddress leftDelete, SketchAddress rightDelete) {
+		OmniJoinStats stats = estimateOmniSketchNetIntersection(state, leftAdd, rightAdd, leftDelete, rightDelete);
+		return stats == null ? Double.NaN : stats.sharedIdentifiers();
+	}
+
+	private OmniJoinStats estimateOmniSketchNetIntersection(State state, SketchAddress leftAdd, SketchAddress rightAdd,
+			SketchAddress leftDelete, SketchAddress rightDelete) {
+		OmniFrequencySketch la = omniSketchForRead(state, leftAdd);
+		OmniFrequencySketch ra = omniSketchForRead(state, rightAdd);
+		OmniFrequencySketch ld = omniSketchForRead(state, leftDelete);
+		OmniFrequencySketch rd = omniSketchForRead(state, rightDelete);
+		if ((la == null && ld == null) || (ra == null && rd == null)) {
+			return null;
+		}
+		if (ld != null || rd != null) {
+			return null;
+		}
+		return new OmniJoinStats(Math.max(0.0d, omniSketchInnerProduct(la, ra)),
+				omniSketchRetainedIdentifiers(la), omniSketchRetainedIdentifiers(ra));
+	}
+
+	private static double omniSketchInnerProduct(OmniFrequencySketch left, OmniFrequencySketch right) {
+		return left == null || right == null ? 0.0d : left.innerProduct(right);
+	}
+
+	private static double omniSketchRetainedIdentifiers(OmniFrequencySketch sketch) {
+		return sketch == null ? 0.0d : sketch.retainedIdentifiers();
+	}
+
+	private record OmniJoinStats(double sharedIdentifiers, double leftIdentifiers, double rightIdentifiers) {
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -4655,6 +4924,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		final StateComponents<SingleBuild> delSingles;
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 		final JoinSketchByEntry joinSketches = new JoinSketchByEntry();
+		final OmniSketchByEntry omniSketches = new OmniSketchByEntry();
 		final CountMinSketchByEntry countMinSketches = new CountMinSketchByEntry();
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
@@ -4720,6 +4990,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			pairs.values().forEach(PairBuild::clear);
 			delPairs.values().forEach(PairBuild::clear);
 			joinSketches.clear();
+			omniSketches.clear();
 			countMinSketches.clear();
 		}
 
@@ -4880,6 +5151,46 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		private void set(int entryId, CountMinFrequencySketch sketch) {
+			ensureCapacity(entryId + 1);
+			sketches[entryId] = sketch;
+		}
+
+		private void clear() {
+			Arrays.fill(sketches, null);
+		}
+
+		private void ensureCapacity(int minCapacity) {
+			if (minCapacity <= sketches.length) {
+				return;
+			}
+			int next = sketches.length;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			sketches = Arrays.copyOf(sketches, next);
+		}
+	}
+
+	private static final class OmniSketchByEntry {
+
+		private OmniFrequencySketch[] sketches = new OmniFrequencySketch[256];
+
+		private OmniFrequencySketch get(int entryId) {
+			return entryId >= 0 && entryId < sketches.length ? sketches[entryId] : null;
+		}
+
+		private OmniFrequencySketch getOrCreate(int entryId) {
+			ensureCapacity(entryId + 1);
+			OmniFrequencySketch sketch = sketches[entryId];
+			if (sketch == null) {
+				sketch = new OmniFrequencySketch(OMNI_SKETCH_ROWS, OMNI_SKETCH_BUCKETS,
+						OMNI_SKETCH_SUPPORT_SAMPLE_COUNT, OMNI_SKETCH_CELL_SAMPLE_COUNT, OMNI_SKETCH_SEED);
+				sketches[entryId] = sketch;
+			}
+			return sketch;
+		}
+
+		private void set(int entryId, OmniFrequencySketch sketch) {
 			ensureCapacity(entryId + 1);
 			sketches[entryId] = sketch;
 		}
@@ -5276,6 +5587,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private static long pairKey(int a, int b) {
 		return (((long) a) << 32) ^ (b & 0xffffffffL);
+	}
+
+	private static long pairValueHash(long a, long b) {
+		return mix64(a ^ Long.rotateLeft(b, 32));
 	}
 
 	private static Pair findPair(Component a, Component b) {
@@ -9644,6 +9959,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public JoinFrequencyEstimate estimateSketchJoinSurface(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String joinVarName) {
+		JoinFrequencyEstimate omniEstimate = estimateOmniJoinSurface(prefixFactors, factor, joinVarName);
+		if (omniEstimate != null) {
+			return omniEstimate;
+		}
 		JoinFrequencyEstimate countMinEstimate = estimateCountMinJoinSurface(prefixFactors, factor, joinVarName);
 		if (countMinEstimate != null) {
 			return countMinEstimate;
@@ -9793,6 +10112,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	public JoinFrequencyEstimate estimateSketchJoinSurface(List<TupleExpr> factors, String joinVarName) {
+		JoinFrequencyEstimate omniEstimate = estimateOmniJoinSurface(factors, joinVarName);
+		if (omniEstimate != null) {
+			return omniEstimate;
+		}
 		JoinFrequencyEstimate countMinEstimate = estimateCountMinJoinSurface(factors, joinVarName);
 		if (countMinEstimate != null) {
 			return countMinEstimate;
@@ -12418,6 +12741,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return new SketchAddress(REC_SINGLE_CPL, isDelete, (byte) fixed.ordinal(), (byte) other.ordinal(), idx, 0);
 	}
 
+	private static SketchAddress singlePairComplementAddress(boolean isDelete, Component fixed, int pairCode,
+			int fixedIndex) {
+		return new SketchAddress(REC_SINGLE_PAIR_CPL, isDelete, (byte) fixed.ordinal(), (byte) pairCode, fixedIndex,
+				0);
+	}
+
 	private static SketchAddress pairAddress(byte recType, boolean isDelete, Pair pair, int x, int y) {
 		return new SketchAddress(recType, isDelete, (byte) pair.ordinal(), (byte) 0, x, y);
 	}
@@ -12459,6 +12788,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		return state.joinSketches.getOrCreate(entryId);
+	}
+
+	private OmniFrequencySketch omniSketchForRead(State state, SketchAddress address) {
+		if (state.sketchStrategy != SketchStrategy.OMNI) {
+			return null;
+		}
+		if (address.recType == REC_GLOBAL_COMPONENT) {
+			return null;
+		}
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.find(address);
+		}
+		OmniFrequencySketch sketch = state.omniSketches.get(entryId);
+		if (sketch == null && entryId >= 0) {
+			loadPersistedSketch(state, address, entryId);
+			sketch = state.omniSketches.get(entryId);
+		}
+		return sketch;
+	}
+
+	private OmniFrequencySketch omniSketchForWrite(State state, byte recType, int entryId) {
+		if (state.sketchStrategy != SketchStrategy.OMNI) {
+			return null;
+		}
+		if (recType == REC_GLOBAL_COMPONENT || entryId < 0) {
+			return null;
+		}
+		return state.omniSketches.getOrCreate(entryId);
 	}
 
 	private CountMinFrequencySketch countMinSketchForRead(State state, SketchAddress address) {
@@ -12684,6 +13042,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			AtomicReferenceArray<FastAgmsBindingSummary> arr = build.cmpl.get(other);
 			return arr == null ? null : arr.get(x);
 		}
+		case REC_SINGLE_PAIR_CPL:
+			return null;
 		case REC_PAIR_TRIPLE:
 		case REC_PAIR_COMP1:
 		case REC_PAIR_COMP2: {
@@ -12730,6 +13090,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			return;
 		}
+		case REC_SINGLE_PAIR_CPL:
+			return;
 		case REC_PAIR_TRIPLE:
 		case REC_PAIR_COMP1:
 		case REC_PAIR_COMP2: {
@@ -12773,11 +13135,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private boolean appendDirtySketchIfResident(int entryId, SketchAddress address, State state) throws IOException {
 		synchronized (state) {
 			FastAgmsBindingSummary sketch = getResidentSketch(state, address);
-			if (sketch == null) {
+			OmniFrequencySketch omniSketch = state.sketchStrategy == SketchStrategy.OMNI && entryId >= 0
+					? state.omniSketches.get(entryId)
+					: null;
+			if (sketch == null && omniSketch == null) {
 				return false;
 			}
 			byte currentSlot = slotByte(slotOf(state));
-			if (sketch.hasMemorySegment()) {
+			if (omniSketch == null && sketch != null && sketch.hasMemorySegment()) {
 				clearDirtyMappedSketch(entryId, currentSlot);
 				return true;
 			}
@@ -12846,7 +13211,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static byte fileKindFor(SketchAddress address) {
 		return switch (address.recType) {
 		case REC_GLOBAL_COMPONENT -> SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL;
-		case REC_SINGLE_TRIPLE, REC_SINGLE_CPL -> SketchEstimatorPersistenceStore.FILE_KIND_SINGLES;
+		case REC_SINGLE_TRIPLE, REC_SINGLE_CPL, REC_SINGLE_PAIR_CPL -> SketchEstimatorPersistenceStore.FILE_KIND_SINGLES;
 		case REC_PAIR_TRIPLE, REC_PAIR_COMP1, REC_PAIR_COMP2 -> SketchEstimatorPersistenceStore.FILE_KIND_PAIRS;
 		default -> throw new IllegalStateException("Unknown sketch record type: " + address.recType);
 		};
@@ -12855,7 +13220,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private byte[] serializeNativeSketchPayload(State state, int entryId, FastAgmsBindingSummary sketch)
 			throws IOException {
 		try {
-			byte[] summaryPayload = sketch.toByteArray();
+			byte[] summaryPayload = sketch == null ? new byte[0] : sketch.toByteArray();
+			if (state.sketchStrategy == SketchStrategy.OMNI) {
+				OmniFrequencySketch omniSketch = entryId >= 0 ? state.omniSketches.get(entryId) : null;
+				byte[] omniPayload = omniSketch == null ? new byte[0] : omniSketch.toByteArray();
+				ByteArrayOutputStream bytes = new ByteArrayOutputStream(summaryPayload.length + omniPayload.length
+						+ Integer.BYTES * 4);
+				try (DataOutputStream out = new DataOutputStream(bytes)) {
+					out.writeInt(OMNI_PAYLOAD_MAGIC);
+					out.writeInt(OMNI_PAYLOAD_VERSION);
+					out.writeInt(summaryPayload.length);
+					out.write(summaryPayload);
+					out.writeInt(omniPayload.length);
+					out.write(omniPayload);
+				}
+				return bytes.toByteArray();
+			}
 			if (usesCountMinSketches(state.sketchStrategy)) {
 				CountMinFrequencySketch countMinSketch = entryId >= 0 ? state.countMinSketches.get(entryId) : null;
 				byte[] countMinPayload = countMinSketch == null ? new byte[0] : countMinSketch.toByteArray();
@@ -12902,6 +13282,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (state.sketchStrategy == SketchStrategy.JOIN_SKETCH) {
 			return store.readFramedPayload(storeRef, payloadFormat(state),
 					payload -> readJoinSketchPayload(state, entryId, payload));
+		}
+		if (state.sketchStrategy == SketchStrategy.OMNI) {
+			return store.readFramedPayload(storeRef, payloadFormat(state),
+					payload -> readOmniPayload(state, entryId, payload));
 		}
 		if (state.sketchStrategy != SketchStrategy.TUPLE) {
 			return store.readFramedPayload(storeRef, payloadFormat(state), FastAgmsBindingSummary::fromMemorySegment);
@@ -12965,6 +13349,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
+	private FastAgmsBindingSummary readOmniPayload(State state, int entryId, MemorySegment payload) throws IOException {
+		try (DataInputStream in = new DataInputStream(
+				new ByteArrayInputStream(payload.toArray(ValueLayout.JAVA_BYTE)))) {
+			int magic = in.readInt();
+			if (magic != OMNI_PAYLOAD_MAGIC) {
+				throw new IOException("Unsupported Omni payload magic: " + magic);
+			}
+			int version = in.readInt();
+			if (version != OMNI_PAYLOAD_VERSION) {
+				throw new IOException("Unsupported Omni payload version: " + version);
+			}
+			byte[] summaryPayload = readBoundedPayload(in, "FastAGMS summary");
+			FastAgmsBindingSummary summary = summaryPayload.length == 0 ? null
+					: FastAgmsBindingSummary.fromByteArray(summaryPayload);
+			byte[] omniPayload = readBoundedPayload(in, "OmniSketch");
+			if (omniPayload.length > 0 && entryId >= 0) {
+				state.omniSketches.set(entryId, OmniFrequencySketch.fromByteArray(omniPayload));
+			}
+			if (in.available() != 0) {
+				throw new IOException("Omni envelope payload has trailing bytes: " + in.available());
+			}
+			return summary;
+		}
+	}
+
 	private static byte[] readBoundedPayload(DataInputStream in, String label) throws IOException {
 		int length = in.readInt();
 		if (length < 0 || length > 64 * 1024 * 1024) {
@@ -12979,6 +13388,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return switch (state.sketchStrategy) {
 		case TUPLE -> SKETCH_PAYLOAD_FORMAT_TUPLE;
 		case JOIN_SKETCH -> SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH;
+		case OMNI -> SKETCH_PAYLOAD_FORMAT_OMNI;
 		case COUNT_MIN, COUNT_MIN_DUAL -> SKETCH_PAYLOAD_FORMAT_COUNT_MIN;
 		case FAST_AGMS -> SKETCH_PAYLOAD_FORMAT_FAST_AGMS;
 		};
@@ -13209,7 +13619,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		String defaultContextString = "urn:default-context";
 		boolean roundJoinEstimates = true;
 		boolean contextPairSketchesEnabled = true;
-		SketchStrategy sketchStrategy = SketchStrategy.FAST_AGMS;
+		SketchStrategy sketchStrategy = SketchStrategy.OMNI;
 
 		int churnSampleMin = 128;
 		int churnSampleMax = 4096;

@@ -53,8 +53,13 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 
 	static MemoExpr logical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
 			String structuralKey) {
+		return logical(id, groupId, tupleExpr, inputs, metadata, List.of(), structuralKey);
+	}
+
+	static MemoExpr logical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
+			List<RuleProof> proofs, String structuralKey) {
 		return new MemoExpr(id, groupId, operatorName(tupleExpr), inputs, metadata, tupleExpr, PhysicalProperties.ANY,
-				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null, structuralKey);
+				RuleKind.TRANSFORMATION, CostVector.ZERO, proofs, null, structuralKey);
 	}
 
 	static MemoExpr physical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,

@@ -30,6 +30,7 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.leftJoin;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.leftJoinConditionVisible;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.leftJoinLike;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.localCostingObjectAnchor;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.materialize;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.minusAntiExistsCanPushToSmallestAssuredInput;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.minusLeftUnionDistribution;
@@ -201,6 +202,7 @@ public final class StandardRuleSpecs {
 				.match(filter("f", capture("input"), scalar("cond")))
 				.where(finiteAnchor("cond"))
 				.where(vars("cond").subsetOf(shape("input").assured()))
+				.where(localCostingObjectAnchor("input", "cond"))
 				.where(noScopeChange("f"))
 				.emit(join(valuesAnchor("cond"), ref("input")))
 				.proof("finiteValuesAnchor", "argumentAssuresFilterVar", "tupleArityPreserved",

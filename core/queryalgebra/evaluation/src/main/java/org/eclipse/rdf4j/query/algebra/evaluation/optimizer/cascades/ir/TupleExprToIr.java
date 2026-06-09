@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -123,6 +124,9 @@ public final class TupleExprToIr {
 				for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
 					String sourceName = element.getName();
 					String targetName = element.getProjectionAlias().orElse(sourceName);
+					if (!plannerName(sourceName) || !plannerName(targetName)) {
+						return nativeTuple(projection);
+					}
 					BindingSymbol source = builder.universe().symbol(sourceName);
 					BindingSymbol target = builder.universe().symbol(targetName);
 					bindings.add(new IrAttr.ProjectionBinding(source, target));
@@ -134,6 +138,9 @@ public final class TupleExprToIr {
 		if (tupleExpr instanceof Extension extension) {
 			List<IrAttr.ExtensionBinding> bindings = new ArrayList<>();
 			for (ExtensionElem element : extension.getElements()) {
+				if (!plannerName(element.getName()) || element.getExpr() instanceof AggregateOperator) {
+					return nativeTuple(extension);
+				}
 				bindings.add(new IrAttr.ExtensionBinding(builder.universe().symbol(element.getName()),
 						scalar(element.getExpr())));
 			}
@@ -144,6 +151,10 @@ public final class TupleExprToIr {
 					semantics, PhysicalProperties.ANY, List.of());
 		}
 		if (tupleExpr instanceof Group group) {
+			if (group.getGroupBindingNames().stream().anyMatch(name -> !plannerName(name))
+					|| group.getAggregateBindingNames().stream().anyMatch(name -> !plannerName(name))) {
+				return nativeTuple(group);
+			}
 			List<BindingSymbol> groupVars = group.getGroupBindingNames()
 					.stream()
 					.map(builder.universe()::symbol)
@@ -175,7 +186,15 @@ public final class TupleExprToIr {
 		if (tupleExpr instanceof SingletonSet) {
 			return builder.singleton();
 		}
+		return nativeTuple(tupleExpr);
+	}
+
+	private IrNodeId nativeTuple(TupleExpr tupleExpr) {
 		return builder.add(IrOp.MATERIALIZE, List.of(), new IrAttr.NativeTuple(tupleExpr));
+	}
+
+	private static boolean plannerName(String name) {
+		return name != null && !name.isBlank() && !name.startsWith("_const_");
 	}
 
 	private ScalarExpr scalar(ValueExpr expression) {

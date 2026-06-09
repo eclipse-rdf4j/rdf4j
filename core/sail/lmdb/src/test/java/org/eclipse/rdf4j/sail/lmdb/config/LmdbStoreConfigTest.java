@@ -130,10 +130,10 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void sketchEstimatorStrategyDefaultsToFastAgms() {
+	void sketchEstimatorStrategyDefaultsToOmni() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
-		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("fastagms");
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
 	}
 
 	@Test
@@ -337,14 +337,14 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "fastagms", "tuple", "joinsketch", "countmin", "countmin-dual" })
+	@ValueSource(strings = { "omni", "fastagms", "tuple", "joinsketch", "countmin", "countmin-dual" })
 	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
 		testParseAndExport(
 				SKETCH_ESTIMATOR_STRATEGY,
 				Values.literal(strategy),
 				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
 				strategy,
-				!"fastagms".equals(strategy)
+				!"omni".equals(strategy)
 		);
 	}
 

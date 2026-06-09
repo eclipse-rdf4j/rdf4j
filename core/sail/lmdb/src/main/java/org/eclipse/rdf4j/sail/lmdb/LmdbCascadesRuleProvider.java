@@ -27,18 +27,22 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -86,6 +90,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Registers LMDB physical alternatives for the generic Cascades engine. */
 final class LmdbCascadesRuleProvider {
@@ -107,6 +112,10 @@ final class LmdbCascadesRuleProvider {
 				.addAllRules(RuleCompiler.compileAll(LmdbRuleSpecs.physicalRules()))
 				.addAllRules(RuleRegistry.standardCompiledDslRules())
 				.add(new LmdbSetSemanticsNormalizationRule(statistics))
+				.add(new LmdbUnusedOptionalDistinctAggregateRule())
+				.add(new LmdbDistinctExistsJoinRule())
+				.add(new LmdbFiniteCodeTypeValuesDistinctAggregateRule())
+				.add(new LmdbFiniteFilterValuesDistinctAggregateRule())
 				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
 				.add(new StructuralCascadesRules.NestedFilterMergeRule())
 				.add(new StructuralCascadesRules.FilterConstantRule())
@@ -430,7 +439,7 @@ final class LmdbCascadesRuleProvider {
 		while (parent != null) {
 			if (parent instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)
 					&& LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
-				return true;
+				return !(filter.getCondition() instanceof Exists);
 			}
 			if (parent instanceof TupleExpr parentTuple && !TupleExprs.isVariableScopeChange(parentTuple)
 					&& (parentTuple instanceof Join || parentTuple instanceof Filter)) {
@@ -892,6 +901,554 @@ final class LmdbCascadesRuleProvider {
 							+ "implementation costing");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
+	}
+
+	private static final class LmdbUnusedOptionalDistinctAggregateRule extends LmdbRule {
+		LmdbUnusedOptionalDistinctAggregateRule() {
+			super("lmdb-remove-unused-optional", RuleKind.TRANSFORMATION, 95, null);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Group group
+					&& unusedOptionalDistinctAggregateAlternative(group) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group alternative = unusedOptionalDistinctAggregateAlternative((Group) expression.tupleExpr());
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("countDistinct", "unusedOptionalRhs", "duplicateInsensitive"),
+					"COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	static Group unusedOptionalDistinctAggregateAlternative(Group group) {
+		Set<String> distinctVars = distinctCountVars(group);
+		if (distinctVars.isEmpty()) {
+			return null;
+		}
+		boolean[] changed = { false };
+		TupleExpr rewrittenArg = removeUnusedOptionals(group.getArg(), distinctVars, changed);
+		if (!changed[0]) {
+			return null;
+		}
+		Group alternative = group.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static final class LmdbDistinctExistsJoinRule extends LmdbRule {
+		LmdbDistinctExistsJoinRule() {
+			super("lmdb-distinct-exists-join", RuleKind.TRANSFORMATION, 94, null);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Group group
+					&& distinctExistsJoinAlternative(group) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group alternative = distinctExistsJoinAlternative((Group) expression.tupleExpr());
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("countDistinct", "positiveExists", "sharedDistinctVar", "unusedExistsBindings",
+							"duplicateInsensitive"),
+					"COUNT DISTINCT permits replacing a positive correlated EXISTS filter with an equivalent "
+							+ "inner join alternative because duplicate RHS matches and RHS-only bindings are "
+							+ "unobserved by the aggregate");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	static Group distinctExistsJoinAlternative(Group group) {
+		Set<String> distinctVars = distinctCountVars(group);
+		if (distinctVars.isEmpty()) {
+			return null;
+		}
+		boolean[] optionalRemoved = { false };
+		TupleExpr arg = removeUnusedOptionals(group.getArg(), distinctVars, optionalRemoved);
+		boolean[] existsJoined = { false };
+		TupleExpr rewrittenArg = rewriteDistinctExistsFiltersAsJoins(arg, distinctVars, existsJoined);
+		if (!existsJoined[0]) {
+			return null;
+		}
+		Group alternative = group.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", optionalRemoved[0]
+				? "lmdb-distinct-exists-join;lmdb-remove-unused-optional"
+				: "lmdb-distinct-exists-join");
+		return alternative;
+	}
+
+	private static final class LmdbFiniteCodeTypeValuesDistinctAggregateRule extends LmdbRule {
+		LmdbFiniteCodeTypeValuesDistinctAggregateRule() {
+			super("lmdb-finite-code-type-values-rewrite", RuleKind.TRANSFORMATION, 94, null);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Group group
+					&& finiteCodeTypeValuesRewrite(group) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group group = (Group) expression.tupleExpr();
+			Group alternative = finiteCodeTypeValuesRewrite(group);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("countDistinct", "finiteCodeDomain", "factoredCommonCodePattern", "finiteTypeDomain",
+							"unusedOptionalRhs", "duplicateInsensitive"),
+					"COUNT DISTINCT permits collapsing duplicate target rows, factoring the shared code lookup, "
+							+ "turning UNION type alternatives into a finite type VALUES domain, and removing the "
+							+ "unobserved OPTIONAL RHS");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	private static final class LmdbFiniteFilterValuesDistinctAggregateRule extends LmdbRule {
+		LmdbFiniteFilterValuesDistinctAggregateRule() {
+			super("lmdb-finite-filter-values-distinct-rewrite", RuleKind.TRANSFORMATION, 94, null);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Group group
+					&& finiteFilterValuesDistinctAggregateAlternative(group) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group alternative = finiteFilterValuesDistinctAggregateAlternative((Group) expression.tupleExpr());
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal),
+					Set.of("countDistinct", "finiteValuesAnchor", "argumentAssuresFilterVar",
+							"duplicateInsensitive"),
+					"COUNT DISTINCT permits replacing a finite RDF-term equality filter with an equivalent "
+							+ "VALUES join anchor before physical join-order costing");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	static Group finiteFilterValuesDistinctAggregateAlternative(Group group) {
+		Set<String> distinctVars = distinctCountVars(group);
+		if (distinctVars.isEmpty()) {
+			return null;
+		}
+		boolean[] optionalRemoved = { false };
+		TupleExpr arg = removeUnusedOptionals(group.getArg(), distinctVars, optionalRemoved);
+		boolean[] finiteFilterRewritten = { false };
+		TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(arg, finiteFilterRewritten);
+		if (!finiteFilterRewritten[0]) {
+			return null;
+		}
+		Group alternative = group.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", optionalRemoved[0]
+				? "lmdb-finite-filter-values-distinct-rewrite;lmdb-remove-unused-optional"
+				: "lmdb-finite-filter-values-distinct-rewrite");
+		return alternative;
+	}
+
+	private static Group finiteCodeTypeValuesRewrite(Group group) {
+		Set<String> distinctVars = distinctCountVars(group);
+		if (distinctVars.size() != 1) {
+			return null;
+		}
+		boolean[] optionalRemoved = { false };
+		TupleExpr arg = removeUnusedOptionals(group.getArg(), distinctVars, optionalRemoved);
+		if (!(arg instanceof Union union) || union.isVariableScopeChange()) {
+			return null;
+		}
+		String entityName = distinctVars.iterator().next();
+		CodeTypeBranch left = codeTypeBranch(union.getLeftArg(), entityName);
+		CodeTypeBranch right = codeTypeBranch(union.getRightArg(), entityName);
+		if (left == null || right == null || !left.compatibleWith(right)) {
+			return null;
+		}
+		LinkedHashSet<Value> codeValues = new LinkedHashSet<>(left.codeValues());
+		codeValues.addAll(right.codeValues());
+		if (codeValues.size() < 2) {
+			return null;
+		}
+		LinkedHashSet<Value> typeValues = new LinkedHashSet<>();
+		typeValues.add(left.typeValue());
+		typeValues.add(right.typeValue());
+		if (typeValues.size() != 2) {
+			return null;
+		}
+
+		BindingSetAssignment codeAssignment = valuesAssignment(left.codeName(), codeValues);
+		BindingSetAssignment typeAssignment = valuesAssignment("type", typeValues);
+		StatementPattern typePattern = new StatementPattern(new Var(entityName),
+				new Var(left.typePredicateName(), left.typePredicate()), new Var("type"));
+		StatementPattern codePattern = new StatementPattern(new Var(entityName),
+				new Var(left.codePredicateName(), left.codePredicate()), new Var(left.codeName()));
+		TupleExpr rewritten = new Join(new Join(codeAssignment, typeAssignment), new Join(typePattern, codePattern));
+		Group alternative = group.clone();
+		alternative.setArg(rewritten);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite",
+				"lmdb-finite-code-type-values-rewrite;lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static TupleExpr rewriteFiniteFiltersAsValues(TupleExpr tupleExpr, boolean[] changed) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(filter.getArg(), changed);
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+			if (safeFiniteFilterValuesAnchor(filter, rewrittenArg, anchor)) {
+				changed[0] = true;
+				anchor.setStringMetricPlanned("optimizer.semanticRewrite",
+						"lmdb-finite-filter-values-distinct-rewrite");
+				return new Join(anchor, rewrittenArg);
+			}
+			if (rewrittenArg != filter.getArg()) {
+				return new Filter(rewrittenArg, filter.getCondition().clone());
+			}
+			return tupleExpr;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			TupleExpr left = rewriteFiniteFiltersAsValues(join.getLeftArg(), changed);
+			TupleExpr right = rewriteFiniteFiltersAsValues(join.getRightArg(), changed);
+			if (left != join.getLeftArg() || right != join.getRightArg()) {
+				return new Join(left, right);
+			}
+		}
+		return tupleExpr;
+	}
+
+	private static TupleExpr rewriteDistinctExistsFiltersAsJoins(TupleExpr tupleExpr, Set<String> distinctVars,
+			boolean[] changed) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			TupleExpr rewrittenArg = rewriteDistinctExistsFiltersAsJoins(filter.getArg(), distinctVars, changed);
+			if (safeDistinctExistsJoin(filter, rewrittenArg, distinctVars)) {
+				changed[0] = true;
+				Exists exists = (Exists) filter.getCondition();
+				Join join = new Join(rewrittenArg, exists.getSubQuery().clone());
+				join.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-distinct-exists-join");
+				return join;
+			}
+			if (rewrittenArg != filter.getArg()) {
+				return new Filter(rewrittenArg, filter.getCondition().clone());
+			}
+			return tupleExpr;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			TupleExpr left = rewriteDistinctExistsFiltersAsJoins(join.getLeftArg(), distinctVars, changed);
+			TupleExpr right = rewriteDistinctExistsFiltersAsJoins(join.getRightArg(), distinctVars, changed);
+			if (left != join.getLeftArg() || right != join.getRightArg()) {
+				return new Join(left, right);
+			}
+		}
+		return tupleExpr;
+	}
+
+	private static boolean safeDistinctExistsJoin(Filter filter, TupleExpr rewrittenArg, Set<String> distinctVars) {
+		if (!(filter.getCondition()instanceof Exists exists) || rewrittenArg == null) {
+			return false;
+		}
+		TupleExpr subQuery = exists.getSubQuery();
+		if (subQuery == null
+				|| containsExistsUnsafeScope(subQuery)
+				|| containsSubQueryValueOperator(subQuery)
+				|| !subqueryVarReferencesAreOutputs(subQuery)) {
+			return false;
+		}
+		Set<String> argBindingNames = rewrittenArg.getBindingNames();
+		Set<String> sharedNames = new LinkedHashSet<>(argBindingNames);
+		sharedNames.retainAll(subQuery.getBindingNames());
+		if (sharedNames.isEmpty() || Collections.disjoint(sharedNames, distinctVars)) {
+			return false;
+		}
+		Set<String> assuredNames = rewrittenArg.getAssuredBindingNames();
+		return assuredNames.containsAll(distinctVars) && assuredNames.containsAll(sharedNames);
+	}
+
+	private static boolean containsExistsUnsafeScope(TupleExpr tupleExpr) {
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(tupleExpr);
+		while (!queue.isEmpty()) {
+			TupleExpr current = queue.removeFirst();
+			if (TupleExprs.isVariableScopeChange(current)) {
+				return true;
+			}
+			queue.addAll(TupleExprs.getChildren(current));
+		}
+		return false;
+	}
+
+	private static boolean containsSubQueryValueOperator(TupleExpr tupleExpr) {
+		final boolean[] contains = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				contains[0] = true;
+			}
+		});
+		return contains[0];
+	}
+
+	private static boolean subqueryVarReferencesAreOutputs(TupleExpr tupleExpr) {
+		Set<String> referencedNames = VarNameCollector.process(tupleExpr);
+		return referencedNames.isEmpty() || tupleExpr.getBindingNames().containsAll(referencedNames);
+	}
+
+	private static boolean safeFiniteFilterValuesAnchor(Filter filter, TupleExpr rewrittenArg,
+			BindingSetAssignment anchor) {
+		return anchor != null
+				&& !anchor.getBindingNames().isEmpty()
+				&& rewrittenArg != null
+				&& rewrittenArg.getAssuredBindingNames().containsAll(anchor.getBindingNames())
+				&& !containsBindingSetAssignment(rewrittenArg, anchor.getBindingNames())
+				&& !LmdbJoinPlanSupport.containsExists(filter.getCondition());
+	}
+
+	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr, Set<String> bindingNames) {
+		if (tupleExpr == null || bindingNames == null || bindingNames.isEmpty()) {
+			return false;
+		}
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (!Collections.disjoint(node.getBindingNames(), bindingNames)) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static TupleExpr removeUnusedOptionals(TupleExpr tupleExpr, Set<String> liveVars, boolean[] changed) {
+		if (tupleExpr instanceof Filter filter) {
+			Set<String> childLiveVars = new LinkedHashSet<>(liveVars);
+			childLiveVars.addAll(VarNameCollector.process(filter.getCondition()));
+			TupleExpr arg = removeUnusedOptionals(filter.getArg(), childLiveVars, changed);
+			if (arg == filter.getArg()) {
+				return tupleExpr;
+			}
+			return new Filter(arg, filter.getCondition().clone());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			Set<String> rightNames = new LinkedHashSet<>(leftJoin.getRightArg().getBindingNames());
+			rightNames.removeAll(leftJoin.getLeftArg().getBindingNames());
+			if (!leftJoin.hasCondition() && Collections.disjoint(rightNames, liveVars)) {
+				changed[0] = true;
+				return removeUnusedOptionals(leftJoin.getLeftArg(), liveVars, changed);
+			}
+		}
+		return tupleExpr;
+	}
+
+	private static Set<String> distinctCountVars(Group group) {
+		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
+			return Set.of();
+		}
+		Set<String> vars = new LinkedHashSet<>();
+		for (GroupElem groupElement : group.getGroupElements()) {
+			AggregateOperator operator = groupElement.getOperator();
+			if (!(operator instanceof Count count)
+					|| !count.isDistinct()
+					|| !(count.getArg()instanceof Var var)
+					|| var.hasValue()
+					|| var.getName() == null) {
+				return Set.of();
+			}
+			vars.add(var.getName());
+		}
+		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
+	}
+
+	private static CodeTypeBranch codeTypeBranch(TupleExpr tupleExpr, String entityName) {
+		if (!(tupleExpr instanceof Filter filter)) {
+			return null;
+		}
+		CodeFilterDomain filterDomain = codeFilterDomain(filter.getCondition());
+		if (filterDomain == null) {
+			return null;
+		}
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(filter.getArg(), factors);
+		BindingSetAssignment targetAssignment = null;
+		StatementPattern typePattern = null;
+		StatementPattern codePattern = null;
+		for (TupleExpr factor : factors) {
+			if (factor instanceof BindingSetAssignment assignment
+					&& assignment.getBindingNames().contains(filterDomain.targetName())) {
+				targetAssignment = assignment;
+			} else if (factor instanceof StatementPattern pattern && statementSubjectName(pattern).equals(entityName)) {
+				if (statementObjectValue(pattern) != null) {
+					typePattern = pattern;
+				} else if (filterDomain.codeName().equals(statementObjectName(pattern))) {
+					codePattern = pattern;
+				}
+			}
+		}
+		if (targetAssignment == null || typePattern == null || codePattern == null) {
+			return null;
+		}
+		Value typePredicate = statementPredicateValue(typePattern);
+		Value codePredicate = statementPredicateValue(codePattern);
+		Value typeValue = statementObjectValue(typePattern);
+		if (typePredicate == null || codePredicate == null || typeValue == null) {
+			return null;
+		}
+		LinkedHashSet<Value> codeValues = valuesFor(targetAssignment, filterDomain.targetName());
+		codeValues.add(filterDomain.literalValue());
+		if (codeValues.stream().anyMatch(value -> !LmdbJoinPlanSupport.isSafeValuesAnchorValue(value))) {
+			return null;
+		}
+		return new CodeTypeBranch(entityName, filterDomain.codeName(), typePredicateName(typePattern),
+				typePredicate, codePredicateName(codePattern), codePredicate, typeValue, codeValues);
+	}
+
+	private static CodeFilterDomain codeFilterDomain(ValueExpr condition) {
+		if (!(condition instanceof Or or)) {
+			return null;
+		}
+		CodeComparison left = codeComparison(or.getLeftArg());
+		CodeComparison right = codeComparison(or.getRightArg());
+		if (left == null || right == null) {
+			return null;
+		}
+		CodeComparison target = left.targetName() == null ? right : left;
+		CodeComparison literal = left.literalValue() == null ? right : left;
+		if (target.targetName() == null || literal.literalValue() == null
+				|| !target.codeName().equals(literal.codeName())) {
+			return null;
+		}
+		return new CodeFilterDomain(target.codeName(), target.targetName(), literal.literalValue());
+	}
+
+	private static CodeComparison codeComparison(ValueExpr expression) {
+		if (!(expression instanceof Compare compare) || compare.getOperator() != Compare.CompareOp.EQ) {
+			return null;
+		}
+		return codeComparison(compare.getLeftArg(), compare.getRightArg());
+	}
+
+	private static CodeComparison codeComparison(ValueExpr left, ValueExpr right) {
+		if (left instanceof Var leftVar && !leftVar.hasValue()) {
+			if (right instanceof Var rightVar && !rightVar.hasValue()) {
+				return new CodeComparison(leftVar.getName(), rightVar.getName(), null);
+			}
+			if (right instanceof ValueConstant constant) {
+				return new CodeComparison(leftVar.getName(), null, constant.getValue());
+			}
+		}
+		if (right instanceof Var rightVar && !rightVar.hasValue() && left instanceof ValueConstant constant) {
+			return new CodeComparison(rightVar.getName(), null, constant.getValue());
+		}
+		return null;
+	}
+
+	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+			return;
+		}
+		factors.add(tupleExpr);
+	}
+
+	private static LinkedHashSet<Value> valuesFor(BindingSetAssignment assignment, String bindingName) {
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value != null) {
+				values.add(value);
+			}
+		}
+		return values;
+	}
+
+	private static BindingSetAssignment valuesAssignment(String bindingName, LinkedHashSet<Value> values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		List<BindingSet> bindingSets = new ArrayList<>(values.size());
+		for (Value value : values) {
+			MapBindingSet row = new MapBindingSet(1);
+			row.addBinding(bindingName, value);
+			bindingSets.add(row);
+		}
+		assignment.setBindingSets(bindingSets);
+		assignment.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-code-type-values-rewrite");
+		return assignment;
+	}
+
+	private static String statementSubjectName(StatementPattern pattern) {
+		Var var = pattern.getSubjectVar();
+		return var == null || var.hasValue() || var.getName() == null ? "" : var.getName();
+	}
+
+	private static String statementObjectName(StatementPattern pattern) {
+		Var var = pattern.getObjectVar();
+		return var == null || var.hasValue() || var.getName() == null ? "" : var.getName();
+	}
+
+	private static Value statementPredicateValue(StatementPattern pattern) {
+		Var var = pattern.getPredicateVar();
+		return var == null ? null : var.getValue();
+	}
+
+	private static String typePredicateName(StatementPattern pattern) {
+		Var var = pattern.getPredicateVar();
+		return var == null || var.getName() == null ? "typePredicate" : var.getName();
+	}
+
+	private static String codePredicateName(StatementPattern pattern) {
+		Var var = pattern.getPredicateVar();
+		return var == null || var.getName() == null ? "codePredicate" : var.getName();
+	}
+
+	private static Value statementObjectValue(StatementPattern pattern) {
+		Var var = pattern.getObjectVar();
+		return var == null ? null : var.getValue();
+	}
+
+	private record CodeFilterDomain(String codeName, String targetName, Value literalValue) {
+	}
+
+	private record CodeComparison(String codeName, String targetName, Value literalValue) {
+	}
+
+	private record CodeTypeBranch(String entityName, String codeName, String typePredicateName, Value typePredicate,
+			String codePredicateName, Value codePredicate, Value typeValue, LinkedHashSet<Value> codeValues) {
+		boolean compatibleWith(CodeTypeBranch other) {
+			return other != null
+					&& entityName.equals(other.entityName)
+					&& codeName.equals(other.codeName)
+					&& sameValue(typePredicate, other.typePredicate)
+					&& sameValue(codePredicate, other.codePredicate)
+					&& codeValues.equals(other.codeValues);
+		}
+	}
+
+	private static boolean sameValue(Value left, Value right) {
+		if (left == right) {
+			return true;
+		}
+		return left != null && right != null && left.stringValue().equals(right.stringValue());
 	}
 
 	private static final class LmdbConnectedJoinOrderingRule extends LmdbRule {
@@ -3945,7 +4502,8 @@ final class LmdbCascadesRuleProvider {
 			if (anchor == null
 					|| anchor.getBindingNames().isEmpty()
 					|| !filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())
-					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())) {
+					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())
+					|| !canMaterializeFiniteFilterValuesAccessPath(filter, pattern, anchor)) {
 				return Optional.empty();
 			}
 			Set<String> goalBoundVars = goalBoundVars(goal);
@@ -4159,7 +4717,8 @@ final class LmdbCascadesRuleProvider {
 			if (anchor == null
 					|| anchor.getBindingNames().isEmpty()
 					|| !filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())
-					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())) {
+					|| !pattern.getBindingNames().containsAll(anchor.getBindingNames())
+					|| !canMaterializeFiniteFilterValuesAccessPath(filter, pattern, anchor)) {
 				trace(context, "lmdb-rule id=" + id()
 						+ " finite-filter-input-bound status=reject reason=no-safe-anchor goalBoundVars="
 						+ goalBoundVars + " condition=" + filter.getCondition().getClass().getSimpleName()
@@ -4200,6 +4759,38 @@ final class LmdbCascadesRuleProvider {
 			return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), stampedAlternative,
 					delivered, cost, proof, "lmdb-finite-filter-input-bound-access",
 					snapshot(estimate.get(), cost)));
+		}
+
+		private boolean canMaterializeFiniteFilterValuesAccessPath(Filter filter, StatementPattern pattern,
+				BindingSetAssignment anchor) {
+			String bindingName = singleBindingName(anchor);
+			if (filter == null || pattern == null || bindingName == null) {
+				return false;
+			}
+			if (!bindingName.equals(unboundName(pattern.getObjectVar()))) {
+				return true;
+			}
+			return !allAnchorValuesAreLiterals(anchor, bindingName);
+		}
+
+		private static String singleBindingName(BindingSetAssignment anchor) {
+			if (anchor == null || anchor.getBindingNames().size() != 1) {
+				return null;
+			}
+			return anchor.getBindingNames().iterator().next();
+		}
+
+		private static String unboundName(Var var) {
+			return var == null || var.hasValue() ? null : var.getName();
+		}
+
+		private static boolean allAnchorValuesAreLiterals(BindingSetAssignment anchor, String bindingName) {
+			for (BindingSet bindingSet : anchor.getBindingSets()) {
+				if (!(bindingSet.getValue(bindingName) instanceof Literal)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 	}

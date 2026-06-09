@@ -355,12 +355,14 @@ public final class CascadesPlanner {
 					application.alternative());
 			telemetry.ruleFired(expression.groupId(), rule.id(), ruleProof);
 			if (application.kind() == RuleKind.TRANSFORMATION) {
-				memo.addLogicalAlternative(application.targetGroupId(), application.alternative());
+				memo.addLogicalAlternative(application.targetGroupId(), application.alternative(),
+						transformationProofs(expression, application, ruleProof));
 			} else {
 				Optional<MemoExpr> added = memo.addPhysicalAlternative(application.targetGroupId(),
 						application.alternative(), application.deliveredProperties(), application.metadata(),
 						application.kind(), application.localCost(),
-						application.proofs(), application.estimate(), application.opaque());
+						physicalProofs(expression, application, ruleProof), application.estimate(),
+						application.opaque());
 				addedOpaqueAlternative |= application.opaque();
 				if (optimizeBudgetedPhysical
 						&& added.isPresent() && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
@@ -371,6 +373,33 @@ public final class CascadesPlanner {
 		}
 		telemetry.ruleOutcome(expression, rule, goal, "applied", "applications=" + applications.size());
 		return addedOpaqueAlternative;
+	}
+
+	private List<RuleProof> transformationProofs(MemoExpr expression, RuleApplication application,
+			RuleProof ruleProof) {
+		List<RuleProof> proofs = new ArrayList<>();
+		if (expression != null && expression.proofs() != null) {
+			proofs.addAll(expression.proofs());
+		}
+		if (application != null && application.proofs() != null && !application.proofs().isEmpty()) {
+			proofs.addAll(application.proofs());
+		} else if (ruleProof != null) {
+			proofs.add(ruleProof);
+		}
+		return proofs;
+	}
+
+	private List<RuleProof> physicalProofs(MemoExpr expression, RuleApplication application, RuleProof ruleProof) {
+		List<RuleProof> proofs = new ArrayList<>();
+		if (application != null && application.proofs() != null && !application.proofs().isEmpty()) {
+			proofs.addAll(application.proofs());
+		} else if (ruleProof != null) {
+			proofs.add(ruleProof);
+		}
+		if (expression != null && expression.proofs() != null) {
+			proofs.addAll(expression.proofs());
+		}
+		return proofs;
 	}
 
 	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,

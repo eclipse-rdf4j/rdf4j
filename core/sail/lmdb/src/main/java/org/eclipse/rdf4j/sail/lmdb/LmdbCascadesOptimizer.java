@@ -19,18 +19,24 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -62,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -377,7 +384,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty()) {
 			return true;
 		}
-		return cascadesPlan.approximate() && hasEmergencyFallbackProvenance(cascadesPlan);
+		return cascadesPlan.approximate();
 	}
 
 	private double fallbackComparisonWork(CostVector cost) {
@@ -439,16 +446,123 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			}
 			CascadesPlan childPlan = planner.optimize(candidate.tupleExpr(), freshSubtreeGoal(goal,
 					candidate.boundVars(), candidate.tupleExpr().getBindingNames()));
-			if (childPlan.tupleExpr().isEmpty()) {
+			SubtreeReplacement subtreeReplacement = semanticFallbackRepair(candidate.tupleExpr(),
+					childPlan.tupleExpr().orElse(null));
+			TupleExpr replacement = subtreeReplacement.tupleExpr();
+			if (replacement == null) {
 				continue;
 			}
-			TupleExpr replacement = childPlan.tupleExpr().get();
 			annotateObjectGuarantees(replacement);
-			childPlan.provenance()
-					.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(replacement, provenance,
-							LmdbCascadesExplainFinalizer.PLANNER_ID));
+			if (!subtreeReplacement.semanticRepair()) {
+				childPlan.provenance()
+						.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(replacement, provenance,
+								LmdbCascadesExplainFinalizer.PLANNER_ID));
+			}
 			replaceRootIfSafe(candidate.tupleExpr(), replacement);
+			if (subtreeReplacement.semanticRepair()) {
+				optimizeSubtrees(replacement, planner, goal);
+				annotateSemanticFallbackRepair((Group) replacement);
+			}
 		}
+	}
+
+	private SubtreeReplacement semanticFallbackRepair(TupleExpr original, TupleExpr planned) {
+		if (!(original instanceof Group group)) {
+			return new SubtreeReplacement(planned, false);
+		}
+		Group alternative = LmdbCascadesRuleProvider.finiteFilterValuesDistinctAggregateAlternative(group);
+		if (alternative == null) {
+			alternative = LmdbCascadesRuleProvider.unusedOptionalDistinctAggregateAlternative(group);
+		}
+		if (alternative == null) {
+			return new SubtreeReplacement(planned, false);
+		}
+		clearCopiedPlannerMetrics(alternative);
+		annotateSemanticFallbackRepair(alternative);
+		return new SubtreeReplacement(alternative, true);
+	}
+
+	private void clearCopiedPlannerMetrics(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				clearCopiedPlannerMetrics(node);
+				node.visitChildren(this);
+			}
+		});
+	}
+
+	private void clearCopiedPlannerMetrics(QueryModelNode node) {
+		removePlannerStringMetrics(node.getStringMetricsPlanned());
+		removePlannerDoubleMetrics(node.getDoubleMetricsPlanned());
+		removePlannerLongMetrics(node.getLongMetricsPlanned());
+	}
+
+	private void removePlannerStringMetrics(Map<String, String> metrics) {
+		if (metrics.isEmpty()) {
+			return;
+		}
+		try {
+			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
+		} catch (UnsupportedOperationException ignored) {
+			// Immutable no-op nodes keep their copied metrics.
+		}
+	}
+
+	private void removePlannerDoubleMetrics(Map<String, Double> metrics) {
+		if (metrics.isEmpty()) {
+			return;
+		}
+		try {
+			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
+		} catch (UnsupportedOperationException ignored) {
+			// Immutable no-op nodes keep their copied metrics.
+		}
+	}
+
+	private void removePlannerLongMetrics(Map<String, Long> metrics) {
+		if (metrics.isEmpty()) {
+			return;
+		}
+		try {
+			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
+		} catch (UnsupportedOperationException ignored) {
+			// Immutable no-op nodes keep their copied metrics.
+		}
+	}
+
+	private static boolean copiedPlannerMetric(String metricName) {
+		return metricName != null
+				&& (metricName.startsWith("optimizer.cascades")
+						|| metricName.startsWith("optimizer.connected")
+						|| metricName.startsWith("optimizer.guarantee")
+						|| metricName.startsWith("optimizer.join")
+						|| metricName.startsWith("planned")
+						|| TelemetryMetricNames.PLANNER_ID.equals(metricName)
+						|| TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE.equals(metricName)
+						|| TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT.equals(metricName));
+	}
+
+	private void annotateSemanticFallbackRepair(Group group) {
+		String semanticRewrite = group.getStringMetricPlanned("optimizer.semanticRewrite");
+		boolean finiteFilterValues = semanticRewrite != null
+				&& semanticRewrite.contains("lmdb-finite-filter-values-distinct-rewrite");
+		String facts = finiteFilterValues
+				? "countDistinct|unusedOptionalRhs|duplicateInsensitive|finiteValuesAnchor"
+				: "countDistinct|unusedOptionalRhs|duplicateInsensitive";
+		String reason = finiteFilterValues
+				? "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS; "
+						+ "the finite RDF-term equality filter is equivalently exposed as a VALUES join anchor"
+				: "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS";
+		group.setStringMetricPlanned(CASCADES_RULE, "lmdb-remove-unused-optional");
+		group.setStringMetricPlanned("optimizer.cascadesRuleKind", RuleKind.TRANSFORMATION.name());
+		group.setStringMetricPlanned("optimizer.cascadesProofs",
+				"rule=lmdb-remove-unused-optional, kind=TRANSFORMATION, semanticScope=logical-bag, "
+						+ "facts=" + facts + ", reason=" + reason);
+		group.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
 	}
 
 	private OptimizationGoal freshSubtreeGoal(OptimizationGoal goal, Set<String> contextualBoundVars,
@@ -492,7 +606,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath) {
 			return true;
 		}
+		if (tupleExpr instanceof Group group) {
+			return duplicateInsensitiveAggregateGroup(group);
+		}
 		if (tupleExpr instanceof Filter filter) {
+			if (filter.getCondition() instanceof Exists) {
+				return false;
+			}
 			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
 		}
 		if (tupleExpr instanceof Difference) {
@@ -500,6 +620,59 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (tupleExpr instanceof Join join) {
 			return !containsJoinPlanningBarrier(tupleExpr) || scopedUnionDistributionOpportunity(join);
+		}
+		return false;
+	}
+
+	private static boolean duplicateInsensitiveAggregateGroup(Group group) {
+		return !duplicateInsensitiveAggregateVars(group).isEmpty();
+	}
+
+	private static boolean semanticRepairCandidate(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Group group)) {
+			return false;
+		}
+		Set<String> distinctVars = duplicateInsensitiveAggregateVars(group);
+		return !distinctVars.isEmpty() && hasRemovableUnusedOptional(group.getArg(), distinctVars);
+	}
+
+	private static Set<String> duplicateInsensitiveAggregateVars(Group group) {
+		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
+			return Set.of();
+		}
+		Set<String> vars = new LinkedHashSet<>();
+		for (GroupElem groupElement : group.getGroupElements()) {
+			AggregateOperator operator = groupElement.getOperator();
+			if (!(operator instanceof Count count) || !count.isDistinct()
+					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
+				return Set.of();
+			}
+			vars.add(var.getName());
+		}
+		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
+	}
+
+	private static boolean hasRemovableUnusedOptional(TupleExpr tupleExpr, Set<String> liveVars) {
+		if (tupleExpr instanceof Filter filter) {
+			Set<String> childLiveVars = new LinkedHashSet<>(liveVars);
+			childLiveVars.addAll(VarNameCollector.process(filter.getCondition()));
+			return hasRemovableUnusedOptional(filter.getArg(), childLiveVars);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin && !leftJoin.hasCondition()) {
+			Set<String> rightNames = new LinkedHashSet<>(leftJoin.getRightArg().getBindingNames());
+			rightNames.removeAll(leftJoin.getLeftArg().getBindingNames());
+			if (Collections.disjoint(rightNames, liveVars)) {
+				return true;
+			}
+			return hasRemovableUnusedOptional(leftJoin.getLeftArg(), liveVars)
+					|| hasRemovableUnusedOptional(leftJoin.getRightArg(), liveVars);
+		}
+		if (tupleExpr instanceof BinaryTupleOperator binary) {
+			return hasRemovableUnusedOptional(binary.getLeftArg(), liveVars)
+					|| hasRemovableUnusedOptional(binary.getRightArg(), liveVars);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return hasRemovableUnusedOptional(unary.getArg(), liveVars);
 		}
 		return false;
 	}
@@ -567,6 +740,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 	}
 
+	private record SubtreeReplacement(TupleExpr tupleExpr, boolean semanticRepair) {
+	}
+
 	private static final class ContextualSubtreeCandidateCollector
 			extends AbstractQueryModelVisitor<RuntimeException> {
 		private final TupleExpr root;
@@ -586,8 +762,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				node.visitChildren(this);
 				return;
 			}
+			if (tupleExpr != root && semanticRepairCandidate(tupleExpr)) {
+				candidates.add(new SubtreeCandidate(tupleExpr, contextualBoundVars(boundVars,
+						tupleExpr.getBindingNames())));
+				return;
+			}
 			if (tupleExpr != root && cascadesPlannedSubtree(tupleExpr)) {
-				if (hasEmergencyFallbackDescendant(tupleExpr)) {
+				if (hasEmergencyFallbackDescendant(tupleExpr) || hasSemanticRepairDescendant(tupleExpr)) {
 					visitTupleChildren(tupleExpr, node);
 				}
 				return;
@@ -829,6 +1010,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return finder.found;
 	}
 
+	private static boolean hasSemanticRepairDescendant(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return false;
+		}
+		SemanticRepairFinder finder = new SemanticRepairFinder();
+		tupleExpr.visitChildren(finder);
+		return finder.found;
+	}
+
 	private static boolean hasEmergencyFallbackProvenance(CascadesPlan plan) {
 		if (plan == null) {
 			return false;
@@ -890,6 +1080,22 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				return;
 			}
 			if (node instanceof TupleExpr tupleExpr && hasEmergencyFallbackMetric(tupleExpr)) {
+				found = true;
+				return;
+			}
+			node.visitChildren(this);
+		}
+	}
+
+	private static final class SemanticRepairFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private boolean found;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (found) {
+				return;
+			}
+			if (node instanceof TupleExpr tupleExpr && semanticRepairCandidate(tupleExpr)) {
 				found = true;
 				return;
 			}

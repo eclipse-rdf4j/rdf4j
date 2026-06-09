@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -56,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -73,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignment
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
@@ -446,6 +449,260 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbCascadesCostsUnusedOptionalRemovalForDistinctAggregate() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	@Test
+	void lmdbCascadesPresentsUnusedOptionalRemovalWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"lmdb-remove-unused-optional"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesPresentsFiniteFilterValuesRewriteWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  {
+				    ?entity a <http://example.com/theme/medical/Condition> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  UNION
+				  {
+				    ?entity a <http://example.com/theme/medical/Medication> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  FILTER ((?code = ?target) || (?code = "DX-202"))
+				  OPTIONAL {
+				    ?entity <http://example.com/theme/medical/code> ?alt .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "code"), diagnosticPlan);
+		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "type"), diagnosticPlan);
+		assertFalse(containsBindingSetAssignmentFor(tupleExpr, "target"), diagnosticPlan);
+		assertFalse(containsUnion(tupleExpr), diagnosticPlan);
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-finite-code-type-values-rewrite"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesPresentsExistsJoinForDistinctAggregateWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(containsExists(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-distinct-exists-join"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesRepairsUnusedOptionalAfterStandardFallback() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new FallbackJoinFactorStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"lmdb-remove-unused-optional"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesRepairsUnusedOptionalWithFullStandardAnnotations() {
+		String previousFullAnnotations = System.setProperty(
+				"rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations", "true");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new FallbackJoinFactorStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"lmdb-remove-unused-optional"), diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations", previousFullAnnotations);
+		}
+	}
+
+	@Test
+	void lmdbCascadesCostsFiniteCodeTypeRewriteForDistinctAggregateUnion() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  {
+				    ?entity a <http://example.com/theme/medical/Condition> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  UNION
+				  {
+				    ?entity a <http://example.com/theme/medical/Medication> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  FILTER ((?code = ?target) || (?code = "DX-202"))
+				  OPTIONAL {
+				    ?entity <http://example.com/theme/medical/code> ?alt .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertTrue(containsBindingSetAssignmentFor(tupleExpr, "code"), diagnosticPlan);
+			assertTrue(containsBindingSetAssignmentFor(tupleExpr, "type"), diagnosticPlan);
+			assertFalse(containsBindingSetAssignmentFor(tupleExpr, "target"), diagnosticPlan);
+			assertFalse(containsUnion(tupleExpr), diagnosticPlan);
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	@Test
 	void lmdbSketchPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -616,6 +873,73 @@ class LmdbOptimizerPipelineTest {
 			}
 		});
 		return found[0];
+	}
+
+	private static boolean containsUnion(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Union node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsExists(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Exists node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsPlannedStringMetric(QueryModelNode queryModelNode, String metricName,
+			String expectedFragment) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				String metricValue = node.getStringMetricPlanned(metricName);
+				if (metricValue != null && metricValue.contains(expectedFragment)) {
+					found[0] = true;
+					return;
+				}
+				super.meetNode(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static String diagnosticPlan(TupleExpr tupleExpr) {
+		return "traceJson=" + tupleExpr.getStringMetricPlanned("optimizer.cascadesTraceJson")
+				+ "\nmetrics=" + plannedMetricSummary(tupleExpr)
+				+ "\n" + tupleExpr;
+	}
+
+	private static String plannedMetricSummary(TupleExpr tupleExpr) {
+		List<String> metrics = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				String rule = node.getStringMetricPlanned("optimizer.cascadesRule");
+				String proofs = node.getStringMetricPlanned("optimizer.cascadesProofs");
+				String rewrite = node.getStringMetricPlanned("optimizer.semanticRewrite");
+				if (rule != null || proofs != null || rewrite != null) {
+					metrics.add(node.getSignature() + "{rule=" + rule + ", proofs=" + proofs
+							+ ", semanticRewrite=" + rewrite + "}");
+				}
+				super.meetNode(node);
+			}
+		});
+		return metrics.toString();
 	}
 
 	private static StatementPattern firstStatementPattern(IRI predicate) {
@@ -886,6 +1210,15 @@ class LmdbOptimizerPipelineTest {
 		@Override
 		public FilterPassEstimate estimateFilterPass(Filter filter) {
 			return new FilterPassEstimate(passRatio, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		}
+	}
+
+	private static final class FallbackJoinFactorStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
 		}
 	}
 
