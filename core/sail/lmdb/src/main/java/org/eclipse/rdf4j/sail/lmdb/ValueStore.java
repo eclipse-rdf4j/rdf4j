@@ -1417,10 +1417,6 @@ class ValueStore extends AbstractValueFactory {
 				} else {
 					// not inlined or ID not cached, search in index
 					byte[] data = value2data(value, create);
-					if (data == null && value instanceof Literal) {
-						data = literal2legacy((Literal) value);
-					}
-
 					if (data != null) {
 						id = findId(data, create);
 					}
@@ -2038,20 +2034,12 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] literal2data(Literal literal, boolean create) throws IOException {
-		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getDatatype(), create);
+		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getBaseDirection(),
+				literal.getDatatype(), create);
 	}
 
-	private byte[] literal2legacy(Literal literal) throws IOException {
-		IRI dt = literal.getDatatype();
-		if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(dt)
-				|| org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(dt)) {
-			return literal2data(literal.getLabel(), literal.getLanguage(), null, false);
-		}
-		return literal2data(literal.getLabel(), literal.getLanguage(), dt, false);
-	}
-
-	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
-			throws IOException {
+	private byte[] literal2data(String label, Optional<String> lang, Literal.BaseDirection baseDirection, IRI dt,
+			boolean create) throws IOException {
 		// Get datatype ID
 		long datatypeID = 0L;
 
@@ -2072,6 +2060,16 @@ class ValueStore extends AbstractValueFactory {
 			langDataLength = langData.length;
 		}
 
+		// Get base direction byte
+		int directionValue = 0;
+		if (baseDirection != null) {
+			directionValue = switch (baseDirection) {
+			case LTR -> 1;
+			case RTL -> 2;
+			default -> 0;
+			};
+		}
+
 		// Get label in UTF-8
 		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
 
@@ -2081,7 +2079,9 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer bb = ByteBuffer.wrap(literalData);
 		bb.put(LITERAL_VALUE);
 		Varint.writeUnsigned(bb, datatypeID);
-		bb.put((byte) langDataLength);
+
+		int directionAndLangLength = directionValue << 6 | langDataLength;
+		bb.put((byte) directionAndLangLength);
 		if (langData != null) {
 			bb.put(langData);
 		}
@@ -2138,12 +2138,21 @@ class ValueStore extends AbstractValueFactory {
 			datatype = (IRI) getValue(datatypeID);
 		}
 
+		int directionAndLangLength = bb.get() & 0xFF;
+		int langLength = directionAndLangLength & 0x3F;
+
 		// Get language tag
 		String lang = null;
-		int langLength = bb.get() & 0xFF;
 		if (langLength > 0) {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
+
+		int directionValue = directionAndLangLength >> 6;
+		Literal.BaseDirection baseDirection = switch (directionValue) {
+		case 1 -> Literal.BaseDirection.LTR;
+		case 2 -> Literal.BaseDirection.RTL;
+		default -> Literal.BaseDirection.NONE;
+		};
 
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
@@ -2151,7 +2160,7 @@ class ValueStore extends AbstractValueFactory {
 
 		if (value == null) {
 			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, id);
+				return new LmdbLiteral(revision, label, lang, baseDirection, id);
 			} else if (datatype != null) {
 				return new LmdbLiteral(revision, label, datatype, id);
 			} else {
@@ -2161,7 +2170,12 @@ class ValueStore extends AbstractValueFactory {
 			value.setLabel(label);
 			if (lang != null) {
 				value.setLanguage(lang);
-				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+				value.setBaseDirection(baseDirection);
+				if (baseDirection != Literal.BaseDirection.NONE) {
+					value.setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+				} else {
+					value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+				}
 			} else if (datatype != null) {
 				value.setDatatype(datatype);
 			} else {
