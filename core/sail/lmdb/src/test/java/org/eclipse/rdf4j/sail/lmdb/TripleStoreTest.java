@@ -502,18 +502,18 @@ public class TripleStoreTest {
 
 	@Test
 	public void testShouldKeepCurrentOrderWhenSortingAlignedBatches() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("shouldResetToMainIndexOrder", char[].class, char[].class,
-				char[].class);
-		method.setAccessible(true);
-
 		assertFalse("SPOC -> PSOC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "psoc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "spoc".toCharArray(),
+						"psoc".toCharArray()));
 		assertFalse("SPOC -> OSPC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "ospc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "spoc".toCharArray(),
+						"ospc".toCharArray()));
 		assertFalse("PSOC -> OPSC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "opsc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "psoc".toCharArray(),
+						"opsc".toCharArray()));
 		assertTrue("PSOC -> OSPC should reset to SPOC first",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "ospc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "psoc".toCharArray(),
+						"ospc".toCharArray()));
 	}
 
 	@Test
