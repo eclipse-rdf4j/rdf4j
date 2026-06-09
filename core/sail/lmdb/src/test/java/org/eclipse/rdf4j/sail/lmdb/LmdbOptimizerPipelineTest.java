@@ -517,6 +517,42 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbCascadesRemovesGroupedPositiveHavingUnusedOptionalWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
+				  VALUES ?date {
+				    "2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>
+				    "2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
+				  }
+				  ?enc <http://example.com/theme/medical/recordedOn> ?date .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  }
+				}
+				GROUP BY ?practitioner
+				HAVING (COUNT(?enc) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("hasCondition"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-remove-unused-optional"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
 	void lmdbCascadesPresentsFiniteFilterValuesRewriteWithFallbackPolicy() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -921,6 +957,20 @@ class LmdbOptimizerPipelineTest {
 		return "traceJson=" + tupleExpr.getStringMetricPlanned("optimizer.cascadesTraceJson")
 				+ "\nmetrics=" + plannedMetricSummary(tupleExpr)
 				+ "\n" + tupleExpr;
+	}
+
+	private static void repairParentReferences(TupleExpr tupleExpr) {
+		tupleExpr.setParentNode(null);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				for (QueryModelNode child : node.getChildren()) {
+					child.setParentNode(node);
+				}
+				super.meetNode(node);
+			}
+		});
 	}
 
 	private static String plannedMetricSummary(TupleExpr tupleExpr) {
