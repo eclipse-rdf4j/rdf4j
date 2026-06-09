@@ -127,7 +127,7 @@ public final class StandardCascadesRules {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Join join = (Join) expression.tupleExpr();
-			List<RuleApplication> applications = new ArrayList<>(2);
+			List<RuleApplication> applications = new ArrayList<>(4);
 			RuleProof proof = proof(semanticScope(goal), Set.of("innerJoin", "associative", "scopeSafe"),
 					"inner joins can be reassociated as costed alternatives");
 			if (join.getLeftArg()instanceof Join leftJoin && !barrier(leftJoin)) {
@@ -509,6 +509,11 @@ public final class StandardCascadesRules {
 			RuleProof nestedScopedFiniteProof = proof(semanticScope(goal),
 					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedFiniteBindingsDisjointFromBranchBinds"),
 					"nested finite bindings distribute into a scope-changing UNION while residual joins remain outside");
+			RuleProof nestedScopedConnectedFiniteProof = proof(semanticScope(goal),
+					Set.of("innerJoin", "bagUnion", "scopePreserved",
+							"connectedFiniteGuardDisjointFromBranchBinds"),
+					"connected finite guard prefixes distribute into a scope-changing UNION while residual joins "
+							+ "remain outside");
 			RuleProof nestedScopedSharedProof = proof(semanticScope(goal),
 					Set.of("innerJoin", "bagUnion", "scopePreserved", "nestedSharedPrefixDisjointFromBranchBinds"),
 					"nested shared prefixes distribute into a scope-changing UNION while residual joins remain outside");
@@ -526,6 +531,12 @@ public final class StandardCascadesRules {
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
+						TupleExpr connectedAlternative = nestedConnectedFiniteGuardScopedUnionAlternative(union,
+								join.getRightArg(), false, universe);
+						if (connectedAlternative != null) {
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									connectedAlternative, nestedScopedConnectedFiniteProof));
+						}
 					} else {
 						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
 								join.getRightArg(), false, universe);
@@ -565,6 +576,12 @@ public final class StandardCascadesRules {
 					if (alternative != null) {
 						applications.add(RuleApplication.transformation(expression.groupId(), alternative,
 								nestedScopedFiniteProof));
+						TupleExpr connectedAlternative = nestedConnectedFiniteGuardScopedUnionAlternative(union,
+								join.getLeftArg(), true, universe);
+						if (connectedAlternative != null) {
+							applications.add(RuleApplication.transformation(expression.groupId(),
+									connectedAlternative, nestedScopedConnectedFiniteProof));
+						}
 					} else {
 						TupleExpr nestedSharedAlternative = nestedSharedScopedUnionAlternative(union,
 								join.getLeftArg(), true, universe);
@@ -1091,6 +1108,117 @@ public final class StandardCascadesRules {
 	private static ExtractedScopedUnionPrefix extractSharedPrefixForScopedUnion(TupleExpr tupleExpr, Union union,
 			boolean allowWholeExpression) {
 		return extractSharedPrefixForScopedUnion(tupleExpr, union, allowWholeExpression, null);
+	}
+
+	private static TupleExpr nestedConnectedFiniteGuardScopedUnionAlternative(Union union, TupleExpr pushedSide,
+			boolean pushedSideIsLeft, BindingUniverse universe) {
+		ExtractedScopedUnionPrefix extracted = extractConnectedFiniteGuardPrefixForScopedUnion(pushedSide, union,
+				universe);
+		if (extracted == null) {
+			return null;
+		}
+		TupleExpr prefix = extracted.prefix;
+		Union distributed = pushedSideIsLeft
+				? unionLike(union, new Join(prefix.clone(), union.getLeftArg().clone()),
+						new Join(prefix.clone(), union.getRightArg().clone()))
+				: unionLike(union, new Join(union.getLeftArg().clone(), prefix.clone()),
+						new Join(union.getRightArg().clone(), prefix.clone()));
+		return pushedSideIsLeft
+				? joinOrSingle(extracted.residual, distributed)
+				: joinOrSingle(distributed, extracted.residual);
+	}
+
+	private static ExtractedScopedUnionPrefix extractConnectedFiniteGuardPrefixForScopedUnion(TupleExpr tupleExpr,
+			Union union, BindingUniverse universe) {
+		if (tupleExpr == null || union == null || !union.isVariableScopeChange() || barrier(tupleExpr)) {
+			return null;
+		}
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(tupleExpr, factors);
+		if (factors.size() < 2) {
+			return null;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask unionNames = CascadesRewriteSupport.mask(safeUniverse, union.getBindingNames());
+		BindingMask branchLocalNames = CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getLeftArg(),
+				safeUniverse)
+				.union(CascadesRewriteSupport.branchLocalBindOrValuesMask(union.getRightArg(), safeUniverse));
+		boolean[] selected = new boolean[factors.size()];
+		BindingMask selectedNames = BindingMask.EMPTY;
+		boolean selectedFinite = false;
+		boolean selectedNonFinite = false;
+		for (int i = 0; i < factors.size(); i++) {
+			TupleExpr factor = factors.get(i);
+			BindingMask factorNames = CascadesRewriteSupport.mask(safeUniverse, factor.getBindingNames());
+			if (factor instanceof BindingSetAssignment
+					&& factorNames.intersects(unionNames)
+					&& !factorNames.intersects(branchLocalNames)) {
+				selected[i] = true;
+				selectedNames = selectedNames.union(factorNames);
+				selectedFinite = true;
+			}
+		}
+		if (!selectedFinite || selectedNames.isEmpty()) {
+			return null;
+		}
+		boolean changed;
+		do {
+			changed = false;
+			for (int i = 0; i < factors.size(); i++) {
+				if (selected[i]) {
+					continue;
+				}
+				TupleExpr factor = factors.get(i);
+				BindingMask factorNames = CascadesRewriteSupport.mask(safeUniverse, factor.getBindingNames());
+				if (factorNames.isEmpty()
+						|| factorNames.intersects(branchLocalNames)
+						|| !factorNames.intersects(selectedNames)) {
+					continue;
+				}
+				selected[i] = true;
+				selectedNames = selectedNames.union(factorNames);
+				selectedNonFinite |= !(factor instanceof BindingSetAssignment);
+				changed = true;
+			}
+		} while (changed);
+		for (int i = 0; i < factors.size(); i++) {
+			selectedNonFinite |= selected[i] && !(factors.get(i) instanceof BindingSetAssignment);
+		}
+		if (!selectedNonFinite || !selectedNames.intersects(unionNames)) {
+			return null;
+		}
+		List<TupleExpr> prefixFactors = new ArrayList<>();
+		List<TupleExpr> residualFactors = new ArrayList<>();
+		for (int i = 0; i < factors.size(); i++) {
+			TupleExpr factor = factors.get(i).clone();
+			if (selected[i]) {
+				prefixFactors.add(factor);
+			} else {
+				residualFactors.add(factor);
+			}
+		}
+		TupleExpr prefix = joinFactors(prefixFactors);
+		if (prefix == null || prefix instanceof BindingSetAssignment) {
+			return null;
+		}
+		return new ExtractedScopedUnionPrefix(prefix, joinFactors(residualFactors));
+	}
+
+	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join join && !barrier(join)) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+		} else if (tupleExpr != null) {
+			factors.add(tupleExpr);
+		}
+	}
+
+	private static TupleExpr joinFactors(List<TupleExpr> factors) {
+		TupleExpr result = null;
+		for (TupleExpr factor : factors) {
+			result = result == null ? factor : new Join(result, factor);
+		}
+		return result;
 	}
 
 	private static ExtractedScopedUnionPrefix extractSharedPrefixForScopedUnion(TupleExpr tupleExpr, Union union,

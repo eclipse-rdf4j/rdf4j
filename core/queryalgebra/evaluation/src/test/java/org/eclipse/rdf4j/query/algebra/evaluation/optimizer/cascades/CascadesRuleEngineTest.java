@@ -943,6 +943,30 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void joinUnionDistributionPushesConnectedFiniteGuardPrefixIntoScopedUnion() {
+		BindingSetAssignment users = values("u");
+		TupleExpr nameGuard = new Join(values("optName"), pattern("u", "name", "optName"));
+		TupleExpr left = new Join(users, nameGuard);
+		Union scopedUnion = new Union(
+				new Extension(new Join(pattern("u", "follows", "v"), pattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(pattern("post", "authored", "u"), new ExtensionElem(new Var("post"), "activity")));
+		scopedUnion.setVariableScopeChange(true);
+		Join join = new Join(left, scopedUnion);
+
+		Optional<Union> maybeDistributed = apply(new StandardCascadesRules.JoinUnionDistributionRule(), join).stream()
+				.map(RuleApplication::alternative)
+				.map(CascadesRuleEngineTest::findScopedUnion)
+				.flatMap(Optional::stream)
+				.filter(union -> containsConnectedFiniteNameGuard(union.getLeftArg())
+						&& containsConnectedFiniteNameGuard(union.getRightArg()))
+				.findFirst();
+
+		assertTrue(maybeDistributed.isPresent(),
+				"Expected connected finite name guard prefix to distribute into both scoped UNION branches");
+	}
+
+	@Test
 	void joinUnionDistributionPushesNestedSharedPrefixIntoScopedUnion() {
 		TupleExpr sharedPrefix = new Join(pattern("work", "about", "topic"),
 				pattern("topic", "mainEntityOfPage", "page"));
@@ -1792,6 +1816,12 @@ class CascadesRuleEngineTest {
 					|| containsBindingSetAssignment(union.getRightArg(), bindingName);
 		}
 		return false;
+	}
+
+	private static boolean containsConnectedFiniteNameGuard(TupleExpr tupleExpr) {
+		return containsBindingSetAssignment(tupleExpr, "u")
+				&& containsBindingSetAssignment(tupleExpr, "optName")
+				&& containsStatementPattern(tupleExpr, "u", "name", "optName");
 	}
 
 	private record TestImplementationRule(String id, double rows) implements CascadesRule {

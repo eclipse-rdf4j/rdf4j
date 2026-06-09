@@ -601,7 +601,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsUnionIndependentFiniteSuffixAfterScopedUnion() {
+	void duplicatesConnectedFiniteSuffixBeforeScopedUnionBranches() {
 		BindingSetAssignment users = values("u", "user7", "user8");
 		BindingSetAssignment names = values("optName", "user7", "user8");
 		StatementPattern nameLookup = statementPattern("u", "name", "optName");
@@ -615,16 +615,41 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
-		List<TupleExpr> args = joinArgs(root.getArg());
-		assertEquals(3, args.size());
-		Union distributedUnion = assertInstanceOf(Union.class, args.getFirst());
+		Union distributedUnion = assertInstanceOf(Union.class, root.getArg());
 		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
 		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
-		assertFalse(containsBindingSetAssignment(distributedUnion, "optName"));
-		assertFalse(statementPatterns(distributedUnion).stream()
-				.anyMatch(pattern -> "optName".equals(pattern.getObjectVar().getName())));
-		assertTrue(containsBindingSetAssignment(args.get(1), "optName"));
-		assertEquals("optName", assertInstanceOf(StatementPattern.class, args.get(2)).getObjectVar().getName());
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "optName"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "optName"));
+		assertTrue(containsNameLookup(distributedUnion.getLeftArg()));
+		assertTrue(containsNameLookup(distributedUnion.getRightArg()));
+	}
+
+	@Test
+	void rewrittenOptionalNameAnchorDistributesConnectedGuardIntoScopedUnionBranches() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		Union union = new Union(
+				new Extension(new Join(statementPattern("u", "follows", "v"), statementPattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(statementPattern("post", "authored", "u"), new ExtensionElem(new Var("post"),
+						"activity")));
+		union.setVariableScopeChange(true);
+		StatementPattern optionalName = statementPattern("u", "name", "optName");
+		ListMemberOperator nameFilter = new ListMemberOperator();
+		nameFilter.addArgument(new Var("optName"));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user7")));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user8")));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(users, union), optionalName), nameFilter));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributedUnion = assertInstanceOf(Union.class, root.getArg());
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "optName"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "optName"));
+		assertTrue(containsNameLookup(distributedUnion.getLeftArg()));
+		assertTrue(containsNameLookup(distributedUnion.getRightArg()));
 	}
 
 	@Test
@@ -910,6 +935,13 @@ class LmdbSketchJoinOptimizerTest {
 			collectStatementPatterns(join.getLeftArg(), patterns);
 			collectStatementPatterns(join.getRightArg(), patterns);
 		}
+	}
+
+	private static boolean containsNameLookup(TupleExpr tupleExpr) {
+		return statementPatterns(tupleExpr).stream()
+				.anyMatch(pattern -> "u".equals(pattern.getSubjectVar().getName())
+						&& "name".equals(pattern.getPredicateVar().getName())
+						&& "optName".equals(pattern.getObjectVar().getName()));
 	}
 
 	private static boolean containsFilter(TupleExpr tupleExpr) {

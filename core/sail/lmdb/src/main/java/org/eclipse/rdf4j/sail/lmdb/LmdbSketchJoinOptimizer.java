@@ -3988,6 +3988,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					return false;
 				}
 				Set<String> factorBindings = plannerBindingNames(factor.getBindingNames());
+				Set<String> finiteBoundUnionKeys = new HashSet<>(factorBindings);
+				finiteBoundUnionKeys.retainAll(unionBindings);
+				finiteBoundUnionKeys.retainAll(prefixBindings);
+				if (!finiteBoundUnionKeys.isEmpty()) {
+					return false;
+				}
 				Set<String> introducedBindings = new HashSet<>(factorBindings);
 				introducedBindings.removeAll(availableBindings);
 				if (!Collections.disjoint(introducedBindings, unionBindings)) {

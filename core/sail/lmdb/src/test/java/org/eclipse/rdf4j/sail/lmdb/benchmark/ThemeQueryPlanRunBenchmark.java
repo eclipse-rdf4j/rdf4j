@@ -91,6 +91,9 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String QUERY_VARIANT_FILTER_IN = "filter-in";
 	private static final String QUERY_VARIANT_TYPE_ANTI_VALUES_CODE = "type-anti-values-code";
 	private static final String QUERY_VARIANT_VALUES_CODE_ANTI_TYPE = "values-code-anti-type";
+	private static final String QUERY_VARIANT_SOCIAL_Q5_NAME_BEFORE_UNION = "social-q5-name-before-union";
+	private static final String QUERY_VARIANT_SOCIAL_Q5_BRANCH_LOCAL_NAME = "social-q5-branch-local-name";
+	private static final String QUERY_VARIANT_SOCIAL_Q5_FILTER_EXISTS_NAME = "social-q5-filter-exists-name";
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
@@ -160,8 +163,7 @@ public class ThemeQueryPlanRunBenchmark {
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			theme = Theme.valueOf(themeName);
-//			query = queryForVariant(theme, z_queryIndex, queryVariant);
-			 query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			query = queryForVariant(theme, z_queryIndex, queryVariant);
 			expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
@@ -562,6 +564,17 @@ public class ThemeQueryPlanRunBenchmark {
 					return medicalQ7ValuesCodeAntiTypeQuery();
 				}
 			}
+			if (theme == Theme.SOCIAL_MEDIA && queryIndex == 5) {
+				if (QUERY_VARIANT_SOCIAL_Q5_NAME_BEFORE_UNION.equals(variant)) {
+					return socialQ5NameBeforeUnionQuery();
+				}
+				if (QUERY_VARIANT_SOCIAL_Q5_BRANCH_LOCAL_NAME.equals(variant)) {
+					return socialQ5BranchLocalNameQuery();
+				}
+				if (QUERY_VARIANT_SOCIAL_Q5_FILTER_EXISTS_NAME.equals(variant)) {
+					return socialQ5FilterExistsNameQuery();
+				}
+			}
 			throw new IllegalArgumentException("Unsupported ThemeQueryPlanRunBenchmark queryVariant=" + queryVariant
 					+ " for " + theme + " q" + queryIndex);
 		}
@@ -587,6 +600,15 @@ public class ThemeQueryPlanRunBenchmark {
 			if ("values-code-not-exists-type".equals(normalized)
 					|| "medical-q7-values-code-anti-type".equals(normalized)) {
 				return QUERY_VARIANT_VALUES_CODE_ANTI_TYPE;
+			}
+			if ("q5-name-before-union".equals(normalized)) {
+				return QUERY_VARIANT_SOCIAL_Q5_NAME_BEFORE_UNION;
+			}
+			if ("q5-branch-local-name".equals(normalized)) {
+				return QUERY_VARIANT_SOCIAL_Q5_BRANCH_LOCAL_NAME;
+			}
+			if ("q5-filter-exists-name".equals(normalized) || "q5-exists-name".equals(normalized)) {
+				return QUERY_VARIANT_SOCIAL_Q5_FILTER_EXISTS_NAME;
 			}
 			return normalized;
 		}
@@ -681,6 +703,93 @@ public class ThemeQueryPlanRunBenchmark {
 					"  ?med a med:Medication .",
 					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
 					"}");
+		}
+
+		private static String socialQ5NameBeforeUnionQuery() {
+			return String.join("\n",
+					"PREFIX social: <http://example.com/theme/social/>",
+					"",
+					"SELECT (COUNT(DISTINCT ?activity) AS ?count) WHERE {",
+					socialQ5UserValues(),
+					socialQ5NameValues(),
+					"  ?u social:name ?optName .",
+					"  {",
+					"    ?u social:follows ?v .",
+					"    ?v social:follows ?u .",
+					"    BIND(?v AS ?activity)",
+					"  }",
+					"  UNION",
+					"  {",
+					"    ?post social:authored ?u .",
+					"    BIND(?post AS ?activity)",
+					"  }",
+					"}");
+		}
+
+		private static String socialQ5BranchLocalNameQuery() {
+			return String.join("\n",
+					"PREFIX social: <http://example.com/theme/social/>",
+					"",
+					"SELECT (COUNT(DISTINCT ?activity) AS ?count) WHERE {",
+					"  {",
+					indent(socialQ5UserValues(), "  "),
+					indent(socialQ5NameValues(), "  "),
+					"    ?u social:name ?optName .",
+					"    ?u social:follows ?v .",
+					"    ?v social:follows ?u .",
+					"    BIND(?v AS ?activity)",
+					"  }",
+					"  UNION",
+					"  {",
+					indent(socialQ5UserValues(), "  "),
+					indent(socialQ5NameValues(), "  "),
+					"    ?u social:name ?optName .",
+					"    ?post social:authored ?u .",
+					"    BIND(?post AS ?activity)",
+					"  }",
+					"}");
+		}
+
+		private static String socialQ5FilterExistsNameQuery() {
+			return String.join("\n",
+					"PREFIX social: <http://example.com/theme/social/>",
+					"",
+					"SELECT (COUNT(DISTINCT ?activity) AS ?count) WHERE {",
+					socialQ5UserValues(),
+					"  FILTER EXISTS {",
+					"    ?u social:name ?optName .",
+					"    FILTER(?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))",
+					"  }",
+					"  {",
+					"    ?u social:follows ?v .",
+					"    ?v social:follows ?u .",
+					"    BIND(?v AS ?activity)",
+					"  }",
+					"  UNION",
+					"  {",
+					"    ?post social:authored ?u .",
+					"    BIND(?post AS ?activity)",
+					"  }",
+					"}");
+		}
+
+		private static String socialQ5UserValues() {
+			return String.join("\n",
+					"  VALUES ?u { <http://example.com/theme/social/user/7>",
+					"              <http://example.com/theme/social/user/8>",
+					"              <http://example.com/theme/social/user/9>",
+					"              <http://example.com/theme/social/user/10>",
+					"              <http://example.com/theme/social/user/11> }");
+		}
+
+		private static String socialQ5NameValues() {
+			return "  VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }";
+		}
+
+		private static String indent(String text, String prefix) {
+			return text.lines()
+					.map(line -> prefix + line)
+					.collect(java.util.stream.Collectors.joining("\n"));
 		}
 	}
 

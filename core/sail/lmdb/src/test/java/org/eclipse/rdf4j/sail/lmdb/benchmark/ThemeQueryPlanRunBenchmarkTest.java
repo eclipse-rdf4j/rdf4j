@@ -125,6 +125,26 @@ class ThemeQueryPlanRunBenchmarkTest {
 		assertOrder(codeAntiBeforeType, "FILTER NOT EXISTS", "?med a med:Medication", "FILTER EXISTS");
 	}
 
+	@Test
+	void socialQ5VariantsRenderCandidateOrders() throws Exception {
+		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("queryForVariant", Theme.class,
+				int.class, String.class);
+		method.setAccessible(true);
+
+		String nameBeforeUnion = (String) method.invoke(null, Theme.SOCIAL_MEDIA, 5,
+				"social-q5-name-before-union");
+		String branchLocalName = (String) method.invoke(null, Theme.SOCIAL_MEDIA, 5,
+				"social-q5-branch-local-name");
+		String existsName = (String) method.invoke(null, Theme.SOCIAL_MEDIA, 5,
+				"social-q5-filter-exists-name");
+
+		assertOrder(nameBeforeUnion, "VALUES ?u", "VALUES ?optName", "?u social:name ?optName");
+		assertOrder(nameBeforeUnion, "?u social:name ?optName", "?u social:follows ?v", "?post social:authored ?u");
+		assertOrder(branchLocalName, "VALUES ?u", "?u social:name ?optName", "?u social:follows ?v");
+		assertOrder(branchLocalName, "VALUES ?u", "?u social:name ?optName", "?post social:authored ?u");
+		assertOrder(existsName, "VALUES ?u", "FILTER EXISTS", "?u social:follows ?v");
+	}
+
 	private static void setTheme(ThemeQueryPlanRunBenchmark.BaseState state, Theme theme)
 			throws ReflectiveOperationException {
 		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredField("theme");
