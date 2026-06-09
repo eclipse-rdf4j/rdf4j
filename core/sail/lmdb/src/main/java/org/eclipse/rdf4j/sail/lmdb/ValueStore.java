@@ -240,6 +240,8 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
+	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
+
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this(dir, new StoreProperties(dir), config);
 	}
@@ -902,15 +904,14 @@ class ValueStore extends AbstractValueFactory {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
-
 				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
 
 				var lockManager = txnManager.lockManager();
-				long stamp = lockManager.tryWriteLock();
-				boolean readLocked = stamp == 0L;
+				boolean readLocked = hasReadLock.get() != null;
 				if (readLocked) {
 					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 				}
+				long stamp;
 				try {
 					stamp = lockManager.writeLock();
 				} catch (InterruptedException e) {
@@ -1291,6 +1292,10 @@ class ValueStore extends AbstractValueFactory {
 		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txnManager.getReadTxn());
 	}
 
+	TxnManager getTxnManager() {
+		return txnManager;
+	}
+
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			return LmdbUtil.readTransaction(env, writeTxn, transaction);
@@ -1299,11 +1304,13 @@ class ValueStore extends AbstractValueFactory {
 			try {
 				var lockManager = txnManager.lockManager();
 				long stamp = lockManager.readLock();
+				hasReadLock.set(Boolean.TRUE);
 				try {
 					try (MemoryStack stack = stackPush()) {
 						return transaction.exec(stack, txnManager.getReadTxn().get());
 					}
 				} finally {
+					hasReadLock.remove();
 					lockManager.unlockRead(stamp);
 				}
 			} catch (InterruptedException e) {
@@ -1811,22 +1818,23 @@ class ValueStore extends AbstractValueFactory {
 			writeTxn = 0;
 			writeTxnOwner = null;
 			invalidateRevisionOnCommit = false;
-			long stamp;
-			try {
-				stamp = txnManager.lockManager().writeLock();
-			} catch (InterruptedException e) {
-				throw new IOException(e);
-			}
-			try {
-				txnManager.reset();
-			} finally {
-				txnManager.lockManager().unlockWrite(stamp);
-			}
 		}
 	}
 
 	public void commit() throws IOException {
 		endTransaction(true, false);
+		var lockManager = txnManager.lockManager();
+		long stamp = 0;
+		try {
+			stamp = lockManager.writeLock();
+			txnManager.reset();
+		} catch (InterruptedException e) {
+			throw new IOException(e);
+		} finally {
+			if (stamp != 0) {
+				lockManager.unlockWrite(stamp);
+			}
+		}
 	}
 
 	public void rollback() throws IOException {
