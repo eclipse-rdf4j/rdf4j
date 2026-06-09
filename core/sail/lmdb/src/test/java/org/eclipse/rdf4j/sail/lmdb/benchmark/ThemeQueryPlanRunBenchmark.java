@@ -90,6 +90,7 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String QUERY_VARIANT_VALUES_CODE_TYPE = "values-code-type";
 	private static final String QUERY_VARIANT_FILTER_IN = "filter-in";
 	private static final String QUERY_VARIANT_TYPE_ANTI_VALUES_CODE = "type-anti-values-code";
+	private static final String QUERY_VARIANT_VALUES_CODE_ANTI_TYPE = "values-code-anti-type";
 
 	@Benchmark
 	public int planQuery(PlanningState state) {
@@ -109,25 +110,25 @@ public class ThemeQueryPlanRunBenchmark {
 	public static class BaseState {
 
 		@Param({
-//				"0",
-//				"1",
-//				"2",
-//				"3",
-//				"4",
-//				"5",
-//				"6",
+				"0",
+				"1",
+				"2",
+				"3",
+				"4",
+				"5",
+				"6",
 				"7",
-//				"8",
-//				"9",
-//				"10",
+				"8",
+				"9",
+				"10",
 //			"11",
 //			"12"
 		})
 		public int z_queryIndex;
 
 		@Param({
-				"MEDICAL_RECORDS",
-//				"SOCIAL_MEDIA",
+//				"MEDICAL_RECORDS",
+				"SOCIAL_MEDIA",
 //				"LIBRARY",
 //				"ENGINEERING",
 //				"HIGHLY_CONNECTED",
@@ -159,8 +160,8 @@ public class ThemeQueryPlanRunBenchmark {
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			theme = Theme.valueOf(themeName);
-			query = queryForVariant(theme, z_queryIndex, queryVariant);
-			// query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+//			query = queryForVariant(theme, z_queryIndex, queryVariant);
+			 query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 			expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
@@ -557,6 +558,9 @@ public class ThemeQueryPlanRunBenchmark {
 				if (QUERY_VARIANT_TYPE_ANTI_VALUES_CODE.equals(variant)) {
 					return medicalQ7TypeAntiValuesCodeQuery();
 				}
+				if (QUERY_VARIANT_VALUES_CODE_ANTI_TYPE.equals(variant)) {
+					return medicalQ7ValuesCodeAntiTypeQuery();
+				}
 			}
 			throw new IllegalArgumentException("Unsupported ThemeQueryPlanRunBenchmark queryVariant=" + queryVariant
 					+ " for " + theme + " q" + queryIndex);
@@ -579,6 +583,10 @@ public class ThemeQueryPlanRunBenchmark {
 			if ("type-not-exists-values-code".equals(normalized)
 					|| "medical-q7-type-anti-values-code".equals(normalized)) {
 				return QUERY_VARIANT_TYPE_ANTI_VALUES_CODE;
+			}
+			if ("values-code-not-exists-type".equals(normalized)
+					|| "medical-q7-values-code-anti-type".equals(normalized)) {
+				return QUERY_VARIANT_VALUES_CODE_ANTI_TYPE;
 			}
 			return normalized;
 		}
@@ -653,6 +661,24 @@ public class ThemeQueryPlanRunBenchmark {
 					"  }",
 					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
 					"  ?med med:code ?code .",
+					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
+					"}");
+		}
+
+		private static String medicalQ7ValuesCodeAntiTypeQuery() {
+			return String.join("\n",
+					"PREFIX med: <http://example.com/theme/medical/>",
+					"",
+					"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+					"  VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+					"  ?med med:code ?code .",
+					"  FILTER NOT EXISTS {",
+					"    {",
+					"      ?med med:dosage ?dose .",
+					"      FILTER (CONTAINS(LCASE(STR(?dose)), \"x\"))",
+					"    }",
+					"  }",
+					"  ?med a med:Medication .",
 					"  FILTER EXISTS { ?patient med:hasMedication ?med . }",
 					"}");
 		}

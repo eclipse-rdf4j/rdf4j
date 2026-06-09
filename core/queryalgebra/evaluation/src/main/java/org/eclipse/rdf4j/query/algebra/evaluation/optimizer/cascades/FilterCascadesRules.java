@@ -16,15 +16,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -61,6 +69,14 @@ public final class FilterCascadesRules {
 			Filter filter = (Filter) expression.tupleExpr();
 			BindingSetAssignment assignment = safeAnchor(filter.getCondition(), filter.getArg(), BindingMask.EMPTY,
 					universe(context));
+			TupleExpr semiFilter = duplicateInsensitiveMembershipSemiFilter(filter, universe(context));
+			if (semiFilter != null) {
+				RuleProof proof = proof(semanticScope(goal),
+						Set.of("finiteValuesAnchor", "duplicateInsensitiveCountDistinct", "unobservedFiniteBinding"),
+						"a finite equality membership filter under duplicate-insensitive COUNT DISTINCT can become "
+								+ "a correlated semi-filter");
+				return List.of(RuleApplication.transformation(expression.groupId(), semiFilter, proof));
+			}
 			RuleProof proof = proof(semanticScope(goal), Set.of("finiteValuesAnchor", "argumentAssuresFilterVar"),
 					"a safe RDF-term equality filter can become a finite VALUES join anchor");
 			return List.of(RuleApplication.transformation(expression.groupId(),
@@ -88,6 +104,15 @@ public final class FilterCascadesRules {
 				return List.of();
 			}
 			Filter filter = (Filter) expression.tupleExpr();
+			TupleExpr semiFilter = duplicateInsensitiveMembershipSemiFilter(filter, universe(context));
+			if (semiFilter != null) {
+				RuleProof proof = proof(semanticScope(goal),
+						Set.of("finiteValuesAnchor", "duplicateInsensitiveCountDistinct", "residualConjunctsRetained",
+								"unobservedFiniteBinding"),
+						"a finite equality conjunct under duplicate-insensitive COUNT DISTINCT can become a "
+								+ "correlated semi-filter while residual filters remain");
+				return List.of(RuleApplication.transformation(expression.groupId(), semiFilter, proof));
+			}
 			ConvertedConjuncts converted = convertedConjuncts(filter, universe(context));
 			TupleExpr anchored = prependAnchors(filter.getArg(), converted.anchors());
 			TupleExpr alternative = converted.residualConjuncts().isEmpty()
@@ -210,6 +235,101 @@ public final class FilterCascadesRules {
 		return new ConvertedConjuncts(anchors, residual);
 	}
 
+	private static TupleExpr duplicateInsensitiveMembershipSemiFilter(Filter filter, BindingUniverse universe) {
+		if (filter == null || filter.isVariableScopeChange()) {
+			return null;
+		}
+		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
+		if (distinctCountVars.isEmpty()) {
+			return null;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		List<ValueExpr> conjuncts = CascadesRewriteSupport.splitConjuncts(filter.getCondition());
+		BindingMask existingAnchorNames = existingAnchorNames(filter.getArg(), safeUniverse);
+		for (ValueExpr conjunct : conjuncts) {
+			BindingSetAssignment anchor = safeAnchor(conjunct, filter.getArg(), existingAnchorNames, safeUniverse);
+			TupleExpr alternative = duplicateInsensitiveMembershipSemiFilter(filter, conjunct, conjuncts, anchor,
+					distinctCountVars);
+			if (alternative != null) {
+				return alternative;
+			}
+		}
+		return null;
+	}
+
+	private static TupleExpr duplicateInsensitiveMembershipSemiFilter(Filter filter, ValueExpr condition,
+			List<ValueExpr> conjuncts, BindingSetAssignment anchor, Set<String> distinctCountVars) {
+		String bindingName = singleBindingName(anchor);
+		if (bindingName == null || distinctCountVars.contains(bindingName)) {
+			return null;
+		}
+		Set<String> conditionNames = VarNameCollector.process(condition);
+		if (conditionNames.size() != 1 || !conditionNames.contains(bindingName)) {
+			return null;
+		}
+		List<ValueExpr> residualConditions = new ArrayList<>();
+		for (ValueExpr conjunct : conjuncts) {
+			if (conjunct == condition) {
+				continue;
+			}
+			if (VarNameCollector.process(conjunct).contains(bindingName)) {
+				return null;
+			}
+			residualConditions.add(conjunct.clone());
+		}
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(filter.getArg(), factors);
+		int patternIndex = singleLocalPatternIndex(factors, bindingName);
+		if (patternIndex < 0 || factors.size() < 2) {
+			return null;
+		}
+		StatementPattern pattern = (StatementPattern) factors.get(patternIndex);
+		Set<String> anchorBindings = anchor.getBindingNames();
+		List<TupleExpr> remainingFactors = new ArrayList<>(factors.size() - 1);
+		for (int i = 0; i < factors.size(); i++) {
+			if (i != patternIndex) {
+				remainingFactors.add(factors.get(i).clone());
+			}
+		}
+		TupleExpr remaining = leftDeep(remainingFactors);
+		if (!java.util.Collections.disjoint(remaining.getBindingNames(), anchorBindings)
+				|| !java.util.Collections.disjoint(VarNameCollector.process(remaining), anchorBindings)) {
+			return null;
+		}
+		Set<String> correlationBindings = new HashSet<>(pattern.getBindingNames());
+		correlationBindings.retainAll(remaining.getBindingNames());
+		correlationBindings.retainAll(distinctCountVars);
+		if (correlationBindings.isEmpty()) {
+			return null;
+		}
+		TupleExpr membership = new Filter(remaining, new Exists(new Join(anchor.clone(), pattern.clone())));
+		if (residualConditions.isEmpty()) {
+			return membership;
+		}
+		return new Filter(membership, CascadesRewriteSupport.combineConjuncts(residualConditions));
+	}
+
+	private static String singleBindingName(BindingSetAssignment anchor) {
+		if (anchor == null || anchor.getBindingNames().size() != 1) {
+			return null;
+		}
+		return anchor.getBindingNames().iterator().next();
+	}
+
+	private static int singleLocalPatternIndex(List<TupleExpr> factors, String bindingName) {
+		int match = -1;
+		for (int i = 0; i < factors.size(); i++) {
+			if (factors.get(i)instanceof StatementPattern pattern
+					&& pattern.getBindingNames().contains(bindingName)) {
+				if (match >= 0) {
+					return -1;
+				}
+				match = i;
+			}
+		}
+		return match;
+	}
+
 	private static BindingSetAssignment safeAnchor(ValueExpr condition, TupleExpr arg,
 			BindingMask existingAnchorNames, BindingUniverse universe) {
 		BindingSetAssignment assignment = FilterValuesAnchorSupport.safeValuesAnchor(condition);
@@ -232,6 +352,56 @@ public final class FilterCascadesRules {
 			result = new Join(anchors.get(i), result);
 		}
 		return result;
+	}
+
+	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+			return;
+		}
+		factors.add(tupleExpr);
+	}
+
+	private static TupleExpr leftDeep(List<TupleExpr> factors) {
+		TupleExpr root = factors.getFirst();
+		for (int i = 1; i < factors.size(); i++) {
+			root = new Join(root, factors.get(i));
+		}
+		return root;
+	}
+
+	private static Set<String> nearestDuplicateInsensitiveDistinctCountVars(Filter filter) {
+		QueryModelNode node = filter;
+		QueryModelNode parent = filter.getParentNode();
+		while (parent != null) {
+			if (parent instanceof Group group) {
+				return duplicateInsensitiveDistinctCountVars(group);
+			}
+			if (parent instanceof org.eclipse.rdf4j.query.algebra.VariableScopeChange
+					&& ((org.eclipse.rdf4j.query.algebra.VariableScopeChange) parent).isVariableScopeChange()) {
+				return Set.of();
+			}
+			node = parent;
+			parent = node.getParentNode();
+		}
+		return Set.of();
+	}
+
+	private static Set<String> duplicateInsensitiveDistinctCountVars(Group group) {
+		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
+			return Set.of();
+		}
+		Set<String> vars = new HashSet<>();
+		for (GroupElem groupElement : group.getGroupElements()) {
+			AggregateOperator operator = groupElement.getOperator();
+			if (!(operator instanceof Count count) || !count.isDistinct()
+					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
+				return Set.of();
+			}
+			vars.add(var.getName());
+		}
+		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
 	}
 
 	private static BindingMask existingAnchorNames(TupleExpr tupleExpr, BindingUniverse universe) {

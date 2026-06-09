@@ -114,12 +114,15 @@ class ThemeQueryPlanRunBenchmarkTest {
 		String typeFirst = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "type-values-code");
 		String codeFirst = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "values-code-type");
 		String antiBeforeValues = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "type-anti-values-code");
+		String codeAntiBeforeType = (String) method.invoke(null, Theme.MEDICAL_RECORDS, 7, "values-code-anti-type");
 
 		assertOrder(valuesTop, "VALUES ?code", "?med a med:Medication", "?med med:code ?code");
 		assertOrder(typeFirst, "?med a med:Medication", "VALUES ?code", "?med med:code ?code");
 		assertOrder(codeFirst, "VALUES ?code", "?med med:code ?code", "?med a med:Medication");
 		assertOrder(antiBeforeValues, "?med a med:Medication", "FILTER NOT EXISTS", "VALUES ?code");
 		assertOrder(antiBeforeValues, "FILTER NOT EXISTS", "VALUES ?code", "?med med:code ?code");
+		assertOrder(codeAntiBeforeType, "VALUES ?code", "?med med:code ?code", "FILTER NOT EXISTS");
+		assertOrder(codeAntiBeforeType, "FILTER NOT EXISTS", "?med a med:Medication", "FILTER EXISTS");
 	}
 
 	private static void setTheme(ThemeQueryPlanRunBenchmark.BaseState state, Theme theme)

@@ -127,7 +127,7 @@ public class ThemeQueryBenchmark {
 			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
-//			"SPARSE",
+			"SPARSE",
 			// "ENGINEERING",
 			// "HIGHLY_CONNECTED",
 			// "TRAIN",

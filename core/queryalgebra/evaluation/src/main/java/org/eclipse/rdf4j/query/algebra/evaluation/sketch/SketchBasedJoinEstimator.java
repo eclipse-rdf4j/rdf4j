@@ -3788,6 +3788,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public double estimateJoinOn(Component j, Component a, String av,
 			Component b, String bv) {
+		Double exactRows = exactFixedSubjectJoinRows(j, a, av, b, bv);
+		if (exactRows != null) {
+			return exactRows;
+		}
 		State snap = current;
 		synchronized (snap) {
 			return joinSingles(snap, j, a, av, b, bv);
@@ -4437,6 +4441,64 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+	}
+
+	private Double exactFixedSubjectJoinRows(Component join, Component leftFixed, String leftFixedValue,
+			Component rightFixed, String rightFixedValue) {
+		if (join == Component.S || leftFixed != Component.S || rightFixed != Component.S
+				|| leftFixedValue == null || rightFixedValue == null) {
+			return null;
+		}
+		Resource leftSubject = iriResource(leftFixedValue);
+		Resource rightSubject = iriResource(rightFixedValue);
+		if (leftSubject == null || rightSubject == null) {
+			return null;
+		}
+
+		try {
+			Map<Value, Long> leftCounts = exactFixedSubjectComponentCounts(leftSubject, join);
+			if (leftCounts == null || leftCounts.isEmpty()) {
+				return 0.0d;
+			}
+			Map<Value, Long> rightCounts = exactFixedSubjectComponentCounts(rightSubject, join);
+			if (rightCounts == null || rightCounts.isEmpty()) {
+				return 0.0d;
+			}
+			double rows = 0.0d;
+			for (Map.Entry<Value, Long> entry : leftCounts.entrySet()) {
+				Long rightCount = rightCounts.get(entry.getKey());
+				if (rightCount != null) {
+					rows += entry.getValue() * rightCount.doubleValue();
+				}
+			}
+			return normalizeRows(rows);
+		} catch (SketchStatementSourceException e) {
+			logger.debug("Falling back from exact fixed-subject join lookup for {} {} and {} {}", leftFixed,
+					leftFixedValue, rightFixed, rightFixedValue, e);
+			return null;
+		}
+	}
+
+	private Map<Value, Long> exactFixedSubjectComponentCounts(Resource subject, Component component) {
+		Map<Value, Long> counts = new HashMap<>();
+		try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(subject, null, null)) {
+			while (statements.hasNext()) {
+				Statement statement = statements.next();
+				counts.merge(statementValue(statement, component), 1L, Long::sum);
+			}
+		}
+		return counts;
+	}
+
+	private Resource iriResource(String value) {
+		if (value == null || value.indexOf(':') < 0) {
+			return null;
+		}
+		try {
+			return statementSource.getValueFactory().createIRI(value);
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	private JoinFrequencyEstimate countMinJoinSingles(State state, Component join,

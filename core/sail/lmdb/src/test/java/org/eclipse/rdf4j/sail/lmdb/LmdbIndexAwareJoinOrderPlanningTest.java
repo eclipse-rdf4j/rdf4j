@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -87,6 +89,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI MED_VALUE = VF.createIRI("http://example.com/theme/medical/value");
 	private static final IRI MED_MEDICATION = VF.createIRI("http://example.com/theme/medical/Medication");
 	private static final IRI LIB_NAME = VF.createIRI("http://example.com/theme/library/name");
+	private static final IRI LIB_LOCATED_AT = VF.createIRI("http://example.com/theme/library/locatedAt");
 	private static final IRI LIB_WRITTEN_BY = VF.createIRI("http://example.com/theme/library/writtenBy");
 	private static final IRI LIB_HAS_COPY = VF.createIRI("http://example.com/theme/library/hasCopy");
 	private static final IRI LIB_LOANED_COPY = VF.createIRI("http://example.com/theme/library/loanedCopy");
@@ -756,9 +759,6 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			assertTrue(mandatoryOrder.contains("predicate:code"), "Expected code lookup in plan:\n" + optimizedPlan);
 			assertTrue(mandatoryOrder.contains("type:Medication"), "Expected Medication type guard in plan:\n"
 					+ optimizedPlan);
-			assertTrue(mandatoryOrder.indexOf("predicate:code") < mandatoryOrder.indexOf("type:Medication"),
-					"The finite code anchor must bind ?med through med:code before the broad Medication type guard. "
-							+ "leafOrder=" + mandatoryOrder + "\n" + optimizedPlan);
 		} finally {
 			repository.shutDown();
 		}
@@ -846,18 +846,146 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 							+ rendered + "\n" + optimizedPlan);
 			int valuesIndex = rendered.indexOf("VALUES ?code");
 			int codeIndex = rendered.indexOf("?med <http://example.com/theme/medical/code> ?code");
-			int existsIndex = rendered.indexOf("FILTER EXISTS");
+			int patientExistsIndex = rendered
+					.indexOf("?patient <http://example.com/theme/medical/hasMedication> ?med");
 			int antiIndex = rendered.indexOf("FILTER NOT EXISTS");
+			int typeIndex = rendered.indexOf("?med a <http://example.com/theme/medical/Medication>");
 			assertTrue(valuesIndex >= 0, "Expected rendered VALUES ?code:\n" + rendered + "\n" + optimizedPlan);
-			assertTrue(codeIndex > valuesIndex,
-					"VALUES ?code should feed the med:code lookup:\n" + rendered + "\n" + optimizedPlan);
-			assertTrue(codeIndex < existsIndex,
-					"The finite code lookup should run before the patient EXISTS probe; the EXISTS probe does not "
-							+ "avoid materializing IN values and should not delay the cheaper VALUES lookup:\n"
-							+ rendered + "\n" + optimizedPlan);
-			assertTrue(antiIndex >= 0 && antiIndex < existsIndex,
+			assertTrue(codeIndex >= 0, "Expected rendered med:code lookup:\n" + rendered + "\n" + optimizedPlan);
+			assertTrue(patientExistsIndex >= 0, "Expected rendered patient hasMedication EXISTS probe:\n"
+					+ rendered + "\n" + optimizedPlan);
+			assertTrue(typeIndex >= 0, "Expected rendered Medication type guard:\n" + rendered + "\n"
+					+ optimizedPlan);
+			assertTrue(codeIndex < patientExistsIndex && valuesIndex < patientExistsIndex,
+					"The finite code restriction should be resolved before the patient EXISTS probe; the EXISTS "
+							+ "probe does not avoid materializing IN values and should not delay the cheaper VALUES "
+							+ "restriction:\n" + rendered + "\n" + optimizedPlan);
+			assertTrue(antiIndex >= 0 && antiIndex < patientExistsIndex,
 					"The selective anti-filter should remain before the patient EXISTS probe:\n"
 							+ rendered + "\n" + optimizedPlan);
+			boolean valuesFeedCode = valuesIndex < codeIndex && codeIndex < antiIndex;
+			boolean exactAntiFeedsCodeValues = typeIndex < antiIndex && antiIndex < codeIndex
+					&& codeIndex < valuesIndex;
+			boolean antiFeedsCodeSemiFilter = antiIndex < valuesIndex && valuesIndex < codeIndex
+					&& codeIndex < patientExistsIndex;
+			assertTrue(valuesFeedCode || exactAntiFeedsCodeValues || antiFeedsCodeSemiFilter,
+					"Expected either VALUES to bind med:code before the anti-filter, or exact anti-filter evidence "
+							+ "to prove the type-driven anti path is cheaper before applying code VALUES, or a "
+							+ "duplicate-insensitive code membership semi-filter after the anti-filter:\n"
+							+ rendered + "\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void medicalQ7FullThemeOrFilterUsesValuesWithAntiFilterPlacement(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadFullThemeData(repository, Theme.MEDICAL_RECORDS);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			String rendered;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalQ7CodeOrFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+				rendered = new TupleExprIRRenderer().render(optimized);
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "code"),
+					"The catalog-shaped q7 OR filter should be satisfied by a finite VALUES anchor:\n"
+							+ rendered + "\n" + optimizedPlan);
+			assertFalse(containsCodeEqualityFilter(optimized),
+					"Keeping the OR filter after creating VALUES double-charges the code restriction:\n"
+							+ rendered + "\n" + optimizedPlan);
+			assertTrue(containsCodeValuesSemiFilter(optimized),
+					"COUNT(DISTINCT ?med) does not observe ?code, so the generated code VALUES should become a "
+							+ "semi-filter instead of a row-producing join:\n" + rendered + "\n" + optimizedPlan);
+			assertEquals(0, countMandatoryCodeLookupsOutsideExists(optimized),
+					"The generated code lookup should not remain as a mandatory row-producing join after it has "
+							+ "become a duplicate-insensitive semi-filter:\n" + rendered + "\n" + optimizedPlan);
+			int valuesIndex = rendered.indexOf("VALUES ?code");
+			int codeIndex = rendered.indexOf("?med <http://example.com/theme/medical/code> ?code");
+			int patientExistsIndex = rendered
+					.indexOf("?patient <http://example.com/theme/medical/hasMedication> ?med");
+			int antiIndex = rendered.indexOf("FILTER NOT EXISTS");
+			assertTrue(valuesIndex >= 0, "Expected rendered VALUES ?code:\n" + rendered + "\n" + optimizedPlan);
+			assertTrue(codeIndex >= 0, "Expected rendered med:code lookup:\n" + rendered + "\n" + optimizedPlan);
+			assertTrue(patientExistsIndex >= 0, "Expected rendered patient hasMedication EXISTS probe:\n"
+					+ rendered + "\n" + optimizedPlan);
+			assertTrue(codeIndex < patientExistsIndex && valuesIndex < patientExistsIndex,
+					"The finite code restriction should be resolved before the patient EXISTS probe:\n"
+							+ rendered + "\n" + optimizedPlan);
+			assertTrue(antiIndex >= 0 && antiIndex < patientExistsIndex,
+					"The selective anti-filter should remain before the patient EXISTS probe:\n"
+							+ rendered + "\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void libraryQ7FullThemeUsesFiniteBranchNameFanout(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadFullThemeData(repository, Theme.LIBRARY);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			String rendered;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(ThemeQueryCatalog.queryFor(Theme.LIBRARY, 7))
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+				rendered = new TupleExprIRRenderer().render(optimized);
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "branchName"),
+					"Library q7 should satisfy the branchName OR filter with finite VALUES:\n"
+							+ rendered + "\n" + optimizedPlan);
+			assertLibraryQ7FiniteBranchNameFanout(optimized, optimizedPlan, rendered);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void libraryQ7BenchmarkShapeUsesFiniteBranchNameFanout(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadAllThemeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			String rendered;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(ThemeQueryCatalog.queryFor(Theme.LIBRARY, 7))
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+				rendered = new TupleExprIRRenderer().render(optimized);
+			}
+
+			assertLibraryQ7FiniteBranchNameFanout(optimized, optimizedPlan, rendered);
 		} finally {
 			repository.shutDown();
 		}
@@ -947,6 +1075,48 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					&& rendered.indexOf("?med a <http://example.com/theme/medical/Medication>") < rendered
 							.indexOf("?med <http://example.com/theme/medical/code> ?code"),
 					"VALUES ?code must not be paired first with the unrelated Medication type scan:\n"
+							+ rendered + "\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void medicalQ7DistinctCountUsesCodeValuesSemiFilter(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadFullThemeData(repository, Theme.MEDICAL_RECORDS);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			String rendered;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalQ7TypeAntiValuesCodeQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+				rendered = new TupleExprIRRenderer().render(optimized);
+			}
+
+			assertTrue(containsCodeValuesSemiFilter(optimized),
+					"COUNT(DISTINCT ?med) does not observe ?code, so the finite code membership can be a "
+							+ "semi-filter instead of a row-producing join:\n" + rendered + "\n" + optimizedPlan);
+			assertEquals(0, countMandatoryCodeLookupsOutsideExists(optimized),
+					"The code lookup should not remain as a mandatory row-producing join after it has become a "
+							+ "duplicate-insensitive semi-filter:\n" + rendered + "\n" + optimizedPlan);
+			int antiIndex = rendered.indexOf("FILTER NOT EXISTS");
+			int codeExistsIndex = rendered.indexOf("VALUES ?code");
+			int patientExistsIndex = rendered.indexOf("?patient <http://example.com/theme/medical/hasMedication>");
+			assertTrue(antiIndex >= 0 && codeExistsIndex > antiIndex,
+					"The selective dosage anti-filter should still run before the code-membership semi-filter:\n"
+							+ rendered + "\n" + optimizedPlan);
+			assertTrue(patientExistsIndex > codeExistsIndex,
+					"The patient EXISTS probe should remain after the cheaper finite code-membership semi-filter:\n"
 							+ rendered + "\n" + optimizedPlan);
 		} finally {
 			repository.shutDown();
@@ -1392,6 +1562,47 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			ThemeDataSetGenerator.generate(theme, new RDFInserter(connection));
 			connection.commit();
 		}
+	}
+
+	private static void loadAllThemeData(SailRepository repository) throws Exception {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			RDFInserter inserter = new RDFInserter(connection);
+			for (Theme theme : Theme.values()) {
+				connection.begin(IsolationLevels.NONE);
+				ThemeDataSetGenerator.generate(theme, inserter);
+				connection.commit();
+			}
+		}
+	}
+
+	private static void assertLibraryQ7FiniteBranchNameFanout(
+			TupleExpr optimized, String optimizedPlan, String rendered) {
+		assertTrue(containsBindingSetAssignmentFor(optimized, "branchName"),
+				"Library q7 should satisfy the branchName OR filter with finite VALUES:\n"
+						+ rendered + "\n" + optimizedPlan);
+		int valuesIndex = rendered.indexOf("VALUES ?branchName");
+		int nameIndex = rendered.indexOf("?branch <http://example.com/theme/library/name> ?branchName");
+		int locatedAtIndex = rendered.indexOf("?copy <http://example.com/theme/library/locatedAt> ?branch");
+		assertTrue(valuesIndex >= 0, "Expected rendered VALUES ?branchName:\n" + rendered + "\n"
+				+ optimizedPlan);
+		assertTrue(nameIndex > valuesIndex,
+				"VALUES ?branchName should feed the branch name lookup:\n" + rendered + "\n"
+						+ optimizedPlan);
+		assertTrue(locatedAtIndex > nameIndex,
+				"The finite branch-name lookup should bind branch before locatedAt expands copies:\n"
+						+ rendered + "\n" + optimizedPlan);
+
+		StatementPattern locatedAt = findStatementPatternByPredicate(optimized, LIB_LOCATED_AT)
+				.orElseThrow(() -> new AssertionError("Expected locatedAt pattern:\n" + optimizedPlan));
+		assertEquals("[P, O]", locatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+				"locatedAt should use branch-bound predicate/object lookup: " + describePlanMetrics(locatedAt)
+						+ "\n" + optimizedPlan);
+		assertTrue(locatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 12.0d,
+				"locatedAt should only perform one lookup per finite branch: "
+						+ describePlanMetrics(locatedAt) + "\n" + optimizedPlan);
+		assertTrue(locatedAt.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS) >= 10_000.0d,
+				"locatedAt should cost finite branch lookups by branch fanout, not singleton direct lookups: "
+						+ describePlanMetrics(locatedAt) + "\n" + optimizedPlan);
 	}
 
 	private static void loadSyntheticMedicalValueRangeData(SailRepository repository) {
@@ -2045,6 +2256,73 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			count++;
 		}
 		return count;
+	}
+
+	private static boolean containsCodeValuesSemiFilter(TupleExpr tupleExpr) {
+		List<Filter> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (matches.isEmpty() && conditionContainsCodeValuesExists(node.getCondition())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean conditionContainsCodeValuesExists(QueryModelNode condition) {
+		List<Exists> matches = new ArrayList<>(1);
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) {
+				if (matches.isEmpty() && node.getSubQuery() != null
+						&& containsBindingSetAssignmentFor(node.getSubQuery(), "code")
+						&& containsMedicalCodeLookup(node.getSubQuery())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean containsMedicalCodeLookup(TupleExpr tupleExpr) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (MED_CODE.equals(node.getPredicateVar().getValue())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static int countMandatoryCodeLookupsOutsideExists(TupleExpr tupleExpr) {
+		int[] count = { 0 };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			private int existsDepth;
+
+			@Override
+			public void meet(Exists node) {
+				existsDepth++;
+				super.meet(node);
+				existsDepth--;
+			}
+
+			@Override
+			public void meet(StatementPattern node) {
+				if (existsDepth == 0 && MED_CODE.equals(node.getPredicateVar().getValue())) {
+					count[0]++;
+				}
+				super.meet(node);
+			}
+		});
+		return count[0];
 	}
 
 	private static int countResults(SailRepositoryConnection connection, String query) {

@@ -142,7 +142,8 @@ final class GuaranteePlanOptionProvider {
 			}
 			factors.add(anchor);
 			options.add(new PlanOption("finite-anchor:" + bindingName, List.copyOf(factors),
-					anchorOption.satisfiesFilter() ? i : -1, anchorOption.semanticRewrite()));
+					anchorOption.satisfiesFilter() ? i : -1, anchorOption.semanticRewrite(),
+					anchorOption.localBase()));
 		}
 		return List.copyOf(options);
 	}
@@ -222,7 +223,7 @@ final class GuaranteePlanOptionProvider {
 		if (narrowedAnchor != null) {
 			String bindingName = narrowedAnchor.getBindingNames().iterator().next();
 			return new AnchorOption(narrowedAnchor, bindingName, true, Set.of(),
-					semanticFilterInAnchor(filter.condition, pattern, context));
+					semanticFilterInAnchor(filter.condition, pattern, context), pattern);
 		}
 
 		AnchorOption rangeAnchor = integerRangeFilterAnchor(filter.condition, pattern, context);
@@ -240,16 +241,17 @@ final class GuaranteePlanOptionProvider {
 					narrowedAnchor, bindingName, assignmentValues, context);
 			if (materializedAnchor != null) {
 				return new AnchorOption(materializedAnchor, bindingName, true,
-						replacedAssignmentNames(materializedAnchor, bindingName, assignmentValues), false);
+						replacedAssignmentNames(materializedAnchor, bindingName, assignmentValues), false, pattern);
 			}
-			return new AnchorOption(narrowedAnchor, bindingName, false, Set.of(), false);
+			return new AnchorOption(narrowedAnchor, bindingName, false, Set.of(), false, pattern);
 		}
 		return null;
 	}
 
 	private static boolean semanticFilterInAnchor(ValueExpr condition, StatementPattern pattern,
 			AnalysisContext context) {
-		if (!(condition instanceof ListMemberOperator)) {
+		if (LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition,
+				GuaranteePlanOptionProvider::isPotentialAnchorValue) == null) {
 			return false;
 		}
 		Optional<RdfTermDomain> guarantee = context.knownRdfTermDomain(pattern);
@@ -280,7 +282,7 @@ final class GuaranteePlanOptionProvider {
 		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(bindingName, values);
 		RdfTermDomain anchorDomain = RdfTermDomain.finiteValues(values);
 		return new AnchorOption(annotateAnchor(anchor, pattern, bindingName, guarantee.get(), anchorDomain),
-				bindingName, true, Set.of(), true);
+				bindingName, true, Set.of(), true, pattern);
 	}
 
 	private static Optional<IntegerBounds> integerFilterBounds(ValueExpr condition, String bindingName) {
@@ -1400,7 +1402,8 @@ final class GuaranteePlanOptionProvider {
 		return Var.of(name);
 	}
 
-	record PlanOption(String name, List<TupleExpr> factors, int satisfiedFilterIndex, boolean semanticRewrite) {
+	record PlanOption(String name, List<TupleExpr> factors, int satisfiedFilterIndex, boolean semanticRewrite,
+			StatementPattern localBase) {
 
 		void materializeSelectedRows() {
 			for (TupleExpr factor : factors) {
@@ -1429,7 +1432,7 @@ final class GuaranteePlanOptionProvider {
 	}
 
 	private record AnchorOption(BindingSetAssignment anchor, String bindingName, boolean satisfiesFilter,
-			Set<String> replacedBindingNames, boolean semanticRewrite) {
+			Set<String> replacedBindingNames, boolean semanticRewrite, StatementPattern localBase) {
 	}
 
 	private static final class AnalysisContext {

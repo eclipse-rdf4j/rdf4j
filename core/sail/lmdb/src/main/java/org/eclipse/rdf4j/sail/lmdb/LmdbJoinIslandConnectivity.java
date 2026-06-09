@@ -20,16 +20,24 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -92,10 +100,170 @@ final class LmdbJoinIslandConnectivity {
 		if (lmdbJoinProviderAvailable && nestedFilterJoinSegmentCanOwn(tupleExpr)) {
 			return false;
 		}
+		if (lmdbJoinProviderAvailable && containsAnchorableFiniteFilter(tupleExpr)) {
+			return false;
+		}
 		if (pureCorrelatedNotExistsFilter(tupleExpr)) {
 			return false;
 		}
+		if (lmdbJoinProviderAvailable && minusJoinPrefixPushdownAvailable(tupleExpr)) {
+			return false;
+		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
+	}
+
+	private static boolean containsAnchorableFiniteFilter(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+			if (anchor != null
+					&& !anchor.getBindingNames().isEmpty()
+					&& filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+				return true;
+			}
+			return containsAnchorableFiniteFilter(filter.getArg());
+		}
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			if (containsAnchorableFiniteFilter(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static boolean minusJoinPrefixPushdownAvailable(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Difference difference) || difference.getLeftArg() == null
+				|| difference.getRightArg() == null || !simpleCorrelatableMinusRhs(difference.getRightArg())) {
+			return false;
+		}
+		Join join = minusJoinInput(difference.getLeftArg());
+		if (join == null) {
+			return false;
+		}
+		Set<String> shared = LmdbJoinPlanSupport.plannerBindingNames(difference.getLeftArg().getBindingNames());
+		shared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(difference.getRightArg().getBindingNames()));
+		if (shared.isEmpty()
+				|| !LmdbJoinPlanSupport.plannerBindingNames(difference.getLeftArg().getAssuredBindingNames())
+						.containsAll(shared)
+				|| !LmdbJoinPlanSupport.plannerBindingNames(difference.getRightArg().getAssuredBindingNames())
+						.containsAll(shared)) {
+			return false;
+		}
+		return canPushMinusIntoJoinPrefix(join.getLeftArg(), join.getRightArg(), difference.getRightArg(), shared)
+				|| canPushMinusIntoJoinPrefix(join.getRightArg(), join.getLeftArg(), difference.getRightArg(),
+						shared);
+	}
+
+	private static Join minusJoinInput(TupleExpr leftArg) {
+		if (leftArg instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			return join;
+		}
+		if (!(leftArg instanceof Filter filter)
+				|| TupleExprs.isVariableScopeChange(filter)
+				|| !(filter.getArg()instanceof Join join)
+				|| TupleExprs.isVariableScopeChange(join)) {
+			return null;
+		}
+		Set<String> conditionNames = conditionNames(filter.getCondition(), filter.getArg().getAssuredBindingNames());
+		return LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames())
+				.containsAll(conditionNames) ? join : null;
+	}
+
+	private static boolean canPushMinusIntoJoinPrefix(TupleExpr prefix, TupleExpr suffix, TupleExpr minusRight,
+			Set<String> shared) {
+		if (prefix == null || suffix == null || minusRight == null || TupleExprs.isVariableScopeChange(prefix)
+				|| TupleExprs.isVariableScopeChange(suffix)) {
+			return false;
+		}
+		Set<String> prefixAssured = LmdbJoinPlanSupport.plannerBindingNames(prefix.getAssuredBindingNames());
+		if (!prefixAssured.containsAll(shared)) {
+			return false;
+		}
+		Set<String> suffixRhsShared = LmdbJoinPlanSupport.plannerBindingNames(suffix.getBindingNames());
+		suffixRhsShared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(minusRight.getBindingNames()));
+		return !suffixRhsShared.isEmpty() && prefixAssured.containsAll(suffixRhsShared);
+	}
+
+	private static boolean simpleCorrelatableMinusRhs(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern || tupleExpr instanceof BindingSetAssignment) {
+			return true;
+		}
+		if (tupleExpr instanceof Join join) {
+			return simpleCorrelatableMinusRhs(join.getLeftArg())
+					&& simpleCorrelatableMinusRhs(join.getRightArg());
+		}
+		if (tupleExpr instanceof Filter filter) {
+			Set<String> conditionNames = conditionNames(filter.getCondition(),
+					filter.getArg().getAssuredBindingNames());
+			return LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames())
+					.containsAll(conditionNames)
+					&& simpleCorrelatableMinusRhs(filter.getArg());
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return rowPreservingNonShadowingExtension(extension)
+					&& simpleCorrelatableMinusRhs(extension.getArg());
+		}
+		return false;
+	}
+
+	private static boolean rowPreservingNonShadowingExtension(Extension extension) {
+		if (extension == null || extension.getArg() == null || TupleExprs.isVariableScopeChange(extension)) {
+			return false;
+		}
+		Set<String> argBindings = LmdbJoinPlanSupport.plannerBindingNames(extension.getArg().getBindingNames());
+		Set<String> argAssuredBindings = LmdbJoinPlanSupport
+				.plannerBindingNames(extension.getArg().getAssuredBindingNames());
+		for (ExtensionElem element : extension.getElements()) {
+			if (element.getName() == null || argBindings.contains(element.getName())) {
+				return false;
+			}
+			Set<String> expressionNames = LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(
+					element.getExpr()));
+			if (!argAssuredBindings.containsAll(expressionNames)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Set<String> conditionNames(ValueExpr condition, Set<String> visibleNames) {
+		if (condition == null) {
+			return Set.of();
+		}
+		Set<String> visible = LmdbJoinPlanSupport.plannerBindingNames(visibleNames);
+		Set<String> names = new HashSet<>();
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				String name = var.getName();
+				if (!var.hasValue() && name != null && !name.startsWith("_const_")) {
+					names.add(name);
+				}
+			}
+
+			@Override
+			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
+				addCorrelatedNames(node);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				addCorrelatedNames(node);
+			}
+
+			private void addCorrelatedNames(SubQueryValueOperator node) {
+				if (node == null || node.getSubQuery() == null || visible.isEmpty()) {
+					return;
+				}
+				Set<String> correlated = LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(
+						node.getSubQuery()));
+				correlated.retainAll(visible);
+				names.addAll(correlated);
+			}
+		});
+		return LmdbJoinPlanSupport.plannerBindingNames(names);
 	}
 
 	private static boolean nestedFilterJoinSegmentCanOwn(TupleExpr tupleExpr) {

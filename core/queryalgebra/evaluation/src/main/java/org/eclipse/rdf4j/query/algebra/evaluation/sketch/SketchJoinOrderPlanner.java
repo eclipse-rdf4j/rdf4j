@@ -3388,12 +3388,14 @@ final class SketchJoinOrderPlanner {
 			return 0L;
 		}
 		long scalarCandidates = zeroVarScalarCandidates(legalCandidates);
-		long connectedCandidates = scalarCandidates
-				| structurallyConnectedCandidates(legalCandidates & ~scalarCandidates,
-						boundVarMask);
+		long structurallyConnectedCandidates = structurallyConnectedCandidates(legalCandidates & ~scalarCandidates,
+				boundVarMask);
+		long connectedCandidates = scalarCandidates | structurallyConnectedCandidates;
 		long bridgeAnchorCandidates = disconnectedFiniteBridgeAnchorCandidates(plan,
 				legalCandidates & ~connectedCandidates, boundVarMask);
-		connectedCandidates |= bridgeAnchorCandidates;
+		if (structurallyConnectedCandidates == 0L) {
+			connectedCandidates |= bridgeAnchorCandidates;
+		}
 		if (plan.mask() == 0L && connectedCandidates == 0L) {
 			return legalCandidates;
 		}

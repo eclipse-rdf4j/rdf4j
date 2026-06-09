@@ -13,9 +13,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleResourceLoader;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleSpec;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.StandardRuleSpecs;
 
 @Experimental
 public final class RuleRegistry {
@@ -30,41 +36,51 @@ public final class RuleRegistry {
 	}
 
 	public static RuleRegistry standardLogicalRules() {
-		return builder()
-				.add(new StandardCascadesRules.JoinCommutationRule())
-				.add(new StandardCascadesRules.JoinAssociativityRule())
+		Builder builder = builder()
+				.addAllRules(standardCompiledDslRules())
 				.add(new StructuralCascadesRules.NestedFilterMergeRule())
 				.add(new StructuralCascadesRules.FilterConstantRule())
 				.add(new StructuralCascadesRules.JoinEmptySetRule())
 				.add(new StructuralCascadesRules.JoinSingletonRule())
 				.add(new StructuralCascadesRules.UnionSimplificationRule())
 				.add(new StructuralCascadesRules.ProjectionMergeRule())
-				.add(new FilterCascadesRules.FilterValuesAnchorRule())
-				.add(new FilterCascadesRules.FilterConjunctValuesAnchorRule())
 				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
-				.add(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule())
 				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
-				.add(new StandardCascadesRules.FilterPushdownRule())
-				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
-				.add(new StandardCascadesRules.FilterDifferencePushdownRule())
-				.add(new StandardCascadesRules.FilterUnionDistributionRule())
-				.add(new ProjectionCascadesRules.ProjectionFilterPushdownRule())
-				.add(new ProjectionCascadesRules.ProjectionDifferencePushdownRule())
 				.add(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
-				.add(new StandardCascadesRules.SafeScopeChangeRemovalRule())
 				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
-				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
-				.add(new StandardCascadesRules.MinusAlternativeRule())
-				.add(new StandardCascadesRules.GenericImplementationRule())
-				.add(new StandardCascadesRules.DistinctEnforcerRule())
-				.add(new StandardCascadesRules.MaterializeEnforcerRule())
-				.build();
+				.add(new StandardCascadesRules.GenericImplementationRule());
+		return builder.build();
+	}
+
+	public static List<? extends CascadesRule> standardCompiledDslRules() {
+		return RuleCompiler.compileAll(standardRuleSpecs());
+	}
+
+	private static List<RuleSpec> standardRuleSpecs() {
+		Map<String, RuleSpec> specs = new LinkedHashMap<>();
+		for (RuleSpec spec : RuleResourceLoader.loadStandardRules()) {
+			addSpec(specs, spec, true);
+		}
+		for (RuleSpec spec : StandardRuleSpecs.allRules()) {
+			addSpec(specs, spec, false);
+		}
+		return List.copyOf(specs.values());
+	}
+
+	private static void addSpec(Map<String, RuleSpec> specs, RuleSpec spec, boolean failOnDuplicate) {
+		if (spec == null) {
+			return;
+		}
+		RuleSpec previous = specs.putIfAbsent(spec.id(), spec);
+		if (previous != null && failOnDuplicate) {
+			throw new IllegalArgumentException("Duplicate standard Cascades rule id: " + spec.id());
+		}
 	}
 
 	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo) {
@@ -125,6 +141,13 @@ public final class RuleRegistry {
 		public Builder addAll(RuleRegistry registry) {
 			if (registry != null) {
 				rules.addAll(registry.rules());
+			}
+			return this;
+		}
+
+		public Builder addAllRules(List<? extends CascadesRule> rules) {
+			if (rules != null && !rules.isEmpty()) {
+				this.rules.addAll(rules);
 			}
 			return this;
 		}

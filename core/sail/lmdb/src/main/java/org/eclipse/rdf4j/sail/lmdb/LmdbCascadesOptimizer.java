@@ -204,6 +204,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					|| shouldRepairStandardFallbackSubtrees(standardPlanPolicy, plan))) {
 				optimizeSubtrees(tupleExpr, planner, searchGoal);
 			}
+			if (appliesPlan && !preserveSerializableObservationOrder) {
+				new LmdbSetSemanticsOptimizer().optimize(tupleExpr, dataset, bindings);
+			}
 			annotateObjectGuarantees(tupleExpr);
 		}
 	}
@@ -491,6 +494,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (tupleExpr instanceof Filter filter) {
 			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
+		}
+		if (tupleExpr instanceof Difference) {
+			return LmdbJoinIslandConnectivity.minusJoinPrefixPushdownAvailable(tupleExpr);
 		}
 		if (tupleExpr instanceof Join join) {
 			return !containsJoinPlanningBarrier(tupleExpr) || scopedUnionDistributionOpportunity(join);

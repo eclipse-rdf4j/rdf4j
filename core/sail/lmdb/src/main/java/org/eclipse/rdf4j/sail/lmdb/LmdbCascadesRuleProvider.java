@@ -32,11 +32,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -48,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -75,6 +78,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SetCascades
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StructuralCascadesRules;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.LmdbRuleSpecs;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -99,9 +104,10 @@ final class LmdbCascadesRuleProvider {
 		boolean legacyOpaqueJoinProviders = Boolean.getBoolean(LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		boolean cascadesConnectedJoinProviderAvailable = statistics instanceof JoinFactorCostModel;
 		RuleRegistry.Builder builder = RuleRegistry.builder()
+				.addAllRules(RuleCompiler.compileAll(LmdbRuleSpecs.physicalRules()))
+				.addAllRules(RuleRegistry.standardCompiledDslRules())
+				.add(new LmdbSetSemanticsNormalizationRule(statistics))
 				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
-				.add(new StandardCascadesRules.JoinCommutationRule())
-				.add(new StandardCascadesRules.JoinAssociativityRule())
 				.add(new StructuralCascadesRules.NestedFilterMergeRule())
 				.add(new StructuralCascadesRules.FilterConstantRule())
 				.add(new StructuralCascadesRules.JoinEmptySetRule())
@@ -109,32 +115,18 @@ final class LmdbCascadesRuleProvider {
 				.add(new StructuralCascadesRules.UnionSimplificationRule())
 				.add(new StructuralCascadesRules.ProjectionMergeRule())
 				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
-				.add(new FilterCascadesRules.FilterLeftJoinLeftPushdownRule())
 				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
-				.add(new StandardCascadesRules.FilterPushdownRule())
-				.add(new StandardCascadesRules.FilterConjunctPushdownRule())
-				.add(new StandardCascadesRules.FilterDifferencePushdownRule())
-				.add(new StandardCascadesRules.FilterUnionDistributionRule())
 				.add(new LmdbNullRejectingOptionalJoinRule())
-				.add(new ProjectionCascadesRules.ProjectionFilterPushdownRule())
-				.add(new ProjectionCascadesRules.ProjectionDifferencePushdownRule())
 				.add(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
-				.add(new StandardCascadesRules.SafeScopeChangeRemovalRule())
 				.add(new StandardCascadesRules.MinusJoinPrefixPushdownRule())
 				.add(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinExtensionPushdownRule())
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
-				.add(new StandardCascadesRules.OptionalNegatedBoundAntiJoinRule())
-				.add(new StandardCascadesRules.MinusAlternativeRule((difference, goal) -> true))
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
-		if (cascadesConnectedJoinProviderAvailable) {
-			builder.add(new FilterCascadesRules.FilterValuesAnchorRule())
-					.add(new FilterCascadesRules.FilterConjunctValuesAnchorRule());
-		}
 		if (legacyOpaqueJoinProviders) {
 			builder.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
 					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
@@ -148,15 +140,14 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbInnerJoinBoundLookupRule(statistics))
 				.add(new LmdbMaterializedMinusAntiSemiRule(statistics))
 				.add(new LmdbMaterializedExistsSemiRule(statistics))
+				.add(new LmdbCorrelatedNotExistsAntiFilterRule(statistics))
 				.add(new LmdbCorrelatedMinusAntiExistsRule(statistics))
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
 								cascadesConnectedJoinProviderAvailable
 										|| (legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner),
-								false)))
-				.add(new StandardCascadesRules.DistinctEnforcerRule())
-				.add(new StandardCascadesRules.MaterializeEnforcerRule());
+								false)));
 		return builder.build();
 	}
 
@@ -451,6 +442,28 @@ final class LmdbCascadesRuleProvider {
 		return false;
 	}
 
+	private static boolean containsAnchorableFiniteFilter(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+			if (anchor != null
+					&& !anchor.getBindingNames().isEmpty()
+					&& filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+				return true;
+			}
+			return containsAnchorableFiniteFilter(filter.getArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsAnchorableFiniteFilter(join.getLeftArg())
+					|| containsAnchorableFiniteFilter(join.getRightArg());
+		}
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			if (containsAnchorableFiniteFilter(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 		LmdbConnectedHypergraphJoinImplementationRule(EvaluationStatistics statistics) {
 			super(LmdbCascadesConnectedJoinPlanner.RULE_ID, RuleKind.IMPLEMENTATION, 130, statistics);
@@ -463,6 +476,7 @@ final class LmdbCascadesRuleProvider {
 					&& expression.tupleExpr() instanceof Join
 					&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())
 					&& !isNestedFilterSegmentChild(expression.tupleExpr())
+					&& !containsAnchorableFiniteFilter(expression.tupleExpr())
 					&& LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 1;
 		}
 
@@ -667,6 +681,10 @@ final class LmdbCascadesRuleProvider {
 			return goal == null ? Set.of() : goal.requiredProperties().boundVars();
 		}
 
+		Set<String> goalInputBoundVars(OptimizationGoal goal) {
+			return goal == null ? Set.of() : goal.requiredProperties().inputBoundVars();
+		}
+
 		private Set<String> bindingNameIntersection(Set<String> bindingNames, Set<String> goalBoundVars) {
 			if (bindingNames == null || bindingNames.isEmpty() || goalBoundVars == null || goalBoundVars.isEmpty()) {
 				return Set.of();
@@ -848,6 +866,31 @@ final class LmdbCascadesRuleProvider {
 
 		String semanticScope(OptimizationGoal goal) {
 			return goal == null ? OptimizationGoal.BAG_SEMANTICS : goal.semanticScope();
+		}
+	}
+
+	private static final class LmdbSetSemanticsNormalizationRule extends LmdbRule {
+		LmdbSetSemanticsNormalizationRule(EvaluationStatistics statistics) {
+			super("lmdb-set-semantics-normalization", RuleKind.TRANSFORMATION, 75, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof Group;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group alternative = ((Group) expression.tupleExpr()).clone();
+			String before = alternative.toString();
+			new LmdbSetSemanticsOptimizer().optimize(alternative, null, null);
+			if (before.equals(alternative.toString())) {
+				return List.of();
+			}
+			RuleProof proof = proof(semanticScope(goal), Set.of("setSemantics", "groupLocalNormalization"),
+					"LMDB set-semantics rewrites are exposed as Cascades logical alternatives before physical "
+							+ "implementation costing");
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
 
@@ -1726,6 +1769,9 @@ final class LmdbCascadesRuleProvider {
 		private static final int FIXED_ORDER_PRESELECTION_FACTOR_THRESHOLD = 6;
 		private static final double SEMANTIC_REWRITE_RARE_FILTER_INVOCATION_ROWS = 32.0d;
 		private static final double SEMANTIC_REWRITE_MIN_WORK_IMPROVEMENT_RATIO = 0.90d;
+		private static final double SEMANTIC_REWRITE_RISK_COMPETE_RATIO = 1.50d;
+		private static final String PLANNED_COST_CONFIDENCE = "plannedCostConfidence";
+		private static final String PLANNED_COST_WORK_Q_ERROR_MAX = "plannedCostWorkQErrorMax";
 
 		private final JoinOrderPlanner joinOrderPlanner;
 
@@ -1862,7 +1908,9 @@ final class LmdbCascadesRuleProvider {
 			if (original.isEmpty()) {
 				return true;
 			}
-			if (!semanticRewriteCanCompete(candidate, original.get())) {
+			if (!semanticRewriteCanCompete(candidate, original.get())
+					&& !semanticRewriteCanCompeteAgainstIncumbentRisk(candidate, original.get(),
+							originalFilters, satisfiedFilterIndex)) {
 				return false;
 			}
 			if (semanticPrefixRewrite(candidate)) {
@@ -2043,19 +2091,27 @@ final class LmdbCascadesRuleProvider {
 				List<DeferredFilter> optionFilters, Set<String> boundVars, JoinOrderPlanner.Algorithm algorithm,
 				OptimizationGoal goal, Optional<CostedOption> current, Optional<CostedOption> original,
 				List<DeferredFilter> originalFilters) {
-			if (original.isEmpty() || option.satisfiedFilterIndex() < 0
-					|| option.satisfiedFilterIndex() >= originalFilters.size()) {
+			if (option.satisfiedFilterIndex() < 0 || option.satisfiedFilterIndex() >= originalFilters.size()) {
 				return current;
 			}
 			List<JoinOrderPlanner.FilterConstraint> plannerFilters = LmdbJoinPlanSupport
 					.toPlannerFilterConstraints(optionFilters);
-			CostedOption best = current.orElse(null);
+			DeferredFilter satisfiedFilter = originalFilters.get(option.satisfiedFilterIndex());
+			TupleExpr localBase = option.localBase() == null ? satisfiedFilter.patternLocalBase : option.localBase();
+			List<TupleExpr> generatedAnchors = generatedFiniteAnchors(option.name(), option.factors());
+			CostedOption fallback = current.orElse(null);
+			CostedOption best = current
+					.filter(costed -> anchorPrefixesLocalBase(costed.plan(), localBase, generatedAnchors))
+					.orElse(null);
 			List<String> prefixAlternatives = new ArrayList<>();
-			for (SemanticPrefixOrder order : semanticPrefixFiniteAnchorOrders(option.name(), option.factors(),
-					original.get().plan(), originalFilters.get(option.satisfiedFilterIndex()), originalFilters)) {
+			List<SemanticPrefixOrder> prefixOrders = semanticPrefixFiniteAnchorOrders(option.name(), option.factors(),
+					original.map(CostedOption::plan).orElse(null), localBase, satisfiedFilter, originalFilters);
+			for (SemanticPrefixOrder order : prefixOrders) {
 				Optional<JoinOrderPlanner.JoinOrderPlan> plan = joinOrderPlanner.estimateJoinOrder(order.order(),
 						new HashSet<>(boundVars), algorithm, plannerFilters);
 				if (plan.isEmpty()) {
+					prefixAlternatives.add(order.details() + ":invalid=no-plan"
+							+ ":order=" + semanticPrefixOrderSummary(order.order()));
 					continue;
 				}
 				double comparableWork = guaranteeOptionComparableWork(plan.get(), option.name());
@@ -2069,13 +2125,79 @@ final class LmdbCascadesRuleProvider {
 					best = prefixCandidate;
 				}
 			}
+			if (best == null) {
+				best = fallback;
+			}
 			if (best != null && !prefixAlternatives.isEmpty()) {
 				best = best.withDetails(best.details() + " prefixFilters="
 						+ semanticPrefixFilterSummary(originalFilters, finiteAnchorBindingName(option.name()))
 						+ " prefixFactors=" + semanticPrefixFactorSummary(option.factors())
 						+ " prefixAlternatives=" + prefixAlternatives);
+			} else if (best != null && best.semanticRewrite()) {
+				best = best.withDetails(best.details() + " prefixDebug=anchors=" + generatedAnchors.size()
+						+ ":localBase=" + semanticPrefixPatternSummary(localBase)
+						+ ":localBaseFactor=" + semanticPrefixPatternSummary(factorForLocalBase(option.factors(),
+								localBase))
+						+ ":orders=" + prefixOrders.size());
 			}
 			return Optional.ofNullable(best);
+		}
+
+		private boolean anchorPrefixesLocalBase(JoinOrderPlanner.JoinOrderPlan plan, TupleExpr localBase,
+				List<TupleExpr> generatedAnchors) {
+			if (plan == null || localBase == null || generatedAnchors == null || generatedAnchors.isEmpty()) {
+				return false;
+			}
+			List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+			int localBaseIndex = identityIndexOf(orderedArgs, localBase);
+			if (localBaseIndex < 0) {
+				localBaseIndex = containingFactorIndex(orderedArgs, localBase);
+			}
+			if (localBaseIndex < 0) {
+				return false;
+			}
+			for (TupleExpr anchor : generatedAnchors) {
+				int anchorIndex = identityIndexOf(orderedArgs, anchor);
+				if (anchorIndex >= 0 && anchorIndex < localBaseIndex) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private int containingFactorIndex(List<TupleExpr> factors, TupleExpr localBase) {
+			for (int i = 0; i < factors.size(); i++) {
+				if (factorContainsLocalBase(factors.get(i), localBase)) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private boolean factorContainsLocalBase(TupleExpr factor, TupleExpr localBase) {
+			if (factor == null || localBase == null) {
+				return false;
+			}
+			if (factor == localBase) {
+				return true;
+			}
+			if (localBase instanceof StatementPattern localPattern) {
+				for (StatementPattern pattern : LmdbJoinPlanSupport.collectPatternIdentities(factor)) {
+					if (pattern == localPattern) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private int identityIndexOf(List<TupleExpr> tupleExprs, TupleExpr candidate) {
+			for (int i = 0; i < tupleExprs.size(); i++) {
+				if (tupleExprs.get(i) == candidate) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		private String semanticPrefixFactorSummary(List<TupleExpr> factors) {
@@ -2180,9 +2302,9 @@ final class LmdbCascadesRuleProvider {
 		}
 
 		private List<SemanticPrefixOrder> semanticPrefixFiniteAnchorOrders(String optionName, List<TupleExpr> factors,
-				JoinOrderPlanner.JoinOrderPlan originalPlan, DeferredFilter satisfiedFilter,
+				JoinOrderPlanner.JoinOrderPlan originalPlan, TupleExpr localBase, DeferredFilter satisfiedFilter,
 				List<DeferredFilter> originalFilters) {
-			if (satisfiedFilter.patternLocalBase == null) {
+			if (localBase == null) {
 				return List.of();
 			}
 			List<TupleExpr> generatedAnchors = generatedFiniteAnchors(optionName, factors);
@@ -2190,21 +2312,57 @@ final class LmdbCascadesRuleProvider {
 				return List.of();
 			}
 			List<SemanticPrefixOrder> orders = new ArrayList<>();
-			semanticBaselinePrefixOrder(factors, originalPlan, satisfiedFilter, generatedAnchors)
-					.ifPresent(order -> orders.add(new SemanticPrefixOrder(order, "costing=semantic-prefix")));
+			semanticAnchorLocalBasePrefixOrder(factors, localBase, generatedAnchors)
+					.ifPresent(order -> addSemanticPrefixOrder(orders, order,
+							"costing=semantic-prefix prefix=finite-anchor-local-base"));
+			if (originalPlan != null) {
+				semanticBaselinePrefixOrder(factors, originalPlan, localBase, generatedAnchors)
+						.ifPresent(order -> addSemanticPrefixOrder(orders, order, "costing=semantic-prefix"));
+			}
 			orders.addAll(semanticSelectiveFilterPrefixOrders(factors, satisfiedFilter, originalFilters,
-					generatedAnchors, finiteAnchorBindingName(optionName)));
+					generatedAnchors, finiteAnchorBindingName(optionName), localBase));
 			return List.copyOf(orders);
 		}
 
+		private Optional<List<TupleExpr>> semanticAnchorLocalBasePrefixOrder(List<TupleExpr> factors,
+				TupleExpr localBase, List<TupleExpr> generatedAnchors) {
+			TupleExpr localBaseFactor = factorForLocalBase(factors, localBase);
+			if (localBaseFactor == null) {
+				return Optional.empty();
+			}
+			List<TupleExpr> ordered = semanticOrderWithPrefix(List.of(), generatedAnchors,
+					localBaseFactor, factors);
+			return containsSameFactorsByIdentity(ordered, factors) ? Optional.of(ordered) : Optional.empty();
+		}
+
+		private void addSemanticPrefixOrder(List<SemanticPrefixOrder> orders, List<TupleExpr> order,
+				String details) {
+			if (order == null || orders.stream().anyMatch(existing -> sameOrderByIdentity(existing.order(), order))) {
+				return;
+			}
+			orders.add(new SemanticPrefixOrder(List.copyOf(order), details));
+		}
+
+		private boolean sameOrderByIdentity(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (int i = 0; i < left.size(); i++) {
+				if (left.get(i) != right.get(i)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		private Optional<List<TupleExpr>> semanticBaselinePrefixOrder(List<TupleExpr> factors,
-				JoinOrderPlanner.JoinOrderPlan originalPlan, DeferredFilter satisfiedFilter,
+				JoinOrderPlanner.JoinOrderPlan originalPlan, TupleExpr localBase,
 				List<TupleExpr> generatedAnchors) {
 			List<TupleExpr> originalOrder = originalPlan.getOrderedArgs();
 			List<TupleExpr> ordered = new ArrayList<>(factors.size());
 			boolean insertedGeneratedAnchor = false;
 			for (TupleExpr originalArg : originalOrder) {
-				if (!insertedGeneratedAnchor && originalArg == satisfiedFilter.patternLocalBase) {
+				if (!insertedGeneratedAnchor && factorContainsLocalBase(originalArg, localBase)) {
 					ordered.addAll(generatedAnchors);
 					insertedGeneratedAnchor = true;
 				}
@@ -2226,20 +2384,24 @@ final class LmdbCascadesRuleProvider {
 
 		private List<SemanticPrefixOrder> semanticSelectiveFilterPrefixOrders(List<TupleExpr> factors,
 				DeferredFilter satisfiedFilter, List<DeferredFilter> originalFilters,
-				List<TupleExpr> generatedAnchors, String generatedAnchorBinding) {
+				List<TupleExpr> generatedAnchors, String generatedAnchorBinding, TupleExpr localBase) {
 			List<SemanticPrefixOrder> orders = new ArrayList<>();
 			for (DeferredFilter filter : originalFilters) {
 				if (filter == satisfiedFilter || !correlatedNotExistsPrefix(filter, generatedAnchorBinding)) {
 					continue;
 				}
 				for (TupleExpr factor : factors) {
-					if (factor == satisfiedFilter.patternLocalBase
+					if (factorContainsLocalBase(factor, localBase)
 							|| LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(factor).isPresent()
 							|| !factor.getBindingNames().containsAll(filter.requiredVars)) {
 						continue;
 					}
+					TupleExpr localBaseFactor = factorForLocalBase(factors, localBase);
+					if (localBaseFactor == null) {
+						continue;
+					}
 					List<TupleExpr> ordered = semanticOrderWithPrefix(List.of(factor), generatedAnchors,
-							satisfiedFilter.patternLocalBase, factors);
+							localBaseFactor, factors);
 					if (containsSameFactorsByIdentity(ordered, factors)) {
 						orders.add(new SemanticPrefixOrder(ordered,
 								"costing=semantic-prefix prefix=selective-not-exists"));
@@ -2247,6 +2409,15 @@ final class LmdbCascadesRuleProvider {
 				}
 			}
 			return orders;
+		}
+
+		private TupleExpr factorForLocalBase(List<TupleExpr> factors, TupleExpr localBase) {
+			for (TupleExpr factor : factors) {
+				if (factorContainsLocalBase(factor, localBase)) {
+					return factor;
+				}
+			}
+			return null;
 		}
 
 		private boolean correlatedNotExistsPrefix(DeferredFilter filter, String generatedAnchorBinding) {
@@ -2804,7 +2975,7 @@ final class LmdbCascadesRuleProvider {
 						&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)
 						&& candidateWork <= incumbentWork;
 			}
-			if (removesMaterializedListMemberFilter(candidate, incumbent)) {
+			if (removesMaterializedFiniteEqualityFilter(candidate, incumbent)) {
 				double candidateWork = candidate.comparableWork();
 				double incumbentWork = incumbent.comparableWork();
 				return LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
@@ -2814,11 +2985,89 @@ final class LmdbCascadesRuleProvider {
 			return semanticRewriteMateriallyBeats(candidate, incumbent);
 		}
 
+		private boolean semanticRewriteCanCompeteAgainstIncumbentRisk(CostedOption candidate,
+				CostedOption incumbent, List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
+			if (!candidate.semanticRewrite()
+					|| !removesMaterializedFiniteEqualityFilter(candidate, incumbent)
+					|| !nonExactFiniteFilterEstimate(originalFilters, satisfiedFilterIndex)) {
+				return false;
+			}
+			double candidateWork = candidate.comparableWork();
+			double incumbentWork = incumbent.comparableWork();
+			double incumbentRiskWork = riskAdjustedOptionWork(incumbent.plan());
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRiskWork)) {
+				return false;
+			}
+			return candidateWork <= incumbentRiskWork
+					&& candidateWork <= incumbentWork * SEMANTIC_REWRITE_RISK_COMPETE_RATIO;
+		}
+
+		private boolean nonExactFiniteFilterEstimate(List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
+			if (originalFilters == null || satisfiedFilterIndex < 0 || satisfiedFilterIndex >= originalFilters.size()) {
+				return false;
+			}
+			EvaluationStatistics.FilterPassEstimate estimate = originalFilters.get(satisfiedFilterIndex)
+					.passEstimate();
+			return estimate != null && estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.EXACT;
+		}
+
+		private double riskAdjustedOptionWork(JoinOrderPlanner.JoinOrderPlan plan) {
+			if (plan == null) {
+				return Double.NaN;
+			}
+			Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
+			double workRows = firstFiniteMetric(metrics,
+					TelemetryMetricNames.PLANNED_COST_WORK_ROWS,
+					TelemetryMetricNames.PLANNED_WORK_ROWS);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+				workRows = plan.getEstimatedTotalWork();
+			}
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+				return Double.NaN;
+			}
+			double qError = metrics.getOrDefault(PLANNED_COST_WORK_Q_ERROR_MAX, 1.0d);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(qError) || qError < 1.0d) {
+				qError = 1.0d;
+			}
+			double uncertaintyRows = metrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, 0.0d);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(uncertaintyRows)) {
+				uncertaintyRows = 0.0d;
+			}
+			double confidence = metrics.getOrDefault(PLANNED_COST_CONFIDENCE,
+					metrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.0d));
+			if (!Double.isFinite(confidence)) {
+				confidence = 0.0d;
+			}
+			confidence = Math.max(0.0d, Math.min(1.0d, confidence));
+			double qErrorPenalty = Math.max(0.0d, qError - 1.0d) * 0.25d;
+			double riskWork = workRows * (1.0d + qErrorPenalty) + uncertaintyRows * (2.0d - confidence);
+			return Math.max(optionFullWork(plan), riskWork);
+		}
+
+		private double firstFiniteMetric(Map<String, Double> metrics, String... names) {
+			if (metrics == null || metrics.isEmpty() || names == null) {
+				return Double.NaN;
+			}
+			for (String name : names) {
+				Double value = metrics.get(name);
+				if (value != null && LmdbJoinPlanSupport.isFiniteNonNegative(value)) {
+					return value;
+				}
+			}
+			return Double.NaN;
+		}
+
 		private boolean semanticPrefixRewrite(CostedOption candidate) {
 			return candidate.details().contains("costing=semantic-prefix");
 		}
 
 		private boolean removesMaterializedListMemberFilter(CostedOption candidate, CostedOption incumbent) {
+			return removesMaterializedFiniteEqualityFilter(candidate, incumbent);
+		}
+
+		private boolean removesMaterializedFiniteEqualityFilter(CostedOption candidate, CostedOption incumbent) {
 			if (candidate == null || incumbent == null || !candidate.semanticRewrite()) {
 				return false;
 			}
@@ -2826,11 +3075,53 @@ final class LmdbCascadesRuleProvider {
 			if (bindingName == null) {
 				return false;
 			}
-			boolean incumbentHasListMember = containsListMemberFilterFor(incumbent.filters(), bindingName)
-					|| containsListMemberFilterFor(incumbent.plan(), bindingName);
-			boolean candidateHasListMember = containsListMemberFilterFor(candidate.filters(), bindingName)
-					|| containsListMemberFilterFor(candidate.plan(), bindingName);
-			return incumbentHasListMember && !candidateHasListMember;
+			boolean incumbentHasMaterializedFilter = containsFiniteEqualityFilterFor(incumbent.filters(), bindingName)
+					|| containsFiniteEqualityFilterFor(incumbent.plan(), bindingName);
+			boolean candidateHasMaterializedFilter = containsFiniteEqualityFilterFor(candidate.filters(), bindingName)
+					|| containsFiniteEqualityFilterFor(candidate.plan(), bindingName);
+			return incumbentHasMaterializedFilter && !candidateHasMaterializedFilter;
+		}
+
+		private boolean containsFiniteEqualityFilterFor(List<DeferredFilter> filters, String bindingName) {
+			if (filters == null || filters.isEmpty() || bindingName == null) {
+				return false;
+			}
+			for (DeferredFilter filter : filters) {
+				if (conditionContainsFiniteEqualityFor(filter.condition, bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean containsFiniteEqualityFilterFor(JoinOrderPlanner.JoinOrderPlan plan, String bindingName) {
+			if (plan == null || bindingName == null) {
+				return false;
+			}
+			for (TupleExpr arg : plan.getOrderedArgs()) {
+				if (containsFiniteEqualityFilterFor(arg, bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean containsFiniteEqualityFilterFor(TupleExpr tupleExpr, String bindingName) {
+			if (tupleExpr == null || bindingName == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter node) {
+					if (conditionContainsFiniteEqualityFor(node.getCondition(), bindingName)) {
+						found[0] = true;
+						return;
+					}
+					super.meet(node);
+				}
+			});
+			return found[0];
 		}
 
 		private boolean containsListMemberFilterFor(List<DeferredFilter> filters, String bindingName) {
@@ -2843,6 +3134,38 @@ final class LmdbCascadesRuleProvider {
 				}
 			}
 			return false;
+		}
+
+		private boolean conditionContainsFiniteEqualityFor(ValueExpr condition, String bindingName) {
+			return conditionContainsListMemberFor(condition, bindingName)
+					|| conditionContainsConstantEqualityFor(condition, bindingName);
+		}
+
+		private boolean conditionContainsConstantEqualityFor(ValueExpr condition, String bindingName) {
+			if (condition instanceof Compare compare) {
+				return compare.getOperator() == Compare.CompareOp.EQ
+						&& (unboundVarNamed(compare.getLeftArg(), bindingName)
+								&& finiteConstant(compare.getRightArg())
+								|| unboundVarNamed(compare.getRightArg(), bindingName)
+										&& finiteConstant(compare.getLeftArg()));
+			}
+			if (condition instanceof And and) {
+				return conditionContainsConstantEqualityFor(and.getLeftArg(), bindingName)
+						|| conditionContainsConstantEqualityFor(and.getRightArg(), bindingName);
+			}
+			if (condition instanceof Or or) {
+				return conditionContainsConstantEqualityFor(or.getLeftArg(), bindingName)
+						|| conditionContainsConstantEqualityFor(or.getRightArg(), bindingName);
+			}
+			return false;
+		}
+
+		private boolean unboundVarNamed(ValueExpr expr, String bindingName) {
+			return expr instanceof Var var && bindingName.equals(var.getName()) && !var.hasValue();
+		}
+
+		private boolean finiteConstant(ValueExpr expr) {
+			return expr instanceof ValueConstant || expr instanceof Var var && var.hasValue();
 		}
 
 		private boolean conditionContainsListMemberFor(ValueExpr condition, String bindingName) {
@@ -4276,6 +4599,7 @@ final class LmdbCascadesRuleProvider {
 			return expression.logical()
 					&& statisticsProvider != null
 					&& expression.tupleExpr()instanceof Difference difference
+					&& !containsAnchorableFiniteFilter(difference)
 					&& StandardCascadesRules.correlatedAntiExistsFilter(difference) != null;
 		}
 
@@ -4329,6 +4653,60 @@ final class LmdbCascadesRuleProvider {
 		}
 	}
 
+	private static final class LmdbCorrelatedNotExistsAntiFilterRule extends LmdbRule {
+		LmdbCorrelatedNotExistsAntiFilterRule(EvaluationStatistics statistics) {
+			super("lmdb-correlated-not-exists-anti-filter", RuleKind.IMPLEMENTATION, 94, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& costModel != null
+					&& expression.tupleExpr()instanceof Filter filter
+					&& !containsAnchorableFiniteFilter(filter.getArg())
+					&& correlatedNotExistsFilterSafe(filter);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter alternative = ((Filter) expression.tupleExpr()).clone();
+			Set<String> shared = correlatedNotExistsSharedBindings(alternative);
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(alternative.getBindingNames())
+					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
+					.accessPath("correlatedNotExists")
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			Set<String> facts = new LinkedHashSet<>();
+			facts.add("correlatedNotExists");
+			facts.add("shared=" + shared);
+			RuleProof proof = proof(semanticScope(goal), facts,
+					"FILTER NOT EXISTS over assured shared variables is implemented as a streaming correlated "
+							+ "anti probe");
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
+					CostVector.ZERO, proof, "lmdb-correlated-not-exists-anti-filter"));
+		}
+
+		private boolean correlatedNotExistsFilterSafe(Filter filter) {
+			return filter != null
+					&& !filter.isVariableScopeChange()
+					&& !correlatedNotExistsSharedBindings(filter).isEmpty();
+		}
+
+		private Set<String> correlatedNotExistsSharedBindings(Filter filter) {
+			if (filter == null || filter.getArg() == null
+					|| !(filter.getCondition()instanceof Not not)
+					|| !(not.getArg()instanceof Exists exists)
+					|| exists.getSubQuery() == null) {
+				return Set.of();
+			}
+			Set<String> shared = LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames());
+			shared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(exists.getSubQuery().getBindingNames()));
+			return shared.isEmpty() ? Set.of() : Set.copyOf(shared);
+		}
+	}
+
 	private static final class LmdbMaterializedMinusAntiSemiRule extends LmdbRule {
 		LmdbMaterializedMinusAntiSemiRule(EvaluationStatistics statistics) {
 			super("lmdb-materialized-minus-anti-semi", RuleKind.IMPLEMENTATION, 92, statistics);
@@ -4340,7 +4718,8 @@ final class LmdbCascadesRuleProvider {
 					&& costModel != null
 					&& expression.tupleExpr()instanceof Difference difference
 					&& difference.getLeftArg() != null
-					&& difference.getRightArg() != null;
+					&& difference.getRightArg() != null
+					&& !containsAnchorableFiniteFilter(difference);
 		}
 
 		@Override
@@ -4372,12 +4751,12 @@ final class LmdbCascadesRuleProvider {
 			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"MINUS is implemented as the existing RDF4J materialized RHS anti-semi iterator");
-			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost,
+			return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost,
 					proof, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost)));
 		}
 
 		private boolean requiresParentBindings(Difference difference, OptimizationGoal goal) {
-			Set<String> boundVars = goalBoundVars(goal);
+			Set<String> boundVars = goalInputBoundVars(goal);
 			if (boundVars.isEmpty() || difference == null) {
 				return false;
 			}
@@ -4394,7 +4773,7 @@ final class LmdbCascadesRuleProvider {
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateMaterializedMinus(Difference difference,
 				OptimizationGoal goal) {
-			Set<String> boundVars = goalBoundVars(goal);
+			Set<String> boundVars = goalInputBoundVars(goal);
 			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = estimate(difference.getLeftArg(),
 					boundVars, false);
 			Optional<JoinFactorCostModel.FactorCostEstimate> rightEstimate = estimate(difference.getRightArg(),
@@ -4474,6 +4853,7 @@ final class LmdbCascadesRuleProvider {
 			return expression.logical()
 					&& costModel != null
 					&& expression.tupleExpr()instanceof Filter filter
+					&& !containsAnchorableFiniteFilter(filter.getArg())
 					&& materializedExistsSemiJoinSafe(filter);
 		}
 
@@ -4488,7 +4868,7 @@ final class LmdbCascadesRuleProvider {
 			CostVector cost = cost(estimate.get());
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(alternative.getBindingNames())
-					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
+					.inputBoundVars(Set.of())
 					.accessPath("materializedExists")
 					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
@@ -4499,14 +4879,14 @@ final class LmdbCascadesRuleProvider {
 			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"Safe FILTER EXISTS is implemented as a materialized RHS semi-join");
-			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost,
+			return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost,
 					proof, "lmdb-materialized-exists-semi", snapshot(estimate.get(), cost)));
 		}
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateMaterializedExists(Filter filter,
 				OptimizationGoal goal) {
 			Exists exists = (Exists) filter.getCondition();
-			Set<String> boundVars = goalBoundVars(goal);
+			Set<String> boundVars = goalInputBoundVars(goal);
 			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = estimate(filter.getArg(), boundVars, false);
 			Optional<JoinFactorCostModel.FactorCostEstimate> rightEstimate = estimate(exists.getSubQuery(), boundVars,
 					false);

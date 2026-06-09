@@ -1311,6 +1311,31 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void minusJoinPrefixPushdownUsesFiniteCodePrefixBeforeTypeGuard() {
+		BindingSetAssignment codeValues = values("code", VF.createLiteral("MED-1000"), VF.createLiteral("MED-1001"));
+		StatementPattern medicationCode = pattern("med", "code", "code");
+		StatementPattern medicationType = pattern("med", "type", "Medication");
+		StatementPattern dosage = pattern("med", "dosage", "dose");
+		FunctionCall doseFilter = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("dose")),
+				new ValueConstant(VF.createLiteral("x")));
+		Difference minus = new Difference(new Join(new Join(codeValues, medicationCode), medicationType),
+				new Filter(dosage, doseFilter));
+
+		List<RuleApplication> applications = apply(new StandardCascadesRules.MinusJoinPrefixPushdownRule(), minus);
+
+		assertTrue(applications.stream()
+				.map(RuleApplication::alternative)
+				.anyMatch(alternative -> alternative instanceof Join join
+						&& join.getLeftArg()instanceof Difference pushedMinus
+						&& bindingRows(pushedMinus.getLeftArg(), "code") == 2
+						&& containsStatementPattern(pushedMinus.getLeftArg(), "med", "code", "code")
+						&& !containsStatementPattern(pushedMinus.getLeftArg(), "med", "type", "Medication")
+						&& containsStatementPattern(join.getRightArg(), "med", "type", "Medication")),
+				"Expected MINUS to be pushed into VALUES+code prefix before the broad type guard: "
+						+ applications);
+	}
+
+	@Test
 	void minusWithNewScopeLocalRhsFilterCanBecomeNegatedExistsFilterAlternative() {
 		StatementPattern medicationType = pattern("med", "type", "Medication");
 		StatementPattern medicationCode = pattern("med", "code", "code");

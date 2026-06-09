@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -66,6 +67,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.CompiledRule;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -119,6 +121,14 @@ class LmdbCascadesOptimizerTest {
 				.map(CascadesRule::id)
 				.anyMatch("join-extension-pushdown"::equals),
 				"LMDB Cascades registry must include non-finite prefix pushdown into scoped Extension");
+		assertTrue(containsCompiledRule(registry, "filter-values-anchor"),
+				"LMDB Cascades registry must include compiled DSL finite-anchor rewrites");
+		assertTrue(containsCompiledRule(registry, "safe-scope-change-removal"),
+				"LMDB Cascades registry must include compiled DSL scope-removal rewrites");
+		assertTrue(containsCompiledRule(registry, "lmdb-access-path-statement-pattern"),
+				"LMDB Cascades registry must include compiled DSL statement access-path properties");
+		assertTrue(containsCompiledRule(registry, "lmdb-hash-anti-semi-minus"),
+				"LMDB Cascades registry must include compiled DSL hash anti-semi child properties");
 	}
 
 	@Test
@@ -934,6 +944,29 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void genericImplementationDefersMinusWithAssuredJoinPrefix() {
+		StatementPattern codeLookup = pattern("med", "code", "code");
+		StatementPattern typeGuard = pattern("med", "type", "Medication");
+		Filter leftWithExists = new Filter(new Join(codeLookup, typeGuard),
+				new Exists(pattern("patient", "hasMedication", "med")));
+		Difference difference = new Difference(leftWithExists,
+				new Filter(pattern("med", "dosage", "dose"), new Bound(new Var("dose"))));
+
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(difference, true, false),
+				"Generic RDF4J Difference must not finalize a MINUS while the logical prefix rewrite can evaluate "
+						+ "it against an assured selective join prefix first");
+	}
+
+	@Test
+	void genericImplementationDefersAnchorableFiniteFilter() {
+		Filter codeIn = new Filter(pattern("med", "code", "code"), listMember("code", "MED-1000", "MED-1001"));
+
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(codeIn, true, false),
+				"Generic RDF4J Filter must not materialize a finite IN filter while LMDB can expose it as a cheaper "
+						+ "VALUES anchor");
+	}
+
+	@Test
 	void connectedProviderDoesNotOwnScopedUnionSeparatorFactor() {
 		TupleExpr deepPrefix = new Join(
 				new Join(new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
@@ -1095,6 +1128,19 @@ class LmdbCascadesOptimizerTest {
 		return new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
 	}
 
+	private static StatementPattern pattern(String subject, String predicate, String object) {
+		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static ListMemberOperator listMember(String name, String... values) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(name));
+		for (String value : values) {
+			operator.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral(value)));
+		}
+		return operator;
+	}
+
 	private static LeftJoin sparseQ6OptionalShape() {
 		TupleExpr deepPath = new Join(
 				new Join(
@@ -1187,6 +1233,12 @@ class LmdbCascadesOptimizerTest {
 
 	private static double component(Object vector, String name) {
 		return assertDoesNotThrow(() -> ((Number) vector.getClass().getMethod(name).invoke(vector)).doubleValue());
+	}
+
+	private static boolean containsCompiledRule(RuleRegistry registry, String id) {
+		return registry.rules()
+				.stream()
+				.anyMatch(rule -> rule instanceof CompiledRule && id.equals(rule.id()));
 	}
 
 	private static Union scopedFanoutUnion() {
