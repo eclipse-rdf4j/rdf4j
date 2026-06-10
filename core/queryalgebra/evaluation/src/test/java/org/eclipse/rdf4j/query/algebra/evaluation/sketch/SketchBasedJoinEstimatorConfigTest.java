@@ -155,7 +155,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void omniStrategyAllocatesOmniSideState() throws Exception {
+	void omniStrategyAllocatesOmniJoinEstimatorSideState() throws Exception {
 		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
 				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
 		StubSketchStatementSource localStore = new StubSketchStatementSource();
@@ -170,7 +170,35 @@ class SketchBasedJoinEstimatorConfigTest {
 		rebuild(estimator);
 
 		assertEquals("omni", estimator.getSketchStrategy().configValue());
-		assertTrue(omniSketchCount(estimator) > 0, "OMNI should allocate Omni side state");
+		assertEquals(0, omniSketchCount(estimator), "OMNI should not allocate legacy OmniFrequencySketch side state");
+		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
+				"OMNI should allocate Omni join-estimator side state");
+	}
+
+	@Test
+	void omniStrategyDoesNotPopulateFastAgmsResidentSketches() throws Exception {
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		for (int i = 0; i < 16; i++) {
+			localStore.add(st(VF.createIRI("urn:omni-fastagms:s" + i), p1,
+					VF.createIRI("urn:omni-fastagms:o" + (i % 4))));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		assertEquals(16.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d);
+		assertEquals(4.0d, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(),
+				"urn:omni-fastagms:o0"), 0.0d);
+		assertEquals(4.0d, estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(),
+				"urn:omni-fastagms:o0", null), 0.0d);
+		assertEquals(0, estimator.debugResidentSketches().size(),
+				"OMNI should replace the FastAGMS update path instead of populating resident FastAGMS sketches");
+		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
+				"OMNI should still populate the join-estimator side state");
 	}
 
 	@Test
@@ -584,6 +612,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		try {
 			properties.clearAll();
 			RareOverlapFixture fixture = buildRareOverlapFixture(SketchBasedJoinEstimator.Config.defaults()
+					.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 					.withNominalEntries(512)
 					.withSubjectBucketCount(128)
 					.withPredicateBucketCount(128)
@@ -731,6 +760,13 @@ class SketchBasedJoinEstimatorConfigTest {
 			}
 		}
 		return count;
+	}
+
+	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object omniJoinEstimator = objectField(state, "omniJoinEstimator");
+		Map<?, ?> relations = (Map<?, ?>) objectField(omniJoinEstimator, "relations");
+		return relations.size();
 	}
 
 	private static Object invokeCountMinJoinEvidence(SketchBasedJoinEstimator estimator,

@@ -87,6 +87,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimatePro
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.OmniCorrelatedProbeEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.OmniFiniteFilterProbeEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -142,6 +144,7 @@ class LmdbEvaluationStatistics
 	private static final String FINITE_ANCHOR_PAGE_WALK_SOURCE = "lmdb-finite-anchor-page-walk";
 	private static final String DECISION_PAGE_WALK_SOURCE = "lmdb-decision-page-walk";
 	private static final double COUNT_MIN_TRUSTED_CONFIDENCE = 0.75d;
+	private static final double NON_EXACT_ZERO_SKETCH_CONFIDENCE = 0.25d;
 	private static final double COUNT_MIN_MIN_CALIBRATION_FACTOR = 0.05d;
 	private static final double COUNT_MIN_MAX_CALIBRATION_FACTOR = 1.0d;
 	private static final String PLANNED_SKETCH_STRATEGY = "plannedSketchStrategy";
@@ -467,6 +470,14 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
 		}
+		JoinFrequencyEstimate joinSurfaceEvidence = multiPatternJoinOrderEvidence(orderedFactors,
+				effectiveBoundVars, rows);
+		if (joinSurfaceEvidence == null) {
+			joinSurfaceEvidence = multiPatternJoinSurfaceEvidence(orderedFactors);
+		}
+		if (joinSurfaceEvidence != null && isFiniteNonNegative(joinSurfaceEvidence.calibratedRows())) {
+			rows = joinSurfaceEvidence.calibratedRows();
+		}
 		double workRows = 0.0d;
 		Set<String> currentBoundVars = effectiveBoundVars;
 		for (TupleExpr factor : orderedFactors) {
@@ -481,11 +492,113 @@ class LmdbEvaluationStatistics
 			currentBoundVars = unionBindingNames(currentBoundVars, factor.getBindingNames());
 		}
 		workRows = Math.max(workRows, rows);
-		Map<String, Double> metrics = Map.of("plannedJoinFactorCount", (double) orderedFactors.size(),
-				TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		Map<String, Double> metrics = new LinkedHashMap<>();
+		metrics.put("plannedJoinFactorCount", (double) orderedFactors.size());
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		String source = "lmdb-sketch-multi-pattern-join";
+		double qError = 2.5d;
+		if (joinSurfaceEvidence != null) {
+			source = joinSurfaceEvidence.source();
+			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.5d;
+			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
+			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
+			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+		}
 		return Optional.of(new StatisticsEstimate(rows,
-				QErrorInterval.heuristic(rows, 2.5d, "lmdb-sketch-multi-pattern-join"), workRows,
-				"lmdb-sketch-multi-pattern-join", metrics));
+				QErrorInterval.heuristic(rows, qError, source), workRows,
+				source, metrics));
+	}
+
+	private JoinFrequencyEstimate multiPatternJoinSurfaceEvidence(List<TupleExpr> orderedFactors) {
+		if (sketchBasedJoinEstimator == null || orderedFactors == null || orderedFactors.size() < 2) {
+			return null;
+		}
+		JoinFrequencyEstimate bestEstimate = null;
+		for (String joinVarName : repeatedBindingNames(orderedFactors)) {
+			JoinFrequencyEstimate estimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(orderedFactors,
+					joinVarName);
+			if (estimate != null && isFiniteNonNegative(estimate.calibratedRows())) {
+				bestEstimate = betterMultiPatternJoinSurfaceEvidence(bestEstimate, estimate);
+			}
+		}
+		return bestEstimate;
+	}
+
+	private JoinFrequencyEstimate betterMultiPatternJoinSurfaceEvidence(JoinFrequencyEstimate current,
+			JoinFrequencyEstimate candidate) {
+		if (candidate == null || !isFiniteNonNegative(candidate.calibratedRows())) {
+			return current;
+		}
+		if (current == null || !isFiniteNonNegative(current.calibratedRows())) {
+			return candidate;
+		}
+		boolean candidateOmni = isOmniJoinEvidence(candidate);
+		boolean currentOmni = isOmniJoinEvidence(current);
+		if (candidateOmni != currentOmni) {
+			return candidateOmni ? candidate : current;
+		}
+		return candidate.calibratedRows() < current.calibratedRows() ? candidate : current;
+	}
+
+	private JoinFrequencyEstimate multiPatternJoinOrderEvidence(List<TupleExpr> orderedFactors,
+			Set<String> boundVars, double baselineRows) {
+		if (sketchBasedJoinEstimator == null || orderedFactors == null || orderedFactors.size() < 2) {
+			return null;
+		}
+		Optional<JoinOrderPlan> plan = sketchBasedJoinEstimator.estimateJoinOrder(orderedFactors,
+				boundVars == null ? Set.of() : boundVars, Algorithm.DYNAMIC_PROGRAMMING, this, List.of());
+		if (plan.isEmpty()) {
+			return null;
+		}
+		JoinOrderPlan joinOrderPlan = plan.get();
+		String source = joinOrderPlan.getSummaryStringMetrics().get(PLANNED_SKETCH_ESTIMATE_SOURCE);
+		if (source == null || !source.startsWith("omni-")) {
+			return null;
+		}
+		double rows = joinOrderPlan.getEstimatedFinalRows();
+		if (!isFiniteNonNegative(rows)) {
+			rows = joinOrderPlan.getSummaryDoubleMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, Double.NaN);
+		}
+		boolean nonExactZeroWithPositiveBaseline = rows == 0.0d
+				&& isFiniteNonNegative(baselineRows)
+				&& baselineRows > 0.0d;
+		if (nonExactZeroWithPositiveBaseline) {
+			rows = baselineRows;
+		}
+		if (!isFiniteNonNegative(rows)) {
+			return null;
+		}
+		double confidence = joinOrderPlan.getSummaryDoubleMetrics()
+				.getOrDefault(PLANNED_SKETCH_CONFIDENCE, 0.75d);
+		if (!Double.isFinite(confidence) || confidence < 0.0d) {
+			confidence = 0.75d;
+		}
+		if (nonExactZeroWithPositiveBaseline) {
+			confidence = Math.min(confidence, 0.25d);
+		}
+		confidence = Math.min(1.0d, confidence);
+		return new JoinFrequencyEstimate(rows, rows, confidence, source, 1.0d);
+	}
+
+	private static List<String> repeatedBindingNames(List<TupleExpr> orderedFactors) {
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		for (TupleExpr factor : orderedFactors) {
+			if (factor == null) {
+				continue;
+			}
+			Set<String> localNames = new HashSet<>(factor.getBindingNames());
+			for (String name : localNames) {
+				counts.merge(name, 1, Integer::sum);
+			}
+		}
+		List<String> repeated = new ArrayList<>();
+		for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+			if (entry.getValue() >= 2) {
+				repeated.add(entry.getKey());
+			}
+		}
+		return repeated;
 	}
 
 	private boolean supportsSketchTuplePlan(List<TupleExpr> orderedFactors, Set<String> boundVars) {
@@ -506,11 +619,24 @@ class LmdbEvaluationStatistics
 		if (left == null || right == null || joinVar == null || sketchBasedJoinEstimator == null) {
 			return Optional.empty();
 		}
+		List<TupleExpr> factors = List.of(left, right);
+		JoinFrequencyEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+				joinVar);
+		double rows = Double.NaN;
+		String source = "lmdb-join-frequency-inner-product";
+		double qError = 2.0d;
+		if (isOmniJoinEvidence(joinSurfaceEvidence) && isFiniteNonNegative(joinSurfaceEvidence.calibratedRows())) {
+			rows = joinSurfaceEvidence.calibratedRows();
+			source = joinSurfaceEvidence.source();
+			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.0d;
+		}
 		Join join = new Join(left.clone(), right.clone());
-		double rows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(join,
-				boundVars == null ? Set.of() : boundVars);
 		if (!isFiniteNonNegative(rows)) {
-			rows = getCardinality(join);
+			rows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(join,
+					boundVars == null ? Set.of() : boundVars);
+			if (!isFiniteNonNegative(rows)) {
+				rows = getCardinality(join);
+			}
 		}
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
@@ -525,9 +651,14 @@ class LmdbEvaluationStatistics
 		metrics.put("plannedJoinVarDistinctLeft", leftDistinct);
 		metrics.put("plannedJoinVarDistinctRight", rightDistinct);
 		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		if (joinSurfaceEvidence != null) {
+			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
+			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
+			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+		}
 		return Optional.of(new StatisticsEstimate(rows,
-				QErrorInterval.heuristic(rows, 2.0d, "lmdb-join-frequency-inner-product"),
-				Math.max(workRows, rows), "lmdb-join-frequency-inner-product", metrics));
+				QErrorInterval.heuristic(rows, qError, source),
+				Math.max(workRows, rows), source, metrics));
 	}
 
 	@Override
@@ -537,7 +668,16 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		List<TupleExpr> factors = new ArrayList<>(pathPatterns);
+		JoinFrequencyEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+				bridgeVar);
 		double rows = sketchBasedJoinEstimator.cardinality(factors);
+		String source = "lmdb-bridge-path";
+		double qError = 2.5d;
+		if (isOmniJoinEvidence(joinSurfaceEvidence) && isFiniteNonNegative(joinSurfaceEvidence.calibratedRows())) {
+			rows = joinSurfaceEvidence.calibratedRows();
+			source = joinSurfaceEvidence.source();
+			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.5d;
+		}
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
 		}
@@ -549,10 +689,20 @@ class LmdbEvaluationStatistics
 			}
 		}
 		double workRows = Math.max(rows, bridgeDistinct);
-		Map<String, Double> metrics = Map.of("plannedBridgeVariableDistinctRows", bridgeDistinct,
-				"plannedBridgePatternCount", (double) pathPatterns.size());
-		return Optional.of(new StatisticsEstimate(rows, QErrorInterval.heuristic(rows, 2.5d, "lmdb-bridge-path"),
-				workRows, "lmdb-bridge-path", metrics));
+		Map<String, Double> metrics = new LinkedHashMap<>();
+		metrics.put("plannedBridgeVariableDistinctRows", bridgeDistinct);
+		metrics.put("plannedBridgePatternCount", (double) pathPatterns.size());
+		if (joinSurfaceEvidence != null) {
+			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
+			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
+			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+		}
+		return Optional.of(new StatisticsEstimate(rows, QErrorInterval.heuristic(rows, qError, source),
+				workRows, source, metrics));
+	}
+
+	private static boolean isOmniJoinEvidence(JoinFrequencyEstimate estimate) {
+		return estimate != null && estimate.source() != null && estimate.source().startsWith("omni-");
 	}
 
 	@Override
@@ -560,6 +710,10 @@ class LmdbEvaluationStatistics
 			Set<String> boundVars) {
 		if (starPatterns == null || starPatterns.size() < 2 || sketchBasedJoinEstimator == null) {
 			return Optional.empty();
+		}
+		Optional<StatisticsEstimate> omniSubjectStar = omniSubjectStarScan(starPatterns, boundVars);
+		if (omniSubjectStar.isPresent()) {
+			return omniSubjectStar;
 		}
 		Optional<StatisticsEstimate> characteristicSet = characteristicSetStar(starPatterns, boundVars);
 		if (characteristicSet.isEmpty()) {
@@ -608,6 +762,80 @@ class LmdbEvaluationStatistics
 				batchedWorkRows, method, metrics));
 	}
 
+	private Optional<StatisticsEstimate> omniSubjectStarScan(List<StatementPattern> starPatterns,
+			Set<String> boundVars) {
+		String subjectVarName = commonSubjectVarName(starPatterns);
+		if (subjectVarName == null) {
+			return Optional.empty();
+		}
+		JoinFrequencyEstimate subjectStar = sketchBasedJoinEstimator.estimateSubjectStarJoinSurface(starPatterns,
+				subjectVarName);
+		if (subjectStar == null || !isFiniteNonNegative(subjectStar.calibratedRows())) {
+			return Optional.empty();
+		}
+		double joinedRows = subjectStar.calibratedRows();
+		double surfaceRows = Math.max(subjectStar.upperBoundRows(), joinedRows);
+		double independentWorkRows = 0.0d;
+		boolean independentWorkRowsComplete = true;
+		for (StatementPattern pattern : starPatterns) {
+			double rows = sketchOnlySubjectStarPatternRows(pattern);
+			if (!isFiniteNonNegative(rows)) {
+				independentWorkRowsComplete = false;
+				break;
+			}
+			independentWorkRows += rows;
+		}
+		if (!independentWorkRowsComplete || !isFiniteNonNegative(independentWorkRows)) {
+			independentWorkRows = surfaceRows;
+		}
+		double batchedWorkRows = independentWorkRowsComplete
+				? Math.min(independentWorkRows, Math.max(joinedRows, surfaceRows))
+				: surfaceRows;
+		Map<String, Double> metrics = new HashMap<>();
+		metrics.put(LmdbStarJoinScanSupport.PREDICATES_METRIC, (double) starPatterns.size());
+		metrics.put(LmdbStarJoinScanSupport.INDEPENDENT_WORK_METRIC, independentWorkRows);
+		metrics.put(LmdbStarJoinScanSupport.BATCHED_WORK_METRIC, batchedWorkRows);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, batchedWorkRows);
+		metrics.put("plannedOmniSubjectStarRows", joinedRows);
+		metrics.put("plannedOmniSubjectStarUpperBoundRows", subjectStar.upperBoundRows());
+		metrics.put("plannedOmniSubjectStarConfidence", subjectStar.confidence());
+		if (!independentWorkRowsComplete) {
+			metrics.put("plannedOmniSubjectStarIndependentWorkFallback", 1.0d);
+		}
+		traceStarMultiPredicateScan("star-multi-predicate-accept", starPatterns, boundVars,
+				"rows=" + estimateTraceRows(joinedRows)
+						+ ", independentWork=" + estimateTraceRows(independentWorkRows)
+						+ ", batchedWork=" + estimateTraceRows(batchedWorkRows)
+						+ ", method=" + subjectStar.source());
+		double qError = subjectStar.confidence() >= 0.75d ? 1.5d : 3.0d;
+		return Optional.of(new StatisticsEstimate(joinedRows,
+				QErrorInterval.heuristic(joinedRows, qError, subjectStar.source()),
+				batchedWorkRows, subjectStar.source(), metrics));
+	}
+
+	private String commonSubjectVarName(List<StatementPattern> starPatterns) {
+		String subjectVarName = null;
+		for (StatementPattern pattern : starPatterns) {
+			if (pattern == null) {
+				return null;
+			}
+			Var subjectVar = pattern.getSubjectVar();
+			if (subjectVar == null || subjectVar.hasValue() || subjectVar.getName() == null) {
+				return null;
+			}
+			String name = subjectVar.getName();
+			if (name.startsWith("_const_")) {
+				return null;
+			}
+			if (subjectVarName == null) {
+				subjectVarName = name;
+			} else if (!subjectVarName.equals(name)) {
+				return null;
+			}
+		}
+		return subjectVarName;
+	}
+
 	private static boolean isExactEstimate(StatisticsEstimate estimate) {
 		if (estimate == null || estimate.qErrorInterval() == null) {
 			return false;
@@ -645,6 +873,14 @@ class LmdbEvaluationStatistics
 			Set<String> boundVars) {
 		if (condition == null || inputEstimate == null) {
 			return Optional.empty();
+		}
+		Optional<StatisticsEstimate> semiEstimate = correlatedExistsFilterEstimate(input, condition, inputEstimate);
+		if (semiEstimate.isPresent()) {
+			return semiEstimate;
+		}
+		Optional<StatisticsEstimate> finiteProbeEstimate = finiteOmniFilterEstimate(input, condition, inputEstimate);
+		if (finiteProbeEstimate.isPresent()) {
+			return finiteProbeEstimate;
 		}
 		Filter synthetic = new Filter(input == null ? new SingletonSet() : input.clone(), condition.clone());
 		FilterPassEstimate passEstimate = estimateFilterPass(synthetic);
@@ -690,6 +926,82 @@ class LmdbEvaluationStatistics
 				filteredEstimate.method(), metrics, bag);
 	}
 
+	private Optional<StatisticsEstimate> finiteOmniFilterEstimate(TupleExpr input, ValueExpr condition,
+			StatisticsEstimate inputEstimate) {
+		if (input == null || condition == null || inputEstimate == null || sketchBasedJoinEstimator == null) {
+			return Optional.empty();
+		}
+		Optional<OmniFiniteFilterProbeEstimate> omniEstimate = sketchBasedJoinEstimator
+				.estimateOmniFiniteFilterProbe(input, condition, inputEstimate.rows());
+		if (omniEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		StatisticsEstimate finiteEstimate = finiteOmniFilterStatisticsEstimate(inputEstimate, omniEstimate.get());
+		ValueExpr residualCondition = omniEstimate.get().residualCondition();
+		if (residualCondition == null) {
+			return Optional.of(finiteEstimate);
+		}
+		Filter residualFilter = new Filter(input.clone(), residualCondition.clone());
+		FilterPassEstimate residualPass = estimateFilterPass(residualFilter);
+		if (residualPass == null || !isFiniteNonNegative(residualPass.getPlanningPassRatio())) {
+			return Optional.empty();
+		}
+		QErrorInterval interval = QErrorInterval.fromBounds(residualPass.getLower95PassRatio(),
+				residualPass.getPlanningPassRatio(), residualPass.getUpper95PassRatio(),
+				Math.min(omniEstimate.get().confidence(), residualPass.getConfidenceScore()),
+				"omni-filter-finite-probe-residual");
+		var vector = finiteEstimate.vector()
+				.filter(residualPass.getPlanningPassRatio(), interval, "omni-filter-finite-probe");
+		StatisticsEstimate residualEstimate = StatisticsEstimate.fromVector(vector, "omni-filter-finite-probe");
+		Map<String, Double> metrics = new HashMap<>(finiteEstimate.metrics());
+		metrics.putAll(residualEstimate.metrics());
+		metrics.put("plannedOmniFilterResidualPassRatio", residualPass.getPlanningPassRatio());
+		metrics.put("plannedOmniFilterResidualConfidence", residualPass.getConfidenceScore());
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, residualEstimate.rows());
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				residualEstimate.rows() == 0.0d && !omniEstimate.get().exactZero() ? 1.0d : residualEstimate.rows());
+		BagEstimate bag = residualEstimate.bag()
+				.withRows(residualEstimate.rows(), "omni-filter-finite-probe")
+				.withMetrics(metrics);
+		StatisticsEstimate combined = new StatisticsEstimate(residualEstimate.rows(),
+				residualEstimate.qErrorInterval(), residualEstimate.workRows(), "omni-filter-finite-probe",
+				metrics, bag);
+		return Optional.of(accountMaterializedFilterEvaluationWork(residualCondition, finiteEstimate, combined));
+	}
+
+	private StatisticsEstimate finiteOmniFilterStatisticsEstimate(StatisticsEstimate inputEstimate,
+			OmniFiniteFilterProbeEstimate omniEstimate) {
+		double probeWorkRows = Math.max(1.0d, Math.max(omniEstimate.probeRows(), omniEstimate.outputRows()));
+		double workRows = inputEstimate.workRows() + probeWorkRows;
+		double outputRows = omniEstimate.outputRows();
+		Map<String, Double> metrics = new HashMap<>(inputEstimate.metrics());
+		metrics.put("plannedOmniFilterFiniteProbeWorkRows", probeWorkRows);
+		metrics.put("plannedOmniFilterFiniteProbeOutputRows", omniEstimate.probeRows());
+		metrics.put("plannedOmniFilterFiniteProbeInputRows", inputEstimate.rows());
+		metrics.put("plannedOmniFilterFiniteProbeValues", (double) omniEstimate.valueCount());
+		metrics.put("plannedOmniFilterInputWitnesses", (double) omniEstimate.inputWitnesses());
+		metrics.put("plannedOmniFilterProbeWitnesses", (double) omniEstimate.probeWitnesses());
+		metrics.put("plannedOmniFilterFiniteProbeWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniFilterMatchedWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniFilterSamplingProbability", omniEstimate.samplingProbability());
+		metrics.put("plannedOmniFilterConfidence", omniEstimate.confidence());
+		metrics.put("plannedOmniFilterProbeKeyWidth", (double) omniEstimate.keyWidth());
+		metrics.put("plannedOmniFilterProbeAttributeCount", (double) omniEstimate.attributeCount());
+		metrics.put("plannedOmniFilterSketchZero", outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : 0.0d);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : outputRows);
+		BagEstimate bag = inputEstimate.bag()
+				.withRows(outputRows, omniEstimate.source())
+				.withWorkRows(workRows, omniEstimate.source())
+				.withMetrics(metrics);
+		double qError = omniEstimate.confidence() >= 0.75d ? 1.5d : 4.0d;
+		QErrorInterval interval = QErrorInterval.heuristic(outputRows, qError, omniEstimate.source());
+		return new StatisticsEstimate(outputRows, interval, workRows, omniEstimate.source(), metrics, bag);
+	}
+
 	private Optional<StatisticsEstimate> correlatedAntiExistsFilterEstimate(TupleExpr input, ValueExpr condition,
 			StatisticsEstimate inputEstimate, StatisticsEstimate filteredEstimate, Set<String> boundVars) {
 		TupleExpr antiProbe = antiExistsProbe(condition);
@@ -706,6 +1018,14 @@ class LmdbEvaluationStatistics
 		if (exactEstimate != null) {
 			return Optional.of(correlatedAntiExistsExactStatisticsEstimate(inputEstimate, filteredEstimate,
 					exactEstimate));
+		}
+		Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator == null
+				? Optional.empty()
+				: sketchBasedJoinEstimator.estimateOmniCorrelatedAntiProbe(input, antiProbe, sharedBindings,
+						inputEstimate.rows());
+		if (omniEstimate.isPresent()) {
+			return Optional.of(correlatedAntiExistsOmniStatisticsEstimate(inputEstimate, filteredEstimate,
+					omniEstimate.get(), sharedBindings.size()));
 		}
 		Set<String> incomingBindings = plannerBindingNames(boundVars);
 		JoinFactorCostModel.CostContext baseContext = JoinFactorCostModel.CostContext.forOptimization(
@@ -726,19 +1046,11 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		double outputRows = filteredEstimate.rows();
-		double antiMatchedRows = Double.NaN;
 		double probeOutputRows = antiProbeEstimate.get().getOutputRows();
-		if (isFiniteNonNegative(probeOutputRows)) {
-			antiMatchedRows = Math.min(inputEstimate.rows(), probeOutputRows);
-			outputRows = Math.min(outputRows, Math.max(0.0d, inputEstimate.rows() - antiMatchedRows));
-		}
 
 		Map<String, Double> metrics = new HashMap<>(filteredEstimate.metrics());
 		metrics.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
 		metrics.put("plannedAntiExistsProbeOutputRows", probeOutputRows);
-		if (isFiniteNonNegative(antiMatchedRows)) {
-			metrics.put("plannedAntiExistsMatchedRows", antiMatchedRows);
-		}
 		metrics.put("plannedAntiExistsInputRows", inputEstimate.rows());
 		metrics.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
 		BagEstimate bag = filteredEstimate.bag()
@@ -751,8 +1063,103 @@ class LmdbEvaluationStatistics
 				workRows, "lmdb-correlated-anti-exists-filter", metrics, bag));
 	}
 
+	private Optional<StatisticsEstimate> correlatedExistsFilterEstimate(TupleExpr input, ValueExpr condition,
+			StatisticsEstimate inputEstimate) {
+		TupleExpr semiProbe = existsProbe(condition);
+		if (input == null || semiProbe == null || inputEstimate == null || sketchBasedJoinEstimator == null) {
+			return Optional.empty();
+		}
+		Set<String> sharedBindings = plannerBindingNames(input.getAssuredBindingNames());
+		sharedBindings.retainAll(plannerBindingNames(semiProbe.getBindingNames()));
+		if (sharedBindings.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator.estimateOmniCorrelatedSemiProbe(
+				input, semiProbe, sharedBindings, inputEstimate.rows());
+		if (omniEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(correlatedExistsOmniStatisticsEstimate(inputEstimate, omniEstimate.get(),
+				sharedBindings.size()));
+	}
+
+	private StatisticsEstimate correlatedExistsOmniStatisticsEstimate(StatisticsEstimate inputEstimate,
+			OmniCorrelatedProbeEstimate omniEstimate, int sharedBindingCount) {
+		double probeWorkRows = Math.max(1.0d, Math.max(omniEstimate.probeRows(), omniEstimate.matchedRows()));
+		double workRows = inputEstimate.workRows() + probeWorkRows;
+		double outputRows = omniEstimate.outputRows();
+		Map<String, Double> metrics = new HashMap<>(inputEstimate.metrics());
+		metrics.put("plannedSemiProbeWorkRows", probeWorkRows);
+		metrics.put("plannedSemiProbeOutputRows", omniEstimate.probeRows());
+		metrics.put("plannedSemiMatchedRows", omniEstimate.matchedRows());
+		metrics.put("plannedSemiInputRows", inputEstimate.rows());
+		metrics.put("plannedSemiSharedBindingCount", (double) sharedBindingCount);
+		metrics.put("plannedOmniSemiInputWitnesses", (double) omniEstimate.inputWitnesses());
+		metrics.put("plannedOmniSemiProbeWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniSemiMatchedWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniSemiSamplingProbability", omniEstimate.samplingProbability());
+		metrics.put("plannedOmniSemiConfidence", omniEstimate.confidence());
+		metrics.put("plannedOmniSemiProbeKeyWidth", (double) omniEstimate.keyWidth());
+		metrics.put("plannedOmniSemiSketchZero", outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : 0.0d);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : outputRows);
+		BagEstimate bag = inputEstimate.bag()
+				.withRows(outputRows, omniEstimate.source())
+				.withWorkRows(workRows, omniEstimate.source())
+				.withMetrics(metrics);
+		double qError = omniEstimate.confidence() >= 0.75d ? 1.5d : 4.0d;
+		QErrorInterval interval = QErrorInterval.heuristic(outputRows, qError, omniEstimate.source());
+		return new StatisticsEstimate(outputRows, interval, workRows, omniEstimate.source(), metrics, bag);
+	}
+
+	private StatisticsEstimate correlatedAntiExistsOmniStatisticsEstimate(StatisticsEstimate inputEstimate,
+			StatisticsEstimate filteredEstimate, OmniCorrelatedProbeEstimate omniEstimate, int sharedBindingCount) {
+		double probeWorkRows = Math.max(1.0d, Math.max(omniEstimate.probeRows(),
+				omniEstimate.matchedRows()));
+		double workRows = filteredEstimate.workRows() + probeWorkRows;
+		double outputRows = omniEstimate.outputRows();
+		Map<String, Double> metrics = new HashMap<>(filteredEstimate.metrics());
+		metrics.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+		metrics.put("plannedAntiExistsProbeOutputRows", omniEstimate.probeRows());
+		metrics.put("plannedAntiExistsMatchedRows", omniEstimate.matchedRows());
+		metrics.put("plannedAntiExistsInputRows", inputEstimate.rows());
+		metrics.put("plannedAntiExistsSharedBindingCount", (double) sharedBindingCount);
+		metrics.put("plannedOmniAntiInputWitnesses", (double) omniEstimate.inputWitnesses());
+		metrics.put("plannedOmniAntiProbeWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniAntiMatchedWitnesses", (double) omniEstimate.matchedWitnesses());
+		metrics.put("plannedOmniAntiTupleKeyWitnesses", omniEstimate.keyWidth() == 2
+				? (double) omniEstimate.inputWitnesses()
+				: 0.0d);
+		metrics.put("plannedOmniAntiSamplingProbability", omniEstimate.samplingProbability());
+		metrics.put("plannedOmniAntiConfidence", omniEstimate.confidence());
+		metrics.put("plannedOmniAntiProbeKeyWidth", (double) omniEstimate.keyWidth());
+		metrics.put("plannedOmniAntiSketchZero", outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : 0.0d);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : outputRows);
+		BagEstimate bag = filteredEstimate.bag()
+				.withRows(outputRows, omniEstimate.source())
+				.withWorkRows(workRows, omniEstimate.source())
+				.withMetrics(metrics);
+		double qError = omniEstimate.confidence() >= 0.75d ? 1.5d : 4.0d;
+		QErrorInterval interval = QErrorInterval.heuristic(outputRows, qError, omniEstimate.source());
+		return new StatisticsEstimate(outputRows, interval, workRows, omniEstimate.source(), metrics, bag);
+	}
+
 	private TupleExpr antiExistsProbe(ValueExpr condition) {
 		if (condition instanceof Not not && not.getArg()instanceof Exists exists) {
+			return exists.getSubQuery();
+		}
+		return null;
+	}
+
+	private TupleExpr existsProbe(ValueExpr condition) {
+		if (condition instanceof Exists exists) {
 			return exists.getSubQuery();
 		}
 		return null;
@@ -2110,7 +2517,8 @@ class LmdbEvaluationStatistics
 
 	private boolean hasProtectedEstimateSource(String source) {
 		return "lmdb-finite-binding-lookup".equals(source)
-				|| "lmdb-finite-derived-surface".equals(source);
+				|| "lmdb-finite-derived-surface".equals(source)
+				|| (source != null && source.startsWith("omni-"));
 	}
 
 	private Map<String, Double> parentDoubleMetrics(FactorCostEstimate childEstimate) {
@@ -2540,6 +2948,13 @@ class LmdbEvaluationStatistics
 		if (!isPositiveFinite(leftRows)) {
 			return Optional.empty();
 		}
+		Optional<OmniCorrelatedProbeEstimate> omniAntiEstimate = sketchBasedJoinEstimator == null
+				? Optional.empty()
+				: sketchBasedJoinEstimator.estimateOmniCorrelatedAntiProbe(leftArg, rightArg, sharedBindings,
+						leftRows);
+		if (omniAntiEstimate.isPresent()) {
+			return Optional.of(omniMinusAntiJoinFactorCost(left, omniAntiEstimate.get(), sharedBindings));
+		}
 		JoinFactorCostModel.CostContext rightContext = optionalRightCostContext(context, leftArg, rightArg, leftRows,
 				sharedBindings);
 		Optional<FactorCostEstimate> rightEstimate = estimateFactorCost(rightArg, rightContext);
@@ -2595,6 +3010,58 @@ class LmdbEvaluationStatistics
 
 		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, false,
 				false, 0, 0, Double.NaN, true, false));
+	}
+
+	private FactorCostEstimate omniMinusAntiJoinFactorCost(FactorCostEstimate left,
+			OmniCorrelatedProbeEstimate omniEstimate, Set<String> sharedBindings) {
+		double leftRows = left.getOutputRows();
+		double leftWorkRows = left.getWorkRows();
+		if (!isFiniteNonNegative(leftWorkRows)) {
+			leftWorkRows = leftRows;
+		}
+		double probeWorkRows = Math.max(1.0d, Math.max(omniEstimate.probeRows(), omniEstimate.matchedRows()));
+		double outputRows = Math.min(leftRows, omniEstimate.outputRows());
+		double workRows = Math.max(outputRows, leftWorkRows + probeWorkRows);
+
+		Map<String, String> stringMetrics = new HashMap<>(left.getStringMetrics());
+		String leftSource = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (leftSource != null) {
+			stringMetrics.put("plannedMinusLeftBaseEstimateSource", leftSource);
+		}
+		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "omni-anti-join");
+		stringMetrics.put("plannedMinusExecution", "omni-anti-probe");
+		stringMetrics.put("plannedMinusSharedBindings", new TreeSet<>(sharedBindings).toString());
+
+		Map<String, Double> doubleMetrics = parentDoubleMetrics(left);
+		doubleMetrics.put("plannedMinusLeftRows", leftRows);
+		doubleMetrics.put("plannedMinusLeftWorkRows", leftWorkRows);
+		doubleMetrics.put("plannedMinusRightRows", omniEstimate.probeRows());
+		doubleMetrics.put("plannedMinusRightWorkRows", probeWorkRows);
+		doubleMetrics.put("plannedMinusOutputRows", outputRows);
+		doubleMetrics.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+		doubleMetrics.put("plannedAntiExistsProbeOutputRows", omniEstimate.probeRows());
+		doubleMetrics.put("plannedAntiExistsMatchedRows", omniEstimate.matchedRows());
+		doubleMetrics.put("plannedAntiExistsInputRows", omniEstimate.inputRows());
+		doubleMetrics.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
+		doubleMetrics.put("plannedOmniAntiInputWitnesses", (double) omniEstimate.inputWitnesses());
+		doubleMetrics.put("plannedOmniAntiProbeWitnesses", (double) omniEstimate.matchedWitnesses());
+		doubleMetrics.put("plannedOmniAntiMatchedWitnesses", (double) omniEstimate.matchedWitnesses());
+		doubleMetrics.put("plannedOmniAntiTupleKeyWitnesses", omniEstimate.keyWidth() == 2
+				? (double) omniEstimate.inputWitnesses()
+				: 0.0d);
+		doubleMetrics.put("plannedOmniAntiSamplingProbability", omniEstimate.samplingProbability());
+		doubleMetrics.put("plannedOmniAntiConfidence", omniEstimate.confidence());
+		doubleMetrics.put("plannedOmniAntiProbeKeyWidth", (double) omniEstimate.keyWidth());
+		doubleMetrics.put("plannedOmniAntiSketchZero", outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d
+				: 0.0d);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+		return new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, false, false, 0, 0,
+				Double.NaN, true, false);
 	}
 
 	private double optionalBridgeProductRows(LeftJoin leftJoin, double leftRows) {
@@ -4220,8 +4687,9 @@ class LmdbEvaluationStatistics
 			traceEstimate("bound-product-reject", factor, context, "reason=complete-base-bound-lookup");
 			return Optional.empty();
 		}
+		boolean finiteAnchorPrefix = hasFiniteAnchorFactor(context.getPrefixFactors());
 		BoundJoinProductEstimate productEstimate = estimateBoundJoinProduct(context.getPrefixFactors(), factor,
-				context.getOuterPrefixRows(), !baseLookupCoversContext);
+				context.getOuterPrefixRows(), !baseLookupCoversContext || finiteAnchorPrefix);
 		if (productEstimate == null || !isPositiveFinite(productEstimate.productRows())
 				|| !isPositiveFinite(productEstimate.prefixRows())) {
 			BoundJoinProductEstimate accessEnvelopeEstimate = directLookupAccessEnvelopeProductEstimate(factor,
@@ -4463,7 +4931,10 @@ class LmdbEvaluationStatistics
 			return;
 		}
 		if (sketchBasedJoinEstimator != null) {
-			stringMetrics.put(PLANNED_SKETCH_STRATEGY, sketchBasedJoinEstimator.getSketchStrategy().configValue());
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy = sketchBasedJoinEstimator.getSketchStrategy();
+			if (sketchStrategy != null) {
+				stringMetrics.put(PLANNED_SKETCH_STRATEGY, sketchStrategy.configValue());
+			}
 		}
 		stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, countMinEvidence.source());
 		if (trustedCountMinSurface(countMinEvidence) && !productEstimate.exactRows()) {
@@ -4497,6 +4968,30 @@ class LmdbEvaluationStatistics
 					isFiniteNonNegative(existingLower) ? Math.min(existingLower, lowerRows) : lowerRows);
 		}
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, countMinEvidence.confidence());
+	}
+
+	private void addFiniteDerivedSurfaceSketchTelemetry(Map<String, String> stringMetrics,
+			Map<String, Double> doubleMetrics, FiniteDerivedSurfaceEstimate surfaceEstimate) {
+		JoinFrequencyEstimate countMinEvidence = surfaceEstimate == null ? null : surfaceEstimate.countMinEvidence();
+		if (countMinEvidence == null) {
+			return;
+		}
+		if (sketchBasedJoinEstimator != null) {
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy = sketchBasedJoinEstimator.getSketchStrategy();
+			if (sketchStrategy != null) {
+				stringMetrics.put(PLANNED_SKETCH_STRATEGY, sketchStrategy.configValue());
+			}
+		}
+		stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, countMinEvidence.source());
+		doubleMetrics.put(PLANNED_SKETCH_UPPER_BOUND_ROWS, countMinEvidence.upperBoundRows());
+		doubleMetrics.put(PLANNED_SKETCH_CALIBRATED_ROWS, countMinEvidence.calibratedRows());
+		doubleMetrics.put(PLANNED_SKETCH_CALIBRATION_FACTOR, countMinEvidence.calibrationFactor());
+		doubleMetrics.put(PLANNED_SKETCH_CONFIDENCE, countMinEvidence.confidence());
+		if (isOmniJoinEvidence(countMinEvidence)) {
+			doubleMetrics.put("plannedOmniJoinSurfaceRows", countMinEvidence.calibratedRows());
+			doubleMetrics.put("plannedOmniJoinSurfaceUpperBoundRows", countMinEvidence.upperBoundRows());
+			doubleMetrics.put("plannedOmniJoinSurfaceConfidence", countMinEvidence.confidence());
+		}
 	}
 
 	private double scaledCountMinBoundJoinRows(BoundJoinProductEstimate productEstimate, double repeatedInvocations,
@@ -5221,8 +5716,9 @@ class LmdbEvaluationStatistics
 			}
 			return Optional.empty();
 		}
-		boolean allowExactFiniteDerivedSurface = !completeBaseBoundLookupAlreadyCoversDerivedLookup(baseEstimate,
-				lookupComponentMask, pattern, currentlyBoundVars);
+		boolean allowExactFiniteDerivedSurface = hasFiniteAnchorFactor(prefixFactors)
+				|| !completeBaseBoundLookupAlreadyCoversDerivedLookup(baseEstimate, lookupComponentMask, pattern,
+						currentlyBoundVars);
 		if (!allowExactFiniteDerivedSurface && estimateTraceEnabled()) {
 			traceEstimate("finite-derived-surface-skip-exact", factor, null,
 					"reason=complete-base-bound-lookup");
@@ -5239,14 +5735,13 @@ class LmdbEvaluationStatistics
 			}
 			FiniteDerivedSurfaceEstimate surfaceEstimate = finiteDerivedSurfaceRows(prefixFactors, surfaceFactor,
 					finiteVarName, finiteValues, allowExactFiniteDerivedSurface);
-			if (surfaceEstimate != null && isFiniteNonNegative(surfaceEstimate.surfaceRows())
+			if (usableFiniteDerivedSurfaceEstimate(surfaceEstimate)
 					&& (bestSurfaceEstimate == null
 							|| surfaceEstimate.surfaceRows() < bestSurfaceEstimate.surfaceRows())) {
 				bestSurfaceEstimate = surfaceEstimate;
 			}
 		}
-		if (bestSurfaceEstimate == null || !isFiniteNonNegative(bestSurfaceEstimate.surfaceRows())
-				|| bestSurfaceEstimate.surfaceRows() <= 0.0d) {
+		if (!usableFiniteDerivedSurfaceEstimate(bestSurfaceEstimate)) {
 			if (estimateTraceEnabled()) {
 				traceEstimate("finite-derived-surface-reject", factor, null,
 						"reason=no-surface");
@@ -5314,6 +5809,7 @@ class LmdbEvaluationStatistics
 					componentMaskString(accessPathEstimate.missingLookupComponentMask()));
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, bestSurfaceEstimate.estimateSource());
+		addFiniteDerivedSurfaceSketchTelemetry(stringMetrics, doubleMetrics, bestSurfaceEstimate);
 		doubleMetrics.put("plannedSurfaceRows", bestSurfaceRows);
 		if (bestSurfaceRows != uncappedSurfaceRows) {
 			doubleMetrics.put("plannedUncappedSurfaceRows", uncappedSurfaceRows);
@@ -5526,7 +6022,7 @@ class LmdbEvaluationStatistics
 		}
 		FiniteDerivedSurfaceEstimate finiteAnchorSketchEstimate = finiteAnchorSketchSurfaceRows(prefixFactors, factor,
 				finiteVarName, finiteValues);
-		if (finiteAnchorSketchEstimate != null && isPositiveFinite(finiteAnchorSketchEstimate.surfaceRows())) {
+		if (usableFiniteDerivedSurfaceEstimate(finiteAnchorSketchEstimate)) {
 			return finiteAnchorSketchEstimate;
 		}
 		if (finiteAnchorSketchEstimate != null && estimateTraceEnabled()) {
@@ -5600,6 +6096,13 @@ class LmdbEvaluationStatistics
 		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, false, finiteVarName);
 	}
 
+	private boolean usableFiniteDerivedSurfaceEstimate(FiniteDerivedSurfaceEstimate estimate) {
+		if (estimate == null || !isFiniteNonNegative(estimate.surfaceRows())) {
+			return false;
+		}
+		return estimate.surfaceRows() > 0.0d || estimate.exactRows() || estimate.countMinEvidence() != null;
+	}
+
 	private FiniteDerivedSurfaceEstimate exactFiniteAnchorSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String finiteVarName, Set<Value> finiteValues) {
 		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty() || factor == null
@@ -5661,26 +6164,63 @@ class LmdbEvaluationStatistics
 		}
 		double bestRows = Double.NaN;
 		String bestJoinVarName = null;
+		JoinFrequencyEstimate bestEvidence = null;
 		for (String sharedBindingName : sharedBindingNames) {
-			double rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor,
+			JoinFrequencyEstimate evidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors, factor,
 					sharedBindingName);
+			double rows = Double.NaN;
+			boolean evidenceRows = false;
+			if (evidence != null && isFiniteNonNegative(evidence.calibratedRows())) {
+				rows = evidence.calibratedRows();
+				evidenceRows = true;
+			}
+			if (!isFiniteNonNegative(rows)) {
+				rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor,
+						sharedBindingName);
+			}
 			if (isFiniteNonNegative(rows) && (!isFiniteNonNegative(bestRows) || rows < bestRows)) {
 				bestRows = rows;
 				bestJoinVarName = sharedBindingName;
+				bestEvidence = evidenceRows ? evidence : null;
 			}
 		}
 		if (!isFiniteNonNegative(bestRows) || bestJoinVarName == null) {
 			return null;
 		}
-		double prefixRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, bestJoinVarName);
+		JoinFrequencyEstimate prefixEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
+				bestJoinVarName);
+		double prefixRows = prefixEvidence != null && isFiniteNonNegative(prefixEvidence.calibratedRows())
+				? prefixEvidence.calibratedRows()
+				: Double.NaN;
+		if (!isFiniteNonNegative(prefixRows)) {
+			prefixRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, bestJoinVarName);
+		}
 		if (!isFiniteNonNegative(prefixRows)) {
 			prefixRows = estimateFiniteBranchRows(prefixFactors);
 		}
 		if (!isFiniteNonNegative(prefixRows)) {
 			prefixRows = Math.min(bestRows, Math.max(1.0d, finiteValues.size()));
 		}
+		bestEvidence = nonExactZeroSketchEvidence(bestEvidence, bestRows, FINITE_ANCHOR_SKETCH_SOURCE);
+		String estimateSource = isOmniJoinEvidence(bestEvidence) ? bestEvidence.source() : FINITE_ANCHOR_SKETCH_SOURCE;
 		return new FiniteDerivedSurfaceEstimate(bestRows, prefixRows, finiteValues.size(), false, finiteVarName,
-				FINITE_ANCHOR_SKETCH_SOURCE);
+				estimateSource, bestEvidence);
+	}
+
+	private JoinFrequencyEstimate nonExactZeroSketchEvidence(JoinFrequencyEstimate evidence, double rows,
+			String fallbackSource) {
+		if (!isFiniteNonNegative(rows) || rows != 0.0d) {
+			return evidence;
+		}
+		if (evidence == null) {
+			return null;
+		}
+		if (evidence.calibratedRows() != 0.0d
+				|| evidence.confidence() <= NON_EXACT_ZERO_SKETCH_CONFIDENCE) {
+			return evidence;
+		}
+		return new JoinFrequencyEstimate(evidence.upperBoundRows(), evidence.calibratedRows(),
+				NON_EXACT_ZERO_SKETCH_CONFIDENCE, evidence.source(), evidence.calibrationFactor());
 	}
 
 	private boolean hasFiniteAnchorFactor(List<TupleExpr> factors) {
@@ -6219,15 +6759,25 @@ class LmdbEvaluationStatistics
 			if (isFiniteNonNegative(finiteRows)) {
 				traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
 						Double.NaN, Double.NaN, Double.NaN, finiteRows);
-				return new FiniteBranchSurfaceEstimate(finiteRows, true);
+				JoinFrequencyEstimate sketchEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+						joinVarName);
+				return new FiniteBranchSurfaceEstimate(finiteRows, true, sketchEvidence);
 			}
 		}
-		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
-		double sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(factors,
+		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
 				joinVarName);
+		double sketchRows;
+		double sketchUpperBoundRows;
+		if (countMinEstimate == null) {
+			sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
+			sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(factors,
+					joinVarName);
+			countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(factors, joinVarName);
+		} else {
+			sketchRows = countMinEstimate.calibratedRows();
+			sketchUpperBoundRows = countMinEstimate.upperBoundRows();
+		}
 		CountMinSurfaceCacheKey countMinCacheKey = CountMinSurfaceCacheKey.of(factors, joinVarName);
-		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(factors,
-				joinVarName);
 
 		countFallbackJoinSurfaceCall();
 		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors,
@@ -6314,16 +6864,27 @@ class LmdbEvaluationStatistics
 			if (isFiniteNonNegative(finiteRows)) {
 				traceJoinSurfaceSelection("surface-prefix-factor-finite", factor, joinVarName, Double.NaN, finiteRows,
 						Double.NaN, Double.NaN, Double.NaN, finiteRows);
-				return new FiniteBranchSurfaceEstimate(finiteRows, true);
+				JoinFrequencyEstimate sketchEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
+						factor, joinVarName);
+				return new FiniteBranchSurfaceEstimate(finiteRows, true, sketchEvidence);
 			}
 		}
 		countSketchJoinSurfaceCall();
-		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
-		double sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(prefixFactors,
+		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
 				factor, joinVarName);
+		double sketchRows;
+		double sketchUpperBoundRows;
+		if (countMinEstimate == null) {
+			sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
+			sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(prefixFactors,
+					factor, joinVarName);
+			countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(prefixFactors, factor,
+					joinVarName);
+		} else {
+			sketchRows = countMinEstimate.calibratedRows();
+			sketchUpperBoundRows = countMinEstimate.upperBoundRows();
+		}
 		CountMinSurfaceCacheKey countMinCacheKey = CountMinSurfaceCacheKey.of(prefixFactors, factor, joinVarName);
-		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(prefixFactors,
-				factor, joinVarName);
 
 		countFallbackJoinSurfaceCall();
 		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(prefixFactors,
@@ -6372,11 +6933,21 @@ class LmdbEvaluationStatistics
 			}
 		}
 		double sketchEvidenceRows = sketchEvidenceRows(sketchRows, sketchUpperBoundRows, pairwiseFallbackRows);
+		if (isPositiveFinite(sketchEvidenceRows) && isPositiveFinite(pairwiseFallbackRows)) {
+			if (pairwiseFallbackRows <= sketchEvidenceRows) {
+				return sketchEvidenceRows;
+			}
+			double disagreement = maxRatio(sketchEvidenceRows, pairwiseFallbackRows);
+			if (isPositiveFinite(disagreement) && disagreement <= EXACT_ESTIMATE_MAX_DISAGREEMENT) {
+				double blendedRows = harmonicMean(sketchEvidenceRows, pairwiseFallbackRows);
+				if (isPositiveFinite(blendedRows)) {
+					return blendedRows;
+				}
+			}
+			return pairwiseFallbackRows;
+		}
 		if (isFiniteNonNegative(sketchEvidenceRows)) {
 			return sketchEvidenceRows;
-		}
-		if (isPositiveFinite(pairwiseFallbackRows)) {
-			return pairwiseFallbackRows;
 		}
 		if (isFiniteNonNegative(pairwiseFallbackRows)) {
 			return pairwiseFallbackRows;
@@ -6421,9 +6992,6 @@ class LmdbEvaluationStatistics
 	}
 
 	private double sketchEvidenceRows(double sketchRows, double sketchUpperBoundRows, double pairwiseFallbackRows) {
-		if (isFiniteNonNegative(sketchRows)) {
-			return sketchRows;
-		}
 		if (isPositiveFinite(sketchUpperBoundRows)
 				&& (!isPositiveFinite(sketchRows) || sketchUpperBoundRows > sketchRows)
 				&& isPositiveFinite(pairwiseFallbackRows)) {
@@ -6432,6 +7000,9 @@ class LmdbEvaluationStatistics
 					&& upperBoundDisagreement <= EXACT_ESTIMATE_MAX_DISAGREEMENT) {
 				return sketchUpperBoundRows;
 			}
+		}
+		if (isFiniteNonNegative(sketchRows)) {
+			return sketchRows;
 		}
 		return isFiniteNonNegative(sketchUpperBoundRows) ? sketchUpperBoundRows : Double.NaN;
 	}
@@ -7126,7 +7697,7 @@ class LmdbEvaluationStatistics
 		if (selected.exactRows()) {
 			return selected;
 		}
-		if (isFiniteNonNegative(selected.rows())) {
+		if (usesOmniJoinEstimatorSurface(selected)) {
 			return selected;
 		}
 		double pageWalkRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors, joinVarName);
@@ -7139,6 +7710,12 @@ class LmdbEvaluationStatistics
 						+ ", selected=" + estimateTraceRows(pageWalkRows)
 						+ ", genericSurface=" + estimateTraceRows(selected.rows()));
 		return new FiniteBranchSurfaceEstimate(pageWalkRows, false);
+	}
+
+	private boolean usesOmniJoinEstimatorSurface(FiniteBranchSurfaceEstimate estimate) {
+		return estimate != null
+				&& estimate.countMinEvidence() != null
+				&& "omni-join-estimator".equals(estimate.countMinEvidence().source());
 	}
 
 	private BoundJoinProductEstimate selectFullPrefixBoundJoinEstimate(BoundJoinProductEstimate current,
@@ -9837,11 +10414,23 @@ class LmdbEvaluationStatistics
 	}
 
 	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
-			boolean exactRows, String finiteVarName, String estimateSource) {
+			boolean exactRows, String finiteVarName, String estimateSource,
+			JoinFrequencyEstimate countMinEvidence) {
+
+		FiniteDerivedSurfaceEstimate {
+			if (estimateSource == null || estimateSource.isBlank()) {
+				estimateSource = FINITE_DERIVED_SURFACE_SOURCE;
+			}
+		}
 
 		private FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
 				boolean exactRows, String finiteVarName) {
-			this(surfaceRows, prefixRows, branchCount, exactRows, finiteVarName, FINITE_DERIVED_SURFACE_SOURCE);
+			this(surfaceRows, prefixRows, branchCount, exactRows, finiteVarName, FINITE_DERIVED_SURFACE_SOURCE, null);
+		}
+
+		private FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
+				boolean exactRows, String finiteVarName, String estimateSource) {
+			this(surfaceRows, prefixRows, branchCount, exactRows, finiteVarName, estimateSource, null);
 		}
 
 	}

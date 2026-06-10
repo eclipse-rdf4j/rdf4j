@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,8 +29,12 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.junit.jupiter.api.Test;
 
 class SketchJoinSketchAccuracyComparisonTest {
@@ -115,15 +120,287 @@ class SketchJoinSketchAccuracyComparisonTest {
 
 		assertEquals("omni", estimator.getSketchStrategy().configValue());
 		assertTrue(estimate != null, "OMNI should expose sketch join-surface evidence");
-		assertEquals("omni-sketch-surface", estimate.source());
+		assertEquals("omni-join-estimator", estimate.source());
 		assertTrue(relativeError(estimate.calibratedRows(), truth) <= 0.10d,
 				() -> "OMNI composite-key estimate should be close to truth. truth=" + truth + ", estimate="
 						+ estimate);
 	}
 
+	@Test
+	void omniStrategyEstimatesThreeWayCompositeKeyJoinSurface() {
+		IRI prescribedDrug = VF.createIRI("urn:omni-sketch:estimator:three-way:prescribedDrug");
+		IRI billedDrug = VF.createIRI("urn:omni-sketch:estimator:three-way:billedDrug");
+		IRI reconciledDrug = VF.createIRI("urn:omni-sketch:estimator:three-way:reconciledDrug");
+		List<Statement> statements = skewedThreeWayCompositeKeyJoin(prescribedDrug, billedDrug, reconciledDrug);
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.addAll(statements);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+				.withNominalEntries(4096));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("encounter"),
+				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
+		StatementPattern middle = new StatementPattern(Var.of("encounter"),
+				Var.of("billedDrug", billedDrug), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"),
+				Var.of("reconciledDrug", reconciledDrug), Var.of("drug"));
+		List<String> keyVars = List.of("encounter", "drug");
+		long truth = exactMultiProduct(List.of(
+				sketchesFor(statements, left, keyVars).truth,
+				sketchesFor(statements, middle, keyVars).truth,
+				sketchesFor(statements, right, keyVars).truth));
+
+		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, middle, right),
+				"encounter");
+
+		assertTrue(estimate != null, "OMNI should expose multi-way composite-key witness evidence");
+		assertEquals("omni-join-estimator", estimate.source());
+		assertTrue(relativeError(estimate.calibratedRows(), truth) <= 0.10d,
+				() -> "OMNI three-way composite-key estimate should be close to truth. truth=" + truth
+						+ ", estimate=" + estimate);
+	}
+
+	@Test
+	void omniStrategyJoinStepUsesCompositeWitnessSurfaceForMultiSharedVars() {
+		IRI prescribedDrug = VF.createIRI("urn:omni-sketch:join-step:prescribedDrug");
+		IRI billedDrug = VF.createIRI("urn:omni-sketch:join-step:billedDrug");
+		List<Statement> statements = skewedCompositeKeyJoin(prescribedDrug, billedDrug);
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.addAll(statements);
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(strategy));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("encounter"),
+				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"),
+				Var.of("billedDrug", billedDrug), Var.of("drug"));
+		long truth = compare(statements, left, right, List.of("encounter", "drug")).truth;
+		SketchBasedJoinEstimator.TuplePlanEstimate leftEstimate = estimator.planEstimateForJoinOrdering(left,
+				Set.of());
+		SketchBasedJoinEstimator.TuplePlanEstimate rightEstimate = estimator.planEstimateForJoinOrdering(right,
+				Set.of());
+
+		SketchBasedJoinEstimator.JoinStepEstimate estimate = estimator.estimateJoinStepForJoinOrdering(leftEstimate,
+				rightEstimate);
+
+		assertTrue(relativeError(estimate.outputRows(), truth) <= 0.10d,
+				() -> "OMNI join-step estimate should use composite witness rows. truth=" + truth + ", estimate="
+						+ estimate.outputRows());
+	}
+
+	@Test
+	void omniStrategyEstimatesSubjectStarWithPredicateObjectWitnesses() {
+		IRI rdfType = VF.createIRI("urn:omni-sketch:subject-star:type");
+		IRI encounterClass = VF.createIRI("urn:omni-sketch:subject-star:Encounter");
+		IRI recordedOn = VF.createIRI("urn:omni-sketch:subject-star:recordedOn");
+		Value january = VF.createLiteral("2024-01-01");
+		Value march = VF.createLiteral("2024-03-01");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 512; i++) {
+			Resource encounter = VF.createIRI("urn:omni-sketch:subject-star:encounter:" + i);
+			store.add(VF.createStatement(encounter, rdfType, encounterClass));
+			store.add(VF.createStatement(encounter, recordedOn, i < 48 ? january : march));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI));
+		estimator.rebuild();
+		StatementPattern typePattern = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+		StatementPattern datePattern = new StatementPattern(Var.of("encounter"),
+				Var.of("recordedOn", recordedOn), Var.of("date", january));
+
+		JoinFrequencyEstimate estimate = estimator.estimateSubjectStarJoinSurface(List.of(typePattern, datePattern),
+				"encounter");
+
+		assertTrue(estimate != null, "OMNI should expose subject-star witness evidence");
+		assertEquals("omni-join-estimator", estimate.source());
+		assertTrue(relativeError(estimate.calibratedRows(), 48L) <= 0.10d,
+				() -> "Subject-star estimate should use predicate/object witnesses. estimate=" + estimate);
+	}
+
+	@Test
+	void omniStrategyUsesSubjectStarWitnessesForSingleVariableJoinStep() {
+		IRI primaryFlag = VF.createIRI("urn:omni-sketch:subject-star:primaryFlag");
+		IRI secondaryFlag = VF.createIRI("urn:omni-sketch:subject-star:secondaryFlag");
+		Value enabled = VF.createLiteral("enabled");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 512; i++) {
+			Resource entity = VF.createIRI("urn:omni-sketch:subject-star:entity:" + i);
+			if (i < 256) {
+				store.add(VF.createStatement(entity, primaryFlag, enabled));
+			}
+			if (i < 16 || (i >= 256 && i < 496)) {
+				store.add(VF.createStatement(entity, secondaryFlag, enabled));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI));
+		estimator.rebuild();
+		StatementPattern primaryPattern = new StatementPattern(Var.of("entity"),
+				Var.of("primaryFlag", primaryFlag), Var.of("primary", enabled));
+		StatementPattern secondaryPattern = new StatementPattern(Var.of("entity"),
+				Var.of("secondaryFlag", secondaryFlag), Var.of("secondary", enabled));
+
+		SketchBasedJoinEstimator.TuplePlanEstimate primaryEstimate = estimator.planEstimateForJoinOrdering(
+				primaryPattern, Set.of());
+		SketchBasedJoinEstimator.TuplePlanEstimate secondaryEstimate = estimator.planEstimateForJoinOrdering(
+				secondaryPattern, Set.of());
+		SketchBasedJoinEstimator.JoinStepEstimate estimate = estimator.estimateJoinStepForJoinOrdering(
+				primaryEstimate, secondaryEstimate);
+
+		assertTrue(relativeError(estimate.outputRows(), 16L) <= 0.25d,
+				() -> "Single-variable subject-star joins should use OMNI witness overlap. estimate="
+						+ estimate.outputRows());
+	}
+
+	@Test
+	void omniStrategyAnnotatesSubjectStarSingleVariableJoinOrderPlan() {
+		IRI primaryFlag = VF.createIRI("urn:omni-sketch:subject-star-plan:primaryFlag");
+		IRI secondaryFlag = VF.createIRI("urn:omni-sketch:subject-star-plan:secondaryFlag");
+		Value enabled = VF.createLiteral("enabled");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 512; i++) {
+			Resource entity = VF.createIRI("urn:omni-sketch:subject-star-plan:entity:" + i);
+			if (i < 256) {
+				store.add(VF.createStatement(entity, primaryFlag, enabled));
+			}
+			if (i < 16 || (i >= 256 && i < 496)) {
+				store.add(VF.createStatement(entity, secondaryFlag, enabled));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI));
+		estimator.rebuild();
+		StatementPattern primaryPattern = new StatementPattern(Var.of("entity"),
+				Var.of("primaryFlag", primaryFlag), Var.of("primary", enabled));
+		StatementPattern secondaryPattern = new StatementPattern(Var.of("entity"),
+				Var.of("secondaryFlag", secondaryFlag), Var.of("secondary", enabled));
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(List.of(primaryPattern, secondaryPattern),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		assertTrue(plan.getSteps()
+				.stream()
+				.anyMatch(step -> "omni-join-estimator".equals(
+						step.getStringMetrics().get("plannedSketchEstimateSource"))),
+				() -> "Single-variable subject-star join-order plans should expose OMNI evidence: "
+						+ plan.getSteps());
+	}
+
+	@Test
+	void omniStrategyAnnotatesDirectedFiniteAnchorJoinOrderPlan() {
+		IRI code = VF.createIRI("urn:omni-sketch:directed-finite:code");
+		IRI hasCondition = VF.createIRI("urn:omni-sketch:directed-finite:hasCondition");
+		IRI rdfType = VF.createIRI("urn:omni-sketch:directed-finite:type");
+		IRI encounterClass = VF.createIRI("urn:omni-sketch:directed-finite:Encounter");
+		Value targetCode = VF.createLiteral("DX-200");
+		Value otherCode = VF.createLiteral("DX-999");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 256; i++) {
+			Resource condition = VF.createIRI("urn:omni-sketch:directed-finite:condition:" + i);
+			Resource encounter = VF.createIRI("urn:omni-sketch:directed-finite:encounter:" + (i % 64));
+			store.add(VF.createStatement(condition, code, i < 32 ? targetCode : otherCode));
+			if (i < 128) {
+				store.add(VF.createStatement(encounter, hasCondition, condition));
+			}
+			if (i < 96) {
+				store.add(VF.createStatement(encounter, rdfType, encounterClass));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+				.withNominalEntries(4096));
+		estimator.rebuild();
+		BindingSetAssignment codeValues = finiteDomainRows(valueRow("code", targetCode));
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code"));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(
+				List.<TupleExpr>of(codeValues, conditionCode, encounterCondition, encounterType),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+		String directOmniDebug = directedOmniDebug(estimator, codeValues, conditionCode, encounterCondition,
+				encounterType);
+
+		assertTrue(plan.getSteps()
+				.stream()
+				.anyMatch(step -> "omni-join-estimator".equals(
+						step.getStringMetrics().get("plannedSketchEstimateSource"))),
+				() -> "Directed finite-anchor join-order plans should expose OMNI probe evidence: "
+						+ planStepMetrics(plan) + " direct=" + directOmniDebug);
+		assertEquals("omni", plan.getSummaryStringMetrics().get("plannedSketchStrategy"),
+				() -> "Directed finite-anchor join-order summaries should expose OMNI strategy: "
+						+ plan.getSummaryStringMetrics());
+		assertEquals("omni-join-estimator", plan.getSummaryStringMetrics().get("plannedSketchEstimateSource"),
+				() -> "Directed finite-anchor join-order summaries should expose OMNI source: "
+						+ plan.getSummaryStringMetrics());
+		assertOmniStepForSharedVar(plan, "code", directOmniDebug);
+		assertOmniStepForSharedVar(plan, "condition", directOmniDebug);
+		assertOmniStepForSharedVar(plan, "encounter", directOmniDebug);
+	}
+
+	private static void assertOmniStepForSharedVar(JoinOrderPlanner.JoinOrderPlan plan, String sharedVar,
+			String directOmniDebug) {
+		assertTrue(plan.getSteps()
+				.stream()
+				.anyMatch(step -> "omni-join-estimator".equals(
+						step.getStringMetrics().get("plannedSketchEstimateSource"))
+						&& ("[" + sharedVar + "]").equals(step.getStringMetrics().get("sharedJoinVars"))),
+				() -> "Expected OMNI step for shared var " + sharedVar + ": " + planStepMetrics(plan)
+						+ " direct=" + directOmniDebug);
+	}
+
+	private static String directedOmniDebug(SketchBasedJoinEstimator estimator, TupleExpr... factors) {
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(factors[0],
+				Set.of());
+		StringBuilder debug = new StringBuilder("seed ")
+				.append(witnessDebug(estimate, "code", "condition", "encounter"));
+		for (int i = 1; i < factors.length; i++) {
+			SketchBasedJoinEstimator.TuplePlanEstimate factor = estimator.planEstimateForJoinOrdering(factors[i],
+					Set.of());
+			SketchBasedJoinEstimator.JoinStepEstimate step = estimator.estimateJoinStepForJoinOrdering(estimate,
+					factor);
+			estimate = estimator.joinedPlanEstimate(step);
+			debug.append(" step")
+					.append(i)
+					.append("[source=")
+					.append(estimate.sketchEstimateSource())
+					.append(", ")
+					.append(witnessDebug(estimate, "code", "condition", "encounter"))
+					.append(']');
+		}
+		return debug.toString();
+	}
+
+	private static String witnessDebug(SketchBasedJoinEstimator.TuplePlanEstimate estimate, String... names) {
+		StringBuilder debug = new StringBuilder("witnesses={");
+		for (String name : names) {
+			OmniWitnessSet witnesses = estimate == null ? null : estimate.omniWitness(name);
+			debug.append(name)
+					.append('=')
+					.append(witnesses == null ? "null"
+							: witnesses.retainedWitnessCount() + "/"
+									+ witnesses.estimatedRows())
+					.append(',');
+		}
+		return debug.append('}').toString();
+	}
+
+	private static List<Map<String, String>> planStepMetrics(JoinOrderPlanner.JoinOrderPlan plan) {
+		return plan.getSteps()
+				.stream()
+				.map(JoinOrderPlanner.PlanStep::getStringMetrics)
+				.toList();
+	}
+
 	private static void assertDominatesBaselines(String label, AccuracyResult result) {
-		System.out.println(label);
-		System.out.println(result);
 		assertTrue(result.truth > 0, label + " truth should be positive");
 		assertEquals(result.truth, result.exactTupleEstimate, 0.0d,
 				() -> label + " exact tuple sketch should use duplicate-aware product sums: " + result);
@@ -185,6 +462,35 @@ class SketchJoinSketchAccuracyComparisonTest {
 		long rows = 0L;
 		for (Map.Entry<JoinKey, Long> entry : smaller.entrySet()) {
 			rows += entry.getValue() * larger.getOrDefault(entry.getKey(), 0L);
+		}
+		return rows;
+	}
+
+	private static long exactMultiProduct(List<Map<JoinKey, Long>> relations) {
+		Map<JoinKey, Long> smallest = relations.get(0);
+		for (Map<JoinKey, Long> relation : relations) {
+			if (relation.size() < smallest.size()) {
+				smallest = relation;
+			}
+		}
+		long rows = 0L;
+		for (Map.Entry<JoinKey, Long> entry : smallest.entrySet()) {
+			long product = entry.getValue();
+			boolean matched = true;
+			for (Map<JoinKey, Long> relation : relations) {
+				if (relation == smallest) {
+					continue;
+				}
+				long multiplicity = relation.getOrDefault(entry.getKey(), 0L);
+				if (multiplicity == 0L) {
+					matched = false;
+					break;
+				}
+				product *= multiplicity;
+			}
+			if (matched) {
+				rows += product;
+			}
 		}
 		return rows;
 	}
@@ -280,6 +586,34 @@ class SketchJoinSketchAccuracyComparisonTest {
 		return statements;
 	}
 
+	private static List<Statement> skewedThreeWayCompositeKeyJoin(IRI prescribedDrug, IRI billedDrug,
+			IRI reconciledDrug) {
+		List<Statement> statements = new ArrayList<>();
+		for (int encounterIndex = 0; encounterIndex < 160; encounterIndex++) {
+			Resource encounter = VF.createIRI("urn:join-sketch:three-way:encounter:" + encounterIndex);
+			for (int drugIndex = 0; drugIndex < 6; drugIndex++) {
+				Resource drug = VF.createIRI("urn:join-sketch:three-way:drug:" + drugIndex);
+				boolean heavy = encounterIndex < 18 && drugIndex < 3;
+				int prescribedContexts = heavy ? 12 : 1;
+				int billedContexts = heavy ? 9 : (drugIndex % 2 == 0 ? 1 : 0);
+				int reconciledContexts = heavy ? 7 : (drugIndex % 3 == 0 ? 1 : 0);
+				for (int contextIndex = 0; contextIndex < prescribedContexts; contextIndex++) {
+					statements.add(VF.createStatement(encounter, prescribedDrug, drug,
+							VF.createIRI("urn:join-sketch:three-way:prescribed-context:" + contextIndex)));
+				}
+				for (int contextIndex = 0; contextIndex < billedContexts; contextIndex++) {
+					statements.add(VF.createStatement(encounter, billedDrug, drug,
+							VF.createIRI("urn:join-sketch:three-way:billed-context:" + contextIndex)));
+				}
+				for (int contextIndex = 0; contextIndex < reconciledContexts; contextIndex++) {
+					statements.add(VF.createStatement(encounter, reconciledDrug, drug,
+							VF.createIRI("urn:join-sketch:three-way:reconciled-context:" + contextIndex)));
+				}
+			}
+		}
+		return statements;
+	}
+
 	private static SketchBasedJoinEstimator.Config smallBudgetConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH)
@@ -292,6 +626,18 @@ class SketchJoinSketchAccuracyComparisonTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private static BindingSetAssignment finiteDomainRows(QueryBindingSet... rows) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(rows));
+		return assignment;
+	}
+
+	private static QueryBindingSet valueRow(String bindingName, Value value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding(bindingName, value);
+		return row;
 	}
 
 	private record JoinKey(List<Value> values) {

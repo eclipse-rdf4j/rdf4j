@@ -69,13 +69,17 @@ final class OmniSketchCell {
 	}
 
 	void update(final long identifierHash) {
+		updateAndCheckRetained(identifierHash);
+	}
+
+	boolean updateAndCheckRetained(final long identifierHash) {
 		count++;
 		if (nominalEntries <= 0) {
-			return;
+			return false;
 		}
 		final int pos = binarySearch(identifierHash);
 		if (pos >= 0) {
-			return; // The min-hash sample is set-valued even when stream count is not.
+			return true; // The min-hash sample is set-valued even when stream count is not.
 		}
 		final int insertAt = -pos - 1;
 		if (retained < nominalEntries) {
@@ -83,13 +87,14 @@ final class OmniSketchCell {
 			System.arraycopy(hashes, insertAt, hashes, insertAt + 1, retained - insertAt);
 			hashes[insertAt] = identifierHash;
 			retained++;
-			return;
+			return true;
 		}
 		if (retained == 0 || compareUnsigned(identifierHash, hashes[retained - 1]) >= 0) {
-			return;
+			return false;
 		}
 		System.arraycopy(hashes, insertAt, hashes, insertAt + 1, retained - insertAt - 1);
 		hashes[insertAt] = identifierHash;
+		return true;
 	}
 
 	void merge(final OmniSketchCell other) {

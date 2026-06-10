@@ -98,11 +98,22 @@ public final class UpdateOmniSketch extends OmniSketch {
 
 	/** Updates this sketch with pre-hashed value and identifier hashes. */
 	public void updateHash(final long valueHash, final long identifierHash) {
+		updateHashAndCheckRetained(valueHash, identifierHash);
+	}
+
+	/**
+	 * Updates this sketch with pre-hashed value and identifier hashes.
+	 *
+	 * @return {@code true} when the identifier remains retained by every matching row cell after the update
+	 */
+	public boolean updateHashAndCheckRetained(final long valueHash, final long identifierHash) {
+		boolean retainedInAllRows = true;
 		for (int row = 0; row < numRows; row++) {
 			final int column = OmniSketchHash.indexFor(OmniSketchHash.rowHash(valueHash, row, seed), lgWidth);
-			cells[row][column].update(identifierHash);
+			retainedInAllRows &= cells[row][column].updateAndCheckRetained(identifierHash);
 		}
 		totalUpdates++;
+		return retainedInAllRows;
 	}
 
 	/** Alias for {@link #updateHash(long, long)}. */

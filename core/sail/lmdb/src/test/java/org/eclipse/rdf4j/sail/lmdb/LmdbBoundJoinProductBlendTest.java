@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -274,6 +275,94 @@ class LmdbBoundJoinProductBlendTest {
 		assertEquals("countmin-sketch-surface", estimate.countMinEvidence().source());
 		assertEquals(0.25d, estimate.countMinEvidence().confidence(), 0.0d);
 		assertTrue(estimate.countMinEvidence().upperBoundRows() >= 4.0d);
+	}
+
+	@Test
+	void boundJoinProductCarriesOmniCompositeSurfaceEvidence() {
+		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI leftPredicate = vf.createIRI("urn:omni:lmdb:left");
+		IRI rightPredicate = vf.createIRI("urn:omni:lmdb:right");
+		Value sharedDrug = vf.createIRI("urn:omni:lmdb:drug:shared");
+		Value otherDrug = vf.createIRI("urn:omni:lmdb:drug:other");
+		source.add(st("urn:omni:lmdb:enc:1", leftPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:enc:1", rightPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:enc:2", leftPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:enc:2", rightPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:enc:3", leftPredicate, otherDrug));
+		source.add(st("urn:omni:lmdb:enc:3", rightPredicate, otherDrug));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null);
+		StatementPattern left = new StatementPattern(Var.of("encounter"), Var.of("leftPredicate", leftPredicate),
+				Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"), Var.of("rightPredicate", rightPredicate),
+				Var.of("drug"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate productEstimate = statistics
+				.estimateBoundJoinProduct(List.of(left), right, 3.0d, false);
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = statistics
+				.estimateFactorCost(right, CostContext.forOptimization(Set.of("encounter", "drug"), 3.0d, 3.0d,
+						true, true, Map.of(), List.of(left)))
+				.orElseThrow();
+
+		assertNotNull(productEstimate);
+		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
+		assertNotNull(omniEvidence, "Bound-product estimates must retain OMNI sketch-surface evidence");
+		assertEquals("omni-join-estimator", omniEvidence.source());
+		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
+		assertEquals("omni-join-estimator", factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
+	}
+
+	@Test
+	void boundJoinProductCarriesOmniThreeWayCompositeSurfaceEvidence() {
+		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI leftPredicate = vf.createIRI("urn:omni:lmdb:three-way:left");
+		IRI middlePredicate = vf.createIRI("urn:omni:lmdb:three-way:middle");
+		IRI rightPredicate = vf.createIRI("urn:omni:lmdb:three-way:right");
+		Value sharedDrug = vf.createIRI("urn:omni:lmdb:three-way:drug:shared");
+		Value otherDrug = vf.createIRI("urn:omni:lmdb:three-way:drug:other");
+		source.add(st("urn:omni:lmdb:three-way:enc:1", leftPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:1", middlePredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:1", rightPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:2", leftPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:2", middlePredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:2", rightPredicate, sharedDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:3", leftPredicate, otherDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:3", middlePredicate, otherDrug));
+		source.add(st("urn:omni:lmdb:three-way:enc:3", rightPredicate, otherDrug));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null);
+		StatementPattern left = new StatementPattern(Var.of("encounter"), Var.of("leftPredicate", leftPredicate),
+				Var.of("drug"));
+		StatementPattern middle = new StatementPattern(Var.of("encounter"),
+				Var.of("middlePredicate", middlePredicate), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"), Var.of("rightPredicate", rightPredicate),
+				Var.of("drug"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate productEstimate = statistics
+				.estimateBoundJoinProduct(List.of(left, middle), right, 3.0d, false);
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = statistics
+				.estimateFactorCost(right, CostContext.forOptimization(Set.of("encounter", "drug"), 3.0d, 3.0d,
+						true, true, Map.of(), List.of(left, middle)))
+				.orElseThrow();
+
+		assertNotNull(productEstimate);
+		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
+		assertNotNull(omniEvidence, "Three-way bound-product estimates must retain OMNI witness evidence");
+		assertEquals("omni-join-estimator", omniEvidence.source());
+		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
+		assertEquals("omni-join-estimator", factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
 	}
 
 	@Test

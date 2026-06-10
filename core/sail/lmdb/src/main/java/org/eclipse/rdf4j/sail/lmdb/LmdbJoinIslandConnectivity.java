@@ -100,7 +100,7 @@ final class LmdbJoinIslandConnectivity {
 		if (lmdbJoinProviderAvailable && nestedFilterJoinSegmentCanOwn(tupleExpr)) {
 			return false;
 		}
-		if (lmdbJoinProviderAvailable && containsAnchorableFiniteFilter(tupleExpr)) {
+		if (lmdbJoinProviderAvailable && anchorableFiniteFilterProviderCanOwn(tupleExpr)) {
 			return false;
 		}
 		if (pureCorrelatedNotExistsFilter(tupleExpr)) {
@@ -112,12 +112,24 @@ final class LmdbJoinIslandConnectivity {
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
 	}
 
+	private static boolean anchorableFiniteFilterProviderCanOwn(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			return directlyAnchorableFiniteFilter(filter) || containsAnchorableFiniteFilter(filter.getArg());
+		}
+		return tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)
+				&& containsAnchorableFiniteFilter(join);
+	}
+
+	private static boolean directlyAnchorableFiniteFilter(Filter filter) {
+		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+		return anchor != null
+				&& !anchor.getBindingNames().isEmpty()
+				&& filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames());
+	}
+
 	private static boolean containsAnchorableFiniteFilter(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
-			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
-			if (anchor != null
-					&& !anchor.getBindingNames().isEmpty()
-					&& filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+			if (directlyAnchorableFiniteFilter(filter)) {
 				return true;
 			}
 			return containsAnchorableFiniteFilter(filter.getArg());

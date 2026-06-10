@@ -197,6 +197,70 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void finiteAnchorSketchZeroKeepsPlanningFloorWithoutClaimingExactRows() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI codePredicate = VF.createIRI("urn:finite-zero:code");
+		IRI bridgePredicate = VF.createIRI("urn:finite-zero:bridge");
+		Value code = VF.createLiteral("missing-code");
+		for (int i = 0; i < 8; i++) {
+			Resource entity = VF.createIRI("urn:finite-zero:entity:" + i);
+			store.add(VF.createStatement(entity, codePredicate, VF.createLiteral("present-code-" + i)));
+			store.add(VF.createStatement(entity, bridgePredicate, VF.createIRI("urn:finite-zero:tail:" + i)));
+		}
+
+		BindingSetAssignment codeValues = singleVariableValues("code", List.of(code));
+		StatementPattern codePattern = pattern("entity", codePredicate, "code");
+		StatementPattern bridgePattern = pattern("entity", bridgePredicate, "tail");
+		List<TupleExpr> args = List.of(codeValues, codePattern, bridgePattern);
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == codeValues) {
+				return Optional.of(exactLogicalCost(1.0d, 1.0d));
+			}
+			if (factor == codePattern) {
+				if (boundVars.contains("code")) {
+					return Optional.of(nonExactFiniteAnchorZero());
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(256.0d, 256.0d));
+			}
+			if (factor == bridgePattern) {
+				if (boundVars.contains("entity")) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(32.0d, 32.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(512.0d, 512.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected finite-anchor zero plan to stay in the planner");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args));
+		assertEquals(0.0d, plan.getEstimatedFinalRows(), 0.0d,
+				"Non-exact zero should remain visible as cardinality metadata");
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
+				"Cardinality display should preserve the estimated zero");
+		assertEquals(1.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS), 0.0d,
+				"Planning cost should use a one-row floor for non-exact finite-anchor zero");
+		assertTrue(plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE) <= 0.25d,
+				"Non-exact finite-anchor zero should not be high confidence");
+		assertTrue(plan.getSteps()
+				.stream()
+				.filter(step -> step.getBoundVarsBefore().contains("entity"))
+				.anyMatch(step -> step.getStepWorkRows() > 0.0d),
+				"A non-exact zero prefix must still cost connected downstream work; order="
+						+ plan.getOrderedArgs() + ", steps=" + describeSteps(plan));
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void statementPlanningRequestsAccessPathTransitions() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI predicate = VF.createIRI("urn:stateful-access:path");
@@ -3424,6 +3488,35 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void omniTwoVariableSurfaceUsesMultipleFixedDimensions() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI pA = VF.createIRI("urn:omni-two-var:pA");
+		IRI pB = VF.createIRI("urn:omni-two-var:pB");
+		Resource graph = VF.createIRI("urn:omni-two-var:graph");
+		Resource otherGraph = VF.createIRI("urn:omni-two-var:otherGraph");
+		for (int i = 0; i < 64; i++) {
+			Resource subject = VF.createIRI("urn:omni-two-var:s" + i);
+			Resource object = VF.createIRI("urn:omni-two-var:o" + i);
+			store.add(VF.createStatement(subject, pA, object, graph));
+			store.add(VF.createStatement(subject, pB, object, i < 16 ? graph : otherGraph));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("pA", pA), Var.of("o"),
+				Var.of("graph", graph));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("pB", pB), Var.of("o"),
+				Var.of("graph", graph));
+
+		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, right), "s");
+
+		assertEquals("omni-join-estimator", estimate.source(),
+				"Two-variable surfaces with predicate and context fixed should intersect Omni tuple witnesses");
+		assertTrue(estimate.calibratedRows() > 0.0d,
+				"Expected the matching subject/object tuple witnesses to survive the Omni intersection");
+	}
+
+	@Test
 	void cardinalityJoinDelegatesToListEstimatorForFlattenableJoinTree() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:pA");
@@ -3834,6 +3927,19 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.withRefreshSleepMillis(5);
 	}
 
+	private static SketchBasedJoinEstimator.Config omniConfig() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+				.withNominalEntries(512)
+				.withSubjectBucketCount(512)
+				.withPredicateBucketCount(64)
+				.withObjectBucketCount(512)
+				.withContextBucketCount(64)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
+	}
+
 	private static SketchBasedJoinEstimator.Config productionThemeConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
@@ -3859,6 +3965,18 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), tolerance,
 					"Estimated total work should equal the sum of step work");
 		}
+	}
+
+	private static String describeSteps(JoinOrderPlanner.JoinOrderPlan plan) {
+		List<String> steps = new ArrayList<>();
+		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+			steps.add("boundBefore=" + step.getBoundVarsBefore()
+					+ ", factorRows=" + step.getFactorOutputRows()
+					+ ", prefixRows=" + step.getPrefixOutputRows()
+					+ ", workRows=" + step.getStepWorkRows()
+					+ ", metrics=" + step.getDoubleMetrics());
+		}
+		return steps.toString();
 	}
 
 	private static void assertParetoMemoExploration(JoinOrderPlanner.JoinOrderPlan plan) {
@@ -3903,6 +4021,16 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static JoinFactorCostModel.FactorCostEstimate exactLogicalCost(double workRows, double outputRows) {
 		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(),
 				false, false, 0, 0, Double.NaN, false, true);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate nonExactFiniteAnchorZero() {
+		return new JoinFactorCostModel.FactorCostEstimate(0.0d, 0.0d,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-finite-anchor-sketch"),
+				Map.of(
+						TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 0.0d,
+						TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, 0.0d,
+						TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.85d),
+				false, false, 0, 0, Double.NaN, false, false);
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate finiteObjectLookupDomainCost(double workRows,

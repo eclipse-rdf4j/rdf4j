@@ -37,19 +37,30 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -110,12 +121,9 @@ final class LmdbCascadesRuleProvider {
 		boolean cascadesConnectedJoinProviderAvailable = statistics instanceof JoinFactorCostModel;
 		RuleRegistry.Builder builder = RuleRegistry.builder()
 				.addAllRules(RuleCompiler.compileAll(LmdbRuleSpecs.physicalRules()))
+				.addAllRules(RuleCompiler.compileAll(LmdbSemanticRuleSpecs.logicalRules()))
 				.addAllRules(RuleRegistry.standardCompiledDslRules())
 				.add(new LmdbSetSemanticsNormalizationRule(statistics))
-				.add(new LmdbUnusedOptionalDistinctAggregateRule())
-				.add(new LmdbDistinctExistsJoinRule())
-				.add(new LmdbFiniteCodeTypeValuesDistinctAggregateRule())
-				.add(new LmdbFiniteFilterValuesDistinctAggregateRule())
 				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
 				.add(new StructuralCascadesRules.NestedFilterMergeRule())
 				.add(new StructuralCascadesRules.FilterConstantRule())
@@ -156,7 +164,9 @@ final class LmdbCascadesRuleProvider {
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
 								cascadesConnectedJoinProviderAvailable
 										|| (legacyOpaqueJoinProviders && statistics instanceof JoinOrderPlanner),
-								false)));
+								false)
+								&& !positiveExistsAboveAntiExists(tupleExpr)
+								&& !leftOnlyFilterAboveDifference(tupleExpr)));
 		return builder.build();
 	}
 
@@ -599,6 +609,18 @@ final class LmdbCascadesRuleProvider {
 			return value != null && Double.isFinite(value) && value >= 0.0d ? value : fallback;
 		}
 
+		double floorNonExactZeroOperatorWorkRows(double workRows,
+				JoinFactorCostModel.FactorCostEstimate left,
+				JoinFactorCostModel.FactorCostEstimate right) {
+			if (workRows != 0.0d) {
+				return workRows;
+			}
+			if (left != null && right != null && left.hasExactOutputRows() && right.hasExactOutputRows()) {
+				return workRows;
+			}
+			return 1.0d;
+		}
+
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, OptimizationGoal goal,
 				boolean nested) {
 			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
@@ -903,38 +925,13 @@ final class LmdbCascadesRuleProvider {
 		}
 	}
 
-	private static final class LmdbUnusedOptionalDistinctAggregateRule extends LmdbRule {
-		LmdbUnusedOptionalDistinctAggregateRule() {
-			super("lmdb-remove-unused-optional", RuleKind.TRANSFORMATION, 95, null);
-		}
-
-		@Override
-		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical()
-					&& expression.tupleExpr()instanceof Group group
-					&& unusedOptionalDistinctAggregateAlternative(group) != null;
-		}
-
-		@Override
-		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			Group alternative = unusedOptionalDistinctAggregateAlternative((Group) expression.tupleExpr());
-			if (alternative == null) {
-				return List.of();
-			}
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("countDistinct", "unusedOptionalRhs", "duplicateInsensitive"),
-					"COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS");
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
-		}
-	}
-
 	static Group unusedOptionalDistinctAggregateAlternative(Group group) {
-		Set<String> distinctVars = distinctCountVars(group);
-		if (distinctVars.isEmpty()) {
+		Set<String> liveVars = duplicateInsensitiveGroupLiveVars(group);
+		if (liveVars.isEmpty()) {
 			return null;
 		}
 		boolean[] changed = { false };
-		TupleExpr rewrittenArg = removeUnusedOptionals(group.getArg(), distinctVars, changed);
+		TupleExpr rewrittenArg = removeUnusedOptionals(group.getArg(), liveVars, changed);
 		if (!changed[0]) {
 			return null;
 		}
@@ -944,35 +941,150 @@ final class LmdbCascadesRuleProvider {
 		return alternative;
 	}
 
-	private static final class LmdbDistinctExistsJoinRule extends LmdbRule {
-		LmdbDistinctExistsJoinRule() {
-			super("lmdb-distinct-exists-join", RuleKind.TRANSFORMATION, 94, null);
+	static TupleExpr unusedOptionalAlternative(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Group group) {
+			return unusedOptionalDistinctAggregateAlternative(group);
 		}
-
-		@Override
-		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical()
-					&& expression.tupleExpr()instanceof Group group
-					&& distinctExistsJoinAlternative(group) != null;
+		if (tupleExpr instanceof Distinct distinct) {
+			return unusedOptionalDistinctAlternative(distinct);
 		}
+		if (tupleExpr instanceof Reduced reduced) {
+			return unusedOptionalReducedAlternative(reduced);
+		}
+		if (tupleExpr instanceof Slice slice) {
+			return unusedOptionalSliceAlternative(slice);
+		}
+		if (tupleExpr instanceof Order order) {
+			return unusedOptionalOrderAlternative(order);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return unusedOptionalAggregateExtensionAlternative(extension);
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return unusedOptionalPositiveHavingAlternative(filter);
+		}
+		return null;
+	}
 
-		@Override
-		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			Group alternative = distinctExistsJoinAlternative((Group) expression.tupleExpr());
-			if (alternative == null) {
-				return List.of();
+	private static Distinct unusedOptionalDistinctAlternative(Distinct distinct) {
+		boolean[] changed = { false };
+		TupleExpr rewrittenArg = removeUnusedOptionals(distinct.getArg(), distinct.getBindingNames(), changed);
+		if (!changed[0]) {
+			return null;
+		}
+		Distinct alternative = distinct.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Reduced unusedOptionalReducedAlternative(Reduced reduced) {
+		boolean[] changed = { false };
+		TupleExpr rewrittenArg = removeUnusedOptionals(reduced.getArg(), reduced.getBindingNames(), changed);
+		if (!changed[0]) {
+			return null;
+		}
+		Reduced alternative = reduced.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Slice unusedOptionalSliceAlternative(Slice slice) {
+		TupleExpr rewrittenArg = unusedOptionalAlternative(slice.getArg());
+		if (rewrittenArg == null) {
+			return null;
+		}
+		Slice alternative = slice.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Order unusedOptionalOrderAlternative(Order order) {
+		TupleExpr rewrittenArg = unusedOptionalAlternative(order.getArg());
+		if (rewrittenArg == null) {
+			return null;
+		}
+		Order alternative = order.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Extension unusedOptionalAggregateExtensionAlternative(Extension extension) {
+		TupleExpr rewrittenArg = null;
+		if (extension.getArg()instanceof Filter filter) {
+			rewrittenArg = unusedOptionalPositiveHavingAlternative(filter);
+		} else if (extension.getArg()instanceof Extension nestedExtension) {
+			rewrittenArg = unusedOptionalAggregateExtensionAlternative(nestedExtension);
+		}
+		if (rewrittenArg == null) {
+			return null;
+		}
+		Extension alternative = extension.clone();
+		alternative.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Filter unusedOptionalPositiveHavingAlternative(Filter filter) {
+		if (TupleExprs.isVariableScopeChange(filter)) {
+			return null;
+		}
+		Group group = positiveHavingGroup(filter.getArg());
+		if (group == null) {
+			return null;
+		}
+		Map<String, Count> rawCounts = rawCountGroupElements(group);
+		Set<String> conditionNames = VarNameCollector.process(filter.getCondition());
+		Set<String> positiveCountNames = new LinkedHashSet<>(conditionNames);
+		positiveCountNames.retainAll(rawCounts.keySet());
+		if (positiveCountNames.isEmpty() || !positiveHavingCondition(filter.getCondition(), positiveCountNames,
+				stableHavingNames(group, positiveCountNames))) {
+			return null;
+		}
+		Set<String> liveVars = duplicateInsensitiveGroupLiveVars(group, positiveCountNames);
+		if (liveVars.isEmpty()) {
+			return null;
+		}
+		Set<String> assuredNames = group.getArg().getAssuredBindingNames();
+		for (String countName : positiveCountNames) {
+			Set<String> countVars = VarNameCollector.process(rawCounts.get(countName));
+			if (countVars.isEmpty() || !assuredNames.containsAll(countVars)) {
+				return null;
 			}
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("countDistinct", "positiveExists", "sharedDistinctVar", "unusedExistsBindings",
-							"duplicateInsensitive"),
-					"COUNT DISTINCT permits replacing a positive correlated EXISTS filter with an equivalent "
-							+ "inner join alternative because duplicate RHS matches and RHS-only bindings are "
-							+ "unobserved by the aggregate");
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+			liveVars.addAll(countVars);
 		}
+		boolean[] changed = { false };
+		TupleExpr rewrittenArg = removeUnusedOptionals(group.getArg(), liveVars, changed);
+		if (!changed[0]) {
+			return null;
+		}
+		Filter alternative = filter.clone();
+		Group alternativeGroup = positiveHavingGroup(alternative.getArg());
+		if (alternativeGroup == null) {
+			return null;
+		}
+		alternativeGroup.setArg(rewrittenArg);
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-remove-unused-optional");
+		return alternative;
+	}
+
+	private static Group positiveHavingGroup(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Group group) {
+			return group;
+		}
+		if (tupleExpr instanceof Extension extension && extension.getArg()instanceof Group group) {
+			return group;
+		}
+		return null;
 	}
 
 	static Group distinctExistsJoinAlternative(Group group) {
+		if (hasSemanticRewrite(group, "lmdb-finite-filter-values-distinct-rewrite")) {
+			return null;
+		}
 		Set<String> distinctVars = distinctCountVars(group);
 		if (distinctVars.isEmpty()) {
 			return null;
@@ -992,60 +1104,10 @@ final class LmdbCascadesRuleProvider {
 		return alternative;
 	}
 
-	private static final class LmdbFiniteCodeTypeValuesDistinctAggregateRule extends LmdbRule {
-		LmdbFiniteCodeTypeValuesDistinctAggregateRule() {
-			super("lmdb-finite-code-type-values-rewrite", RuleKind.TRANSFORMATION, 94, null);
-		}
-
-		@Override
-		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical()
-					&& expression.tupleExpr()instanceof Group group
-					&& finiteCodeTypeValuesRewrite(group) != null;
-		}
-
-		@Override
-		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			Group group = (Group) expression.tupleExpr();
-			Group alternative = finiteCodeTypeValuesRewrite(group);
-			if (alternative == null) {
-				return List.of();
-			}
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("countDistinct", "finiteCodeDomain", "factoredCommonCodePattern", "finiteTypeDomain",
-							"unusedOptionalRhs", "duplicateInsensitive"),
-					"COUNT DISTINCT permits collapsing duplicate target rows, factoring the shared code lookup, "
-							+ "turning UNION type alternatives into a finite type VALUES domain, and removing the "
-							+ "unobserved OPTIONAL RHS");
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
-		}
-	}
-
-	private static final class LmdbFiniteFilterValuesDistinctAggregateRule extends LmdbRule {
-		LmdbFiniteFilterValuesDistinctAggregateRule() {
-			super("lmdb-finite-filter-values-distinct-rewrite", RuleKind.TRANSFORMATION, 94, null);
-		}
-
-		@Override
-		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical()
-					&& expression.tupleExpr()instanceof Group group
-					&& finiteFilterValuesDistinctAggregateAlternative(group) != null;
-		}
-
-		@Override
-		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			Group alternative = finiteFilterValuesDistinctAggregateAlternative((Group) expression.tupleExpr());
-			if (alternative == null) {
-				return List.of();
-			}
-			RuleProof proof = proof(semanticScope(goal),
-					Set.of("countDistinct", "finiteValuesAnchor", "argumentAssuresFilterVar",
-							"duplicateInsensitive"),
-					"COUNT DISTINCT permits replacing a finite RDF-term equality filter with an equivalent "
-							+ "VALUES join anchor before physical join-order costing");
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
-		}
+	private static boolean hasSemanticRewrite(TupleExpr tupleExpr, String rewrite) {
+		String semanticRewrite = tupleExpr == null ? null
+				: tupleExpr.getStringMetricPlanned("optimizer.semanticRewrite");
+		return semanticRewrite != null && semanticRewrite.contains(rewrite);
 	}
 
 	static Group finiteFilterValuesDistinctAggregateAlternative(Group group) {
@@ -1056,7 +1118,8 @@ final class LmdbCascadesRuleProvider {
 		boolean[] optionalRemoved = { false };
 		TupleExpr arg = removeUnusedOptionals(group.getArg(), distinctVars, optionalRemoved);
 		boolean[] finiteFilterRewritten = { false };
-		TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(arg, finiteFilterRewritten);
+		TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(arg, finiteFilterRewritten,
+				"lmdb-finite-filter-values-distinct-rewrite", true);
 		if (!finiteFilterRewritten[0]) {
 			return null;
 		}
@@ -1068,7 +1131,18 @@ final class LmdbCascadesRuleProvider {
 		return alternative;
 	}
 
-	private static Group finiteCodeTypeValuesRewrite(Group group) {
+	static TupleExpr finiteFilterValuesAlternative(TupleExpr tupleExpr) {
+		boolean[] changed = { false };
+		TupleExpr rewritten = rewriteFiniteFiltersAsValues(tupleExpr, changed, "lmdb-finite-filter-values-rewrite",
+				false);
+		if (!changed[0]) {
+			return null;
+		}
+		rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-filter-values-rewrite");
+		return rewritten;
+	}
+
+	static Group finiteCodeTypeValuesRewrite(Group group) {
 		Set<String> distinctVars = distinctCountVars(group);
 		if (distinctVars.size() != 1) {
 			return null;
@@ -1110,29 +1184,711 @@ final class LmdbCascadesRuleProvider {
 		return alternative;
 	}
 
-	private static TupleExpr rewriteFiniteFiltersAsValues(TupleExpr tupleExpr, boolean[] changed) {
+	static TupleExpr orFilterValuesAlternative(TupleExpr tupleExpr) {
+		return rewriteOrFilterValues(tupleExpr);
+	}
+
+	static TupleExpr orFilterUnionAlternative(TupleExpr tupleExpr) {
+		return rewriteDuplicateInsensitiveOrFilterUnion(tupleExpr);
+	}
+
+	static TupleExpr filterMinusLeftPushdownAlternative(TupleExpr tupleExpr) {
+		return rewriteFilterMinusLeftPushdown(tupleExpr);
+	}
+
+	private static TupleExpr rewriteFilterMinusLeftPushdown(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && filter.getArg()instanceof Difference difference
+				&& filterConditionUsesOnlyMinusLeft(filter, difference)) {
+			Filter pushedFilter = new Filter(difference.getLeftArg().clone(), filter.getCondition().clone());
+			pushedFilter.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+			Filter alternative = new Filter(pushedFilter, new Not(new Exists(difference.getRightArg().clone())));
+			alternative.setVariableScopeChange(difference.isVariableScopeChange());
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+			return alternative;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			TupleExpr reordered = reorderPositiveExistsBelowAntiExists(filter);
+			if (reordered != null) {
+				return reordered;
+			}
+			TupleExpr antiExistsAlternative = splitLeftOnlyFiltersBelowAntiExists(filter);
+			if (antiExistsAlternative != null) {
+				return antiExistsAlternative;
+			}
+		}
+		if (tupleExpr instanceof Filter filter) {
+			TupleExpr rewrittenArg = rewriteFilterMinusLeftPushdown(filter.getArg());
+			if (rewrittenArg != null) {
+				Filter alternative = filter.clone();
+				alternative.setArg(rewrittenArg);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+				return alternative;
+			}
+		}
+		return rewriteUnaryOrBinaryChild(tupleExpr, LmdbCascadesRuleProvider::rewriteFilterMinusLeftPushdown,
+				"lmdb-filter-minus-left-pushdown");
+	}
+
+	private static boolean positiveExistsAboveAntiExists(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter outer)
+				|| !(outer.getArg()instanceof Filter inner)
+				|| conditionContainsAntiExists(outer.getCondition())
+				|| !conditionContainsPositiveExists(outer.getCondition())
+				|| !conditionContainsAntiExists(inner.getCondition())) {
+			return false;
+		}
+		Set<String> inputNames = LmdbJoinPlanSupport.plannerBindingNames(inner.getArg().getBindingNames());
+		return conditionUsesOnlyInput(outer.getCondition(), inputNames);
+	}
+
+	private static boolean leftOnlyFilterAboveDifference(TupleExpr tupleExpr) {
+		return tupleExpr instanceof Filter filter
+				&& filter.getArg()instanceof Difference difference
+				&& filterConditionUsesOnlyMinusLeft(filter, difference);
+	}
+
+	private static TupleExpr reorderPositiveExistsBelowAntiExists(Filter outer) {
+		if (!(outer.getArg()instanceof Filter inner)
+				|| TupleExprs.isVariableScopeChange(inner)
+				|| !conditionContainsPositiveExists(outer.getCondition())
+				|| conditionContainsAntiExists(outer.getCondition())
+				|| !conditionContainsAntiExists(inner.getCondition())) {
+			return null;
+		}
+		Set<String> inputNames = LmdbJoinPlanSupport.plannerBindingNames(inner.getArg().getBindingNames());
+		if (!conditionUsesOnlyInput(outer.getCondition(), inputNames)) {
+			return null;
+		}
+		Filter pushedPositive = new Filter(inner.getArg().clone(), outer.getCondition().clone());
+		pushedPositive.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+		Filter reordered = new Filter(pushedPositive, inner.getCondition().clone());
+		reordered.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+		return reordered;
+	}
+
+	private static TupleExpr splitLeftOnlyFiltersBelowAntiExists(Filter filter) {
+		List<ValueExpr> conjuncts = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
+		if (conjuncts.size() < 2) {
+			return null;
+		}
+		Set<String> inputNames = LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getBindingNames());
+		if (inputNames.isEmpty()) {
+			return null;
+		}
+		List<ValueExpr> antiExistsConjuncts = new ArrayList<>();
+		List<ValueExpr> pushedConjuncts = new ArrayList<>();
+		List<ValueExpr> residualConjuncts = new ArrayList<>();
+		for (ValueExpr conjunct : conjuncts) {
+			if (conjunct instanceof Not not && not.getArg() instanceof Exists) {
+				antiExistsConjuncts.add(conjunct);
+			} else if (conditionUsesOnlyInput(conjunct, inputNames)) {
+				pushedConjuncts.add(conjunct);
+			} else {
+				residualConjuncts.add(conjunct);
+			}
+		}
+		if (antiExistsConjuncts.isEmpty() || pushedConjuncts.isEmpty()) {
+			return null;
+		}
+		TupleExpr pushedInput = new Filter(filter.getArg().clone(),
+				LmdbJoinPlanSupport.combinedCondition(pushedConjuncts));
+		pushedInput.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+		List<ValueExpr> outerConjuncts = new ArrayList<>(antiExistsConjuncts.size() + residualConjuncts.size());
+		outerConjuncts.addAll(antiExistsConjuncts);
+		outerConjuncts.addAll(residualConjuncts);
+		Filter alternative = new Filter(pushedInput, LmdbJoinPlanSupport.combinedCondition(outerConjuncts));
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
+		return alternative;
+	}
+
+	private static boolean conditionUsesOnlyInput(ValueExpr condition, Set<String> inputNames) {
+		Set<String> conditionNames = LmdbJoinPlanSupport.conditionBindingNames(condition, inputNames);
+		return !conditionNames.isEmpty() && inputNames.containsAll(conditionNames);
+	}
+
+	private static boolean conditionContainsPositiveExists(ValueExpr condition) {
+		if (condition instanceof Exists) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return conditionContainsPositiveExists(and.getLeftArg())
+					|| conditionContainsPositiveExists(and.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean conditionContainsAntiExists(ValueExpr condition) {
+		if (condition instanceof Not not && not.getArg() instanceof Exists) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return conditionContainsAntiExists(and.getLeftArg()) || conditionContainsAntiExists(and.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean filterConditionUsesOnlyMinusLeft(Filter filter, Difference difference) {
+		if (filter == null || difference == null || filter.getCondition() == null || filter.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> leftNames = LmdbJoinPlanSupport.plannerBindingNames(difference.getLeftArg().getBindingNames());
+		if (leftNames.isEmpty()) {
+			return false;
+		}
+		Set<String> outputNames = LmdbJoinPlanSupport.plannerBindingNames(difference.getBindingNames());
+		Set<String> conditionNames = LmdbJoinPlanSupport.conditionBindingNames(filter.getCondition(), outputNames);
+		return !conditionNames.isEmpty() && leftNames.containsAll(conditionNames);
+	}
+
+	private static TupleExpr rewriteOrFilterValues(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
-			TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(filter.getArg(), changed);
-			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
-			if (safeFiniteFilterValuesAnchor(filter, rewrittenArg, anchor)) {
+			OrValuesRewrite rewrite = orValuesRewrite(filter.getCondition(), filter.getArg().getAssuredBindingNames());
+			if (rewrite == null) {
+				TupleExpr rewrittenArg = rewriteOrFilterValues(filter.getArg());
+				if (rewrittenArg == null) {
+					return null;
+				}
+				Filter alternative = filter.clone();
+				alternative.setArg(rewrittenArg);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
+				return alternative;
+			}
+			TupleExpr rewritten = new Join(rewrite.assignment(), filter.getArg().clone());
+			if (!rewrite.residualConditions().isEmpty()) {
+				rewritten = new Filter(rewritten, LmdbJoinPlanSupport.combinedCondition(rewrite.residualConditions()));
+			}
+			rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
+			return rewritten;
+		}
+		return rewriteUnaryOrBinaryChild(tupleExpr, LmdbCascadesRuleProvider::rewriteOrFilterValues,
+				"lmdb-or-filter-values-rewrite");
+	}
+
+	private static TupleExpr rewriteDuplicateInsensitiveOrFilterUnion(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Distinct distinct) {
+			TupleExpr rewrittenArg = rewriteOrFilterUnion(distinct.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Distinct alternative = distinct.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return alternative;
+		}
+		if (tupleExpr instanceof Group group && !distinctCountVars(group).isEmpty()) {
+			TupleExpr rewrittenArg = rewriteOrFilterUnion(group.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Group alternative = group.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return alternative;
+		}
+		if (tupleExpr instanceof QueryRoot root) {
+			TupleExpr rewrittenArg = rewriteDuplicateInsensitiveOrFilterUnion(root.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			QueryRoot alternative = root.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return alternative;
+		}
+		if (tupleExpr instanceof Projection projection) {
+			TupleExpr rewrittenArg = rewriteDuplicateInsensitiveOrFilterUnion(projection.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Projection alternative = projection.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return alternative;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			TupleExpr rewrittenArg = rewriteDuplicateInsensitiveOrFilterUnion(extension.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Extension alternative = extension.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return alternative;
+		}
+		return null;
+	}
+
+	private static TupleExpr rewriteOrFilterUnion(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			OrUnionRewrite rewrite = orUnionRewrite(filter.getCondition(), filter.getArg().getAssuredBindingNames());
+			if (rewrite == null) {
+				TupleExpr rewrittenArg = rewriteOrFilterUnion(filter.getArg());
+				if (rewrittenArg == null) {
+					return null;
+				}
+				Filter alternative = filter.clone();
+				alternative.setArg(rewrittenArg);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+				return alternative;
+			}
+			TupleExpr union = null;
+			for (ValueExpr branchCondition : rewrite.branchConditions()) {
+				TupleExpr branch = anchoredUnionBranch(filter.getArg(), branchCondition,
+						filter.getArg().getAssuredBindingNames());
+				union = union == null ? branch : new Union(union, branch);
+			}
+			if (union != null) {
+				union.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			}
+			return union;
+		}
+		return rewriteUnaryOrBinaryChild(tupleExpr, LmdbCascadesRuleProvider::rewriteOrFilterUnion,
+				"lmdb-or-filter-union-rewrite");
+	}
+
+	private static TupleExpr anchoredUnionBranch(TupleExpr input, ValueExpr condition, Set<String> assuredBindings) {
+		TupleExpr result = input.clone();
+		List<ValueExpr> residual = new ArrayList<>();
+		Set<String> anchoredBindings = new HashSet<>();
+		for (ValueExpr conjunct : LmdbJoinPlanSupport.splitConjuncts(condition)) {
+			FiniteRelation relation = finiteRelation(conjunct, false);
+			if (relation != null
+					&& assuredBindings.containsAll(relation.bindingNames())
+					&& Collections.disjoint(anchoredBindings, relation.bindingNames())) {
+				BindingSetAssignment assignment = relation.assignment();
+				assignment.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+				result = new Join(assignment, result);
+				anchoredBindings.addAll(relation.bindingNames());
+			} else {
+				residual.add(conjunct.clone());
+			}
+		}
+		if (residual.isEmpty()) {
+			result.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+			return result;
+		}
+		Filter branch = new Filter(result, LmdbJoinPlanSupport.combinedCondition(residual));
+		branch.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-union-rewrite");
+		return branch;
+	}
+
+	private static TupleExpr rewriteUnaryOrBinaryChild(TupleExpr tupleExpr, TupleRewrite rewrite,
+			String semanticRewrite) {
+		if (tupleExpr == null || TupleExprs.isVariableScopeChange(tupleExpr)) {
+			return null;
+		}
+		if (tupleExpr instanceof QueryRoot root) {
+			TupleExpr rewrittenArg = rewrite.rewrite(root.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			QueryRoot alternative = root.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Projection projection) {
+			TupleExpr rewrittenArg = rewrite.rewrite(projection.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Projection alternative = projection.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			TupleExpr rewrittenArg = rewrite.rewrite(extension.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Extension alternative = extension.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Group group) {
+			TupleExpr rewrittenArg = rewrite.rewrite(group.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Group alternative = group.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Distinct distinct) {
+			TupleExpr rewrittenArg = rewrite.rewrite(distinct.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Distinct alternative = distinct.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Reduced reduced) {
+			TupleExpr rewrittenArg = rewrite.rewrite(reduced.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Reduced alternative = reduced.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Slice slice) {
+			TupleExpr rewrittenArg = rewrite.rewrite(slice.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Slice alternative = slice.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Order order) {
+			TupleExpr rewrittenArg = rewrite.rewrite(order.getArg());
+			if (rewrittenArg == null) {
+				return null;
+			}
+			Order alternative = order.clone();
+			alternative.setArg(rewrittenArg);
+			alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			return alternative;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			TupleExpr left = rewrite.rewrite(join.getLeftArg());
+			if (left != null) {
+				Join alternative = join.clone();
+				alternative.setLeftArg(left);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
+			}
+			TupleExpr right = rewrite.rewrite(join.getRightArg());
+			if (right != null) {
+				Join alternative = join.clone();
+				alternative.setRightArg(right);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
+			}
+		}
+		if (tupleExpr instanceof Union union && !union.isVariableScopeChange()) {
+			TupleExpr left = rewrite.rewrite(union.getLeftArg());
+			if (left != null) {
+				Union alternative = union.clone();
+				alternative.setLeftArg(left);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
+			}
+			TupleExpr right = rewrite.rewrite(union.getRightArg());
+			if (right != null) {
+				Union alternative = union.clone();
+				alternative.setRightArg(right);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
+			}
+		}
+		return null;
+	}
+
+	private static OrValuesRewrite orValuesRewrite(ValueExpr condition, Set<String> assuredBindings) {
+		List<ValueExpr> conjuncts = LmdbJoinPlanSupport.splitConjuncts(condition);
+		for (int i = 0; i < conjuncts.size(); i++) {
+			ValueExpr conjunct = conjuncts.get(i);
+			FiniteRelation relation = finiteOrRelation(conjunct);
+			if (relation == null || !assuredBindings.containsAll(relation.bindingNames())) {
+				continue;
+			}
+			List<ValueExpr> residual = new ArrayList<>(conjuncts.size() - 1);
+			for (int j = 0; j < conjuncts.size(); j++) {
+				if (j != i) {
+					residual.add(conjuncts.get(j).clone());
+				}
+			}
+			BindingSetAssignment assignment = relation.assignment();
+			assignment.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
+			return new OrValuesRewrite(assignment, residual);
+		}
+		return null;
+	}
+
+	private static OrUnionRewrite orUnionRewrite(ValueExpr condition, Set<String> assuredBindings) {
+		List<ValueExpr> conjuncts = LmdbJoinPlanSupport.splitConjuncts(condition);
+		for (int i = 0; i < conjuncts.size(); i++) {
+			ValueExpr conjunct = conjuncts.get(i);
+			if (!containsOr(conjunct) || finiteOrRelation(conjunct) != null) {
+				continue;
+			}
+			List<ValueExpr> branches = flattenOrBranches(conjunct);
+			if (branches.size() < 2 || branches.stream().anyMatch(LmdbJoinPlanSupport::containsExists)) {
+				continue;
+			}
+			Set<String> conditionVars = VarNameCollector.process(condition);
+			if (!assuredBindings.containsAll(conditionVars)) {
+				continue;
+			}
+			List<ValueExpr> branchConditions = new ArrayList<>(branches.size());
+			for (ValueExpr branch : branches) {
+				List<ValueExpr> branchConjuncts = new ArrayList<>();
+				for (int j = 0; j < conjuncts.size(); j++) {
+					branchConjuncts.add(j == i ? branch.clone() : conjuncts.get(j).clone());
+				}
+				branchConditions.add(LmdbJoinPlanSupport.combinedCondition(branchConjuncts));
+			}
+			return new OrUnionRewrite(branchConditions);
+		}
+		return null;
+	}
+
+	private static FiniteRelation finiteOrRelation(ValueExpr condition) {
+		return finiteRelation(condition, true);
+	}
+
+	private static FiniteRelation finiteRelation(ValueExpr condition, boolean requireOr) {
+		if (requireOr && !containsOr(condition)) {
+			return null;
+		}
+		List<LinkedHashMap<String, Value>> rows = finiteRows(condition);
+		if (rows == null || rows.isEmpty() || rows.size() > 256) {
+			return null;
+		}
+		LinkedHashSet<String> bindingNames = new LinkedHashSet<>();
+		for (LinkedHashMap<String, Value> row : rows) {
+			bindingNames.addAll(row.keySet());
+		}
+		if (bindingNames.isEmpty()) {
+			return null;
+		}
+		LinkedHashMap<List<Value>, LinkedHashMap<String, Value>> uniqueRows = new LinkedHashMap<>();
+		for (LinkedHashMap<String, Value> row : rows) {
+			if (!row.keySet().equals(bindingNames)) {
+				return null;
+			}
+			List<Value> key = new ArrayList<>(bindingNames.size());
+			for (String bindingName : bindingNames) {
+				key.add(row.get(bindingName));
+			}
+			uniqueRows.putIfAbsent(List.copyOf(key), row);
+		}
+		if (uniqueRows.isEmpty() || uniqueRows.size() > 256) {
+			return null;
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(bindingNames);
+		List<BindingSet> bindingSets = new ArrayList<>(uniqueRows.size());
+		for (LinkedHashMap<String, Value> row : uniqueRows.values()) {
+			MapBindingSet bindingSet = new MapBindingSet(bindingNames.size());
+			for (String bindingName : bindingNames) {
+				bindingSet.addBinding(bindingName, row.get(bindingName));
+			}
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return new FiniteRelation(Set.copyOf(bindingNames), assignment);
+	}
+
+	private static List<LinkedHashMap<String, Value>> finiteRows(ValueExpr condition) {
+		if (condition instanceof Or or) {
+			List<LinkedHashMap<String, Value>> left = finiteRows(or.getLeftArg());
+			List<LinkedHashMap<String, Value>> right = finiteRows(or.getRightArg());
+			if (left == null || right == null) {
+				return null;
+			}
+			List<LinkedHashMap<String, Value>> rows = new ArrayList<>(left.size() + right.size());
+			rows.addAll(left);
+			rows.addAll(right);
+			return rows;
+		}
+		if (condition instanceof And and) {
+			List<LinkedHashMap<String, Value>> left = finiteRows(and.getLeftArg());
+			List<LinkedHashMap<String, Value>> right = finiteRows(and.getRightArg());
+			if (left == null || right == null) {
+				return null;
+			}
+			List<LinkedHashMap<String, Value>> rows = new ArrayList<>(left.size() * Math.max(1, right.size()));
+			for (LinkedHashMap<String, Value> leftRow : left) {
+				for (LinkedHashMap<String, Value> rightRow : right) {
+					LinkedHashMap<String, Value> combined = combineFiniteRows(leftRow, rightRow);
+					if (combined != null) {
+						rows.add(combined);
+					}
+				}
+			}
+			return rows;
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			return finiteEqualityRows(compare.getLeftArg(), compare.getRightArg());
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return finiteSameTermRows(sameTerm.getLeftArg(), sameTerm.getRightArg());
+		}
+		if (condition instanceof ListMemberOperator list) {
+			return finiteListMemberRows(list);
+		}
+		return null;
+	}
+
+	private static LinkedHashMap<String, Value> combineFiniteRows(LinkedHashMap<String, Value> left,
+			LinkedHashMap<String, Value> right) {
+		LinkedHashMap<String, Value> combined = new LinkedHashMap<>(left);
+		for (Map.Entry<String, Value> entry : right.entrySet()) {
+			Value previous = combined.putIfAbsent(entry.getKey(), entry.getValue());
+			if (previous != null && !previous.equals(entry.getValue())) {
+				return null;
+			}
+		}
+		return combined;
+	}
+
+	private static List<LinkedHashMap<String, Value>> finiteEqualityRows(ValueExpr leftArg, ValueExpr rightArg) {
+		if (leftArg instanceof Var var && rightArg instanceof ValueConstant constant) {
+			return finiteValueRows(var, List.of(constant.getValue()), false);
+		}
+		if (rightArg instanceof Var var && leftArg instanceof ValueConstant constant) {
+			return finiteValueRows(var, List.of(constant.getValue()), false);
+		}
+		return null;
+	}
+
+	private static List<LinkedHashMap<String, Value>> finiteSameTermRows(ValueExpr leftArg, ValueExpr rightArg) {
+		if (leftArg instanceof Var var && rightArg instanceof ValueConstant constant) {
+			return finiteValueRows(var, List.of(constant.getValue()), true);
+		}
+		if (rightArg instanceof Var var && leftArg instanceof ValueConstant constant) {
+			return finiteValueRows(var, List.of(constant.getValue()), true);
+		}
+		return null;
+	}
+
+	private static List<LinkedHashMap<String, Value>> finiteListMemberRows(ListMemberOperator list) {
+		List<ValueExpr> arguments = list.getArguments();
+		if (arguments.size() < 2 || !(arguments.getFirst()instanceof Var var)) {
+			return null;
+		}
+		List<Value> values = new ArrayList<>(arguments.size() - 1);
+		for (int i = 1; i < arguments.size(); i++) {
+			ValueExpr argument = arguments.get(i);
+			if (!(argument instanceof ValueConstant constant)) {
+				return null;
+			}
+			values.add(constant.getValue());
+		}
+		return finiteValueRows(var, values, false);
+	}
+
+	private static List<LinkedHashMap<String, Value>> finiteValueRows(Var var, List<Value> values,
+			boolean exactTermComparison) {
+		String bindingName = var == null || var.hasValue() ? null : var.getName();
+		if (bindingName == null || values == null || values.isEmpty()) {
+			return null;
+		}
+		List<LinkedHashMap<String, Value>> rows = new ArrayList<>(values.size());
+		for (Value value : values) {
+			if (!(exactTermComparison ? isExactValuesRowValue(value)
+					: LmdbJoinPlanSupport.isSafeValuesAnchorValue(value))) {
+				return null;
+			}
+			LinkedHashMap<String, Value> row = new LinkedHashMap<>();
+			row.put(bindingName, value);
+			rows.add(row);
+		}
+		return rows;
+	}
+
+	private static boolean isExactValuesRowValue(Value value) {
+		return value instanceof IRI || value instanceof Literal;
+	}
+
+	private static boolean containsOr(ValueExpr expression) {
+		boolean[] found = { false };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Or node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static List<ValueExpr> flattenOrBranches(ValueExpr expression) {
+		List<ValueExpr> branches = new ArrayList<>();
+		collectOrBranches(expression, branches);
+		return branches;
+	}
+
+	private static void collectOrBranches(ValueExpr expression, List<ValueExpr> branches) {
+		if (expression instanceof Or or) {
+			collectOrBranches(or.getLeftArg(), branches);
+			collectOrBranches(or.getRightArg(), branches);
+		} else {
+			branches.add(expression);
+		}
+	}
+
+	private static TupleExpr rewriteFiniteFiltersAsValues(TupleExpr tupleExpr, boolean[] changed,
+			String semanticRewrite, boolean allowCurrentFilterAnchor) {
+		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+			TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(filter.getArg(), changed, semanticRewrite,
+					allowCurrentFilterAnchor);
+			ValueExpr rewrittenCondition = rewriteFiniteFilterSubqueries(filter.getCondition(), changed,
+					semanticRewrite);
+			boolean conditionRewritten = rewrittenCondition != filter.getCondition();
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(rewrittenCondition);
+			if (allowCurrentFilterAnchor && safeFiniteFilterValuesAnchor(rewrittenCondition, rewrittenArg, anchor)) {
 				changed[0] = true;
-				anchor.setStringMetricPlanned("optimizer.semanticRewrite",
-						"lmdb-finite-filter-values-distinct-rewrite");
+				anchor.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
 				return new Join(anchor, rewrittenArg);
 			}
-			if (rewrittenArg != filter.getArg()) {
-				return new Filter(rewrittenArg, filter.getCondition().clone());
+			if (rewrittenArg != filter.getArg() || conditionRewritten) {
+				Filter alternative = new Filter(rewrittenArg, rewrittenCondition.clone());
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
 			}
 			return tupleExpr;
 		}
 		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-			TupleExpr left = rewriteFiniteFiltersAsValues(join.getLeftArg(), changed);
-			TupleExpr right = rewriteFiniteFiltersAsValues(join.getRightArg(), changed);
+			TupleExpr left = rewriteFiniteFiltersAsValues(join.getLeftArg(), changed, semanticRewrite,
+					allowCurrentFilterAnchor);
+			TupleExpr right = rewriteFiniteFiltersAsValues(join.getRightArg(), changed, semanticRewrite,
+					allowCurrentFilterAnchor);
 			if (left != join.getLeftArg() || right != join.getRightArg()) {
-				return new Join(left, right);
+				Join alternative = new Join(left, right);
+				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+				return alternative;
 			}
+			return tupleExpr;
+		}
+		TupleExpr rewritten = rewriteUnaryOrBinaryChild(tupleExpr, child -> {
+			TupleExpr rewrittenChild = rewriteFiniteFiltersAsValues(child, changed, semanticRewrite,
+					allowCurrentFilterAnchor);
+			return rewrittenChild == child ? null : rewrittenChild;
+		}, semanticRewrite);
+		if (rewritten != null) {
+			return rewritten;
 		}
 		return tupleExpr;
+	}
+
+	private static ValueExpr rewriteFiniteFilterSubqueries(ValueExpr condition, boolean[] changed,
+			String semanticRewrite) {
+		if (condition == null) {
+			return null;
+		}
+		ValueExpr clone = condition.clone();
+		boolean[] conditionChanged = { false };
+		clone.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				TupleExpr subQuery = node.getSubQuery();
+				TupleExpr rewritten = rewriteFiniteFiltersAsValues(subQuery, changed, semanticRewrite, true);
+				if (rewritten != subQuery) {
+					node.setSubQuery(rewritten);
+					conditionChanged[0] = true;
+				}
+			}
+		});
+		return conditionChanged[0] ? clone : condition;
 	}
 
 	private static TupleExpr rewriteDistinctExistsFiltersAsJoins(TupleExpr tupleExpr, Set<String> distinctVars,
@@ -1213,12 +1969,17 @@ final class LmdbCascadesRuleProvider {
 
 	private static boolean safeFiniteFilterValuesAnchor(Filter filter, TupleExpr rewrittenArg,
 			BindingSetAssignment anchor) {
+		return safeFiniteFilterValuesAnchor(filter.getCondition(), rewrittenArg, anchor);
+	}
+
+	private static boolean safeFiniteFilterValuesAnchor(ValueExpr condition, TupleExpr rewrittenArg,
+			BindingSetAssignment anchor) {
 		return anchor != null
 				&& !anchor.getBindingNames().isEmpty()
 				&& rewrittenArg != null
 				&& rewrittenArg.getAssuredBindingNames().containsAll(anchor.getBindingNames())
 				&& !containsBindingSetAssignment(rewrittenArg, anchor.getBindingNames())
-				&& !LmdbJoinPlanSupport.containsExists(filter.getCondition());
+				&& !LmdbJoinPlanSupport.containsExists(condition);
 	}
 
 	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr, Set<String> bindingNames) {
@@ -1249,15 +2010,236 @@ final class LmdbCascadesRuleProvider {
 			}
 			return new Filter(arg, filter.getCondition().clone());
 		}
+		if (tupleExpr instanceof Projection projection) {
+			TupleExpr arg = removeUnusedOptionals(projection.getArg(), projectionSourceLiveVars(projection, liveVars),
+					changed);
+			if (arg == projection.getArg()) {
+				return tupleExpr;
+			}
+			Projection alternative = projection.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			TupleExpr arg = removeUnusedOptionals(extension.getArg(), extensionSourceLiveVars(extension, liveVars),
+					changed);
+			if (arg == extension.getArg()) {
+				return tupleExpr;
+			}
+			Extension alternative = extension.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Distinct distinct) {
+			TupleExpr arg = removeUnusedOptionals(distinct.getArg(), liveVars, changed);
+			if (arg == distinct.getArg()) {
+				return tupleExpr;
+			}
+			Distinct alternative = distinct.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Reduced reduced) {
+			TupleExpr arg = removeUnusedOptionals(reduced.getArg(), liveVars, changed);
+			if (arg == reduced.getArg()) {
+				return tupleExpr;
+			}
+			Reduced alternative = reduced.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Order order) {
+			Set<String> childLiveVars = new LinkedHashSet<>(liveVars);
+			for (OrderElem element : order.getElements()) {
+				childLiveVars.addAll(VarNameCollector.process(element.getExpr()));
+			}
+			TupleExpr arg = removeUnusedOptionals(order.getArg(), childLiveVars, changed);
+			if (arg == order.getArg()) {
+				return tupleExpr;
+			}
+			Order alternative = order.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Slice slice) {
+			TupleExpr arg = removeUnusedOptionals(slice.getArg(), liveVars, changed);
+			if (arg == slice.getArg()) {
+				return tupleExpr;
+			}
+			Slice alternative = slice.clone();
+			alternative.setArg(arg);
+			return alternative;
+		}
+		if (tupleExpr instanceof Union union && !TupleExprs.isVariableScopeChange(union)) {
+			TupleExpr left = removeUnusedOptionals(union.getLeftArg(), liveVars, changed);
+			TupleExpr right = removeUnusedOptionals(union.getRightArg(), liveVars, changed);
+			if (left != union.getLeftArg() || right != union.getRightArg()) {
+				return new Union(left, right);
+			}
+			return tupleExpr;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			Set<String> leftLiveVars = new LinkedHashSet<>(liveVars);
+			leftLiveVars.addAll(join.getRightArg().getBindingNames());
+			Set<String> rightLiveVars = new LinkedHashSet<>(liveVars);
+			rightLiveVars.addAll(join.getLeftArg().getBindingNames());
+			TupleExpr left = removeUnusedOptionals(join.getLeftArg(), leftLiveVars, changed);
+			TupleExpr right = removeUnusedOptionals(join.getRightArg(), rightLiveVars, changed);
+			if (left != join.getLeftArg() || right != join.getRightArg()) {
+				return new Join(left, right);
+			}
+			return tupleExpr;
+		}
 		if (tupleExpr instanceof LeftJoin leftJoin) {
 			Set<String> rightNames = new LinkedHashSet<>(leftJoin.getRightArg().getBindingNames());
 			rightNames.removeAll(leftJoin.getLeftArg().getBindingNames());
-			if (!leftJoin.hasCondition() && Collections.disjoint(rightNames, liveVars)) {
+			if (Collections.disjoint(rightNames, liveVars)) {
 				changed[0] = true;
 				return removeUnusedOptionals(leftJoin.getLeftArg(), liveVars, changed);
 			}
+			Set<String> conditionVars = leftJoin.hasCondition()
+					? VarNameCollector.process(leftJoin.getCondition())
+					: Set.of();
+			Set<String> leftLiveVars = new LinkedHashSet<>(liveVars);
+			leftLiveVars.addAll(conditionVars);
+			leftLiveVars.addAll(leftJoin.getRightArg().getBindingNames());
+			Set<String> rightLiveVars = new LinkedHashSet<>(liveVars);
+			rightLiveVars.addAll(conditionVars);
+			rightLiveVars.addAll(leftJoin.getLeftArg().getBindingNames());
+			TupleExpr left = removeUnusedOptionals(leftJoin.getLeftArg(), leftLiveVars, changed);
+			TupleExpr right = removeUnusedOptionals(leftJoin.getRightArg(), rightLiveVars, changed);
+			if (left != leftJoin.getLeftArg() || right != leftJoin.getRightArg()) {
+				LeftJoin alternative = new LeftJoin(left, right);
+				if (leftJoin.hasCondition()) {
+					alternative.setCondition(leftJoin.getCondition().clone());
+				}
+				return alternative;
+			}
 		}
 		return tupleExpr;
+	}
+
+	private static Set<String> projectionSourceLiveVars(Projection projection, Set<String> liveVars) {
+		Set<String> childLiveVars = new LinkedHashSet<>();
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			String projectedName = element.getProjectionAlias().orElse(element.getName());
+			if (liveVars.contains(projectedName)) {
+				childLiveVars.add(element.getName());
+			}
+		}
+		return childLiveVars;
+	}
+
+	private static Set<String> extensionSourceLiveVars(Extension extension, Set<String> liveVars) {
+		Set<String> childLiveVars = new LinkedHashSet<>(liveVars);
+		for (ExtensionElem element : extension.getElements()) {
+			childLiveVars.remove(element.getName());
+			if (liveVars.contains(element.getName())) {
+				childLiveVars.addAll(VarNameCollector.process(element.getExpr()));
+			}
+		}
+		return childLiveVars;
+	}
+
+	private static Set<String> duplicateInsensitiveGroupLiveVars(Group group) {
+		return duplicateInsensitiveGroupLiveVars(group, Set.of());
+	}
+
+	private static Set<String> duplicateInsensitiveGroupLiveVars(Group group, Set<String> positiveCountNames) {
+		if (group == null) {
+			return Set.of();
+		}
+		Set<String> liveVars = new LinkedHashSet<>(group.getGroupBindingNames());
+		if (group.getGroupElements().isEmpty()) {
+			return liveVars;
+		}
+		for (GroupElem groupElement : group.getGroupElements()) {
+			AggregateOperator operator = groupElement.getOperator();
+			if (positiveCountNames.contains(groupElement.getName())) {
+				if (!(operator instanceof Count count) || count.isDistinct()) {
+					return Set.of();
+				}
+				liveVars.addAll(VarNameCollector.process(count));
+			} else if (duplicateInsensitiveAggregate(operator)) {
+				liveVars.addAll(VarNameCollector.process(operator));
+			} else {
+				return Set.of();
+			}
+		}
+		return liveVars;
+	}
+
+	private static boolean duplicateInsensitiveAggregate(AggregateOperator operator) {
+		return operator instanceof Count count && count.isDistinct()
+				|| operator instanceof Min
+				|| operator instanceof Max;
+	}
+
+	private static Map<String, Count> rawCountGroupElements(Group group) {
+		Map<String, Count> rawCounts = new LinkedHashMap<>();
+		for (GroupElem groupElement : group.getGroupElements()) {
+			if (groupElement.getOperator()instanceof Count count && !count.isDistinct()) {
+				rawCounts.put(groupElement.getName(), count);
+			}
+		}
+		return rawCounts;
+	}
+
+	private static Set<String> stableHavingNames(Group group, Set<String> positiveCountNames) {
+		Set<String> stableNames = new LinkedHashSet<>(group.getGroupBindingNames());
+		for (GroupElem groupElement : group.getGroupElements()) {
+			if (positiveCountNames.contains(groupElement.getName())
+					|| duplicateInsensitiveAggregate(groupElement.getOperator())) {
+				stableNames.add(groupElement.getName());
+			}
+		}
+		return stableNames;
+	}
+
+	private static boolean positiveHavingCondition(ValueExpr condition, Set<String> positiveCountNames,
+			Set<String> stableNames) {
+		if (condition instanceof And and) {
+			return positiveHavingCondition(and.getLeftArg(), positiveCountNames, stableNames)
+					&& positiveHavingCondition(and.getRightArg(), positiveCountNames, stableNames);
+		}
+		if (positiveCountComparison(condition, positiveCountNames)) {
+			return true;
+		}
+		Set<String> conditionNames = VarNameCollector.process(condition);
+		return Collections.disjoint(conditionNames, positiveCountNames) && stableNames.containsAll(conditionNames);
+	}
+
+	private static boolean positiveCountComparison(ValueExpr condition, Set<String> positiveCountNames) {
+		if (!(condition instanceof Compare compare)) {
+			return false;
+		}
+		if (compare.getLeftArg()instanceof Var var && positiveCountNames.contains(var.getName())
+				&& compare.getRightArg()instanceof ValueConstant constant) {
+			return positiveCountThreshold(compare.getOperator(), constant, true);
+		}
+		if (compare.getRightArg()instanceof Var var && positiveCountNames.contains(var.getName())
+				&& compare.getLeftArg()instanceof ValueConstant constant) {
+			return positiveCountThreshold(compare.getOperator(), constant, false);
+		}
+		return false;
+	}
+
+	private static boolean positiveCountThreshold(Compare.CompareOp operator, ValueConstant constant,
+			boolean countOnLeft) {
+		if (!(constant.getValue()instanceof Literal literal)) {
+			return false;
+		}
+		long value;
+		try {
+			value = literal.longValue();
+		} catch (NumberFormatException e) {
+			return false;
+		}
+		return countOnLeft
+				? (operator == Compare.CompareOp.GT && value == 0L)
+						|| (operator == Compare.CompareOp.GE && value == 1L)
+				: (operator == Compare.CompareOp.LT && value == 0L)
+						|| (operator == Compare.CompareOp.LE && value == 1L);
 	}
 
 	private static Set<String> distinctCountVars(Group group) {
@@ -1449,6 +2431,20 @@ final class LmdbCascadesRuleProvider {
 			return true;
 		}
 		return left != null && right != null && left.stringValue().equals(right.stringValue());
+	}
+
+	@FunctionalInterface
+	private interface TupleRewrite {
+		TupleExpr rewrite(TupleExpr tupleExpr);
+	}
+
+	private record OrValuesRewrite(BindingSetAssignment assignment, List<ValueExpr> residualConditions) {
+	}
+
+	private record OrUnionRewrite(List<ValueExpr> branchConditions) {
+	}
+
+	private record FiniteRelation(Set<String> bindingNames, BindingSetAssignment assignment) {
 	}
 
 	private static final class LmdbConnectedJoinOrderingRule extends LmdbRule {
@@ -5262,6 +6258,19 @@ final class LmdbCascadesRuleProvider {
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			Filter alternative = ((Filter) expression.tupleExpr()).clone();
 			Set<String> shared = correlatedNotExistsSharedBindings(alternative);
+			Set<String> boundVars = goalBoundVars(goal);
+			StatisticsEstimate inputEstimate = inputEstimate(alternative.getArg(), boundVars);
+			Optional<StatisticsEstimate> antiExistsEstimate = statistics instanceof RdfStatisticsProvider provider
+					? provider.filter(alternative.getArg(), alternative.getCondition(), inputEstimate, boundVars)
+					: Optional.empty();
+			if (antiExistsEstimate.isEmpty()) {
+				return List.of();
+			}
+			StatisticsEstimate estimate = antiExistsEstimate.get();
+			double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
+					Math.max(1.0d, estimate.rows()));
+			CostVector cost = estimate.vector()
+					.toCostVector();
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(alternative.getBindingNames())
 					.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
@@ -5272,11 +6281,25 @@ final class LmdbCascadesRuleProvider {
 			Set<String> facts = new LinkedHashSet<>();
 			facts.add("correlatedNotExists");
 			facts.add("shared=" + shared);
+			facts.add("operatorWorkRows=" + probeWorkRows);
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"FILTER NOT EXISTS over assured shared variables is implemented as a streaming correlated "
 							+ "anti probe");
 			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
-					CostVector.ZERO, proof, "lmdb-correlated-not-exists-anti-filter"));
+					cost, proof, "lmdb-correlated-not-exists-anti-filter",
+					snapshot(estimate, cost, estimate.method())));
+		}
+
+		private StatisticsEstimate inputEstimate(TupleExpr input, Set<String> boundVars) {
+			if (costModel == null || input == null) {
+				return StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-not-exists-input");
+			}
+			return estimate(input, boundVars, false)
+					.map(estimate -> new StatisticsEstimate(estimate.getOutputRows(),
+							QErrorInterval.heuristic(estimate.getOutputRows(), 4.0d,
+									"lmdb-correlated-not-exists-input"),
+							estimate.getWorkRows(), "lmdb-correlated-not-exists-input", estimate.getDoubleMetrics()))
+					.orElseGet(() -> StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-not-exists-input"));
 		}
 
 		private boolean correlatedNotExistsFilterSafe(Filter filter) {
@@ -5342,8 +6365,55 @@ final class LmdbCascadesRuleProvider {
 			facts.add("operatorWorkRows=" + estimate.get().getWorkRows());
 			RuleProof proof = proof(semanticScope(goal), facts,
 					"MINUS is implemented as the existing RDF4J materialized RHS anti-semi iterator");
-			return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost,
-					proof, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost)));
+			List<RuleProof> proofs = new ArrayList<>();
+			if (containsSemanticRewrite(alternative, "lmdb-filter-minus-left-pushdown")
+					|| containsLeftPushedPositiveExists(alternative)) {
+				proofs.add(new RuleProof("lmdb-filter-minus-left-pushdown", RuleKind.TRANSFORMATION,
+						semanticScope(goal), Set.of("preservedBeforeMaterializedMinus"),
+						"Left-only FILTER EXISTS was pushed below MINUS before materialized anti-semi implementation"));
+			}
+			proofs.add(proof);
+			return List.of(new RuleApplication(expression.groupId(), alternative, RuleKind.IMPLEMENTATION, delivered,
+					cost, proofs, "lmdb-materialized-minus-anti-semi", snapshot(estimate.get(), cost), true));
+		}
+
+		private boolean containsSemanticRewrite(QueryModelNode node, String rewrite) {
+			if (node == null || rewrite == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					String semanticRewrite = node.getStringMetricPlanned("optimizer.semanticRewrite");
+					if (semanticRewrite != null && semanticRewrite.contains(rewrite)) {
+						found[0] = true;
+						return;
+					}
+					super.meetNode(node);
+				}
+			});
+			return found[0];
+		}
+
+		private boolean containsLeftPushedPositiveExists(Difference difference) {
+			if (difference == null || difference.getLeftArg() == null) {
+				return false;
+			}
+			boolean[] found = { false };
+			difference.getLeftArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+				@Override
+				public void meet(Filter node) {
+					if (conditionContainsPositiveExists(node.getCondition())) {
+						found[0] = true;
+						return;
+					}
+					super.meet(node);
+				}
+			});
+			return found[0];
 		}
 
 		private boolean requiresParentBindings(Difference difference, OptimizationGoal goal) {
@@ -5400,6 +6470,8 @@ final class LmdbCascadesRuleProvider {
 				return Optional.empty();
 			}
 			workRows = Math.max(workRows, outputRows);
+			double rawWorkRows = workRows;
+			workRows = floorNonExactZeroOperatorWorkRows(workRows, left, right);
 
 			Map<String, String> stringMetrics = new HashMap<>(right.getStringMetrics());
 			String leftSource = left.getStringMetrics()
@@ -5429,6 +6501,9 @@ final class LmdbCascadesRuleProvider {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			if (workRows != rawWorkRows) {
+				doubleMetrics.put("plannedNonExactZeroWorkFloor", workRows);
+			}
 			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, stringMetrics,
 					doubleMetrics));
 		}
@@ -5445,6 +6520,7 @@ final class LmdbCascadesRuleProvider {
 					&& costModel != null
 					&& expression.tupleExpr()instanceof Filter filter
 					&& !containsAnchorableFiniteFilter(filter.getArg())
+					&& !leftOnlyFilterAboveDifference(filter)
 					&& materializedExistsSemiJoinSafe(filter);
 		}
 
@@ -5508,6 +6584,8 @@ final class LmdbCascadesRuleProvider {
 				return Optional.empty();
 			}
 			workRows = Math.max(workRows, outputRows);
+			double rawWorkRows = workRows;
+			workRows = floorNonExactZeroOperatorWorkRows(workRows, left, right);
 
 			Map<String, String> stringMetrics = new HashMap<>(right.getStringMetrics());
 			String leftSource = left.getStringMetrics()
@@ -5536,6 +6614,9 @@ final class LmdbCascadesRuleProvider {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			if (workRows != rawWorkRows) {
+				doubleMetrics.put("plannedNonExactZeroWorkFloor", workRows);
+			}
 			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, stringMetrics,
 					doubleMetrics));
 		}

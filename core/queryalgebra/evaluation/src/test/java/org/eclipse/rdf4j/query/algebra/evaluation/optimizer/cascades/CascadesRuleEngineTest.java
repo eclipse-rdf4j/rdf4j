@@ -468,6 +468,22 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void nestedFilterMergePreservesPositiveExistsBeforeAntiExists() {
+		Filter positiveMembership = new Filter(pattern("s", "p", "o"), new Exists(pattern("s", "name", "name")));
+		Filter antiProbe = new Filter(positiveMembership, new Not(new Exists(pattern("s", "blockedBy", "blocked"))));
+
+		assertTrue(apply(new StructuralCascadesRules.NestedFilterMergeRule(), antiProbe).isEmpty(),
+				"Positive EXISTS filters must stay below anti-EXISTS probes so they can reduce probe input");
+
+		Filter innerAntiProbe = new Filter(pattern("s", "p", "o"),
+				new Not(new Exists(pattern("s", "blockedBy", "blocked"))));
+		Filter outerPositiveMembership = new Filter(innerAntiProbe, new Exists(pattern("s", "name", "name")));
+
+		assertTrue(apply(new StructuralCascadesRules.NestedFilterMergeRule(), outerPositiveMembership).isEmpty(),
+				"Nested filter merge must not combine anti-EXISTS and positive EXISTS in either order");
+	}
+
+	@Test
 	void constantFilterTrueAndFalseSimplify() {
 		Filter trueFilter = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(true)));
 		Filter falseFilter = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(false)));

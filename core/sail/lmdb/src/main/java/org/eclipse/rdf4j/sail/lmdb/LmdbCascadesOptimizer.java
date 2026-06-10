@@ -470,16 +470,64 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (!(original instanceof Group group)) {
 			return new SubtreeReplacement(planned, false);
 		}
-		Group alternative = LmdbCascadesRuleProvider.finiteFilterValuesDistinctAggregateAlternative(group);
-		if (alternative == null) {
-			alternative = LmdbCascadesRuleProvider.unusedOptionalDistinctAggregateAlternative(group);
-		}
+		Group alternative = semanticFallbackRepair(group);
 		if (alternative == null) {
 			return new SubtreeReplacement(planned, false);
 		}
 		clearCopiedPlannerMetrics(alternative);
 		annotateSemanticFallbackRepair(alternative);
 		return new SubtreeReplacement(alternative, true);
+	}
+
+	private Group semanticFallbackRepair(Group group) {
+		Group current = group;
+		String semanticRewrite = current.getStringMetricPlanned("optimizer.semanticRewrite");
+		boolean changed = false;
+		for (int i = 0; i < 4; i++) {
+			Group next = firstSemanticFallbackAlternative(current);
+			if (next == null) {
+				break;
+			}
+			semanticRewrite = mergeSemanticRewrite(semanticRewrite,
+					next.getStringMetricPlanned("optimizer.semanticRewrite"));
+			if (semanticRewrite != null) {
+				next.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
+			}
+			current = next;
+			changed = true;
+		}
+		return changed ? current : null;
+	}
+
+	private Group firstSemanticFallbackAlternative(Group group) {
+		Group alternative = LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group);
+		if (alternative != null) {
+			return alternative;
+		}
+		alternative = LmdbCascadesRuleProvider.finiteFilterValuesDistinctAggregateAlternative(group);
+		if (alternative != null) {
+			return alternative;
+		}
+		return LmdbCascadesRuleProvider.unusedOptionalDistinctAggregateAlternative(group);
+	}
+
+	private static String mergeSemanticRewrite(String left, String right) {
+		LinkedHashSet<String> ids = new LinkedHashSet<>();
+		addSemanticRewriteIds(ids, left);
+		addSemanticRewriteIds(ids, right);
+		return ids.isEmpty() ? null : String.join(";", ids);
+	}
+
+	private static void addSemanticRewriteIds(Set<String> ids, String value) {
+		if (value == null || value.isBlank()) {
+			return;
+		}
+		for (String id : value.split(";")) {
+			String trimmed = id.trim();
+			if (!trimmed.isEmpty()) {
+				ids.add(trimmed);
+			}
+		}
 	}
 
 	private void clearCopiedPlannerMetrics(TupleExpr tupleExpr) {
@@ -548,19 +596,38 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private void annotateSemanticFallbackRepair(Group group) {
 		String semanticRewrite = group.getStringMetricPlanned("optimizer.semanticRewrite");
+		boolean distinctExists = semanticRewrite != null && semanticRewrite.contains("lmdb-distinct-exists-join");
+		boolean finiteCodeType = semanticRewrite != null
+				&& semanticRewrite.contains("lmdb-finite-code-type-values-rewrite");
 		boolean finiteFilterValues = semanticRewrite != null
 				&& semanticRewrite.contains("lmdb-finite-filter-values-distinct-rewrite");
-		String facts = finiteFilterValues
-				? "countDistinct|unusedOptionalRhs|duplicateInsensitive|finiteValuesAnchor"
-				: "countDistinct|unusedOptionalRhs|duplicateInsensitive";
-		String reason = finiteFilterValues
-				? "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS; "
-						+ "the finite RDF-term equality filter is equivalently exposed as a VALUES join anchor"
-				: "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS";
-		group.setStringMetricPlanned(CASCADES_RULE, "lmdb-remove-unused-optional");
+		String rule = distinctExists
+				? "lmdb-distinct-exists-join"
+				: finiteCodeType ? "lmdb-finite-code-type-values-rewrite"
+						: finiteFilterValues ? "lmdb-finite-filter-values-distinct-rewrite"
+								: "lmdb-remove-unused-optional";
+		String facts;
+		String reason;
+		if (distinctExists) {
+			facts = "countDistinct|positiveExists|sharedDistinctVar|unusedExistsBindings|duplicateInsensitive";
+			reason = "COUNT DISTINCT permits replacing a positive correlated EXISTS filter with an equivalent inner "
+					+ "join alternative because duplicate RHS matches and RHS-only bindings are unobserved";
+		} else if (finiteCodeType) {
+			facts = "countDistinct|finiteCodeDomain|factoredCommonCodePattern|finiteTypeDomain|unusedOptionalRhs|duplicateInsensitive";
+			reason = "COUNT DISTINCT permits factoring a finite code/type domain into VALUES joins because branch-local "
+					+ "duplicates and unused OPTIONAL RHS bindings are unobserved";
+		} else if (finiteFilterValues) {
+			facts = "countDistinct|unusedOptionalRhs|duplicateInsensitive|finiteValuesAnchor";
+			reason = "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS; "
+					+ "the finite RDF-term equality filter is equivalently exposed as a VALUES join anchor";
+		} else {
+			facts = "countDistinct|unusedOptionalRhs|duplicateInsensitive";
+			reason = "COUNT DISTINCT does not observe bindings or duplicate rows introduced only by the OPTIONAL RHS";
+		}
+		group.setStringMetricPlanned(CASCADES_RULE, rule);
 		group.setStringMetricPlanned("optimizer.cascadesRuleKind", RuleKind.TRANSFORMATION.name());
 		group.setStringMetricPlanned("optimizer.cascadesProofs",
-				"rule=lmdb-remove-unused-optional, kind=TRANSFORMATION, semanticScope=logical-bag, "
+				"rule=" + rule + ", kind=TRANSFORMATION, semanticScope=logical-bag, "
 						+ "facts=" + facts + ", reason=" + reason);
 		group.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
 	}
@@ -611,7 +678,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (tupleExpr instanceof Filter filter) {
 			if (filter.getCondition() instanceof Exists) {
-				return false;
+				return !containsJoinPlanningBarrier(filter);
 			}
 			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
 		}
@@ -631,6 +698,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static boolean semanticRepairCandidate(TupleExpr tupleExpr) {
 		if (!(tupleExpr instanceof Group group)) {
 			return false;
+		}
+		if (LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group) != null
+				|| LmdbCascadesRuleProvider.finiteFilterValuesDistinctAggregateAlternative(group) != null
+				|| LmdbCascadesRuleProvider.distinctExistsJoinAlternative(group) != null) {
+			return true;
 		}
 		Set<String> distinctVars = duplicateInsensitiveAggregateVars(group);
 		return !distinctVars.isEmpty() && hasRemovableUnusedOptional(group.getArg(), distinctVars);

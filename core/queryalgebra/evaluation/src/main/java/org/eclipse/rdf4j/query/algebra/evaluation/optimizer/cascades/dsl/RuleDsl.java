@@ -195,6 +195,17 @@ public final class RuleDsl {
 		return RuleTemplate.physical(op, input);
 	}
 
+	public static RuleTemplate tuple(RuleTemplate.TupleEmitter emitter) {
+		return RuleTemplate.tuple(emitter);
+	}
+
+	public static RuleGuard tupleAlternativeAvailable(RuleTemplate.TupleEmitter emitter) {
+		Objects.requireNonNull(emitter, "emitter");
+		return capture -> emitter.emit(capture) != null
+				? RuleGuard.GuardResult.ok("tupleAlternativeAvailable")
+				: RuleGuard.GuardResult.fail("tuple alternative not available");
+	}
+
 	public static RuleTemplate.ScalarTemplate scalarRef(String captureName) {
 		return RuleTemplate.ScalarTemplate.ref(captureName);
 	}
@@ -495,10 +506,7 @@ public final class RuleDsl {
 			BindingSymbol variable = ScalarFacts.finiteAnchorVariable(conjunct);
 			BindingMask variableMask = BindingShape.maskOfSymbol(ir.universe(), variable);
 			if ((facts.isFiniteEqualityAnchor() || facts.isFiniteInAnchor())
-					&& inputAssured.containsAll(variableMask)
-					&& !objectAnchorShouldRemainLocalForCosting(ir, input, variable,
-							conjunct,
-							ScalarFacts.finiteAnchorValues(conjunct))) {
+					&& inputAssured.containsAll(variableMask)) {
 				return true;
 			}
 		}

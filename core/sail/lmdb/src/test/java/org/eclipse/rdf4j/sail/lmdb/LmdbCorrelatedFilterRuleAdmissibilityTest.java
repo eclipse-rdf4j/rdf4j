@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -39,8 +40,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class LmdbCorrelatedFilterRuleAdmissibilityTest {
@@ -56,6 +60,31 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 
 		assertTrue(rules.contains("lmdb-guarantee-options"), rules::toString);
 		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+	}
+
+	@Test
+	void correlatedNotExistsAntiFilterRuleUsesOmniProbeCost() {
+		Filter filter = correlatedNotExistsFilter();
+		CostedStatistics statistics = new CostedStatistics();
+		RuleRegistry registry = LmdbCascadesRuleProvider.rules(statistics);
+		Memo memo = new Memo(CascadesCostModel.from(statistics));
+		int groupId = memo.intern(filter);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		CascadesRule rule = registry.rules()
+				.stream()
+				.filter(candidate -> "lmdb-correlated-not-exists-anti-filter".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(memo, null, null, null)).getFirst();
+
+		assertTrue(application.localCost().workRows() > 0.0d, application.localCost().toString());
+		assertTrue(statistics.filterWasAsked, "Rule must ask the RDF statistics provider for anti-probe cost");
+		assertTrue(application.estimate().source().equals("omni-correlated-anti-probe"),
+				application.estimate().toString());
+		assertTrue(application.estimate().doubleMetrics().containsKey("plannedOmniAntiMatchedWitnesses"),
+				application.estimate().doubleMetrics().toString());
 	}
 
 	@Test
@@ -111,6 +140,7 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 
 	private static final class CostedStatistics extends EvaluationStatistics
 			implements JoinOrderPlanner, JoinFactorCostModel, RdfStatisticsProvider {
+		private boolean filterWasAsked;
 
 		@Override
 		public double getCardinality(TupleExpr expr) {
@@ -126,6 +156,22 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 			return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> filter(TupleExpr input, org.eclipse.rdf4j.query.algebra.ValueExpr condition,
+				StatisticsEstimate inputEstimate, Set<String> boundVars) {
+			filterWasAsked = true;
+			return Optional.of(new StatisticsEstimate(6.0d,
+					org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval.heuristic(6.0d,
+							2.0d, "omni-correlated-anti-probe"),
+					37.0d, "omni-correlated-anti-probe",
+					Map.of(
+							"plannedAntiExistsProbeWorkRows", 31.0d,
+							"plannedOmniAntiInputWitnesses", 10.0d,
+							"plannedOmniAntiMatchedWitnesses", 4.0d,
+							TelemetryMetricNames.PLANNED_WORK_ROWS, 37.0d,
+							TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 37.0d)));
 		}
 
 		@Override

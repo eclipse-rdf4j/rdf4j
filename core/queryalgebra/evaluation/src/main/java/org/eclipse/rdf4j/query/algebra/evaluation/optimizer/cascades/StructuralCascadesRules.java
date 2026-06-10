@@ -19,8 +19,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -57,11 +59,42 @@ public final class StructuralCascadesRules {
 			}
 			Filter outer = (Filter) expression.tupleExpr();
 			Filter inner = (Filter) outer.getArg();
+			if (wouldMergePositiveExistsWithAntiExists(outer, inner)) {
+				return List.of();
+			}
 			Filter alternative = new Filter(inner.getArg().clone(),
 					new And(inner.getCondition().clone(), outer.getCondition().clone()));
 			RuleProof proof = proof(semanticScope(goal), Set.of("filterConjunction", "noScopeChange"),
 					"nested filters merge into one conjunctive filter when neither filter changes variable scope");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+
+		private static boolean wouldMergePositiveExistsWithAntiExists(Filter outer, Filter inner) {
+			return conditionContainsPositiveExists(outer.getCondition())
+					&& conditionContainsAntiExists(inner.getCondition())
+					|| conditionContainsAntiExists(outer.getCondition())
+							&& conditionContainsPositiveExists(inner.getCondition());
+		}
+
+		private static boolean conditionContainsPositiveExists(ValueExpr condition) {
+			if (condition instanceof Exists) {
+				return true;
+			}
+			if (condition instanceof And and) {
+				return conditionContainsPositiveExists(and.getLeftArg())
+						|| conditionContainsPositiveExists(and.getRightArg());
+			}
+			return false;
+		}
+
+		private static boolean conditionContainsAntiExists(ValueExpr condition) {
+			if (condition instanceof Not not && not.getArg() instanceof Exists) {
+				return true;
+			}
+			if (condition instanceof And and) {
+				return conditionContainsAntiExists(and.getLeftArg()) || conditionContainsAntiExists(and.getRightArg());
+			}
+			return false;
 		}
 	}
 

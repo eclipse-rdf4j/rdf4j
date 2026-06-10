@@ -42,12 +42,18 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -66,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -91,7 +98,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -753,6 +762,341 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void correlatedAntiExistsFilterUsesOmniAntiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-anti:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-anti:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:omni-anti:hasCondition");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-anti:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			if (i < 16) {
+				source.add(vf.createStatement(encounter, hasCondition,
+						vf.createIRI("urn:test:omni-anti:condition:" + i)));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern antiProbe = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, new Not(new Exists(antiProbe)),
+					inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-correlated-anti-probe", estimate.get().method());
+			assertEquals(48.0d, estimate.get().rows(), 8.0d);
+			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniAntiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void correlatedAntiExistsFilterUsesOmniTupleAntiProbeForTwoSharedVars() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI("urn:test:omni-tuple-anti:hasCondition");
+		IRI suppressedCondition = vf.createIRI("urn:test:omni-tuple-anti:suppressedCondition");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-tuple-anti:encounter:" + i);
+			IRI condition = vf.createIRI("urn:test:omni-tuple-anti:condition:" + i);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+			if (i < 16) {
+				source.add(vf.createStatement(encounter, suppressedCondition, condition));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatementPattern antiProbe = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("suppressedCondition", suppressedCondition),
+					Var.of("condition"));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, new Not(new Exists(antiProbe)),
+					inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-correlated-anti-probe", estimate.get().method());
+			assertEquals(48.0d, estimate.get().rows(), 8.0d);
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniAntiProbeKeyWidth"));
+			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniAntiTupleKeyWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void correlatedExistsFilterUsesOmniSemiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-semi:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-semi:Encounter");
+		IRI hasObservation = vf.createIRI("urn:test:omni-semi:hasObservation");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-semi:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			if (i < 16) {
+				source.add(vf.createStatement(encounter, hasObservation,
+						vf.createIRI("urn:test:omni-semi:observation:" + i)));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern semiProbe = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasObservation", hasObservation),
+					Var.of("observation"));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, new Exists(semiProbe), inputEstimate,
+					Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-semi-join", estimate.get().method());
+			assertEquals(16.0d, estimate.get().rows(), 8.0d);
+			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniSemiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniSemiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void orEqualityFilterUsesOmniFiniteProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI codePredicate = vf.createIRI("urn:test:omni-filter:code");
+		var codeA = vf.createLiteral("A");
+		var codeB = vf.createLiteral("B");
+		var codeC = vf.createLiteral("C");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource entity = vf.createIRI("urn:test:omni-filter:entity:" + i);
+			Value code = i < 10 ? codeA : i < 22 ? codeB : codeC;
+			source.add(vf.createStatement(entity, codePredicate, code));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("entity"),
+					Var.of("codePredicate", codePredicate),
+					Var.of("code"));
+			Or condition = new Or(
+					new Compare(Var.of("code"), new ValueConstant(codeA), Compare.CompareOp.EQ),
+					new Compare(Var.of("code"), new ValueConstant(codeB), Compare.CompareOp.EQ));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, condition, inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-filter-finite-probe", estimate.get().method());
+			assertEquals(22.0d, estimate.get().rows(), 8.0d);
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterFiniteProbeValues"));
+			assertEquals(22.0d, estimate.get().metrics().get("plannedOmniFilterFiniteProbeWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void orConjunctiveEqualityFilterUsesOmniTupleFiniteProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI codePredicate = vf.createIRI("urn:test:omni-tuple-filter:code");
+		Resource januaryGraph = vf.createIRI("urn:test:omni-tuple-filter:graph:january");
+		Resource februaryGraph = vf.createIRI("urn:test:omni-tuple-filter:graph:february");
+		var codeA = vf.createLiteral("A");
+		var codeB = vf.createLiteral("B");
+		var codeC = vf.createLiteral("C");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource entity = vf.createIRI("urn:test:omni-tuple-filter:entity:" + i);
+			Value code = i < 10 ? codeA : i < 22 ? codeB : i < 32 ? codeA : i < 42 ? codeB : codeC;
+			Resource graph = i < 10 ? januaryGraph
+					: i < 22 ? februaryGraph
+							: i < 32 ? februaryGraph
+									: januaryGraph;
+			source.add(vf.createStatement(entity, codePredicate, code, graph));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("entity"),
+					Var.of("codePredicate", codePredicate),
+					Var.of("code"),
+					Var.of("graph"));
+			Or condition = new Or(
+					new And(new Compare(Var.of("code"), new ValueConstant(codeA), Compare.CompareOp.EQ),
+							new Compare(Var.of("graph"), new ValueConstant(januaryGraph), Compare.CompareOp.EQ)),
+					new And(new Compare(Var.of("code"), new ValueConstant(codeB), Compare.CompareOp.EQ),
+							new Compare(Var.of("graph"), new ValueConstant(februaryGraph), Compare.CompareOp.EQ)));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, condition, inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-filter-finite-probe", estimate.get().method());
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterFiniteProbeValues"));
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterProbeKeyWidth"));
+			assertTrue(estimate.get().rows() > 0.0d);
+			assertTrue(estimate.get().rows() <= inputEstimate.rows());
+			assertTrue(estimate.get().metrics().get("plannedOmniFilterFiniteProbeWitnesses") > 0.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void mixedComponentOrEqualityFilterUsesOmniFiniteProbeUnion() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI codePredicate = vf.createIRI("urn:test:omni-mixed-filter:code");
+		Resource januaryGraph = vf.createIRI("urn:test:omni-mixed-filter:graph:january");
+		Resource februaryGraph = vf.createIRI("urn:test:omni-mixed-filter:graph:february");
+		var codeA = vf.createLiteral("A");
+		var codeB = vf.createLiteral("B");
+		var codeC = vf.createLiteral("C");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource entity = vf.createIRI("urn:test:omni-mixed-filter:entity:" + i);
+			Value code = i < 10 ? codeA : i < 22 ? codeB : i < 32 ? codeA : codeC;
+			Resource graph = i < 22 ? januaryGraph : februaryGraph;
+			source.add(vf.createStatement(entity, codePredicate, code, graph));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("entity"),
+					Var.of("codePredicate", codePredicate),
+					Var.of("code"),
+					Var.of("graph"));
+			Or condition = new Or(
+					new Compare(Var.of("code"), new ValueConstant(codeA), Compare.CompareOp.EQ),
+					new Compare(Var.of("graph"), new ValueConstant(januaryGraph), Compare.CompareOp.EQ));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, condition, inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-filter-finite-probe", estimate.get().method());
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterFiniteProbeValues"));
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterProbeAttributeCount"));
+			assertEquals(1.0d, estimate.get().metrics().get("plannedOmniFilterProbeKeyWidth"));
+			assertTrue(estimate.get().rows() > 0.0d);
+			assertTrue(estimate.get().rows() <= inputEstimate.rows());
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
 	void clonedNestedFactorCostUsesScopedFinalEstimateCache() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
@@ -1365,6 +1709,268 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void multiPatternJoinPreservesOmniJoinEstimatorSource() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern prescribedDrug = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("prescribedDrug", vf.createIRI("urn:test:prescribedDrug")),
+				Var.of("drug"));
+		StatementPattern billedDrug = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("billedDrug", vf.createIRI("urn:test:billedDrug")),
+				Var.of("drug"));
+		List<TupleExpr> factors = List.of(prescribedDrug, billedDrug);
+		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(100.0d);
+		when(estimator.orderedCardinality(factors)).thenReturn(42.0d);
+		when(estimator.estimateSketchJoinSurface(factors, "encounter"))
+				.thenReturn(new JoinFrequencyEstimate(42.0d, 42.0d, 0.90d, "omni-join-estimator", 1.0d));
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(42.0d, estimate.rows(), 0.0d);
+	}
+
+	@Test
+	void multiPatternJoinChoosesBestOmniSurfaceAcrossSharedVariables() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(
+				Var.of("a"),
+				Var.of("leftPredicate", vf.createIRI("urn:test:left")),
+				Var.of("b"));
+		StatementPattern right = new StatementPattern(
+				Var.of("a"),
+				Var.of("rightPredicate", vf.createIRI("urn:test:right")),
+				Var.of("b"));
+		List<TupleExpr> factors = List.of(left, right);
+		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(10_000.0d);
+		when(estimator.orderedCardinality(factors)).thenReturn(10_000.0d);
+		when(estimator.estimateSketchJoinSurface(factors, "a"))
+				.thenReturn(new JoinFrequencyEstimate(9_000.0d, 9_000.0d, 0.50d, "count-min", 1.0d));
+		when(estimator.estimateSketchJoinSurface(factors, "b"))
+				.thenReturn(new JoinFrequencyEstimate(21.0d, 21.0d, 0.95d, "omni-join-estimator", 1.0d));
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(21.0d, estimate.rows(), 0.0d);
+	}
+
+	@Test
+	void bridgePathPreservesOmniJoinEstimatorSurface() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern encounterCondition = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("hasCondition", vf.createIRI("urn:test:hasCondition")),
+				Var.of("condition"));
+		StatementPattern conditionCode = new StatementPattern(
+				Var.of("condition"),
+				Var.of("code", vf.createIRI("urn:test:code")),
+				Var.of("codeValue"));
+		List<StatementPattern> pathPatterns = List.of(encounterCondition, conditionCode);
+		List<TupleExpr> factors = List.of(encounterCondition, conditionCode);
+		when(estimator.cardinality(factors)).thenReturn(1_000.0d);
+		when(estimator.estimateJoinVarDistinctRows(encounterCondition, "condition")).thenReturn(800.0d);
+		when(estimator.estimateJoinVarDistinctRows(conditionCode, "condition")).thenReturn(40.0d);
+		when(estimator.estimateSketchJoinSurface(factors, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(32.0d, 32.0d, 0.90d, "omni-join-estimator", 1.0d));
+
+		StatisticsEstimate estimate = statistics.bridgePath(pathPatterns, "condition", Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(32.0d, estimate.rows(), 0.0d);
+		assertEquals(800.0d, estimate.workRows(), 0.0d);
+	}
+
+	@Test
+	void joinFrequencyInnerProductPrefersOmniJoinSurface() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern encounterCondition = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("hasCondition", vf.createIRI("urn:test:hasCondition")),
+				Var.of("condition"));
+		StatementPattern conditionCode = new StatementPattern(
+				Var.of("condition"),
+				Var.of("code", vf.createIRI("urn:test:code")),
+				Var.of("codeValue"));
+		List<TupleExpr> factors = List.of(encounterCondition, conditionCode);
+		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(1_000.0d);
+		when(estimator.estimateSketchJoinSurface(factors, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(44.0d, 44.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateJoinVarDistinctRows(encounterCondition, "condition")).thenReturn(800.0d);
+		when(estimator.estimateJoinVarDistinctRows(conditionCode, "condition")).thenReturn(40.0d);
+
+		StatisticsEstimate estimate = statistics
+				.joinFrequencyInnerProduct(encounterCondition, conditionCode, "condition", Set.of())
+				.orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(44.0d, estimate.rows(), 0.0d);
+		assertEquals(800.0d, estimate.metrics().get("plannedJoinVarDistinctLeft"), 0.0d);
+	}
+
+	@Test
+	void multiPatternJoinPreservesRealOmniFiniteAnchorSource() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI code = vf.createIRI("urn:test:medical:code");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 256; i++) {
+			Resource condition = vf.createIRI("urn:test:medical:condition:" + i);
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + (i % 64));
+			source.add(vf.createStatement(condition, code, i < 32 ? targetCode : otherCode));
+			if (i < 128) {
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+			}
+			if (i < 96) {
+				source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		BindingSetAssignment codeValues = finiteAssignment("code", "DX-200");
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code"));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+		List<TupleExpr> factors = List.of(codeValues, conditionCode, encounterCondition, encounterType);
+		double orderedRows = estimator.orderedCardinality(factors);
+		JoinOrderPlanner.JoinOrderPlan joinOrderPlan = estimator
+				.planJoinOrder(factors, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method(),
+				"Real finite-anchor multi-pattern joins must surface Omni join-order evidence");
+		assertTrue(estimate.rows() > 0.0d,
+				() -> "Expected the real Omni finite-anchor chain to estimate matching rows, estimateRows="
+						+ estimate.rows() + ", orderedRows=" + orderedRows + ", joinOrderRows="
+						+ joinOrderPlan.getEstimatedFinalRows() + ", summaryStrings="
+						+ joinOrderPlan.getSummaryStringMetrics() + ", summaryDoubles="
+						+ joinOrderPlan.getSummaryDoubleMetrics());
+	}
+
+	@Test
+	void starMultiPredicateScanUsesOmniSubjectStarEvidence() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern typePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("class", vf.createIRI("urn:test:Encounter")));
+		StatementPattern datePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("recordedOn", vf.createIRI("urn:test:recordedOn")),
+				Var.of("date", vf.createLiteral("2024-01-01")));
+		List<StatementPattern> patterns = List.of(typePattern, datePattern);
+		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
+				.thenReturn(new JoinFrequencyEstimate(48.0d, 48.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
+				.thenReturn(512.0d);
+
+		StatisticsEstimate estimate = statistics.starMultiPredicateScan(patterns, Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(48.0d, estimate.rows(), 0.0d);
+	}
+
+	@Test
+	void starMultiPredicateScanUsesOmniWhenIndependentCountsAreMissing() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern typePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("class", vf.createIRI("urn:test:Encounter")));
+		StatementPattern practitionerPattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("handledBy", vf.createIRI("urn:test:handledBy")),
+				Var.of("practitioner"));
+		List<StatementPattern> patterns = List.of(typePattern, practitionerPattern);
+		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
+				.thenReturn(new JoinFrequencyEstimate(55.0d, 37.0d, 0.85d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
+				.thenReturn(Double.NaN);
+
+		StatisticsEstimate estimate = statistics.starMultiPredicateScan(patterns, Set.of()).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(37.0d, estimate.rows(), 0.0d);
+		assertEquals(55.0d, estimate.workRows(), 0.0d);
+	}
+
+	@Test
+	void starMultiPredicateScanUsesOmniWhenSubjectIsAlreadyBound() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern typePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("class", vf.createIRI("urn:test:Encounter")));
+		StatementPattern practitionerPattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("handledBy", vf.createIRI("urn:test:handledBy")),
+				Var.of("practitioner"));
+		List<StatementPattern> patterns = List.of(typePattern, practitionerPattern);
+		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
+				.thenReturn(new JoinFrequencyEstimate(24.0d, 18.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
+				.thenReturn(512.0d);
+
+		StatisticsEstimate estimate = statistics.starMultiPredicateScan(patterns, Set.of("encounter")).orElseThrow();
+
+		assertEquals("omni-join-estimator", estimate.method());
+		assertEquals(18.0d, estimate.rows(), 0.0d);
+		assertEquals(24.0d, estimate.workRows(), 0.0d);
+		verify(estimator, times(1)).estimateSubjectStarJoinSurface(patterns, "encounter");
+	}
+
+	@Test
 	void inconsistentJoinSurfaceEstimateSkipsExactProbe() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
@@ -1389,6 +1995,37 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			assertEquals(120_000_000.0d, statistics.estimateBoundJoinSurfaceRows(factors, "org"));
+		}
+
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
+	}
+
+	@Test
+	void omniJoinSurfaceOverridesPairwiseFallbackDisagreement() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern personOrg = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:memberOf")),
+				Var.of("org"));
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:department")),
+				Var.of("department"));
+		List<TupleExpr> factors = List.of(personOrg, orgDepartment);
+
+		when(estimator.estimateSketchJoinSurface(factors, "org"))
+				.thenReturn(new JoinFrequencyEstimate(17.0d, 17.0d, 0.75d, "omni-join-estimator", 1.0d));
+		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(factors, "org")).thenReturn(120_000_000.0d);
+		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(Double.NaN);
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			assertEquals(17.0d, statistics.estimateBoundJoinSurfaceRows(factors, "org"));
 		}
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
@@ -1464,6 +2101,136 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(estimate.exactRows(), "Exact finite surfaces should mark the product as exact");
 			assertEquals(10.0d, estimate.prefixSurfaceRows(), 0.0d);
 			assertEquals(25.0d, estimate.prefixRightSurfaceRows(), 0.0d);
+		}
+	}
+
+	@Test
+	void finiteDerivedSurfacePreservesOmniJoinEstimatorEvidence() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(2);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment valueAnchor = finiteAssignment("value", "DX-200");
+		StatementPattern codePattern = new StatementPattern(
+				Var.of("condition"),
+				Var.of("codePredicate", vf.createIRI("urn:test:finite-derived:code")),
+				Var.of("value"));
+		StatementPattern encounterCondition = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("hasCondition", vf.createIRI("urn:test:finite-derived:hasCondition")),
+				Var.of("condition"));
+		List<TupleExpr> prefixFactors = List.of(valueAnchor, codePattern);
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(encounterCondition);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit | objectBit);
+		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
+		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(encounterCondition, Set.of("condition")))
+				.thenReturn(100_000.0d);
+		when(estimator.accessShapeForJoinOrdering(encounterCondition, Set.of("condition")))
+				.thenReturn(accessShape);
+		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(32.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "condition")).thenReturn(16.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(Double.NaN);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, "condition")).thenReturn(Double.NaN);
+		when(estimator.estimateSketchJoinSurface(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(32.0d, 32.0d, 0.90d,
+						"omni-join-estimator", 1.0d));
+		when(estimator.estimateSketchJoinSurface(prefixFactors, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(16.0d, 16.0d, 0.90d,
+						"omni-join-estimator", 1.0d));
+		Map<String, Set<Value>> finiteValues = Map.of("value", Set.of(vf.createLiteral("DX-200")));
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("condition"),
+					16.0d, 16.0d, true, true, finiteValues, prefixFactors);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(encounterCondition, context)
+					.orElseThrow();
+
+			assertEquals("omni-join-estimator",
+					estimate.getStringMetrics()
+							.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals("omni-join-estimator",
+					estimate.getStringMetrics()
+							.get("plannedSketchEstimateSource"));
+			assertEquals(32.0d, estimate.getOutputRows(), 0.0d);
+		}
+	}
+
+	@Test
+	void finiteDerivedSurfaceFloorsNonExactOmniZeroForPlanning() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(2);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment valueAnchor = finiteAssignment("value", "DX-999");
+		StatementPattern codePattern = new StatementPattern(
+				Var.of("condition"),
+				Var.of("codePredicate", vf.createIRI("urn:test:finite-derived-zero:code")),
+				Var.of("value"));
+		StatementPattern encounterCondition = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("hasCondition", vf.createIRI("urn:test:finite-derived-zero:hasCondition")),
+				Var.of("condition"));
+		List<TupleExpr> prefixFactors = List.of(valueAnchor, codePattern);
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(encounterCondition);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit | objectBit);
+		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
+		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(encounterCondition, Set.of("condition")))
+				.thenReturn(100_000.0d);
+		when(estimator.accessShapeForJoinOrdering(encounterCondition, Set.of("condition")))
+				.thenReturn(accessShape);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(Double.NaN);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, "condition")).thenReturn(Double.NaN);
+		when(estimator.estimateSketchJoinSurface(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(0.0d, 0.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateSketchJoinSurface(prefixFactors, "condition"))
+				.thenReturn(new JoinFrequencyEstimate(1.0d, 1.0d, 0.90d, "omni-join-estimator", 1.0d));
+		Map<String, Set<Value>> finiteValues = Map.of("value", Set.of(vf.createLiteral("DX-999")));
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("condition"),
+					1.0d, 1.0d, true, true, finiteValues, prefixFactors);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(encounterCondition, context)
+					.orElseThrow();
+
+			assertEquals("omni-join-estimator",
+					estimate.getStringMetrics()
+							.get("plannedSketchEstimateSource"));
+			assertEquals(0.0d, estimate.getOutputRows(), 0.0d);
+			assertEquals(1.0d, estimate.getWorkRows(), 0.0d);
+			assertEquals(0.0d, estimate.getDoubleMetrics().get("plannedSketchCalibratedRows"), 0.0d);
+			assertEquals(0.25d, estimate.getDoubleMetrics().get("plannedSketchConfidence"), 0.0d);
+			assertEquals(0.25d, estimate.getDoubleMetrics().get("plannedOmniJoinSurfaceConfidence"), 0.0d);
 		}
 	}
 
@@ -2157,6 +2924,42 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void bridgeDuplicateCorrectionKeepsOmniWitnessDenominator() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), null,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern memberOf = new StatementPattern(
+				Var.of("person"),
+				Var.of("p1", vf.createIRI("urn:test:omni:memberOf")),
+				Var.of("org"));
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p2", vf.createIRI("urn:test:omni:department")),
+				Var.of("dept"));
+		when(estimator.estimateSketchJoinSurface(List.of(memberOf), "org"))
+				.thenReturn(new JoinFrequencyEstimate(960_000.0d, 960_000.0d, 0.90d,
+						"omni-join-estimator", 1.0d));
+		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), "org"))
+				.thenReturn(200.0d);
+		when(estimator.estimateSketchJoinSurface(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(new JoinFrequencyEstimate(15_000.0d, 15_000.0d, 0.90d,
+						"omni-join-estimator", 1.0d));
+		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(15_000.0d);
+		when(estimator.cardinality(List.of(memberOf))).thenReturn(160_000.0d);
+		when(estimator.orderedCardinality(List.of(memberOf))).thenReturn(160_000.0d);
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+				.estimateBoundJoinProduct(List.of(memberOf), orgDepartment, 160_000.0d, false);
+
+		assertNotNull(estimate);
+		assertEquals("omni-join-estimator", estimate.countMinEvidence().source());
+		assertEquals(960_000.0d, estimate.prefixSurfaceRows(), 0.0d);
+		assertEquals(2_500.0d, estimate.productRows(), 0.0d);
+	}
+
+	@Test
 	@Disabled("Exact direct-lookup multiplier assertion is too brittle for planner changes.")
 	void directLookupRepeatedOutputRowsUseLookupDomainAverage() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
@@ -2297,6 +3100,61 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(estimate.getWorkRows() >= 32_000.0d,
 				"MINUS bound-probe cost must include one RHS probe per left row, not one representative lookup: "
 						+ estimate.getDoubleMetrics());
+	}
+
+	@Test
+	void minusBoundProbeUsesOmniAntiJoinEstimate() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-minus:type");
+		IRI medicationClass = vf.createIRI("urn:test:omni-minus:Medication");
+		IRI dosage = vf.createIRI("urn:test:omni-minus:dosage");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource medication = vf.createIRI("urn:test:omni-minus:medication:" + i);
+			source.add(vf.createStatement(medication, type, medicationClass));
+			if (i < 16) {
+				source.add(vf.createStatement(medication, dosage, vf.createLiteral(i)));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern left = new StatementPattern(
+					Var.of("medication"),
+					Var.of("type", type),
+					Var.of("class", medicationClass));
+			StatementPattern right = new StatementPattern(
+					Var.of("medication"),
+					Var.of("dosage", dosage),
+					Var.of("dose"));
+			Difference minus = new Difference(left, right);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(minus, JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, Double.NaN,
+							true))
+					.orElseThrow();
+
+			assertEquals("omni-anti-join",
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals(48.0d, estimate.getOutputRows(), 8.0d);
+			assertEquals(64.0d, estimate.getDoubleMetrics().get("plannedOmniAntiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.getDoubleMetrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
 	}
 
 	@Test
@@ -3330,6 +4188,33 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assignment.setBindingNames(Set.of(bindingName));
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static final class InMemorySketchStatementSource implements SketchStatementSource {
+		private final List<Statement> statements = new ArrayList<>();
+
+		void add(Statement statement) {
+			statements.add(statement);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			List<Statement> matches = new ArrayList<>();
+			for (Statement statement : statements) {
+				if (subject != null && !subject.equals(statement.getSubject())) {
+					continue;
+				}
+				if (predicate != null && !predicate.equals(statement.getPredicate())) {
+					continue;
+				}
+				if (object != null && !object.equals(statement.getObject())) {
+					continue;
+				}
+				matches.add(statement);
+			}
+			return new CloseableIteratorIteration<>(matches.iterator());
+		}
 	}
 
 	private static final class ScriptedJoinEstimator extends SketchBasedJoinEstimator {

@@ -160,6 +160,16 @@ public abstract class OmniSketch implements MemorySegmentStatus {
 	/** Estimates the number of distinct identifiers matching the given predicate over this dimension. */
 	public abstract OmniSketchEstimate estimate(OmniSketchPredicate predicate);
 
+	/** Returns retained witness identifiers and sampling metadata for the given predicate. */
+	public final OmniSketchProbeResult probe(final OmniSketchPredicate predicate) {
+		return OmniSketchProbeResult.fromSummary(summary(predicate));
+	}
+
+	/** Returns retained witness identifiers and sampling metadata for a pre-hashed value. */
+	public final OmniSketchProbeResult probeHash(final long valueHash) {
+		return probe(OmniSketchPredicate.equalToHash(valueHash));
+	}
+
 	/** Returns an immutable compact representation on the Java heap. */
 	public abstract CompactOmniSketch compact();
 

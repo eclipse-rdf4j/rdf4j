@@ -20,6 +20,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.FiniteRelation;
@@ -290,6 +291,22 @@ public interface RuleTemplate {
 		Objects.requireNonNull(op, "op");
 		Objects.requireNonNull(input, "input");
 		return (capture, builder) -> builder.unary(op, input.emit(capture, builder), IrAttr.NONE);
+	}
+
+	static RuleTemplate tuple(TupleEmitter emitter) {
+		Objects.requireNonNull(emitter, "emitter");
+		return (capture, builder) -> {
+			TupleExpr tupleExpr = emitter.emit(capture);
+			if (tupleExpr == null) {
+				throw new IllegalStateException("Tuple template did not emit an alternative");
+			}
+			return builder.add(IrOp.MATERIALIZE, List.of(), new IrAttr.NativeTuple(tupleExpr));
+		};
+	}
+
+	@FunctionalInterface
+	interface TupleEmitter {
+		TupleExpr emit(RuleCapture capture);
 	}
 
 	private static IrNodeId pushFilterToSmallestAssuredInput(PlanIr source, PlanIrBuilder builder,

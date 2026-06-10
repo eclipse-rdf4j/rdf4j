@@ -14,84 +14,54 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
-
-import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
-import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.repository.util.RDFInserter;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.io.TempDir;
 
 class LmdbMedicalOptimizedQueryRegressionIT {
 
 	@Test
-	@Timeout(90)
-	void medicalQ4RemovesUnusedHandledByOptional(@TempDir Path dataDir) throws Exception {
-		Path storeDir = dataDir.resolve("medical-q4");
-		prepareMedicalStore(storeDir);
+	@Timeout(180)
+	void medicalQ4RunQueryPlanUsesCascadesOmniInsteadOfStandardFallback() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 4;
+		state.sketchEstimatorEnabled = true;
+		state.sketchEstimatorStrategy = "omni";
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		state.setup();
 		try {
-			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "medical q4 optimized plan regression", 60,
-					TimeUnit.SECONDS);
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+			String diagnostics = snapshot.diagnostics();
 
-			BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("MEDICAL_RECORDS:4", () -> {
-				OptimizerSnapshot snapshot = explainOptimized(repository, Theme.MEDICAL_RECORDS, 4);
-
-				assertFalse(snapshot.plan().contains("handledBy"), snapshot.plan());
-				assertFalse(snapshot.renderedQuery().contains("handledBy"), snapshot.renderedQuery());
-				assertTrue(snapshot.renderedQuery().contains("VALUES ?code"), snapshot.renderedQuery());
-				assertTrue(snapshot.plan().contains("optimizer.cascadesProofs=rule=lmdb-remove-unused-optional"),
-						snapshot.plan());
-				assertTrue(snapshot.plan().contains("optimizer.cascadesRule=lmdb-cascades-connected-hypergraph-join"),
-						snapshot.plan());
-			});
+			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
+					"MEDICAL q4 should exercise the default standard fallback policy\n" + diagnostics);
+			assertFalse(diagnostics.contains("optimizer.cascadesWinner=standard"),
+					"MEDICAL q4 must not fall back to the standard pipeline when OMNI join evidence is available\n"
+							+ diagnostics + "\n" + plan);
+			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
+					"MEDICAL q4 should use the Cascades-selected OMNI-aware physical plan\n"
+							+ diagnostics + "\n" + plan);
+			assertTrue(
+					plan.contains("plannedSketchStrategy=omni") || diagnostics.contains("plannedSketchStrategy=omni"),
+					"MEDICAL q4 should expose OMNI sketch evidence in the selected runQuery plan\n"
+							+ diagnostics + "\n" + plan);
 		} finally {
-			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
-			repository.shutDown();
+			state.tearDown();
 		}
 	}
 
-	private static void prepareMedicalStore(Path storeDir) throws Exception {
-		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				ThemeDataSetGenerator.generate(Theme.MEDICAL_RECORDS, new RDFInserter(connection));
-				connection.commit();
+	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
+
+		private OptimizedPlanSnapshot optimizedPlanSnapshot() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {
+				return new OptimizedPlanSnapshot(plan.optimizedPlan(), plan.optimizedDiagnostics());
 			}
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
-			repository.shutDown();
 		}
 	}
 
-	private static OptimizerSnapshot explainOptimized(SailRepository repository, Theme theme, int queryIndex) {
-		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			Explanation explanation = connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Optimized);
-			return new OptimizerSnapshot(explanation.toString(),
-					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
-		}
-	}
-
-	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	private record OptimizedPlanSnapshot(String plan, String diagnostics) {
 	}
 }

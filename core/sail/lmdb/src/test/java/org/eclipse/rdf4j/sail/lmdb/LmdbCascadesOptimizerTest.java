@@ -37,10 +37,14 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -129,6 +133,18 @@ class LmdbCascadesOptimizerTest {
 				"LMDB Cascades registry must include compiled DSL statement access-path properties");
 		assertTrue(containsCompiledRule(registry, "lmdb-hash-anti-semi-minus"),
 				"LMDB Cascades registry must include compiled DSL hash anti-semi child properties");
+		assertTrue(containsCompiledRule(registry, "lmdb-remove-unused-optional"),
+				"LMDB semantic OPTIONAL elimination must be exposed as a compiled DSL rule");
+		assertTrue(containsCompiledRule(registry, "lmdb-distinct-exists-join"),
+				"LMDB DISTINCT EXISTS join alternatives must be exposed as compiled DSL rules");
+		assertTrue(containsCompiledRule(registry, "lmdb-finite-filter-values-distinct-rewrite"),
+				"LMDB finite filter DISTINCT rewrites must be exposed as compiled DSL rules");
+		assertTrue(containsCompiledRule(registry, "lmdb-finite-code-type-values-rewrite"),
+				"LMDB code/type DISTINCT rewrites must be exposed as compiled DSL rules");
+		assertTrue(containsCompiledRule(registry, "lmdb-or-filter-values-rewrite"),
+				"LMDB OR-to-VALUES rewrites must be exposed as compiled DSL rules");
+		assertTrue(containsCompiledRule(registry, "lmdb-or-filter-union-rewrite"),
+				"LMDB duplicate-insensitive OR-to-UNION rewrites must be exposed as compiled DSL rules");
 	}
 
 	@Test
@@ -964,6 +980,20 @@ class LmdbCascadesOptimizerTest {
 		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(codeIn, true, false),
 				"Generic RDF4J Filter must not materialize a finite IN filter while LMDB can expose it as a cheaper "
 						+ "VALUES anchor");
+	}
+
+	@Test
+	void genericImplementationAllowsWrappersOverAnchorableFiniteFilter() {
+		Filter codeIn = new Filter(pattern("med", "code", "code"), listMember("code", "MED-1000", "MED-1001"));
+		ProjectionElemList projectionElems = new ProjectionElemList();
+		projectionElems.addElement(new ProjectionElem("med"));
+		Projection projection = new Projection(codeIn.clone(), projectionElems);
+		Group group = new Group(codeIn.clone());
+
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(projection, true, false),
+				"Generic Projection should remain legal so its child finite filter can still be implemented by LMDB");
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(group, true, false),
+				"Generic Group should remain legal so its child finite filter can still be implemented by LMDB");
 	}
 
 	@Test

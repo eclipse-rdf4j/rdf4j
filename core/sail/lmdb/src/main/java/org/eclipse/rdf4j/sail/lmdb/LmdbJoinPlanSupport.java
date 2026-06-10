@@ -99,7 +99,7 @@ final class LmdbJoinPlanSupport {
 		return deferredFilters;
 	}
 
-	private static Set<String> conditionBindingNames(ValueExpr condition, Set<String> scopeBindingNames) {
+	static Set<String> conditionBindingNames(ValueExpr condition, Set<String> scopeBindingNames) {
 		if (condition == null) {
 			return Set.of();
 		}

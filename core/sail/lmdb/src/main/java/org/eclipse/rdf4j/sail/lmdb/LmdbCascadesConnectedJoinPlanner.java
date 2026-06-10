@@ -511,6 +511,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		double workRows = finiteNonNegative(factorEstimate.getWorkRows(), outputRows);
 		Map<String, String> stringMetrics = new LinkedHashMap<>(factorEstimate.getStringMetrics());
 		Map<String, Double> doubleMetrics = new LinkedHashMap<>(factorEstimate.getDoubleMetrics());
+		if (outputRows == 0.0d && workRows == 0.0d && !factorEstimate.hasExactOutputRows()) {
+			workRows = 1.0d;
+			doubleMetrics.put("plannedNonExactZeroWorkFloor", workRows);
+		}
 		stringMetrics.put("optimizer.connectedFactor", factorSummary(factor));
 		doubleMetrics.put("optimizer.connectedFactorIndex", (double) factorIndex);
 		if (path(factor)) {

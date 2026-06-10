@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +51,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -294,7 +296,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void omniStrategyLazyLoadRestoresOmniSideState(@TempDir Path tempDir) throws Exception {
+	void omniStrategyDoesNotPersistLegacyOmniFrequencySideState(@TempDir Path tempDir) throws Exception {
 		Resource s1 = VF.createIRI("urn:omni-lazy:s1");
 		Resource s2 = VF.createIRI("urn:omni-lazy:s2");
 		Resource s3 = VF.createIRI("urn:omni-lazy:s3");
@@ -313,11 +315,22 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
 		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
 		writer.rebuild();
-		assertTrue(omniSketchCount(writer) > 0, "OMNI writer should build side-state sketches");
+		assertEquals(0, omniSketchCount(writer), "OMNI writer should not build legacy OmniFrequencySketch side state");
+		assertTrue(omniJoinEstimatorRelationCount(writer) > 0, "OMNI writer should build join-estimator side state");
 
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
 		writer.configurePersistence(storeDirectory, false);
 		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+		SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(
+				new DataInputStream(
+						new ByteArrayInputStream(Files.readAllBytes(storeDirectory.resolve("metadata.bin")))));
+		assertNull(metadata.omniJoinEstimatorRefA, "OMNI should not persist join side-state as framed payload A");
+		assertNull(metadata.omniJoinEstimatorRefB, "OMNI should not persist join side-state as framed payload B");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/manifest.bin")),
+				"OMNI should persist join side-state through the mapped witness manifest");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-a.dat"))
+				|| Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-b.dat")),
+				"OMNI should persist witness postings in a slot data file");
 
 		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
 		reader.configurePersistence(storeDirectory, true);
@@ -327,8 +340,62 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
 						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
 				0.0d);
-		assertTrue(omniSketchCount(reader) > 0,
-				"Lazy OMNI reads should restore persisted Omni side state");
+		assertEquals(0, omniSketchCount(reader), "Lazy OMNI reads should not restore legacy OmniFrequencySketch state");
+		assertTrue(omniJoinEstimatorRelationCount(reader) > 0,
+				"Lazy OMNI reads should restore persisted Omni join-estimator side state");
+		MappedWitnessIndex mappedIndex = firstMappedOmniWitnessIndex(reader);
+
+		reader.close();
+
+		assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(0L).next(),
+				"Closing the estimator should release its mapped Omni witness snapshot");
+	}
+
+	@Test
+	void omniStrategyLazyLoadRestoresOmniJoinEstimatorSideState(@TempDir Path tempDir) throws Exception {
+		IRI prescribedDrug = VF.createIRI("urn:omni-join-lazy:prescribedDrug");
+		IRI billedDrug = VF.createIRI("urn:omni-join-lazy:billedDrug");
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 16; encounterIndex++) {
+			Resource encounter = VF.createIRI("urn:omni-join-lazy:encounter:" + encounterIndex);
+			for (int drugIndex = 0; drugIndex < 4; drugIndex++) {
+				Resource drug = VF.createIRI("urn:omni-join-lazy:drug:" + drugIndex);
+				int prescribedRows = encounterIndex < 4 && drugIndex < 2 ? 5 : 1;
+				int billedRows = encounterIndex < 4 && drugIndex < 2 ? 3 : (drugIndex == 0 ? 1 : 0);
+				for (int row = 0; row < prescribedRows; row++) {
+					sourceStore.add(st(encounter, prescribedDrug, drug,
+							VF.createIRI("urn:omni-join-lazy:prescribed-context:" + row)));
+				}
+				for (int row = 0; row < billedRows; row++) {
+					sourceStore.add(st(encounter, billedDrug, drug,
+							VF.createIRI("urn:omni-join-lazy:billed-context:" + row)));
+				}
+			}
+		}
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("encounter"),
+				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"),
+				Var.of("billedDrug", billedDrug), Var.of("drug"));
+		JoinFrequencyEstimate writerEstimate = writer.estimateSketchJoinSurface(List.of(left, right), "encounter");
+		assertNotNull(writerEstimate, "Writer should expose an Omni composite witness surface");
+		assertEquals("omni-join-estimator", writerEstimate.source());
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+
+		JoinFrequencyEstimate readerEstimate = reader.estimateSketchJoinSurface(List.of(left, right), "encounter");
+
+		assertNotNull(readerEstimate, "Lazy OMNI read should restore persisted Omni join estimator side state");
+		assertEquals("omni-join-estimator", readerEstimate.source());
+		assertEquals(writerEstimate.calibratedRows(), readerEstimate.calibratedRows(), 0.0d);
 	}
 
 	@Test
@@ -421,6 +488,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 						.withSubjectBucketCount(4)
 						.withPredicateBucketCount(8)
 						.withObjectBucketCount(16)
@@ -510,6 +578,31 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 			assertArrayEquals(payload, (byte[]) read.invoke(store, ref, marker, reader));
 			assertTrue(sawMappedPayload.get(), "Expected read path to expose only the mapped sketch payload");
+		}
+	}
+
+	@Test
+	void omniJoinFramedPayloadCanSpanMappedPartFiles(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] payload = new byte[40];
+		for (int i = 0; i < payload.length; i++) {
+			payload[i] = (byte) (i + 1);
+		}
+		int marker = 0x4f4a4553;
+
+		try (SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(storeDirectory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class),
+				SketchEstimatorPersistenceStore.SketchFileChunks.of(16L, 16L, 16L, 16L))) {
+			SketchEstimatorPersistenceStore.Ref ref = store.appendFramedPayload((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_OMNI_JOIN, marker, payload, 1L);
+
+			assertEquals(0L, ref.offset());
+			assertEquals(48, ref.length());
+			assertEquals(16L, Files.size(storeDirectory.resolve("a/omni-join.part1.sketches")));
+			assertEquals(16L, Files.size(storeDirectory.resolve("a/omni-join.part2.sketches")));
+			assertEquals(16L, Files.size(storeDirectory.resolve("a/omni-join.part3.sketches")));
+			assertArrayEquals(payload,
+					store.readFramedPayload(ref, marker, segment -> segment.toArray(ValueLayout.JAVA_BYTE)));
 		}
 	}
 
@@ -1327,6 +1420,129 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void backgroundRebuildWaitsForQuietLoadPeriodAfterOfflineWrites() throws Exception {
+		Resource s = VF.createIRI("urn:quiet-load:s");
+		IRI p = VF.createIRI("urn:quiet-load:p");
+		Value o = VF.createIRI("urn:quiet-load:o");
+
+		BlockingRebuildStore store = new BlockingRebuildStore(st(s, p, o));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(1)));
+		estimator.unload();
+		estimator.addStatement(st(s, p, o));
+		estimator.startBackgroundRefresh(0);
+
+		try {
+			assertFalse(store.awaitRebuildEntry(250, TimeUnit.MILLISECONDS),
+					"Background rebuild should wait until loading is quiet for at least 500 ms");
+			assertTrue(store.awaitRebuildEntry(2, TimeUnit.SECONDS), "Expected rebuild after the quiet period");
+		} finally {
+			store.releaseRebuild();
+		}
+	}
+
+	@Test
+	void backgroundRebuildWaitsForQuietLoadPeriodAfterForcedRebuildMarker() throws Exception {
+		Resource s = VF.createIRI("urn:quiet-forced-rebuild:s");
+		IRI p = VF.createIRI("urn:quiet-forced-rebuild:p");
+		Value o = VF.createIRI("urn:quiet-forced-rebuild:o");
+
+		BlockingRebuildStore store = new BlockingRebuildStore(st(s, p, o));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(1)));
+		estimator.discardAndMarkForRebuild();
+		estimator.startBackgroundRefresh(0);
+
+		try {
+			assertFalse(store.awaitRebuildEntry(250, TimeUnit.MILLISECONDS),
+					"Forced background rebuild should also wait until loading is quiet for at least 500 ms");
+			assertTrue(store.awaitRebuildEntry(2, TimeUnit.SECONDS), "Expected forced rebuild after the quiet period");
+		} finally {
+			store.releaseRebuild();
+		}
+	}
+
+	@Test
+	void backgroundRefreshDoesNotRepeatRebuildClearedBySynchronousFlush() throws Exception {
+		Resource s = VF.createIRI("urn:single-rebuild:s");
+		IRI p = VF.createIRI("urn:single-rebuild:p");
+		Value o = VF.createIRI("urn:single-rebuild:o");
+
+		CountingBlockingRebuildStore store = new CountingBlockingRebuildStore(st(s, p, o));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(1)));
+		estimator.unload();
+		estimator.addStatement(st(s, p, o));
+		Thread.sleep(550L);
+
+		ExecutorService exec = Executors.newSingleThreadExecutor();
+		Future<Long> rebuildFuture = exec.submit(estimator::rebuild);
+		try {
+			assertTrue(store.awaitFirstRebuildEntry(2, TimeUnit.SECONDS), "Expected synchronous rebuild to start");
+			estimator.startBackgroundRefresh(0);
+			Thread.sleep(100L);
+
+			store.releaseFirstRebuild();
+			assertEquals(1L, rebuildFuture.get(2, TimeUnit.SECONDS));
+			Thread.sleep(250L);
+
+			assertEquals(1, store.rebuildEntries(),
+					"Background refresh should re-check rebuildRequired after a synchronous rebuild clears it");
+		} finally {
+			store.releaseFirstRebuild();
+			exec.shutdownNow();
+		}
+	}
+
+	@Test
+	void forceFlushDoesNotRepeatInFlightBackgroundRebuild() throws Exception {
+		Resource s = VF.createIRI("urn:force-single-rebuild:s");
+		IRI p = VF.createIRI("urn:force-single-rebuild:p");
+		Value o = VF.createIRI("urn:force-single-rebuild:o");
+
+		CountingBlockingRebuildStore store = new CountingBlockingRebuildStore(st(s, p, o));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(1)));
+		estimator.unload();
+		estimator.addStatement(st(s, p, o));
+		Thread.sleep(550L);
+		estimator.startBackgroundRefresh(0);
+
+		ExecutorService exec = Executors.newSingleThreadExecutor();
+		try {
+			assertTrue(store.awaitFirstRebuildEntry(2, TimeUnit.SECONDS), "Expected background rebuild to start");
+			Future<Boolean> forceFlush = exec.submit(estimator::forceFlush);
+			Thread.sleep(100L);
+
+			store.releaseFirstRebuild();
+			assertTrue(forceFlush.get(2, TimeUnit.SECONDS));
+			Thread.sleep(250L);
+
+			assertEquals(1, store.rebuildEntries(),
+					"forceFlush should re-check rebuildRequired after an in-flight background rebuild clears it");
+		} finally {
+			store.releaseFirstRebuild();
+			exec.shutdownNow();
+		}
+	}
+
+	@Test
+	void rebuildThroughputPrintGateRequiresTimeAndStatementThresholds() {
+		assertFalse(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(99_999L, 0L, 10_000L, 0L));
+		assertFalse(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(100_000L, 0L, 9_999L, 0L));
+		assertTrue(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(100_000L, 0L, 10_000L, 0L));
+		assertTrue(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(225_000L, 100_000L, 21_000L, 10_000L));
+	}
+
+	@Test
+	void rebuildThroughputCheckGateRequiresOneThousandMoreStatements() {
+		assertFalse(SketchBasedJoinEstimator.shouldCheckRebuildThroughput(999L, 0L));
+		assertTrue(SketchBasedJoinEstimator.shouldCheckRebuildThroughput(1_000L, 0L));
+		assertFalse(SketchBasedJoinEstimator.shouldCheckRebuildThroughput(1_999L, 1_000L));
+		assertTrue(SketchBasedJoinEstimator.shouldCheckRebuildThroughput(2_000L, 1_000L));
+	}
+
+	@Test
 	void persistIfDirtyDoesNotHoldPersistLockWhileBlockedOnStateLock(@TempDir Path tempDir) throws Exception {
 		Resource subject = VF.createIRI("urn:s");
 		IRI predicate = VF.createIRI("urn:p");
@@ -1488,6 +1704,29 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			}
 		}
 		return count;
+	}
+
+	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
+		Map<?, ?> relations = (Map<?, ?>) privateFieldValue(omniJoinEstimator, "relations");
+		return relations.size();
+	}
+
+	private static MappedWitnessIndex firstMappedOmniWitnessIndex(SketchBasedJoinEstimator estimator)
+			throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
+		MappedOmniJoinSnapshot snapshot = (MappedOmniJoinSnapshot) privateFieldValue(omniJoinEstimator,
+				"mappedSnapshot");
+		assertNotNull(snapshot, "Expected mapped Omni witness snapshot");
+		return snapshot.attributes()
+				.values()
+				.iterator()
+				.next()
+				.values()
+				.iterator()
+				.next();
 	}
 
 	private static FastAgmsBindingSummary residentSinglePredicateSketch(SketchBasedJoinEstimator estimator,
@@ -1695,6 +1934,86 @@ class SketchBasedJoinEstimatorPersistenceTest {
 						Thread.currentThread().interrupt();
 					}
 					return !emitted;
+				}
+
+				@Override
+				public Statement next() {
+					emitted = true;
+					return statement;
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+			};
+		}
+	}
+
+	private static final class CountingBlockingRebuildStore implements SketchStatementSource {
+		private final Statement statement;
+		private final CountDownLatch firstRebuildEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseFirstRebuild = new CountDownLatch(1);
+		private final AtomicInteger rebuildEntries = new AtomicInteger();
+
+		private CountingBlockingRebuildStore(Statement statement) {
+			this.statement = statement;
+		}
+
+		boolean awaitFirstRebuildEntry(long timeout, TimeUnit unit) throws InterruptedException {
+			return firstRebuildEntered.await(timeout, unit);
+		}
+
+		void releaseFirstRebuild() {
+			releaseFirstRebuild.countDown();
+		}
+
+		int rebuildEntries() {
+			return rebuildEntries.get();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(
+				Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return new CloseableIteration<Statement>() {
+				private boolean emitted;
+				private boolean counted;
+
+				@Override
+				public void close() {
+				}
+
+				@Override
+				public boolean hasNext() {
+					if (emitted) {
+						return false;
+					}
+					if (!counted) {
+						counted = true;
+						int entry = rebuildEntries.incrementAndGet();
+						if (entry == 1) {
+							firstRebuildEntered.countDown();
+							boolean interrupted = false;
+							while (releaseFirstRebuild.getCount() > 0L) {
+								try {
+									if (releaseFirstRebuild.await(50, TimeUnit.MILLISECONDS)) {
+										break;
+									}
+								} catch (InterruptedException e) {
+									interrupted = true;
+								}
+							}
+							if (interrupted) {
+								Thread.currentThread().interrupt();
+							}
+						}
+					}
+					return true;
 				}
 
 				@Override
