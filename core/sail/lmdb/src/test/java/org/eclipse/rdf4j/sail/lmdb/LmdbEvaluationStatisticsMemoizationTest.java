@@ -817,6 +817,67 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void correlatedAntiExistsFilterUsesOmniBridgeAntiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-bridge-anti:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-bridge-anti:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:omni-bridge-anti:hasCondition");
+		IRI code = vf.createIRI("urn:test:omni-bridge-anti:code");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-bridge-anti:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			Resource condition = vf.createIRI("urn:test:omni-bridge-anti:condition:" + i);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+			source.add(vf.createStatement(condition, code, i < 16 ? targetCode : otherCode));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern bridge = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatementPattern conditionCode = new StatementPattern(
+					Var.of("condition"),
+					Var.of("codePredicate", code),
+					Var.of("code", targetCode));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, new Not(new Exists(new Join(bridge,
+					conditionCode))), inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-correlated-anti-bridge", estimate.get().method());
+			assertEquals(48.0d, estimate.get().rows(), 8.0d);
+			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniAntiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
 	void correlatedAntiExistsFilterUsesOmniTupleAntiProbeForTwoSharedVars() {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI hasCondition = vf.createIRI("urn:test:omni-tuple-anti:hasCondition");
@@ -918,6 +979,67 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			assertTrue(estimate.isPresent());
 			assertEquals("omni-semi-join", estimate.get().method());
+			assertEquals(16.0d, estimate.get().rows(), 8.0d);
+			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniSemiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniSemiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void correlatedExistsFilterUsesOmniBridgeSemiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-bridge-semi:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-bridge-semi:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:omni-bridge-semi:hasCondition");
+		IRI code = vf.createIRI("urn:test:omni-bridge-semi:code");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-bridge-semi:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			Resource condition = vf.createIRI("urn:test:omni-bridge-semi:condition:" + i);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+			source.add(vf.createStatement(condition, code, i < 16 ? targetCode : otherCode));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern bridge = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatementPattern conditionCode = new StatementPattern(
+					Var.of("condition"),
+					Var.of("codePredicate", code),
+					Var.of("code", targetCode));
+			StatisticsEstimate inputEstimate = new StatisticsEstimate(64.0d,
+					QErrorInterval.exact(64.0d, "test-input"), 64.0d, "test-input", Map.of());
+
+			Optional<StatisticsEstimate> estimate = statistics.filter(input, new Exists(new Join(bridge,
+					conditionCode)), inputEstimate, Set.of());
+
+			assertTrue(estimate.isPresent());
+			assertEquals("omni-correlated-semi-bridge", estimate.get().method());
 			assertEquals(16.0d, estimate.get().rows(), 8.0d);
 			assertEquals(64.0d, estimate.get().metrics().get("plannedOmniSemiInputWitnesses"), 8.0d);
 			assertEquals(16.0d, estimate.get().metrics().get("plannedOmniSemiMatchedWitnesses"), 8.0d);
@@ -1876,14 +1998,372 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
 
-		assertEquals("omni-join-estimator", estimate.method(),
-				"Real finite-anchor multi-pattern joins must surface Omni join-order evidence");
+		assertEquals("omni-finite-anchor-bridge", estimate.method(),
+				"Real finite-anchor multi-pattern joins must surface Omni bridge-chain evidence");
 		assertTrue(estimate.rows() > 0.0d,
 				() -> "Expected the real Omni finite-anchor chain to estimate matching rows, estimateRows="
 						+ estimate.rows() + ", orderedRows=" + orderedRows + ", joinOrderRows="
 						+ joinOrderPlan.getEstimatedFinalRows() + ", summaryStrings="
 						+ joinOrderPlan.getSummaryStringMetrics() + ", summaryDoubles="
 						+ joinOrderPlan.getSummaryDoubleMetrics());
+	}
+
+	@Test
+	void multiPatternJoinFindsFiniteAnchorBridgeWhenValuesAreNotFirst() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI code = vf.createIRI("urn:test:medical:unordered-finite:code");
+		IRI hasCondition = vf.createIRI("urn:test:medical:unordered-finite:hasCondition");
+		IRI rdfType = vf.createIRI("urn:test:unordered-finite:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:unordered-finite:Encounter");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 128; i++) {
+			Resource condition = vf.createIRI("urn:test:medical:unordered-finite:condition:" + i);
+			Resource encounter = vf.createIRI("urn:test:medical:unordered-finite:encounter:" + (i % 32));
+			source.add(vf.createStatement(condition, code, i < 24 ? targetCode : otherCode));
+			if (i < 96) {
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+			}
+			if (i < 64) {
+				source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		BindingSetAssignment codeValues = finiteAssignment("code", "DX-200");
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code"));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+		List<TupleExpr> factors = List.of(conditionCode, encounterCondition, codeValues, encounterType);
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-finite-anchor-bridge", estimate.method());
+		assertTrue(estimate.rows() > 0.0d,
+				() -> "Finite-anchor bridge evidence should not depend on VALUES placement, estimate="
+						+ estimate);
+	}
+
+	@Test
+	void multiPatternJoinUsesOmniBridgeChainForDirectionalFanoutAndFilter() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI code = vf.createIRI("urn:test:medical:code");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 64; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			for (int conditionIndex = 0; conditionIndex < 4; conditionIndex++) {
+				Resource condition = vf.createIRI("urn:test:medical:condition:" + encounterIndex + ":"
+						+ conditionIndex);
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+				source.add(vf.createStatement(condition, code,
+						encounterIndex < 16 && conditionIndex < 2 ? targetCode : otherCode));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code", targetCode));
+		List<TupleExpr> factors = List.of(encounterType, encounterCondition, conditionCode);
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-bridge-chain", estimate.method());
+		assertTrue(estimate.rows() > 0.0d,
+				() -> "Bridge chain should carry encounter witnesses through hasCondition into code, estimate="
+						+ estimate);
+	}
+
+	@Test
+	void multiPatternJoinFindsOmniBridgeChainWhenInputOrderStartsWithBridge() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI code = vf.createIRI("urn:test:medical:unordered:code");
+		IRI hasCondition = vf.createIRI("urn:test:medical:unordered:hasCondition");
+		IRI rdfType = vf.createIRI("urn:test:unordered:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:unordered:Encounter");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 64; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:unordered:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			for (int conditionIndex = 0; conditionIndex < 4; conditionIndex++) {
+				Resource condition = vf.createIRI("urn:test:medical:unordered:condition:" + encounterIndex + ":"
+						+ conditionIndex);
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+				source.add(vf.createStatement(condition, code,
+						encounterIndex < 16 && conditionIndex < 2 ? targetCode : otherCode));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code", targetCode));
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
+		List<TupleExpr> factors = List.of(encounterCondition, conditionCode, encounterType);
+
+		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
+
+		assertEquals("omni-bridge-chain", estimate.method());
+		assertTrue(estimate.rows() > 0.0d,
+				() -> "Bridge chain evidence should not depend on incoming factor order, estimate=" + estimate);
+	}
+
+	@Test
+	void boundJoinProductUsesOmniBridgeProbeForPrefixWitnesses() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 96; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			int fanout = encounterIndex < 24 ? 4 : 1;
+			for (int conditionIndex = 0; conditionIndex < fanout; conditionIndex++) {
+				Resource condition = vf.createIRI("urn:test:medical:condition:" + encounterIndex + ":"
+						+ conditionIndex);
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("class", encounterClass));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 96.0d, false);
+
+		assertNotNull(estimate);
+		assertNotNull(estimate.countMinEvidence());
+		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
+		assertEquals("omni-bridge-probe", estimate.surfaceSource());
+		assertTrue(estimate.productRows() >= 96.0d,
+				() -> "Bridge probe should preserve prefix witness fanout, estimate=" + estimate);
+	}
+
+	@Test
+	void boundJoinProductUsesOmniBridgeProbeForFiniteAnchorReverseBridge() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI code = vf.createIRI("urn:test:medical:code");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int conditionIndex = 0; conditionIndex < 80; conditionIndex++) {
+			Resource condition = vf.createIRI("urn:test:medical:condition:" + conditionIndex);
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + (conditionIndex % 40));
+			source.add(vf.createStatement(condition, code, conditionIndex < 24 ? targetCode : otherCode));
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code", targetCode));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+				.estimateBoundJoinProduct(List.of(conditionCode), encounterCondition, 24.0d, false);
+
+		assertNotNull(estimate);
+		assertNotNull(estimate.countMinEvidence());
+		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
+		assertTrue(estimate.productRows() >= 24.0d,
+				() -> "Finite anchor should walk back through the bridge, estimate=" + estimate);
+	}
+
+	@Test
+	void boundJoinProductUsesOmniBridgeProbeAfterSubjectStarPrefix() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI recordedOn = vf.createIRI("urn:test:medical:recordedOn");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		Value january = vf.createLiteral("2024-01-01", XMLSchema.DATE);
+		Value march = vf.createLiteral("2024-03-01", XMLSchema.DATE);
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 96; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			source.add(vf.createStatement(encounter, recordedOn, encounterIndex < 32 ? january : march));
+			Resource condition = vf.createIRI("urn:test:medical:condition:" + encounterIndex);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("class", encounterClass));
+		StatementPattern encounterDate = new StatementPattern(Var.of("encounter"),
+				Var.of("recordedOn", recordedOn), Var.of("date", january));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+				.estimateBoundJoinProduct(List.of(encounterType, encounterDate), encounterCondition, 32.0d, false);
+
+		assertNotNull(estimate);
+		assertNotNull(estimate.countMinEvidence());
+		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
+		assertTrue(estimate.productRows() >= 32.0d,
+				() -> "Subject-star prefix witnesses should feed the bridge probe, estimate=" + estimate);
+	}
+
+	@Test
+	void optionalBridgeProductUsesOmniPrefixBridgeProbeFanout() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI recordedOn = vf.createIRI("urn:test:medical:recordedOn");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		IRI code = vf.createIRI("urn:test:medical:code");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		Value january = vf.createLiteral("2024-01-01", XMLSchema.DATE);
+		Value march = vf.createLiteral("2024-03-01", XMLSchema.DATE);
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 96; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			source.add(vf.createStatement(encounter, recordedOn, encounterIndex < 32 ? january : march));
+			int fanout = encounterIndex < 32 ? 4 : 1;
+			for (int conditionIndex = 0; conditionIndex < fanout; conditionIndex++) {
+				Resource condition = vf.createIRI("urn:test:medical:condition:" + encounterIndex + ":"
+						+ conditionIndex);
+				source.add(vf.createStatement(encounter, hasCondition, condition));
+				source.add(vf.createStatement(condition, code, encounterIndex < 32 ? targetCode : otherCode));
+			}
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("class", encounterClass));
+		StatementPattern encounterDate = new StatementPattern(Var.of("encounter"),
+				Var.of("recordedOn", recordedOn), Var.of("date", january));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
+				Var.of("codePredicate", code), Var.of("code", targetCode));
+
+		LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate = statistics
+				.estimateOptionalBridgeProduct(new Join(encounterType, encounterDate),
+						new Join(encounterCondition, conditionCode), 32.0d);
+
+		assertNotNull(estimate);
+		assertTrue(estimate.prefixBridgeRows() >= 128.0d,
+				() -> "OPTIONAL prefix bridge must preserve condition fanout, estimate=" + estimate);
+		assertTrue(estimate.productRows() >= 128.0d,
+				() -> "OPTIONAL continuation should start from witness-preserved bridge rows, estimate="
+						+ estimate);
 	}
 
 	@Test
@@ -3152,6 +3632,130 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertEquals(48.0d, estimate.getOutputRows(), 8.0d);
 			assertEquals(64.0d, estimate.getDoubleMetrics().get("plannedOmniAntiInputWitnesses"), 8.0d);
 			assertEquals(16.0d, estimate.getDoubleMetrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void correlatedAntiExistsFactorCostUsesOmniBridgeAntiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-factor-anti:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-factor-anti:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:omni-factor-anti:hasCondition");
+		IRI code = vf.createIRI("urn:test:omni-factor-anti:code");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-factor-anti:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			Resource condition = vf.createIRI("urn:test:omni-factor-anti:condition:" + i);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+			source.add(vf.createStatement(condition, code, i < 16 ? targetCode : otherCode));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern bridge = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatementPattern conditionCode = new StatementPattern(
+					Var.of("condition"),
+					Var.of("codePredicate", code),
+					Var.of("code", targetCode));
+			Filter filter = new Filter(input, new Not(new Exists(new Join(bridge, conditionCode))));
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(filter, JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, Double.NaN,
+							true))
+					.orElseThrow();
+
+			assertEquals("omni-correlated-anti-bridge",
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals(48.0d, estimate.getOutputRows(), 8.0d);
+			assertEquals(64.0d, estimate.getDoubleMetrics().get("plannedOmniAntiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.getDoubleMetrics().get("plannedOmniAntiMatchedWitnesses"), 8.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void correlatedExistsFactorCostUsesOmniBridgeSemiProbe() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI type = vf.createIRI("urn:test:omni-factor-semi:type");
+		IRI encounterClass = vf.createIRI("urn:test:omni-factor-semi:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:omni-factor-semi:hasCondition");
+		IRI code = vf.createIRI("urn:test:omni-factor-semi:code");
+		Value targetCode = vf.createLiteral("DX-200");
+		Value otherCode = vf.createLiteral("DX-999");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource encounter = vf.createIRI("urn:test:omni-factor-semi:encounter:" + i);
+			source.add(vf.createStatement(encounter, type, encounterClass));
+			Resource condition = vf.createIRI("urn:test:omni-factor-semi:condition:" + i);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+			source.add(vf.createStatement(condition, code, i < 16 ? targetCode : otherCode));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(1024)
+						.withSubjectBucketCount(1024)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(1024)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), estimator);
+			StatementPattern input = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("type", type),
+					Var.of("class", encounterClass));
+			StatementPattern bridge = new StatementPattern(
+					Var.of("encounter"),
+					Var.of("hasCondition", hasCondition),
+					Var.of("condition"));
+			StatementPattern conditionCode = new StatementPattern(
+					Var.of("condition"),
+					Var.of("codePredicate", code),
+					Var.of("code", targetCode));
+			Filter filter = new Filter(input, new Exists(new Join(bridge, conditionCode)));
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics
+					.estimateFactorCost(filter, JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, Double.NaN,
+							true))
+					.orElseThrow();
+
+			assertEquals("omni-correlated-semi-bridge",
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals(16.0d, estimate.getOutputRows(), 8.0d);
+			assertEquals(64.0d, estimate.getDoubleMetrics().get("plannedOmniSemiInputWitnesses"), 8.0d);
+			assertEquals(16.0d, estimate.getDoubleMetrics().get("plannedOmniSemiMatchedWitnesses"), 8.0d);
 		} finally {
 			estimator.close();
 		}

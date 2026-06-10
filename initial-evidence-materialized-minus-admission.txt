@@ -1,0 +1,6 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbCascadesOptimizerTest#materializedMinusPlannerAdmissionDoesNotInheritCorrelatedRhsInputBindings --retain-logs
+Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptimizerTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptimizerTest.txt
+Summary: tests=1, failures=1, errors=0, skipped=0, time=0.231s
+Failure: org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptimizerTest.materializedMinusPlannerAdmissionDoesNotInheritCorrelatedRhsInputBindings: failure: consider group=3 rule=lmdb-materialized-minus-anti-semi kind=IMPLEMENTATION delivered=PhysicalProperties[ordering=[], distinctVars=[], accessPath=materialize...
+Log: logs/mvnf/20260606-165245-verify.log
