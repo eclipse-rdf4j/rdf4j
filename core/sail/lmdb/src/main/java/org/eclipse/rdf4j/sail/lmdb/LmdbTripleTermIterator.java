@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 
 /**
- * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
- * {@link Statement} objects.
+ * An iterator that wraps a RecordIterator containing triple term records and translates these records to
+ * {@link TripleTerm} objects.
  */
 class LmdbTripleTermIterator extends AbstractCloseableIteration<TripleTerm> implements IndexReportingIterator {
 
