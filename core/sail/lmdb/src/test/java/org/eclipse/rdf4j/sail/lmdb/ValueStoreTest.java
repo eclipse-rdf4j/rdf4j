@@ -521,18 +521,6 @@ public class ValueStoreTest {
 		return initializedField.getBoolean(value);
 	}
 
-	private <T> T getField(Object target, String fieldName, Class<T> fieldType) throws Exception {
-		Field field = target.getClass().getDeclaredField(fieldName);
-		field.setAccessible(true);
-		return fieldType.cast(field.get(target));
-	}
-
-	private long getLongField(Object target, String fieldName) throws Exception {
-		Field field = target.getClass().getDeclaredField(fieldName);
-		field.setAccessible(true);
-		return field.getLong(target);
-	}
-
 	@AfterEach
 	public void after() throws Exception {
 		try {
