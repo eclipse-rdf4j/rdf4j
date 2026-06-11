@@ -23,7 +23,7 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 	private final int nominalEntries;
 	private final long seed;
 	private final long generation;
-	private final Map<String, Map<String, MappedWitnessIndex>> attributes;
+	private final Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> attributes;
 
 	MappedOmniJoinSnapshot(Arena arena, int width, int rows, int nominalEntries, long seed, long generation,
 			List<AttributeRef> attributes) {
@@ -58,7 +58,7 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 		return generation;
 	}
 
-	Map<String, Map<String, MappedWitnessIndex>> attributes() {
+	Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> attributes() {
 		return attributes;
 	}
 
@@ -67,6 +67,6 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 		arena.close();
 	}
 
-	record AttributeRef(String relation, String attribute, MappedWitnessIndex index) {
+	record AttributeRef(OmniRelation relation, OmniAttributeRef attribute, MappedWitnessIndex index) {
 	}
 }

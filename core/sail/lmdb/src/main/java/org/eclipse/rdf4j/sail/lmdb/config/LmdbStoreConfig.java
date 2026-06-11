@@ -123,7 +123,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
 
-	private String sketchEstimatorStrategy = "omni";
+	private String sketchEstimatorStrategy = "countmin-dual";
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -558,7 +558,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
 					vf.createLiteral(sketchEstimatorThrottleMillis));
 		}
-		if (!"omni".equals(sketchEstimatorStrategy)) {
+		if (!"countmin-dual".equals(sketchEstimatorStrategy)) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
 		}
 		if (!optimizerSamplingEnabled) {
@@ -891,14 +891,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 				.replace("_", "")
 				.toLowerCase(Locale.ROOT);
 		return switch (normalized) {
-		case "omni" -> "omni";
-		case "fastagms" -> "fastagms";
-		case "tuple" -> "tuple";
-		case "joinsketch" -> "joinsketch";
+		case "omni", "fastagms", "tuple", "joinsketch", "countmindual" -> "countmin-dual";
 		case "countmin" -> "countmin";
-		case "countmindual" -> "countmin-dual";
 		default -> throw new SailConfigException(
-				"Sketch estimator strategy value required: omni, fastagms, tuple, joinsketch, countmin, or countmin-dual; found "
+				"Sketch estimator strategy value required: countmin or countmin-dual; found "
 						+ value);
 		};
 	}

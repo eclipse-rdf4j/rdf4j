@@ -130,10 +130,10 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void sketchEstimatorStrategyDefaultsToOmni() {
+	void sketchEstimatorStrategyDefaultsToCountMinDual() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
-		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("countmin-dual");
 	}
 
 	@Test
@@ -337,14 +337,25 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "omni", "fastagms", "tuple", "joinsketch", "countmin", "countmin-dual" })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
+	@ValueSource(strings = { "omni", "fastagms", "tuple", "joinsketch", "countmin-dual" })
+	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
 		testParseAndExport(
 				SKETCH_ESTIMATOR_STRATEGY,
 				Values.literal(strategy),
 				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
-				strategy,
-				!"omni".equals(strategy)
+				"countmin-dual",
+				false
+		);
+	}
+
+	@Test
+	void testThatLmdbStoreConfigParsesAndExportsCountMinSketchEstimatorStrategy() {
+		testParseAndExport(
+				SKETCH_ESTIMATOR_STRATEGY,
+				Values.literal("countmin"),
+				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
+				"countmin",
+				true
 		);
 	}
 

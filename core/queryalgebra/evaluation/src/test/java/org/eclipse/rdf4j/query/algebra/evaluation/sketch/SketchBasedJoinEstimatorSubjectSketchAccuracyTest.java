@@ -78,7 +78,7 @@ class SketchBasedJoinEstimatorSubjectSketchAccuracyTest {
 
 	private static SketchBasedJoinEstimator.Config subjectAccuracyConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(16_384)
 				.withSubjectBucketCount(16_384)
 				.withPredicateBucketCount(16_384)

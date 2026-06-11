@@ -30,7 +30,7 @@ import java.util.List;
 final class OmniWitnessPersistenceStore implements AutoCloseable {
 
 	private static final int MANIFEST_MAGIC = 0x4f57494d;
-	private static final int MANIFEST_VERSION = 1;
+	private static final int MANIFEST_VERSION = 2;
 
 	private final Path directory;
 
@@ -109,8 +109,8 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			out.writeLong(seed);
 			out.writeInt(attributes.size());
 			for (ManifestAttribute attribute : attributes) {
-				out.writeUTF(attribute.relation);
-				out.writeUTF(attribute.attribute);
+				out.writeByte(attribute.relation.id());
+				attribute.attribute.writeTo(out);
 				out.writeLong(attribute.offset);
 				out.writeLong(attribute.length);
 			}
@@ -140,7 +140,8 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			}
 			List<ManifestAttribute> attributes = new ArrayList<>(attributeCount);
 			for (int i = 0; i < attributeCount; i++) {
-				attributes.add(new ManifestAttribute(in.readUTF(), in.readUTF(), in.readLong(), in.readLong()));
+				attributes.add(new ManifestAttribute(OmniRelation.fromId(in.readUnsignedByte()),
+						OmniAttributeRef.readFrom(in), in.readLong(), in.readLong()));
 			}
 			return new Manifest(slot, generation, width, rows, nominalEntries, seed, attributes);
 		}
@@ -158,6 +159,6 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			List<ManifestAttribute> attributes) {
 	}
 
-	private record ManifestAttribute(String relation, String attribute, long offset, long length) {
+	private record ManifestAttribute(OmniRelation relation, OmniAttributeRef attribute, long offset, long length) {
 	}
 }

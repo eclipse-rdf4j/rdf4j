@@ -20,7 +20,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,14 +44,14 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 2;
+	private static final int SERIAL_VERSION = 3;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 
 	private final int width;
 	private final int rows;
 	private final int nominalEntries;
 	private final long seed;
-	private final Map<String, Relation> relations = new HashMap<>();
+	private final Map<OmniRelation, Relation> relations = new EnumMap<>(OmniRelation.class);
 	private MappedOmniJoinSnapshot mappedSnapshot;
 
 	OmniJoinEstimator(int width, int rows, int nominalEntries, long seed) {
@@ -64,8 +64,8 @@ final class OmniJoinEstimator {
 		this.seed = seed;
 	}
 
-	Relation relation(String name) {
-		return relations.computeIfAbsent(Objects.requireNonNull(name, "name"),
+	Relation relation(OmniRelation relation) {
+		return relations.computeIfAbsent(Objects.requireNonNull(relation, "relation"),
 				key -> new Relation(key, width, rows, nominalEntries, seed));
 	}
 
@@ -92,10 +92,10 @@ final class OmniJoinEstimator {
 
 	List<AttributeSnapshot> snapshotAttributes() {
 		List<AttributeSnapshot> snapshots = new ArrayList<>();
-		for (Map.Entry<String, Relation> relationEntry : relations.entrySet()) {
-			for (Map.Entry<String, AttributeIndex> attributeEntry : relationEntry.getValue().attributes.entrySet()) {
-				AttributeIndex index = attributeEntry.getValue();
-				snapshots.add(new AttributeSnapshot(relationEntry.getKey(), attributeEntry.getKey(),
+		for (Map.Entry<OmniRelation, Relation> relationEntry : relations.entrySet()) {
+			for (AttributeEntry attributeEntry : relationEntry.getValue().attributeEntries()) {
+				AttributeIndex index = attributeEntry.index();
+				snapshots.add(new AttributeSnapshot(relationEntry.getKey(), attributeEntry.attribute(),
 						index.sketch.compact(), index.snapshotValuePostings()));
 			}
 		}
@@ -104,7 +104,7 @@ final class OmniJoinEstimator {
 
 	boolean hasIndexedData() {
 		for (Relation relation : relations.values()) {
-			if (!relation.attributes.isEmpty()) {
+			if (relation.hasAttributes()) {
 				return true;
 			}
 		}
@@ -121,13 +121,14 @@ final class OmniJoinEstimator {
 			out.writeInt(nominalEntries);
 			out.writeLong(seed);
 			out.writeInt(relations.size());
-			for (Map.Entry<String, Relation> relationEntry : relations.entrySet()) {
-				out.writeUTF(relationEntry.getKey());
+			for (Map.Entry<OmniRelation, Relation> relationEntry : relations.entrySet()) {
+				out.writeByte(relationEntry.getKey().id());
 				Relation relation = relationEntry.getValue();
-				out.writeInt(relation.attributes.size());
-				for (Map.Entry<String, AttributeIndex> attributeEntry : relation.attributes.entrySet()) {
-					out.writeUTF(attributeEntry.getKey());
-					AttributeIndex index = attributeEntry.getValue();
+				List<AttributeEntry> attributes = relation.attributeEntries();
+				out.writeInt(attributes.size());
+				for (AttributeEntry attributeEntry : attributes) {
+					attributeEntry.attribute().writeTo(out);
+					AttributeIndex index = attributeEntry.index();
 					index.compactWeightsToRetainedSample();
 					byte[] sketchPayload = index.sketch.compact().toByteArray();
 					out.writeInt(sketchPayload.length);
@@ -161,7 +162,7 @@ final class OmniJoinEstimator {
 				throw new IOException("Unsupported Omni join estimator payload magic: " + magic);
 			}
 			int version = in.readInt();
-			if (version < 1 || version > SERIAL_VERSION) {
+			if (version != SERIAL_VERSION) {
 				throw new IOException("Unsupported Omni join estimator payload version: " + version);
 			}
 			int storedWidth = in.readInt();
@@ -175,46 +176,32 @@ final class OmniJoinEstimator {
 			clear();
 			int relationCount = readCount(in, "relation");
 			for (int relationIndex = 0; relationIndex < relationCount; relationIndex++) {
-				Relation relation = relation(in.readUTF());
+				Relation relation = relation(OmniRelation.fromId(in.readUnsignedByte()));
 				int attributeCount = readCount(in, "attribute");
 				for (int attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++) {
-					AttributeIndex index = relation.attribute(in.readUTF());
-					if (version >= 2) {
-						int sketchPayloadLength = readCount(in, "attribute sketch payload");
-						byte[] sketchPayload = in.readNBytes(sketchPayloadLength);
-						if (sketchPayload.length != sketchPayloadLength) {
-							throw new IOException("Truncated Omni join estimator attribute sketch payload");
-						}
-						index.loadSketch(sketchPayload);
+					AttributeIndex index = relation.attribute(OmniAttributeRef.readFrom(in));
+					int sketchPayloadLength = readCount(in, "attribute sketch payload");
+					byte[] sketchPayload = in.readNBytes(sketchPayloadLength);
+					if (sketchPayload.length != sketchPayloadLength) {
+						throw new IOException("Truncated Omni join estimator attribute sketch payload");
 					}
+					index.loadSketch(sketchPayload);
 					int valueCount = readCount(in, "value");
-					if (version >= 2) {
-						long[] valueHashes = new long[valueCount];
-						int[] witnessOffsets = new int[valueCount];
-						int[] witnessCounts = new int[valueCount];
-						for (int valueIndex = 0; valueIndex < valueCount; valueIndex++) {
-							valueHashes[valueIndex] = in.readLong();
-							int witnessCount = readCount(in, "witness");
-							witnessCounts[valueIndex] = witnessCount;
-							witnessOffsets[valueIndex] = payload.length - in.available();
-							long witnessBytes = (long) witnessCount * LAZY_WEIGHT_ENTRY_BYTES;
-							if (witnessBytes > in.available()) {
-								throw new IOException("Truncated Omni join estimator witness payload");
-							}
-							in.skipNBytes(witnessBytes);
+					long[] valueHashes = new long[valueCount];
+					int[] witnessOffsets = new int[valueCount];
+					int[] witnessCounts = new int[valueCount];
+					for (int valueIndex = 0; valueIndex < valueCount; valueIndex++) {
+						valueHashes[valueIndex] = in.readLong();
+						int witnessCount = readCount(in, "witness");
+						witnessCounts[valueIndex] = witnessCount;
+						witnessOffsets[valueIndex] = payload.length - in.available();
+						long witnessBytes = (long) witnessCount * LAZY_WEIGHT_ENTRY_BYTES;
+						if (witnessBytes > in.available()) {
+							throw new IOException("Truncated Omni join estimator witness payload");
 						}
-						index.loadLazyWeights(payload, valueHashes, witnessOffsets, witnessCounts);
-					} else {
-						for (int valueIndex = 0; valueIndex < valueCount; valueIndex++) {
-							long valueHash = in.readLong();
-							int witnessCount = readCount(in, "witness");
-							for (int witnessIndex = 0; witnessIndex < witnessCount; witnessIndex++) {
-								long witnessHash = in.readLong();
-								double weight = in.readDouble();
-								index.loadHash(valueHash, witnessHash, weight);
-							}
-						}
+						in.skipNBytes(witnessBytes);
 					}
+					index.loadLazyWeights(payload, valueHashes, witnessOffsets, witnessCounts);
 				}
 			}
 			if (in.available() != 0) {
@@ -234,11 +221,11 @@ final class OmniJoinEstimator {
 		}
 		clear();
 		mappedSnapshot = snapshot;
-		for (Map.Entry<String, Map<String, MappedWitnessIndex>> relationEntry : snapshot
+		for (Map.Entry<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> relationEntry : snapshot
 				.attributes()
 				.entrySet()) {
 			Relation relation = relation(relationEntry.getKey());
-			for (Map.Entry<String, MappedWitnessIndex> attributeEntry : relationEntry
+			for (Map.Entry<OmniAttributeRef, MappedWitnessIndex> attributeEntry : relationEntry
 					.getValue()
 					.entrySet()) {
 				relation.attribute(attributeEntry.getKey()).loadMappedBase(attributeEntry.getValue());
@@ -254,9 +241,23 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	OmniWitnessSet probePredicate(Relation relation, String attribute, Predicate predicate) {
+	OmniWitnessSet probeStatic(Relation relation, byte attributeId, Predicate predicate) {
+		AttributeIndex index = relation == null ? null : relation.indexStatic(attributeId);
+		return probeIndex(index, predicate);
+	}
+
+	OmniWitnessSet probePredicate(Relation relation, long predicateHash, Predicate predicate) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+		return probeIndex(index, predicate);
+	}
+
+	OmniWitnessSet probePredicateContext(Relation relation, long predicateHash, long contextHash, Predicate predicate) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+		return probeIndex(index, predicate);
+	}
+
+	private OmniWitnessSet probeIndex(AttributeIndex index, Predicate predicate) {
 		Objects.requireNonNull(predicate, "predicate");
-		AttributeIndex index = relation == null ? null : relation.index(attribute);
 		if (index == null) {
 			return OmniWitnessSet.empty();
 		}
@@ -291,13 +292,27 @@ final class OmniJoinEstimator {
 				minDetectable);
 	}
 
-	OmniWitnessSet probeJoin(OmniWitnessSet input, Relation relation, String joinAttribute,
+	OmniWitnessSet probeJoinStatic(OmniWitnessSet input, Relation relation, byte joinAttribute,
 			OutputIdentifier outputIdentifier) {
-		if (input == null || relation == null || outputIdentifier == null || input.retainedWitnessCount() == 0) {
-			return OmniWitnessSet.empty();
-		}
-		AttributeIndex index = relation.index(joinAttribute);
-		if (index == null) {
+		AttributeIndex index = relation == null ? null : relation.indexStatic(joinAttribute);
+		return probeJoin(input, index, outputIdentifier);
+	}
+
+	OmniWitnessSet probeJoinPredicate(OmniWitnessSet input, Relation relation, long predicateHash,
+			OutputIdentifier outputIdentifier) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+		return probeJoin(input, index, outputIdentifier);
+	}
+
+	OmniWitnessSet probeJoinPredicateContext(OmniWitnessSet input, Relation relation, long predicateHash,
+			long contextHash, OutputIdentifier outputIdentifier) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+		return probeJoin(input, index, outputIdentifier);
+	}
+
+	private OmniWitnessSet probeJoin(OmniWitnessSet input, AttributeIndex index,
+			OutputIdentifier outputIdentifier) {
+		if (input == null || index == null || outputIdentifier == null || input.retainedWitnessCount() == 0) {
 			return OmniWitnessSet.empty();
 		}
 		Long2DoubleOpenHashMap outputWeights = new Long2DoubleOpenHashMap();
@@ -452,7 +467,10 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	record AttributeSnapshot(String relation, String attribute, CompactOmniSketch sketch,
+	private record AttributeEntry(OmniAttributeRef attribute, AttributeIndex index) {
+	}
+
+	record AttributeSnapshot(OmniRelation relation, OmniAttributeRef attribute, CompactOmniSketch sketch,
 			List<ValuePostings> values) {
 	}
 
@@ -468,14 +486,16 @@ final class OmniJoinEstimator {
 	}
 
 	static final class Relation {
-		private final String name;
+		private final OmniRelation name;
 		private final int width;
 		private final int rows;
 		private final int nominalEntries;
 		private final long seed;
-		private final Map<String, AttributeIndex> attributes = new HashMap<>();
+		private final AttributeIndex[] staticAttributes = new AttributeIndex[OmniAttributeRef.STATIC_COUNT];
+		private final Long2ObjectOpenHashMap<AttributeIndex> predicateAttributes = new Long2ObjectOpenHashMap<>();
+		private final Long2ObjectOpenHashMap<Long2ObjectOpenHashMap<AttributeIndex>> predicateContextAttributes = new Long2ObjectOpenHashMap<>();
 
-		private Relation(String name, int width, int rows, int nominalEntries, long seed) {
+		private Relation(OmniRelation name, int width, int rows, int nominalEntries, long seed) {
 			this.name = name;
 			this.width = width;
 			this.rows = rows;
@@ -483,30 +503,143 @@ final class OmniJoinEstimator {
 			this.seed = seed;
 		}
 
-		void updateHash(String attribute, long valueHash, long identifierHash, double estimatedMultiplicity) {
+		void updateStatic(byte attributeId, long valueHash, long identifierHash, double estimatedMultiplicity) {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			attribute(attribute).updateHash(valueHash, identifierHash, estimatedMultiplicity);
+			attributeStatic(attributeId).updateHash(valueHash, identifierHash, estimatedMultiplicity);
 		}
 
-		AttributeIndex index(String attribute) {
-			return attributes.get(attribute);
+		void updatePredicate(long predicateHash, long valueHash, long identifierHash,
+				double estimatedMultiplicity) {
+			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
+				return;
+			}
+			attributePredicate(predicateHash).updateHash(valueHash, identifierHash, estimatedMultiplicity);
 		}
 
-		private AttributeIndex attribute(String attribute) {
-			Objects.requireNonNull(attribute, "attribute");
-			AttributeIndex index = attributes.get(attribute);
+		void updatePredicateContext(long predicateHash, long contextHash, long valueHash, long identifierHash,
+				double estimatedMultiplicity) {
+			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
+				return;
+			}
+			attributePredicateContext(predicateHash, contextHash).updateHash(valueHash, identifierHash,
+					estimatedMultiplicity);
+		}
+
+		AttributeIndex indexStatic(byte attributeId) {
+			return staticAttributes[staticOffset(attributeId)];
+		}
+
+		AttributeIndex indexPredicate(long predicateHash) {
+			return predicateAttributes.get(predicateHash);
+		}
+
+		AttributeIndex indexPredicateContext(long predicateHash, long contextHash) {
+			Long2ObjectOpenHashMap<AttributeIndex> byContext = predicateContextAttributes.get(predicateHash);
+			return byContext == null ? null : byContext.get(contextHash);
+		}
+
+		AttributeIndex index(OmniAttributeRef ref) {
+			Objects.requireNonNull(ref, "ref");
+			return switch (ref.kind()) {
+			case OmniAttributeRef.KIND_STATIC -> indexStatic(ref.staticId());
+			case OmniAttributeRef.KIND_PREDICATE -> indexPredicate(ref.first());
+			case OmniAttributeRef.KIND_PREDICATE_CONTEXT -> indexPredicateContext(ref.first(), ref.second());
+			default -> throw new IllegalArgumentException("Unsupported Omni attribute kind: " + ref.kind());
+			};
+		}
+
+		private AttributeIndex attribute(OmniAttributeRef ref) {
+			Objects.requireNonNull(ref, "ref");
+			return switch (ref.kind()) {
+			case OmniAttributeRef.KIND_STATIC -> attributeStatic(ref.staticId());
+			case OmniAttributeRef.KIND_PREDICATE -> attributePredicate(ref.first());
+			case OmniAttributeRef.KIND_PREDICATE_CONTEXT -> attributePredicateContext(ref.first(), ref.second());
+			default -> throw new IllegalArgumentException("Unsupported Omni attribute kind: " + ref.kind());
+			};
+		}
+
+		private AttributeIndex attributeStatic(byte attributeId) {
+			int offset = staticOffset(attributeId);
+			AttributeIndex index = staticAttributes[offset];
 			if (index == null) {
 				index = new AttributeIndex(width, rows, nominalEntries, seed);
-				attributes.put(attribute, index);
+				staticAttributes[offset] = index;
 			}
 			return index;
 		}
 
+		private AttributeIndex attributePredicate(long predicateHash) {
+			AttributeIndex index = predicateAttributes.get(predicateHash);
+			if (index == null) {
+				index = new AttributeIndex(width, rows, nominalEntries, seed);
+				predicateAttributes.put(predicateHash, index);
+			}
+			return index;
+		}
+
+		private AttributeIndex attributePredicateContext(long predicateHash, long contextHash) {
+			Long2ObjectOpenHashMap<AttributeIndex> byContext = predicateContextAttributes.get(predicateHash);
+			if (byContext == null) {
+				byContext = new Long2ObjectOpenHashMap<>();
+				predicateContextAttributes.put(predicateHash, byContext);
+			}
+			AttributeIndex index = byContext.get(contextHash);
+			if (index == null) {
+				index = new AttributeIndex(width, rows, nominalEntries, seed);
+				byContext.put(contextHash, index);
+			}
+			return index;
+		}
+
+		private boolean hasAttributes() {
+			if (!predicateAttributes.isEmpty() || !predicateContextAttributes.isEmpty()) {
+				return true;
+			}
+			for (AttributeIndex index : staticAttributes) {
+				if (index != null) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private List<AttributeEntry> attributeEntries() {
+			List<AttributeEntry> entries = new ArrayList<>();
+			for (int i = 0; i < staticAttributes.length; i++) {
+				AttributeIndex index = staticAttributes[i];
+				if (index != null) {
+					entries.add(new AttributeEntry(OmniAttributeRef.staticAttribute((byte) i), index));
+				}
+			}
+			for (Long2ObjectMap.Entry<AttributeIndex> entry : predicateAttributes.long2ObjectEntrySet()) {
+				entries.add(new AttributeEntry(OmniAttributeRef.predicate(entry.getLongKey()), entry.getValue()));
+			}
+			for (Long2ObjectMap.Entry<Long2ObjectOpenHashMap<AttributeIndex>> predicateEntry : predicateContextAttributes
+					.long2ObjectEntrySet()) {
+				for (Long2ObjectMap.Entry<AttributeIndex> contextEntry : predicateEntry.getValue()
+						.long2ObjectEntrySet()) {
+					entries.add(new AttributeEntry(
+							OmniAttributeRef.predicateContext(predicateEntry.getLongKey(),
+									contextEntry.getLongKey()),
+							contextEntry.getValue()));
+				}
+			}
+			return entries;
+		}
+
+		private static int staticOffset(byte attributeId) {
+			int offset = attributeId & 0xff;
+			if (offset >= OmniAttributeRef.STATIC_COUNT) {
+				throw new IllegalArgumentException("Static Omni attribute id out of range: " + offset);
+			}
+			return offset;
+		}
+
 		@Override
 		public String toString() {
-			return name;
+			return name.name();
 		}
 	}
 

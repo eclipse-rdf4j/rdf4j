@@ -16,6 +16,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 final class SketchEstimatorMetadata {
 
@@ -128,7 +129,7 @@ final class SketchEstimatorMetadata {
 		}
 		SketchBasedJoinEstimator.SketchStrategy sketchStrategy = null;
 		if (version >= 3) {
-			sketchStrategy = SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(readString(in), null);
+			sketchStrategy = readPersistedSketchStrategy(readString(in));
 			if (sketchStrategy == null) {
 				throw new IOException("Unsupported join estimator sketch strategy in metadata");
 			}
@@ -147,6 +148,21 @@ final class SketchEstimatorMetadata {
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext,
 				activeSlot, seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
 				slotGenerationB, omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+	}
+
+	private static SketchBasedJoinEstimator.SketchStrategy readPersistedSketchStrategy(String value) {
+		if (value == null) {
+			return null;
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "countmin" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN;
+		case "countmindual" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL;
+		default -> null;
+		};
 	}
 
 	private static void writeString(DataOutput out, String value) throws IOException {

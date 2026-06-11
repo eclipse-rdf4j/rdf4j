@@ -43,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -110,7 +109,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static SketchBasedJoinEstimator.Config smallConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
@@ -136,7 +135,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(
 				new DataInputStream(
 						new ByteArrayInputStream(Files.readAllBytes(storeDirectory.resolve("metadata.bin")))));
-		assertEquals(SketchBasedJoinEstimator.SketchStrategy.TUPLE, metadata.sketchStrategy);
+		assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL, metadata.sketchStrategy);
 		assertTrue(Files.size(storeDirectory.resolve("a/index.bin")) > 0L
 				|| Files.size(storeDirectory.resolve("b/index.bin")) > 0L,
 				"Expected at least one slot index to contain persisted sketch refs");
@@ -226,42 +225,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void joinSketchStrategyLazyLoadRestoresJoinSketchSideState(@TempDir Path tempDir) throws Exception {
-		Resource s1 = VF.createIRI("urn:join-sketch-lazy:s1");
-		Resource s2 = VF.createIRI("urn:join-sketch-lazy:s2");
-		IRI p1 = VF.createIRI("urn:join-sketch-lazy:p1");
-		IRI p2 = VF.createIRI("urn:join-sketch-lazy:p2");
-		Value o1 = VF.createIRI("urn:join-sketch-lazy:o1");
-		Value o2 = VF.createIRI("urn:join-sketch-lazy:o2");
-
-		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
-		sourceStore.add(st(s1, p1, o1));
-		sourceStore.add(st(s2, p1, o1));
-		sourceStore.add(st(s1, p2, o2));
-
-		SketchBasedJoinEstimator.Config config = smallConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH);
-		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
-		writer.rebuild();
-		assertTrue(joinSketchCount(writer) > 0, "JOIN_SKETCH writer should build side-state sketches");
-
-		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
-		writer.configurePersistence(storeDirectory, false);
-		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
-
-		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
-		reader.configurePersistence(storeDirectory, true);
-		assertEquals(0, joinSketchCount(reader), "Lazy startup should not heap-load JoinSketch side state");
-
-		assertEquals(1.0d,
-				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
-						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
-				0.0d);
-		assertTrue(joinSketchCount(reader) > 0,
-				"Lazy JOIN_SKETCH reads should restore persisted JoinSketch side state");
-	}
-
-	@Test
 	void countMinDualLazyLoadRestoresCountMinSideState(@TempDir Path tempDir) throws Exception {
 		Resource s1 = VF.createIRI("urn:count-min-lazy:s1");
 		Resource s2 = VF.createIRI("urn:count-min-lazy:s2");
@@ -297,110 +260,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void omniStrategyDoesNotPersistLegacyOmniFrequencySideState(@TempDir Path tempDir) throws Exception {
-		Resource s1 = VF.createIRI("urn:omni-lazy:s1");
-		Resource s2 = VF.createIRI("urn:omni-lazy:s2");
-		Resource s3 = VF.createIRI("urn:omni-lazy:s3");
-		IRI p1 = VF.createIRI("urn:omni-lazy:p1");
-		IRI p2 = VF.createIRI("urn:omni-lazy:p2");
-		Value o1 = VF.createIRI("urn:omni-lazy:o1");
-		Value o2 = VF.createIRI("urn:omni-lazy:o2");
-
-		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
-		sourceStore.add(st(s1, p1, o1));
-		sourceStore.add(st(s2, p1, o1));
-		sourceStore.add(st(s1, p2, o2));
-		sourceStore.add(st(s3, p2, o2));
-
-		SketchBasedJoinEstimator.Config config = smallConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
-		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
-		writer.rebuild();
-		assertEquals(0, omniSketchCount(writer), "OMNI writer should not build legacy OmniFrequencySketch side state");
-		assertTrue(omniJoinEstimatorRelationCount(writer) > 0, "OMNI writer should build join-estimator side state");
-
-		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
-		writer.configurePersistence(storeDirectory, false);
-		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
-		SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(
-				new DataInputStream(
-						new ByteArrayInputStream(Files.readAllBytes(storeDirectory.resolve("metadata.bin")))));
-		assertNull(metadata.omniJoinEstimatorRefA, "OMNI should not persist join side-state as framed payload A");
-		assertNull(metadata.omniJoinEstimatorRefB, "OMNI should not persist join side-state as framed payload B");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/manifest.bin")),
-				"OMNI should persist join side-state through the mapped witness manifest");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-a.dat"))
-				|| Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-b.dat")),
-				"OMNI should persist witness postings in a slot data file");
-
-		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
-		reader.configurePersistence(storeDirectory, true);
-		assertEquals(0, omniSketchCount(reader), "Lazy startup should not heap-load Omni side state");
-
-		assertEquals(1.0d,
-				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
-						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
-				0.0d);
-		assertEquals(0, omniSketchCount(reader), "Lazy OMNI reads should not restore legacy OmniFrequencySketch state");
-		assertTrue(omniJoinEstimatorRelationCount(reader) > 0,
-				"Lazy OMNI reads should restore persisted Omni join-estimator side state");
-		MappedWitnessIndex mappedIndex = firstMappedOmniWitnessIndex(reader);
-
-		reader.close();
-
-		assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(0L).next(),
-				"Closing the estimator should release its mapped Omni witness snapshot");
-	}
-
-	@Test
-	void omniStrategyLazyLoadRestoresOmniJoinEstimatorSideState(@TempDir Path tempDir) throws Exception {
-		IRI prescribedDrug = VF.createIRI("urn:omni-join-lazy:prescribedDrug");
-		IRI billedDrug = VF.createIRI("urn:omni-join-lazy:billedDrug");
-		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
-		for (int encounterIndex = 0; encounterIndex < 16; encounterIndex++) {
-			Resource encounter = VF.createIRI("urn:omni-join-lazy:encounter:" + encounterIndex);
-			for (int drugIndex = 0; drugIndex < 4; drugIndex++) {
-				Resource drug = VF.createIRI("urn:omni-join-lazy:drug:" + drugIndex);
-				int prescribedRows = encounterIndex < 4 && drugIndex < 2 ? 5 : 1;
-				int billedRows = encounterIndex < 4 && drugIndex < 2 ? 3 : (drugIndex == 0 ? 1 : 0);
-				for (int row = 0; row < prescribedRows; row++) {
-					sourceStore.add(st(encounter, prescribedDrug, drug,
-							VF.createIRI("urn:omni-join-lazy:prescribed-context:" + row)));
-				}
-				for (int row = 0; row < billedRows; row++) {
-					sourceStore.add(st(encounter, billedDrug, drug,
-							VF.createIRI("urn:omni-join-lazy:billed-context:" + row)));
-				}
-			}
-		}
-		SketchBasedJoinEstimator.Config config = smallConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
-		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
-		writer.rebuild();
-		StatementPattern left = new StatementPattern(Var.of("encounter"),
-				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
-		StatementPattern right = new StatementPattern(Var.of("encounter"),
-				Var.of("billedDrug", billedDrug), Var.of("drug"));
-		JoinFrequencyEstimate writerEstimate = writer.estimateSketchJoinSurface(List.of(left, right), "encounter");
-		assertNotNull(writerEstimate, "Writer should expose an Omni composite witness surface");
-		assertEquals("omni-join-estimator", writerEstimate.source());
-
-		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
-		writer.configurePersistence(storeDirectory, false);
-		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
-
-		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
-		reader.configurePersistence(storeDirectory, true);
-
-		JoinFrequencyEstimate readerEstimate = reader.estimateSketchJoinSurface(List.of(left, right), "encounter");
-
-		assertNotNull(readerEstimate, "Lazy OMNI read should restore persisted Omni join estimator side state");
-		assertEquals("omni-join-estimator", readerEstimate.source());
-		assertEquals(writerEstimate.calibratedRows(), readerEstimate.calibratedRows(), 0.0d);
-	}
-
-	@Test
-	void strategyMismatchSnapshotIsIgnoredInsteadOfRead(@TempDir Path tempDir) throws Exception {
+	void countMinStrategyMismatchSnapshotIsIgnoredInsteadOfRead(@TempDir Path tempDir) throws Exception {
 		Resource subject = VF.createIRI("urn:strategy-mismatch:s");
 		IRI predicate = VF.createIRI("urn:strategy-mismatch:p");
 		Value object = VF.createIRI("urn:strategy-mismatch:o");
@@ -412,11 +272,11 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		writer.rebuild();
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		writer.configurePersistence(snapshot, false);
-		assertTrue(writer.persistIfDirty(), "Expected tuple-strategy snapshot");
+		assertTrue(writer.persistIfDirty(), "Expected count-min-dual snapshot");
 
-		SketchBasedJoinEstimator.Config joinSketchConfig = smallConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH);
-		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(sourceStore, joinSketchConfig));
+		SketchBasedJoinEstimator.Config countMinConfig = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN);
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(sourceStore, countMinConfig));
 		reader.configurePersistence(snapshot, true);
 
 		assertFalse(reader.isReadyNonBlocking(),
@@ -489,7 +349,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withSubjectBucketCount(4)
 						.withPredicateBucketCount(8)
 						.withObjectBucketCount(16)
@@ -673,60 +533,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			assertTrue(wrapped.hasMemorySegment(), "Reloaded persisted sketch should remain mapped");
 			assertEquals(1.0d, wrapped.getEstimate(), 0.0d);
 		}
-	}
-
-	@Test
-	void heapOriginPersistedSketchReloadsAsMappedUpdatableSketch(@TempDir Path tempDir) throws Exception {
-		IRI predicate = VF.createIRI("urn:mapped-reload:p");
-		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
-		sourceStore.add(st(VF.createIRI("urn:mapped-reload:s0"), predicate, VF.createIRI("urn:mapped-reload:o0")));
-
-		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, smallConfig()));
-		writer.rebuild();
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		writer.configurePersistence(snapshot, false);
-		assertTrue(writer.persistIfDirty(), "Expected heap-origin rebuild sketches to persist");
-
-		SketchBasedJoinEstimator reader = track(
-				new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig()));
-		reader.configurePersistence(snapshot, true);
-		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
-				1.0);
-
-		FastAgmsBindingSummary reloaded = residentSinglePredicateSketch(reader, predicate.stringValue());
-		assertNotNull(reloaded, "Expected predicate sketch to be resident after cardinality read");
-		assertTrue(reloaded.hasMemorySegment(), "Persisted mutable sketch reload should wrap mapped storage");
-	}
-
-	@Test
-	void persistentRebuildCreatesMappedResidentSketches(@TempDir Path tempDir) throws Exception {
-		IRI predicate = VF.createIRI("urn:mapped-rebuild:p");
-		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
-		for (int i = 0; i < 16; i++) {
-			sourceStore.add(st(VF.createIRI("urn:mapped-rebuild:s" + i), predicate,
-					VF.createIRI("urn:mapped-rebuild:o" + i)));
-		}
-
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(sourceStore,
-				smallConfig().withContextPairSketchesEnabled(false)));
-		estimator.configurePersistence(snapshot, false);
-		estimator.rebuild();
-
-		assertFalse(estimator.debugResidentSketches().isEmpty(), "Expected rebuild to create resident sketches");
-		FastAgmsBindingSummary sketch = residentSinglePredicateSketch(estimator, predicate.stringValue());
-		assertNotNull(sketch, "Expected rebuilt predicate sketch to be resident");
-		assertTrue(sketch.hasMemorySegment(), "Persistent rebuild should allocate mutable sketches in mapped storage");
-		assertTrue(estimator.persistIfDirty(), "Expected directly mapped rebuild sketches to persist");
-
-		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(),
-				smallConfig().withContextPairSketchesEnabled(false)));
-		reader.configurePersistence(snapshot, true);
-		assertEquals(16.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
-				1.0);
-		FastAgmsBindingSummary reloaded = residentSinglePredicateSketch(reader, predicate.stringValue());
-		assertNotNull(reloaded, "Expected mapped rebuild sketch to reload");
-		assertTrue(reloaded.hasMemorySegment(), "Reloaded rebuild sketch should still wrap mapped storage");
 	}
 
 	@Test
@@ -1681,21 +1487,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return loadedField.getBoolean(estimator);
 	}
 
-	private static int joinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Object current = privateFieldValue(estimator, "current");
-		Object joinSketches = privateFieldValue(current, "joinSketches");
-		Field sketchesField = joinSketches.getClass().getDeclaredField("sketches");
-		sketchesField.setAccessible(true);
-		Object[] sketches = (Object[]) sketchesField.get(joinSketches);
-		int count = 0;
-		for (Object sketch : sketches) {
-			if (sketch != null) {
-				count++;
-			}
-		}
-		return count;
-	}
-
 	private static int countMinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
 		Object current = privateFieldValue(estimator, "current");
 		Object countMinSketches = privateFieldValue(current, "countMinSketches");
@@ -1709,44 +1500,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			}
 		}
 		return count;
-	}
-
-	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Object current = privateFieldValue(estimator, "current");
-		Object omniSketches = privateFieldValue(current, "omniSketches");
-		Field sketchesField = omniSketches.getClass().getDeclaredField("sketches");
-		sketchesField.setAccessible(true);
-		Object[] sketches = (Object[]) sketchesField.get(omniSketches);
-		int count = 0;
-		for (Object sketch : sketches) {
-			if (sketch != null) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Object current = privateFieldValue(estimator, "current");
-		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
-		Map<?, ?> relations = (Map<?, ?>) privateFieldValue(omniJoinEstimator, "relations");
-		return relations.size();
-	}
-
-	private static MappedWitnessIndex firstMappedOmniWitnessIndex(SketchBasedJoinEstimator estimator)
-			throws Exception {
-		Object current = privateFieldValue(estimator, "current");
-		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
-		MappedOmniJoinSnapshot snapshot = (MappedOmniJoinSnapshot) privateFieldValue(omniJoinEstimator,
-				"mappedSnapshot");
-		assertNotNull(snapshot, "Expected mapped Omni witness snapshot");
-		return snapshot.attributes()
-				.values()
-				.iterator()
-				.next()
-				.values()
-				.iterator()
-				.next();
 	}
 
 	private static FastAgmsBindingSummary residentSinglePredicateSketch(SketchBasedJoinEstimator estimator,

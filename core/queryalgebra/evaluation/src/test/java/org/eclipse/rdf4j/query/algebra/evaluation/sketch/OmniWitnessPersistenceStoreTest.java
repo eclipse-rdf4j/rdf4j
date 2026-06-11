@@ -33,9 +33,9 @@ class OmniWitnessPersistenceStoreTest {
 	@Test
 	void valueRecordsStoreSamplingProbabilityAndMinimumDetectableEstimate(@TempDir Path tempDir) throws Exception {
 		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 4, 64, SEED);
-		OmniJoinEstimator.Relation events = estimator.relation("events");
+		OmniJoinEstimator.Relation events = estimator.relation(OmniRelation.STATEMENT);
 		long code = OmniJoinEstimator.stableHash("A");
-		events.updateHash("code", code, OmniJoinEstimator.stableHash("event:1"), 1.0d);
+		events.updateStatic(OmniAttributeRef.component(1), code, OmniJoinEstimator.stableHash("event:1"), 1.0d);
 
 		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
 			store.writeSnapshot((byte) 0, estimator, 1L);

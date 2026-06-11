@@ -81,37 +81,40 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void defaultSketchStrategyIsOmni() throws Exception {
+	void defaultSketchStrategyIsCountMinDual() throws Exception {
 		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, defaults);
 
-		assertEquals("omni", defaults.sketchStrategy.configValue());
-		assertEquals("omni",
+		assertEquals("countmin-dual", defaults.sketchStrategy.configValue());
+		assertEquals("countmin-dual",
 				((SketchBasedJoinEstimator.SketchStrategy) objectField(estimator, "sketchStrategy")).configValue());
 	}
 
 	@Test
-	void omniConfigValueSelectsOmniStrategy() {
+	void legacyConfigValuesSelectCountMinDualStrategy() {
 		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
 				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
 
-		assertEquals("omni", strategy.configValue());
+		assertEquals("countmin-dual", strategy.configValue());
 	}
 
 	@Test
-	void builderSelectsEachSketchStrategy() throws Exception {
+	void builderCanonicalizesLegacySketchStrategies() throws Exception {
 		for (SketchBasedJoinEstimator.SketchStrategy strategy : SketchBasedJoinEstimator.SketchStrategy.values()) {
 			SketchBasedJoinEstimator.Config config = SketchBasedJoinEstimator.Config.defaults()
 					.withSketchStrategy(strategy);
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config);
+			SketchBasedJoinEstimator.SketchStrategy expected = strategy == SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN
+					? SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN
+					: SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL;
 
-			assertEquals(strategy, config.sketchStrategy);
-			assertEquals(strategy, objectField(estimator, "sketchStrategy"));
+			assertEquals(expected, config.sketchStrategy);
+			assertEquals(expected, objectField(estimator, "sketchStrategy"));
 		}
 	}
 
 	@Test
-	void onlyJoinSketchStrategyAllocatesJoinSketchSideState() throws Exception {
+	void legacySketchStrategiesDoNotAllocateJoinSketchSideState() throws Exception {
 		for (SketchBasedJoinEstimator.SketchStrategy strategy : SketchBasedJoinEstimator.SketchStrategy.values()) {
 			StubSketchStatementSource localStore = new StubSketchStatementSource();
 			localStore.add(st(s1, p1, o1));
@@ -125,12 +128,8 @@ class SketchBasedJoinEstimatorConfigTest {
 			rebuild(estimator);
 
 			int allocatedJoinSketches = joinSketchCount(estimator);
-			if (strategy == SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH) {
-				assertTrue(allocatedJoinSketches > 0, "JOIN_SKETCH should allocate JoinSketch side state");
-			} else {
-				assertEquals(0, allocatedJoinSketches,
-						strategy + " should not allocate JoinSketch side state");
-			}
+			assertEquals(0, allocatedJoinSketches,
+					strategy + " should not allocate JoinSketch side state");
 		}
 	}
 
@@ -155,7 +154,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void omniStrategyAllocatesOmniJoinEstimatorSideState() throws Exception {
+	void legacyOmniConfigAllocatesCountMinSideState() throws Exception {
 		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
 				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
 		StubSketchStatementSource localStore = new StubSketchStatementSource();
@@ -169,14 +168,15 @@ class SketchBasedJoinEstimatorConfigTest {
 
 		rebuild(estimator);
 
-		assertEquals("omni", estimator.getSketchStrategy().configValue());
-		assertEquals(0, omniSketchCount(estimator), "OMNI should not allocate legacy OmniFrequencySketch side state");
-		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
-				"OMNI should allocate Omni join-estimator side state");
+		assertEquals("countmin-dual", estimator.getSketchStrategy().configValue());
+		assertTrue(countMinSketchCount(estimator) > 0, "Legacy OMNI config should use Count-Min side state");
+		assertEquals(0, omniSketchCount(estimator), "Legacy OMNI config should not allocate OmniFrequencySketch state");
+		assertEquals(0, omniJoinEstimatorRelationCount(estimator),
+				"Legacy OMNI config should not allocate Omni join-estimator state");
 	}
 
 	@Test
-	void omniStrategyDoesNotPopulateFastAgmsResidentSketches() throws Exception {
+	void explicitOmniStrategyUsesCountMinDualRuntimePath() throws Exception {
 		StubSketchStatementSource localStore = new StubSketchStatementSource();
 		for (int i = 0; i < 16; i++) {
 			localStore.add(st(VF.createIRI("urn:omni-fastagms:s" + i), p1,
@@ -190,15 +190,10 @@ class SketchBasedJoinEstimatorConfigTest {
 
 		rebuild(estimator);
 
-		assertEquals(16.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d);
-		assertEquals(4.0d, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(),
-				"urn:omni-fastagms:o0"), 0.0d);
-		assertEquals(4.0d, estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(),
-				"urn:omni-fastagms:o0", null), 0.0d);
-		assertEquals(0, estimator.debugResidentSketches().size(),
-				"OMNI should replace the FastAGMS update path instead of populating resident FastAGMS sketches");
-		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
-				"OMNI should still populate the join-estimator side state");
+		assertEquals("countmin-dual", estimator.getSketchStrategy().configValue());
+		assertTrue(countMinSketchCount(estimator) > 0, "Explicit OMNI strategy should use Count-Min side state");
+		assertEquals(0, omniJoinEstimatorRelationCount(estimator),
+				"Explicit OMNI strategy should not allocate Omni join-estimator state");
 	}
 
 	@Test
@@ -234,7 +229,8 @@ class SketchBasedJoinEstimatorConfigTest {
 					SketchBasedJoinEstimator.Config.defaults()
 							.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH));
 
-			assertEquals(SketchBasedJoinEstimator.SketchStrategy.TUPLE, objectField(estimator, "sketchStrategy"));
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					objectField(estimator, "sketchStrategy"));
 		} finally {
 			properties.restore();
 		}
@@ -249,7 +245,8 @@ class SketchBasedJoinEstimatorConfigTest {
 					SketchBasedJoinEstimator.Config.defaults()
 							.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH));
 
-			assertEquals(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH, objectField(estimator, "sketchStrategy"));
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					objectField(estimator, "sketchStrategy"));
 		} finally {
 			properties.restore();
 		}
@@ -606,7 +603,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void tupleSketchJoinSurvivesWhenRareOverlapFallbackDisabled() throws Exception {
+	void legacyTupleStrategyUsesRetainedCountMinRuntimePath() throws Exception {
 		PropertyState properties = PropertyState.capture(EXACT_LIMIT_PROPERTY, SKEW_RATIO_PROPERTY, ROW_BUDGET_PROPERTY,
 				SAMPLE_SIZE_PROPERTY);
 		try {
@@ -626,15 +623,8 @@ class SketchBasedJoinEstimatorConfigTest {
 					.withZeroIntersectionRowBudget(0L)
 					.withZeroIntersectionSampleSize(32));
 
-			double estimate = fixture.estimator.cardinality(fixture.join);
-			double relativeError = Math.abs(estimate - fixture.actualJoinRows) / fixture.actualJoinRows;
-
-			assertTrue(estimate > 0.0d,
-					() -> "Tuple sketch dot products should estimate rare overlap without fallback sampling. actual="
-							+ fixture.actualJoinRows);
-			assertTrue(relativeError <= 0.35d,
-					() -> "Sampled tuple-sketch rare-overlap estimate should stay bounded. estimate=" + estimate
-							+ ", actual=" + fixture.actualJoinRows + ", error=" + relativeError);
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					fixture.estimator.getSketchStrategy());
 		} finally {
 			properties.restore();
 		}
@@ -765,6 +755,9 @@ class SketchBasedJoinEstimatorConfigTest {
 	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
 		Object state = objectField(estimator, "current");
 		Object omniJoinEstimator = objectField(state, "omniJoinEstimator");
+		if (omniJoinEstimator == null) {
+			return 0;
+		}
 		Map<?, ?> relations = (Map<?, ?>) objectField(omniJoinEstimator, "relations");
 		return relations.size();
 	}

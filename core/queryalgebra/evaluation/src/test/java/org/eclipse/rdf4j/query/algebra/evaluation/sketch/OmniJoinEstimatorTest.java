@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,17 +28,23 @@ import org.junit.jupiter.api.Test;
 class OmniJoinEstimatorTest {
 
 	private static final long SEED = 0x51E7C0DEL;
+	private static final byte ATTR_S = OmniAttributeRef.component(0);
+	private static final byte ATTR_P = OmniAttributeRef.component(1);
+	private static final byte ATTR_O = OmniAttributeRef.component(2);
+	private static final byte ATTR_C = OmniAttributeRef.component(3);
+	private static final byte ATTR_SURFACE_S_P_O = OmniAttributeRef.tupleSurface(0, 1, 2);
+	private static final byte ATTR_SURFACE_P_S_O = OmniAttributeRef.tupleSurface(1, 0, 2);
 
 	@Test
 	void predicateProbeSeparatesValueHashFromWitnessIdentifierHash() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation conditions = estimator.relation("conditions");
+		OmniJoinEstimator.Relation conditions = estimator.relation(OmniRelation.STATEMENT);
 		long codeDx200 = OmniJoinEstimator.stableHash("DX-200");
 		long conditionId = OmniJoinEstimator.stableHash("condition:1");
 
-		conditions.updateHash("code", codeDx200, conditionId, 1.0d);
+		conditions.updateStatic(ATTR_P, codeDx200, conditionId, 1.0d);
 
-		OmniWitnessSet witnesses = estimator.probePredicate(conditions, "code",
+		OmniWitnessSet witnesses = estimator.probeStatic(conditions, ATTR_P,
 				OmniJoinEstimator.Predicate.equalHash(codeDx200));
 
 		assertTrue(witnesses.containsHash(conditionId));
@@ -72,19 +79,19 @@ class OmniJoinEstimatorTest {
 	@Test
 	void pkFkProbeExpandsSampledPrimaryKeysIntoForeignKeyFacts() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation conditionDimension = estimator.relation("conditionDimension");
-		OmniJoinEstimator.Relation encounterFacts = estimator.relation("encounterFacts");
+		OmniJoinEstimator.Relation conditionDimension = estimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation encounterFacts = estimator.relation(OmniRelation.SUBJECT_STAR);
 		long dx200 = OmniJoinEstimator.stableHash("DX-200");
 		long condition1 = OmniJoinEstimator.stableHash("condition:1");
 
-		conditionDimension.updateHash("code", dx200, condition1, 1.0d);
-		encounterFacts.updateHash("hasCondition", condition1, OmniJoinEstimator.stableHash("encounter:1"), 1.0d);
-		encounterFacts.updateHash("hasCondition", condition1, OmniJoinEstimator.stableHash("encounter:2"), 1.0d);
-		encounterFacts.updateHash("hasCondition", condition1, OmniJoinEstimator.stableHash("encounter:3"), 1.0d);
+		conditionDimension.updateStatic(ATTR_P, dx200, condition1, 1.0d);
+		encounterFacts.updateStatic(ATTR_O, condition1, OmniJoinEstimator.stableHash("encounter:1"), 1.0d);
+		encounterFacts.updateStatic(ATTR_O, condition1, OmniJoinEstimator.stableHash("encounter:2"), 1.0d);
+		encounterFacts.updateStatic(ATTR_O, condition1, OmniJoinEstimator.stableHash("encounter:3"), 1.0d);
 
-		OmniWitnessSet sampledPk = estimator.probePredicate(conditionDimension, "code",
+		OmniWitnessSet sampledPk = estimator.probeStatic(conditionDimension, ATTR_P,
 				OmniJoinEstimator.Predicate.equalHash(dx200));
-		OmniWitnessSet encounters = estimator.probeJoin(sampledPk, encounterFacts, "hasCondition",
+		OmniWitnessSet encounters = estimator.probeJoinStatic(sampledPk, encounterFacts, ATTR_O,
 				OmniJoinEstimator.OutputIdentifier.RECORD);
 
 		assertEquals(3.0d, estimator.estimateRows(encounters), 0.0d);
@@ -94,22 +101,22 @@ class OmniJoinEstimatorTest {
 	@Test
 	void secondarySubjectStarSketchesIntersectPredicateObjectConstraintsOnSubjectWitnesses() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation subjectStar = estimator.relation("subjectStar");
+		OmniJoinEstimator.Relation subjectStar = estimator.relation(OmniRelation.SUBJECT_STAR);
 		long encounter1 = OmniJoinEstimator.stableHash("encounter:1");
 		long encounter2 = OmniJoinEstimator.stableHash("encounter:2");
 
-		subjectStar.updateHash("rdf:type", OmniJoinEstimator.stableHash("Encounter"), encounter1, 1.0d);
-		subjectStar.updateHash("recordedOn", OmniJoinEstimator.stableHash("2024-01-01"), encounter1, 1.0d);
-		subjectStar.updateHash("handledBy", OmniJoinEstimator.stableHash("practitioner:9"), encounter1, 1.0d);
-		subjectStar.updateHash("rdf:type", OmniJoinEstimator.stableHash("Encounter"), encounter2, 1.0d);
-		subjectStar.updateHash("recordedOn", OmniJoinEstimator.stableHash("2024-03-01"), encounter2, 1.0d);
+		subjectStar.updateStatic(ATTR_P, OmniJoinEstimator.stableHash("Encounter"), encounter1, 1.0d);
+		subjectStar.updateStatic(ATTR_O, OmniJoinEstimator.stableHash("2024-01-01"), encounter1, 1.0d);
+		subjectStar.updateStatic(ATTR_C, OmniJoinEstimator.stableHash("practitioner:9"), encounter1, 1.0d);
+		subjectStar.updateStatic(ATTR_P, OmniJoinEstimator.stableHash("Encounter"), encounter2, 1.0d);
+		subjectStar.updateStatic(ATTR_O, OmniJoinEstimator.stableHash("2024-03-01"), encounter2, 1.0d);
 
 		OmniWitnessSet januaryEncounters = estimator.intersect(List.of(
-				estimator.probePredicate(subjectStar, "rdf:type",
+				estimator.probeStatic(subjectStar, ATTR_P,
 						OmniJoinEstimator.Predicate.equalHash(OmniJoinEstimator.stableHash("Encounter"))),
-				estimator.probePredicate(subjectStar, "recordedOn",
+				estimator.probeStatic(subjectStar, ATTR_O,
 						OmniJoinEstimator.Predicate.equalHash(OmniJoinEstimator.stableHash("2024-01-01"))),
-				estimator.probePredicate(subjectStar, "handledBy",
+				estimator.probeStatic(subjectStar, ATTR_C,
 						OmniJoinEstimator.Predicate.equalHash(OmniJoinEstimator.stableHash("practitioner:9")))));
 
 		assertEquals(1.0d, estimator.estimateRows(januaryEncounters), 0.0d);
@@ -120,8 +127,7 @@ class OmniJoinEstimatorTest {
 	@Test
 	void twoVariableSurfaceUsesOrderedTupleWitnesses() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation conditionEdges = estimator.relation("conditionEdges");
-		OmniJoinEstimator.Relation conditionCodes = estimator.relation("conditionCodes");
+		OmniJoinEstimator.Relation tupleSurface = estimator.relation(OmniRelation.TUPLE_SURFACE);
 		long dx200 = OmniJoinEstimator.stableHash("DX-200");
 		long encounter1 = OmniJoinEstimator.stableHash("encounter:1");
 		long encounter2 = OmniJoinEstimator.stableHash("encounter:2");
@@ -130,14 +136,14 @@ class OmniJoinEstimatorTest {
 		long tuple11 = OmniJoinEstimator.orderedTupleHash(encounter1, condition1);
 		long tuple22 = OmniJoinEstimator.orderedTupleHash(encounter2, condition2);
 
-		conditionEdges.updateHash("predicate", OmniJoinEstimator.stableHash("hasCondition"), tuple11, 1.0d);
-		conditionEdges.updateHash("predicate", OmniJoinEstimator.stableHash("hasCondition"), tuple22, 1.0d);
-		conditionCodes.updateHash("code", dx200, tuple11, 1.0d);
+		tupleSurface.updateStatic(ATTR_SURFACE_S_P_O, OmniJoinEstimator.stableHash("hasCondition"), tuple11, 1.0d);
+		tupleSurface.updateStatic(ATTR_SURFACE_S_P_O, OmniJoinEstimator.stableHash("hasCondition"), tuple22, 1.0d);
+		tupleSurface.updateStatic(ATTR_SURFACE_P_S_O, dx200, tuple11, 1.0d);
 
 		OmniWitnessSet surface = estimator.intersect(List.of(
-				estimator.probePredicate(conditionEdges, "predicate",
+				estimator.probeStatic(tupleSurface, ATTR_SURFACE_S_P_O,
 						OmniJoinEstimator.Predicate.equalHash(OmniJoinEstimator.stableHash("hasCondition"))),
-				estimator.probePredicate(conditionCodes, "code", OmniJoinEstimator.Predicate.equalHash(dx200))));
+				estimator.probeStatic(tupleSurface, ATTR_SURFACE_P_S_O, OmniJoinEstimator.Predicate.equalHash(dx200))));
 
 		assertEquals(1.0d, estimator.estimateRows(surface), 0.0d);
 		assertTrue(surface.containsHash(tuple11));
@@ -147,7 +153,7 @@ class OmniJoinEstimatorTest {
 	@Test
 	void finiteValuesProbeUnionRetainsAffectedWitnesses() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation codes = estimator.relation("codes");
+		OmniJoinEstimator.Relation codes = estimator.relation(OmniRelation.STATEMENT);
 		long dx200 = OmniJoinEstimator.stableHash("DX-200");
 		long dx201 = OmniJoinEstimator.stableHash("DX-201");
 		long dx999 = OmniJoinEstimator.stableHash("DX-999");
@@ -155,11 +161,11 @@ class OmniJoinEstimatorTest {
 		long entity2 = OmniJoinEstimator.stableHash("entity:2");
 		long entity9 = OmniJoinEstimator.stableHash("entity:9");
 
-		codes.updateHash("code", dx200, entity1, 1.0d);
-		codes.updateHash("code", dx201, entity2, 1.0d);
-		codes.updateHash("code", dx999, entity9, 1.0d);
+		codes.updateStatic(ATTR_P, dx200, entity1, 1.0d);
+		codes.updateStatic(ATTR_P, dx201, entity2, 1.0d);
+		codes.updateStatic(ATTR_P, dx999, entity9, 1.0d);
 
-		OmniWitnessSet witnesses = estimator.probePredicate(codes, "code",
+		OmniWitnessSet witnesses = estimator.probeStatic(codes, ATTR_P,
 				OmniJoinEstimator.Predicate.anyOfHashes(dx200, dx201));
 
 		assertEquals(2.0d, estimator.estimateRows(witnesses), 0.0d);
@@ -171,19 +177,19 @@ class OmniJoinEstimatorTest {
 	@Test
 	void sampleLossFallsBackToMinimumDetectableRowsWithLowConfidence() {
 		OmniJoinEstimator estimator = newEstimator(64, 1, 1);
-		OmniJoinEstimator.Relation left = estimator.relation("left");
-		OmniJoinEstimator.Relation right = estimator.relation("right");
+		OmniJoinEstimator.Relation left = estimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation right = estimator.relation(OmniRelation.SUBJECT_STAR);
 		long value = OmniJoinEstimator.stableHash("shared-value");
 		for (long id = 1; id <= 100; id++) {
-			left.updateHash("v", value, id, 1.0d);
+			left.updateStatic(ATTR_P, value, id, 1.0d);
 		}
 		for (long id = 90; id <= 190; id++) {
-			right.updateHash("v", value, id, 1.0d);
+			right.updateStatic(ATTR_P, value, id, 1.0d);
 		}
 
 		OmniWitnessSet intersection = estimator.intersect(List.of(
-				estimator.probePredicate(left, "v", OmniJoinEstimator.Predicate.equalHash(value)),
-				estimator.probePredicate(right, "v", OmniJoinEstimator.Predicate.equalHash(value))));
+				estimator.probeStatic(left, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				estimator.probeStatic(right, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
 
 		assertTrue(estimator.estimateRows(intersection) > 0.0d,
 				"Non-empty source samples with zero retained overlap should not become a trusted zero");
@@ -194,10 +200,10 @@ class OmniJoinEstimatorTest {
 	@Test
 	void serializedPayloadKeepsOnlySampledWitnessWeights() throws Exception {
 		OmniJoinEstimator estimator = newEstimator(64, 1, 8);
-		OmniJoinEstimator.Relation relation = estimator.relation("large");
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
 		long value = OmniJoinEstimator.stableHash("shared-value");
 		for (long id = 1; id <= 10_000; id++) {
-			relation.updateHash("v", value, id, 1.0d);
+			relation.updateStatic(ATTR_P, value, id, 1.0d);
 		}
 
 		byte[] payload = estimator.toByteArray();
@@ -209,21 +215,21 @@ class OmniJoinEstimatorTest {
 	@Test
 	void persistedWeightsAreLoadedOnDemand() throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation relation = writer.relation("events");
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
 		long codeA = OmniJoinEstimator.stableHash("A");
 		long codeB = OmniJoinEstimator.stableHash("B");
-		relation.updateHash("code", codeA, OmniJoinEstimator.stableHash("event:1"), 1.0d);
-		relation.updateHash("code", codeB, OmniJoinEstimator.stableHash("event:2"), 1.0d);
+		relation.updateStatic(ATTR_P, codeA, OmniJoinEstimator.stableHash("event:1"), 1.0d);
+		relation.updateStatic(ATTR_P, codeB, OmniJoinEstimator.stableHash("event:2"), 1.0d);
 
 		OmniJoinEstimator reader = newEstimator(64, 4, 64);
 		reader.loadFromByteArray(writer.toByteArray());
-		OmniJoinEstimator.Relation loadedRelation = reader.relation("events");
-		Object loadedAttribute = attributeIndex(loadedRelation, "code");
+		OmniJoinEstimator.Relation loadedRelation = reader.relation(OmniRelation.STATEMENT);
+		Object loadedAttribute = staticAttributeIndex(loadedRelation, ATTR_P);
 
 		assertEquals(0, loadedWeightMapSize(loadedAttribute),
 				"Persisted Omni load should not eagerly materialize witness weight maps");
 
-		OmniWitnessSet witnesses = reader.probePredicate(loadedRelation, "code",
+		OmniWitnessSet witnesses = reader.probeStatic(loadedRelation, ATTR_P,
 				OmniJoinEstimator.Predicate.equalHash(codeA));
 
 		assertEquals(1.0d, reader.estimateRows(witnesses), 0.0d);
@@ -232,28 +238,56 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void predicateAndPredicateContextAttributesPersistSeparately() throws Exception {
+		OmniJoinEstimator writer = newEstimator(64, 4, 64);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.EDGE_FORWARD);
+		long predicateHash = OmniJoinEstimator.stableHash("urn:p");
+		long contextHash = OmniJoinEstimator.stableHash("urn:g");
+		long subjectHash = OmniJoinEstimator.stableHash("urn:s");
+		long objectHash = OmniJoinEstimator.stableHash("urn:o");
+		long contextualObjectHash = OmniJoinEstimator.stableHash("urn:o:contextual");
+
+		relation.updatePredicate(predicateHash, subjectHash, objectHash, 1.0d);
+		relation.updatePredicateContext(predicateHash, contextHash, subjectHash, contextualObjectHash, 1.0d);
+
+		OmniJoinEstimator reader = newEstimator(64, 4, 64);
+		reader.loadFromByteArray(writer.toByteArray());
+		OmniJoinEstimator.Relation loadedRelation = reader.relation(OmniRelation.EDGE_FORWARD);
+
+		OmniWitnessSet predicateOnly = reader.probePredicate(loadedRelation, predicateHash,
+				OmniJoinEstimator.Predicate.equalHash(subjectHash));
+		OmniWitnessSet predicateAndContext = reader.probePredicateContext(loadedRelation, predicateHash, contextHash,
+				OmniJoinEstimator.Predicate.equalHash(subjectHash));
+
+		assertTrue(predicateOnly.containsHash(objectHash));
+		assertFalse(predicateOnly.containsHash(contextualObjectHash));
+		assertTrue(predicateAndContext.containsHash(contextualObjectHash));
+		assertFalse(predicateAndContext.containsHash(objectHash));
+	}
+
+	@Test
 	void mappedSnapshotProbeDoesNotMaterializeBaseWitnessMaps(@org.junit.jupiter.api.io.TempDir Path tempDir)
 			throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation relation = writer.relation("events");
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
 		long codeA = OmniJoinEstimator.stableHash("A");
 		long codeB = OmniJoinEstimator.stableHash("B");
 		long event1 = OmniJoinEstimator.stableHash("event:1");
-		relation.updateHash("code", codeA, event1, 1.0d);
-		relation.updateHash("code", codeB, OmniJoinEstimator.stableHash("event:2"), 1.0d);
+		relation.updateStatic(ATTR_P, codeA, event1, 1.0d);
+		relation.updateStatic(ATTR_P, codeB, OmniJoinEstimator.stableHash("event:2"), 1.0d);
 
 		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
 			store.writeSnapshot((byte) 0, writer, 7L);
 
 			OmniJoinEstimator reader = newEstimator(64, 4, 64);
 			reader.loadMappedSnapshot(store.openSnapshot((byte) 0));
-			OmniJoinEstimator.Relation loadedRelation = reader.relation("events");
-			Object loadedAttribute = attributeIndex(loadedRelation, "code");
+			OmniJoinEstimator.Relation loadedRelation = reader.relation(OmniRelation.STATEMENT);
+			Object loadedAttribute = staticAttributeIndex(loadedRelation, ATTR_P);
 
 			assertEquals(0, loadedWeightMapSize(loadedAttribute),
 					"Mapped Omni load must not create base witness maps");
 
-			OmniWitnessSet witnesses = reader.probePredicate(loadedRelation, "code",
+			OmniWitnessSet witnesses = reader.probeStatic(loadedRelation, ATTR_P,
 					OmniJoinEstimator.Predicate.equalHash(codeA));
 
 			assertEquals(1.0d, reader.estimateRows(witnesses), 0.0d);
@@ -266,22 +300,25 @@ class OmniJoinEstimatorTest {
 	@Test
 	void clearClosesMappedSnapshotArena(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
-		OmniJoinEstimator.Relation relation = writer.relation("events");
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
 		long codeA = OmniJoinEstimator.stableHash("A");
 		long event1 = OmniJoinEstimator.stableHash("event:1");
-		relation.updateHash("code", codeA, event1, 1.0d);
+		relation.updateStatic(ATTR_P, codeA, event1, 1.0d);
 
 		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
 			store.writeSnapshot((byte) 0, writer, 7L);
 			MappedOmniJoinSnapshot snapshot = store.openSnapshot((byte) 0);
 			MappedWitnessIndex mappedIndex = snapshot.attributes()
-					.get("events")
-					.get("code");
+					.get(OmniRelation.STATEMENT)
+					.get(OmniAttributeRef.staticAttribute(ATTR_P));
+			assertNotNull(mappedIndex);
 
 			OmniJoinEstimator reader = newEstimator(64, 4, 64);
 			reader.loadMappedSnapshot(snapshot);
-			assertEquals(1.0d, reader.estimateRows(reader.probePredicate(reader.relation("events"), "code",
-					OmniJoinEstimator.Predicate.equalHash(codeA))), 0.0d);
+			assertEquals(1.0d,
+					reader.estimateRows(reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+							OmniJoinEstimator.Predicate.equalHash(codeA))),
+					0.0d);
 
 			reader.clear();
 
@@ -294,12 +331,11 @@ class OmniJoinEstimatorTest {
 		return new OmniJoinEstimator(width, rows, nominalEntries, SEED);
 	}
 
-	private static Object attributeIndex(OmniJoinEstimator.Relation relation, String attribute) throws Exception {
-		Field attributesField = OmniJoinEstimator.Relation.class.getDeclaredField("attributes");
+	private static Object staticAttributeIndex(OmniJoinEstimator.Relation relation, byte attribute) throws Exception {
+		Field attributesField = OmniJoinEstimator.Relation.class.getDeclaredField("staticAttributes");
 		attributesField.setAccessible(true);
-		@SuppressWarnings("unchecked")
-		Map<String, ?> attributes = (Map<String, ?>) attributesField.get(relation);
-		return attributes.get(attribute);
+		Object[] attributes = (Object[]) attributesField.get(relation);
+		return attributes[attribute & 0xff];
 	}
 
 	private static int loadedWeightMapSize(Object attributeIndex) throws Exception {

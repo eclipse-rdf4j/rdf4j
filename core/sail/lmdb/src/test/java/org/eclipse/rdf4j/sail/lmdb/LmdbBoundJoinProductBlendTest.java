@@ -278,7 +278,7 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
-	void boundJoinProductCarriesOmniCompositeSurfaceEvidence() {
+	void boundJoinProductCarriesCountMinCompositeSurfaceEvidence() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI leftPredicate = vf.createIRI("urn:omni:lmdb:left");
@@ -293,7 +293,7 @@ class LmdbBoundJoinProductBlendTest {
 		source.add(st("urn:omni:lmdb:enc:3", rightPredicate, otherDrug));
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0));
 		estimator.rebuild();
@@ -311,15 +311,15 @@ class LmdbBoundJoinProductBlendTest {
 				.orElseThrow();
 
 		assertNotNull(productEstimate);
-		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
-		assertNotNull(omniEvidence, "Bound-product estimates must retain OMNI sketch-surface evidence");
-		assertEquals("omni-join-estimator", omniEvidence.source());
-		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
-		assertEquals("omni-join-estimator", factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
+		JoinFrequencyEstimate countMinEvidence = productEstimate.countMinEvidence();
+		assertNotNull(countMinEvidence, "Bound-product estimates must retain Count-Min sketch-surface evidence");
+		assertEquals("countmin-sketch-surface", countMinEvidence.source());
+		assertEquals("countmin-dual", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
+		assertEquals("countmin-sketch-surface", factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
 	}
 
 	@Test
-	void boundJoinProductCarriesOmniThreeWayCompositeSurfaceEvidence() {
+	void boundJoinProductCarriesCountMinThreeWayCompositeSurfaceEvidence() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI leftPredicate = vf.createIRI("urn:omni:lmdb:three-way:left");
@@ -338,7 +338,7 @@ class LmdbBoundJoinProductBlendTest {
 		source.add(st("urn:omni:lmdb:three-way:enc:3", rightPredicate, otherDrug));
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0));
 		estimator.rebuild();
@@ -358,11 +358,12 @@ class LmdbBoundJoinProductBlendTest {
 				.orElseThrow();
 
 		assertNotNull(productEstimate);
-		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
-		assertNotNull(omniEvidence, "Three-way bound-product estimates must retain OMNI witness evidence");
-		assertEquals("omni-join-estimator", omniEvidence.source());
-		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
-		assertEquals("omni-join-estimator", factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
+		JoinFrequencyEstimate countMinEvidence = productEstimate.countMinEvidence();
+		assertNotNull(countMinEvidence, "Three-way bound-product estimates must retain Count-Min evidence");
+		assertEquals("countmin-sketch-surface", countMinEvidence.source());
+		assertEquals("countmin-dual", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
+		assertEquals("tuple_sketch_surface_product",
+				factorEstimate.getStringMetrics().get("plannedSketchEstimateSource"));
 	}
 
 	@Test
