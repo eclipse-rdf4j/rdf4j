@@ -3920,7 +3920,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
@@ -3942,7 +3942,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static SketchBasedJoinEstimator.Config productionThemeConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withSubjectBucketCount(4096)
 				.withPredicateBucketCount(64)
 				.withObjectBucketCount(4096)

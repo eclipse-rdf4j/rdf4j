@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -257,6 +258,109 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(estimate.upperBoundRows() >= 4.0d);
 		assertTrue(countMinSketchCount(reader) > 0,
 				"Lazy COUNT_MIN_DUAL reads should restore persisted Count-Min side state");
+	}
+
+	@Test
+	void omniStrategyDoesNotPersistLegacyOmniFrequencySideState(@TempDir Path tempDir) throws Exception {
+		Resource s1 = VF.createIRI("urn:omni-lazy:s1");
+		Resource s2 = VF.createIRI("urn:omni-lazy:s2");
+		Resource s3 = VF.createIRI("urn:omni-lazy:s3");
+		IRI p1 = VF.createIRI("urn:omni-lazy:p1");
+		IRI p2 = VF.createIRI("urn:omni-lazy:p2");
+		Value o1 = VF.createIRI("urn:omni-lazy:o1");
+		Value o2 = VF.createIRI("urn:omni-lazy:o2");
+
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(s1, p1, o1));
+		sourceStore.add(st(s2, p1, o1));
+		sourceStore.add(st(s1, p2, o2));
+		sourceStore.add(st(s3, p2, o2));
+
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		assertEquals(0, omniSketchCount(writer), "OMNI writer should not build legacy OmniFrequencySketch side state");
+		assertTrue(omniJoinEstimatorRelationCount(writer) > 0, "OMNI writer should build join-estimator side state");
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+		SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(
+				new DataInputStream(
+						new ByteArrayInputStream(Files.readAllBytes(storeDirectory.resolve("metadata.bin")))));
+		assertNull(metadata.omniJoinEstimatorRefA, "OMNI should not persist join side-state as framed payload A");
+		assertNull(metadata.omniJoinEstimatorRefB, "OMNI should not persist join side-state as framed payload B");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/manifest.bin")),
+				"OMNI should persist join side-state through the mapped witness manifest");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-a.dat"))
+				|| Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-b.dat")),
+				"OMNI should persist witness postings in a slot data file");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+		assertEquals(0, omniSketchCount(reader), "Lazy startup should not heap-load Omni side state");
+
+		assertEquals(1.0d,
+				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
+						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+				0.0d);
+		assertEquals(0, omniSketchCount(reader), "Lazy OMNI reads should not restore legacy OmniFrequencySketch state");
+		assertTrue(omniJoinEstimatorRelationCount(reader) > 0,
+				"Lazy OMNI reads should restore persisted Omni join-estimator side state");
+		MappedWitnessIndex mappedIndex = firstMappedOmniWitnessIndex(reader);
+
+		reader.close();
+
+		assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(0L).next(),
+				"Closing the estimator should release its mapped Omni witness snapshot");
+	}
+
+	@Test
+	void omniStrategyLazyLoadRestoresOmniJoinEstimatorSideState(@TempDir Path tempDir) throws Exception {
+		IRI prescribedDrug = VF.createIRI("urn:omni-join-lazy:prescribedDrug");
+		IRI billedDrug = VF.createIRI("urn:omni-join-lazy:billedDrug");
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		for (int encounterIndex = 0; encounterIndex < 16; encounterIndex++) {
+			Resource encounter = VF.createIRI("urn:omni-join-lazy:encounter:" + encounterIndex);
+			for (int drugIndex = 0; drugIndex < 4; drugIndex++) {
+				Resource drug = VF.createIRI("urn:omni-join-lazy:drug:" + drugIndex);
+				int prescribedRows = encounterIndex < 4 && drugIndex < 2 ? 5 : 1;
+				int billedRows = encounterIndex < 4 && drugIndex < 2 ? 3 : (drugIndex == 0 ? 1 : 0);
+				for (int row = 0; row < prescribedRows; row++) {
+					sourceStore.add(st(encounter, prescribedDrug, drug,
+							VF.createIRI("urn:omni-join-lazy:prescribed-context:" + row)));
+				}
+				for (int row = 0; row < billedRows; row++) {
+					sourceStore.add(st(encounter, billedDrug, drug,
+							VF.createIRI("urn:omni-join-lazy:billed-context:" + row)));
+				}
+			}
+		}
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("encounter"),
+				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
+		StatementPattern right = new StatementPattern(Var.of("encounter"),
+				Var.of("billedDrug", billedDrug), Var.of("drug"));
+		JoinFrequencyEstimate writerEstimate = writer.estimateSketchJoinSurface(List.of(left, right), "encounter");
+		assertNotNull(writerEstimate, "Writer should expose an Omni composite witness surface");
+		assertEquals("omni-join-estimator", writerEstimate.source());
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+
+		JoinFrequencyEstimate readerEstimate = reader.estimateSketchJoinSurface(List.of(left, right), "encounter");
+
+		assertNotNull(readerEstimate, "Lazy OMNI read should restore persisted Omni join estimator side state");
+		assertEquals("omni-join-estimator", readerEstimate.source());
+		assertEquals(writerEstimate.calibratedRows(), readerEstimate.calibratedRows(), 0.0d);
 	}
 
 	@Test
@@ -1502,14 +1606,42 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return count;
 	}
 
-	private static FastAgmsBindingSummary residentSinglePredicateSketch(SketchBasedJoinEstimator estimator,
-			String predicate) throws Exception {
-		Object state = privateFieldValue(estimator, "current");
-		Object singleTriples = privateFieldValue(state, "singleTriples");
-		@SuppressWarnings("unchecked")
-		AtomicReferenceArray<FastAgmsBindingSummary> predicates = (AtomicReferenceArray<FastAgmsBindingSummary>) privateFieldValue(
-				singleTriples, "P");
-		return predicates.get(hash(estimator, predicate));
+	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniSketches = privateFieldValue(current, "omniSketches");
+		Field sketchesField = omniSketches.getClass().getDeclaredField("sketches");
+		sketchesField.setAccessible(true);
+		Object[] sketches = (Object[]) sketchesField.get(omniSketches);
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
+		Map<?, ?> relations = (Map<?, ?>) privateFieldValue(omniJoinEstimator, "relations");
+		return relations.size();
+	}
+
+	private static MappedWitnessIndex firstMappedOmniWitnessIndex(SketchBasedJoinEstimator estimator)
+			throws Exception {
+		Object current = privateFieldValue(estimator, "current");
+		Object omniJoinEstimator = privateFieldValue(current, "omniJoinEstimator");
+		MappedOmniJoinSnapshot snapshot = (MappedOmniJoinSnapshot) privateFieldValue(omniJoinEstimator,
+				"mappedSnapshot");
+		assertNotNull(snapshot, "Expected mapped Omni witness snapshot");
+		return snapshot.attributes()
+				.values()
+				.iterator()
+				.next()
+				.values()
+				.iterator()
+				.next();
 	}
 
 	private static void corruptIndexVersion(Path indexPath) throws Exception {

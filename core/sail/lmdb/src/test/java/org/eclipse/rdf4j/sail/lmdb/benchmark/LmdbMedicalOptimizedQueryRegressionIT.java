@@ -23,12 +23,12 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 
 	@Test
 	@Timeout(180)
-	void medicalQ4RunQueryPlanUsesCascadesCountMinInsteadOfStandardFallback() throws Exception {
+	void medicalQ4RunQueryPlanUsesCascadesOmniInsteadOfStandardFallback() throws Exception {
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 4;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "countmin-dual";
+		state.sketchEstimatorStrategy = "omni";
 
 		state.setup();
 		try {
@@ -39,15 +39,14 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
 					"MEDICAL q4 should exercise the default standard fallback policy\n" + diagnostics);
 			assertFalse(diagnostics.contains("optimizer.cascadesWinner=standard"),
-					"MEDICAL q4 must not fall back to the standard pipeline when sketch evidence is available\n"
+					"MEDICAL q4 must not fall back to the standard pipeline when OMNI join evidence is available\n"
 							+ diagnostics + "\n" + plan);
 			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
-					"MEDICAL q4 should use the Cascades-selected Count-Min-aware physical plan\n"
+					"MEDICAL q4 should use the Cascades-selected OMNI-aware physical plan\n"
 							+ diagnostics + "\n" + plan);
 			assertTrue(
-					plan.contains("plannedSketchStrategy=countmin-dual")
-							|| diagnostics.contains("plannedSketchStrategy=countmin-dual"),
-					"MEDICAL q4 should expose Count-Min sketch evidence in the selected runQuery plan\n"
+					plan.contains("plannedSketchStrategy=omni") || diagnostics.contains("plannedSketchStrategy=omni"),
+					"MEDICAL q4 should expose OMNI sketch evidence in the selected runQuery plan\n"
 							+ diagnostics + "\n" + plan);
 		} finally {
 			state.tearDown();

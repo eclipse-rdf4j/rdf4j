@@ -137,6 +137,10 @@ final class CountMinFrequencySketch implements FrequencySketch, DistributionSket
 		return counters.length * Long.BYTES;
 	}
 
+	static int serializedBytes(int rows, int buckets) {
+		return Integer.BYTES * 5 + Long.BYTES + checkedCounterLength(rows, buckets) * Long.BYTES;
+	}
+
 	long[] countersCopy() {
 		return counters.clone();
 	}

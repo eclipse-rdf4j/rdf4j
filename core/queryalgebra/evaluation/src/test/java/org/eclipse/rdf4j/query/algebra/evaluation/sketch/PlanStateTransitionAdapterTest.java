@@ -156,7 +156,7 @@ class PlanStateTransitionAdapterTest {
 		BagEstimate factorBag = sketchedBag("factor-sketch", "org", orgSketch)
 				.withVariable("person", VariableEstimate.bound(5.0d, 5.0d));
 		JoinFactorCostModel.FactorCostEstimate factorCost = new JoinFactorCostModel.FactorCostEstimate(6.0d,
-				5.0d, Map.of("plannedEstimateSource", "tuple-sketch-factor"), Map.of()).withBag(factorBag);
+				5.0d, Map.of("plannedEstimateSource", "sketch-factor"), Map.of()).withBag(factorBag);
 		PlanState prefix = PlanState.initial(BagEstimate.exact(1.0d, "outer"), Set.of(), Map.of());
 
 		TransitionEstimate transition = new ScalarFactorTransitionEstimator((requestedFactor, boundVars) -> Optional
@@ -372,7 +372,7 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
-	void scalarTransitionUsesPostTransitionTupleProfileWhenAvailable() throws Exception {
+	void scalarTransitionUsesPostTransitionSketchProfileWhenAvailable() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		addRows(store, "person-a", memberOf, "org-a", 10);
@@ -380,7 +380,7 @@ class PlanStateTransitionAdapterTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0)
@@ -408,7 +408,7 @@ class PlanStateTransitionAdapterTest {
 							tupleEstimate);
 
 			assertEquals(tupleEstimate.outputRows(), transition.nextState().estimate().rows(), 1.0e-9d,
-					"Transition state must use the supplied post-transition tuple profile without recomposing it");
+					"Transition state must use the supplied post-transition sketch profile without recomposing it");
 			assertEquals(transition.planCost().finalRows(), transition.nextState().estimate().rows(), 1.0e-9d,
 					"PlanState and JoinCostVector must agree on post-transition rows");
 		} finally {
@@ -417,7 +417,7 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
-	void planStateCarriesTupleSketchEstimateForStatefulTransitions() throws Exception {
+	void planStateCarriesSketchEstimateForStatefulTransitions() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		for (int i = 0; i < 16; i++) {
@@ -427,7 +427,7 @@ class PlanStateTransitionAdapterTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0)
@@ -474,7 +474,7 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
-	void tuplePlanEstimateDoesNotExposeSyntheticProductAsCurrentTupleSketch() throws Exception {
+	void sketchPlanEstimateDoesNotExposeSyntheticProductAsCurrentSketch() throws Exception {
 		IRI memberOf = VF.createIRI("urn:memberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		for (int i = 0; i < 16; i++) {
@@ -484,7 +484,7 @@ class PlanStateTransitionAdapterTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0)
@@ -502,18 +502,18 @@ class PlanStateTransitionAdapterTest {
 
 			assertEquals(tupleEstimate.outputRows(), profile.rows(), 1.0e-9d);
 			assertFalse(hasMultiVariableSketch(profile),
-					"Synthetic product evidence must not masquerade as current tuple/set evidence");
+					"Synthetic product evidence must not masquerade as current sketch/set evidence");
 			assertNotNull(supporting, "Synthetic product evidence should survive as bridge support evidence");
 			assertFalse(supporting.current());
 			assertEquals(EvidenceQuality.COMPOSED_SKETCH, supporting.quality(),
-					"Synthetic product evidence must be lower quality than exact tuple sketch evidence");
+					"Synthetic product evidence must be lower quality than current sketch evidence");
 		} finally {
 			estimator.close();
 		}
 	}
 
 	@Test
-	void tuplePlanVariableEstimatesCarrySketchesIntoBagEstimateMath() throws Exception {
+	void sketchPlanVariableEstimatesCarrySketchesIntoBagEstimateMath() throws Exception {
 		IRI leftPredicate = VF.createIRI("urn:leftMemberOf");
 		IRI rightPredicate = VF.createIRI("urn:rightMemberOf");
 		StubSketchStatementSource store = new StubSketchStatementSource();
@@ -528,7 +528,7 @@ class PlanStateTransitionAdapterTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0)
@@ -540,21 +540,21 @@ class PlanStateTransitionAdapterTest {
 			SketchBasedJoinEstimator.TuplePlanEstimate rightTuple = estimator
 					.planEstimateForJoinOrdering(pattern("right", rightPredicate, "org"), Set.of());
 			BagEstimate leftBag = new BagEstimate(leftTuple.outputRows(), leftTuple.outputRows(), 0.0d, 1.0d,
-					"left-tuple", leftTuple.variableEstimates(), Map.of(), Map.of());
+					"left-sketch", leftTuple.variableEstimates(), Map.of(), Map.of());
 			BagEstimate rightBag = new BagEstimate(rightTuple.outputRows(), rightTuple.outputRows(), 0.0d, 1.0d,
-					"right-tuple", rightTuple.variableEstimates(), Map.of(), Map.of());
+					"right-sketch", rightTuple.variableEstimates(), Map.of(), Map.of());
 
 			DistributionSketch leftSketch = leftBag.variable("org").sketch();
 			DistributionSketch rightSketch = rightBag.variable("org").sketch();
-			assertNotNull(leftSketch, "TuplePlanEstimate variable estimates must expose the left frequency sketch");
-			assertNotNull(rightSketch, "TuplePlanEstimate variable estimates must expose the right frequency sketch");
+			assertNotNull(leftSketch, "Sketch plan estimates must expose the left frequency sketch");
+			assertNotNull(rightSketch, "Sketch plan estimates must expose the right frequency sketch");
 			OptionalDouble sketchRows = leftSketch.innerProduct(rightSketch);
 			assertTrue(sketchRows.isPresent(), "BagEstimate join math needs a frequency-sketch inner product");
 
 			BagEstimate joined = EstimateMath.innerJoin(leftBag, rightBag, Set.of("org"));
 
 			assertEquals(sketchRows.getAsDouble(), joined.rows(), 1.0e-9d,
-					"BagEstimate inner join should consume the sketch propagated from TuplePlanEstimate");
+					"BagEstimate inner join should consume the sketch propagated from the plan estimate");
 		} finally {
 			estimator.close();
 		}

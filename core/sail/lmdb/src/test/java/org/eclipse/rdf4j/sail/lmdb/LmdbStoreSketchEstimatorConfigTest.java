@@ -116,7 +116,7 @@ class LmdbStoreSketchEstimatorConfigTest {
 		try {
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 
-			assertThat(estimator.getSketchStrategy()).isEqualTo(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL);
+			assertThat(estimator.getSketchStrategy()).isEqualTo(SketchBasedJoinEstimator.SketchStrategy.OMNI);
 			assertThat(longField(estimator, "zeroIntersectionRowBudget")).isPositive();
 			assertThat(intField(estimator, "zeroIntersectionSampleSize")).isZero();
 			assertThat(intField(estimator, "zeroIntersectionExactDistinctLimit")).isZero();

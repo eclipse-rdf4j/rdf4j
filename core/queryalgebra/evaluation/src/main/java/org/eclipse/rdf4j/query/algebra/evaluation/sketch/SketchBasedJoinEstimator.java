@@ -266,14 +266,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					.replace("_", "")
 					.toLowerCase(Locale.ROOT);
 			return switch (normalized) {
+			case "omni" -> OMNI;
+			case "fastagms" -> FAST_AGMS;
 			case "countmin" -> COUNT_MIN;
-			case "countmindual", "omni", "fastagms", "tuple", "joinsketch" -> COUNT_MIN_DUAL;
+			case "countmindual", "tuple", "joinsketch" -> COUNT_MIN_DUAL;
 			default -> runtimeStrategy(fallback);
 			};
 		}
 
 		private static SketchStrategy runtimeStrategy(SketchStrategy strategy) {
-			if (strategy == null || strategy == COUNT_MIN_DUAL || strategy == COUNT_MIN) {
+			if (strategy == null) {
+				return null;
+			}
+			if (strategy == OMNI || strategy == FAST_AGMS || strategy == COUNT_MIN_DUAL || strategy == COUNT_MIN) {
 				return strategy;
 			}
 			return COUNT_MIN_DUAL;
@@ -2386,8 +2391,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return SketchEstimatorPersistenceStore.SketchFileChunks.of(
 				sketchPartChunkBytes(globalBytes, 1, frameBytes),
 				sketchPartChunkBytes(singlesBytes, largeKindTargetFiles, frameBytes),
-					sketchPartChunkBytes(pairsBytes, largeKindTargetFiles, frameBytes),
-					omniJoinBytes);
+				sketchPartChunkBytes(pairsBytes, largeKindTargetFiles, frameBytes),
+				omniJoinBytes);
 	}
 
 	private static long nativeSketchFrameBytes(State state) {
@@ -15986,7 +15991,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		String defaultContextString = "urn:default-context";
 		boolean roundJoinEstimates = true;
 		boolean contextPairSketchesEnabled = true;
-		SketchStrategy sketchStrategy = SketchStrategy.COUNT_MIN_DUAL;
+		SketchStrategy sketchStrategy = SketchStrategy.OMNI;
 
 		int churnSampleMin = 128;
 		int churnSampleMax = 4096;

@@ -130,10 +130,10 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void sketchEstimatorStrategyDefaultsToCountMinDual() {
+	void sketchEstimatorStrategyDefaultsToOmni() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
-		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("countmin-dual");
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
 	}
 
 	@Test
@@ -337,26 +337,34 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "omni", "fastagms", "tuple", "joinsketch", "countmin-dual" })
-	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
+	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual" })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
 		testParseAndExport(
 				SKETCH_ESTIMATOR_STRATEGY,
 				Values.literal(strategy),
 				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
-				"countmin-dual",
-				false
+				strategy,
+				!"omni".equals(strategy)
 		);
 	}
 
-	@Test
-	void testThatLmdbStoreConfigParsesAndExportsCountMinSketchEstimatorStrategy() {
-		testParseAndExport(
-				SKETCH_ESTIMATOR_STRATEGY,
-				Values.literal("countmin"),
-				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
-				"countmin",
-				true
-		);
+	@ParameterizedTest
+	@ValueSource(strings = { "tuple", "joinsketch" })
+	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal(strategy))
+				.build();
+
+		lmdbStoreConfig.parse(configModel, implNode);
+		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("countmin-dual");
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY,
+				Values.literal("countmin-dual"))).isTrue();
 	}
 
 	@Test

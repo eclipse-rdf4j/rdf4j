@@ -549,7 +549,7 @@ class LmdbSailStore implements SailStore {
 				.withZeroIntersectionRowBudget(SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET)
 				.withZeroIntersectionSampleSize(0)
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
-						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL));
+						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.OMNI));
 		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
 			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());
 		}

@@ -183,7 +183,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	}
 
 	@Test
-	void plannerUsesTupleSketchDotProductForRareOverlap() throws Exception {
+	void plannerUsesCountMinDotProductForRareOverlap() throws Exception {
 		PropertyState properties = PropertyState.capture(
 				EXACT_LIMIT_PROPERTY,
 				SKEW_RATIO_PROPERTY,
@@ -200,9 +200,10 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 			double relativeError = Math.abs(plannerJoinEstimate - fixture.actualJoinRows) / fixture.actualJoinRows;
 
 			assertTrue(plannerJoinEstimate > 0.0d,
-					() -> "Planner should use tuple multiplicity dot products. actual=" + fixture.actualJoinRows);
+					() -> "Planner should use Count-Min multiplicity dot products. actual="
+							+ fixture.actualJoinRows);
 			assertTrue(relativeError <= 0.35d,
-					() -> "Sampled tuple-sketch rare-overlap estimate should stay within 35% relative error. estimate="
+					() -> "Sampled Count-Min rare-overlap estimate should stay within 35% relative error. estimate="
 							+ plannerJoinEstimate + ", actual=" + fixture.actualJoinRows + ", error=" + relativeError);
 		} finally {
 			properties.restore();
@@ -267,7 +268,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(512)
 				.withSubjectBucketCount(128)
 				.withPredicateBucketCount(128)

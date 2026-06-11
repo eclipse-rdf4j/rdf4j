@@ -159,6 +159,8 @@ final class SketchEstimatorMetadata {
 				.replace("_", "")
 				.toLowerCase(Locale.ROOT);
 		return switch (normalized) {
+		case "omni" -> SketchBasedJoinEstimator.SketchStrategy.OMNI;
+		case "fastagms" -> SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS;
 		case "countmin" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN;
 		case "countmindual" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL;
 		default -> null;
