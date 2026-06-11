@@ -131,14 +131,14 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({
 				"MEDICAL_RECORDS",
-//				"SOCIAL_MEDIA",
-//				"LIBRARY",
-//				"ENGINEERING",
-//				"HIGHLY_CONNECTED",
-//				"TRAIN",
-//				"ELECTRICAL_GRID",
-//				"PHARMA",
-//				"SPARSE"
+				"SOCIAL_MEDIA",
+				"LIBRARY",
+				"ENGINEERING",
+				"HIGHLY_CONNECTED",
+				"TRAIN",
+				"ELECTRICAL_GRID",
+				"PHARMA",
+				"SPARSE"
 		})
 		public String themeName;
 
