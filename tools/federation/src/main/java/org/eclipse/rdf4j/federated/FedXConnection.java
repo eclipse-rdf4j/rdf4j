@@ -297,12 +297,19 @@ public class FedXConnection extends AbstractSailConnection {
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 
-		Dataset dataset = new SimpleDataset();
-		FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
-		QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
-				dataset);
-		federationContext.getMonitoringService().monitorQuery(queryInfo);
-		return strategy.getStatements(queryInfo, subj, pred, obj, contexts);
+		try {
+			Dataset dataset = new SimpleDataset();
+			FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
+			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
+					dataset);
+			federationContext.getMonitoringService().monitorQuery(queryInfo);
+			return strategy.getStatements(queryInfo, subj, pred, obj, contexts);
+		} catch (Exception e) {
+			if (e instanceof SailException se) {
+				throw se;
+			}
+			throw new SailException(e);
+		}
 	}
 
 	@Override
@@ -316,9 +323,10 @@ public class FedXConnection extends AbstractSailConnection {
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			return strategy.hasStatements(queryInfo, subj, pred, obj, contexts);
 
-		} catch (RuntimeException e) {
-			throw e;
 		} catch (Exception e) {
+			if (e instanceof SailException se) {
+				throw se;
+			}
 			if (e instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
 			}
@@ -330,7 +338,10 @@ public class FedXConnection extends AbstractSailConnection {
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		try {
 			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);
-		} catch (RepositoryException e) {
+		} catch (Exception e) {
+			if (e instanceof SailException se) {
+				throw se;
+			}
 			throw new SailException(e);
 		}
 	}
