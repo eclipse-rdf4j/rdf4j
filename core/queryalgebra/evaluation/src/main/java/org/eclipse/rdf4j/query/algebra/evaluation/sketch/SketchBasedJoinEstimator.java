@@ -2956,9 +2956,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		long elapsedSinceLastPrintMillis = Math.max(1L, nowMillis - lastPrintedMillis);
 		long ingestedSinceLastPrint = ingestedStatements - lastPrintedStatements;
 		long statementsPerSecond = Math.round(ingestedSinceLastPrint * 1000.0d / elapsedSinceLastPrintMillis);
-		System.out.println("RdfJoinEstimator: Rebuilding " + targetBuffer + ", ingested " + ingestedStatements
-				+ " statements into sketches, " + statementsPerSecond
-				+ " statements/s since last print. Elapsed: " + ((nowMillis - startMillis) / 1000L) + " s.");
+		logger.info(
+				"RdfJoinEstimator: Rebuilding {}, ingested {} statements into sketches, {} statements/s since last print. Elapsed: {} s.",
+				targetBuffer, ingestedStatements, statementsPerSecond, (nowMillis - startMillis) / 1000L);
 	}
 
 	private long stopRebuildEarly(State target, String targetBuffer, byte targetSlot, long seen, long startMillis,

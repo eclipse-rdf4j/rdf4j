@@ -26,6 +26,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
@@ -1532,6 +1533,25 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertFalse(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(100_000L, 0L, 9_999L, 0L));
 		assertTrue(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(100_000L, 0L, 10_000L, 0L));
 		assertTrue(SketchBasedJoinEstimator.shouldPrintRebuildThroughput(225_000L, 100_000L, 21_000L, 10_000L));
+	}
+
+	@Test
+	void rebuildThroughputProgressDoesNotWriteToStdout() throws Exception {
+		LoggerFactory.getLogger(SketchBasedJoinEstimator.class).isWarnEnabled();
+		ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+		PrintStream originalOut = System.out;
+		try (PrintStream capture = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+			System.setOut(capture);
+
+			Method printRebuildThroughput = SketchBasedJoinEstimator.class.getDeclaredMethod("printRebuildThroughput",
+					String.class, long.class, long.class, long.class, long.class, long.class);
+			printRebuildThroughput.setAccessible(true);
+			printRebuildThroughput.invoke(null, "buffer-A", 100_000L, 0L, 10_000L, 0L, 0L);
+		} finally {
+			System.setOut(originalOut);
+		}
+
+		assertEquals("", stdout.toString(StandardCharsets.UTF_8));
 	}
 
 	@Test
