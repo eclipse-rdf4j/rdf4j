@@ -1,0 +1,13 @@
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.memory.MemorySparqlBindTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.248 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.memory.MemorySparqlBindTest
+org.eclipse.rdf4j.sail.memory.MemorySparqlBindTest.testBind -- Time elapsed: 0.241 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <[http://www.example.com/resource/Bob]> but was: <[http://www.example.com/resource/Carol, "Bob Jones", https://schema.org/CreativeWork, http://www.example.com/resource/Alice, http://www.example.com/resource/Dave, "A Benchmark Suite for Distributed Systems", http://www.example.com/resource/CompanyA, http://www.example.com/resource/Paper4, http://www.example.com/resource/Paper2, http://www.example.com/resource/Paper3, https://schema.org/Person, http://www.example.com/resource/Bob, http://www.example.com/resource/UniversityA]>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:184)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:179)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1188)
+	at org.eclipse.rdf4j.sail.memory.MemorySparqlBindTest.testBind(MemorySparqlBindTest.java:98)
