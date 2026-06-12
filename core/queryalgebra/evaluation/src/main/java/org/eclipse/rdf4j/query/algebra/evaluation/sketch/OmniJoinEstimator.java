@@ -271,7 +271,7 @@ final class OmniJoinEstimator {
 			if (probe.getCount() > 0L || probe.getEstimate() > 0.0d) {
 				sawPopulation = true;
 			}
-			double valueProbability = probe.getSamplingProbability();
+			double valueProbability = index.effectiveSamplingProbability(valueHash, probe);
 			if (!index.addRetainedWeights(valueHash, probe.getIdentifierHashes(), 1.0d, weights)) {
 				probability = Math.min(probability, valueProbability);
 				minDetectable = Math.max(minDetectable, probe.getMinimumDetectableEstimate());
@@ -323,7 +323,7 @@ final class OmniJoinEstimator {
 			long joinValueHash = input.hashAt(i);
 			double inputWeight = input.weightAt(i);
 			OmniSketchProbeResult probe = index.sketch.probe(OmniSketchPredicate.equalToHash(joinValueHash));
-			outputProbability = multiplyProbability(outputProbability, probe.getSamplingProbability());
+			outputProbability = Math.min(outputProbability, index.effectiveSamplingProbability(joinValueHash, probe));
 			minDetectable = Math.max(minDetectable, probe.getMinimumDetectableEstimate());
 			if (probe.getCount() > 0L || probe.getEstimate() > 0.0d) {
 				sawPopulation = true;
@@ -421,16 +421,6 @@ final class OmniJoinEstimator {
 			return MurmurHash3.hash(0L, TUPLE_SEED)[0];
 		}
 		return MurmurHash3.hash(values, 0, values.length, TUPLE_SEED)[0];
-	}
-
-	private static double multiplyProbability(double left, double right) {
-		if (!Double.isFinite(left) || left <= 0.0d) {
-			return 0.0d;
-		}
-		if (!Double.isFinite(right) || right <= 0.0d) {
-			return 0.0d;
-		}
-		return Math.min(1.0d, left * right);
 	}
 
 	private static int nextPowerOfTwo(int value) {
@@ -564,7 +554,9 @@ final class OmniJoinEstimator {
 			int offset = staticOffset(attributeId);
 			AttributeIndex index = staticAttributes[offset];
 			if (index == null) {
-				index = new AttributeIndex(width, rows, nominalEntries, seed);
+				OmniAttributeRef attribute = OmniAttributeRef.staticAttribute(attributeId);
+				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
+						compactLargePostings(attribute));
 				staticAttributes[offset] = index;
 			}
 			return index;
@@ -573,7 +565,9 @@ final class OmniJoinEstimator {
 		private AttributeIndex attributePredicate(long predicateHash) {
 			AttributeIndex index = predicateAttributes.get(predicateHash);
 			if (index == null) {
-				index = new AttributeIndex(width, rows, nominalEntries, seed);
+				OmniAttributeRef attribute = OmniAttributeRef.predicate(predicateHash);
+				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
+						compactLargePostings(attribute));
 				predicateAttributes.put(predicateHash, index);
 			}
 			return index;
@@ -587,10 +581,27 @@ final class OmniJoinEstimator {
 			}
 			AttributeIndex index = byContext.get(contextHash);
 			if (index == null) {
-				index = new AttributeIndex(width, rows, nominalEntries, seed);
+				OmniAttributeRef attribute = OmniAttributeRef.predicateContext(predicateHash, contextHash);
+				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
+						compactLargePostings(attribute));
 				byContext.put(contextHash, index);
 			}
 			return index;
+		}
+
+		private boolean exactPostings(OmniAttributeRef attribute) {
+			return name == OmniRelation.EDGE_FORWARD || name == OmniRelation.EDGE_REVERSE
+					|| isSubjectStarPredicateAttribute(attribute);
+		}
+
+		private boolean compactLargePostings(OmniAttributeRef attribute) {
+			return !isSubjectStarPredicateAttribute(attribute);
+		}
+
+		private boolean isSubjectStarPredicateAttribute(OmniAttributeRef attribute) {
+			return name == OmniRelation.SUBJECT_STAR && attribute != null
+					&& attribute.kind() == OmniAttributeRef.KIND_STATIC
+					&& attribute.staticId() == OmniAttributeRef.component(1);
 		}
 
 		private boolean hasAttributes() {
@@ -647,12 +658,19 @@ final class OmniJoinEstimator {
 		private final UpdateOmniSketch sketch;
 		private MappedWitnessIndex mappedBase;
 		private Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash;
+		private final Long2DoubleOpenHashMap totalWeightByValueHash = new Long2DoubleOpenHashMap();
+		private final LongOpenHashSet compactedValueHashes = new LongOpenHashSet();
 		private LazyWeightPayload lazyWeights;
 		private final int compactThreshold;
+		private final boolean exactSmallPostings;
+		private final boolean compactLargePostings;
 
-		private AttributeIndex(int width, int rows, int nominalEntries, long seed) {
+		private AttributeIndex(int width, int rows, int nominalEntries, long seed, boolean exactSmallPostings,
+				boolean compactLargePostings) {
 			int effectiveNominalEntries = Math.max(1, nominalEntries);
 			compactThreshold = Math.max(16, effectiveNominalEntries * 2);
+			this.exactSmallPostings = exactSmallPostings;
+			this.compactLargePostings = compactLargePostings;
 			this.sketch = OmniSketch.builder()
 					.setWidth(width)
 					.setNumRows(rows)
@@ -662,18 +680,27 @@ final class OmniJoinEstimator {
 		}
 
 		private void updateHash(long valueHash, long identifierHash, double estimatedMultiplicity) {
+			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
+				return;
+			}
+			totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
+			boolean retained = sketch.updateHashAndCheckRetained(valueHash, identifierHash);
 			Long2DoubleOpenHashMap weights = weightsForRead(valueHash);
 			if (weights != null && weights.containsKey(identifierHash)) {
 				weights.addTo(identifierHash, estimatedMultiplicity);
 				return;
 			}
-			if (!sketch.updateHashAndCheckRetained(valueHash, identifierHash)) {
+			if (!exactSmallPostings && !retained) {
+				return;
+			}
+			if (compactedValueHashes.contains(valueHash) && !retained) {
 				return;
 			}
 			weights = weightsForValue(valueHash);
 			weights.addTo(identifierHash, estimatedMultiplicity);
-			if (weights.size() > compactThreshold) {
+			if (compactLargePostings && weights.size() > compactThreshold) {
 				compactWeightsForValue(valueHash, weights);
+				compactedValueHashes.add(valueHash);
 			}
 		}
 
@@ -681,6 +708,7 @@ final class OmniJoinEstimator {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
+			totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
 			sketch.updateHash(valueHash, identifierHash);
 			weightsForValue(valueHash).put(identifierHash, estimatedMultiplicity);
 		}
@@ -694,6 +722,8 @@ final class OmniJoinEstimator {
 
 		private void loadMappedBase(MappedWitnessIndex mappedBase) {
 			this.mappedBase = mappedBase;
+			totalWeightByValueHash.clear();
+			compactedValueHashes.clear();
 			weightsByValueHash = null;
 			lazyWeights = null;
 			sketch.reset();
@@ -772,17 +802,49 @@ final class OmniJoinEstimator {
 
 		private boolean addRetainedWeights(long valueHash, long[] retainedHashes, double multiplier,
 				Long2DoubleOpenHashMap outputWeights) {
-			if (retainedHashes == null || retainedHashes.length == 0 || outputWeights == null
-					|| !Double.isFinite(multiplier) || multiplier <= 0.0d) {
+			if (outputWeights == null || !Double.isFinite(multiplier) || multiplier <= 0.0d) {
 				return false;
 			}
-			boolean added = false;
 			if (lazyWeights != null) {
 				weightsForRead(valueHash);
 			}
-			added |= addCursorRetainedWeights(witnessIndex().cursor(valueHash), retainedHashes, multiplier,
+			if (exactSmallPostings && !compactedValueHashes.contains(valueHash)) {
+				return addCursorWeights(witnessIndex().cursor(valueHash), multiplier, outputWeights);
+			}
+			if (retainedHashes == null || retainedHashes.length == 0) {
+				return false;
+			}
+			return addCursorRetainedWeights(witnessIndex().cursor(valueHash), retainedHashes, multiplier,
 					outputWeights);
-			return added;
+		}
+
+		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe) {
+			if (probe == null) {
+				return 1.0d;
+			}
+			double totalWeight = totalWeightByValueHash.get(valueHash);
+			if (Double.isFinite(totalWeight) && totalWeight > 0.0d) {
+				double retainedWeight = retainedWeightForValue(valueHash);
+				if (Double.isFinite(retainedWeight) && retainedWeight > 0.0d) {
+					return Math.min(1.0d, retainedWeight / totalWeight);
+				}
+			}
+			if (probe.getRetainedEntries() < sketch.getNominalEntries()) {
+				return 1.0d;
+			}
+			return probe.getSamplingProbability();
+		}
+
+		private double retainedWeightForValue(long valueHash) {
+			double retainedWeight = 0.0d;
+			WitnessCursor cursor = witnessIndex().cursor(valueHash);
+			while (cursor.next()) {
+				double weight = cursor.weight();
+				if (Double.isFinite(weight) && weight > 0.0d) {
+					retainedWeight += weight;
+				}
+			}
+			return retainedWeight;
 		}
 
 		private boolean addCursorRetainedWeights(WitnessCursor cursor, long[] retainedHashes, double multiplier,
@@ -801,6 +863,19 @@ final class OmniJoinEstimator {
 						outputWeights.addTo(witnessHash, weight * multiplier);
 						added = true;
 					}
+				}
+			}
+			return added;
+		}
+
+		private boolean addCursorWeights(WitnessCursor cursor, double multiplier,
+				Long2DoubleOpenHashMap outputWeights) {
+			boolean added = false;
+			while (cursor.next()) {
+				double weight = cursor.weight();
+				if (Double.isFinite(weight) && weight > 0.0d) {
+					outputWeights.addTo(cursor.witnessHash(), weight * multiplier);
+					added = true;
 				}
 			}
 			return added;
@@ -877,7 +952,8 @@ final class OmniJoinEstimator {
 			}
 			sortByUnsignedHash(witnessHashes, weights);
 			OmniSketchProbeResult probe = sketch.probe(OmniSketchPredicate.equalToHash(valueHash));
-			return new ValuePostings(valueHash, witnessHashes, weights, (float) probe.getSamplingProbability(),
+			return new ValuePostings(valueHash, witnessHashes, weights,
+					(float) effectiveSamplingProbability(valueHash, probe),
 					probe.getMinimumDetectableEstimate());
 		}
 

@@ -584,6 +584,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final byte OMNI_SUBJECT_STAR_OC_ATTRIBUTE = OmniAttributeRef.subjectStarOC();
 	private static final byte OMNI_SUBJECT_STAR_POC_ATTRIBUTE = OmniAttributeRef.subjectStarPOC();
 	private static final byte[][][] OMNI_TUPLE_SURFACE_ATTRIBUTES = buildOmniTupleSurfaceAttributes();
+	private static final long OMNI_PREDICATE_EDGE_ANY_VALUE_HASH = 0x4f4d4e495f454447L;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -2536,6 +2537,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	}
 
+	record OmniJoinDiagnostic(double rows, double confidence, double samplingProbability, String source,
+			String fallbackReason, List<OmniJoinDiagnosticStep> steps) {
+
+	}
+
+	record OmniJoinDiagnosticStep(int step, String inputBindingName, String outputBindingName, String direction,
+			double rows, int retainedWitnesses, double samplingProbability, double confidence, String fallbackReason) {
+
+	}
+
 	/**
 	 * Install a store-provided gate for background rebuilds. Returning {@code false} pauses refresh-thread rebuild
 	 * attempts until the gate opens again.
@@ -3821,8 +3832,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					1.0d);
 			edgeForward.updatePredicate(predicateHash, subjectHash, objectHash, 1.0d);
 			edgeReverse.updatePredicate(predicateHash, objectHash, subjectHash, 1.0d);
+			edgeForward.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, objectHash, 1.0d);
+			edgeReverse.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, subjectHash, 1.0d);
 			edgeForward.updatePredicateContext(predicateHash, contextHash, subjectHash, objectHash, 1.0d);
 			edgeReverse.updatePredicateContext(predicateHash, contextHash, objectHash, subjectHash, 1.0d);
+			edgeForward.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+					objectHash, 1.0d);
+			edgeReverse.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+					subjectHash, 1.0d);
 			for (Component fixed : COMPONENT_VALUES) {
 				long fixedHash = omniComponentHash(fixed.ordinal(), subjectHash, predicateHash, objectHash,
 						contextHash);
@@ -5304,6 +5321,197 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				direction.inputBindingName(), direction.outputBindingName()));
 	}
 
+	OmniJoinDiagnostic diagnoseOmniOrderedConnectedJoin(List<TupleExpr> orderedFactors, Set<String> boundVars) {
+		List<OmniJoinDiagnosticStep> steps = new ArrayList<>();
+		JoinFrequencyEstimate estimate = estimateOmniOrderedConnectedJoin(orderedFactors, boundVars, steps);
+		if (estimate == null) {
+			return new OmniJoinDiagnostic(-1.0d, 0.0d, 0.0d, "omni-ordered-connected", "UNSUPPORTED",
+					List.copyOf(steps));
+		}
+		return new OmniJoinDiagnostic(estimate.calibratedRows(), estimate.confidence(), estimate.calibrationFactor(),
+				estimate.source(), "NONE", List.copyOf(steps));
+	}
+
+	private JoinFrequencyEstimate estimateOmniOrderedConnectedJoin(List<TupleExpr> orderedFactors,
+			Set<String> boundVars) {
+		return estimateOmniOrderedConnectedJoin(orderedFactors, boundVars, null);
+	}
+
+	private JoinFrequencyEstimate estimateOmniOrderedConnectedJoin(List<TupleExpr> orderedFactors,
+			Set<String> boundVars, List<OmniJoinDiagnosticStep> diagnosticSteps) {
+		if (!isReady() || sketchStrategy != SketchStrategy.OMNI || orderedFactors == null
+				|| orderedFactors.size() < 2 || (boundVars != null && !boundVars.isEmpty())) {
+			return null;
+		}
+		Map<String, OmniWitnessSet> witnesses = new LinkedHashMap<>();
+		double rows = Double.NaN;
+		double confidence = 1.0d;
+		double samplingProbability = 1.0d;
+		int joinedFactors = 0;
+		for (TupleExpr factor : orderedFactors) {
+			PatternEstimateInput input = asSketchCompatibleInput(factor);
+			if (input == null || input.filterMultiplier != 1.0d) {
+				return null;
+			}
+			int previousWitnessCount = witnesses.size();
+			OmniOrderedJoinStep step = estimateOmniOrderedConnectedStep(input.pattern(), witnesses);
+			if (step == null || step.outputWitnesses().isEmpty()) {
+				return null;
+			}
+			witnesses.putAll(step.outputWitnesses());
+			rows = step.rows();
+			confidence = Math.min(confidence, step.confidence());
+			samplingProbability = Math.min(samplingProbability, step.samplingProbability());
+			if (diagnosticSteps != null) {
+				diagnosticSteps.add(new OmniJoinDiagnosticStep(diagnosticSteps.size(), step.inputBindingName(),
+						step.outputBindingName(), step.direction(), step.rows(), step.retainedWitnessCount(),
+						step.samplingProbability(), step.confidence(), step.fallbackReason()));
+			}
+			if (previousWitnessCount > 0) {
+				joinedFactors++;
+			}
+		}
+		if (joinedFactors == 0 || !Double.isFinite(rows) || rows < 0.0d) {
+			return null;
+		}
+		confidence = Math.max(0.10d, Math.min(0.90d, confidence));
+		if (rows == 0.0d) {
+			confidence = Math.min(confidence, 0.25d);
+		}
+		double normalizedRows = normalizeRows(rows);
+		return new JoinFrequencyEstimate(normalizedRows, normalizedRows, confidence, "omni-ordered-connected",
+				samplingProbability);
+	}
+
+	private OmniOrderedJoinStep estimateOmniOrderedConnectedStep(StatementPattern pattern,
+			Map<String, OmniWitnessSet> witnesses) {
+		if (pattern == null || witnesses == null) {
+			return null;
+		}
+		if (witnesses.isEmpty()) {
+			return omniOrderedInitialStep(pattern);
+		}
+		String subjectName = unboundVarName(pattern.getSubjectVar());
+		String objectName = unboundVarName(pattern.getObjectVar());
+		OmniWitnessSet subjectInput = subjectName == null ? null : witnesses.get(subjectName);
+		OmniWitnessSet objectInput = objectName == null ? null : witnesses.get(objectName);
+		if ((subjectInput == null || subjectInput.isEmpty()) && (objectInput == null || objectInput.isEmpty())) {
+			return null;
+		}
+		Map<String, OmniWitnessSet> outputWitnesses = new LinkedHashMap<>(2);
+		double rows = Double.NaN;
+		double confidence = 1.0d;
+		double samplingProbability = 1.0d;
+		String inputBindingName = null;
+		String direction = "unsupported";
+		if (subjectInput != null && !subjectInput.isEmpty()) {
+			inputBindingName = subjectName;
+			direction = objectName == null ? "subject-filter" : "subject-to-object";
+			OmniWitnessSet filteredSubject = filterOmniSubjectWitnesses(subjectInput, pattern, subjectName);
+			if (filteredSubject != null && !filteredSubject.isEmpty()) {
+				outputWitnesses.put(subjectName, filteredSubject);
+				rows = mergeDirectedRows(rows, filteredSubject.estimatedRows());
+				confidence = Math.min(confidence, filteredSubject.confidence());
+				samplingProbability = Math.min(samplingProbability, filteredSubject.samplingProbability());
+			}
+			if (objectName != null) {
+				OmniWitnessSet objectWitness = probeOmniBridgeWitnesses(subjectInput, OMNI_RELATION_EDGE_FORWARD,
+						pattern);
+				if (objectWitness != null && objectInput != null && !objectInput.isEmpty()) {
+					objectWitness = intersectOmniWitnesses(objectWitness, objectInput);
+				}
+				if (objectWitness != null && !objectWitness.isEmpty()) {
+					outputWitnesses.put(objectName, objectWitness);
+					rows = objectInput == null || objectInput.isEmpty()
+							? mergeDirectedRows(rows, objectWitness.estimatedRows())
+							: objectWitness.estimatedRows();
+					confidence = Math.min(confidence, objectWitness.confidence());
+					samplingProbability = Math.min(samplingProbability, objectWitness.samplingProbability());
+				}
+			}
+		}
+		if (outputWitnesses.isEmpty() && objectInput != null && !objectInput.isEmpty() && subjectName != null) {
+			inputBindingName = objectName;
+			direction = "object-to-subject";
+			OmniWitnessSet subjectWitness = probeOmniBridgeWitnesses(objectInput, OMNI_RELATION_EDGE_REVERSE,
+					pattern);
+			if (subjectWitness != null && subjectInput != null && !subjectInput.isEmpty()) {
+				subjectWitness = intersectOmniWitnesses(subjectWitness, subjectInput);
+			}
+			if (subjectWitness != null && !subjectWitness.isEmpty()) {
+				outputWitnesses.put(subjectName, subjectWitness);
+				rows = subjectWitness.estimatedRows();
+				confidence = Math.min(confidence, subjectWitness.confidence());
+				samplingProbability = Math.min(samplingProbability, subjectWitness.samplingProbability());
+			}
+		}
+		if (outputWitnesses.isEmpty() || !Double.isFinite(rows) || rows < 0.0d) {
+			return null;
+		}
+		OmniWitnessSet dominantWitness = dominantOmniWitness(outputWitnesses);
+		return new OmniOrderedJoinStep(outputWitnesses, rows, confidence, samplingProbability, inputBindingName,
+				dominantOmniWitnessBinding(outputWitnesses, dominantWitness), direction,
+				dominantWitness == null ? 0 : dominantWitness.retainedWitnessCount(),
+				dominantWitness == null ? OmniWitnessSet.FallbackReason.UNSUPPORTED.name()
+						: dominantWitness.fallbackReason().name());
+	}
+
+	private OmniOrderedJoinStep omniOrderedInitialStep(StatementPattern pattern) {
+		Map<String, OmniWitnessSet> initialWitnesses = estimateOmniPatternWitnesses(pattern);
+		if (initialWitnesses.isEmpty()) {
+			return null;
+		}
+		double rows = Double.NaN;
+		double confidence = 1.0d;
+		double samplingProbability = 1.0d;
+		for (OmniWitnessSet witnessSet : initialWitnesses.values()) {
+			rows = mergeDirectedRows(rows, witnessSet.estimatedRows());
+			confidence = Math.min(confidence, witnessSet.confidence());
+			samplingProbability = Math.min(samplingProbability, witnessSet.samplingProbability());
+		}
+		OmniWitnessSet dominantWitness = dominantOmniWitness(initialWitnesses);
+		return Double.isFinite(rows) && rows >= 0.0d
+				? new OmniOrderedJoinStep(initialWitnesses, rows, confidence, samplingProbability, null,
+						dominantOmniWitnessBinding(initialWitnesses, dominantWitness), "anchor",
+						dominantWitness == null ? 0 : dominantWitness.retainedWitnessCount(),
+						dominantWitness == null ? OmniWitnessSet.FallbackReason.UNSUPPORTED.name()
+								: dominantWitness.fallbackReason().name())
+				: null;
+	}
+
+	private OmniWitnessSet dominantOmniWitness(Map<String, OmniWitnessSet> witnesses) {
+		if (witnesses == null || witnesses.isEmpty()) {
+			return null;
+		}
+		OmniWitnessSet dominant = null;
+		for (OmniWitnessSet witnessSet : witnesses.values()) {
+			if (witnessSet == null) {
+				continue;
+			}
+			if (dominant == null || witnessSet.estimatedRows() > dominant.estimatedRows()) {
+				dominant = witnessSet;
+			}
+		}
+		return dominant;
+	}
+
+	private String dominantOmniWitnessBinding(Map<String, OmniWitnessSet> witnesses, OmniWitnessSet dominantWitness) {
+		if (witnesses == null || witnesses.isEmpty() || dominantWitness == null) {
+			return null;
+		}
+		for (Map.Entry<String, OmniWitnessSet> entry : witnesses.entrySet()) {
+			if (entry.getValue() == dominantWitness) {
+				return entry.getKey();
+			}
+		}
+		return null;
+	}
+
+	private record OmniOrderedJoinStep(Map<String, OmniWitnessSet> outputWitnesses, double rows,
+			double confidence, double samplingProbability, String inputBindingName, String outputBindingName,
+			String direction, int retainedWitnessCount, String fallbackReason) {
+	}
+
 	public JoinFrequencyEstimate estimateOmniBridgeChain(List<TupleExpr> orderedFactors, Set<String> boundVars) {
 		if (!isReady() || sketchStrategy != SketchStrategy.OMNI || orderedFactors == null
 				|| orderedFactors.size() < 3 || (boundVars != null && !boundVars.isEmpty())) {
@@ -6043,6 +6251,47 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
+	private OmniWitnessSet probeOmniBridgeWitnesses(OmniJoinEstimator estimator, OmniWitnessSet inputWitness,
+			OmniRelation relationName, StatementPattern bridge) {
+		if (estimator == null || inputWitness == null || inputWitness.isEmpty() || relationName == null
+				|| bridge == null || !hasBoundValue(bridge.getPredicateVar())) {
+			return null;
+		}
+		String predicateValue = getValueOrNull(bridge.getPredicateVar());
+		if (predicateValue == null) {
+			return null;
+		}
+		long predicateHash = omniValueHash(predicateValue);
+		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
+		if (hasBoundValue(bridge.getContextVar())) {
+			return estimator.probeJoinPredicateContext(inputWitness, relation, predicateHash,
+					omniValueHash(getValueOrNull(bridge.getContextVar())),
+					OmniJoinEstimator.OutputIdentifier.RECORD);
+		}
+		return estimator.probeJoinPredicate(inputWitness, relation, predicateHash,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+	}
+
+	private OmniWitnessSet probeOmniPredicateEdgeAny(OmniJoinEstimator estimator, OmniRelation relationName,
+			StatementPattern pattern) {
+		if (estimator == null || relationName == null || pattern == null || !hasBoundValue(pattern.getPredicateVar())) {
+			return null;
+		}
+		String predicateValue = getValueOrNull(pattern.getPredicateVar());
+		if (predicateValue == null) {
+			return null;
+		}
+		long predicateHash = omniValueHash(predicateValue);
+		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
+		OmniJoinEstimator.Predicate anyEdgeValue = OmniJoinEstimator.Predicate
+				.equalHash(OMNI_PREDICATE_EDGE_ANY_VALUE_HASH);
+		if (hasBoundValue(pattern.getContextVar())) {
+			return estimator.probePredicateContext(relation, predicateHash,
+					omniValueHash(getValueOrNull(pattern.getContextVar())), anyEdgeValue);
+		}
+		return estimator.probePredicate(relation, predicateHash, anyEdgeValue);
+	}
+
 	private OmniWitnessSet intersectOmniWitnesses(OmniWitnessSet first, OmniWitnessSet second) {
 		if (first == null || first.isEmpty() || second == null || second.isEmpty()) {
 			return OmniWitnessSet.empty();
@@ -6084,6 +6333,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					OmniJoinEstimator.Predicate.equalHash(input.valueHash()));
 			return estimator.intersect(List.of(inputWitness, filterWitness));
 		}
+	}
+
+	private OmniWitnessSet filterOmniSubjectWitnesses(OmniJoinEstimator estimator, OmniWitnessSet inputWitness,
+			StatementPattern pattern, String subjectVarName) {
+		if (estimator == null || inputWitness == null || inputWitness.isEmpty() || pattern == null
+				|| subjectVarName == null) {
+			return null;
+		}
+		OmniSubjectStarInput input = omniSubjectStarInput(pattern, subjectVarName);
+		if (input == null) {
+			return null;
+		}
+		OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
+		OmniWitnessSet filterWitness = estimator.probeStatic(subjectStar, input.attribute(),
+				OmniJoinEstimator.Predicate.equalHash(input.valueHash()));
+		return estimator.intersect(List.of(inputWitness, filterWitness));
 	}
 
 	private OmniWitnessStep estimateOmniFiniteAnchorStep(BindingSetAssignment assignment, StatementPattern pattern) {
@@ -7797,7 +8062,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (input.filterMultiplier < 1.0d) {
 			varStats = clampVarStatsToRows(varStats, outputRows, false);
 		}
-		return new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats);
+		return new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats, null, null, Double.NaN,
+				estimateOmniPatternWitnesses(pattern));
 	}
 
 	private TuplePlanEstimate estimatePropertyPathTupleExprPlan(ArbitraryLengthPath path) {
@@ -8223,13 +8489,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		} else {
 			JoinFrequencyEstimate omniSurface = estimateOmniJoinStepSurface(left, right, sharedVarNames, useSketches);
 			if (omniSurface != null) {
-				rawRows = Math.min(rawRows, omniSurface.calibratedRows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniSurface.calibratedRows(),
+						omniSurface.confidence());
 				sketchEstimateSource = omniSurface.source();
 				sketchEstimateConfidence = omniSurface.confidence();
 			}
 			omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
 			if (omniDirected != null) {
-				rawRows = Math.min(rawRows, omniDirected.rows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
+						omniDirected.confidence());
 				sketchEstimateSource = omniDirected.source();
 				sketchEstimateConfidence = omniDirected.confidence();
 			}
@@ -8321,12 +8589,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		} else {
 			JoinFrequencyEstimate omniSurface = estimateOmniJoinStepSurface(left, right, sharedVarNames, useSketches);
 			if (omniSurface != null) {
-				rawRows = Math.min(rawRows, omniSurface.calibratedRows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniSurface.calibratedRows(),
+						omniSurface.confidence());
 			}
 			OmniDirectedJoinEstimate omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames,
 					useSketches);
 			if (omniDirected != null) {
-				rawRows = Math.min(rawRows, omniDirected.rows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
+						omniDirected.confidence());
 			}
 			rawRows = Math.min(rawRows, disconnectedRows);
 		}
@@ -8385,16 +8655,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		} else {
 			JoinFrequencyEstimate omniSurface = estimateOmniJoinStepSurface(left, right, sharedVarNames, useSketches);
 			if (omniSurface != null) {
-				rawRows = Math.min(rawRows, omniSurface.calibratedRows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniSurface.calibratedRows(),
+						omniSurface.confidence());
 			}
 			OmniDirectedJoinEstimate omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames,
 					useSketches);
 			if (omniDirected != null) {
-				rawRows = Math.min(rawRows, omniDirected.rows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
+						omniDirected.confidence());
 			}
 			rawRows = Math.min(rawRows, disconnectedRows);
 		}
 		return normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
+	}
+
+	private double selectOmniJoinRows(double currentRows, double disconnectedRows, double omniRows,
+			double confidence) {
+		if (!trustedOmniJoinEstimate(omniRows, confidence)) {
+			return currentRows;
+		}
+		double boundedRows = Math.min(omniRows, disconnectedRows);
+		if (!Double.isFinite(boundedRows) || boundedRows < 0.0d) {
+			return currentRows;
+		}
+		return boundedRows;
+	}
+
+	private boolean trustedOmniJoinEstimate(double rows, double confidence) {
+		return Double.isFinite(rows) && rows >= 0.0d && Double.isFinite(confidence) && confidence >= 0.50d;
 	}
 
 	private JoinFrequencyEstimate estimateOmniJoinStepSurface(TuplePlanEstimate left, TuplePlanEstimate right,
@@ -8467,9 +8755,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		Var subject = pattern.getSubjectVar();
-		if (subject == null || subject.hasValue() || subject.getName() == null) {
-			return null;
-		}
+		String subjectName = unboundVarName(subject);
+		String objectName = unboundVarName(pattern.getObjectVar());
 		flushPendingIncremental();
 		State snap = current;
 		if (snap == null || snap.omniJoinEstimator == null || snap.omniJoinEstimatorHasDeletes) {
@@ -8480,37 +8767,60 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return null;
 			}
 			OmniJoinEstimator estimator = snap.omniJoinEstimator;
-			OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
-			OmniWitnessSet subjectWitnesses = sharedComponent == Component.S
-					? input
-					: estimator.probeJoinStatic(input, subjectStar, OMNI_COMPONENT_ATTRIBUTES[sharedComponent
-							.ordinal()],
-							OmniJoinEstimator.OutputIdentifier.RECORD);
-			if (subjectWitnesses == null || subjectWitnesses.isEmpty()) {
+			Map<String, OmniWitnessSet> outputWitnesses = new LinkedHashMap<>();
+			double rows = Double.NaN;
+			double confidence = input.confidence();
+			if (sharedComponent == Component.S && subjectName != null) {
+				OmniWitnessSet subjectWitnesses = filterOmniSubjectWitnesses(estimator, input, pattern, subjectName);
+				if (subjectWitnesses != null && !subjectWitnesses.isEmpty()) {
+					outputWitnesses.put(subjectName, subjectWitnesses);
+					rows = subjectWitnesses.estimatedRows();
+					confidence = Math.min(confidence, subjectWitnesses.confidence());
+				}
+				OmniWitnessSet objectWitnesses = probeOmniBridgeWitnesses(estimator, input,
+						OMNI_RELATION_EDGE_FORWARD, pattern);
+				if (objectWitnesses != null && !objectWitnesses.isEmpty() && objectName != null) {
+					outputWitnesses.put(objectName, objectWitnesses);
+					rows = mergeDirectedRows(rows, objectWitnesses.estimatedRows());
+					confidence = Math.min(confidence, objectWitnesses.confidence());
+				}
+			} else if (sharedComponent == Component.O && subjectName != null) {
+				OmniWitnessSet subjectWitnesses = probeOmniBridgeWitnesses(estimator, input,
+						OMNI_RELATION_EDGE_REVERSE, pattern);
+				if (subjectWitnesses != null && !subjectWitnesses.isEmpty()) {
+					outputWitnesses.put(subjectName, subjectWitnesses);
+					rows = subjectWitnesses.estimatedRows();
+					confidence = Math.min(confidence, subjectWitnesses.confidence());
+				}
+			} else if (subjectName != null) {
+				OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
+				OmniWitnessSet subjectWitnesses = estimator.probeJoinStatic(input, subjectStar,
+						OMNI_COMPONENT_ATTRIBUTES[sharedComponent.ordinal()],
+						OmniJoinEstimator.OutputIdentifier.RECORD);
+				subjectWitnesses = filterOmniSubjectWitnesses(estimator, subjectWitnesses, pattern, subjectName);
+				if (subjectWitnesses != null && !subjectWitnesses.isEmpty()) {
+					outputWitnesses.put(subjectName, subjectWitnesses);
+					rows = subjectWitnesses.estimatedRows();
+					confidence = Math.min(confidence, subjectWitnesses.confidence());
+				}
+			}
+			if (outputWitnesses.isEmpty() || !Double.isFinite(rows) || rows < 0.0d) {
 				return null;
 			}
-			List<OmniWitnessSet> witnessSets = new ArrayList<>();
-			witnessSets.add(subjectWitnesses);
-			for (Component component : List.of(Component.P, Component.O, Component.C)) {
-				if (component == sharedComponent) {
-					continue;
-				}
-				Var var = varForComponent(pattern, component);
-				if (!hasBoundValue(var)) {
-					continue;
-				}
-				witnessSets.add(estimator.probeStatic(subjectStar, OMNI_COMPONENT_ATTRIBUTES[component.ordinal()],
-						OmniJoinEstimator.Predicate.equalHash(omniValueHash(getValueOrNull(var)))));
-			}
-			OmniWitnessSet output = estimator.intersect(witnessSets);
-			double rows = estimator.estimateRows(output);
-			if (!Double.isFinite(rows) || rows < 0.0d) {
-				return null;
-			}
-			double confidence = Math.max(0.10d, Math.min(0.90d, output.confidence()));
+			confidence = Math.max(0.10d, Math.min(0.90d, confidence));
 			return new OmniDirectedJoinEstimate(normalizeRows(rows), confidence, "omni-join-estimator",
-					Map.of(subject.getName(), output));
+					outputWitnesses);
 		}
+	}
+
+	private double mergeDirectedRows(double currentRows, double candidateRows) {
+		if (!Double.isFinite(currentRows) || currentRows < 0.0d) {
+			return candidateRows;
+		}
+		if (!Double.isFinite(candidateRows) || candidateRows < 0.0d) {
+			return currentRows;
+		}
+		return Math.max(currentRows, candidateRows);
 	}
 
 	private Map<String, OmniWitnessSet> mergedOmniWitnesses(TuplePlanEstimate left, TuplePlanEstimate right,
@@ -8605,13 +8915,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		} else {
 			JoinFrequencyEstimate omniSurface = estimateOmniJoinStepSurface(left, right, sharedVarNames, useSketches);
 			if (omniSurface != null) {
-				rawRows = Math.min(rawRows, omniSurface.calibratedRows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniSurface.calibratedRows(),
+						omniSurface.confidence());
 				sketchEstimateSource = omniSurface.source();
 				sketchEstimateConfidence = omniSurface.confidence();
 			}
 			omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
 			if (omniDirected != null) {
-				rawRows = Math.min(rawRows, omniDirected.rows());
+				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
+						omniDirected.confidence());
 				sketchEstimateSource = omniDirected.source();
 				sketchEstimateConfidence = omniDirected.confidence();
 			}
@@ -10266,6 +10578,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return normalizeRows(simulated.outputRows);
 			}
 		}
+		JoinFrequencyEstimate omniConnected = estimateOmniOrderedConnectedJoin(tupleExprs, bound);
+		if (omniConnected != null && trustedOmniJoinEstimate(omniConnected.calibratedRows(),
+				omniConnected.confidence())) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(omniConnected.calibratedRows());
+		}
 		JoinOrderPlanner.Algorithm algorithm = tupleExprs
 				.size() <= SketchJoinOrderPlanner.MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS
 						? JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
@@ -11658,19 +11976,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (sketchStrategy != SketchStrategy.OMNI || pattern == null) {
 			return Map.of();
 		}
-		Var subject = pattern.getSubjectVar();
-		if (subject == null || subject.hasValue() || subject.getName() == null) {
-			return Map.of();
-		}
-		List<OmniSubjectStarInput> inputs = new ArrayList<>(3);
-		for (Component component : List.of(Component.P, Component.O, Component.C)) {
-			Var var = varForComponent(pattern, component);
-			if (hasBoundValue(var)) {
-				inputs.add(new OmniSubjectStarInput(OMNI_COMPONENT_ATTRIBUTES[component.ordinal()],
-						omniValueHash(getValueOrNull(var))));
-			}
-		}
-		if (inputs.isEmpty()) {
+		String subjectName = unboundVarName(pattern.getSubjectVar());
+		String objectName = unboundVarName(pattern.getObjectVar());
+		if (subjectName == null && objectName == null) {
 			return Map.of();
 		}
 		flushPendingIncremental();
@@ -11683,15 +11991,46 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return Map.of();
 			}
 			OmniJoinEstimator estimator = snap.omniJoinEstimator;
-			OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
-			List<OmniWitnessSet> witnessSets = new ArrayList<>(inputs.size());
-			for (OmniSubjectStarInput input : inputs) {
-				witnessSets.add(estimator.probeStatic(subjectStar, input.attribute(),
-						OmniJoinEstimator.Predicate.equalHash(input.valueHash())));
+			Map<String, OmniWitnessSet> witnesses = new LinkedHashMap<>(2);
+			OmniWitnessSet subjectWitness = null;
+			if (subjectName != null) {
+				OmniSubjectStarInput subjectInput = omniSubjectStarInput(pattern, subjectName);
+				if (subjectInput != null) {
+					OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
+					subjectWitness = estimator.probeStatic(subjectStar, subjectInput.attribute(),
+							OmniJoinEstimator.Predicate.equalHash(subjectInput.valueHash()));
+					if (subjectWitness != null && !subjectWitness.isEmpty()) {
+						witnesses.put(subjectName, subjectWitness);
+					}
+				}
 			}
-			OmniWitnessSet witnesses = estimator.intersect(witnessSets);
-			return witnesses.isEmpty() ? Map.of() : Map.of(subject.getName(), witnesses);
+			if (objectName != null) {
+				OmniWitnessSet objectWitness = probeOmniPredicateEdgeAny(estimator, OMNI_RELATION_EDGE_FORWARD,
+						pattern);
+				if ((objectWitness == null || objectWitness.isEmpty()) && subjectWitness != null
+						&& !subjectWitness.isEmpty()) {
+					objectWitness = probeOmniBridgeWitnesses(estimator,
+							unitWeightOmniWitnesses(subjectWitness),
+							OMNI_RELATION_EDGE_FORWARD, pattern);
+				}
+				if (objectWitness != null && !objectWitness.isEmpty()) {
+					witnesses.put(objectName, objectWitness);
+				}
+			}
+			return witnesses.isEmpty() ? Map.of() : witnesses;
 		}
+	}
+
+	private OmniWitnessSet unitWeightOmniWitnesses(OmniWitnessSet witnessSet) {
+		if (witnessSet == null || witnessSet.isEmpty()) {
+			return OmniWitnessSet.empty();
+		}
+		Long2DoubleOpenHashMap weights = new Long2DoubleOpenHashMap(witnessSet.retainedWitnessCount());
+		for (int i = 0; i < witnessSet.retainedWitnessCount(); i++) {
+			weights.put(witnessSet.hashAt(i), 1.0d);
+		}
+		return OmniWitnessSet.fromWeights(weights, witnessSet.samplingProbability(), witnessSet.confidence(),
+				witnessSet.fallbackReason(), witnessSet.minimumDetectableRows());
 	}
 
 	private Double zeroIntersectionFallbackJoinRows(StatementPattern left, StatementPattern right, String sharedVarName,
