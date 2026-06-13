@@ -32,12 +32,15 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -676,6 +679,29 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void rewritesDuplicateInsensitiveMembershipAsEarlyJoinAnchor() {
+		StatementPattern name = statementPatternWithPredicate("a", "http://example.com/theme/social/name", "optName");
+		TupleExpr cycle = new Join(
+				new Join(statementPattern("a", "follows", "b"), statementPattern("b", "follows", "c")),
+				statementPattern("c", "follows", "a"));
+		Filter filter = new Filter(new Join(cycle, name), listMember("optName", "user0", "user1", "user2"));
+		Count count = new Count(new Var("a"), true);
+		Group group = new Group(filter);
+		group.addGroupElement(new GroupElem("count", count));
+		QueryRoot root = new QueryRoot(group);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("user0")))).optimize(root, null, null);
+
+		Group optimizedGroup = assertInstanceOf(Group.class, root.getArg());
+		Join optimizedJoin = assertInstanceOf(Join.class, optimizedGroup.getArg(), optimizedGroup.getArg().toString());
+		assertTrue(containsBindingSetAssignmentFor(optimizedJoin.getLeftArg(), "optName"));
+		assertTrue(containsStatementPatternWithObject(optimizedJoin.getLeftArg(), "optName"));
+		assertFalse(containsFilter(optimizedJoin));
+		assertFalse(containsExists(optimizedJoin));
+	}
+
+	@Test
 	void hoistsMandatoryOptionalLiteralAnchorAheadOfLeftUnionFanout() {
 		BindingSetAssignment users = values("u", "user7", "user8");
 		TupleExpr activityUnion = new Union(statementPattern("u", "follows", "v"),
@@ -818,6 +844,19 @@ class LmdbFilterSimplifierOptimizerTest {
 		}
 		if (tupleExpr instanceof Union union) {
 			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsExists(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter) {
+			return filter.getCondition() instanceof Exists || containsExists(filter.getArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsExists(leftJoin.getLeftArg()) || containsExists(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsExists(join.getLeftArg()) || containsExists(join.getRightArg());
 		}
 		return false;
 	}

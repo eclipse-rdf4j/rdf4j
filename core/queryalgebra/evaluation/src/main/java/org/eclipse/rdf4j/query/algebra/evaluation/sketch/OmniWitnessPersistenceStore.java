@@ -49,7 +49,7 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			return;
 		}
 		List<OmniJoinEstimator.AttributeSnapshot> attributes = estimator.snapshotAttributes();
-		Path dataPath = dataPath(slot);
+		Path dataPath = dataPath(slot, generation);
 		Path tmpDataPath = dataPath.resolveSibling(dataPath.getFileName() + ".tmp");
 		List<ManifestAttribute> manifestAttributes = new ArrayList<>(attributes.size());
 		try (FileChannel channel = FileChannel.open(tmpDataPath, StandardOpenOption.CREATE,
@@ -73,7 +73,10 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			throw new IOException("Omni witness snapshot slot mismatch: requested=" + slot + " manifest="
 					+ manifest.slot);
 		}
-		Path dataPath = dataPath(slot);
+		Path dataPath = dataPath(manifest.slot, manifest.generation);
+		if (!Files.isRegularFile(dataPath)) {
+			dataPath = legacyDataPath(slot);
+		}
 		Arena arena = Arena.ofShared();
 		MemorySegment data;
 		try (FileChannel channel = FileChannel.open(dataPath, StandardOpenOption.READ)) {
@@ -151,7 +154,12 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 		return directory.resolve("manifest.bin");
 	}
 
-	private Path dataPath(byte slot) {
+	private Path dataPath(byte slot, long generation) {
+		String slotName = slot == 0 ? "a" : "b";
+		return directory.resolve("omni-witness-" + slotName + "-" + Long.toUnsignedString(generation) + ".dat");
+	}
+
+	private Path legacyDataPath(byte slot) {
 		return directory.resolve(slot == 0 ? "omni-witness-a.dat" : "omni-witness-b.dat");
 	}
 

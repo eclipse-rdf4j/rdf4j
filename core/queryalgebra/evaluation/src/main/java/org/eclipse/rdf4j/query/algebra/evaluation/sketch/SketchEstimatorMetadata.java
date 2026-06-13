@@ -21,8 +21,9 @@ import java.util.Locale;
 final class SketchEstimatorMetadata {
 
 	static final byte[] MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	static final int VERSION = 4;
+	static final int VERSION = 5;
 
+	final int version;
 	final int bucketCount;
 	final int subjectBucketCount;
 	final int predicateBucketCount;
@@ -47,7 +48,7 @@ final class SketchEstimatorMetadata {
 			String defaultContext, byte activeSlot,
 			long seenCount, long approxStoreSize, long lastPublishTime,
 			long slotGenerationA, long slotGenerationB) {
-		this(subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
 				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
 				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB, null, null);
 	}
@@ -60,6 +61,21 @@ final class SketchEstimatorMetadata {
 			long slotGenerationA, long slotGenerationB,
 			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
 			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB) {
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB,
+				omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+	}
+
+	private SketchEstimatorMetadata(int version, int subjectBucketCount, int predicateBucketCount,
+			int objectBucketCount, int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
+			String defaultContext, byte activeSlot,
+			long seenCount, long approxStoreSize, long lastPublishTime,
+			long slotGenerationA, long slotGenerationB,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB) {
+		this.version = version;
 		this.bucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
 				Math.max(objectBucketCount, contextBucketCount));
 		this.subjectBucketCount = subjectBucketCount;
@@ -144,7 +160,7 @@ final class SketchEstimatorMetadata {
 		long slotGenerationB = in.readLong();
 		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA = version >= 4 ? readRef(in) : null;
 		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB = version >= 4 ? readRef(in) : null;
-		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
+		return new SketchEstimatorMetadata(version, subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext,
 				activeSlot, seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
 				slotGenerationB, omniJoinEstimatorRefA, omniJoinEstimatorRefB);

@@ -18,11 +18,17 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.UpdateOmniSketch;
 import org.junit.jupiter.api.Test;
 
 class OmniJoinEstimatorTest {
@@ -96,6 +102,61 @@ class OmniJoinEstimatorTest {
 
 		assertEquals(3.0d, estimator.estimateRows(encounters), 0.0d);
 		assertEquals(3, encounters.retainedWitnessCount());
+	}
+
+	@Test
+	void cappedStaticProbeStopsBeforeOversizedExactPostingMaterializes() {
+		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("broad-value");
+		for (long id = 1; id <= 1_000; id++) {
+			relation.updateStatic(ATTR_P, value, id, 1.0d);
+		}
+
+		OmniWitnessSet capped = estimator.probeStaticRetainedAtMost(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value), 32);
+
+		assertEquals(null, capped);
+	}
+
+	@Test
+	void cappedJoinProbeStopsBeforeOversizedOutputMaterializes() {
+		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
+		long predicate = OmniJoinEstimator.stableHash("knows");
+		long joinValue = OmniJoinEstimator.stableHash("person:source");
+		for (long id = 1; id <= 1_000; id++) {
+			relation.updatePredicate(predicate, joinValue, id, 1.0d);
+		}
+		OmniWitnessSet input = OmniWitnessSet.builder()
+				.put(joinValue, 1.0d)
+				.build();
+
+		OmniWitnessSet capped = estimator.probeJoinPredicateRetainedAtMost(input, relation, predicate,
+				OmniJoinEstimator.OutputIdentifier.RECORD, 32);
+
+		assertEquals(null, capped);
+	}
+
+	@Test
+	void cachedProbeInvalidatesAfterSketchUpdate() {
+		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("late-value");
+		long witness = OmniJoinEstimator.stableHash("late-witness");
+
+		OmniWitnessSet beforeUpdate = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+
+		assertEquals(0.0d, estimator.estimateRows(beforeUpdate), 0.0d);
+
+		relation.updateStatic(ATTR_P, value, witness, 1.0d);
+
+		OmniWitnessSet afterUpdate = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+
+		assertEquals(1.0d, estimator.estimateRows(afterUpdate), 0.0d);
+		assertTrue(afterUpdate.containsHash(witness));
 	}
 
 	@Test
@@ -213,6 +274,20 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void compactedPostingsStayBoundedWhenNewWitnessesEnterRetainedSample() throws Exception {
+		OmniJoinEstimator estimator = newEstimator(64, 1, 1);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("shared-value");
+
+		for (long id = 10_000; id >= 1; id--) {
+			relation.updateStatic(ATTR_P, value, id, 1.0d);
+		}
+
+		assertTrue(storedWitnessWeightCount(staticAttributeIndex(relation, ATTR_P), value) <= 1,
+				"Compacted postings should track the current retained sample, not every historical replacement");
+	}
+
+	@Test
 	void persistedWeightsAreLoadedOnDemand() throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
@@ -298,6 +373,56 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void mappedSnapshotProbeUsesPersistedSamplingGuarantees(@org.junit.jupiter.api.io.TempDir Path tempDir)
+			throws Exception {
+		int width = 64;
+		int rows = 4;
+		int nominalEntries = 64;
+		long valueHash = OmniJoinEstimator.stableHash("sampled-value");
+		long witnessHash = OmniJoinEstimator.stableHash("retained-witness");
+		Path data = tempDir.resolve("attribute.dat");
+		UpdateOmniSketch sketch = OmniSketch.builder()
+				.setWidth(width)
+				.setNumRows(rows)
+				.setNominalEntries(nominalEntries)
+				.setSeed(SEED)
+				.build();
+		sketch.updateHash(valueHash, witnessHash);
+		OmniJoinEstimator.AttributeSnapshot attribute = new OmniJoinEstimator.AttributeSnapshot(
+				OmniRelation.STATEMENT, OmniAttributeRef.staticAttribute(ATTR_P), sketch.compact(),
+				List.of(new OmniJoinEstimator.ValuePostings(valueHash, new long[] { witnessHash },
+						new double[] { 1.0d }, 0.25f, 7.0d)));
+		try (FileChannel channel = FileChannel.open(data, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+			OmniWitnessSnapshotWriter.writeAttribute(channel, attribute);
+		}
+
+		OmniJoinEstimator reader = newEstimator(width, rows, nominalEntries);
+		Arena arena = Arena.ofShared();
+		MappedOmniJoinSnapshot snapshot = null;
+		try (FileChannel channel = FileChannel.open(data, StandardOpenOption.READ)) {
+			MemorySegment segment = channel.map(FileChannel.MapMode.READ_ONLY, 0L, channel.size(), arena);
+			snapshot = new MappedOmniJoinSnapshot(arena, width, rows, nominalEntries, SEED, 11L,
+					List.of(new MappedOmniJoinSnapshot.AttributeRef(OmniRelation.STATEMENT,
+							OmniAttributeRef.staticAttribute(ATTR_P), MappedWitnessIndex.wrap(segment))));
+			reader.loadMappedSnapshot(snapshot);
+			snapshot = null;
+
+			OmniWitnessSet witnesses = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+					OmniJoinEstimator.Predicate.equalHash(valueHash));
+
+			assertEquals(0.25d, witnesses.samplingProbability(), 0.0d);
+			assertEquals(7.0d, witnesses.minimumDetectableRows(), 0.0d);
+			assertEquals(4.0d, reader.estimateRows(witnesses), 0.0d);
+		} finally {
+			reader.clear();
+			if (snapshot != null) {
+				snapshot.close();
+			}
+		}
+	}
+
+	@Test
 	void clearClosesMappedSnapshotArena(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
@@ -343,5 +468,16 @@ class OmniJoinEstimatorTest {
 		weightsField.setAccessible(true);
 		Object weightsByValueHash = weightsField.get(attributeIndex);
 		return weightsByValueHash instanceof Map<?, ?> map ? map.size() : 0;
+	}
+
+	private static int storedWitnessWeightCount(Object attributeIndex, long valueHash) throws Exception {
+		Field weightsField = attributeIndex.getClass().getDeclaredField("weightsByValueHash");
+		weightsField.setAccessible(true);
+		Object weightsByValueHash = weightsField.get(attributeIndex);
+		if (!(weightsByValueHash instanceof Map<?, ?> map)) {
+			return 0;
+		}
+		Object weights = map.get(valueHash);
+		return weights instanceof Map<?, ?> witnessWeights ? witnessWeights.size() : 0;
 	}
 }

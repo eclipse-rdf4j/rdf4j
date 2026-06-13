@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
@@ -36,6 +37,9 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 
 public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
+
+	private static final long OPTIMIZATION_TIMEOUT_BUDGET_DIVISOR = 2L;
+	private static final long MILLIS_PER_SECOND = 1_000L;
 
 	private final SailSource branch;
 	private final SailDataset dataset;
@@ -86,9 +90,15 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 					.createEvaluationStrategy(tupleQuery.getActiveDataset(),
 							new SailDatasetTripleTermSource(sailStore.getValueFactory(), dataset),
 							sailStore.getEvaluationStatistics());
-			TupleExpr optimized = strategy.optimize(tupleExpr, sailStore.getEvaluationStatistics(),
-					tupleQuery.getBindings());
-			QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
+			TupleExpr optimizationInput = tupleExpr;
+			OptimizedQuery optimizedQuery = withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
+				TupleExpr optimized = strategy.optimize(optimizationInput, sailStore.getEvaluationStatistics(),
+						tupleQuery.getBindings());
+				QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
+				return new OptimizedQuery(optimized, evaluationStep);
+			});
+			TupleExpr optimized = optimizedQuery.tupleExpr();
+			QueryEvaluationStep evaluationStep = optimizedQuery.evaluationStep();
 			String optimizedDiagnostics = "";
 			String optimizedPlan = "";
 			if (captureOptimizedPlan) {
@@ -105,6 +115,41 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			closeQuietly(dataset);
 			closeQuietly(branch);
 			throw e;
+		}
+	}
+
+	public static <T> T withCascadesOptimizationTimeout(int maxExecutionTimeSeconds, Supplier<T> supplier) {
+		if (maxExecutionTimeSeconds <= 0) {
+			return supplier.get();
+		}
+		String previousValue = System.getProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY);
+		long timeoutMillis = cascadesOptimizationTimeoutMillis(maxExecutionTimeSeconds, previousValue);
+		System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, Long.toString(timeoutMillis));
+		try {
+			return supplier.get();
+		} finally {
+			restoreCascadesOptimizationTimeout(previousValue);
+		}
+	}
+
+	static long cascadesOptimizationTimeoutMillis(int maxExecutionTimeSeconds, String currentValue) {
+		long timeoutBudgetMillis = Math.max(1L,
+				(maxExecutionTimeSeconds * MILLIS_PER_SECOND) / OPTIMIZATION_TIMEOUT_BUDGET_DIVISOR);
+		if (currentValue == null || currentValue.isBlank()) {
+			return timeoutBudgetMillis;
+		}
+		try {
+			return Math.max(1L, Math.min(timeoutBudgetMillis, Long.parseLong(currentValue.trim())));
+		} catch (NumberFormatException e) {
+			return timeoutBudgetMillis;
+		}
+	}
+
+	private static void restoreCascadesOptimizationTimeout(String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY);
+		} else {
+			System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, previousValue);
 		}
 	}
 
@@ -158,6 +203,9 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			closeable.close();
 		} catch (Exception ignored) {
 		}
+	}
+
+	private record OptimizedQuery(TupleExpr tupleExpr, QueryEvaluationStep evaluationStep) {
 	}
 
 	private static String optimizedDiagnostics(TupleExpr optimized) {

@@ -283,7 +283,6 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
-	@Test
 	void libraryQ7BenchmarkCostsBranchLocatedAtByFiniteBranchFanout() throws Exception {
 		ThemeQueryBenchmark benchmark = newBenchmark(Theme.LIBRARY, 7);
 

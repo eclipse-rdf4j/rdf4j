@@ -228,6 +228,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 4096L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
 	private static final long DEFAULT_FINITE_RELATION_SURFACE_ROW_BUDGET = 16_384L;
+	private static final long FINITE_RELATION_MIN_SCANNED_ROWS = 256L;
+	private static final long FINITE_RELATION_MAX_SCANNED_ROWS = 4_096L;
+	private static final long FINITE_RELATION_SCANNED_ROWS_PER_OUTPUT_ROW = 16L;
 	private static final int FINITE_UNIQUE_JOIN_CAP_MAX_ROWS = 4096;
 	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
 	private static final long REBUILD_THROUGHPUT_CHECK_INTERVAL_STATEMENTS = 1_000L;
@@ -573,6 +576,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int OMNI_JOIN_ESTIMATOR_WIDTH = 16;
 	private static final int OMNI_JOIN_ESTIMATOR_ROWS = 2;
 	private static final int OMNI_JOIN_ESTIMATOR_NOMINAL_ENTRIES = 2048;
+	private static final int OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES = OMNI_JOIN_ESTIMATOR_NOMINAL_ENTRIES;
+	private static final int OMNI_ORDERED_CONNECTED_PROBE_MAX_RETAINED_WITNESSES = OMNI_JOIN_ESTIMATOR_NOMINAL_ENTRIES
+			* 8;
 	private static final OmniRelation OMNI_RELATION_STATEMENT = OmniRelation.STATEMENT;
 	private static final OmniRelation OMNI_RELATION_SUBJECT_STAR = OmniRelation.SUBJECT_STAR;
 	private static final OmniRelation OMNI_RELATION_TUPLE_SURFACE = OmniRelation.TUPLE_SURFACE;
@@ -2373,6 +2379,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 							normalizedFile, e);
 					store.reset();
 					clearPersistedSketchDirectory();
+					discardAndMarkForRebuild();
 				}
 			}
 		} catch (Throwable t) {
@@ -3789,6 +3796,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		OmniJoinEstimator.Relation tupleSurface = estimator.relation(OMNI_RELATION_TUPLE_SURFACE);
 		OmniJoinEstimator.Relation edgeForward = estimator.relation(OMNI_RELATION_EDGE_FORWARD);
 		OmniJoinEstimator.Relation edgeReverse = estimator.relation(OMNI_RELATION_EDGE_REVERSE);
+		boolean ingestContextSurfaces = contextPairSketchesEnabled;
 		for (int i = 0; i < eventCount; i++) {
 			IngestEvent event = events[i];
 			if (event == null) {
@@ -3811,44 +3819,54 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					1.0d);
 			statements.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.O.ordinal()], objectHash, statementIdentifier,
 					1.0d);
-			statements.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.C.ordinal()], contextHash, statementIdentifier,
-					1.0d);
-			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.S.ordinal()], subjectHash, subjectIdentifier,
-					1.0d);
+			if (ingestContextSurfaces) {
+				statements.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.C.ordinal()], contextHash,
+						statementIdentifier,
+						1.0d);
+			} else {
+				statements.updateStaticTotalOnly(OMNI_COMPONENT_ATTRIBUTES[Component.C.ordinal()], contextHash,
+						1.0d);
+			}
 			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.P.ordinal()], predicateHash, subjectIdentifier,
-					1.0d);
-			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.O.ordinal()], objectHash, subjectIdentifier,
-					1.0d);
-			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.C.ordinal()], contextHash, subjectIdentifier,
 					1.0d);
 			subjectStar.updateStatic(OMNI_SUBJECT_STAR_PO_ATTRIBUTE,
 					OmniJoinEstimator.orderedTupleHash(predicateHash, objectHash), subjectIdentifier, 1.0d);
-			subjectStar.updateStatic(OMNI_SUBJECT_STAR_PC_ATTRIBUTE,
-					OmniJoinEstimator.orderedTupleHash(predicateHash, contextHash), subjectIdentifier, 1.0d);
-			subjectStar.updateStatic(OMNI_SUBJECT_STAR_OC_ATTRIBUTE,
-					OmniJoinEstimator.orderedTupleHash(objectHash, contextHash), subjectIdentifier, 1.0d);
-			subjectStar.updateStatic(OMNI_SUBJECT_STAR_POC_ATTRIBUTE,
-					OmniJoinEstimator.orderedTupleHash(predicateHash, objectHash, contextHash), subjectIdentifier,
-					1.0d);
+			if (ingestContextSurfaces) {
+				subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.C.ordinal()], contextHash,
+						subjectIdentifier, 1.0d);
+				subjectStar.updateStatic(OMNI_SUBJECT_STAR_PC_ATTRIBUTE,
+						OmniJoinEstimator.orderedTupleHash(predicateHash, contextHash), subjectIdentifier, 1.0d);
+				subjectStar.updateStatic(OMNI_SUBJECT_STAR_OC_ATTRIBUTE,
+						OmniJoinEstimator.orderedTupleHash(objectHash, contextHash), subjectIdentifier, 1.0d);
+				subjectStar.updateStatic(OMNI_SUBJECT_STAR_POC_ATTRIBUTE,
+						OmniJoinEstimator.orderedTupleHash(predicateHash, objectHash, contextHash), subjectIdentifier,
+						1.0d);
+			}
 			edgeForward.updatePredicate(predicateHash, subjectHash, objectHash, 1.0d);
 			edgeReverse.updatePredicate(predicateHash, objectHash, subjectHash, 1.0d);
 			edgeForward.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, objectHash, 1.0d);
 			edgeReverse.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, subjectHash, 1.0d);
-			edgeForward.updatePredicateContext(predicateHash, contextHash, subjectHash, objectHash, 1.0d);
-			edgeReverse.updatePredicateContext(predicateHash, contextHash, objectHash, subjectHash, 1.0d);
-			edgeForward.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
-					objectHash, 1.0d);
-			edgeReverse.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
-					subjectHash, 1.0d);
+			if (ingestContextSurfaces) {
+				edgeForward.updatePredicateContext(predicateHash, contextHash, subjectHash, objectHash, 1.0d);
+				edgeReverse.updatePredicateContext(predicateHash, contextHash, objectHash, subjectHash, 1.0d);
+				edgeForward.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+						objectHash, 1.0d);
+				edgeReverse.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+						subjectHash, 1.0d);
+			}
 			for (Component fixed : COMPONENT_VALUES) {
+				if (!ingestContextSurfaces && fixed == Component.C) {
+					continue;
+				}
 				long fixedHash = omniComponentHash(fixed.ordinal(), subjectHash, predicateHash, objectHash,
 						contextHash);
 				for (Component first : COMPONENT_VALUES) {
-					if (first == fixed) {
+					if (first == fixed || (!ingestContextSurfaces && first == Component.C)) {
 						continue;
 					}
 					for (Component second : COMPONENT_VALUES) {
-						if (second == fixed || second == first) {
+						if (second == fixed || second.ordinal() <= first.ordinal()
+								|| (!ingestContextSurfaces && second == Component.C)) {
 							continue;
 						}
 						long tupleIdentifier = OmniJoinEstimator.orderedTupleHash(
@@ -4500,6 +4518,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (fixed == null || fixed.isEmpty()) {
 			return approxTotalRows();
 		}
+		if (!contextPairSketchesEnabled && fixed.containsKey(Component.C)) {
+			return estimateOmniStatementRowsWithContextSingles(st, fixed);
+		}
 		OmniJoinEstimator estimator = st.omniJoinEstimator;
 		OmniJoinEstimator.Relation statements = estimator.relation(OMNI_RELATION_STATEMENT);
 		List<OmniWitnessSet> witnessSets = new ArrayList<>(fixed.size());
@@ -4511,6 +4532,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		OmniWitnessSet intersection = estimator.intersect(witnessSets);
 		double rows = estimator.estimateRows(intersection);
+		return Double.isFinite(rows) ? normalizeRows(rows) : Double.NaN;
+	}
+
+	private double estimateOmniStatementRowsWithContextSingles(State st, Map<Component, String> fixed) {
+		double rows = Double.POSITIVE_INFINITY;
+		for (Map.Entry<Component, String> entry : fixed.entrySet()) {
+			rows = Math.min(rows, estimateOmniStatementSingleRows(st, entry.getKey(), entry.getValue()));
+		}
+		return rows == Double.POSITIVE_INFINITY ? approxTotalRows() : normalizeRows(rows);
+	}
+
+	private double estimateOmniStatementSingleRows(State st, Component component, String fixedValue) {
+		String value = normalizeOmniComponentValue(fixedValue);
+		OmniJoinEstimator estimator = st.omniJoinEstimator;
+		OmniJoinEstimator.Relation statements = estimator.relation(OMNI_RELATION_STATEMENT);
+		byte attribute = OMNI_COMPONENT_ATTRIBUTES[component.ordinal()];
+		long valueHash = omniValueHash(value);
+		if (!contextPairSketchesEnabled && component == Component.C) {
+			return statements.staticTotalWeight(attribute, valueHash);
+		}
+		OmniWitnessSet witnessSet = estimator.probeStatic(statements, attribute,
+				OmniJoinEstimator.Predicate.equalHash(valueHash));
+		double rows = estimator.estimateRows(witnessSet);
 		return Double.isFinite(rows) ? normalizeRows(rows) : Double.NaN;
 	}
 
@@ -4841,6 +4885,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		long keyA = pairKey(hash(a.x, ax), hash(a.y, ay));
 		long keyB = pairKey(hash(b.x, bx), hash(b.y, by));
 
+		if (st.sketchStrategy == SketchStrategy.OMNI) {
+			double omniRows = estimateOmniPairJoinRows(st, j, a, ax, ay, b, bx, by);
+			if (Double.isFinite(omniRows)) {
+				return roundJoinEstimate(omniRows);
+			}
+		}
+
 		FastAgmsBindingSummary sa = pairWrapper(st, a, false).getComplementSketch(j, keyA);
 		FastAgmsBindingSummary sb = pairWrapper(st, b, false).getComplementSketch(j, keyB);
 		FastAgmsBindingSummary da = pairWrapper(st, a, true).getComplementSketch(j, keyA);
@@ -4916,6 +4967,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+	}
+
+	private double estimateOmniPairJoinRows(State state, Component join, Pair leftPair, String leftXValue,
+			String leftYValue, Pair rightPair, String rightXValue, String rightYValue) {
+		if (state == null || state.omniJoinEstimator == null || state.omniJoinEstimatorHasDeletes
+				|| join != Component.S) {
+			return Double.NaN;
+		}
+		OmniSubjectStarInput leftInput = omniSubjectStarInput(leftPair, leftXValue, leftYValue);
+		OmniSubjectStarInput rightInput = omniSubjectStarInput(rightPair, rightXValue, rightYValue);
+		if (leftInput == null || rightInput == null) {
+			return Double.NaN;
+		}
+		OmniJoinEstimator estimator = state.omniJoinEstimator;
+		OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
+		OmniWitnessSet left = estimator.probeStatic(subjectStar, leftInput.attribute(),
+				OmniJoinEstimator.Predicate.equalHash(leftInput.valueHash()));
+		OmniWitnessSet right = estimator.probeStatic(subjectStar, rightInput.attribute(),
+				OmniJoinEstimator.Predicate.equalHash(rightInput.valueHash()));
+		OmniWitnessSet intersection = estimator.intersect(List.of(left, right));
+		double rows = estimator.estimateRows(intersection);
+		return Double.isFinite(rows) ? normalizeRows(rows) : Double.NaN;
+	}
+
+	private OmniSubjectStarInput omniSubjectStarInput(Pair pair, String xValue, String yValue) {
+		if (pair == null || xValue == null || yValue == null || pair.x == Component.S || pair.y == Component.S) {
+			return null;
+		}
+		Component[] components = { pair.x, pair.y };
+		long[] valueHashes = {
+				omniValueHash(normalizeOmniComponentValue(xValue)),
+				omniValueHash(normalizeOmniComponentValue(yValue))
+		};
+		return new OmniSubjectStarInput(omniSubjectStarAttribute(components),
+				OmniJoinEstimator.orderedTupleHash(valueHashes));
 	}
 
 	private double estimateOmniSingleJoinRows(State state, Component join, Component leftFixed, String leftFixedValue,
@@ -5359,7 +5445,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return null;
 			}
 			witnesses.putAll(step.outputWitnesses());
-			rows = step.rows();
+			if (previousWitnessCount == 0) {
+				rows = step.rows();
+			} else {
+				rows = normalizeRows(rows * step.rowMultiplier());
+			}
 			confidence = Math.min(confidence, step.confidence());
 			samplingProbability = Math.min(samplingProbability, step.samplingProbability());
 			if (diagnosticSteps != null) {
@@ -5402,21 +5492,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double rows = Double.NaN;
 		double confidence = 1.0d;
 		double samplingProbability = 1.0d;
+		double rowMultiplier = 1.0d;
 		String inputBindingName = null;
 		String direction = "unsupported";
 		if (subjectInput != null && !subjectInput.isEmpty()) {
 			inputBindingName = subjectName;
 			direction = objectName == null ? "subject-filter" : "subject-to-object";
-			OmniWitnessSet filteredSubject = filterOmniSubjectWitnesses(subjectInput, pattern, subjectName);
+			OmniWitnessSet effectiveSubject = subjectInput;
+			OmniWitnessSet filteredSubject = filterOmniSubjectWitnesses(subjectInput, pattern, subjectName,
+					OMNI_ORDERED_CONNECTED_PROBE_MAX_RETAINED_WITNESSES);
 			if (filteredSubject != null && !filteredSubject.isEmpty()) {
-				outputWitnesses.put(subjectName, filteredSubject);
-				rows = mergeDirectedRows(rows, filteredSubject.estimatedRows());
+				effectiveSubject = unitWeightOmniWitnesses(filteredSubject);
+				outputWitnesses.put(subjectName, effectiveSubject);
+				rows = mergeDirectedRows(rows, effectiveSubject.estimatedRows());
+				if (objectName == null) {
+					rowMultiplier *= orderedConnectedRatio(effectiveSubject.estimatedRows(),
+							subjectInput.estimatedRows());
+				}
 				confidence = Math.min(confidence, filteredSubject.confidence());
 				samplingProbability = Math.min(samplingProbability, filteredSubject.samplingProbability());
 			}
 			if (objectName != null) {
-				OmniWitnessSet objectWitness = probeOmniBridgeWitnesses(subjectInput, OMNI_RELATION_EDGE_FORWARD,
-						pattern);
+				OmniWitnessSet objectWitness = probeOmniBridgeWitnesses(effectiveSubject, OMNI_RELATION_EDGE_FORWARD,
+						pattern, OMNI_ORDERED_CONNECTED_PROBE_MAX_RETAINED_WITNESSES);
 				if (objectWitness != null && objectInput != null && !objectInput.isEmpty()) {
 					objectWitness = intersectOmniWitnesses(objectWitness, objectInput);
 				}
@@ -5425,6 +5523,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					rows = objectInput == null || objectInput.isEmpty()
 							? mergeDirectedRows(rows, objectWitness.estimatedRows())
 							: objectWitness.estimatedRows();
+					rowMultiplier *= orderedConnectedRatio(objectWitness.estimatedRows(),
+							subjectInput.estimatedRows());
 					confidence = Math.min(confidence, objectWitness.confidence());
 					samplingProbability = Math.min(samplingProbability, objectWitness.samplingProbability());
 				}
@@ -5434,13 +5534,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			inputBindingName = objectName;
 			direction = "object-to-subject";
 			OmniWitnessSet subjectWitness = probeOmniBridgeWitnesses(objectInput, OMNI_RELATION_EDGE_REVERSE,
-					pattern);
+					pattern, OMNI_ORDERED_CONNECTED_PROBE_MAX_RETAINED_WITNESSES);
 			if (subjectWitness != null && subjectInput != null && !subjectInput.isEmpty()) {
 				subjectWitness = intersectOmniWitnesses(subjectWitness, subjectInput);
 			}
 			if (subjectWitness != null && !subjectWitness.isEmpty()) {
 				outputWitnesses.put(subjectName, subjectWitness);
 				rows = subjectWitness.estimatedRows();
+				rowMultiplier *= orderedConnectedRatio(subjectWitness.estimatedRows(), objectInput.estimatedRows());
 				confidence = Math.min(confidence, subjectWitness.confidence());
 				samplingProbability = Math.min(samplingProbability, subjectWitness.samplingProbability());
 			}
@@ -5449,7 +5550,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		OmniWitnessSet dominantWitness = dominantOmniWitness(outputWitnesses);
-		return new OmniOrderedJoinStep(outputWitnesses, rows, confidence, samplingProbability, inputBindingName,
+		return new OmniOrderedJoinStep(outputWitnesses, rows, confidence, samplingProbability, rowMultiplier,
+				inputBindingName,
 				dominantOmniWitnessBinding(outputWitnesses, dominantWitness), direction,
 				dominantWitness == null ? 0 : dominantWitness.retainedWitnessCount(),
 				dominantWitness == null ? OmniWitnessSet.FallbackReason.UNSUPPORTED.name()
@@ -5471,12 +5573,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		OmniWitnessSet dominantWitness = dominantOmniWitness(initialWitnesses);
 		return Double.isFinite(rows) && rows >= 0.0d
-				? new OmniOrderedJoinStep(initialWitnesses, rows, confidence, samplingProbability, null,
+				? new OmniOrderedJoinStep(initialWitnesses, rows, confidence, samplingProbability, 1.0d, null,
 						dominantOmniWitnessBinding(initialWitnesses, dominantWitness), "anchor",
 						dominantWitness == null ? 0 : dominantWitness.retainedWitnessCount(),
 						dominantWitness == null ? OmniWitnessSet.FallbackReason.UNSUPPORTED.name()
 								: dominantWitness.fallbackReason().name())
 				: null;
+	}
+
+	private double orderedConnectedRatio(double outputRows, double inputRows) {
+		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
+			return 1.0d;
+		}
+		if (!Double.isFinite(inputRows) || inputRows <= 0.0d) {
+			return outputRows;
+		}
+		return Math.max(0.0d, outputRows / inputRows);
 	}
 
 	private OmniWitnessSet dominantOmniWitness(Map<String, OmniWitnessSet> witnesses) {
@@ -5508,8 +5620,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private record OmniOrderedJoinStep(Map<String, OmniWitnessSet> outputWitnesses, double rows,
-			double confidence, double samplingProbability, String inputBindingName, String outputBindingName,
-			String direction, int retainedWitnessCount, String fallbackReason) {
+			double confidence, double samplingProbability, double rowMultiplier, String inputBindingName,
+			String outputBindingName, String direction, int retainedWitnessCount, String fallbackReason) {
 	}
 
 	public JoinFrequencyEstimate estimateOmniBridgeChain(List<TupleExpr> orderedFactors, Set<String> boundVars) {
@@ -6020,6 +6132,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		if (boundComponents.size() == 1) {
 			Component component = boundComponents.get(0);
+			if (component == Component.O) {
+				return null;
+			}
 			return new OmniSubjectStarInput(OMNI_COMPONENT_ATTRIBUTES[component.ordinal()],
 					omniValueHash(getValueOrNull(varForComponent(pattern, component))));
 		}
@@ -6222,8 +6337,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private OmniWitnessSet probeOmniBridgeWitnesses(OmniWitnessSet inputWitness, OmniRelation relationName,
 			StatementPattern bridge) {
+		return probeOmniBridgeWitnesses(inputWitness, relationName, bridge,
+				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
+	}
+
+	private OmniWitnessSet probeOmniBridgeWitnesses(OmniWitnessSet inputWitness, OmniRelation relationName,
+			StatementPattern bridge, int maxRetainedWitnesses) {
 		if (inputWitness == null || inputWitness.isEmpty() || relationName == null || bridge == null
 				|| !hasBoundValue(bridge.getPredicateVar())) {
+			return null;
+		}
+		if (inputWitness.retainedWitnessCount() > maxRetainedWitnesses) {
 			return null;
 		}
 		String predicateValue = getValueOrNull(bridge.getPredicateVar());
@@ -6242,12 +6366,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			OmniJoinEstimator.Relation relation = snap.omniJoinEstimator.relation(relationName);
 			if (hasBoundValue(bridge.getContextVar())) {
-				return snap.omniJoinEstimator.probeJoinPredicateContext(inputWitness, relation, predicateHash,
+				return snap.omniJoinEstimator.probeJoinPredicateContextRetainedAtMost(inputWitness, relation,
+						predicateHash,
 						omniValueHash(getValueOrNull(bridge.getContextVar())),
-						OmniJoinEstimator.OutputIdentifier.RECORD);
+						OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
 			}
-			return snap.omniJoinEstimator.probeJoinPredicate(inputWitness, relation, predicateHash,
-					OmniJoinEstimator.OutputIdentifier.RECORD);
+			return snap.omniJoinEstimator.probeJoinPredicateRetainedAtMost(inputWitness, relation, predicateHash,
+					OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
 		}
 	}
 
@@ -6257,6 +6382,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				|| bridge == null || !hasBoundValue(bridge.getPredicateVar())) {
 			return null;
 		}
+		if (inputWitness.retainedWitnessCount() > OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES) {
+			return null;
+		}
 		String predicateValue = getValueOrNull(bridge.getPredicateVar());
 		if (predicateValue == null) {
 			return null;
@@ -6264,12 +6392,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		long predicateHash = omniValueHash(predicateValue);
 		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
 		if (hasBoundValue(bridge.getContextVar())) {
-			return estimator.probeJoinPredicateContext(inputWitness, relation, predicateHash,
+			return estimator.probeJoinPredicateContextRetainedAtMost(inputWitness, relation, predicateHash,
 					omniValueHash(getValueOrNull(bridge.getContextVar())),
-					OmniJoinEstimator.OutputIdentifier.RECORD);
+					OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
 		}
-		return estimator.probeJoinPredicate(inputWitness, relation, predicateHash,
-				OmniJoinEstimator.OutputIdentifier.RECORD);
+		return estimator.probeJoinPredicateRetainedAtMost(inputWitness, relation, predicateHash,
+				OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
 	}
 
 	private OmniWitnessSet probeOmniPredicateEdgeAny(OmniJoinEstimator estimator, OmniRelation relationName,
@@ -6311,6 +6439,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private OmniWitnessSet filterOmniSubjectWitnesses(OmniWitnessSet inputWitness, StatementPattern pattern,
 			String subjectVarName) {
+		return filterOmniSubjectWitnesses(inputWitness, pattern, subjectVarName,
+				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
+	}
+
+	private OmniWitnessSet filterOmniSubjectWitnesses(OmniWitnessSet inputWitness, StatementPattern pattern,
+			String subjectVarName, int maxRetainedWitnesses) {
 		if (inputWitness == null || inputWitness.isEmpty() || pattern == null || subjectVarName == null) {
 			return null;
 		}
@@ -6329,8 +6463,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			OmniJoinEstimator estimator = snap.omniJoinEstimator;
 			OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
-			OmniWitnessSet filterWitness = estimator.probeStatic(subjectStar, input.attribute(),
-					OmniJoinEstimator.Predicate.equalHash(input.valueHash()));
+			OmniWitnessSet filterWitness = estimator.probeStaticRetainedAtMost(subjectStar, input.attribute(),
+					OmniJoinEstimator.Predicate.equalHash(input.valueHash()), maxRetainedWitnesses);
+			if (filterWitness == null) {
+				return null;
+			}
 			return estimator.intersect(List.of(inputWitness, filterWitness));
 		}
 	}
@@ -6346,8 +6483,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
-		OmniWitnessSet filterWitness = estimator.probeStatic(subjectStar, input.attribute(),
-				OmniJoinEstimator.Predicate.equalHash(input.valueHash()));
+		OmniWitnessSet filterWitness = estimator.probeStaticRetainedAtMost(subjectStar, input.attribute(),
+				OmniJoinEstimator.Predicate.equalHash(input.valueHash()),
+				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
+		if (filterWitness == null) {
+			return null;
+		}
 		return estimator.intersect(List.of(inputWitness, filterWitness));
 	}
 
@@ -6447,6 +6588,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Component secondJoin = findPatternComponentByVarName(pattern, sharedVars.get(1));
 		if (firstJoin == null || secondJoin == null || firstJoin == secondJoin) {
 			return List.of();
+		}
+		if (secondJoin.ordinal() < firstJoin.ordinal()) {
+			Component swap = firstJoin;
+			firstJoin = secondJoin;
+			secondJoin = swap;
 		}
 		List<OmniSurfaceInput> inputs = new ArrayList<>(2);
 		int pairCode = componentPairCode(firstJoin, secondJoin);
@@ -8750,6 +8896,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (input == null || input.isEmpty() || pattern == null || sharedVarName == null) {
 			return null;
 		}
+		if (input.retainedWitnessCount() > OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES) {
+			return null;
+		}
 		Component sharedComponent = findPatternComponentByVarName(pattern, sharedVarName);
 		if (sharedComponent == null) {
 			return null;
@@ -8794,9 +8943,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				}
 			} else if (subjectName != null) {
 				OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
-				OmniWitnessSet subjectWitnesses = estimator.probeJoinStatic(input, subjectStar,
+				OmniWitnessSet subjectWitnesses = estimator.probeJoinStaticRetainedAtMost(input, subjectStar,
 						OMNI_COMPONENT_ATTRIBUTES[sharedComponent.ordinal()],
-						OmniJoinEstimator.OutputIdentifier.RECORD);
+						OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
 				subjectWitnesses = filterOmniSubjectWitnesses(estimator, subjectWitnesses, pattern, subjectName);
 				if (subjectWitnesses != null && !subjectWitnesses.isEmpty()) {
 					outputWitnesses.put(subjectName, subjectWitnesses);
@@ -10001,6 +10150,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
 		private final Map<BindingSetAssignmentEstimateCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentEstimateCache = new HashMap<>();
 		private final Map<FiniteAnchorPrefixCacheKey, Optional<TuplePlanEstimate>> finiteAnchorPrefixEstimateCache = new HashMap<>();
+		private final Map<FiniteAnchorPrefixCacheKey, Optional<List<Map<String, Value>>>> finiteAnchorPrefixRowsCache = new HashMap<>();
+		private final Map<FiniteAnchorPrefixSurfaceCacheKey, Optional<Double>> finiteAnchorPrefixSurfaceCache = new HashMap<>();
 		private final Set<FiniteAnchorPrefixFailureCacheKey> finiteAnchorPrefixFailureCache = new HashSet<>();
 		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
 	}
@@ -10154,6 +10305,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				}
 			}
 			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class FiniteAnchorPrefixSurfaceCacheKey {
+		private final FiniteAnchorPrefixCacheKey prefixKey;
+		private final TupleExpr factor;
+		private final String joinVarName;
+		private final int hashCode;
+
+		private FiniteAnchorPrefixSurfaceCacheKey(List<TupleExpr> prefixFactors, TupleExpr factor,
+				String joinVarName) {
+			this.prefixKey = new FiniteAnchorPrefixCacheKey(prefixFactors);
+			this.factor = Objects.requireNonNull(factor, "factor");
+			this.joinVarName = joinVarName;
+			int hash = prefixKey.hashCode();
+			hash = 31 * hash + System.identityHashCode(factor);
+			hash = 31 * hash + Objects.hashCode(joinVarName);
+			this.hashCode = hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof FiniteAnchorPrefixSurfaceCacheKey that)) {
+				return false;
+			}
+			return factor == that.factor && Objects.equals(joinVarName, that.joinVarName)
+					&& prefixKey.equals(that.prefixKey);
 		}
 
 		@Override
@@ -12823,6 +13009,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private Double finiteAnchorPrefixJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String joinVarName) {
+		if (factor instanceof StatementPattern pattern) {
+			Double exactRows = finiteAnchorPrefixExactSurfaceRows(prefixFactors, pattern, joinVarName);
+			if (exactRows != null) {
+				return exactRows;
+			}
+		}
 		TuplePlanEstimate prefixEstimate = finiteAnchorPrefixEstimate(prefixFactors);
 		if (prefixEstimate == null) {
 			return null;
@@ -12947,6 +13139,37 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate finiteAnchorPrefixEstimateUncached(List<TupleExpr> factors) {
+		List<Map<String, Value>> rows = finiteAnchorPrefixRows(factors);
+		return rows == null ? null : finiteRowsTuplePlanEstimate(rows);
+	}
+
+	private List<Map<String, Value>> finiteAnchorPrefixRows(List<TupleExpr> factors) {
+		if (factors == null || factors.isEmpty() || !containsFiniteAnchorFactor(factors)) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return finiteAnchorPrefixRowsUncached(factors);
+		}
+		FiniteAnchorPrefixCacheKey key = new FiniteAnchorPrefixCacheKey(factors);
+		Optional<List<Map<String, Value>>> cached = scope.finiteAnchorPrefixRowsCache.get(key);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
+		FiniteAnchorPrefixFailureCacheKey failureKey = new FiniteAnchorPrefixFailureCacheKey(factors);
+		if (scope.finiteAnchorPrefixFailureCache.contains(failureKey)) {
+			return null;
+		}
+		List<Map<String, Value>> rows = finiteAnchorPrefixRowsUncached(factors);
+		if (rows != null) {
+			scope.finiteAnchorPrefixRowsCache.put(key, Optional.of(rows));
+		} else {
+			scope.finiteAnchorPrefixFailureCache.add(failureKey);
+		}
+		return rows;
+	}
+
+	private List<Map<String, Value>> finiteAnchorPrefixRowsUncached(List<TupleExpr> factors) {
 		List<Map<String, Value>> rows = new ArrayList<>();
 		rows.add(new LinkedHashMap<>());
 		boolean sawFiniteAnchor = false;
@@ -12966,10 +13189,55 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return null;
 			}
 			if (rows.isEmpty()) {
-				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+				return rows;
 			}
 		}
-		return sawFiniteAnchor ? finiteRowsTuplePlanEstimate(rows) : null;
+		return sawFiniteAnchor ? rows : null;
+	}
+
+	private Double finiteAnchorPrefixExactSurfaceRows(List<TupleExpr> prefixFactors, StatementPattern factor,
+			String joinVarName) {
+		if (prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return finiteAnchorPrefixExactSurfaceRowsUncached(prefixFactors, factor, joinVarName);
+		}
+		FiniteAnchorPrefixSurfaceCacheKey key = new FiniteAnchorPrefixSurfaceCacheKey(prefixFactors, factor,
+				joinVarName);
+		Optional<Double> cached = scope.finiteAnchorPrefixSurfaceCache.get(key);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
+		Double rows = finiteAnchorPrefixExactSurfaceRowsUncached(prefixFactors, factor, joinVarName);
+		scope.finiteAnchorPrefixSurfaceCache.put(key, rows == null ? Optional.empty() : Optional.of(rows));
+		return rows;
+	}
+
+	private Double finiteAnchorPrefixExactSurfaceRowsUncached(List<TupleExpr> prefixFactors, StatementPattern factor,
+			String joinVarName) {
+		List<Map<String, Value>> prefixRows = finiteAnchorPrefixRows(prefixFactors);
+		if (prefixRows == null) {
+			return null;
+		}
+		List<Map<String, Value>> joinedRows = joinFiniteRowsWithPattern(prefixRows, factor);
+		return finiteSurfaceRows(joinedRows, joinVarName);
+	}
+
+	private static Double finiteSurfaceRows(List<Map<String, Value>> rows, String joinVarName) {
+		if (rows == null || joinVarName == null) {
+			return null;
+		}
+		if (rows.isEmpty()) {
+			return 0.0d;
+		}
+		for (Map<String, Value> row : rows) {
+			if (row.containsKey(joinVarName)) {
+				return (double) rows.size();
+			}
+		}
+		return null;
 	}
 
 	private List<Map<String, Value>> joinFiniteFilterRows(List<Map<String, Value>> input,
@@ -13015,6 +13283,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		List<Map<String, Value>> joined = new ArrayList<>();
 		long rowBudget = finiteRelationSurfaceRowBudget();
+		long scanBudget = finiteRelationScanBudget(rowBudget);
+		long scannedRows = 0L;
 		for (Map<String, Value> row : input) {
 			StatementPattern boundPattern = bindPatternRow(pattern, row);
 			if (boundComponentCount(boundPattern) == 0) {
@@ -13034,6 +13304,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					predicate, object, contexts)) {
 				while (statements.hasNext()) {
 					Statement statement = statements.next();
+					scannedRows++;
+					if (scannedRows > scanBudget) {
+						return null;
+					}
 					if (!statementMatchesPatternVariableEqualities(boundPattern, statement)) {
 						continue;
 					}
@@ -13240,6 +13514,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private long finiteRelationSurfaceRowBudget() {
 		return zeroIntersectionRowBudget > 0L ? zeroIntersectionRowBudget : DEFAULT_FINITE_RELATION_SURFACE_ROW_BUDGET;
+	}
+
+	private static long finiteRelationScanBudget(long rowBudget) {
+		if (rowBudget <= 0L) {
+			return FINITE_RELATION_MAX_SCANNED_ROWS;
+		}
+		if (rowBudget >= FINITE_RELATION_MAX_SCANNED_ROWS / FINITE_RELATION_SCANNED_ROWS_PER_OUTPUT_ROW) {
+			return FINITE_RELATION_MAX_SCANNED_ROWS;
+		}
+		long scaledBudget = rowBudget * FINITE_RELATION_SCANNED_ROWS_PER_OUTPUT_ROW;
+		return Math.max(FINITE_RELATION_MIN_SCANNED_ROWS, scaledBudget);
 	}
 
 	private static Map<String, Value> mergeFiniteAssignmentRow(Map<String, Value> row, BindingSet bindingSet,
@@ -15200,6 +15485,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		clearPositiveReadinessCache();
 		SketchEstimatorMetadata metadata = store.readMetadata();
+		if (metadata.version != SketchEstimatorMetadata.VERSION) {
+			throw new IOException("Snapshot metadata version mismatch: snapshot="
+					+ metadata.version + " current=" + SketchEstimatorMetadata.VERSION);
+		}
 		if (metadata.subjectBucketCount != subjectBucketCount || metadata.predicateBucketCount != predicateBucketCount
 				|| metadata.objectBucketCount != objectBucketCount
 				|| metadata.contextBucketCount != contextBucketCount) {
@@ -15816,9 +16105,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		byte slot = slotByte(slotOf(state));
 		try (OmniWitnessPersistenceStore witnessStore = OmniWitnessPersistenceStore.open(persistenceFile)) {
-			synchronized (state) {
-				witnessStore.writeSnapshot(slot, state.omniJoinEstimator, slotGenerations[slot]);
-			}
+			witnessStore.writeSnapshot(slot, state.omniJoinEstimator, slotGenerations[slot]);
 		}
 		omniJoinEstimatorRefs[0] = null;
 		omniJoinEstimatorRefs[1] = null;

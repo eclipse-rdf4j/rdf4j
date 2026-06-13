@@ -6577,9 +6577,9 @@ final class LmdbCascadesRuleProvider {
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(estimatedOutputRows)) {
 				outputRows = Math.min(leftRows, estimatedOutputRows);
 			}
-			double rhsBuildRows = rightRows;
+			double rhsBuildRows = rightWorkRows;
 			double leftProbeRows = leftRows;
-			double workRows = rhsBuildRows + leftProbeRows;
+			double workRows = leftWorkRows + rhsBuildRows + leftProbeRows;
 			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
 				return Optional.empty();
 			}

@@ -166,6 +166,29 @@ class SketchJoinSketchAccuracyComparisonTest {
 	}
 
 	@Test
+	void omniStrategySkipsObjectOnlySubjectStarSurface() {
+		Value enabled = VF.createLiteral("enabled");
+		Value flagged = VF.createLiteral("flagged");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 64; i++) {
+			Resource entity = VF.createIRI("urn:omni-sketch:subject-star-object-only:entity:" + i);
+			store.add(VF.createStatement(entity, VF.createIRI("urn:omni-sketch:subject-star-object-only:p1"),
+					enabled));
+			store.add(VF.createStatement(entity, VF.createIRI("urn:omni-sketch:subject-star-object-only:p2"),
+					flagged));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("entity"), Var.of("p1"), Var.of("left", enabled));
+		StatementPattern right = new StatementPattern(Var.of("entity"), Var.of("p2"), Var.of("right", flagged));
+
+		JoinFrequencyEstimate estimate = estimator.estimateSubjectStarJoinSurface(List.of(left, right), "entity");
+
+		assertEquals(null, estimate, "Object-only subject-star surfaces are intentionally not materialized");
+	}
+
+	@Test
 	void omniStrategyUsesSubjectStarWitnessesForSingleVariableJoinStep() {
 		IRI primaryFlag = VF.createIRI("urn:omni-sketch:subject-star:primaryFlag");
 		IRI secondaryFlag = VF.createIRI("urn:omni-sketch:subject-star:secondaryFlag");

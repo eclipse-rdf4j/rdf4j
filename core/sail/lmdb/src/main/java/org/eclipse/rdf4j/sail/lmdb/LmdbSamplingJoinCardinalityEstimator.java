@@ -56,6 +56,9 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	private static final long MISSING_ID = Long.MIN_VALUE;
 	private static final int CONNECTED_JOIN_MAX_ENUMERATED_ROWS = 16_384;
 	private static final double CONNECTED_JOIN_MAX_SAMPLE_MATCHES = 1_000_000.0d;
+	private static final long FINITE_JOIN_MIN_SCANNED_ROWS = 256L;
+	private static final long FINITE_JOIN_MAX_SCANNED_ROWS = 4_096L;
+	private static final long FINITE_JOIN_SCANNED_ROWS_PER_OUTPUT_ROW = 16L;
 	private static final int EXACT_SURFACE_CACHE_MAX_ENTRIES = 65_536;
 
 	private final ValueStore valueStore;
@@ -229,6 +232,7 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		long rowBudget = request.rowBudget() <= 0L
 				? CONNECTED_JOIN_MAX_ENUMERATED_ROWS
 				: request.rowBudget();
+		long scanBudget = finiteJoinScanBudget(rowBudget);
 		RowMapView rowView = new RowMapView(slots);
 		for (int patternIndex = 0; patternIndex < request.patterns()
 				.size(); patternIndex++) {
@@ -245,6 +249,8 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			}
 			List<long[]> result = null;
 			boolean finished = false;
+			boolean scanBudgetExceeded = false;
+			long scannedRows = 0L;
 			List<long[]> output = new ArrayList<>();
 			for (long[] row : rows) {
 				PatternIds ids = patternIds(pattern, rowView.wrap(row));
@@ -264,6 +270,12 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 						true)) {
 					long[] quad;
 					while ((quad = records.next()) != null) {
+						scannedRows++;
+						if (scannedRows > scanBudget) {
+							scanBudgetExceeded = true;
+							finished = true;
+							break;
+						}
 						long[] merged = merge(row, slots, pattern, quad);
 						if (merged == null) {
 							continue;
@@ -284,7 +296,12 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			}
 			rows = result;
 			if (rows == null) {
-				trace("finite-budget-exceeded", request, "pattern=" + pattern + ", budget=" + rowBudget);
+				if (scanBudgetExceeded) {
+					trace("finite-scan-budget-exceeded", request,
+							"pattern=" + pattern + ", scannedRows=" + scannedRows + ", budget=" + scanBudget);
+				} else {
+					trace("finite-budget-exceeded", request, "pattern=" + pattern + ", budget=" + rowBudget);
+				}
 				return NO_EXACT_ESTIMATE;
 			}
 			if (rows.isEmpty()) {
@@ -303,6 +320,17 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		trace("finite-unsupported", request, "reason=surface-unbound");
 		return UNSUPPORTED;
 
+	}
+
+	private static long finiteJoinScanBudget(long rowBudget) {
+		if (rowBudget <= 0L) {
+			return FINITE_JOIN_MAX_SCANNED_ROWS;
+		}
+		if (rowBudget >= FINITE_JOIN_MAX_SCANNED_ROWS / FINITE_JOIN_SCANNED_ROWS_PER_OUTPUT_ROW) {
+			return FINITE_JOIN_MAX_SCANNED_ROWS;
+		}
+		long scaledBudget = rowBudget * FINITE_JOIN_SCANNED_ROWS_PER_OUTPUT_ROW;
+		return Math.max(FINITE_JOIN_MIN_SCANNED_ROWS, scaledBudget);
 	}
 
 	private double estimateFinalPatternRows(ExactFiniteJoinSurfaceRequest request, RowMapView rowView,

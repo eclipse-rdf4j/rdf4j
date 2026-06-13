@@ -442,6 +442,26 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void materializedExistsSemiCostIncludesLeftSubplanWorkRows() {
+		CascadesRule rule = LmdbCascadesRuleProvider.rules(new MaterializedExistsWorkStatistics())
+				.rules()
+				.stream()
+				.filter(candidate -> "lmdb-materialized-exists-semi".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Filter existsFilter = new Filter(pattern("a", "follows", "b"),
+				new Exists(pattern("a", "name", "optName")));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(), "", existsFilter, PhysicalProperties.ANY,
+				RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
+
+		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(null, null, null, null)).getFirst();
+
+		assertEquals(1_000_004.0d, application.localCost().workRows(), 0.0d,
+				"Materialized EXISTS still has to evaluate the left subplan before probing the RHS cache");
+	}
+
+	@Test
 	void materializedExistsSemiRejectsHiddenOuterFilterDependency() {
 		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
 				.rules()
@@ -1318,6 +1338,34 @@ class LmdbCascadesOptimizerTest {
 			return Optional.of(new FactorCostEstimate(50.0d, 10.0d,
 					Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"), robustMetrics(), true, true,
 					0, 0, 12.0d));
+		}
+	}
+
+	private static final class MaterializedExistsWorkStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return estimateFactorCost(factor,
+					JoinFactorCostModel.CostContext.of(currentlyBoundVars, Double.NaN, Double.NaN, false));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				JoinFactorCostModel.CostContext context) {
+			Set<String> bindingNames = factor.getBindingNames();
+			if (bindingNames.contains("optName")) {
+				return Optional.of(new FactorCostEstimate(3.0d, 3.0d));
+			}
+			if (bindingNames.contains("b")) {
+				return Optional.of(new FactorCostEstimate(1_000_000.0d, 1.0d));
+			}
+			return Optional.of(new FactorCostEstimate(10.0d, 1.0d));
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return 1.0d;
 		}
 	}
 

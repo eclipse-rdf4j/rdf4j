@@ -5553,12 +5553,16 @@ class LmdbEvaluationStatistics
 				accessEnvelopeRows);
 		boolean duplicateProductRaisesEnvelope = duplicateProductRaisesAccessEnvelope(productEstimate, productRows,
 				accessEnvelopeRows);
+		boolean duplicateEnvelopeRaisesProduct = duplicateAccessEnvelopeRaisesBoundProduct(productEstimate,
+				productRows, accessEnvelopeRows, repeatedInvocations);
 		if (boundAccessPathEnvelopeIsAuthoritative(baseEstimate)
 				&& !duplicateProductRaisesEnvelope
 				&& isPositiveFinite(accessEnvelopeRows)
 				&& isPositiveFinite(accessEnvelopeWorkRows)) {
 			double envelopeWorkRows = Math.max(workRows, Math.max(accessEnvelopeRows, accessEnvelopeWorkRows));
-			double envelopeOutputRows = Math.min(productRows, accessEnvelopeRows);
+			double envelopeOutputRows = duplicateEnvelopeRaisesProduct
+					? accessEnvelopeRows
+					: Math.min(productRows, accessEnvelopeRows);
 			if (!isPositiveFinite(envelopeOutputRows)) {
 				envelopeOutputRows = accessEnvelopeRows;
 			}
@@ -5662,6 +5666,24 @@ class LmdbEvaluationStatistics
 			return false;
 		}
 		if (!needsDuplicateCorrection(productEstimate.prefixRows(), productEstimate.prefixSurfaceRows())) {
+			return false;
+		}
+		double disagreementRatio = maxRatio(productRows, accessEnvelopeRows);
+		return isPositiveFinite(disagreementRatio)
+				&& disagreementRatio >= BOUND_JOIN_PRODUCT_PAGE_WALK_BLEND_MIN_RATIO;
+	}
+
+	private boolean duplicateAccessEnvelopeRaisesBoundProduct(BoundJoinProductEstimate productEstimate,
+			double productRows, double accessEnvelopeRows, double repeatedInvocations) {
+		if (productEstimate == null
+				|| !isPositiveFinite(productRows)
+				|| !isPositiveFinite(accessEnvelopeRows)
+				|| !isPositiveFinite(repeatedInvocations)
+				|| accessEnvelopeRows <= productRows) {
+			return false;
+		}
+		if (!needsDuplicateCorrection(repeatedInvocations, productEstimate.prefixRows())
+				&& !needsDuplicateCorrection(repeatedInvocations, productEstimate.prefixSurfaceRows())) {
 			return false;
 		}
 		double disagreementRatio = maxRatio(productRows, accessEnvelopeRows);

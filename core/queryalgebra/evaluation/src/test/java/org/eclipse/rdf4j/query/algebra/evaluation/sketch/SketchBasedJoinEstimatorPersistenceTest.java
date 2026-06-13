@@ -108,6 +108,15 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		out.write(bytes);
 	}
 
+	private static void rewriteMetadataVersion(Path metadataFile, int version) throws Exception {
+		byte[] bytes = Files.readAllBytes(metadataFile);
+		bytes[4] = (byte) (version >>> 24);
+		bytes[5] = (byte) (version >>> 16);
+		bytes[6] = (byte) (version >>> 8);
+		bytes[7] = (byte) version;
+		Files.write(metadataFile, bytes);
+	}
+
 	private static SketchBasedJoinEstimator.Config smallConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
@@ -293,9 +302,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertNull(metadata.omniJoinEstimatorRefB, "OMNI should not persist join side-state as framed payload B");
 		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/manifest.bin")),
 				"OMNI should persist join side-state through the mapped witness manifest");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-a.dat"))
-				|| Files.isRegularFile(storeDirectory.resolve("join-estimator/omni-witness-b.dat")),
-				"OMNI should persist witness postings in a slot data file");
+		try (var dataFiles = Files.list(storeDirectory.resolve("join-estimator"))) {
+			assertTrue(dataFiles.anyMatch(SketchBasedJoinEstimatorPersistenceTest::isOmniWitnessDataFile),
+					"OMNI should persist witness postings in a slot data file");
+		}
 
 		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
 		reader.configurePersistence(storeDirectory, true);
@@ -314,6 +324,38 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(0L).next(),
 				"Closing the estimator should release its mapped Omni witness snapshot");
+	}
+
+	private static boolean isOmniWitnessDataFile(Path path) {
+		String fileName = path.getFileName().toString();
+		return fileName.startsWith("omni-witness-") && fileName.endsWith(".dat");
+	}
+
+	@Test
+	void omniStrategyPersistsContextSinglesWithoutContextPairSketches(@TempDir Path tempDir) throws Exception {
+		Resource context = VF.createIRI("urn:omni-context-lazy:c1");
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(VF.createIRI("urn:omni-context-lazy:s1"), VF.createIRI("urn:omni-context-lazy:p1"),
+				VF.createIRI("urn:omni-context-lazy:o1"), context));
+
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+				.withoutContextPairSketches();
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
+		writer.rebuild();
+		assertEquals(1.0d,
+				writer.cardinalitySingle(SketchBasedJoinEstimator.Component.C, context.stringValue()), 0.0d);
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
+		reader.configurePersistence(storeDirectory, true);
+
+		assertEquals(1.0d,
+				reader.cardinalitySingle(SketchBasedJoinEstimator.Component.C, context.stringValue()), 0.0d,
+				"Context single cardinality should survive lazy OMNI snapshot reload");
 	}
 
 	@Test
@@ -392,6 +434,32 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		reader.rebuild();
 		assertEquals(1.0d,
 				reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()), 0.0d);
+	}
+
+	@Test
+	void staleMetadataVersionSnapshotIsIgnoredInsteadOfRead(@TempDir Path tempDir) throws Exception {
+		Resource subject = VF.createIRI("urn:metadata-version-mismatch:s");
+		IRI predicate = VF.createIRI("urn:metadata-version-mismatch:p");
+		Value object = VF.createIRI("urn:metadata-version-mismatch:o");
+
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(subject, predicate, object));
+
+		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, smallConfig()));
+		writer.rebuild();
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(snapshot, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+		rewriteMetadataVersion(snapshot.resolve("metadata.bin"), 4);
+
+		SketchBasedJoinEstimator reader = track(
+				new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig()));
+		reader.configurePersistence(snapshot, true);
+
+		assertFalse(reader.isReadyNonBlocking(),
+				"Older metadata versions must be treated as stale cache entries after estimator layout changes");
+		assertTrue(reader.debugPersistedSketches().isEmpty(),
+				"Stale snapshots should not leave readable persisted sketch refs behind");
 	}
 
 	@Test
@@ -1530,6 +1598,58 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertFalse(heldPersistLock, "persistIfDirty should not hold persistLock while waiting on state lock");
 		assertTrue(persistCompleted.get(), "Persist thread should complete after state lock is released");
 		assertNull(persistFailure.get(), "Persist thread should not fail");
+	}
+
+	@Test
+	void omniPersistDoesNotWaitForStateMonitor(@TempDir Path tempDir) throws Exception {
+		Resource subject = VF.createIRI("urn:omni-state-lock:s");
+		IRI predicate = VF.createIRI("urn:omni-state-lock:p");
+		Value object = VF.createIRI("urn:omni-state-lock:o");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.add(st(subject, predicate, object));
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator.Config config = smallConfig()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config));
+		estimator.rebuild();
+		estimator.configurePersistence(snapshot, false);
+
+		Object stateLockA = privateFieldValue(estimator, "bufA");
+		Object stateLockB = privateFieldValue(estimator, "bufB");
+		CountDownLatch stateLocked = new CountDownLatch(1);
+		CountDownLatch releaseStateLock = new CountDownLatch(1);
+		Thread stateHolder = new Thread(() -> {
+			synchronized (stateLockA) {
+				synchronized (stateLockB) {
+					stateLocked.countDown();
+					awaitUninterruptibly(releaseStateLock);
+				}
+			}
+		}, "SketchEstimator-OmniStateLockHolder");
+		stateHolder.start();
+		assertTrue(stateLocked.await(2, TimeUnit.SECONDS), "Expected state lock to be acquired by helper thread");
+
+		AtomicReference<Throwable> persistFailure = new AtomicReference<>();
+		CountDownLatch persistCompleted = new CountDownLatch(1);
+		Thread persistThread = new Thread(() -> {
+			try {
+				estimator.persistIfDirty();
+				persistCompleted.countDown();
+			} catch (Throwable t) {
+				persistFailure.set(t);
+			}
+		}, "SketchEstimator-OmniPersistAttempt");
+		persistThread.start();
+
+		try {
+			assertTrue(persistCompleted.await(2, TimeUnit.SECONDS),
+					"OMNI snapshot persistence should not wait for the state monitor");
+			assertNull(persistFailure.get(), "Persist thread should not fail");
+		} finally {
+			releaseStateLock.countDown();
+			persistThread.join(TimeUnit.SECONDS.toMillis(2));
+			stateHolder.join(TimeUnit.SECONDS.toMillis(2));
+		}
 	}
 
 	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {

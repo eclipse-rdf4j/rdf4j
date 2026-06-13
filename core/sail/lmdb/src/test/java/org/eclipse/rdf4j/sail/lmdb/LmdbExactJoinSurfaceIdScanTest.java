@@ -24,6 +24,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactFiniteJoinSurfaceRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -187,6 +189,41 @@ class LmdbExactJoinSurfaceIdScanTest {
 		}
 	}
 
+	@Test
+	void finiteJoinSurfaceFallsBackWhenScanBudgetExceedsOutputBudget(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			loadRepeatedVariableScanData(repository, 512);
+			TripleStore tripleStore = tripleStore(store);
+			ValueStore valueStore = (ValueStore) store.getBackingStore()
+					.getValueFactory();
+			LmdbStatementPatternCardinalitySource cardinalitySource = new LmdbStatementPatternCardinalitySource(
+					valueStore, tripleStore);
+			LmdbSamplingJoinCardinalityEstimator estimator = new LmdbSamplingJoinCardinalityEstimator(valueStore,
+					tripleStore, cardinalitySource, () -> () -> {
+					});
+			StatementPattern repeatedValue = new StatementPattern(
+					Var.of("same"),
+					Var.of("predicate", MARKER),
+					Var.of("same"));
+			ExactFiniteJoinSurfaceRequest request = new ExactFiniteJoinSurfaceRequest(
+					List.of(Map.of()),
+					List.of(repeatedValue),
+					"same",
+					8L);
+
+			double rows = estimator.estimateFiniteJoinSurface(request);
+
+			assertEquals(SketchBasedJoinEstimator.ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE, rows, 0.0d,
+					"Exact finite-surface costing must not scan a large non-matching range to prove zero rows");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
 	private static SketchBasedJoinEstimator rebuildAndGetEstimator(LmdbStore store) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 		estimator.rebuild();
@@ -228,6 +265,17 @@ class LmdbExactJoinSurfaceIdScanTest {
 			connection.add(VF.createIRI("urn:test:marker:0"), MARKER, VF.createLiteral("50", XSD.INT));
 			connection.add(VF.createIRI("urn:test:marker:1"), MARKER, VF.createLiteral("60", XSD.INT));
 			connection.add(VF.createIRI("urn:test:marker:2"), MARKER, VF.createLiteral("70", XSD.INT));
+			connection.commit();
+		}
+	}
+
+	private static void loadRepeatedVariableScanData(SailRepository repository, int count) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < count; i++) {
+				connection.add(VF.createIRI("urn:test:scan:subject:" + i), MARKER,
+						VF.createIRI("urn:test:scan:object:" + i));
+			}
 			connection.commit();
 		}
 	}

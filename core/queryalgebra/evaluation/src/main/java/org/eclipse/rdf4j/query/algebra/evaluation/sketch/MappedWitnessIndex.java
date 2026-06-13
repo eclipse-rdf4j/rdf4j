@@ -58,35 +58,52 @@ final class MappedWitnessIndex implements WitnessIndex {
 
 	@Override
 	public WitnessCursor cursor(long valueHash) {
+		ValueRecord record = valueRecord(valueHash);
+		return record == null ? WitnessCursor.empty() : record.cursor();
+	}
+
+	ValueRecord valueRecord(long valueHash) {
 		if (valueCount == 0 || tableSize == 0) {
-			return WitnessCursor.empty();
+			return null;
 		}
 		int slot = OmniWitnessLayout.tableSlot(valueHash, tableSize);
 		for (int scanned = 0; scanned < tableSize; scanned++) {
 			long offset = hashTableOffset + (long) slot * OmniWitnessLayout.VALUE_HASH_SLOT_BYTES;
 			int recordIndexPlusOne = segment.get(OmniWitnessLayout.BE_INT, offset + Long.BYTES);
 			if (recordIndexPlusOne == 0) {
-				return WitnessCursor.empty();
+				return null;
 			}
 			long storedValueHash = segment.get(OmniWitnessLayout.BE_LONG, offset);
 			if (storedValueHash == valueHash) {
-				long recordOffset = valueRecordOffset
-						+ (long) (recordIndexPlusOne - 1) * OmniWitnessLayout.VALUE_RECORD_BYTES;
-				long postings = segment.get(OmniWitnessLayout.BE_LONG, recordOffset + Long.BYTES);
-				int count = segment.get(OmniWitnessLayout.BE_INT, recordOffset + Long.BYTES + Long.BYTES);
-				return new MappedPostingCursor(segment, postings, count);
+				return readValueRecord(recordIndexPlusOne - 1);
 			}
 			slot = (slot + 1) & (tableSize - 1);
 		}
-		return WitnessCursor.empty();
+		return null;
 	}
 
 	void forEach(ValuePostingsConsumer consumer) {
 		for (int i = 0; i < valueCount; i++) {
-			long recordOffset = valueRecordOffset + (long) i * OmniWitnessLayout.VALUE_RECORD_BYTES;
-			long valueHash = segment.get(OmniWitnessLayout.BE_LONG, recordOffset);
-			consumer.accept(valueHash, cursor(valueHash));
+			ValueRecord record = readValueRecord(i);
+			consumer.accept(record.valueHash(), record.cursor());
 		}
+	}
+
+	private ValueRecord readValueRecord(int recordIndex) {
+		long recordOffset = valueRecordOffset + (long) recordIndex * OmniWitnessLayout.VALUE_RECORD_BYTES;
+		long valueHash = segment.get(OmniWitnessLayout.BE_LONG, recordOffset);
+		long postings = segment.get(OmniWitnessLayout.BE_LONG, recordOffset + Long.BYTES);
+		int count = segment.get(OmniWitnessLayout.BE_INT, recordOffset + Long.BYTES + Long.BYTES);
+		float samplingProbability = segment.get(OmniWitnessLayout.BE_FLOAT,
+				recordOffset + Long.BYTES + Long.BYTES + Integer.BYTES);
+		double minimumDetectableEstimate = segment.get(OmniWitnessLayout.BE_DOUBLE,
+				recordOffset + Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES);
+		return new ValueRecord(valueHash, new MappedPostingCursor(segment, postings, count), samplingProbability,
+				minimumDetectableEstimate);
+	}
+
+	record ValueRecord(long valueHash, WitnessCursor cursor, double samplingProbability,
+			double minimumDetectableEstimate) {
 	}
 
 	interface ValuePostingsConsumer {

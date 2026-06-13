@@ -190,6 +190,33 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 	}
 
 	@Test
+	void finiteAnchorPrefixStopsPatternScanAtBudget() {
+		IRI marker = VF.createIRI("urn:test:scan-marker");
+		CountingSketchStatementSource store = new CountingSketchStatementSource();
+		for (int i = 0; i < 512; i++) {
+			store.add(st(VF.createIRI("urn:test:scan-subject:" + i), marker,
+					VF.createIRI("urn:test:scan-object:" + i)));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				config().withZeroIntersectionRowBudget(8));
+		estimator.rebuild();
+		store.resetCounters();
+		BindingSetAssignment anchor = finiteDomainRows(valueRow("anchor", VF.createLiteral("present")));
+		StatementPattern repeatedValue = new StatementPattern(Var.of("same"), Var.of("marker", marker),
+				Var.of("same"));
+		StatementPattern downstream = new StatementPattern(Var.of("same"),
+				Var.of("next", VF.createIRI("urn:test:next")), Var.of("out"));
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			estimator.estimateSketchJoinSurfaceRows(List.of(anchor, repeatedValue), downstream, "same");
+		}
+
+		assertTrue(store.statementRowsRead() <= 257,
+				"Finite-anchor prefix costing should fall back before scanning every non-matching row; scanned="
+						+ store.statementRowsRead());
+	}
+
+	@Test
 	void finiteBindingSetInequalityFilterUsesExactTupleRows() {
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults());
@@ -380,16 +407,48 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	private static final class CountingSketchStatementSource extends StubSketchStatementSource {
 		private final AtomicInteger statementProbes = new AtomicInteger();
+		private final AtomicInteger statementRows = new AtomicInteger();
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) {
 			statementProbes.incrementAndGet();
-			return super.getStatements(subj, pred, obj, contexts);
+			CloseableIteration<? extends Statement> delegate = super.getStatements(subj, pred, obj, contexts);
+			return new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					return delegate.hasNext();
+				}
+
+				@Override
+				public Statement next() {
+					statementRows.incrementAndGet();
+					return delegate.next();
+				}
+
+				@Override
+				public void remove() {
+					delegate.remove();
+				}
+
+				@Override
+				public void close() {
+					delegate.close();
+				}
+			};
 		}
 
 		int statementProbeCount() {
 			return statementProbes.get();
+		}
+
+		int statementRowsRead() {
+			return statementRows.get();
+		}
+
+		void resetCounters() {
+			statementProbes.set(0);
+			statementRows.set(0);
 		}
 	}
 

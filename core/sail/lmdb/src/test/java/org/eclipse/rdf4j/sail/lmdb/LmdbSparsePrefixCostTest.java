@@ -15,9 +15,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -33,6 +37,7 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbSparsePrefixCostTest {
 
 	private static final double MAX_SPARSE_PREFIX_CARDINALITY_Q_ERROR = 16.0d;
+	private static final double MAX_SPARSE_Q6_PLANNED_WORK_ROWS = 1_000_000_000.0d;
 
 	private static final String PREFIX = """
 			PREFIX schema: <https://schema.org/>
@@ -50,14 +55,15 @@ class LmdbSparsePrefixCostTest {
 
 	@Test
 	void sparseDeepPathPrefixesHaveActualCountsAndOptimizedPlannedCosts(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig storeConfig = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		loadSparseBenchmarkDataWithSketchDisabled(dataDir);
+
+		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
 		LmdbStore store = new LmdbStore(dataDir, storeConfig);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			loadSparseData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				for (int prefixLength = 1; prefixLength <= SPARSE_DEEP_PATH_PREFIXES.size(); prefixLength++) {
@@ -89,6 +95,131 @@ class LmdbSparsePrefixCostTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void sparseQ6OptimizedPlanDoesNotAcceptAstronomicalConnectedWork(@TempDir File dataDir) throws Exception {
+		loadSparseBenchmarkDataWithSketchDisabled(dataDir);
+
+		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
+		LmdbStore store = new LmdbStore(dataDir, storeConfig);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
+
+			try (SailRepositoryConnection connection = repository.getConnection();
+					LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection,
+							ThemeQueryCatalog.queryFor(Theme.SPARSE, 6), 60, true)) {
+				String query = ThemeQueryCatalog.queryFor(Theme.SPARSE, 6);
+				double plannedCostWorkRows = diagnosticDouble(plan.optimizedDiagnostics(), "plannedCostWorkRows");
+
+				assertTrue(Double.isFinite(plannedCostWorkRows)
+						&& plannedCostWorkRows < MAX_SPARSE_Q6_PLANNED_WORK_ROWS,
+						"SPARSE q6 should not accept a saturated connected-plan cost, plannedCostWorkRows="
+								+ plannedCostWorkRows + "\n" + query + "\n" + plan.optimizedDiagnostics()
+								+ "\n" + plan.optimizedPlan());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void sparseQ6ReopenedAfterStaleSnapshotRebuildsBeforePlanning(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig loadConfig = sparseBenchmarkStoreConfig();
+		loadConfig.setSketchEstimatorEnabled(false);
+		LmdbStore store = new LmdbStore(dataDir, loadConfig);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseBenchmarkData(repository);
+		} finally {
+			repository.shutDown();
+		}
+
+		writeIncompatibleMetadata(dataDir.toPath().resolve("join-estimator.rjes").resolve("metadata.bin"));
+
+		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
+		store = new LmdbStore(dataDir, storeConfig);
+		repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			boolean ready = store.forceFlushSketchEstimator();
+			assertTrue(ready, "Expected stale snapshot reopen to force a rebuild, ready="
+					+ estimator.isReadyNonBlocking() + ", staleness=" + estimator.staleness());
+			try (SailRepositoryConnection connection = repository.getConnection();
+					LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection,
+							ThemeQueryCatalog.queryFor(Theme.SPARSE, 6), 60, true)) {
+				String query = ThemeQueryCatalog.queryFor(Theme.SPARSE, 6);
+				double plannedCostWorkRows = diagnosticDouble(plan.optimizedDiagnostics(), "plannedCostWorkRows");
+
+				assertTrue(Double.isFinite(plannedCostWorkRows)
+						&& plannedCostWorkRows < MAX_SPARSE_Q6_PLANNED_WORK_ROWS,
+						"SPARSE q6 should rebuild a stale persisted snapshot before planning, plannedCostWorkRows="
+								+ plannedCostWorkRows + "\n" + query + "\n" + plan.optimizedDiagnostics()
+								+ "\n" + plan.optimizedPlan());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static LmdbStoreConfig sparseBenchmarkStoreConfig() {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		config.setForceSync(false);
+		config.setValueDBSize(1_073_741_824L);
+		config.setTripleDBSize(config.getValueDBSize());
+		config.setSketchEstimatorSubjectBucketCount(4096);
+		config.setSketchEstimatorPredicateBucketCount(64);
+		config.setSketchEstimatorObjectBucketCount(4096);
+		config.setSketchEstimatorContextBucketCount(16);
+		config.setSketchEstimatorContextPairSketchesEnabled(false);
+		config.setSketchEstimatorEnabled(true);
+		config.setSketchEstimatorStrategy("omni");
+		config.setOptimizerSamplingMaxMillis(30_000L);
+		return config;
+	}
+
+	private static double diagnosticDouble(String diagnostics, String metricName) {
+		String prefix = "  " + metricName + "=";
+		return diagnostics.lines()
+				.filter(line -> line.startsWith(prefix))
+				.map(line -> line.substring(prefix.length()))
+				.mapToDouble(Double::parseDouble)
+				.findFirst()
+				.orElse(Double.NaN);
+	}
+
+	private static void loadSparseBenchmarkData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generateSparse(ThemeDataSetGenerator.sparseConfig(), new RDFInserter(connection));
+			connection.commit();
+		}
+	}
+
+	private static void loadSparseBenchmarkDataWithSketchDisabled(File dataDir) {
+		LmdbStoreConfig loadConfig = sparseBenchmarkStoreConfig();
+		loadConfig.setSketchEstimatorEnabled(false);
+		LmdbStore store = new LmdbStore(dataDir, loadConfig);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseBenchmarkData(repository);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void writeIncompatibleMetadata(Path metadataFile) throws Exception {
+		Files.createDirectories(metadataFile.getParent());
+		Files.write(metadataFile, new byte[] { 'R', 'J', 'E', 'D', 0, 0, 0, 4 });
 	}
 
 	private static void loadSparseData(SailRepository repository) {

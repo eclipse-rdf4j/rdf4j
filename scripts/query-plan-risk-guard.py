@@ -22,6 +22,8 @@ SPO_DIRECT_LOOKUP_RE = re.compile(
 STATEMENT_PATTERN_RE = re.compile(r"StatementPattern")
 SUBJECT_RE = re.compile(r"\bs:\s+")
 UNBOUND_SUBJECT_RE = re.compile(r"\bs:\s+Var .*bindingState=unbound")
+UNBOUND_SUBJECT_NAME_RE = re.compile(r"\bs:\s+Var \(name=([^,\)]+).*bindingState=unbound")
+PLANNED_BOUND_VARS_RE = re.compile(r"plannedBoundVars=([^)]*?)(?:, [A-Za-z][A-Za-z0-9.]*=|\))")
 
 
 @dataclass(frozen=True)
@@ -61,7 +63,8 @@ class PlanRiskDetector:
 		if self.pending_direct_spo_header is not None:
 			self.pending_direct_spo_lines -= 1
 			if SUBJECT_RE.search(line):
-				if UNBOUND_SUBJECT_RE.search(line):
+				if UNBOUND_SUBJECT_RE.search(line) and not planned_bound_subject(
+						self.pending_direct_spo_header, line):
 					risks.append(PlanRisk(
 						"unbound-spo-direct-lookup",
 						"direct [S, P, O] lookup is planned while the subject binding is still unbound",
@@ -110,6 +113,16 @@ def bounded_connected_work(line: str, max_work_rows: float) -> bool:
 		and planned_cost_work <= max_work_rows
 		and (not is_finite(planned_work) or planned_work <= max_work_rows)
 	)
+
+
+def planned_bound_subject(header: str, subject_line: str) -> bool:
+	subject_match = UNBOUND_SUBJECT_NAME_RE.search(subject_line)
+	bound_vars_match = PLANNED_BOUND_VARS_RE.search(header)
+	if not subject_match or not bound_vars_match:
+		return False
+	subject_name = subject_match.group(1).strip()
+	bound_vars = {name.strip() for name in bound_vars_match.group(1).split(",")}
+	return subject_name in bound_vars
 
 
 def is_finite(value: float) -> bool:
@@ -208,6 +221,11 @@ def self_test() -> int:
 		"StatementPattern (plannedIndexAccessMode=directLookup, plannedLookupComponents=[P, O]) [right]\n",
 		"  s: Var (name=section) (bindingState=unbound)\n",
 	]
+	connected_dp_direct_lookup_with_planned_bound_subject = [
+		"StatementPattern (plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O], "
+		"plannedBoundVars=a,optName, plannerId=lmdb-cascades)\n",
+		"  s: Var (name=a) (bindingState=unbound)\n",
+	]
 
 	checks = [
 		("dangerous cartesian", dangerous_cartesian, True),
@@ -216,6 +234,8 @@ def self_test() -> int:
 		("connected filter diagnostic cartesian", connected_filter_diagnostic_cartesian, False),
 		("bound direct lookup", bound_direct_lookup, False),
 		("bound direct lookup with unbound sibling", bound_direct_lookup_with_unbound_sibling, False),
+		("connected dp direct lookup with planned bound subject",
+			connected_dp_direct_lookup_with_planned_bound_subject, False),
 	]
 	for name, sample, expected_risk in checks:
 		risks = scan_lines(sample, DEFAULT_MAX_CARTESIAN_WORK_ROWS)

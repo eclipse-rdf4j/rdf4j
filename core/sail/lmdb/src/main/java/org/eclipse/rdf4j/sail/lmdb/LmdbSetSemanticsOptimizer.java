@@ -249,8 +249,11 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 				return null;
 			}
 			Join membershipProbe = new Join(anchor.clone(), pattern.clone());
-			Filter replacement = new Filter(remaining, new Exists(membershipProbe));
-			annotateDistinctMembershipSemiFilter(replacement, duplicateKeyVars);
+			boolean directJoinSafe = duplicateKeyVars.containsAll(correlationBindings);
+			TupleExpr replacement = directJoinSafe ? new Join(membershipProbe, remaining)
+					: new Filter(remaining,
+							new Exists(membershipProbe));
+			annotateDistinctMembershipSemiFilter(replacement, duplicateKeyVars, directJoinSafe);
 			return replacement;
 		}
 
@@ -309,13 +312,21 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		}
 
 		private void annotateDistinctMembershipSemiFilter(TupleExpr tupleExpr, Set<String> duplicateKeyVars) {
+			annotateDistinctMembershipSemiFilter(tupleExpr, duplicateKeyVars, false);
+		}
+
+		private void annotateDistinctMembershipSemiFilter(TupleExpr tupleExpr, Set<String> duplicateKeyVars,
+				boolean directJoin) {
 			tupleExpr.setStringMetricPlanned("optimizer.rewriteProof",
 					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER,
 							LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
 							Set.of("distinctCountVars=" + duplicateKeyVars, "finiteMembership",
-									"unobservedMembershipBinding", "correlatedExists"),
+									"unobservedMembershipBinding", directJoin ? "earlyMembershipJoin"
+											: "correlatedExists"),
 							"finite membership variables are unobserved under COUNT DISTINCT and can be tested "
-									+ "with a correlated semi-filter").metricFragment());
+									+ (directJoin ? "as an early join anchor"
+											: "with a correlated semi-filter"))
+													.metricFragment());
 		}
 
 		private void annotateProof(TupleExpr tupleExpr, LmdbRewriteProof.RewriteKind kind,

@@ -84,6 +84,7 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String COUNT_BINDING_NAME = "count";
 	private static final int QUERY_TIMEOUT_SECONDS = 60;
+	private static final long OPTIMIZATION_TIMEOUT_MILLIS = 30_000L;
 	private static final String QUERY_VARIANT_FILTER = "filter";
 	private static final String QUERY_VARIANT_VALUES_TOP_TYPE_CODE = "values-top-type-code";
 	private static final String QUERY_VARIANT_TYPE_VALUES_CODE = "type-values-code";
@@ -245,8 +246,7 @@ public class ThemeQueryPlanRunBenchmark {
 				throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + storeDirectory);
 			}
 
-			storeConfig = createStoreConfig();
-			storeConfig.setIterationCacheSyncThreshold(0);
+			storeConfig = createLoadStoreConfig();
 			store = new LmdbStore(storeDirectory, storeConfig);
 			repository = new SailRepository(store);
 			loadData();
@@ -257,14 +257,23 @@ public class ThemeQueryPlanRunBenchmark {
 
 			System.gc();
 
+			storeConfig = createStoreConfig();
 			store = new LmdbStore(storeDirectory, storeConfig);
 			repository = new SailRepository(store);
+		}
+
+		private LmdbStoreConfig createLoadStoreConfig() {
+			LmdbStoreConfig config = createStoreConfig();
+			config.setSketchEstimatorEnabled(false);
+			config.setIterationCacheSyncThreshold(0);
+			return config;
 		}
 
 		private LmdbStoreConfig createStoreConfig() {
 			LmdbStoreConfig config = ConfigUtil.createConfig();
 			config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
 			config.setSketchEstimatorStrategy(sketchEstimatorStrategyOrDefault());
+			config.setOptimizerSamplingMaxMillis(OPTIMIZATION_TIMEOUT_MILLIS);
 			return config;
 		}
 
@@ -401,20 +410,25 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private void printTelemetryPlanAtTrialTeardown() {
+			if (profiling()) {
+				return;
+			}
 			if (connection == null || query == null) {
 				return;
 			}
 			var tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setIncludeInferred(false);
 			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			String renderedPlan = "\n### Telemetry Query - Trial teardown ###\n"
-					+ queryDescription() + "\n"
-					+ tupleQuery.explain(Explanation.Level.Telemetry) + "\n";
+			String renderedPlan = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
+					() -> "\n### Telemetry Query - Trial teardown ###\n"
+							+ queryDescription() + "\n"
+							+ tupleQuery.explain(Explanation.Level.Telemetry) + "\n");
 			System.out.print(renderedPlan);
 			var optimizedQuery = connection.prepareTupleQuery(query);
 			optimizedQuery.setIncludeInferred(false);
 			optimizedQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			Explanation optimized = optimizedQuery.explain(Explanation.Level.Optimized);
+			Explanation optimized = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
+					() -> optimizedQuery.explain(Explanation.Level.Optimized));
 			String renderedSparql = "\n### Rendered Optimized SPARQL - Trial teardown ###\n"
 					+ queryDescription() + "\n"
 					+ new TupleExprIRRenderer().render((TupleExpr) optimized.tupleExpr()) + "\n";

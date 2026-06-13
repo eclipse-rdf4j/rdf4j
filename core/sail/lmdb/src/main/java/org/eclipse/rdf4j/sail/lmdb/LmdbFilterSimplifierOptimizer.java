@@ -896,7 +896,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return null;
 		}
 		TupleExpr membership = new Join(anchor.clone(), pattern.clone());
-		TupleExpr replacement = new Filter(remaining, new Exists(membership));
+		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
+		boolean directJoinSafe = distinctCountVars.containsAll(correlationBindings);
+		TupleExpr replacement = directJoinSafe ? new Join(membership, remaining)
+				: new Filter(remaining,
+						new Exists(membership));
 		if (!residualConditions.isEmpty()) {
 			replacement = new Filter(replacement, LmdbJoinPlanSupport.combinedCondition(residualConditions));
 		}
@@ -904,7 +908,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER,
 						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
 						Set.of("finiteFilter", "distinctCount", "unobservedMembershipBinding",
-								"correlatedExists"),
+								directJoinSafe ? "earlyMembershipJoin" : "correlatedExists"),
 						"finite filter membership is duplicate-insensitive under COUNT DISTINCT").metricFragment());
 		return replacement;
 	}
