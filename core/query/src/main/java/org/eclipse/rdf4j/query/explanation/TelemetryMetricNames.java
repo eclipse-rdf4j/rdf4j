@@ -135,6 +135,7 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_CARDINALITY_LOWER = "plannedCardinalityLower";
 	public static final String PLANNED_CARDINALITY_UPPER = "plannedCardinalityUpper";
 	public static final String PLANNED_CARDINALITY_CONFIDENCE = "plannedCardinalityConfidence";
+	public static final String PLANNED_SKETCH_CONFIDENCE = "plannedSketchConfidence";
 	public static final String PLANNED_COST_SHAPE = "plannedCostShape";
 	public static final String PLANNED_COST_WORK_ROWS = "plannedCostWorkRows";
 	public static final String PLANNED_COST_LOOKUP_PROBES = "plannedCostLookupProbes";

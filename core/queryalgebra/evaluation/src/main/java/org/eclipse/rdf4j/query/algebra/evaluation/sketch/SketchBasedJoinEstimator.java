@@ -125,7 +125,6 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 /**
@@ -6065,22 +6064,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (input == null || input.isEmpty()) {
 			return OmniWitnessSet.empty();
 		}
-		double confidence = removals == null ? input.confidence() : Math.min(input.confidence(), removals.confidence());
-		OmniWitnessSet.Builder builder = OmniWitnessSet.builder()
-				.samplingProbability(input.samplingProbability())
-				.confidence(confidence);
-		if (input.fallbackReason() != OmniWitnessSet.FallbackReason.NONE) {
-			builder.fallback(input.fallbackReason(), input.minimumDetectableRows());
-		} else if (removals != null && removals.fallbackReason() != OmniWitnessSet.FallbackReason.NONE) {
-			builder.fallback(removals.fallbackReason(), removals.minimumDetectableRows());
-		}
-		for (int i = 0; i < input.retainedWitnessCount(); i++) {
-			long hash = input.hashAt(i);
-			if (removals == null || !removals.containsHash(hash)) {
-				builder.put(hash, input.weightAt(i));
-			}
-		}
-		return builder.build();
+		return OmniWitnessAccumulator.subtract(input, removals);
 	}
 
 	private String omniFallbackReason(OmniWitnessSet first, OmniWitnessSet second, OmniWitnessSet third) {
@@ -6096,31 +6080,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (witnessSets == null || witnessSets.isEmpty()) {
 			return OmniWitnessSet.empty();
 		}
-		Long2DoubleOpenHashMap weights = new Long2DoubleOpenHashMap();
-		double probability = 1.0d;
-		double confidence = 1.0d;
-		double minimumDetectableRows = 0.0d;
-		OmniWitnessSet.FallbackReason fallbackReason = OmniWitnessSet.FallbackReason.NONE;
-		for (OmniWitnessSet witnessSet : witnessSets) {
-			if (witnessSet == null) {
-				continue;
-			}
-			probability = Math.min(probability, witnessSet.samplingProbability());
-			confidence = Math.min(confidence, witnessSet.confidence());
-			minimumDetectableRows = Math.max(minimumDetectableRows, witnessSet.minimumDetectableRows());
-			if (fallbackReason == OmniWitnessSet.FallbackReason.NONE
-					&& witnessSet.fallbackReason() != OmniWitnessSet.FallbackReason.NONE) {
-				fallbackReason = witnessSet.fallbackReason();
-			}
-			for (int i = 0; i < witnessSet.retainedWitnessCount(); i++) {
-				long hash = witnessSet.hashAt(i);
-				double weight = witnessSet.weightAt(i);
-				if (Double.isFinite(weight) && weight > weights.get(hash)) {
-					weights.put(hash, weight);
-				}
-			}
-		}
-		return OmniWitnessSet.fromWeights(weights, probability, confidence, fallbackReason, minimumDetectableRows);
+		return OmniWitnessAccumulator.maxUnion(witnessSets);
 	}
 
 	private OmniSubjectStarInput omniSubjectStarInput(StatementPattern pattern, String subjectVarName) {
@@ -8425,7 +8385,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> valueSketches = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = detail.materializeOmniWitnesses()
 				&& sketchStrategy == SketchStrategy.OMNI
 						? new HashMap<>()
 						: null;
@@ -10740,7 +10700,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
 				? new HashMap<>()
 				: null;
 
@@ -12046,7 +12006,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = detail.materializeOmniWitnesses()
 				&& sketchStrategy == SketchStrategy.OMNI
 						? new HashMap<>()
 						: null;
@@ -12143,7 +12103,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = detail.materializeOmniWitnesses()
 				&& sketchStrategy == SketchStrategy.OMNI
 						? new HashMap<>()
 						: null;
@@ -12348,7 +12308,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			Resource subject, IRI predicate, Value object, Resource[] contexts) {
 		double rows = 0.0d;
 		Map<String, Set<Value>> distinctValues = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = detail.materializeOmniWitnesses()
 				&& sketchStrategy == SketchStrategy.OMNI
 						? new HashMap<>()
 						: null;
@@ -12425,7 +12385,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void collectExactPatternOmniWitnesses(StatementPattern pattern, Statement statement,
-			Map<String, Long2DoubleOpenHashMap> witnesses) {
+			Map<String, OmniWitnessAccumulator> witnesses) {
 		if (witnesses == null || pattern == null || statement == null) {
 			return;
 		}
@@ -12494,12 +12454,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (witnessSet == null || witnessSet.isEmpty()) {
 			return OmniWitnessSet.empty();
 		}
-		Long2DoubleOpenHashMap weights = new Long2DoubleOpenHashMap(witnessSet.retainedWitnessCount());
-		for (int i = 0; i < witnessSet.retainedWitnessCount(); i++) {
-			weights.put(witnessSet.hashAt(i), 1.0d);
-		}
-		return OmniWitnessSet.fromWeights(weights, witnessSet.samplingProbability(), witnessSet.confidence(),
-				witnessSet.fallbackReason(), witnessSet.minimumDetectableRows());
+		return OmniWitnessAccumulator.unitWeights(witnessSet).toWitnessSet(witnessSet);
 	}
 
 	private Double zeroIntersectionFallbackJoinRows(StatementPattern left, StatementPattern right, String sharedVarName,
@@ -13678,7 +13633,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		Map<String, Set<Value>> distinctValues = new LinkedHashMap<>();
 		Map<String, FastAgmsBindingSummary> sketches = new LinkedHashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
+		Map<String, OmniWitnessAccumulator> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
 				? new LinkedHashMap<>()
 				: null;
 		for (Map<String, Value> row : rows) {
@@ -13706,7 +13661,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void collectCarriedOmniWitnesses(TuplePlanEstimate rowEstimate, BindingSet bindingSet,
-			Map<String, Long2DoubleOpenHashMap> outputWeights) {
+			Map<String, OmniWitnessAccumulator> outputWeights) {
 		if (rowEstimate == null || rowEstimate.omniWitnesses.isEmpty() || outputWeights == null) {
 			return;
 		}
@@ -13718,7 +13673,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void addOmniWitnessSetWeights(Map<String, Long2DoubleOpenHashMap> outputWeights, String bindingName,
+	private void addOmniWitnessSetWeights(Map<String, OmniWitnessAccumulator> outputWeights, String bindingName,
 			OmniWitnessSet witnessSet) {
 		if (outputWeights == null || bindingName == null || witnessSet == null || witnessSet.isEmpty()) {
 			return;
@@ -13728,23 +13683,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void addOmniWitnessWeight(Map<String, Long2DoubleOpenHashMap> outputWeights, String bindingName,
+	private void addOmniWitnessWeight(Map<String, OmniWitnessAccumulator> outputWeights, String bindingName,
 			long witnessHash, double weight) {
 		if (outputWeights == null || bindingName == null || !Double.isFinite(weight) || weight <= 0.0d) {
 			return;
 		}
-		outputWeights.computeIfAbsent(bindingName, ignored -> new Long2DoubleOpenHashMap())
-				.addTo(witnessHash, weight);
+		outputWeights.computeIfAbsent(bindingName, ignored -> OmniWitnessAccumulator.sorted())
+				.add(witnessHash, weight);
 	}
 
-	private Map<String, OmniWitnessSet> omniWitnessSets(Map<String, Long2DoubleOpenHashMap> weightsByBindingName) {
+	private Map<String, OmniWitnessSet> omniWitnessSets(Map<String, OmniWitnessAccumulator> weightsByBindingName) {
 		if (weightsByBindingName == null || weightsByBindingName.isEmpty()) {
 			return Map.of();
 		}
 		Map<String, OmniWitnessSet> witnesses = new LinkedHashMap<>(weightsByBindingName.size());
-		for (Map.Entry<String, Long2DoubleOpenHashMap> entry : weightsByBindingName.entrySet()) {
-			OmniWitnessSet witnessSet = OmniWitnessSet.fromWeights(entry.getValue(), 1.0d, 1.0d,
-					OmniWitnessSet.FallbackReason.NONE, 0.0d);
+		for (Map.Entry<String, OmniWitnessAccumulator> entry : weightsByBindingName.entrySet()) {
+			OmniWitnessSet witnessSet = entry.getValue()
+					.toWitnessSet(1.0d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 0.0d);
 			if (!witnessSet.isEmpty()) {
 				witnesses.put(entry.getKey(), witnessSet);
 			}

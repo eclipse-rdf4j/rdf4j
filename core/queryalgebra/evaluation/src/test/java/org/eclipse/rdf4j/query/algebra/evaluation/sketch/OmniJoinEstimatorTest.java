@@ -480,4 +480,5 @@ class OmniJoinEstimatorTest {
 		Object weights = map.get(valueHash);
 		return weights instanceof Map<?, ?> witnessWeights ? witnessWeights.size() : 0;
 	}
+
 }

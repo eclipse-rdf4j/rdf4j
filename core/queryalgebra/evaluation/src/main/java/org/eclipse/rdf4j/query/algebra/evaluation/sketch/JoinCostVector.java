@@ -75,11 +75,21 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		double cumulativeWorkRows = prefix == null ? totalWorkRows : prefix.cumulativeWorkRows + totalWorkRows;
 		double combinedRowQErrorMax = prefix == null ? rowQErrorMax : Math.max(prefix.rowQErrorMax, rowQErrorMax);
 		double combinedWorkQErrorMax = prefix == null ? workQErrorMax : Math.max(prefix.workQErrorMax, workQErrorMax);
-		double combinedConfidence = prefix == null ? confidence : Math.min(prefix.confidence, confidence);
+		double combinedConfidence = prefix == null ? confidence : combineConfidence(prefix.confidence, confidence);
 		double combinedEvidenceCount = (prefix == null ? 0.0d : prefix.evidenceCount) + evidenceCount;
 		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows,
 				cumulativeWorkRows, robustWorkRows, combinedRowQErrorMax, combinedWorkQErrorMax, combinedConfidence,
 				combinedEvidenceCount);
+	}
+
+	private static double combineConfidence(double prefixConfidence, double stepConfidence) {
+		if (prefixConfidence <= 0.0d) {
+			return stepConfidence;
+		}
+		if (stepConfidence <= 0.0d) {
+			return prefixConfidence;
+		}
+		return Math.min(prefixConfidence, stepConfidence);
 	}
 
 	boolean dominates(JoinCostVector other) {

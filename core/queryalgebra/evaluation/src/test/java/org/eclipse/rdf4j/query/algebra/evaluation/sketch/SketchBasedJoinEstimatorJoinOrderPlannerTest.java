@@ -197,6 +197,43 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void sketchConfidenceFeedsCostVectorWhenFactorCostConfidenceMissing() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI leftPredicate = VF.createIRI("urn:sketch-confidence:omni:left");
+		IRI middlePredicate = VF.createIRI("urn:sketch-confidence:omni:middle");
+		IRI rightPredicate = VF.createIRI("urn:sketch-confidence:omni:right");
+		for (int i = 0; i < 8; i++) {
+			Resource encounter = VF.createIRI("urn:sketch-confidence:omni:enc:" + i);
+			Value drug = VF.createIRI("urn:sketch-confidence:omni:drug:" + (i % 2));
+			store.add(VF.createStatement(encounter, leftPredicate, drug));
+			store.add(VF.createStatement(encounter, middlePredicate, drug));
+			store.add(VF.createStatement(encounter, rightPredicate, drug));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+		StatementPattern left = pattern("enc", leftPredicate, "drug");
+		StatementPattern middle = pattern("enc", middlePredicate, "drug");
+		StatementPattern right = pattern("enc", rightPredicate, "drug");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(4.0d, 8.0d));
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(left, middle, right), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
+		assertTrue(metrics.getOrDefault(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, 0.0d) > 0.0d,
+				"Expected sketch confidence telemetry in plan summary: " + metrics);
+		assertTrue(metrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.0d) > 0.0d,
+				"Sketch confidence should feed cardinality confidence: " + metrics);
+		assertTrue(metrics.getOrDefault(SketchJoinOrderPlanner.PLANNED_COST_CONFIDENCE, 0.0d) > 0.0d,
+				"Sketch confidence should feed cost confidence: " + metrics);
+	}
+
+	@Test
 	void finiteAnchorSketchZeroKeepsPlanningFloorWithoutClaimingExactRows() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI codePredicate = VF.createIRI("urn:finite-zero:code");

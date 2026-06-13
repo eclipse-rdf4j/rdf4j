@@ -109,6 +109,54 @@ final class OmniWitnessSet {
 				minimumDetectableRows);
 	}
 
+	static OmniWitnessSet fromSortedUnsigned(long[] hashes, double[] weights, int length, double samplingProbability,
+			double confidence, FallbackReason fallbackReason, double minimumDetectableRows) {
+		if (hashes == null || weights == null || length <= 0) {
+			double estimate = fallbackReason == FallbackReason.NONE ? 0.0d : minimumDetectableRows;
+			return new OmniWitnessSet(new long[0], new double[0], samplingProbability, estimate, confidence,
+					fallbackReason, minimumDetectableRows);
+		}
+		if (length > hashes.length || length > weights.length) {
+			throw new IllegalArgumentException("length exceeds array length");
+		}
+		int write = 0;
+		double retainedWeight = 0.0d;
+		boolean hasPreviousInputHash = false;
+		long previousInputHash = 0L;
+		for (int read = 0; read < length; read++) {
+			long hash = hashes[read];
+			if (hasPreviousInputHash && Long.compareUnsigned(previousInputHash, hash) > 0) {
+				throw new IllegalArgumentException("hashes must be sorted by unsigned hash");
+			}
+			hasPreviousInputHash = true;
+			previousInputHash = hash;
+			double weight = weights[read];
+			if (!Double.isFinite(weight) || weight <= 0.0d) {
+				continue;
+			}
+			if (write > 0 && hashes[write - 1] == hash) {
+				weights[write - 1] += weight;
+				retainedWeight += weight;
+				continue;
+			}
+			hashes[write] = hash;
+			weights[write] = weight;
+			retainedWeight += weight;
+			write++;
+		}
+		if (write == 0) {
+			double estimate = fallbackReason == FallbackReason.NONE ? 0.0d : minimumDetectableRows;
+			return new OmniWitnessSet(new long[0], new double[0], samplingProbability, estimate, confidence,
+					fallbackReason, minimumDetectableRows);
+		}
+		long[] compactHashes = Arrays.copyOf(hashes, write);
+		double[] compactWeights = Arrays.copyOf(weights, write);
+		double probability = clampProbability(samplingProbability);
+		double estimatedRows = probability > 0.0d ? retainedWeight / probability : retainedWeight;
+		return new OmniWitnessSet(compactHashes, compactWeights, probability, estimatedRows, confidence,
+				fallbackReason, minimumDetectableRows);
+	}
+
 	boolean containsHash(long hash) {
 		return indexOf(hash) >= 0;
 	}

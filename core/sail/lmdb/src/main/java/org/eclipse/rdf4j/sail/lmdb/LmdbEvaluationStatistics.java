@@ -154,7 +154,7 @@ class LmdbEvaluationStatistics
 	private static final String PLANNED_SKETCH_UPPER_BOUND_ROWS = "plannedSketchUpperBoundRows";
 	private static final String PLANNED_SKETCH_CALIBRATED_ROWS = "plannedSketchCalibratedRows";
 	private static final String PLANNED_SKETCH_CALIBRATION_FACTOR = "plannedSketchCalibrationFactor";
-	private static final String PLANNED_SKETCH_CONFIDENCE = "plannedSketchConfidence";
+	private static final String PLANNED_SKETCH_CONFIDENCE = TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE;
 	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final String CONNECTED_JOIN_BLEND_SUPPRESSED = "plannedConnectedJoinBlendSuppressed";

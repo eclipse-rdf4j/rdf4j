@@ -775,6 +775,7 @@ public interface JoinFactorCostModel {
 			return firstMetric(metrics, 0.0d, "plannedOperatorFeedbackConfidence",
 					TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
 					TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+					TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE,
 					TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE);
 		}
 

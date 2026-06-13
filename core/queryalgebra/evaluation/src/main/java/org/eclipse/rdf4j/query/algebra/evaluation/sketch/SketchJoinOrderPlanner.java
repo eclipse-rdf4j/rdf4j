@@ -601,9 +601,9 @@ final class SketchJoinOrderPlanner {
 			Map<String, Double> summaryDoubleMetrics, JoinOrderPlanner.PlanStep step) {
 		copyStringMetricIfPresent(summaryStringMetrics, step, "plannedSketchEstimateSource");
 		copyStringMetricIfPresent(summaryStringMetrics, step, "plannedSketchStrategy");
-		Double confidence = step.getDoubleMetrics().get("plannedSketchConfidence");
+		Double confidence = step.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE);
 		if (confidence != null && Double.isFinite(confidence)) {
-			summaryDoubleMetrics.putIfAbsent("plannedSketchConfidence", confidence);
+			summaryDoubleMetrics.putIfAbsent(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, confidence);
 		}
 	}
 
@@ -1193,7 +1193,8 @@ final class SketchJoinOrderPlanner {
 				+ delayedFiniteDomainWorkRows + delayedFiniteInteractionWorkRows;
 		double seedCostRows = planningRowsForCost(seedEstimate.outputRows(), physicalEstimate);
 		JoinCostVector costVector = costVector(stepWorkRows, seedCostRows, Math.max(rowsProcessed, seedCostRows),
-				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate);
+				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate,
+				seedEstimate);
 		PlanState physicalState = factorTransitionState(null, factorIndex, physicalEstimate, stepWorkRows,
 				seedEstimate.outputRows(), costVector, seedEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(factorIndex, 0L, initiallyBoundVarMask);
@@ -1666,7 +1667,7 @@ final class SketchJoinOrderPlanner {
 		double maxIntermediateRows = Math.max(prefix.costVector().maxIntermediateRows(), stepIntermediateRows);
 		JoinCostVector costVector = costVector(prefix.totalWork() + stepWorkRows, costFinalRows,
 				maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix.costVector(), stepWorkRows,
-				physicalEstimate);
+				physicalEstimate, nextEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
 		PlanState physicalState = factorTransitionState(prefix, candidate, physicalEstimate, stepWorkRows,
 				nextEstimate.outputRows(), costVector, nextEstimate);
@@ -1791,7 +1792,7 @@ final class SketchJoinOrderPlanner {
 			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		PlanState prefixState = prefix == null ? initialPhysicalPlanState() : prefix.physicalState();
 		JoinFactorCostModel.FactorCostEstimate factorCost = transitionFactorCost(physicalEstimate, stepWorkRows,
-				outputRows);
+				outputRows, tupleEstimate);
 		AccessPathCandidate candidate = AccessPathCandidate.physical(factors.get(factorIndex).tupleExpr(),
 				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars(),
 				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
@@ -1850,12 +1851,14 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate transitionFactorCost(FactorPhysicalEstimate physicalEstimate,
-			double stepWorkRows, double outputRows) {
+			double stepWorkRows, double outputRows,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		JoinFactorCostModel.FactorCostEstimate factorCost = physicalEstimate == null ? null
 				: physicalEstimate.factorCostEstimate();
 		if (factorCost == null) {
 			return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows);
 		}
+		factorCost = factorCostWithSketchConfidence(factorCost, tupleEstimate);
 		return new JoinFactorCostModel.FactorCostEstimate(stepWorkRows, outputRows, factorCost.getStringMetrics(),
 				factorCost.getDoubleMetrics(), physicalEstimate.physicalComparable(), physicalEstimate.directLookup(),
 				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
@@ -2938,9 +2941,18 @@ final class SketchJoinOrderPlanner {
 	private JoinCostVector costVector(double totalWorkRows, double finalRows, double maxIntermediateRows,
 			double uncertaintyRows, double cartesianWorkRows, JoinCostVector prefix, double stepWorkRows,
 			FactorPhysicalEstimate physicalEstimate) {
-		finalRows = planningRowsForCost(finalRows, physicalEstimate);
 		return costVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix,
-				stepWorkRows, estimateVector(physicalEstimate, finalRows));
+				stepWorkRows, physicalEstimate, null);
+	}
+
+	private JoinCostVector costVector(double totalWorkRows, double finalRows, double maxIntermediateRows,
+			double uncertaintyRows, double cartesianWorkRows, JoinCostVector prefix, double stepWorkRows,
+			FactorPhysicalEstimate physicalEstimate, SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
+		boolean nonExactZeroFloor = physicalEstimate != null
+				&& appliesNonExactZeroPlanningFloor(physicalEstimate.factorOutputRows(), physicalEstimate);
+		finalRows = nonExactZeroFloor ? 1.0d : planningRowsForCost(finalRows, physicalEstimate);
+		return costVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix,
+				stepWorkRows, estimateVector(physicalEstimate, finalRows, tupleEstimate, nonExactZeroFloor));
 	}
 
 	private JoinCostVector costVector(double totalWorkRows, double finalRows, double maxIntermediateRows,
@@ -2951,16 +2963,29 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private JoinFactorCostModel.EstimateVector estimateVector(FactorPhysicalEstimate physicalEstimate) {
-		return estimateVector(physicalEstimate, Double.NaN);
+		return estimateVector(physicalEstimate, Double.NaN, null);
 	}
 
 	private JoinFactorCostModel.EstimateVector estimateVector(FactorPhysicalEstimate physicalEstimate,
 			double costRows) {
+		return estimateVector(physicalEstimate, costRows, null);
+	}
+
+	private JoinFactorCostModel.EstimateVector estimateVector(FactorPhysicalEstimate physicalEstimate,
+			double costRows, SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
+		return estimateVector(physicalEstimate, costRows, tupleEstimate,
+				appliesNonExactZeroPlanningFloor(costRows, physicalEstimate));
+	}
+
+	private JoinFactorCostModel.EstimateVector estimateVector(FactorPhysicalEstimate physicalEstimate,
+			double costRows, SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate, boolean nonExactZeroFloor) {
 		if (physicalEstimate == null || physicalEstimate.factorCostEstimate() == null) {
 			return null;
 		}
-		JoinFactorCostModel.EstimateVector vector = physicalEstimate.factorCostEstimate().getEstimateVector();
-		if (!appliesNonExactZeroPlanningFloor(costRows, physicalEstimate)) {
+		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = factorCostWithSketchConfidence(
+				physicalEstimate.factorCostEstimate(), tupleEstimate);
+		JoinFactorCostModel.EstimateVector vector = factorCostEstimate.getEstimateVector();
+		if (!nonExactZeroFloor) {
 			return vector;
 		}
 		return new JoinFactorCostModel.EstimateVector(costRows,
@@ -2968,6 +2993,33 @@ final class SketchJoinOrderPlanner {
 				vector.pageWalkRows(), vector.rowQErrorMean(), vector.rowQErrorMax(), vector.workQErrorMean(),
 				vector.workQErrorMax(), vector.uncertaintyRows(), Math.min(vector.confidence(), 0.25d),
 				vector.evidenceCount());
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate factorCostWithSketchConfidence(
+			JoinFactorCostModel.FactorCostEstimate factorCost,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
+		if (factorCost == null || tupleEstimate == null) {
+			return factorCost;
+		}
+		double confidence = tupleEstimate.sketchEstimateConfidence();
+		if (!Double.isFinite(confidence) || confidence <= 0.0d) {
+			return factorCost;
+		}
+		Map<String, Double> doubleMetrics = factorCost.getDoubleMetrics();
+		if (doubleMetrics.containsKey(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE)) {
+			return factorCost;
+		}
+		Map<String, Double> promotedDoubleMetrics = new HashMap<>(doubleMetrics);
+		promotedDoubleMetrics.put(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, confidence);
+		JoinFactorCostModel.FactorCostEstimate promoted = new JoinFactorCostModel.FactorCostEstimate(
+				factorCost.getWorkRows(), factorCost.getOutputRows(), factorCost.getStringMetrics(),
+				promotedDoubleMetrics, factorCost.hasPhysicalAccessPath(), factorCost.isDirectLookup(),
+				factorCost.getLookupComponentMask(), factorCost.getMissingLookupComponentMask(),
+				factorCost.getAccessRowsBeforeFilter(), factorCost.isRepeatedInvocationsCosted(),
+				factorCost.hasExactOutputRows());
+		return factorCost.getBagEstimate()
+				.map(promoted::withBag)
+				.orElse(promoted);
 	}
 
 	private static double planningRowsForCost(double rows, FactorPhysicalEstimate physicalEstimate) {
@@ -7182,7 +7234,7 @@ final class SketchJoinOrderPlanner {
 		}
 		double confidence = estimate.sketchEstimateConfidence();
 		if (Double.isFinite(confidence)) {
-			doubleMetrics.put("plannedSketchConfidence", confidence);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, confidence);
 		}
 	}
 
