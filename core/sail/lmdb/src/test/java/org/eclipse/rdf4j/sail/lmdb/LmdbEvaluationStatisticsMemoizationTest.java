@@ -661,7 +661,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("o"));
 		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
 		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("s"))).thenReturn(12.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
@@ -672,7 +672,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
 		}
 
-		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of("s"));
+		verify(estimator, times(1)).factorOutputRowsForCosting(pattern, Set.of("s"));
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of("s"));
 		verify(tripleStore, times(1)).indexAccessPaths(anyInt());
 	}
@@ -694,7 +694,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		CountingBindingSetAssignment prefix = valuesAssignment("u", vf.createIRI("urn:test:u1"));
 		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
 		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("s"))).thenReturn(12.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
@@ -1210,7 +1210,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertEquals("omni-filter-finite-probe", estimate.get().method());
 			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterFiniteProbeValues"));
 			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterProbeAttributeCount"));
-			assertEquals(1.0d, estimate.get().metrics().get("plannedOmniFilterProbeKeyWidth"));
+			assertEquals(2.0d, estimate.get().metrics().get("plannedOmniFilterProbeKeyWidth"));
 			assertTrue(estimate.get().rows() > 0.0d);
 			assertTrue(estimate.get().rows() <= inputEstimate.rows());
 		} finally {
@@ -1241,7 +1241,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("s"),
 				Var.of("p", vf.createIRI("urn:test:follows")),
 				Var.of("o"));
-		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(10.0d);
+		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(10.0d);
 		when(estimator.accessShapeForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenAnswer(invocation -> {
 			StatementPattern accessPattern = invocation.getArgument(0);
 			SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
@@ -1262,7 +1262,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(statistics.estimateFactorCost(pattern.clone(), context).isPresent());
 		}
 
-		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class));
+		verify(estimator, times(1)).factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class));
 		verify(estimator, times(1)).estimateJoinVarDistinctRows(any(TupleExpr.class), any(String.class));
 	}
 
@@ -1319,7 +1319,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
 		when(accessShape.pattern()).thenReturn(pattern);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of())).thenReturn(100.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of())).thenReturn(100.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of())).thenReturn(accessShape);
 		when(valueStore.getId(predicate)).thenReturn(10L);
 		when(valueStore.getId(value50)).thenReturn(50L);
@@ -1335,7 +1335,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
 		}
 
-		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of());
+		verify(estimator, times(1)).factorOutputRowsForCosting(pattern, Set.of());
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of());
 		verify(cardinalitySource, times(3)).estimateIdsForPlanning(anyLong(), anyLong(), anyLong(), anyLong());
 	}
@@ -1380,7 +1380,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.pattern()).thenReturn(pattern);
 		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit | objectBit);
 		when(accessShape.filterMultiplier()).thenReturn(0.25d);
-		when(estimator.factorOutputRowsForJoinOrdering(filter, Set.of("w"))).thenReturn(10.0d);
+		when(estimator.factorOutputRowsForCosting(filter, Set.of("w"))).thenReturn(10.0d);
 		when(estimator.accessShapeForJoinOrdering(filter, Set.of("w"))).thenReturn(accessShape);
 		when(valueStore.getId(weight)).thenReturn(10L);
 		when(valueStore.getId(value1)).thenReturn(1L);
@@ -1439,7 +1439,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(factor, Set.of("obs"))).thenReturn(100_000.0d);
+		when(estimator.factorOutputRowsForCosting(factor, Set.of("obs"))).thenReturn(100_000.0d);
 		when(estimator.accessShapeForJoinOrdering(factor, Set.of("obs"))).thenReturn(accessShape);
 		when(estimator.estimateExactJoinSurfaceRows(any(), any(String.class))).thenReturn(100.0d);
 		when(estimator.estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class)))
@@ -1511,7 +1511,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(5.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(any(), any(Set.class))).thenReturn(120_000_000.0d);
+		when(estimator.factorOutputRowsForCosting(any(), any(Set.class))).thenReturn(120_000_000.0d);
 		when(estimator.accessShapeForJoinOrdering(any(), any(Set.class))).thenReturn(accessShape);
 		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
 		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, "org")).thenReturn(-1.0d);
@@ -1580,7 +1580,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(120_000_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+		when(estimator.factorOutputRowsForCosting(offerItem, Set.of("department", "offer", "org")))
 				.thenReturn(120_000_000.0d);
 		when(estimator.accessShapeForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
 				.thenReturn(accessShape);
@@ -1664,7 +1664,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(120_000_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+		when(estimator.factorOutputRowsForCosting(offerItem, Set.of("department", "offer", "org")))
 				.thenReturn(120_000_000.0d);
 		when(estimator.accessShapeForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
 				.thenReturn(accessShape);
@@ -1703,7 +1703,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("p2", vf.createIRI("urn:test:review")),
 				Var.of("review"));
 		Join join = new Join(topicPage, workReview);
-		when(estimator.factorOutputRowsForJoinOrdering(join, Set.of())).thenReturn(1_000.0d);
+		when(estimator.factorOutputRowsForCosting(join, Set.of())).thenReturn(1_000.0d);
 		when(estimator.estimateJoinOrder(any(List.class), any(Set.class), any(JoinOrderPlanner.Algorithm.class),
 				any(JoinFactorCostModel.class), any(List.class)))
 						.thenReturn(Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.of(topicPage, workReview), 1.0d,
@@ -1752,7 +1752,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("work"));
 		List<TupleExpr> prefixFactors = List.of(orgDepartment, departmentOffer);
 
-		when(estimator.factorOutputRowsForJoinOrdering(any(), any(Set.class))).thenReturn(120_000_000.0d);
+		when(estimator.factorOutputRowsForCosting(any(), any(Set.class))).thenReturn(120_000_000.0d);
 		when(estimator.accessShapeForJoinOrdering(any(), any(Set.class))).thenAnswer(invocation -> {
 			StatementPattern pattern = invocation.getArgument(0);
 			SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
@@ -1846,7 +1846,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("billedDrug", vf.createIRI("urn:test:billedDrug")),
 				Var.of("drug"));
 		List<TupleExpr> factors = List.of(prescribedDrug, billedDrug);
-		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(100.0d);
+		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(100.0d);
 		when(estimator.orderedCardinality(factors)).thenReturn(42.0d);
 		when(estimator.estimateSketchJoinSurface(factors, "encounter"))
 				.thenReturn(new JoinFrequencyEstimate(42.0d, 42.0d, 0.90d, "omni-join-estimator", 1.0d));
@@ -1873,7 +1873,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("rightPredicate", vf.createIRI("urn:test:right")),
 				Var.of("b"));
 		List<TupleExpr> factors = List.of(left, right);
-		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(10_000.0d);
+		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(10_000.0d);
 		when(estimator.orderedCardinality(factors)).thenReturn(10_000.0d);
 		when(estimator.estimateSketchJoinSurface(factors, "a"))
 				.thenReturn(new JoinFrequencyEstimate(9_000.0d, 9_000.0d, 0.50d, "count-min", 1.0d));
@@ -1932,7 +1932,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("code", vf.createIRI("urn:test:code")),
 				Var.of("codeValue"));
 		List<TupleExpr> factors = List.of(encounterCondition, conditionCode);
-		when(estimator.factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class))).thenReturn(1_000.0d);
+		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(1_000.0d);
 		when(estimator.estimateSketchJoinSurface(factors, "condition"))
 				.thenReturn(new JoinFrequencyEstimate(44.0d, 44.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimateJoinVarDistinctRows(encounterCondition, "condition")).thenReturn(800.0d);
@@ -2615,7 +2615,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(encounterCondition, Set.of("condition")))
+		when(estimator.factorOutputRowsForCosting(encounterCondition, Set.of("condition")))
 				.thenReturn(100_000.0d);
 		when(estimator.accessShapeForJoinOrdering(encounterCondition, Set.of("condition")))
 				.thenReturn(accessShape);
@@ -2682,7 +2682,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(encounterCondition, Set.of("condition")))
+		when(estimator.factorOutputRowsForCosting(encounterCondition, Set.of("condition")))
 				.thenReturn(100_000.0d);
 		when(estimator.accessShapeForJoinOrdering(encounterCondition, Set.of("condition")))
 				.thenReturn(accessShape);
@@ -2804,7 +2804,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(factor, Set.of("obs"))).thenReturn(100_000.0d);
+		when(estimator.factorOutputRowsForCosting(factor, Set.of("obs"))).thenReturn(100_000.0d);
 		when(estimator.accessShapeForJoinOrdering(factor, Set.of("obs"))).thenReturn(accessShape);
 
 		Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteValues = Map.of("value",
@@ -2875,7 +2875,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("o"));
 		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
 		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("s"))).thenReturn(12.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = new JoinFactorCostModel.CostContext(Set.of("s"),
@@ -2960,7 +2960,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit);
 		when(accessShape.joinBoundComponentMask()).thenReturn(0);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(12.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("left"))).thenReturn(12.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("left"))).thenReturn(12.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("left"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("left"),
@@ -2998,7 +2998,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.filterMultiplier()).thenReturn(1.0d);
 		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("offer"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("offer"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("offer"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("offer"),
@@ -3056,9 +3056,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(500.0d);
 		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(5.0d);
 
-		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(10.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(100.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(5.0d);
+		when(estimator.factorOutputRowsForCosting(optional, Set.of())).thenReturn(10.0d);
+		when(estimator.factorOutputRowsForCosting(memberOf, Set.of())).thenReturn(100.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(5.0d);
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
@@ -3121,9 +3121,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
 		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
 
-		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(optional, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
@@ -3195,9 +3195,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
 		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
 
-		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(optional, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
@@ -3292,10 +3292,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
 		when(rightShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
 
-		when(estimator.factorOutputRowsForJoinOrdering(optional, Set.of())).thenReturn(960_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(left, Set.of())).thenReturn(960_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(optional, Set.of())).thenReturn(960_000.0d);
+		when(estimator.factorOutputRowsForCosting(left, Set.of())).thenReturn(960_000.0d);
+		when(estimator.factorOutputRowsForCosting(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(left, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
@@ -3379,9 +3379,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(continuationShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
 		when(continuationShape.estimateAccessRows(subjectPredicateBits)).thenReturn(1.0d);
 
-		when(estimator.factorOutputRowsForJoinOrdering(memberOf, Set.of())).thenReturn(160_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(orgDepartment, Set.of("org"))).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(departmentEmployee, Set.of("org", "dept")))
+		when(estimator.factorOutputRowsForCosting(memberOf, Set.of())).thenReturn(160_000.0d);
+		when(estimator.factorOutputRowsForCosting(orgDepartment, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(departmentEmployee, Set.of("org", "dept")))
 				.thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(orgDepartment, Set.of("org"))).thenReturn(bridgeShape);
@@ -3467,7 +3467,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(12.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("offer"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("offer"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("offer"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("offer"),
@@ -3507,7 +3507,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(108_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("person"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("person"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("person"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("person"),
@@ -3554,7 +3554,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(leftShape.joinBoundComponentMask()).thenReturn(0);
 		when(leftShape.estimateAccessRows(anyInt())).thenReturn(16_000.0d);
 		when(leftShape.estimateAccessRows(predicateBit)).thenReturn(16_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(left, Set.of())).thenReturn(16_000.0d);
+		when(estimator.factorOutputRowsForCosting(left, Set.of())).thenReturn(16_000.0d);
 		when(estimator.accessShapeForJoinOrdering(left, Set.of())).thenReturn(leftShape);
 
 		SketchBasedJoinEstimator.AccessShape rightShape = mock(SketchBasedJoinEstimator.AccessShape.class);
@@ -3565,7 +3565,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(rightShape.estimateAccessRows(anyInt())).thenReturn(48_000.0d);
 		when(rightShape.estimateAccessRows(predicateBit)).thenReturn(48_000.0d);
 		when(rightShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(right, Set.of("med"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(right, Set.of("med"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(right, Set.of("med"))).thenReturn(rightShape);
 
 		JoinFactorCostModel.FactorCostEstimate estimate = statistics
@@ -3788,7 +3788,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(60_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("org"))).thenReturn(accessShape);
 		when(estimator.estimateJoinVarDistinctRows(pattern, "org")).thenReturn(4_000.0d);
 
@@ -3835,7 +3835,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(60_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(accessShape);
 		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(4_000.0d);
 		when(estimator.estimateSketchJoinSurfaceRows(List.of(orgAnchor), "org")).thenReturn(4_000.0d);
@@ -3887,7 +3887,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(15_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(employee, Set.of("org"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(accessShape);
 		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(0.0d);
 
@@ -3932,7 +3932,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(480_000.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("topic"))).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("topic"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("topic"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("topic"),
@@ -3975,7 +3975,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
 		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
 		when(accessShape.estimateAccessRows(domainMask)).thenReturn(24.0d);
-		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("work"))).thenReturn(50.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("work"))).thenReturn(50.0d);
 		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("work"))).thenReturn(accessShape);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("work"),

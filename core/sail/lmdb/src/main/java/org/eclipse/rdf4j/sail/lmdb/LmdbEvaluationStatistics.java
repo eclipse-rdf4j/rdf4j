@@ -673,7 +673,7 @@ class LmdbEvaluationStatistics
 	private boolean supportsSketchTuplePlan(List<TupleExpr> orderedFactors, Set<String> boundVars) {
 		Set<String> currentBoundVars = boundVars == null ? Set.of() : boundVars;
 		for (TupleExpr factor : orderedFactors) {
-			double factorRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, currentBoundVars);
+			double factorRows = sketchBasedJoinEstimator.factorOutputRowsForCosting(factor, currentBoundVars);
 			if (!isFiniteNonNegative(factorRows)) {
 				return false;
 			}
@@ -9743,7 +9743,7 @@ class LmdbEvaluationStatistics
 			return bindingSetAssignmentRows(assignment);
 		}
 		if (sketchBasedJoinEstimator != null) {
-			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, boundVars);
+			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForCosting(factor, boundVars);
 			if (isFiniteNonNegative(sketchRows)) {
 				return sketchRows;
 			}
@@ -9757,7 +9757,7 @@ class LmdbEvaluationStatistics
 			return bindingSetAssignmentRows(assignment);
 		}
 		if (sketchBasedJoinEstimator != null) {
-			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, variableNames,
+			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForCosting(factor, variableNames,
 					boundVarMask);
 			if (isFiniteNonNegative(sketchRows)) {
 				return sketchRows;

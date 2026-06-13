@@ -1748,6 +1748,41 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void factorOutputRowsForCostingDoesNotReuseRowsOnlyEstimateForWitnessPlanning() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI predicate = VF.createIRI("urn:rows-only-costing:p");
+		for (int i = 0; i < 64; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:rows-only-costing:s:" + i), predicate,
+					VF.createIRI("urn:rows-only-costing:o:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+
+		StatementPattern pattern = pattern("s", predicate, "o");
+		Method rowsOnlyMethod = SketchBasedJoinEstimator.class.getMethod("factorOutputRowsForCosting", TupleExpr.class,
+				Set.class);
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			double rows = (double) rowsOnlyMethod.invoke(estimator, pattern, Set.of());
+			assertTrue(Double.isFinite(rows) && rows > 0.0d, "Rows-only costing should produce a finite row estimate");
+
+			Map<?, Optional<?>> cache = scopedTupleEstimateCache(estimator);
+			assertEquals(1, cache.size(), "Rows-only costing should cache one tuple estimate");
+			Object rowsOnlyEstimate = cache.values().iterator().next().orElseThrow();
+			assertTrue(omniWitnesses(rowsOnlyEstimate).isEmpty(),
+					"Rows-only costing should not materialize Omni witnesses");
+
+			SketchBasedJoinEstimator.TuplePlanEstimate fullEstimate = estimator.factorEstimateForJoinOrdering(pattern,
+					Set.of());
+
+			assertTrue(fullEstimate.omniWitness("s") != null || fullEstimate.omniWitness("o") != null,
+					"Full join-ordering estimates should still carry Omni witnesses");
+			assertEquals(2, cache.size(), "Rows-only and witness estimates need separate cache keys");
+		}
+	}
+
+	@Test
 	void bindingSetAssignmentEstimateCacheIgnoresUnrelatedBoundVars() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI p = VF.createIRI("urn:p");
@@ -2125,7 +2160,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertTrue(plan.isPresent(), "Expected planner to produce a plan");
 		assertTrue(plan.get().getEstimatedFinalRows() < 5.0d,
-				"Expected BSA overlap to drive final-row estimate close to the single matching binding");
+				() -> "rows=" + plan.get().getEstimatedFinalRows() + ", order=" + plan.get().getOrderedArgs()
+						+ ", metrics=" + plan.get().getSummaryDoubleMetrics());
 	}
 
 	@Test
@@ -3986,6 +4022,23 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Expected Pareto memo exploration: " + plan.getSummaryStringMetrics());
 		assertTrue(summary.contains("finalVector="),
 				"Expected final cost vector diagnostics: " + plan.getSummaryStringMetrics());
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<?, Optional<?>> scopedTupleEstimateCache(SketchBasedJoinEstimator estimator) throws Exception {
+		Field optimizationScope = SketchBasedJoinEstimator.class.getDeclaredField("optimizationScope");
+		optimizationScope.setAccessible(true);
+		ThreadLocal<?> threadLocal = (ThreadLocal<?>) optimizationScope.get(estimator);
+		Object scope = threadLocal.get();
+		Field tupleEstimateCache = scope.getClass().getDeclaredField("tupleEstimateCache");
+		tupleEstimateCache.setAccessible(true);
+		return (Map<?, Optional<?>>) tupleEstimateCache.get(scope);
+	}
+
+	private static Map<?, ?> omniWitnesses(Object estimate) throws Exception {
+		Field omniWitnesses = estimate.getClass().getDeclaredField("omniWitnesses");
+		omniWitnesses.setAccessible(true);
+		return (Map<?, ?>) omniWitnesses.get(estimate);
 	}
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {

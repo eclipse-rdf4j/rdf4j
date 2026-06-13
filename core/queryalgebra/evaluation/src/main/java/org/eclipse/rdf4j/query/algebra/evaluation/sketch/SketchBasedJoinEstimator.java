@@ -121,6 +121,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -285,6 +286,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return strategy;
 			}
 			return COUNT_MIN_DUAL;
+		}
+	}
+
+	private enum EstimateDetail {
+		ROWS_ONLY,
+		WITH_WITNESSES;
+
+		private boolean materializeOmniWitnesses() {
+			return this == WITH_WITNESSES;
 		}
 	}
 
@@ -6684,8 +6694,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			valueHashes.add(omniValueHash(value.stringValue()));
 		}
 		return valueHashes.isEmpty() ? null
-				: FiniteOmniFilterProbe.of(OMNI_COMPONENT_ATTRIBUTES[component.ordinal()], 1,
-						toLongArray(valueHashes), null);
+				: finiteOmniFilterProbeForComponent(pattern, component, toLongArray(valueHashes), condition);
 	}
 
 	private FiniteOmniFilterProbe disjunctiveFiniteOmniFilterProbe(StatementPattern pattern, ValueExpr condition) {
@@ -6701,14 +6710,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		List<FiniteOmniFilterArm> arms = new ArrayList<>(alternatives.size());
+		boolean residualRequired = false;
 		for (FiniteOmniFilterProbe alternative : alternatives) {
 			FiniteOmniFilterArm arm = alternative.singleArm();
-			if (arm == null || alternative.residualCondition() != null) {
+			if (arm == null) {
 				return null;
 			}
+			residualRequired |= alternative.residualCondition() != null;
 			addOrMergeFiniteOmniFilterArm(arms, arm);
 		}
-		return arms.isEmpty() ? null : new FiniteOmniFilterProbe(arms, null);
+		return arms.isEmpty() ? null : new FiniteOmniFilterProbe(arms, residualRequired ? condition : null);
 	}
 
 	private FiniteOmniFilterProbe tupleDisjunctiveFiniteOmniFilterProbe(StatementPattern pattern,
@@ -6722,16 +6733,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		LinkedHashSet<Long> valueHashes = new LinkedHashSet<>();
+		boolean residualRequired = false;
 		for (FiniteOmniTupleAlternative alternative : alternatives) {
 			if (!alternative.components().equals(components)) {
 				return null;
 			}
 			valueHashes.add(alternative.valueHash());
+			residualRequired |= alternative.residualRequired();
 		}
 		Component[] tupleComponents = components.toArray(Component[]::new);
 		return valueHashes.isEmpty() ? null
 				: FiniteOmniFilterProbe.of(omniSubjectStarAttribute(tupleComponents), components.size(),
-						toLongArray(valueHashes), null);
+						toLongArray(valueHashes), residualRequired ? condition : null);
 	}
 
 	private boolean collectFiniteOmniTupleDisjuncts(StatementPattern pattern, ValueExpr condition,
@@ -6750,7 +6763,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private FiniteOmniTupleAlternative tupleFiniteOmniConjunct(StatementPattern pattern, ValueExpr condition) {
 		EnumMap<Component, Long> valueHashes = new EnumMap<>(Component.class);
-		if (!collectFiniteOmniConjunctBindings(pattern, condition, valueHashes) || valueHashes.size() < 2) {
+		if (!collectFiniteOmniConjunctBindings(pattern, condition, valueHashes)) {
+			return null;
+		}
+		boolean conditionUsesContext = valueHashes.containsKey(Component.C);
+		for (Component component : List.of(Component.P, Component.O, Component.C)) {
+			Var var = varForComponent(pattern, component);
+			if (!valueHashes.containsKey(component) && hasBoundValue(var)) {
+				valueHashes.put(component, omniValueHash(getValueOrNull(var)));
+			}
+		}
+		boolean residualRequired = false;
+		if (!contextPairSketchesEnabled && valueHashes.containsKey(Component.C)) {
+			if (!conditionUsesContext) {
+				return null;
+			}
+			valueHashes.remove(Component.C);
+			residualRequired = true;
+		}
+		if (valueHashes.size() < 2) {
 			return null;
 		}
 		List<Component> components = new ArrayList<>(3);
@@ -6767,7 +6798,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			tupleHashes[i] = valueHashes.get(components.get(i));
 		}
 		return new FiniteOmniTupleAlternative(List.copyOf(components),
-				OmniJoinEstimator.orderedTupleHash(tupleHashes));
+				OmniJoinEstimator.orderedTupleHash(tupleHashes), residualRequired);
 	}
 
 	private boolean collectFiniteOmniConjunctBindings(StatementPattern pattern, ValueExpr condition,
@@ -6807,26 +6838,90 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return null;
 			}
 			return equalityFiniteOmniFilterProbe(pattern, compare.getLeftArg(), compare.getRightArg(),
-					compare.getRightArg(), compare.getLeftArg());
+					compare.getRightArg(), compare.getLeftArg(), condition);
 		}
 		if (condition instanceof SameTerm sameTerm) {
 			return equalityFiniteOmniFilterProbe(pattern, sameTerm.getLeftArg(), sameTerm.getRightArg(),
-					sameTerm.getRightArg(), sameTerm.getLeftArg());
+					sameTerm.getRightArg(), sameTerm.getLeftArg(), condition);
 		}
 		return null;
 	}
 
 	private FiniteOmniFilterProbe equalityFiniteOmniFilterProbe(StatementPattern pattern,
 			ValueExpr leftVarCandidate, ValueExpr rightValueCandidate, ValueExpr rightVarCandidate,
-			ValueExpr leftValueCandidate) {
+			ValueExpr leftValueCandidate, ValueExpr condition) {
 		FiniteOmniFilterBinding binding = finiteOmniFilterBindingForVar(pattern, leftVarCandidate,
 				rightValueCandidate);
 		if (binding == null) {
 			binding = finiteOmniFilterBindingForVar(pattern, rightVarCandidate, leftValueCandidate);
 		}
 		return binding == null ? null
-				: FiniteOmniFilterProbe.of(OMNI_COMPONENT_ATTRIBUTES[binding.component().ordinal()], 1,
-						new long[] { binding.valueHash() }, null);
+				: finiteOmniFilterProbeForComponent(pattern, binding.component(), new long[] { binding.valueHash() },
+						condition);
+	}
+
+	private FiniteOmniFilterProbe finiteOmniFilterProbeForComponent(StatementPattern pattern,
+			Component finiteComponent, long[] finiteValueHashes, ValueExpr residualCondition) {
+		if (pattern == null || finiteComponent == null || finiteComponent == Component.S
+				|| finiteValueHashes == null || finiteValueHashes.length == 0) {
+			return null;
+		}
+		List<Component> components = new ArrayList<>(3);
+		boolean finiteContextSkipped = false;
+		for (Component component : List.of(Component.P, Component.O, Component.C)) {
+			Var var = varForComponent(pattern, component);
+			boolean included = component == finiteComponent || hasBoundValue(var);
+			if (!included) {
+				continue;
+			}
+			if (!contextPairSketchesEnabled && component == Component.C) {
+				if (component != finiteComponent) {
+					return null;
+				}
+				finiteContextSkipped = true;
+				continue;
+			}
+			components.add(component);
+		}
+		if (components.isEmpty()) {
+			return null;
+		}
+		if (components.size() == 1) {
+			Component component = components.getFirst();
+			if (component == Component.O) {
+				return null;
+			}
+			if (finiteContextSkipped) {
+				return FiniteOmniFilterProbe.of(OMNI_COMPONENT_ATTRIBUTES[component.ordinal()], 1,
+						new long[] { omniValueHash(getValueOrNull(varForComponent(pattern, component))) },
+						residualCondition);
+			}
+			return FiniteOmniFilterProbe.of(OMNI_COMPONENT_ATTRIBUTES[component.ordinal()], 1,
+					finiteValueHashes.clone(), residualCondition);
+		}
+		if (finiteContextSkipped) {
+			long[] componentHashes = new long[components.size()];
+			for (int componentIndex = 0; componentIndex < components.size(); componentIndex++) {
+				componentHashes[componentIndex] = omniValueHash(
+						getValueOrNull(varForComponent(pattern, components.get(componentIndex))));
+			}
+			return FiniteOmniFilterProbe.of(omniSubjectStarAttribute(components.toArray(Component[]::new)),
+					components.size(), new long[] { OmniJoinEstimator.orderedTupleHash(componentHashes) },
+					residualCondition);
+		}
+		long[] valueHashes = new long[finiteValueHashes.length];
+		for (int valueIndex = 0; valueIndex < finiteValueHashes.length; valueIndex++) {
+			long[] componentHashes = new long[components.size()];
+			for (int componentIndex = 0; componentIndex < components.size(); componentIndex++) {
+				Component component = components.get(componentIndex);
+				componentHashes[componentIndex] = component == finiteComponent
+						? finiteValueHashes[valueIndex]
+						: omniValueHash(getValueOrNull(varForComponent(pattern, component)));
+			}
+			valueHashes[valueIndex] = OmniJoinEstimator.orderedTupleHash(componentHashes);
+		}
+		return FiniteOmniFilterProbe.of(omniSubjectStarAttribute(components.toArray(Component[]::new)),
+				components.size(), valueHashes, residualCondition);
 	}
 
 	private FiniteOmniFilterBinding finiteOmniEqualityBinding(StatementPattern pattern, ValueExpr condition) {
@@ -6942,7 +7037,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	}
 
-	private record FiniteOmniTupleAlternative(List<Component> components, long valueHash) {
+	private record FiniteOmniTupleAlternative(List<Component> components, long valueHash, boolean residualRequired) {
 
 	}
 
@@ -7979,10 +8074,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm, outcome.path().name(),
 					outcome.rejectedFactor(), diagnostics);
 		}
-		JoinOrderPlanner.JoinOrderPlan plan = prependJoinPlannerInputDiagnostics(outcome.plan().get(),
-				inputDiagnostics);
+		JoinOrderPlanner.JoinOrderPlan plan = refineJoinOrderPlanCardinality(outcome.plan().get());
+		plan = prependJoinPlannerInputDiagnostics(plan, inputDiagnostics);
 		return JoinOrderPlanner.PlanningAttempt.planned(plan, "sketch", algorithm, outcome.path().name(),
 				plan.getDiagnostics());
+	}
+
+	private JoinOrderPlanner.JoinOrderPlan refineJoinOrderPlanCardinality(JoinOrderPlanner.JoinOrderPlan plan) {
+		TuplePlanEstimate finitePatternRows = estimateBindingSetAssignmentPatternRows(plan.getOrderedArgs());
+		if (finitePatternRows == null) {
+			return plan;
+		}
+		double finalRows = normalizeRows(finitePatternRows.outputRows);
+		Map<String, Double> summaryDoubleMetrics = new HashMap<>(plan.getSummaryDoubleMetrics());
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
+		double existingCostFinalRows = summaryDoubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				finalRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				finalRows == 0.0d && existingCostFinalRows > 0.0d ? existingCostFinalRows : finalRows);
+		return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), finalRows, plan.getEstimatedTotalWork(),
+				plan.getDiagnostics(), plan.getSummaryStringMetrics(), summaryDoubleMetrics, plan.getSteps());
 	}
 
 	private JoinOrderPlanner.JoinOrderPlan prependJoinPlannerInputDiagnostics(JoinOrderPlanner.JoinOrderPlan plan,
@@ -8087,10 +8198,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return parent != null && isPartOfSubQuery(parent);
 	}
 
-	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
 		TuplePlanEstimate estimate;
 		if (tupleExpr instanceof BindingSetAssignment) {
-			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr, detail);
 		} else if (tupleExpr instanceof ArbitraryLengthPath) {
 			estimate = estimatePropertyPathTupleExprPlan((ArbitraryLengthPath) tupleExpr);
 		} else if (tupleExpr instanceof ZeroLengthPath) {
@@ -8102,16 +8214,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (input == null) {
 				return null;
 			}
-			estimate = estimatePatternTupleExprPlan(input);
+			estimate = estimatePatternTupleExprPlan(input, detail);
 		}
 		return applyInitiallyBoundVars(estimate, initiallyBoundVars);
 	}
 
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
+			long initiallyBoundVarMask, EstimateDetail detail) {
 		TuplePlanEstimate estimate;
 		if (tupleExpr instanceof BindingSetAssignment) {
-			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr, detail);
 		} else if (tupleExpr instanceof ArbitraryLengthPath) {
 			estimate = estimatePropertyPathTupleExprPlan((ArbitraryLengthPath) tupleExpr);
 		} else if (tupleExpr instanceof ZeroLengthPath) {
@@ -8123,7 +8235,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (input == null) {
 				return null;
 			}
-			estimate = estimatePatternTupleExprPlan(input);
+			estimate = estimatePatternTupleExprPlan(input, detail);
 		}
 		return applyInitiallyBoundVarMask(estimate, scope, initiallyBoundVarMask);
 	}
@@ -8198,7 +8310,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return true;
 	}
 
-	private TuplePlanEstimate estimatePatternTupleExprPlan(PatternEstimateInput input) {
+	private TuplePlanEstimate estimatePatternTupleExprPlan(PatternEstimateInput input, EstimateDetail detail) {
 		StatementPattern pattern = input.pattern;
 		double baseRows = normalizeRows(estimatePatternRows(pattern));
 		double outputRows = normalizeRows(applyFilterMultiplier(baseRows, input.filterMultiplier));
@@ -8208,8 +8320,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (input.filterMultiplier < 1.0d) {
 			varStats = clampVarStatsToRows(varStats, outputRows, false);
 		}
+		Map<String, OmniWitnessSet> witnesses = detail.materializeOmniWitnesses()
+				? estimateOmniPatternWitnesses(pattern)
+				: Map.of();
 		return new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats, null, null, Double.NaN,
-				estimateOmniPatternWitnesses(pattern));
+				witnesses);
 	}
 
 	private TuplePlanEstimate estimatePropertyPathTupleExprPlan(ArbitraryLengthPath path) {
@@ -8286,28 +8401,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
+		return estimateBindingSetAssignment(assignment, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment, EstimateDetail detail) {
 		OptimizationScopeState scope = optimizationScope.get();
 		if (scope != null) {
-			BindingSetAssignmentEstimateCacheKey key = new BindingSetAssignmentEstimateCacheKey(assignment);
+			BindingSetAssignmentEstimateCacheKey key = new BindingSetAssignmentEstimateCacheKey(assignment, detail);
 			Optional<TuplePlanEstimate> cached = scope.bindingSetAssignmentEstimateCache.get(key);
 			if (cached != null) {
 				return cached.orElse(null);
 			}
-			TuplePlanEstimate estimate = computeBindingSetAssignmentEstimate(assignment);
+			TuplePlanEstimate estimate = computeBindingSetAssignmentEstimate(assignment, detail);
 			scope.bindingSetAssignmentEstimateCache.put(key, Optional.ofNullable(estimate));
 			return estimate;
 		}
-		return computeBindingSetAssignmentEstimate(assignment);
+		return computeBindingSetAssignmentEstimate(assignment, detail);
 	}
 
-	private TuplePlanEstimate computeBindingSetAssignmentEstimate(BindingSetAssignment assignment) {
+	private TuplePlanEstimate computeBindingSetAssignmentEstimate(BindingSetAssignment assignment,
+			EstimateDetail detail) {
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> valueSketches = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
-				? new HashMap<>()
-				: null;
+		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+				&& sketchStrategy == SketchStrategy.OMNI
+						? new HashMap<>()
+						: null;
 		Set<String> bindingNames = assignment.getBindingNames();
 		if (bindingSets != null) {
 			for (BindingSet bindingSet : bindingSets) {
@@ -8316,10 +8437,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					Value value = bindingSet.getValue(bindingName);
 					if (value != null) {
 						valueSets.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-						addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(str(value)), 1.0d);
+						String valueString = str(value);
+						addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(valueString), 1.0d);
 						FastAgmsBindingSummary sketch = valueSketches.computeIfAbsent(bindingName,
 								key -> newSk(bufA.k, sketchStrategy));
-						frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(str(value))), 1.0d);
+						frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(valueString)), 1.0d);
 					}
 				}
 			}
@@ -8339,6 +8461,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate exactFiniteBindingSetFilterPlan(Filter filter) {
+		return exactFiniteBindingSetFilterPlan(filter, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate exactFiniteBindingSetFilterPlan(Filter filter, EstimateDetail detail) {
 		if (!(filter.getArg()instanceof BindingSetAssignment assignment)) {
 			return null;
 		}
@@ -8374,7 +8500,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		BindingSetAssignment filteredAssignment = new BindingSetAssignment();
 		filteredAssignment.setBindingNames(bindingNames);
 		filteredAssignment.setBindingSets(filteredRows);
-		return estimateBindingSetAssignment(filteredAssignment);
+		return estimateBindingSetAssignment(filteredAssignment, detail);
 	}
 
 	private Boolean evaluateFiniteFilter(ValueExpr condition, BindingSet bindingSet) {
@@ -8579,23 +8705,33 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right) {
-		return estimateJoinStep(left, right, null);
+		return estimateJoinStep(left, right, null, true, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right, EstimateDetail detail) {
+		return estimateJoinStep(left, right, null, true, detail);
 	}
 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
-		return estimateJoinStep(left, right, sketchIntersectionCache, true);
+		return estimateJoinStep(left, right, sketchIntersectionCache, true, EstimateDetail.WITH_WITNESSES);
 	}
 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
+		return estimateJoinStep(left, right, sketchIntersectionCache, useSketches, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches, EstimateDetail detail) {
 		if (shouldShortCircuitEmptyJoin(left, right)) {
 			return new JoinStepEstimate(0.0d, Collections.emptyMap());
 		}
 		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
 		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
 		if (leftSmall != null && leftSmall.sameDictionary(rightSmall)) {
-			return estimateJoinStepSmall(left, right, sketchIntersectionCache, leftSmall, rightSmall, useSketches);
+			return estimateJoinStepSmall(left, right, sketchIntersectionCache, leftSmall, rightSmall, useSketches,
+					detail);
 		}
 
 		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
@@ -8640,7 +8776,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				sketchEstimateSource = omniSurface.source();
 				sketchEstimateConfidence = omniSurface.confidence();
 			}
-			omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
+			if (detail.materializeOmniWitnesses()) {
+				omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
+			}
 			if (omniDirected != null) {
 				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
 						omniDirected.confidence());
@@ -8685,7 +8823,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			mergedStats.put(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), sketch, pattern));
 		}
-		Map<String, OmniWitnessSet> mergedOmniWitnesses = mergedOmniWitnesses(left, right, omniDirected);
+		Map<String, OmniWitnessSet> mergedOmniWitnesses = detail.materializeOmniWitnesses()
+				? mergedOmniWitnesses(left, right, omniDirected)
+				: Map.of();
 		return new JoinStepEstimate(outputRows, mergedStats, sketchEstimateSource, sketchEstimateConfidence,
 				mergedOmniWitnesses);
 	}
@@ -8995,7 +9135,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private JoinStepEstimate estimateJoinStepSmall(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, SmallVarStatsMap leftStatsMap,
-			SmallVarStatsMap rightStatsMap, boolean useSketches) {
+			SmallVarStatsMap rightStatsMap, boolean useSketches, EstimateDetail detail) {
 		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
 		double rawRows = Double.POSITIVE_INFINITY;
 		double[] sharedDistinctByLeftIndex = null;
@@ -9069,7 +9209,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				sketchEstimateSource = omniSurface.source();
 				sketchEstimateConfidence = omniSurface.confidence();
 			}
-			omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
+			if (detail.materializeOmniWitnesses()) {
+				omniDirected = estimateOmniDirectedJoinStep(left, right, sharedVarNames, useSketches);
+			}
 			if (omniDirected != null) {
 				rawRows = selectOmniJoinRows(rawRows, disconnectedRows, omniDirected.rows(),
 						omniDirected.confidence());
@@ -9114,7 +9256,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					rightStatsMap.patternAt(i));
 			mergedStats.putNew(key, id, clampDistinct(rightStatsMap.distinctAt(i), outputRows), sketch, pattern);
 		}
-		Map<String, OmniWitnessSet> mergedOmniWitnesses = mergedOmniWitnesses(left, right, omniDirected);
+		Map<String, OmniWitnessSet> mergedOmniWitnesses = detail.materializeOmniWitnesses()
+				? mergedOmniWitnesses(left, right, omniDirected)
+				: Map.of();
 		return new JoinStepEstimate(outputRows, mergedStats, sketchEstimateSource, sketchEstimateConfidence,
 				mergedOmniWitnesses);
 	}
@@ -9197,6 +9341,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					: sketchIntersectionCache.intersect(leftSketch, rightSketch);
 			FastAgmsBindingSummary intersection = intersectionResult.sketch;
 			double distinct = Math.min(intersectionResult.distinct, Math.min(leftDistinct, rightDistinct));
+			if (distinct > 0.0d && intersectionResult.upperBoundDistinct1StdDev > 0.0d
+					&& !leftSketch.isTuple() && !rightSketch.isTuple()) {
+				recordSketchIntersectionUpperBoundUse();
+			}
 			if (distinct == 0.0d) {
 				double rows = estimateUpperBoundIntersectionRows(intersectionResult.upperBoundDistinct1StdDev,
 						leftRows, rightRows, leftDistinct, rightDistinct, disconnectedRows);
@@ -10181,12 +10329,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final class TuplePlanEstimateCacheKey {
 		private final TupleExpr tupleExpr;
 		private final long boundVarMask;
+		private final EstimateDetail detail;
 		private final int hashCode;
 
-		private TuplePlanEstimateCacheKey(TupleExpr tupleExpr, long boundVarMask) {
+		private TuplePlanEstimateCacheKey(TupleExpr tupleExpr, long boundVarMask, EstimateDetail detail) {
 			this.tupleExpr = Objects.requireNonNull(tupleExpr, "tupleExpr");
 			this.boundVarMask = boundVarMask;
-			this.hashCode = 31 * System.identityHashCode(tupleExpr) + Long.hashCode(boundVarMask);
+			this.detail = Objects.requireNonNull(detail, "detail");
+			int result = 31 * System.identityHashCode(tupleExpr) + Long.hashCode(boundVarMask);
+			this.hashCode = 31 * result + detail.hashCode();
 		}
 
 		@Override
@@ -10197,7 +10348,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (!(other instanceof TuplePlanEstimateCacheKey that)) {
 				return false;
 			}
-			return tupleExpr == that.tupleExpr && boundVarMask == that.boundVarMask;
+			return tupleExpr == that.tupleExpr && boundVarMask == that.boundVarMask && detail == that.detail;
 		}
 
 		@Override
@@ -10209,12 +10360,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final class BindingSetAssignmentEstimateCacheKey {
 		private final Iterable<BindingSet> bindingSets;
 		private final Set<String> bindingNames;
+		private final EstimateDetail detail;
 		private final int hashCode;
 
-		private BindingSetAssignmentEstimateCacheKey(BindingSetAssignment assignment) {
+		private BindingSetAssignmentEstimateCacheKey(BindingSetAssignment assignment, EstimateDetail detail) {
 			this.bindingSets = assignment.getBindingSets();
 			this.bindingNames = Set.copyOf(assignment.getBindingNames());
-			this.hashCode = 31 * System.identityHashCode(bindingSets) + bindingNames.hashCode();
+			this.detail = Objects.requireNonNull(detail, "detail");
+			int result = 31 * System.identityHashCode(bindingSets) + bindingNames.hashCode();
+			this.hashCode = 31 * result + detail.hashCode();
 		}
 
 		@Override
@@ -10225,7 +10379,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (!(other instanceof BindingSetAssignmentEstimateCacheKey that)) {
 				return false;
 			}
-			return bindingSets == that.bindingSets && bindingNames.equals(that.bindingNames);
+			return bindingSets == that.bindingSets && bindingNames.equals(that.bindingNames) && detail == that.detail;
 		}
 
 		@Override
@@ -10555,7 +10709,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignmentPatternRows(List<TupleExpr> tupleExprs) {
-		if (tupleExprs.size() != 2 || patternCardinalityProvider == null) {
+		if (tupleExprs.size() != 2) {
 			return null;
 		}
 		boolean leftAssignment = tupleExprs.get(0) instanceof BindingSetAssignment;
@@ -10568,7 +10722,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				: tupleExprs.get(1));
 		TupleExpr patternExpr = leftAssignment ? tupleExprs.get(1) : tupleExprs.get(0);
 		PatternEstimateInput input = asSketchCompatibleInput(patternExpr);
-		if (input == null || !isSmallBindingSetAssignment(assignment)) {
+		if (input == null || !isExactBindingSetAssignmentPatternRowsEligible(assignment)) {
 			return null;
 		}
 		Set<String> sharedNames = new HashSet<>(assignment.getBindingNames());
@@ -10592,8 +10746,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		for (BindingSet bindingSet : bindingSets) {
 			TupleExpr boundExpr = bindTupleExpr(patternExpr, bindingSet);
-			PatternEstimateInput boundInput = asSketchCompatibleInput(boundExpr);
-			TuplePlanEstimate rowEstimate = estimateBoundPatternRowsFromProvider(boundInput);
+			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundExpr, Collections.emptySet(),
+					EstimateDetail.WITH_WITNESSES, true);
 			if (rowEstimate == null) {
 				return null;
 			}
@@ -10613,11 +10767,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(str(value)), 1.0d);
+				String valueString = str(value);
+				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(valueString), 1.0d);
 				frequencyUpdateRaw(
 						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
 								sketchStrategy)),
-						thetaHash(valueFingerprint(str(value))), 1.0d);
+						thetaHash(valueFingerprint(valueString)), 1.0d);
 			}
 			for (Map.Entry<String, VarPlanStats> entry : rowEstimate.varStats.entrySet()) {
 				if (!bindingSet.hasBinding(entry.getKey())) {
@@ -10639,6 +10794,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		return new TuplePlanEstimate(totalRows, totalRows, 1.0d, varStats, null, null, Double.NaN,
 				omniWitnessSets(omniWitnessWeights));
+	}
+
+	private boolean isExactBindingSetAssignmentPatternRowsEligible(BindingSetAssignment assignment) {
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return true;
+		}
+		long rowBudget = Math.max((long) SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS,
+				zeroIntersectionRowBudget);
+		long rows = 0L;
+		for (BindingSet ignored : bindingSets) {
+			rows++;
+			if (rows > rowBudget) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private TuplePlanEstimate estimateBoundPatternRowsFromProvider(PatternEstimateInput input) {
@@ -10756,6 +10928,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
 				: Set.copyOf(initiallyBoundVars);
+		TuplePlanEstimate finitePatternRows = estimateBindingSetAssignmentPatternRows(tupleExprs);
+		if (finitePatternRows != null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(finitePatternRows.outputRows);
+		}
 		if (tupleExprs.size() == 2) {
 			TuplePlanEstimate simulated = estimateBindingSetAssignmentJoinPlan(tupleExprs.get(0), tupleExprs.get(1),
 					false, bound);
@@ -11315,44 +11492,59 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr) {
-		return estimateTupleExprPlan(tupleExpr, Collections.emptySet());
+		return estimateTupleExprPlan(tupleExpr, Collections.emptySet(), EstimateDetail.WITH_WITNESSES);
 	}
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}
 		OptimizationScopeState scope = optimizationScope.get();
 		if (scope == null) {
-			return computeTupleExprPlan(tupleExpr, initiallyBoundVars);
+			return computeTupleExprPlan(tupleExpr, initiallyBoundVars, detail);
 		}
 		long boundVarMask = scope.variableDictionary.maskOf(initiallyBoundVars);
 		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
-			return computeTupleExprPlan(tupleExpr, initiallyBoundVars);
+			return computeTupleExprPlan(tupleExpr, initiallyBoundVars, detail);
 		}
-		return estimateTupleExprPlan(tupleExpr, scope, boundVarMask);
+		return estimateTupleExprPlan(tupleExpr, scope, boundVarMask, detail);
 	}
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, long initiallyBoundVarMask) {
+		return estimateTupleExprPlan(tupleExpr, initiallyBoundVarMask, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, long initiallyBoundVarMask,
+			EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}
 		OptimizationScopeState scope = optimizationScope.get();
 		if (scope == null || initiallyBoundVarMask == BOUND_VAR_MASK_OVERFLOW) {
-			return computeTupleExprPlan(tupleExpr, Collections.emptySet());
+			return computeTupleExprPlan(tupleExpr, Collections.emptySet(), detail);
 		}
-		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
+		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, detail);
 	}
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
+		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask, EstimateDetail detail) {
 		long cacheBoundVarMask = canonicalTupleEstimateBoundMask(tupleExpr, scope, initiallyBoundVarMask);
-		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, cacheBoundVarMask);
+		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, cacheBoundVarMask, detail);
 		Optional<TuplePlanEstimate> cached = scope.tupleEstimateCache.get(key);
 		if (cached != null) {
 			return cached.orElse(null);
 		}
-		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, scope, cacheBoundVarMask);
+		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, scope, cacheBoundVarMask, detail);
 		scope.tupleEstimateCache.put(key, Optional.ofNullable(estimate));
 		return estimate;
 	}
@@ -11370,40 +11562,43 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return initiallyBoundVarMask & assignmentMask;
 	}
 
-	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}
 
-		TuplePlanEstimate plannerEstimate = toPlannerTupleEstimate(tupleExpr, initiallyBoundVars);
+		TuplePlanEstimate plannerEstimate = toPlannerTupleEstimate(tupleExpr, initiallyBoundVars, detail);
 		if (plannerEstimate != null) {
 			return plannerEstimate;
 		}
 
 		switch (tupleExpr) {
 			case Filter filter -> {
-				return estimateFilteredTupleExprPlan(filter, initiallyBoundVars);
+				return estimateFilteredTupleExprPlan(filter, initiallyBoundVars, detail);
 			}
 			case Join join -> {
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars);
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars,
+						detail);
 			}
 			case LeftJoin join -> {
 				if (join.hasCondition()) {
 					return null;
 				}
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars,
+						detail);
 			}
 			case Union union -> {
-				return estimateUnionTupleExprPlan(union, initiallyBoundVars);
+				return estimateUnionTupleExprPlan(union, initiallyBoundVars, detail);
 			}
 			case Difference difference -> {
-				return estimateDifferenceTupleExprPlan(difference, initiallyBoundVars);
+				return estimateDifferenceTupleExprPlan(difference, initiallyBoundVars, detail);
 			}
 			case Intersection intersection -> {
-				return estimateIntersectionTupleExprPlan(intersection, initiallyBoundVars);
+				return estimateIntersectionTupleExprPlan(intersection, initiallyBoundVars, detail);
 			}
 			case Group group -> {
-				return estimateGroupTupleExprPlan(group, initiallyBoundVars);
+				return estimateGroupTupleExprPlan(group, initiallyBoundVars, detail);
 			}
 			case EmptySet emptySet -> {
 				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
@@ -11412,57 +11607,57 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
 			}
 			case Slice slice -> {
-				return estimateSliceTupleExprPlan(slice, initiallyBoundVars);
+				return estimateSliceTupleExprPlan(slice, initiallyBoundVars, detail);
 			}
 			default -> {
 			}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
-			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, initiallyBoundVars);
+			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, initiallyBoundVars, detail);
 		}
 		if (tupleExpr instanceof UnaryTupleOperator) {
-			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg(), initiallyBoundVars);
+			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg(), initiallyBoundVars, detail);
 		}
 		return null;
 	}
 
 	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
-	                                               long initiallyBoundVarMask) {
+			long initiallyBoundVarMask, EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}
 
-		TuplePlanEstimate plannerEstimate = toPlannerTupleEstimate(tupleExpr, scope, initiallyBoundVarMask);
+		TuplePlanEstimate plannerEstimate = toPlannerTupleEstimate(tupleExpr, scope, initiallyBoundVarMask, detail);
 		if (plannerEstimate != null) {
 			return plannerEstimate;
 		}
 
 		switch (tupleExpr) {
 			case Filter filter -> {
-				return estimateFilteredTupleExprPlan(filter, scope, initiallyBoundVarMask);
+				return estimateFilteredTupleExprPlan(filter, scope, initiallyBoundVarMask, detail);
 			}
 			case Join join -> {
 				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
-						initiallyBoundVarMask);
+						initiallyBoundVarMask, detail);
 			}
 			case LeftJoin join -> {
 				if (join.hasCondition()) {
 					return null;
 				}
 				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
-						initiallyBoundVarMask);
+						initiallyBoundVarMask, detail);
 			}
 			case Union union -> {
-				return estimateUnionTupleExprPlan(union, scope, initiallyBoundVarMask);
+				return estimateUnionTupleExprPlan(union, scope, initiallyBoundVarMask, detail);
 			}
 			case Difference difference -> {
-				return estimateDifferenceTupleExprPlan(difference, scope, initiallyBoundVarMask);
+				return estimateDifferenceTupleExprPlan(difference, scope, initiallyBoundVarMask, detail);
 			}
 			case Intersection intersection -> {
-				return estimateIntersectionTupleExprPlan(intersection, scope, initiallyBoundVarMask);
+				return estimateIntersectionTupleExprPlan(intersection, scope, initiallyBoundVarMask, detail);
 			}
 			case Group group -> {
-				return estimateGroupTupleExprPlan(group, scope, initiallyBoundVarMask);
+				return estimateGroupTupleExprPlan(group, scope, initiallyBoundVarMask, detail);
 			}
 			case EmptySet emptySet -> {
 				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
@@ -11471,26 +11666,28 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
 			}
 			case Slice slice -> {
-				return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask);
+				return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask, detail);
 			}
 			default -> {
 			}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
-			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, scope, initiallyBoundVarMask);
+			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, scope, initiallyBoundVarMask, detail);
 		}
 		if (tupleExpr instanceof UnaryTupleOperator) {
-			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg(), scope, initiallyBoundVarMask);
+			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg(), scope, initiallyBoundVarMask,
+					detail);
 		}
 		return null;
 	}
 
-	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, Set<String> initiallyBoundVars) {
-		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter);
+	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter, detail);
 		if (exactFiniteEstimate != null) {
 			return exactFiniteEstimate;
 		}
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), initiallyBoundVars);
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), initiallyBoundVars, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -11509,12 +11706,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
-		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter);
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter, detail);
 		if (exactFiniteEstimate != null) {
 			return exactFiniteEstimate;
 		}
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), scope, initiallyBoundVarMask);
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), scope, initiallyBoundVarMask, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -11533,35 +11730,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
-			Set<String> initiallyBoundVars) {
+			Set<String> initiallyBoundVars, EstimateDetail detail) {
 		TuplePlanEstimate simulated = estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin,
-				initiallyBoundVars);
+				initiallyBoundVars, detail);
 		if (simulated != null) {
 			return simulated;
 		}
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, initiallyBoundVars);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, initiallyBoundVars);
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, initiallyBoundVars, detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, initiallyBoundVars, detail);
 		if (leftEstimate == null || rightEstimate == null) {
 			return null;
 		}
-		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
+		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate, detail);
 		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
 				: joinedTuplePlanEstimate(leftEstimate, rightEstimate, step);
 	}
 
 	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
-			OptimizationScopeState scope, long initiallyBoundVarMask) {
+			Set<String> initiallyBoundVars) {
+		return estimateJoinedTupleExprPlan(leftArg, rightArg, leftJoin, initiallyBoundVars,
+				EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
+			OptimizationScopeState scope, long initiallyBoundVarMask, EstimateDetail detail) {
 		TuplePlanEstimate simulated = estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope,
-				initiallyBoundVarMask);
+				initiallyBoundVarMask, detail);
 		if (simulated != null) {
 			return simulated;
 		}
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, scope, initiallyBoundVarMask);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, scope, initiallyBoundVarMask);
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, scope, initiallyBoundVarMask, detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, scope, initiallyBoundVarMask, detail);
 		if (leftEstimate == null || rightEstimate == null) {
 			return null;
 		}
-		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
+		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate, detail);
 		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
 				: joinedTuplePlanEstimate(leftEstimate, rightEstimate, step);
 	}
@@ -11634,16 +11837,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return varStats;
 	}
 
-	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, Set<String> initiallyBoundVars) {
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), initiallyBoundVars);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), initiallyBoundVars);
+	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), initiallyBoundVars, detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), initiallyBoundVars, detail);
 		return estimateUnionTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
 	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), scope, initiallyBoundVarMask);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), scope, initiallyBoundVarMask);
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), scope, initiallyBoundVarMask,
+				detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), scope, initiallyBoundVarMask,
+				detail);
 		return estimateUnionTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
@@ -11657,16 +11863,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				unionVarStats(leftEstimate, rightEstimate, outputRows));
 	}
 
-	private TuplePlanEstimate estimateDifferenceTupleExprPlan(Difference difference, Set<String> initiallyBoundVars) {
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), initiallyBoundVars);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), initiallyBoundVars);
+	private TuplePlanEstimate estimateDifferenceTupleExprPlan(Difference difference, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), initiallyBoundVars, detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), initiallyBoundVars, detail);
 		return estimateDifferenceTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
 	private TuplePlanEstimate estimateDifferenceTupleExprPlan(Difference difference, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), scope, initiallyBoundVarMask);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), scope, initiallyBoundVarMask);
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), scope, initiallyBoundVarMask,
+				detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), scope, initiallyBoundVarMask,
+				detail);
 		return estimateDifferenceTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
@@ -11681,18 +11890,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateIntersectionTupleExprPlan(Intersection intersection,
-			Set<String> initiallyBoundVars) {
-		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(intersection.getLeftArg(), initiallyBoundVars);
-		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(intersection.getRightArg(), initiallyBoundVars);
+			Set<String> initiallyBoundVars, EstimateDetail detail) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(intersection.getLeftArg(), initiallyBoundVars, detail);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(intersection.getRightArg(), initiallyBoundVars, detail);
 		return estimateIntersectionTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
 	private TuplePlanEstimate estimateIntersectionTupleExprPlan(Intersection intersection, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
+			long initiallyBoundVarMask, EstimateDetail detail) {
 		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(intersection.getLeftArg(), scope,
-				initiallyBoundVarMask);
+				initiallyBoundVarMask, detail);
 		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(intersection.getRightArg(), scope,
-				initiallyBoundVarMask);
+				initiallyBoundVarMask, detail);
 		return estimateIntersectionTupleExprPlan(leftEstimate, rightEstimate);
 	}
 
@@ -11706,14 +11915,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				intersectionVarStats(leftEstimate, rightEstimate, outputRows));
 	}
 
-	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, Set<String> initiallyBoundVars) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), initiallyBoundVars);
+	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), initiallyBoundVars, detail);
 		return estimateGroupTupleExprPlan(group, argEstimate);
 	}
 
 	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), scope, initiallyBoundVarMask);
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), scope, initiallyBoundVarMask, detail);
 		return estimateGroupTupleExprPlan(group, argEstimate);
 	}
 
@@ -11804,6 +12014,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
 			boolean leftJoin, Set<String> initiallyBoundVars) {
+		return estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, initiallyBoundVars,
+				EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
+			boolean leftJoin, Set<String> initiallyBoundVars, EstimateDetail detail) {
 		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
 		boolean rightAssignment = rightArg instanceof BindingSetAssignment;
 		if (leftAssignment == rightAssignment) {
@@ -11830,13 +12046,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
-				? new HashMap<>()
-				: null;
+		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+				&& sketchStrategy == SketchStrategy.OMNI
+						? new HashMap<>()
+						: null;
 
 		for (BindingSet bindingSet : bindingSets) {
 			TupleExpr boundOther = bindTupleExpr(otherArg, bindingSet);
-			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundOther, initiallyBoundVars);
+			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundOther, initiallyBoundVars, detail, true);
 			if (rowEstimate == null) {
 				return null;
 			}
@@ -11858,11 +12075,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(str(value)), 1.0d);
+				String valueString = str(value);
+				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(valueString), 1.0d);
 				frequencyUpdateRaw(
 						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
 								sketchStrategy)),
-						thetaHash(valueFingerprint(str(value))), 1.0d);
+						thetaHash(valueFingerprint(valueString)), 1.0d);
 			}
 
 			if (matchedRows <= 0.0d) {
@@ -11893,6 +12111,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
 			boolean leftJoin, OptimizationScopeState scope, long initiallyBoundVarMask) {
+		return estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope, initiallyBoundVarMask,
+				EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
+			boolean leftJoin, OptimizationScopeState scope, long initiallyBoundVarMask, EstimateDetail detail) {
 		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
 		boolean rightAssignment = rightArg instanceof BindingSetAssignment;
 		if (leftAssignment == rightAssignment) {
@@ -11919,13 +12143,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
 		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
-				? new HashMap<>()
-				: null;
+		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+				&& sketchStrategy == SketchStrategy.OMNI
+						? new HashMap<>()
+						: null;
 
 		for (BindingSet bindingSet : bindingSets) {
 			TupleExpr boundOther = bindTupleExpr(otherArg, bindingSet);
-			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundOther, scope, initiallyBoundVarMask);
+			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundOther, scope, initiallyBoundVarMask,
+					detail, true);
 			if (rowEstimate == null) {
 				return null;
 			}
@@ -11947,11 +12173,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(str(value)), 1.0d);
+				String valueString = str(value);
+				addOmniWitnessWeight(omniWitnessWeights, bindingName, omniValueHash(valueString), 1.0d);
 				frequencyUpdateRaw(
 						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
 								sketchStrategy)),
-						thetaHash(valueFingerprint(str(value))), 1.0d);
+						thetaHash(valueFingerprint(valueString)), 1.0d);
 			}
 
 			if (matchedRows <= 0.0d) {
@@ -11998,37 +12225,67 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+		return estimateBoundTupleExprPlan(tupleExpr, initiallyBoundVars, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		return estimateBoundTupleExprPlan(tupleExpr, initiallyBoundVars, detail, false);
+	}
+
+	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
+			EstimateDetail detail, boolean preferExactScan) {
 		if (tupleExpr instanceof StatementPattern) {
-			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr);
+			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr, detail,
+					preferExactScan);
 			if (exactPlan != null) {
 				return exactPlan;
 			}
 		} else if (tupleExpr instanceof Filter) {
-			TuplePlanEstimate exactPlan = exactBoundLocalFilterPlan((Filter) tupleExpr);
+			TuplePlanEstimate exactPlan = exactBoundLocalFilterPlan((Filter) tupleExpr, detail, preferExactScan);
 			if (exactPlan != null) {
 				return exactPlan;
 			}
 		}
-		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars, detail);
 	}
 
 	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
+		return estimateBoundTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		return estimateBoundTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, detail, false);
+	}
+
+	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask, EstimateDetail detail, boolean preferExactScan) {
 		if (tupleExpr instanceof StatementPattern) {
-			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr);
+			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr, detail,
+					preferExactScan);
 			if (exactPlan != null) {
 				return exactPlan;
 			}
 		} else if (tupleExpr instanceof Filter) {
-			TuplePlanEstimate exactPlan = exactBoundLocalFilterPlan((Filter) tupleExpr);
+			TuplePlanEstimate exactPlan = exactBoundLocalFilterPlan((Filter) tupleExpr, detail, preferExactScan);
 			if (exactPlan != null) {
 				return exactPlan;
 			}
 		}
-		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
+		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, detail);
 	}
 
 	private TuplePlanEstimate exactBoundLocalFilterPlan(Filter filter) {
+		return exactBoundLocalFilterPlan(filter, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate exactBoundLocalFilterPlan(Filter filter, EstimateDetail detail) {
+		return exactBoundLocalFilterPlan(filter, detail, false);
+	}
+
+	private TuplePlanEstimate exactBoundLocalFilterPlan(Filter filter, EstimateDetail detail, boolean preferExactScan) {
 		if (!(filter.getArg() instanceof StatementPattern)) {
 			return null;
 		}
@@ -12036,10 +12293,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (!bindSimpleFilterCondition(pattern, filter.getCondition())) {
 			return null;
 		}
-		return exactBoundStatementPatternPlan(pattern);
+		return exactBoundStatementPatternPlan(pattern, detail, preferExactScan);
 	}
 
 	private TuplePlanEstimate exactBoundStatementPatternPlan(StatementPattern pattern) {
+		return exactBoundStatementPatternPlan(pattern, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate exactBoundStatementPatternPlan(StatementPattern pattern, EstimateDetail detail) {
+		return exactBoundStatementPatternPlan(pattern, detail, false);
+	}
+
+	private TuplePlanEstimate exactBoundStatementPatternPlan(StatementPattern pattern, EstimateDetail detail,
+			boolean preferExactScan) {
 		if (boundComponentCount(pattern) < 2) {
 			return null;
 		}
@@ -12057,18 +12323,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
 		}
 
+		if (preferExactScan) {
+			TuplePlanEstimate scanned = scanExactBoundStatementPatternPlan(pattern, detail, subject, predicate,
+					object, contexts);
+			if (scanned != null) {
+				return scanned;
+			}
+		}
+
 		Long estimatedRows = estimateBoundPatternRows(pattern);
 		if (estimatedRows != null) {
 			double rows = normalizeRows(estimatedRows);
+			Map<String, OmniWitnessSet> witnesses = detail.materializeOmniWitnesses()
+					? estimateOmniPatternWitnesses(pattern)
+					: Map.of();
 			return new TuplePlanEstimate(rows, rows, 1.0d, conservativeBoundPatternVarStats(pattern, rows), null,
-					null, Double.NaN, estimateOmniPatternWitnesses(pattern));
+					null, Double.NaN, witnesses);
 		}
 
+		return scanExactBoundStatementPatternPlan(pattern, detail, subject, predicate, object, contexts);
+	}
+
+	private TuplePlanEstimate scanExactBoundStatementPatternPlan(StatementPattern pattern, EstimateDetail detail,
+			Resource subject, IRI predicate, Value object, Resource[] contexts) {
 		double rows = 0.0d;
 		Map<String, Set<Value>> distinctValues = new HashMap<>();
-		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = sketchStrategy == SketchStrategy.OMNI
-				? new HashMap<>()
-				: null;
+		Map<String, Long2DoubleOpenHashMap> omniWitnessWeights = detail.materializeOmniWitnesses()
+				&& sketchStrategy == SketchStrategy.OMNI
+						? new HashMap<>()
+						: null;
 		try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(subject, predicate,
 				object, contexts)) {
 			while (statements.hasNext()) {
@@ -12565,7 +12848,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice, Set<String> initiallyBoundVars) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg(), initiallyBoundVars);
+		return estimateSliceTupleExprPlan(slice, initiallyBoundVars, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice, Set<String> initiallyBoundVars,
+			EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg(), initiallyBoundVars, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -12582,7 +12870,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg(), scope, initiallyBoundVarMask);
+		return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice, OptimizationScopeState scope,
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg(), scope, initiallyBoundVarMask, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -12599,7 +12892,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr,
 			Set<String> initiallyBoundVars) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), initiallyBoundVars);
+		return estimateDistinctTupleExprPlan(tupleExpr, initiallyBoundVars, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr,
+			Set<String> initiallyBoundVars, EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), initiallyBoundVars, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -12609,7 +12907,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
-		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), scope, initiallyBoundVarMask);
+		return estimateDistinctTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask, EstimateDetail.WITH_WITNESSES);
+	}
+
+	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask, EstimateDetail detail) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), scope, initiallyBoundVarMask, detail);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -13385,10 +13688,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				distinctValues.computeIfAbsent(entry.getKey(), ignored -> new HashSet<>()).add(value);
-				addOmniWitnessWeight(omniWitnessWeights, entry.getKey(), omniValueHash(str(value)), 1.0d);
+				String valueString = str(value);
+				addOmniWitnessWeight(omniWitnessWeights, entry.getKey(), omniValueHash(valueString), 1.0d);
 				FastAgmsBindingSummary sketch = sketches.computeIfAbsent(entry.getKey(),
 						ignored -> newSk(bufA.k, sketchStrategy));
-				frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(str(value))), 1.0d);
+				frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(valueString)), 1.0d);
 			}
 		}
 		Map<String, VarPlanStats> varStats = newVarStatsMap(distinctValues.size());
@@ -13833,6 +14137,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return estimate == null ? -1.0d : estimate.outputRows();
 	}
 
+	public double factorOutputRowsForCosting(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
+		TuplePlanEstimate estimate = estimateTupleExprPlan(tupleExpr,
+				currentlyBoundVars == null ? Collections.emptySet() : currentlyBoundVars,
+				EstimateDetail.ROWS_ONLY);
+		return estimate == null ? -1.0d : estimate.outputRows();
+	}
+
 	public double factorOutputRowsForJoinOrdering(TupleExpr tupleExpr, String[] sourceVariableNames,
 			long sourceBoundVarMask) {
 		if (tupleExpr == null) {
@@ -13849,6 +14160,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
 		}
 		TuplePlanEstimate estimate = estimateTupleExprPlan(tupleExpr, scope, boundVarMask);
+		return estimate == null ? -1.0d : estimate.outputRows();
+	}
+
+	public double factorOutputRowsForCosting(TupleExpr tupleExpr, String[] sourceVariableNames,
+			long sourceBoundVarMask) {
+		if (tupleExpr == null) {
+			return -1.0d;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return factorOutputRowsForCosting(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		long boundVarMask = scope.variableDictionary.maskOf(sourceVariableNames, sourceBoundVarMask);
+		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return factorOutputRowsForCosting(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		TuplePlanEstimate estimate = estimateTupleExprPlan(tupleExpr, scope, boundVarMask, EstimateDetail.ROWS_ONLY);
 		return estimate == null ? -1.0d : estimate.outputRows();
 	}
 

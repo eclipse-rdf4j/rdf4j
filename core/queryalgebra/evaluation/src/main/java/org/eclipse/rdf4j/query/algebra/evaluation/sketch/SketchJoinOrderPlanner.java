@@ -1151,6 +1151,7 @@ final class SketchJoinOrderPlanner {
 		rowsEnteringEstimate = repeatedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
+		rowsEnteringEstimate = nonExactZeroPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		if (appliesSelectiveSeedFilterRowFlow(seedMask)) {
 			rowsEnteringEstimate = applyUnlockedFilters(0L, seedMask, rowsEnteringEstimate);
 		}
@@ -1567,6 +1568,7 @@ final class SketchJoinOrderPlanner {
 		rowsEnteringEstimate = repeatedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
+		rowsEnteringEstimate = nonExactZeroPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = boundedFiniteLookupRowFlowEstimate(candidate, mask, currentBoundVarMask,
 				prefix.estimate(), rowsEnteringEstimate, physicalEstimate);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters = rowsEnteringEstimate;
@@ -4111,6 +4113,18 @@ final class SketchJoinOrderPlanner {
 			return estimate;
 		}
 		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
+	}
+
+	private SketchBasedJoinEstimator.TuplePlanEstimate nonExactZeroPhysicalRowFlowEstimate(
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
+		double outputRows = physicalEstimate == null ? Double.NaN : physicalEstimate.factorOutputRows();
+		if (estimate == null || !appliesNonExactZeroPlanningFloor(outputRows, physicalEstimate)) {
+			return estimate;
+		}
+		if (estimate.outputRows() == 0.0d) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, 0.0d);
 	}
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate repeatedPhysicalRowFlowEstimate(
