@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,11 +20,16 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -35,11 +41,15 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -52,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterConditionCostM
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Standard logical, implementation and enforcer rules for the generic Cascades optimizer. */
 @Experimental
@@ -477,8 +488,13 @@ public final class StandardCascadesRules {
 			Union alternative = new Union(
 					new Projection(union.getLeftArg().clone(), projection.getProjectionElemList().clone()),
 					new Projection(union.getRightArg().clone(), projection.getProjectionElemList().clone()));
-			RuleProof proof = proof(semanticScope(goal), Set.of("projectionBranchLocal", "bagUnion"),
-					"projection distributes over UNION; variables missing from one branch remain unbound in that branch");
+			RuleProof proof = new RuleProof("21", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("projectionBranchLocal", "bagUnion", "projectedVarsVisible"),
+					"projection distributes over UNION as branch-local projections; variables missing from one "
+							+ "branch remain unbound in that branch",
+					new RewriteCertificate("21", "projection-over-union",
+							"union-of-branch-local-projections", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
@@ -607,6 +623,144 @@ public final class StandardCascadesRules {
 						}
 					}
 				}
+			}
+			return applications;
+		}
+	}
+
+	public static final class UnionCommonPrefixFactoringRule extends AbstractRule {
+		public UnionCommonPrefixFactoringRule() {
+			super("union-common-prefix-factoring", RuleKind.TRANSFORMATION, 57);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Union union
+					&& unionCommonPrefixFactoringAlternative(union) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Union union = (Union) expression.tupleExpr();
+			TupleExpr alternative = unionCommonPrefixFactoringAlternative(union);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("17", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("commonJoinPrefix", "bagUnion", "pureGraphPattern", "scopeSafe"),
+					"identical pure join prefixes can be factored out of UNION without changing visible bindings, "
+							+ "multiplicity, order, errors, or graph scope",
+					new RewriteCertificate("17", "union-branches-with-common-prefix",
+							"join-common-prefix-with-union", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class UnionCommonSuffixFactoringRule extends AbstractRule {
+		public UnionCommonSuffixFactoringRule() {
+			super("union-common-suffix-factoring", RuleKind.TRANSFORMATION, 57);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Union union
+					&& unionCommonSuffixFactoringAlternative(union) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Union union = (Union) expression.tupleExpr();
+			TupleExpr alternative = unionCommonSuffixFactoringAlternative(union);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("18", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("commonJoinSuffix", "bagUnion", "pureGraphPattern", "scopeSafe"),
+					"identical pure join suffixes can be factored out of UNION without changing visible bindings, "
+							+ "multiplicity, order, errors, or graph scope",
+					new RewriteCertificate("18", "union-branches-with-common-suffix",
+							"join-union-with-common-suffix", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class UnionSubsumedBranchEliminationRule extends AbstractRule {
+		public UnionSubsumedBranchEliminationRule() {
+			super("union-subsumed-branch-elimination", RuleKind.TRANSFORMATION, 56);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& duplicateInsensitiveUnionScope(goal)
+					&& expression.tupleExpr()instanceof Union union
+					&& unionSubsumedBranchAlternative(union) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Union union = (Union) expression.tupleExpr();
+			TupleExpr alternative = unionSubsumedBranchAlternative(union);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("20", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("subsumedFilteredBranch", "duplicateInsensitiveContext", "assuredBoundCondition"),
+					"a UNION branch filtered only by an assured BOUND condition is subsumed by the unfiltered branch "
+							+ "when duplicate rows are unobservable",
+					new RewriteCertificate("20", "union-with-subsumed-filter-branch",
+							"subsuming-union-branch", RewriteSafety.builder()
+									.preservedMultiplicity(false)
+									.build(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class BranchLocalDistinctRule extends AbstractRule {
+		public BranchLocalDistinctRule() {
+			super("branch-local-distinct", RuleKind.TRANSFORMATION, 55);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical()
+					|| !duplicateInsensitiveUnionScope(goal)
+					|| !(expression.tupleExpr()instanceof Union union)
+					|| union.isVariableScopeChange()) {
+				return false;
+			}
+			return branchLocalDistinctCandidate(union.getLeftArg())
+					|| branchLocalDistinctCandidate(union.getRightArg());
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Union union = (Union) expression.tupleExpr();
+			List<RuleApplication> applications = new ArrayList<>(2);
+			RuleProof proof = new RuleProof("22", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("branchLocalDistinct", "duplicateInsensitiveContext", "pureGraphPattern"),
+					"branch-local DISTINCT can be added under UNION when duplicate rows are already unobservable",
+					new RewriteCertificate("22", "union-branch", "union-branch-local-distinct",
+							RewriteSafety.builder()
+									.preservedMultiplicity(false)
+									.build(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)));
+			if (branchLocalDistinctCandidate(union.getLeftArg())) {
+				applications.add(RuleApplication.transformation(expression.groupId(),
+						unionLike(union, new Distinct(union.getLeftArg().clone()), union.getRightArg().clone()),
+						proof));
+			}
+			if (branchLocalDistinctCandidate(union.getRightArg())) {
+				applications.add(RuleApplication.transformation(expression.groupId(),
+						unionLike(union, union.getLeftArg().clone(), new Distinct(union.getRightArg().clone())),
+						proof));
 			}
 			return applications;
 		}
@@ -781,6 +935,328 @@ public final class StandardCascadesRules {
 					"OPTIONAL filtered by !BOUND(rhs-only var) is a MINUS/anti-join alternative");
 			return List.of(RuleApplication.transformation(expression.groupId(),
 					new Difference(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()), proof));
+		}
+	}
+
+	public static final class KeyOnlyNotExistsToMinusRule extends AbstractRule {
+		public KeyOnlyNotExistsToMinusRule() {
+			super("key-only-not-exists-to-minus", RuleKind.TRANSFORMATION, 55);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& keyOnlyNotExistsToMinusAlternative(filter) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			TupleExpr alternative = keyOnlyNotExistsToMinusAlternative(filter);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("30", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("keyOnlyNotExists", "nonEmptyAssuredSharedKeys", "pureGraphPattern"),
+					"key-only NOT EXISTS can be evaluated as MINUS over distinct anti-join keys",
+					new RewriteCertificate("30", "filter-not-exists-key-only",
+							"minus-distinct-key-projection", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class PushConstantIntoNegationRule extends AbstractRule {
+		public PushConstantIntoNegationRule() {
+			super("push-constant-into-negation", RuleKind.TRANSFORMATION, 54);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& pushConstantIntoNegationAlternative(filter) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			TupleExpr alternative = pushConstantIntoNegationAlternative(filter);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("31", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("localNegationVar", "sameTermConstant", "outerCorrelationPreserved"),
+					"a local sameTerm constant inside NOT EXISTS can be pushed into the negated statement pattern",
+					new RewriteCertificate("31", "not-exists-local-sameterm-filter",
+							"not-exists-constant-pattern", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class PositiveClosureDecompositionRule extends AbstractRule {
+		public PositiveClosureDecompositionRule() {
+			super("positive-closure-decomposition", RuleKind.TRANSFORMATION, 53);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& duplicateInsensitiveUnionScope(goal)
+					&& expression.tupleExpr()instanceof ArbitraryLengthPath path
+					&& positiveClosureDecompositionAlternative(path) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			ArbitraryLengthPath path = (ArbitraryLengthPath) expression.tupleExpr();
+			TupleExpr alternative = positiveClosureDecompositionAlternative(path);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("35", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("positiveClosure", "duplicateInsensitiveContext", "hiddenPathVariableProjected"),
+					"positive closure can be decomposed into one explicit step plus zero-or-more closure when "
+							+ "path multiplicity is unobservable",
+					new RewriteCertificate("35", "one-or-more-path", "one-step-then-zero-or-more-path",
+							RewriteSafety.builder()
+									.preservedMultiplicity(false)
+									.build(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class GroupByAsDistinctRule extends AbstractRule {
+		public GroupByAsDistinctRule() {
+			super("group-by-as-distinct", RuleKind.TRANSFORMATION, 52);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Group group
+					&& groupByAsDistinctAlternative(group) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Group group = (Group) expression.tupleExpr();
+			TupleExpr alternative = groupByAsDistinctAlternative(group);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("40", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("aggregateFreeGroup", "projectedKeysOnly", "distinctPreservesGroupKeys"),
+					"aggregate-free GROUP BY over projected grouping keys is equivalent to DISTINCT projection",
+					new RewriteCertificate("40", "aggregate-free-group-by", "distinct-projection",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class FixedGraphSubstitutionRule extends AbstractRule {
+		public FixedGraphSubstitutionRule() {
+			super("fixed-graph-substitution", RuleKind.TRANSFORMATION, 51);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& fixedGraphSubstitutionAlternative(filter) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			TupleExpr alternative = fixedGraphSubstitutionAlternative(filter);
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = new RuleProof("41", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("contextVarConstantized", "sameTermGraphResource", "contextBindingPreserved"),
+					"a sameTerm filter on a GRAPH context variable can be folded into the statement-pattern context "
+							+ "while preserving the context binding name",
+					new RewriteCertificate("41", "filter-over-variable-graph", "fixed-graph-statement-pattern",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class RestrictVariableGraphUniverseRule extends AbstractRule {
+		public RestrictVariableGraphUniverseRule() {
+			super("restrict-variable-graph-universe", RuleKind.TRANSFORMATION, 50);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical() || !(expression.tupleExpr()instanceof StatementPattern pattern)) {
+				return false;
+			}
+			String contextName = variableGraphContextName(pattern);
+			return contextName != null && !incomingBindingNames(goal).contains(contextName);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			StatementPattern pattern = (StatementPattern) expression.tupleExpr();
+			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			TupleExpr alternative = variableGraphUniverseAlternative(pattern, goal, metadata);
+			if (alternative == null) {
+				return List.of();
+			}
+			String contextName = variableGraphContextName(pattern);
+			Set<IRI> graphs = metadata.completeGraphUniverse().orElse(Set.of());
+			RuleProof proof = new RuleProof("43", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("metadataCompleteForDataset", "completeGraphUniverse", "contextVar=" + contextName,
+							"graphs=" + graphs.size()),
+					"a complete named-graph universe can be represented as VALUES joined with the variable GRAPH "
+							+ "pattern",
+					new RewriteCertificate("43", "variable-graph-statement-pattern",
+							"complete-graph-universe-values", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.COMPLETE_GRAPH_UNIVERSE)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class PushValuesIntoServiceRule extends AbstractRule {
+		public PushValuesIntoServiceRule() {
+			super("push-values-into-service", RuleKind.TRANSFORMATION, 49);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Join join
+					&& join.getLeftArg() instanceof BindingSetAssignment
+					&& join.getRightArg() instanceof Service;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Join join = (Join) expression.tupleExpr();
+			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			TupleExpr alternative = serviceValuesPushdownAlternative(join, metadata);
+			if (alternative == null) {
+				return List.of();
+			}
+			BindingSetAssignment localValues = (BindingSetAssignment) join.getLeftArg();
+			Service service = (Service) join.getRightArg();
+			Set<String> pushNames = servicePushBindingNames(localValues, service);
+			RuleProof proof = new RuleProof("44", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("endpointSupportsValues", "localValuesPreservedOutsideService", "pushVars=" + pushNames),
+					"static local VALUES can be duplicated into a compatible SERVICE as a remote restriction while "
+							+ "the original local VALUES keeps local multiplicity",
+					new RewriteCertificate("44", "values-join-service",
+							"values-join-service-with-remote-values", RewriteSafety.all(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class PushFilterIntoServiceRule extends AbstractRule {
+		public PushFilterIntoServiceRule() {
+			super("push-filter-into-service", RuleKind.TRANSFORMATION, 48);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& filter.getArg() instanceof Service;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			TupleExpr alternative = serviceFilterPushdownAlternative(filter, metadata);
+			if (alternative == null) {
+				return List.of();
+			}
+			Service service = (Service) filter.getArg();
+			Set<String> conditionVars = plannerNames(VarNameCollector.process(filter.getCondition()));
+			RuleProof proof = new RuleProof("45", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("endpointExpressionCompatible", "remoteOnlyFilterVars", "conditionVars="
+							+ conditionVars),
+					"a filter that references only SERVICE variables can be pushed into a compatible fixed endpoint",
+					new RewriteCertificate("45", "filter-over-service", "service-with-filtered-body",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class ProjectRemoteServiceVarsRule extends AbstractRule {
+		public ProjectRemoteServiceVarsRule() {
+			super("project-remote-service-vars", RuleKind.TRANSFORMATION, 47);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Projection projection
+					&& projection.getArg() instanceof Service
+					&& orderedIdentityProjectionNames(projection) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Projection projection = (Projection) expression.tupleExpr();
+			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			TupleExpr alternative = serviceProjectionPushdownAlternative(projection, metadata);
+			if (alternative == null) {
+				return List.of();
+			}
+			List<String> projectedNames = orderedIdentityProjectionNames(projection);
+			RuleProof proof = new RuleProof("46", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("endpointSupportsProjection", "identityProjection", "projectedVars=" + projectedNames),
+					"a projection over SERVICE can be sent to a compatible fixed endpoint without changing local "
+							+ "multiplicity",
+					new RewriteCertificate("46", "projection-over-service", "service-with-remote-projection",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class ExpandVariableServiceRule extends AbstractRule {
+		public ExpandVariableServiceRule() {
+			super("expand-variable-service", RuleKind.TRANSFORMATION, 46);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Service service
+					&& variableServiceEndpointName(service) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Service service = (Service) expression.tupleExpr();
+			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			TupleExpr alternative = variableServiceExpansionAlternative(service, goal, metadata);
+			if (alternative == null) {
+				return List.of();
+			}
+			String endpointName = variableServiceEndpointName(service);
+			int endpointCount = metadata.completeEndpointSet(endpointName).map(Set::size).orElse(0);
+			RuleProof proof = new RuleProof("47", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("completeEndpointSet", "endpointVar=" + endpointName, "endpoints=" + endpointCount,
+							"endpointBindingPreserved"),
+					"a variable SERVICE with a complete endpoint set can be expanded to endpoint-specific SERVICE "
+							+ "branches while preserving the endpoint binding",
+					new RewriteCertificate("47", "variable-service", "fixed-service-union",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+									RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 		}
 	}
 
@@ -1021,6 +1497,684 @@ public final class StandardCascadesRules {
 		Union union = new Union(left, right);
 		union.setVariableScopeChange(original != null && original.isVariableScopeChange());
 		return union;
+	}
+
+	private static TupleExpr unionCommonPrefixFactoringAlternative(Union union) {
+		if (union == null
+				|| union.isVariableScopeChange()
+				|| !(union.getLeftArg()instanceof Join leftJoin)
+				|| !(union.getRightArg()instanceof Join rightJoin)
+				|| barrier(leftJoin)
+				|| barrier(rightJoin)) {
+			return null;
+		}
+		TupleExpr leftPrefix = leftJoin.getLeftArg();
+		TupleExpr rightPrefix = rightJoin.getLeftArg();
+		TupleExpr leftResidual = leftJoin.getRightArg();
+		TupleExpr rightResidual = rightJoin.getRightArg();
+		if (!leftPrefix.equals(rightPrefix)
+				|| !pureUnionFactoringRegion(leftPrefix)
+				|| !pureUnionFactoringRegion(leftResidual)
+				|| !pureUnionFactoringRegion(rightResidual)) {
+			return null;
+		}
+		return new Join(leftPrefix.clone(), unionLike(union, leftResidual.clone(), rightResidual.clone()));
+	}
+
+	private static TupleExpr unionCommonSuffixFactoringAlternative(Union union) {
+		if (union == null
+				|| union.isVariableScopeChange()
+				|| !(union.getLeftArg()instanceof Join leftJoin)
+				|| !(union.getRightArg()instanceof Join rightJoin)
+				|| barrier(leftJoin)
+				|| barrier(rightJoin)) {
+			return null;
+		}
+		TupleExpr leftResidual = leftJoin.getLeftArg();
+		TupleExpr rightResidual = rightJoin.getLeftArg();
+		TupleExpr leftSuffix = leftJoin.getRightArg();
+		TupleExpr rightSuffix = rightJoin.getRightArg();
+		if (!leftSuffix.equals(rightSuffix)
+				|| !pureUnionFactoringRegion(leftResidual)
+				|| !pureUnionFactoringRegion(rightResidual)
+				|| !pureUnionFactoringRegion(leftSuffix)) {
+			return null;
+		}
+		return new Join(unionLike(union, leftResidual.clone(), rightResidual.clone()), leftSuffix.clone());
+	}
+
+	private static TupleExpr unionSubsumedBranchAlternative(Union union) {
+		if (union == null || union.isVariableScopeChange()) {
+			return null;
+		}
+		TupleExpr left = union.getLeftArg();
+		TupleExpr right = union.getRightArg();
+		if (subsumesFilteredBranch(left, right)) {
+			return left.clone();
+		}
+		if (subsumesFilteredBranch(right, left)) {
+			return right.clone();
+		}
+		return null;
+	}
+
+	private static boolean subsumesFilteredBranch(TupleExpr broad, TupleExpr narrow) {
+		if (!pureUnionFactoringRegion(broad)
+				|| !(narrow instanceof Filter filter)
+				|| filter.isVariableScopeChange()
+				|| !filter.getArg().equals(broad)
+				|| !(filter.getCondition()instanceof Bound bound)
+				|| !(bound.getArg()instanceof Var var)) {
+			return false;
+		}
+		String name = var.getName();
+		return name != null && plannerNames(broad.getAssuredBindingNames()).contains(name);
+	}
+
+	private static boolean duplicateInsensitiveUnionScope(OptimizationGoal goal) {
+		if (goal == null) {
+			return false;
+		}
+		return OptimizationGoal.SET_SEMANTICS.equals(goal.semanticScope())
+				|| OptimizationGoal.EXISTENCE_SEMANTICS.equals(goal.semanticScope());
+	}
+
+	private static boolean branchLocalDistinctCandidate(TupleExpr tupleExpr) {
+		return !(tupleExpr instanceof Distinct) && pureUnionFactoringRegion(tupleExpr);
+	}
+
+	private static TupleExpr keyOnlyNotExistsToMinusAlternative(Filter filter) {
+		if (filter == null || filter.isVariableScopeChange() || !pureUnionFactoringRegion(filter.getArg())) {
+			return null;
+		}
+		TupleExpr right = notExistsSubquery(filter.getCondition());
+		if (!pureUnionFactoringRegion(right)) {
+			return null;
+		}
+		Set<String> shared = safeAssuredSharedVars(filter.getArg(), right);
+		if (shared.isEmpty()) {
+			return null;
+		}
+		Projection keyProjection = new Projection(right.clone(), projectionList(shared));
+		return new Difference(filter.getArg().clone(), new Distinct(keyProjection));
+	}
+
+	private static TupleExpr pushConstantIntoNegationAlternative(Filter filter) {
+		if (filter == null || filter.isVariableScopeChange()) {
+			return null;
+		}
+		TupleExpr subquery = notExistsSubquery(filter.getCondition());
+		if (!(subquery instanceof Filter innerFilter)
+				|| innerFilter.isVariableScopeChange()
+				|| !(innerFilter.getArg()instanceof StatementPattern pattern)) {
+			return null;
+		}
+		TermConstantBinding binding = sameTermLocalConstant(innerFilter.getCondition());
+		if (binding == null || VarNameCollector.process(filter.getArg()).contains(binding.name())) {
+			return null;
+		}
+		StatementPattern replacementPattern = constantizedStatementPattern(pattern, binding.name(), binding.value());
+		if (replacementPattern == null) {
+			return null;
+		}
+		return new Filter(filter.getArg().clone(), new Not(new Exists(replacementPattern)));
+	}
+
+	private static TupleExpr positiveClosureDecompositionAlternative(ArbitraryLengthPath path) {
+		if (path == null
+				|| path.getMinLength() != 1
+				|| !(path.getPathExpression()instanceof StatementPattern step)
+				|| !sameEndpoint(step.getSubjectVar(), path.getSubjectVar())
+				|| !sameEndpoint(step.getObjectVar(), path.getObjectVar())) {
+			return null;
+		}
+		String hiddenName = freshHiddenPathName(path);
+		Var hidden = Var.of(hiddenName);
+		StatementPattern firstStep = new StatementPattern(step.getScope(), path.getSubjectVar().clone(),
+				step.getPredicateVar().clone(), hidden.clone(),
+				step.getContextVar() == null ? null : step.getContextVar().clone());
+		StatementPattern tailStep = new StatementPattern(step.getScope(), hidden.clone(),
+				step.getPredicateVar().clone(), path.getObjectVar().clone(),
+				step.getContextVar() == null ? null : step.getContextVar().clone());
+		ArbitraryLengthPath tail = new ArbitraryLengthPath(path.getScope(), hidden.clone(), tailStep,
+				path.getObjectVar().clone(), path.getContextVar() == null ? null : path.getContextVar().clone(), 0);
+		Projection projection = new Projection(new Join(firstStep, tail),
+				projectionList(plannerNames(path.getBindingNames())));
+		return projection;
+	}
+
+	private static TupleExpr groupByAsDistinctAlternative(Group group) {
+		if (group == null
+				|| !group.getGroupElements().isEmpty()
+				|| group.getGroupBindingNames().isEmpty()
+				|| group.isVariableScopeChange()) {
+			return null;
+		}
+		Projection projection = new Projection(group.getArg().clone(),
+				projectionList(plannerNames(group.getGroupBindingNames())));
+		return new Distinct(projection);
+	}
+
+	private static TupleExpr fixedGraphSubstitutionAlternative(Filter filter) {
+		if (filter == null
+				|| filter.isVariableScopeChange()
+				|| !(filter.getArg()instanceof StatementPattern pattern)
+				|| pattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS
+				|| pattern.getContextVar() == null
+				|| pattern.getContextVar().hasValue()) {
+			return null;
+		}
+		TermConstantBinding binding = sameTermLocalConstant(filter.getCondition());
+		if (binding == null
+				|| !(binding.value() instanceof Resource)
+				|| !binding.name().equals(pattern.getContextVar().getName())
+				|| statementPatternUsesNameOutsideContext(pattern, binding.name())) {
+			return null;
+		}
+		StatementPattern replacement = new StatementPattern(pattern.getScope(), pattern.getSubjectVar().clone(),
+				pattern.getPredicateVar().clone(), pattern.getObjectVar().clone(),
+				Var.of(binding.name(), binding.value()));
+		replacement.setIndexName(pattern.getIndexName());
+		return replacement;
+	}
+
+	private static boolean statementPatternUsesNameOutsideContext(StatementPattern pattern, String name) {
+		return patternPositionUsesName(pattern.getSubjectVar(), name)
+				|| patternPositionUsesName(pattern.getPredicateVar(), name)
+				|| patternPositionUsesName(pattern.getObjectVar(), name);
+	}
+
+	private static boolean patternPositionUsesName(Var var, String name) {
+		return var != null && !var.hasValue() && name.equals(var.getName());
+	}
+
+	private static TupleExpr variableGraphUniverseAlternative(StatementPattern pattern, OptimizationGoal goal,
+			RewriteMetadata metadata) {
+		String contextName = variableGraphContextName(pattern);
+		if (contextName == null
+				|| incomingBindingNames(goal).contains(contextName)
+				|| metadata == null
+				|| !metadata.completeForDataset()
+				|| metadata.completeGraphUniverse().isEmpty()
+				|| metadata.completeGraphUniverse().get().stream().anyMatch(graph -> graph == null)) {
+			return null;
+		}
+		return new Join(graphUniverseValues(contextName, metadata.completeGraphUniverse().get()), pattern.clone());
+	}
+
+	private static String variableGraphContextName(StatementPattern pattern) {
+		if (pattern == null
+				|| pattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS
+				|| pattern.getContextVar() == null
+				|| pattern.getContextVar().hasValue()) {
+			return null;
+		}
+		return pattern.getContextVar().getName();
+	}
+
+	private static BindingSetAssignment graphUniverseValues(String contextName, Set<IRI> graphs) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(contextName));
+		List<BindingSet> rows = new ArrayList<>(graphs.size());
+		graphs.stream()
+				.sorted(Comparator.comparing(Value::stringValue))
+				.forEach(graph -> {
+					MapBindingSet row = new MapBindingSet(1);
+					row.addBinding(contextName, graph);
+					rows.add(row);
+				});
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static TupleExpr serviceValuesPushdownAlternative(Join join, RewriteMetadata metadata) {
+		if (join == null
+				|| join.isVariableScopeChange()
+				|| !(join.getLeftArg()instanceof BindingSetAssignment localValues)
+				|| !(join.getRightArg()instanceof Service service)
+				|| serviceExpressionIsSubselect(service)) {
+			return null;
+		}
+		IRI endpoint = fixedServiceEndpoint(service);
+		if (endpoint == null
+				|| metadata == null
+				|| !metadata.endpointSupportsValues(endpoint)
+				|| containsBlankNodeValue(localValues)) {
+			return null;
+		}
+		BindingSetAssignment pushedValues = projectedUniqueValues(localValues, servicePushBindingNames(localValues,
+				service));
+		if (pushedValues == null) {
+			return null;
+		}
+		Service pushedService = serviceWithRemoteValues(service, pushedValues);
+		return new Join(localValues.clone(), pushedService);
+	}
+
+	private static TupleExpr serviceFilterPushdownAlternative(Filter filter, RewriteMetadata metadata) {
+		if (filter == null
+				|| filter.isVariableScopeChange()
+				|| !(filter.getArg()instanceof Service service)
+				|| serviceExpressionIsSubselect(service)) {
+			return null;
+		}
+		IRI endpoint = fixedServiceEndpoint(service);
+		String expressionKey = serviceFilterExpressionKey(filter.getCondition());
+		String expression = serviceFilterExpression(filter.getCondition());
+		Set<String> conditionVars = plannerNames(VarNameCollector.process(filter.getCondition()));
+		if (endpoint == null
+				|| expressionKey == null
+				|| expression == null
+				|| conditionVars.isEmpty()
+				|| !plannerNames(service.getServiceVars()).containsAll(conditionVars)
+				|| metadata == null
+				|| !metadata.endpointExpressionSemanticsCompatible(endpoint, expressionKey)) {
+			return null;
+		}
+		return serviceWithRemoteFilter(service, filter.getCondition().clone(), expression);
+	}
+
+	private static TupleExpr serviceProjectionPushdownAlternative(Projection projection, RewriteMetadata metadata) {
+		if (projection == null
+				|| projection.isSubquery()
+				|| projection.getProjectionContext() != null
+				|| !(projection.getArg()instanceof Service service)
+				|| serviceExpressionIsSubselect(service)) {
+			return null;
+		}
+		IRI endpoint = fixedServiceEndpoint(service);
+		List<String> projectedNames = orderedIdentityProjectionNames(projection);
+		Set<String> serviceBindings = plannerNames(service.getBindingNames());
+		if (endpoint == null
+				|| projectedNames == null
+				|| projectedNames.isEmpty()
+				|| !serviceBindings.containsAll(projectedNames)
+				|| serviceBindings.equals(Set.copyOf(projectedNames))
+				|| metadata == null
+				|| !metadata.endpointSupportsProjection(endpoint)) {
+			return null;
+		}
+		return serviceWithRemoteProjection(service, projectedNames);
+	}
+
+	private static TupleExpr variableServiceExpansionAlternative(Service service, OptimizationGoal goal,
+			RewriteMetadata metadata) {
+		String endpointName = variableServiceEndpointName(service);
+		if (endpointName == null
+				|| service.getBindingNames().contains(endpointName)
+				|| incomingBindingNames(goal).contains(endpointName)
+				|| metadata == null) {
+			return null;
+		}
+		Set<IRI> endpoints = metadata.completeEndpointSet(endpointName).orElse(Set.of());
+		if (endpoints.isEmpty()) {
+			return null;
+		}
+		List<TupleExpr> branches = endpoints.stream()
+				.sorted(Comparator.comparing(IRI::stringValue))
+				.map(endpoint -> (TupleExpr) fixedEndpointServiceBranch(service, endpointName, endpoint))
+				.toList();
+		return union(branches);
+	}
+
+	private static String variableServiceEndpointName(Service service) {
+		if (service == null
+				|| service.getServiceRef() == null
+				|| service.getServiceRef().hasValue()
+				|| service.getServiceRef().isAnonymous()
+				|| service.getServiceRef().getName() == null) {
+			return null;
+		}
+		return service.getServiceRef().getName();
+	}
+
+	private static IRI fixedServiceEndpoint(Service service) {
+		if (service == null
+				|| service.getServiceRef() == null
+				|| !service.getServiceRef().hasValue()
+				|| !(service.getServiceRef().getValue()instanceof IRI endpoint)) {
+			return null;
+		}
+		return endpoint;
+	}
+
+	private static boolean serviceExpressionIsSubselect(Service service) {
+		String expression = service.getServiceExpressionString();
+		if (expression == null) {
+			return false;
+		}
+		String trimmed = expression.stripLeading();
+		return trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length());
+	}
+
+	private static String serviceFilterExpressionKey(ValueExpr condition) {
+		if (condition instanceof Bound) {
+			return "BOUND";
+		}
+		return null;
+	}
+
+	private static String serviceFilterExpression(ValueExpr condition) {
+		if (condition instanceof Bound bound && bound.getArg()instanceof Var var && var.getName() != null) {
+			return "BOUND(?" + var.getName() + ")";
+		}
+		return null;
+	}
+
+	private static Set<String> servicePushBindingNames(BindingSetAssignment localValues, Service service) {
+		if (localValues == null || service == null) {
+			return Set.of();
+		}
+		Set<String> pushNames = plannerNames(localValues.getBindingNames());
+		pushNames.retainAll(plannerNames(service.getServiceVars()));
+		return pushNames.isEmpty() ? Set.of() : Set.copyOf(pushNames);
+	}
+
+	private static BindingSetAssignment projectedUniqueValues(BindingSetAssignment localValues, Set<String> pushNames) {
+		if (localValues == null || pushNames == null || pushNames.isEmpty()) {
+			return null;
+		}
+		List<String> names = pushNames.stream().sorted().toList();
+		Set<List<Value>> seen = new HashSet<>();
+		List<BindingSet> rows = new ArrayList<>();
+		for (BindingSet bindingSet : localValues.getBindingSets()) {
+			List<Value> values = new ArrayList<>(names.size());
+			MapBindingSet row = new MapBindingSet(names.size());
+			for (String name : names) {
+				if (!bindingSet.hasBinding(name)) {
+					return null;
+				}
+				Value value = bindingSet.getValue(name);
+				if (value == null || value instanceof BNode) {
+					return null;
+				}
+				values.add(value);
+				row.addBinding(name, value);
+			}
+			if (seen.add(List.copyOf(values))) {
+				rows.add(row);
+			}
+		}
+		if (rows.isEmpty()) {
+			return null;
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.copyOf(names));
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static boolean containsBlankNodeValue(BindingSetAssignment assignment) {
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			for (String name : assignment.getBindingNames()) {
+				if (bindingSet.getValue(name) instanceof BNode) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static Service serviceWithRemoteValues(Service service, BindingSetAssignment pushedValues) {
+		String expression = valuesClause(pushedValues) + "\n" + service.getServiceExpressionString();
+		return new Service(service.getServiceRef().clone(),
+				new Join(pushedValues.clone(), service.getServiceExpr().clone()), expression,
+				service.getPrefixDeclarations(), service.getBaseURI(), service.isSilent());
+	}
+
+	private static Service serviceWithRemoteFilter(Service service, ValueExpr condition, String expression) {
+		String serviceExpression = service.getServiceExpressionString() + "\nFILTER(" + expression + ")";
+		return new Service(service.getServiceRef().clone(), new Filter(service.getServiceExpr().clone(), condition),
+				serviceExpression, service.getPrefixDeclarations(), service.getBaseURI(), service.isSilent());
+	}
+
+	private static Service serviceWithRemoteProjection(Service service, List<String> projectedNames) {
+		Projection remoteProjection = new Projection(service.getServiceExpr().clone(), projectionList(projectedNames),
+				false);
+		String serviceExpression = selectServiceExpression(projectedNames, service.getServiceExpressionString());
+		return new Service(service.getServiceRef().clone(), remoteProjection, serviceExpression,
+				service.getPrefixDeclarations(), service.getBaseURI(), service.isSilent());
+	}
+
+	private static Extension fixedEndpointServiceBranch(Service service, String endpointName, IRI endpoint) {
+		Service fixedService = new Service(Var.of(endpointName, endpoint), service.getServiceExpr().clone(),
+				service.getServiceExpressionString(), service.getPrefixDeclarations(), service.getBaseURI(),
+				service.isSilent());
+		return new Extension(fixedService, new ExtensionElem(new ValueConstant(endpoint), endpointName));
+	}
+
+	private static TupleExpr union(List<TupleExpr> branches) {
+		if (branches.isEmpty()) {
+			throw new IllegalArgumentException("branches must not be empty");
+		}
+		TupleExpr result = branches.getLast();
+		for (int i = branches.size() - 2; i >= 0; i--) {
+			result = new Union(branches.get(i), result);
+		}
+		return result;
+	}
+
+	private static String selectServiceExpression(List<String> projectedNames, String serviceExpression) {
+		StringBuilder builder = new StringBuilder("SELECT");
+		for (String name : projectedNames) {
+			builder.append(" ?").append(name);
+		}
+		builder.append(" WHERE { ");
+		builder.append(serviceExpression == null ? "" : serviceExpression.trim());
+		builder.append("\n}");
+		return builder.toString();
+	}
+
+	private static String valuesClause(BindingSetAssignment assignment) {
+		List<String> names = assignment.getBindingNames().stream().sorted().toList();
+		StringBuilder builder = new StringBuilder();
+		if (names.size() == 1) {
+			String name = names.getFirst();
+			builder.append("VALUES ?").append(name).append(" {");
+			for (BindingSet row : assignment.getBindingSets()) {
+				builder.append(' ').append(sparqlValue(row.getValue(name)));
+			}
+			builder.append(" }");
+			return builder.toString();
+		}
+		builder.append("VALUES (");
+		for (String name : names) {
+			builder.append(" ?").append(name);
+		}
+		builder.append(" ) {");
+		for (BindingSet row : assignment.getBindingSets()) {
+			builder.append(" (");
+			for (int i = 0; i < names.size(); i++) {
+				if (i > 0) {
+					builder.append(' ');
+				}
+				builder.append(sparqlValue(row.getValue(names.get(i))));
+			}
+			builder.append(')');
+		}
+		builder.append(" }");
+		return builder.toString();
+	}
+
+	private static String sparqlValue(Value value) {
+		if (value instanceof IRI iri) {
+			return "<" + iri.stringValue() + ">";
+		}
+		if (value instanceof Literal literal) {
+			StringBuilder builder = new StringBuilder();
+			builder.append('"').append(escapeSparqlString(literal.getLabel())).append('"');
+			literal.getLanguage().ifPresent(language -> builder.append('@').append(language));
+			if (literal.getLanguage().isEmpty() && literal.getDatatype() != null) {
+				builder.append("^^<").append(literal.getDatatype().stringValue()).append('>');
+			}
+			return builder.toString();
+		}
+		throw new IllegalArgumentException("Unsupported SERVICE VALUES term: " + value);
+	}
+
+	private static String escapeSparqlString(String label) {
+		StringBuilder builder = new StringBuilder(label.length() + 8);
+		for (int i = 0; i < label.length(); i++) {
+			char ch = label.charAt(i);
+			switch (ch) {
+			case '\\':
+				builder.append("\\\\");
+				break;
+			case '"':
+				builder.append("\\\"");
+				break;
+			case '\n':
+				builder.append("\\n");
+				break;
+			case '\r':
+				builder.append("\\r");
+				break;
+			case '\t':
+				builder.append("\\t");
+				break;
+			default:
+				builder.append(ch);
+				break;
+			}
+		}
+		return builder.toString();
+	}
+
+	private static boolean sameEndpoint(Var left, Var right) {
+		return left != null && left.equals(right);
+	}
+
+	private static String freshHiddenPathName(TupleExpr tupleExpr) {
+		Set<String> used = plannerNames(VarNameCollector.process(tupleExpr));
+		String prefix = "_rule35_path_";
+		for (int i = 0; i < 1000; i++) {
+			String candidate = prefix + i;
+			if (!used.contains(candidate)) {
+				return candidate;
+			}
+		}
+		return prefix + "overflow";
+	}
+
+	private static TupleExpr notExistsSubquery(ValueExpr condition) {
+		if (!(condition instanceof Not not)
+				|| !(not.getArg()instanceof Exists exists)
+				|| exists.getSubQuery() == null) {
+			return null;
+		}
+		return exists.getSubQuery();
+	}
+
+	private static TermConstantBinding sameTermLocalConstant(ValueExpr condition) {
+		if (!(condition instanceof SameTerm sameTerm)) {
+			return null;
+		}
+		TermConstantBinding leftBinding = sameTermLocalConstant(sameTerm.getLeftArg(), sameTerm.getRightArg());
+		if (leftBinding != null) {
+			return leftBinding;
+		}
+		return sameTermLocalConstant(sameTerm.getRightArg(), sameTerm.getLeftArg());
+	}
+
+	private static TermConstantBinding sameTermLocalConstant(ValueExpr candidateVar, ValueExpr candidateValue) {
+		if (candidateVar instanceof Var var
+				&& !var.hasValue()
+				&& var.getName() != null
+				&& candidateValue instanceof ValueConstant valueConstant
+				&& valueConstant.getValue() != null) {
+			return new TermConstantBinding(var.getName(), valueConstant.getValue());
+		}
+		return null;
+	}
+
+	private static StatementPattern constantizedStatementPattern(StatementPattern pattern, String name, Value value) {
+		Var subject = constantizedVar(pattern.getSubjectVar(), name, value);
+		Var predicate = constantizedVar(pattern.getPredicateVar(), name, value);
+		Var object = constantizedVar(pattern.getObjectVar(), name, value);
+		Var context = pattern.getContextVar() == null ? null : constantizedVar(pattern.getContextVar(), name, value);
+		if (subject == pattern.getSubjectVar()
+				&& predicate == pattern.getPredicateVar()
+				&& object == pattern.getObjectVar()
+				&& context == pattern.getContextVar()) {
+			return null;
+		}
+		StatementPattern replacement = new StatementPattern(pattern.getScope(), subject, predicate, object, context);
+		replacement.setIndexName(pattern.getIndexName());
+		return replacement;
+	}
+
+	private static Var constantizedVar(Var var, String name, Value value) {
+		if (var != null && !var.hasValue() && name.equals(var.getName())) {
+			return Var.of(name, value);
+		}
+		return var == null ? null : var.clone();
+	}
+
+	private static Set<String> safeAssuredSharedVars(TupleExpr left, TupleExpr right) {
+		Set<String> shared = plannerNames(left.getBindingNames());
+		shared.retainAll(plannerNames(right.getBindingNames()));
+		if (shared.isEmpty()
+				|| !plannerNames(left.getAssuredBindingNames()).containsAll(shared)
+				|| !plannerNames(right.getAssuredBindingNames()).containsAll(shared)) {
+			return Set.of();
+		}
+		return Set.copyOf(shared);
+	}
+
+	private static ProjectionElemList projectionList(Set<String> names) {
+		ProjectionElemList list = new ProjectionElemList();
+		names.stream()
+				.sorted()
+				.forEach(name -> list.addElement(new ProjectionElem(name)));
+		return list;
+	}
+
+	private static ProjectionElemList projectionList(List<String> names) {
+		ProjectionElemList list = new ProjectionElemList();
+		for (String name : names) {
+			list.addElement(new ProjectionElem(name));
+		}
+		return list;
+	}
+
+	private static List<String> orderedIdentityProjectionNames(Projection projection) {
+		if (projection == null || projection.getProjectionElemList() == null) {
+			return null;
+		}
+		Set<String> seen = new HashSet<>();
+		List<String> names = new ArrayList<>();
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			String name = element.getName();
+			if (name == null
+					|| element.getProjectionAlias().isPresent()
+					|| element.hasAggregateOperatorInExpression()
+					|| element.getSourceExpression() != null
+					|| name.startsWith("_const_")
+					|| !seen.add(name)) {
+				return null;
+			}
+			names.add(name);
+		}
+		return names.isEmpty() ? null : List.copyOf(names);
+	}
+
+	private record TermConstantBinding(String name, Value value) {
+	}
+
+	private static boolean pureUnionFactoringRegion(TupleExpr tupleExpr) {
+		if (tupleExpr == null || barrier(tupleExpr)) {
+			return false;
+		}
+		if (tupleExpr instanceof StatementPattern || tupleExpr instanceof BindingSetAssignment) {
+			return true;
+		}
+		if (tupleExpr instanceof Join join) {
+			return pureUnionFactoringRegion(join.getLeftArg()) && pureUnionFactoringRegion(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union && !union.isVariableScopeChange()) {
+			return pureUnionFactoringRegion(union.getLeftArg()) && pureUnionFactoringRegion(union.getRightArg());
+		}
+		return false;
 	}
 
 	private static boolean canPushFiniteBindingsIntoScopedUnion(TupleExpr pushed, Union union) {

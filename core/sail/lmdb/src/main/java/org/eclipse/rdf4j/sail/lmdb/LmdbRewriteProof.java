@@ -15,10 +15,18 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
+
 /**
  * Query-local certificate that a catalog rewrite alternative is admissible for the current algebra shape.
  */
-record LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> facts, String reason) {
+record LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> facts, String reason,
+		RewriteCertificate certificate) {
+
+	LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> facts, String reason) {
+		this(kind, scope, facts, reason, null);
+	}
 
 	LmdbRewriteProof {
 		facts = Collections.unmodifiableSet(new LinkedHashSet<>(facts));
@@ -28,10 +36,31 @@ record LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> fa
 		return "proofKind=" + kind
 				+ ", proofScope=" + scope
 				+ ", proofFacts=" + String.join("|", facts)
-				+ ", proofReason=" + reason;
+				+ ", proofReason=" + reason
+				+ certificateMetricFragment();
+	}
+
+	private String certificateMetricFragment() {
+		if (certificate == null) {
+			return "";
+		}
+		RewriteSafety safety = certificate.safety();
+		return ", rule=" + certificate.ruleId()
+				+ ", originalNode=" + certificate.originalNodeId()
+				+ ", replacementNode=" + certificate.replacementNodeId()
+				+ ", preservedVisibleVars=" + safety.preservedVisibleVars()
+				+ ", preservedMultiplicity=" + safety.preservedMultiplicity()
+				+ ", preservedOrder=" + safety.preservedOrder()
+				+ ", preservedErrors=" + safety.preservedErrors()
+				+ ", preservedGraphScope=" + safety.preservedGraphScope()
+				+ ", assumptions=" + certificate.assumptions();
 	}
 
 	enum RewriteKind {
+		TRIVIAL_BIND_ALIAS,
+		TAUTOLOGICAL_POSITIVE_HAVING,
+		ELIGIBILITY_UNION_SEMI_FILTER,
+		GROUP_KEY_EXISTS_LIFT,
 		OPTIONAL_NEGATED_BOUND_ANTI_JOIN,
 		OPTIONAL_LEFT_UNION_DISTRIBUTION,
 		OPTIONAL_RIGHT_UNION_DISTRIBUTION,
@@ -47,7 +76,13 @@ record LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> fa
 		SET_LEFTJOIN_IDEMPOTENCE,
 		SET_DIFFERENCE_SELF,
 		DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER,
+		FILTER_IN_TO_VALUES,
+		EQUALITY_DISJUNCTION_TO_VALUES,
+		TUPLE_DISJUNCTION_TO_VALUES,
+		DEDUPLICATE_VALUES,
+		CORRELATED_VALUES_CONSTRUCTION,
 		ASK_TOP_LEVEL_OPTIONAL,
+		OPTIONAL_NULL_REJECTING_TO_JOIN,
 		OPTIONAL_WELL_DESIGNED_NORMALIZATION,
 		OPTIONAL_UNION_NORMAL_FORM_BRANCH,
 		PROPERTY_PATH_COST_ANNOTATION,

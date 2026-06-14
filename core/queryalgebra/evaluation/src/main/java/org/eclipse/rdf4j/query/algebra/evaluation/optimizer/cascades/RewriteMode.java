@@ -13,20 +13,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
+/** Safety mode requested for SPARQL algebra rewrites. */
 @Experimental
-public record RuleContext(Memo memo, CascadesCostModel costModel, CascadesTelemetry telemetry,
-		CascadesPlanner.SearchState searchState, RewriteMetadata rewriteMetadata) {
-
-	public RuleContext {
-		rewriteMetadata = rewriteMetadata == null ? RewriteMetadata.empty() : rewriteMetadata;
-	}
-
-	public RuleContext(Memo memo, CascadesCostModel costModel, CascadesTelemetry telemetry,
-			CascadesPlanner.SearchState searchState) {
-		this(memo, costModel, telemetry, searchState, RewriteMetadata.empty());
-	}
-
-	public BindingUniverse universe() {
-		return memo == null ? BindingUniverse.create() : memo.universe();
-	}
+public enum RewriteMode {
+	PORTABLE,
+	SCHEMA_AWARE,
+	FEDERATION_AWARE,
+	DUPLICATE_INSENSITIVE,
+	AGGRESSIVE
 }

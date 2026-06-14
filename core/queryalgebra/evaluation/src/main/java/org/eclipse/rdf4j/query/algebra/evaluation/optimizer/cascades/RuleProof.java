@@ -20,7 +20,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * Query-local proof that a Cascades rewrite or implementation is admissible.
  */
 @Experimental
-public record RuleProof(String ruleId, RuleKind kind, String semanticScope, Set<String> facts, String reason) {
+public record RuleProof(String ruleId, RuleKind kind, String semanticScope, Set<String> facts, String reason,
+		RewriteCertificate certificate) {
+
+	public RuleProof(String ruleId, RuleKind kind, String semanticScope, Set<String> facts, String reason) {
+		this(ruleId, kind, semanticScope, facts, reason, null);
+	}
 
 	public RuleProof {
 		ruleId = ruleId == null || ruleId.isBlank() ? "unknown" : ruleId;
@@ -36,6 +41,22 @@ public record RuleProof(String ruleId, RuleKind kind, String semanticScope, Set<
 				+ ", kind=" + kind
 				+ ", semanticScope=" + semanticScope
 				+ ", facts=" + String.join("|", facts)
-				+ ", reason=" + reason;
+				+ ", reason=" + reason
+				+ certificateMetricFragment();
+	}
+
+	private String certificateMetricFragment() {
+		if (certificate == null) {
+			return "";
+		}
+		RewriteSafety safety = certificate.safety();
+		return ", originalNode=" + certificate.originalNodeId()
+				+ ", replacementNode=" + certificate.replacementNodeId()
+				+ ", preservedVisibleVars=" + safety.preservedVisibleVars()
+				+ ", preservedMultiplicity=" + safety.preservedMultiplicity()
+				+ ", preservedOrder=" + safety.preservedOrder()
+				+ ", preservedErrors=" + safety.preservedErrors()
+				+ ", preservedGraphScope=" + safety.preservedGraphScope()
+				+ ", assumptions=" + certificate.assumptions();
 	}
 }

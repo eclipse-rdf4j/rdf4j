@@ -39,6 +39,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -89,8 +92,35 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(BindingSetAssignment assignment) {
+			if (!setContext) {
+				return;
+			}
+			List<BindingSet> uniqueRows = deduplicateBindingRows(assignment);
+			if (uniqueRows != null) {
+				assignment.setBindingSets(uniqueRows);
+				annotateProof(assignment, LmdbRewriteProof.RewriteKind.DEDUPLICATE_VALUES,
+						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
+						Set.of("setContext=" + setContextName, "duplicateValuesRows", "scopeSafe"),
+						"duplicate-values-rows-are-unobservable-under-set-semantics");
+			}
+		}
+
+		@Override
 		public void meet(Group group) {
-			super.meet(group);
+			boolean previousSetContext = setContext;
+			boolean previousAskRootSliceContext = askRootSliceContext;
+			String previousSetContextName = setContextName;
+			setContext = false;
+			askRootSliceContext = false;
+			setContextName = null;
+			try {
+				super.meet(group);
+			} finally {
+				setContext = previousSetContext;
+				askRootSliceContext = previousAskRootSliceContext;
+				setContextName = previousSetContextName;
+			}
 			Set<String> distinctCountVars = duplicateInsensitiveDistinctCountVars(group);
 			if (!distinctCountVars.isEmpty()) {
 				TupleExpr replacement = rewriteFiniteMembershipAsSemiFilter(group.getArg(), distinctCountVars);
@@ -282,6 +312,20 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 			return rowCount > 0;
 		}
 
+		private List<BindingSet> deduplicateBindingRows(BindingSetAssignment assignment) {
+			LinkedHashSet<BindingSet> seen = new LinkedHashSet<>();
+			List<BindingSet> uniqueRows = new ArrayList<>();
+			boolean changed = false;
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				if (seen.add(bindingSet)) {
+					uniqueRows.add(bindingSet);
+				} else {
+					changed = true;
+				}
+			}
+			return changed ? uniqueRows : null;
+		}
+
 		private TupleExpr leftDeep(List<TupleExpr> factors) {
 			TupleExpr root = factors.getFirst();
 			for (int i = 1; i < factors.size(); i++) {
@@ -325,14 +369,69 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 											: "correlatedExists"),
 							"finite membership variables are unobserved under COUNT DISTINCT and can be tested "
 									+ (directJoin ? "as an early join anchor"
-											: "with a correlated semi-filter"))
-													.metricFragment());
+											: "with a correlated semi-filter"),
+							distinctMembershipSemiFilterCertificate(directJoin))
+									.metricFragment());
+		}
+
+		private RewriteCertificate distinctMembershipSemiFilterCertificate(boolean directJoin) {
+			return new RewriteCertificate("23", "dead-finite-membership-join",
+					directJoin ? "early-membership-join" : "correlated-exists-semi-filter",
+					RewriteSafety.builder()
+							.preservedMultiplicity(false)
+							.build(),
+					Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+							RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
 		}
 
 		private void annotateProof(TupleExpr tupleExpr, LmdbRewriteProof.RewriteKind kind,
 				LmdbRewriteProof.EquivalenceScope scope, Set<String> facts, String reason) {
 			tupleExpr.setStringMetricPlanned("optimizer.rewriteProof",
-					new LmdbRewriteProof(kind, scope, facts, reason).metricFragment());
+					new LmdbRewriteProof(kind, scope, facts, reason, certificate(kind)).metricFragment());
+		}
+
+		private RewriteCertificate certificate(LmdbRewriteProof.RewriteKind kind) {
+			if (kind == LmdbRewriteProof.RewriteKind.SET_UNION_IDEMPOTENCE) {
+				return new RewriteCertificate("19", "duplicate-union-branches", "single-union-branch",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
+			if (kind == LmdbRewriteProof.RewriteKind.DEDUPLICATE_VALUES) {
+				return new RewriteCertificate("13", "duplicate-values-rows", "unique-values-rows",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
+			if (kind == LmdbRewriteProof.RewriteKind.ASK_TOP_LEVEL_OPTIONAL) {
+				return new RewriteCertificate("28", "ask-top-level-leftjoin", "ask-left-arg",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
+			if (kind == LmdbRewriteProof.RewriteKind.SET_LEFTJOIN_IDEMPOTENCE) {
+				return new RewriteCertificate("26", "dead-duplicate-leftjoin", "leftjoin-left-arg",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
+			if (kind == LmdbRewriteProof.RewriteKind.SET_JOIN_IDEMPOTENCE) {
+				return new RewriteCertificate("5", "duplicate-join-subtree", "single-join-subtree",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
+			return null;
 		}
 	}
 

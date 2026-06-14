@@ -1192,7 +1192,8 @@ final class SketchJoinOrderPlanner {
 				+ delayedFilterExpansionWorkRows
 				+ delayedFiniteDomainWorkRows + delayedFiniteInteractionWorkRows;
 		double seedCostRows = planningRowsForCost(seedEstimate.outputRows(), physicalEstimate);
-		JoinCostVector costVector = costVector(stepWorkRows, seedCostRows, Math.max(rowsProcessed, seedCostRows),
+		JoinCostVector costVector = costVector(stepWorkRows, seedEstimate.outputRows(),
+				Math.max(rowsProcessed, seedCostRows),
 				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate,
 				seedEstimate);
 		PlanState physicalState = factorTransitionState(null, factorIndex, physicalEstimate, stepWorkRows,
@@ -1665,7 +1666,7 @@ final class SketchJoinOrderPlanner {
 		double stepIntermediateRows = maxFinite(rowsProcessed, rowsBeforeUnlockedFilters.outputRows(),
 				rowsEnteringEstimate.outputRows(), nextEstimate.outputRows(), costFinalRows);
 		double maxIntermediateRows = Math.max(prefix.costVector().maxIntermediateRows(), stepIntermediateRows);
-		JoinCostVector costVector = costVector(prefix.totalWork() + stepWorkRows, costFinalRows,
+		JoinCostVector costVector = costVector(prefix.totalWork() + stepWorkRows, nextEstimate.outputRows(),
 				maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix.costVector(), stepWorkRows,
 				physicalEstimate, nextEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
@@ -2949,7 +2950,7 @@ final class SketchJoinOrderPlanner {
 			double uncertaintyRows, double cartesianWorkRows, JoinCostVector prefix, double stepWorkRows,
 			FactorPhysicalEstimate physicalEstimate, SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		boolean nonExactZeroFloor = physicalEstimate != null
-				&& appliesNonExactZeroPlanningFloor(physicalEstimate.factorOutputRows(), physicalEstimate);
+				&& appliesNonExactZeroPlanningFloor(finalRows, physicalEstimate);
 		finalRows = nonExactZeroFloor ? 1.0d : planningRowsForCost(finalRows, physicalEstimate);
 		return costVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows, prefix,
 				stepWorkRows, estimateVector(physicalEstimate, finalRows, tupleEstimate, nonExactZeroFloor));

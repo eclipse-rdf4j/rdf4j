@@ -67,6 +67,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -164,6 +165,27 @@ public class SPARQLParserTest {
 
 		assertTrue(leftArg.getObjectVar().equals(rightArg.getSubjectVar()));
 		assertEquals(leftArg.getObjectVar().getName(), rightArg.getSubjectVar().getName());
+	}
+
+	@Test
+	public void testRepeatedGraphScopesLowerToStatementPatternContexts() {
+		ParsedQuery query = parser.parseQuery("""
+				PREFIX ex: <urn:>
+				SELECT * WHERE {
+					GRAPH ex:g { ?s ex:p ?o }
+					GRAPH ex:g { ?s ex:q ?v }
+				}
+				""", null);
+
+		List<StatementPattern> patterns = StatementPatternCollector.process(query.getTupleExpr());
+
+		assertThat(patterns).hasSize(2);
+		for (StatementPattern pattern : patterns) {
+			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
+			assertThat(pattern.getContextVar()).isNotNull();
+			assertThat(pattern.getContextVar().hasValue()).isTrue();
+			assertThat(pattern.getContextVar().getValue()).isEqualTo(Values.iri("urn:g"));
+		}
 	}
 
 	@Test

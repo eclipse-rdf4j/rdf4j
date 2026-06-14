@@ -28,6 +28,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -128,7 +131,10 @@ final class LmdbOptionalNormalFormOptimizer implements QueryOptimizer {
 			replacement.setStringMetricPlanned("optimizer.rewriteProof",
 					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.OPTIONAL_WELL_DESIGNED_NORMALIZATION,
 							LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT, facts,
-							"adjacent-independent-well-designed-optionals-stable-order").metricFragment());
+							"adjacent-independent-well-designed-optionals-stable-order",
+							new RewriteCertificate("27", "adjacent-independent-optionals",
+									"stable-ordered-independent-optionals", RewriteSafety.all(),
+									Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS))).metricFragment());
 		}
 	}
 

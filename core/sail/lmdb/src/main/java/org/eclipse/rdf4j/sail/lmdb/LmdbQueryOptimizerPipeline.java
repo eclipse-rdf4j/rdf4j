@@ -53,6 +53,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	private static final LmdbEligibilitySemiJoinOptimizer ELIGIBILITY_SEMI_JOIN_OPTIMIZER = new LmdbEligibilitySemiJoinOptimizer();
 	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
@@ -101,6 +102,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
 		optimizers.add(QUERY_MODEL_NORMALIZER);
 		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
+		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
 		optimizers.add(PROJECTION_REMOVAL_OPTIMIZER);
 		optimizers.add(new FilterOptimizer(null, false, false));
 		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
@@ -120,6 +122,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
+		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
 		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
 			optimizers.add(new LmdbStandardPlanBaselineOptimizer());
 		}

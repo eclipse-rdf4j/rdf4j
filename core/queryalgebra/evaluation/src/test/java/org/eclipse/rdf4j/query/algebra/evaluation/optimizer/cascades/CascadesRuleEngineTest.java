@@ -17,39 +17,52 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Constructor;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -408,10 +421,17 @@ class CascadesRuleEngineTest {
 		assertTrue(apply(new StandardCascadesRules.ProjectionUnionDistributionRule(),
 				new Projection(safeUnion, projection("o"))).stream()
 						.anyMatch(application -> application.alternative() instanceof Union));
-		assertTrue(apply(new StandardCascadesRules.ProjectionUnionDistributionRule(),
-				new Projection(branchLocalUnion, projection("o"))).stream()
-						.anyMatch(application -> application.alternative() instanceof Union),
+		List<RuleApplication> applications = apply(new StandardCascadesRules.ProjectionUnionDistributionRule(),
+				new Projection(branchLocalUnion, projection("o")));
+		assertTrue(applications.stream()
+				.anyMatch(application -> application.alternative() instanceof Union),
 				"Projection over UNION remains safe when a branch leaves the projected variable unbound");
+		assertTrue(applications.stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "21".equals(proof.ruleId())
+						&& proof.certificate() != null
+						&& "21".equals(proof.certificate().ruleId())),
+				"Branch-local projection should emit a rule-21 certificate");
 	}
 
 	@Test
@@ -577,6 +597,119 @@ class CascadesRuleEngineTest {
 				projection("o"), false);
 		assertTrue(apply(new StructuralCascadesRules.ProjectionMergeRule(), missingOuterName).isEmpty(),
 				"Inner projection must preserve every outer projection name");
+	}
+
+	@Test
+	void inlineModifierFreeSubqueryKeepsHiddenVarsBehindOuterProjection() {
+		Projection subquery = new Projection(pattern("s", "p", "o"), projection("s", "o"), true);
+		Projection outer = new Projection(subquery, projection("o"), false);
+
+		assertTrue(apply(new StructuralCascadesRules.ProjectionMergeRule(), outer).isEmpty(),
+				"The generic projection merge rule must not cross subquery boundaries");
+
+		Optional<RuleApplication> maybeInlined = applyStandardRules(outer).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "48".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "48".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybeInlined.isPresent(),
+				"Expected rule 48 to inline a modifier-free subquery under a preserving outer projection");
+		TupleExpr alternative = maybeInlined.get().alternative();
+		assertTrue(alternative instanceof Projection, "Expected outer projection to remain: " + alternative);
+		Projection inlined = (Projection) alternative;
+		assertEquals(Set.of("o"), inlined.getBindingNames());
+		assertTrue(inlined.getArg() instanceof StatementPattern);
+		assertFalse(inlined.getBindingNames().contains("p"),
+				"Hidden subquery-local vars must not become visible above the outer projection");
+	}
+
+	@Test
+	void inlineModifierFreeSubqueryRejectsSubqueryModifiers() {
+		Projection subquery = new Projection(new Distinct(pattern("s", "p", "o")), projection("s", "o"), true);
+		Projection outer = new Projection(subquery, projection("o"), false);
+
+		assertFalse(applyStandardRules(outer).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "48".equals(proof.ruleId())),
+				"Rule 48 must reject subqueries with solution modifiers such as DISTINCT");
+	}
+
+	@Test
+	void dropUnusedSubqueryVarsNarrowsModifierFreeSubqueryProjection() {
+		Projection subquery = new Projection(pattern("s", "p", "o"), projection("s", "o"), true);
+		Projection outer = new Projection(subquery, projection("o"), false);
+
+		Optional<RuleApplication> maybeNarrowed = applyStandardRules(outer).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "49".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "49".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybeNarrowed.isPresent(),
+				"Expected rule 49 to remove subquery vars unused above the subquery boundary");
+		TupleExpr alternative = maybeNarrowed.get().alternative();
+		assertTrue(alternative instanceof Projection, "Expected outer projection to remain: " + alternative);
+		Projection outerProjection = (Projection) alternative;
+		assertEquals(Set.of("o"), outerProjection.getBindingNames());
+		assertTrue(outerProjection.getArg() instanceof Projection, "Expected narrowed subquery projection");
+		Projection narrowedSubquery = (Projection) outerProjection.getArg();
+		assertTrue(narrowedSubquery.isSubquery(), "The subquery boundary must stay in place");
+		assertEquals(Set.of("o"), narrowedSubquery.getBindingNames());
+		assertFalse(narrowedSubquery.getBindingNames().contains("s"),
+				"Unused subquery-local vars should be dropped from the subquery projection");
+		assertTrue(narrowedSubquery.getArg() instanceof StatementPattern);
+	}
+
+	@Test
+	void dropUnusedSubqueryVarsRejectsSubqueryModifiers() {
+		Projection subquery = new Projection(new Distinct(pattern("s", "p", "o")), projection("s", "o"), true);
+		Projection outer = new Projection(subquery, projection("o"), false);
+
+		assertFalse(applyStandardRules(outer).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "49".equals(proof.ruleId())),
+				"Rule 49 must reject subqueries with solution modifiers such as DISTINCT");
+	}
+
+	@Test
+	void removeUnobservableOrderDropsInnerSubqueryOrderWithoutSlice() {
+		Projection subquery = new Projection(
+				new Order(pattern("s", "p", "o"), new OrderElem(new Var("s"))), projection("s", "o"), true);
+		Projection outer = new Projection(subquery, projection("o"), false);
+
+		Optional<RuleApplication> maybeUnordered = applyStandardRules(outer).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "50".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "50".equals(proof.certificate().ruleId())
+								&& !proof.certificate().safety().preservedOrder()))
+				.findFirst();
+
+		assertTrue(maybeUnordered.isPresent(),
+				"Expected rule 50 to remove an unobservable inner subquery ORDER BY");
+		TupleExpr alternative = maybeUnordered.get().alternative();
+		assertTrue(alternative instanceof Projection, "Expected outer projection to remain: " + alternative);
+		Projection outerProjection = (Projection) alternative;
+		assertTrue(outerProjection.getArg() instanceof Projection, "Expected subquery projection to remain");
+		Projection unorderedSubquery = (Projection) outerProjection.getArg();
+		assertTrue(unorderedSubquery.isSubquery(), "The subquery boundary must stay in place");
+		assertFalse(unorderedSubquery.getArg() instanceof Order, "The unobservable ORDER BY should be removed");
+		assertTrue(unorderedSubquery.getArg() instanceof StatementPattern);
+
+		Projection slicedSubquery = new Projection(
+				new Slice(new Order(pattern("s", "p", "o"), new OrderElem(new Var("s"))), 0, 10),
+				projection("s", "o"), true);
+		Projection slicedOuter = new Projection(slicedSubquery, projection("o"), false);
+		assertFalse(applyStandardRules(slicedOuter).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "50".equals(proof.ruleId())),
+				"Rule 50 must reject ORDER BY when the same subquery has LIMIT/OFFSET");
 	}
 
 	@Test
@@ -926,6 +1059,617 @@ class CascadesRuleEngineTest {
 				.anyMatch(application -> application.alternative() instanceof Union));
 		assertTrue(apply(new StandardCascadesRules.JoinUnionDistributionRule(), rightUnion).stream()
 				.anyMatch(application -> application.alternative() instanceof Union));
+	}
+
+	@Test
+	void unionCommonPrefixFactoringExtractsSharedJoinPrefixWithCertificate() {
+		StatementPattern shared = pattern("s", "type", "type");
+		StatementPattern branchA = pattern("s", "name", "name");
+		StatementPattern branchB = pattern("s", "email", "email");
+		Union union = new Union(new Join(shared.clone(), branchA), new Join(shared.clone(), branchB));
+
+		Optional<RuleApplication> maybeFactored = applyStandardRules(union).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "17".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "17".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybeFactored.isPresent(), "Expected rule 17 to factor a shared UNION join prefix");
+		TupleExpr alternative = maybeFactored.get().alternative();
+		assertTrue(alternative instanceof Join, "Expected factored alternative to be a Join: " + alternative);
+		Join factored = (Join) alternative;
+		assertTrue(containsStatementPattern(factored.getLeftArg(), "s", "type", "type"));
+		assertTrue(factored.getRightArg() instanceof Union, "Expected right argument to remain a UNION");
+		Union branches = (Union) factored.getRightArg();
+		assertTrue(containsStatementPattern(branches.getLeftArg(), "s", "name", "name"));
+		assertTrue(containsStatementPattern(branches.getRightArg(), "s", "email", "email"));
+	}
+
+	@Test
+	void unionCommonSuffixFactoringExtractsSharedJoinSuffixWithCertificate() {
+		StatementPattern shared = pattern("s", "type", "type");
+		StatementPattern branchA = pattern("s", "name", "name");
+		StatementPattern branchB = pattern("s", "email", "email");
+		Union union = new Union(new Join(branchA, shared.clone()), new Join(branchB, shared.clone()));
+
+		Optional<RuleApplication> maybeFactored = applyStandardRules(union).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "18".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "18".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybeFactored.isPresent(), "Expected rule 18 to factor a shared UNION join suffix");
+		TupleExpr alternative = maybeFactored.get().alternative();
+		assertTrue(alternative instanceof Join, "Expected factored alternative to be a Join: " + alternative);
+		Join factored = (Join) alternative;
+		assertTrue(factored.getLeftArg() instanceof Union, "Expected left argument to remain a UNION");
+		Union branches = (Union) factored.getLeftArg();
+		assertTrue(containsStatementPattern(branches.getLeftArg(), "s", "name", "name"));
+		assertTrue(containsStatementPattern(branches.getRightArg(), "s", "email", "email"));
+		assertTrue(containsStatementPattern(factored.getRightArg(), "s", "type", "type"));
+	}
+
+	@Test
+	void subsumedUnionBranchEliminationRequiresDuplicateInsensitiveScope() {
+		StatementPattern base = pattern("s", "p", "o");
+		Union union = new Union(base.clone(), new Filter(base.clone(), new Bound(new Var("o"))));
+
+		assertFalse(applyStandardRules(union).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "20".equals(proof.ruleId())),
+				"Bag semantics must keep a filtered branch that can duplicate rows");
+
+		Optional<RuleApplication> maybeEliminated = applyStandardRules(union,
+				OptimizationGoal.root().withSemanticScope(OptimizationGoal.SET_SEMANTICS)).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "20".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& !proof.certificate().safety().preservedMultiplicity()
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)))
+						.findFirst();
+
+		assertTrue(maybeEliminated.isPresent(), "Expected rule 20 to remove the filtered subsumed branch");
+		assertTrue(containsStatementPattern(maybeEliminated.get().alternative(), "s", "p", "o"));
+		assertFalse(maybeEliminated.get().alternative() instanceof Union);
+	}
+
+	@Test
+	void branchLocalDistinctRequiresDuplicateInsensitiveScope() {
+		StatementPattern branchA = pattern("s", "email", "email");
+		StatementPattern branchB = pattern("s", "phone", "phone");
+		Union union = new Union(branchA, branchB);
+
+		assertFalse(applyStandardRules(union).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "22".equals(proof.ruleId())),
+				"Bag semantics must not add branch-local DISTINCT");
+
+		Optional<RuleApplication> maybeDistinct = applyStandardRules(union,
+				OptimizationGoal.root().withSemanticScope(OptimizationGoal.SET_SEMANTICS)).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "22".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "22".equals(proof.certificate().ruleId())
+										&& !proof.certificate().safety().preservedMultiplicity()
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)))
+						.findFirst();
+
+		assertTrue(maybeDistinct.isPresent(), "Expected rule 22 to add a branch-local DISTINCT");
+		TupleExpr alternative = maybeDistinct.get().alternative();
+		assertTrue(alternative instanceof Union, "Expected a UNION alternative: " + alternative);
+		Union optimized = (Union) alternative;
+		assertTrue(optimized.getLeftArg() instanceof Distinct || optimized.getRightArg() instanceof Distinct,
+				"Expected one UNION branch to be wrapped in DISTINCT: " + optimized);
+		Distinct distinct = optimized.getLeftArg() instanceof Distinct
+				? (Distinct) optimized.getLeftArg()
+				: (Distinct) optimized.getRightArg();
+		assertTrue(containsStatementPattern(distinct.getArg(), "s", "email", "email")
+				|| containsStatementPattern(distinct.getArg(), "s", "phone", "phone"));
+	}
+
+	@Test
+	void keyOnlyNotExistsToMinusRequiresAssuredSharedKey() {
+		Filter disjoint = new Filter(pattern("s", "type", "type"),
+				new Not(new Exists(pattern("x", "badFlag", "flag"))));
+		assertFalse(applyStandardRules(disjoint).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "30".equals(proof.ruleId())),
+				"Disjoint NOT EXISTS must not become MINUS");
+
+		Filter filter = new Filter(pattern("s", "type", "type"),
+				new Not(new Exists(pattern("s", "badFlag", "flag"))));
+		Optional<RuleApplication> maybeMinus = applyStandardRules(filter).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "30".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "30".equals(proof.certificate().ruleId())
+								&& proof.certificate().safety().preservedMultiplicity()))
+				.findFirst();
+
+		assertTrue(maybeMinus.isPresent(), "Expected rule 30 to build a key-only MINUS alternative");
+		TupleExpr alternative = maybeMinus.get().alternative();
+		assertTrue(alternative instanceof Difference, "Expected a MINUS/Difference alternative: " + alternative);
+		Difference minus = (Difference) alternative;
+		assertTrue(containsStatementPattern(minus.getLeftArg(), "s", "type", "type"));
+		assertTrue(minus.getRightArg() instanceof Distinct, "Expected distinct anti-join keys: " + minus);
+		Distinct distinctKeys = (Distinct) minus.getRightArg();
+		assertTrue(distinctKeys.getArg() instanceof Projection, "Expected projected anti-join keys: " + minus);
+		Projection keyProjection = (Projection) distinctKeys.getArg();
+		assertEquals(Set.of("s"), keyProjection.getProjectionElemList().getProjectedNames());
+		assertTrue(containsStatementPattern(keyProjection.getArg(), "s", "badFlag", "flag"));
+	}
+
+	@Test
+	void pushConstantIntoNegationRejectsOuterCorrelatedVariables() {
+		Value blockedFlag = VF.createIRI("urn:blocked");
+		Filter outerCorrelated = new Filter(pattern("s", "type", "type"),
+				new Not(new Exists(new Filter(pattern("s", "badFlag", "flag"),
+						new SameTerm(new Var("s"), new ValueConstant(blockedFlag))))));
+
+		assertFalse(applyStandardRules(outerCorrelated).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "31".equals(proof.ruleId())),
+				"Constants must not be pushed onto variables correlated with the outer pattern");
+
+		Filter filter = new Filter(pattern("s", "type", "type"),
+				new Not(new Exists(new Filter(pattern("s", "badFlag", "flag"),
+						new SameTerm(new Var("flag"), new ValueConstant(blockedFlag))))));
+		Optional<RuleApplication> maybePushed = applyStandardRules(filter).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "31".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "31".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybePushed.isPresent(), "Expected rule 31 to push a local sameTerm constant into NOT EXISTS");
+		TupleExpr alternative = maybePushed.get().alternative();
+		assertTrue(alternative instanceof Filter, "Expected a FILTER alternative: " + alternative);
+		Filter rewrittenFilter = (Filter) alternative;
+		assertTrue(rewrittenFilter.getCondition() instanceof Not);
+		Exists rewrittenExists = (Exists) ((Not) rewrittenFilter.getCondition()).getArg();
+		assertTrue(rewrittenExists.getSubQuery() instanceof StatementPattern,
+				"Expected sameTerm filter to be removed inside NOT EXISTS: " + rewrittenExists.getSubQuery());
+		StatementPattern pushedPattern = (StatementPattern) rewrittenExists.getSubQuery();
+		assertTrue(pushedPattern.getObjectVar().hasValue());
+		assertEquals(blockedFlag, pushedPattern.getObjectVar().getValue());
+	}
+
+	@Test
+	void positiveClosureDecompositionRequiresDuplicateInsensitiveScope() {
+		StatementPattern step = pattern("s", "p", "o");
+		ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("s"), step, new Var("o"), 1);
+
+		assertFalse(applyStandardRules(path).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "35".equals(proof.ruleId())),
+				"Bag semantics must keep positive closure intact");
+
+		Optional<RuleApplication> maybeDecomposed = applyStandardRules(path,
+				OptimizationGoal.root().withSemanticScope(OptimizationGoal.SET_SEMANTICS)).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "35".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "35".equals(proof.certificate().ruleId())
+										&& !proof.certificate().safety().preservedMultiplicity()
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT)))
+						.findFirst();
+
+		assertTrue(maybeDecomposed.isPresent(), "Expected rule 35 to decompose positive closure");
+		TupleExpr alternative = maybeDecomposed.get().alternative();
+		assertTrue(alternative instanceof Projection, "Expected hidden-path projection: " + alternative);
+		Projection projection = (Projection) alternative;
+		assertFalse(projection.getProjectionElemList()
+				.getProjectedNames()
+				.stream()
+				.anyMatch(name -> name.startsWith("_rule35_path_")));
+		assertTrue(projection.getArg() instanceof Join, "Expected explicit first step joined with closure tail");
+		Join join = (Join) projection.getArg();
+		assertTrue(join.getLeftArg() instanceof StatementPattern, "Expected explicit first path step");
+		assertTrue(join.getRightArg() instanceof ArbitraryLengthPath, "Expected zero-or-more closure tail");
+		ArbitraryLengthPath tail = (ArbitraryLengthPath) join.getRightArg();
+		assertEquals(0, tail.getMinLength());
+		assertEquals("o", tail.getObjectVar().getName());
+	}
+
+	@Test
+	void groupByAsDistinctRequiresNoAggregates() {
+		Group aggregateGroup = new Group(pattern("s", "p", "o"), List.of("s"),
+				List.of(new GroupElem("count", new Count(new Var("o")))));
+		assertFalse(applyStandardRules(aggregateGroup).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "40".equals(proof.ruleId())),
+				"GROUP BY with aggregate outputs must remain a Group");
+
+		Group group = new Group(pattern("s", "p", "o"), List.of("s", "o"), List.of());
+		Optional<RuleApplication> maybeDistinct = applyStandardRules(group).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "40".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "40".equals(proof.certificate().ruleId())))
+				.findFirst();
+
+		assertTrue(maybeDistinct.isPresent(), "Expected rule 40 to lower aggregate-free GROUP BY");
+		TupleExpr alternative = maybeDistinct.get().alternative();
+		assertTrue(alternative instanceof Distinct, "Expected DISTINCT alternative: " + alternative);
+		Distinct distinct = (Distinct) alternative;
+		assertTrue(distinct.getArg() instanceof Projection, "Expected DISTINCT over Projection: " + alternative);
+		Projection projection = (Projection) distinct.getArg();
+		assertEquals(Set.of("s", "o"), projection.getProjectionElemList().getProjectedNames());
+		assertTrue(containsStatementPattern(projection.getArg(), "s", "p", "o"));
+	}
+
+	@Test
+	void fixedGraphSubstitutionPreservesContextBinding() {
+		Value graph = VF.createIRI("urn:graph:1");
+		StatementPattern graphPattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"));
+
+		Filter nonContextFilter = new Filter(graphPattern.clone(),
+				new SameTerm(new Var("s"), new ValueConstant(graph)));
+		assertFalse(applyStandardRules(nonContextFilter).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "41".equals(proof.ruleId())),
+				"Rule 41 must only constantize the graph/context variable");
+
+		StatementPattern reusedGraphPattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("g"), Var.of("p"), Var.of("o"), Var.of("g"));
+		Filter reusedContextFilter = new Filter(reusedGraphPattern,
+				new SameTerm(new Var("g"), new ValueConstant(graph)));
+		assertFalse(applyStandardRules(reusedContextFilter).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "41".equals(proof.ruleId())),
+				"Rule 41 must not partially constantize reused graph variables");
+
+		Filter filter = new Filter(graphPattern, new SameTerm(new Var("g"), new ValueConstant(graph)));
+		Optional<RuleApplication> maybeGraph = applyStandardRules(filter).stream()
+				.filter(application -> application.proofs()
+						.stream()
+						.anyMatch(proof -> "41".equals(proof.ruleId())
+								&& proof.certificate() != null
+								&& "41".equals(proof.certificate().ruleId())
+								&& proof.certificate().safety().preservedGraphScope()))
+				.findFirst();
+
+		assertTrue(maybeGraph.isPresent(), "Expected rule 41 to constantize a GRAPH context variable");
+		TupleExpr alternative = maybeGraph.get().alternative();
+		assertTrue(alternative instanceof StatementPattern, "Expected fixed graph StatementPattern: " + alternative);
+		StatementPattern fixed = (StatementPattern) alternative;
+		assertEquals(StatementPattern.Scope.NAMED_CONTEXTS, fixed.getScope());
+		assertNotNull(fixed.getContextVar());
+		assertEquals("g", fixed.getContextVar().getName());
+		assertTrue(fixed.getContextVar().hasValue(), "The context binding name must remain visible");
+		assertEquals(graph, fixed.getContextVar().getValue());
+	}
+
+	@Test
+	void variableGraphRestrictionRequiresCompleteMetadata() {
+		IRI graphA = VF.createIRI("urn:graph:a");
+		IRI graphB = VF.createIRI("urn:graph:b");
+		StatementPattern graphPattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"));
+
+		assertFalse(applyStandardRules(graphPattern.clone()).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "43".equals(proof.ruleId())),
+				"Rule 43 must not restrict GRAPH variables without explicit complete dataset metadata");
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean completeForDataset() {
+				return true;
+			}
+
+			@Override
+			public Optional<Set<IRI>> completeGraphUniverse() {
+				return Optional.of(Set.of(graphA, graphB));
+			}
+		};
+		Optional<RuleApplication> maybeRestricted = applyStandardRules(graphPattern, OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "43".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "43".equals(proof.certificate().ruleId())
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.COMPLETE_GRAPH_UNIVERSE)))
+						.findFirst();
+
+		assertTrue(maybeRestricted.isPresent(),
+				"Expected rule 43 to restrict a variable GRAPH context to complete known graphs");
+		TupleExpr alternative = maybeRestricted.get().alternative();
+		assertTrue(alternative instanceof Join, "Expected VALUES joined with the original graph pattern: "
+				+ alternative);
+		Join join = (Join) alternative;
+		assertEquals(2, bindingRows(join.getLeftArg(), "g"));
+		assertEquals(Set.of(graphA, graphB), bindingValues(join.getLeftArg(), "g"));
+		assertTrue(join.getRightArg() instanceof StatementPattern, "Expected right side graph pattern: " + join);
+		StatementPattern restricted = (StatementPattern) join.getRightArg();
+		assertEquals(StatementPattern.Scope.NAMED_CONTEXTS, restricted.getScope());
+		assertNotNull(restricted.getContextVar());
+		assertEquals("g", restricted.getContextVar().getName());
+		assertFalse(restricted.getContextVar().hasValue(), "VALUES supplies the visible graph binding");
+	}
+
+	@Test
+	void plannerPropagatesRewriteMetadataToRules() throws Exception {
+		IRI graph = VF.createIRI("urn:graph:planner");
+		StatementPattern graphPattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"));
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean completeForDataset() {
+				return true;
+			}
+
+			@Override
+			public Optional<Set<IRI>> completeGraphUniverse() {
+				return Optional.of(Set.of(graph));
+			}
+		};
+		Optional<Constructor<?>> metadataConstructor = Arrays.stream(CascadesPlanner.class.getConstructors())
+				.filter(constructor -> constructor.getParameterCount() == 4)
+				.filter(constructor -> constructor.getParameterTypes()[3] == RewriteMetadata.class)
+				.findFirst();
+		assertTrue(metadataConstructor.isPresent(),
+				"CascadesPlanner should accept rewrite metadata for metadata-gated rewrite rules");
+
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.RestrictVariableGraphUniverseRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		CascadesPlanner planner = (CascadesPlanner) metadataConstructor.get()
+				.newInstance(CascadesCostModel.from(new EvaluationStatistics()), registry,
+						CascadesTelemetry.NO_OP, metadata);
+
+		CascadesPlan plan = planner.optimize(graphPattern, OptimizationGoal.root());
+
+		assertTrue(memoContainsProof(plan, "43"), "Planner-created RuleContext should expose rewrite metadata");
+	}
+
+	@Test
+	void serviceValuesPushdownRequiresEndpointSupport() {
+		IRI endpoint = VF.createIRI("urn:endpoint");
+		IRI subjectA = VF.createIRI("urn:subject:a");
+		IRI subjectB = VF.createIRI("urn:subject:b");
+		BindingSetAssignment localValues = values("s", subjectA, subjectA, subjectB);
+		StatementPattern remotePattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Service service = new Service(Var.of("endpoint", endpoint), remotePattern, "?s ?p ?o .",
+				Map.of(), null, false);
+		Join query = new Join(localValues, service);
+
+		assertFalse(applyStandardRules(query.clone()).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "44".equals(proof.ruleId())),
+				"Rule 44 must not push VALUES into SERVICE without endpoint compatibility metadata");
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean endpointSupportsValues(IRI candidateEndpoint) {
+				return endpoint.equals(candidateEndpoint);
+			}
+		};
+		Optional<RuleApplication> maybePushed = applyStandardRules(query, OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "44".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "44".equals(proof.certificate().ruleId())
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)))
+						.findFirst();
+
+		assertTrue(maybePushed.isPresent(), "Expected rule 44 to push compatible static VALUES into SERVICE");
+		TupleExpr alternative = maybePushed.get().alternative();
+		assertTrue(alternative instanceof Join, "Expected local VALUES joined with rewritten SERVICE: "
+				+ alternative);
+		Join outerJoin = (Join) alternative;
+		assertEquals(3, bindingRows(outerJoin.getLeftArg(), "s"), "Local multiplicity must stay outside SERVICE");
+		assertTrue(outerJoin.getRightArg() instanceof Service, "Expected rewritten SERVICE on RHS: " + alternative);
+		Service pushedService = (Service) outerJoin.getRightArg();
+		assertTrue(pushedService.getServiceExpr() instanceof Join, "Expected remote VALUES joined with service body");
+		Join remoteJoin = (Join) pushedService.getServiceExpr();
+		assertEquals(2, bindingRows(remoteJoin.getLeftArg(), "s"), "Remote restriction should deduplicate rows");
+		assertEquals(Set.of(subjectA, subjectB), bindingValues(remoteJoin.getLeftArg(), "s"));
+		assertTrue(pushedService.getServiceExpressionString()
+				.contains("VALUES ?s { <urn:subject:a> <urn:subject:b> }"),
+				pushedService.getServiceExpressionString());
+	}
+
+	@Test
+	void serviceFilterPushdownRequiresEndpointExpressionCompatibility() {
+		IRI endpoint = VF.createIRI("urn:endpoint:filter");
+		StatementPattern remotePattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Service service = new Service(Var.of("endpoint", endpoint), remotePattern, "?s ?p ?o .",
+				Map.of(), null, false);
+		Filter query = new Filter(service, new Bound(new Var("o")));
+
+		assertFalse(applyStandardRules(query.clone()).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "45".equals(proof.ruleId())),
+				"Rule 45 must not push filters into SERVICE without endpoint expression metadata");
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean endpointExpressionSemanticsCompatible(IRI candidateEndpoint, String expressionKey) {
+				return endpoint.equals(candidateEndpoint);
+			}
+		};
+		Optional<RuleApplication> maybePushed = applyStandardRules(query, OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "45".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "45".equals(proof.certificate().ruleId())
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)))
+						.findFirst();
+
+		assertTrue(maybePushed.isPresent(),
+				"Expected rule 45 to push a compatible remote-only filter into SERVICE");
+		TupleExpr alternative = maybePushed.get().alternative();
+		assertTrue(alternative instanceof Service, "Expected rewritten SERVICE without an outer FILTER: "
+				+ alternative);
+		Service pushedService = (Service) alternative;
+		assertTrue(pushedService.getServiceExpr() instanceof Filter, "Expected remote SERVICE body to be filtered");
+		Filter remoteFilter = (Filter) pushedService.getServiceExpr();
+		assertTrue(remoteFilter.getCondition() instanceof Bound);
+		assertTrue(remoteFilter.getArg() instanceof StatementPattern);
+		assertTrue(pushedService.getServiceExpressionString().contains("FILTER(BOUND(?o))"),
+				pushedService.getServiceExpressionString());
+	}
+
+	@Test
+	void remoteProjectionRequiresEndpointProjectionSupport() {
+		IRI endpoint = VF.createIRI("urn:endpoint:projection");
+		StatementPattern remotePattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Service service = new Service(Var.of("endpoint", endpoint), remotePattern, "?s ?p ?o .",
+				Map.of(), null, false);
+		Projection query = new Projection(service, projection("s", "o"), false);
+
+		assertFalse(applyStandardRules(query.clone()).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "46".equals(proof.ruleId())),
+				"Rule 46 must not project remote SERVICE results without endpoint projection metadata");
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean endpointSupportsProjection(IRI candidateEndpoint) {
+				return endpoint.equals(candidateEndpoint);
+			}
+		};
+		Optional<RuleApplication> maybeProjected = applyStandardRules(query, OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "46".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "46".equals(proof.certificate().ruleId())
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)))
+						.findFirst();
+
+		assertTrue(maybeProjected.isPresent(),
+				"Expected rule 46 to push an identity projection into a compatible SERVICE");
+		TupleExpr alternative = maybeProjected.get().alternative();
+		assertTrue(alternative instanceof Service, "Expected rewritten SERVICE without an outer projection: "
+				+ alternative);
+		Service projectedService = (Service) alternative;
+		assertTrue(projectedService.getServiceExpr() instanceof Projection,
+				"Expected remote SERVICE body to carry the projection");
+		Projection remoteProjection = (Projection) projectedService.getServiceExpr();
+		assertEquals(Set.of("s", "o"), remoteProjection.getProjectionElemList().getProjectedNames());
+		assertFalse(remoteProjection.getProjectionElemList().getProjectedNames().contains("p"));
+		assertTrue(projectedService.getServiceExpressionString().contains("SELECT ?s ?o WHERE"),
+				projectedService.getServiceExpressionString());
+		assertTrue(projectedService.getServiceExpressionString().contains("?s ?p ?o ."),
+				projectedService.getServiceExpressionString());
+	}
+
+	@Test
+	void servicePushdownsSkipSubselectBodies() {
+		IRI endpoint = VF.createIRI("urn:endpoint:subselect");
+		StatementPattern remotePattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Projection remoteProjection = new Projection(remotePattern, projection("s"), false);
+		Service service = new Service(Var.of("endpoint", endpoint), remoteProjection,
+				"SELECT ?s WHERE { ?s ?p ?o . }", Map.of(), null, false);
+		BindingSetAssignment localValues = values("s", VF.createIRI("urn:subject:subselect"));
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public boolean endpointSupportsValues(IRI candidateEndpoint) {
+				return endpoint.equals(candidateEndpoint);
+			}
+
+			@Override
+			public boolean endpointExpressionSemanticsCompatible(IRI candidateEndpoint, String expressionKey) {
+				return endpoint.equals(candidateEndpoint);
+			}
+
+			@Override
+			public boolean endpointSupportsProjection(IRI candidateEndpoint) {
+				return endpoint.equals(candidateEndpoint);
+			}
+		};
+
+		assertFalse(applyStandardRules(new Join(localValues, service.clone()), OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.flatMap(application -> application.proofs().stream())
+						.anyMatch(proof -> "44".equals(proof.ruleId())),
+				"Rule 44 must not prepend VALUES to a complete SERVICE subselect");
+		assertFalse(applyStandardRules(new Filter(service.clone(), new Bound(new Var("s"))), OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.flatMap(application -> application.proofs().stream())
+						.anyMatch(proof -> "45".equals(proof.ruleId())),
+				"Rule 45 must not append FILTER to a complete SERVICE subselect");
+		assertFalse(applyStandardRules(new Projection(service.clone(), projection("s"), false),
+				OptimizationGoal.root(), CascadesTelemetry.NO_OP, metadata).stream()
+						.flatMap(application -> application.proofs().stream())
+						.anyMatch(proof -> "46".equals(proof.ruleId())),
+				"Rule 46 must not wrap a complete SERVICE subselect as a graph pattern");
+	}
+
+	@Test
+	void variableServiceExpansionRequiresCompleteEndpointSet() {
+		IRI endpointA = VF.createIRI("urn:endpoint:a");
+		IRI endpointB = VF.createIRI("urn:endpoint:b");
+		StatementPattern remotePattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Service service = new Service(Var.of("endpoint"), remotePattern, "?s ?p ?o .",
+				Map.of(), null, true);
+
+		assertFalse(applyStandardRules(service.clone()).stream()
+				.flatMap(application -> application.proofs().stream())
+				.anyMatch(proof -> "47".equals(proof.ruleId())),
+				"Rule 47 must not expand variable SERVICE without a complete endpoint set");
+
+		RewriteMetadata metadata = new RewriteMetadata() {
+			@Override
+			public Optional<Set<IRI>> completeEndpointSet(String variableName) {
+				return "endpoint".equals(variableName) ? Optional.of(Set.of(endpointA, endpointB)) : Optional.empty();
+			}
+		};
+		Optional<RuleApplication> maybeExpanded = applyStandardRules(service, OptimizationGoal.root(),
+				CascadesTelemetry.NO_OP, metadata).stream()
+						.filter(application -> application.proofs()
+								.stream()
+								.anyMatch(proof -> "47".equals(proof.ruleId())
+										&& proof.certificate() != null
+										&& "47".equals(proof.certificate().ruleId())
+										&& proof.certificate()
+												.assumptions()
+												.contains(RewriteAssumption.FEDERATION_ENDPOINT_COMPATIBLE)))
+						.findFirst();
+
+		assertTrue(maybeExpanded.isPresent(),
+				"Expected rule 47 to expand variable SERVICE over the complete endpoint set");
+		TupleExpr alternative = maybeExpanded.get().alternative();
+		assertTrue(alternative instanceof Union, "Expected endpoint-specific SERVICE branches: " + alternative);
+		Union union = (Union) alternative;
+		assertEquals(Set.of(endpointA, endpointB), endpointExtensionValues(union));
+		assertEquals(Set.of(endpointA, endpointB), fixedServiceRefs(union));
+		assertTrue(allServiceBranchesSilent(union), "SERVICE SILENT must be preserved on every branch");
 	}
 
 	@Test
@@ -1623,11 +2367,49 @@ class CascadesRuleEngineTest {
 				.toList();
 	}
 
+	private static List<RuleApplication> applyStandardRules(TupleExpr tupleExpr, OptimizationGoal goal,
+			CascadesTelemetry telemetry, RewriteMetadata metadata) {
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(tupleExpr);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		RuleContext context = ruleContextWithMetadata(memo, costModel, telemetry, metadata);
+		return RuleRegistry.standardLogicalRules()
+				.applicableRules(expression, goal, memo)
+				.stream()
+				.flatMap(rule -> rule.apply(expression, goal, context).stream())
+				.toList();
+	}
+
+	private static RuleContext ruleContextWithMetadata(Memo memo, CascadesCostModel costModel,
+			CascadesTelemetry telemetry, RewriteMetadata metadata) {
+		Optional<Constructor<?>> metadataConstructor = Arrays.stream(RuleContext.class.getConstructors())
+				.filter(constructor -> constructor.getParameterCount() == 5)
+				.filter(constructor -> constructor.getParameterTypes()[4] == RewriteMetadata.class)
+				.findFirst();
+		assertTrue(metadataConstructor.isPresent(),
+				"RuleContext should carry rewrite metadata for metadata-gated rewrites");
+		try {
+			return (RuleContext) metadataConstructor.get().newInstance(memo, costModel, telemetry, null, metadata);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("RuleContext metadata constructor should be usable by rule tests", e);
+		}
+	}
+
 	private static boolean standardRulesContainValuesAnchor(TupleExpr tupleExpr, String bindingName) {
 		return applyStandardRules(tupleExpr)
 				.stream()
 				.map(RuleApplication::alternative)
 				.anyMatch(alternative -> bindingRows(alternative, bindingName) >= 0);
+	}
+
+	private static boolean memoContainsProof(CascadesPlan plan, String ruleId) {
+		return plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> ruleId.equals(proof.ruleId()));
 	}
 
 	@SuppressWarnings("unchecked")
@@ -1688,6 +2470,71 @@ class CascadesRuleEngineTest {
 			return leftRows >= 0 ? leftRows : bindingRows(join.getRightArg(), bindingName);
 		}
 		return -1;
+	}
+
+	private static Set<Value> bindingValues(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.getBindingNames().contains(bindingName)) {
+			Set<Value> values = new HashSet<>();
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				if (bindingSet.hasBinding(bindingName)) {
+					values.add(bindingSet.getValue(bindingName));
+				}
+			}
+			return values;
+		}
+		if (tupleExpr instanceof Join join) {
+			Set<Value> leftValues = bindingValues(join.getLeftArg(), bindingName);
+			return leftValues.isEmpty() ? bindingValues(join.getRightArg(), bindingName) : leftValues;
+		}
+		return Set.of();
+	}
+
+	private static Set<Value> endpointExtensionValues(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Extension extension) {
+			Set<Value> values = new HashSet<>();
+			for (ExtensionElem element : extension.getElements()) {
+				if ("endpoint".equals(element.getName()) && element.getExpr()instanceof ValueConstant constant) {
+					values.add(constant.getValue());
+				}
+			}
+			return values;
+		}
+		if (tupleExpr instanceof Union union) {
+			Set<Value> values = new HashSet<>(endpointExtensionValues(union.getLeftArg()));
+			values.addAll(endpointExtensionValues(union.getRightArg()));
+			return values;
+		}
+		return Set.of();
+	}
+
+	private static Set<Value> fixedServiceRefs(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Service service
+				&& service.getServiceRef().hasValue()) {
+			return Set.of(service.getServiceRef().getValue());
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return fixedServiceRefs(extension.getArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			Set<Value> values = new HashSet<>(fixedServiceRefs(union.getLeftArg()));
+			values.addAll(fixedServiceRefs(union.getRightArg()));
+			return values;
+		}
+		return Set.of();
+	}
+
+	private static boolean allServiceBranchesSilent(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Service service) {
+			return service.isSilent();
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return allServiceBranchesSilent(extension.getArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return allServiceBranchesSilent(union.getLeftArg()) && allServiceBranchesSilent(union.getRightArg());
+		}
+		return false;
 	}
 
 	private static boolean containsStatementPattern(TupleExpr tupleExpr, String subject, String predicate,

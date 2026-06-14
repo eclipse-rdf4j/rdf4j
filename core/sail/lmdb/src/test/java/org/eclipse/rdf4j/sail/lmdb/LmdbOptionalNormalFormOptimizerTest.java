@@ -130,6 +130,12 @@ class LmdbOptionalNormalFormOptimizerTest {
 	private static void assertProof(String metric, String kind) {
 		assertTrue(metric != null && metric.contains("proofKind=" + kind), () -> String.valueOf(metric));
 		assertTrue(metric.contains("proofScope=LOGICAL_BAG_EQUIVALENT"), () -> metric);
+		assertTrue(metric.contains("rule=27"), () -> metric);
+		assertTrue(metric.contains("preservedVisibleVars=true"), () -> metric);
+		assertTrue(metric.contains("preservedMultiplicity=true"), () -> metric);
+		assertTrue(metric.contains("preservedOrder=true"), () -> metric);
+		assertTrue(metric.contains("preservedErrors=true"), () -> metric);
+		assertTrue(metric.contains("preservedGraphScope=true"), () -> metric);
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {

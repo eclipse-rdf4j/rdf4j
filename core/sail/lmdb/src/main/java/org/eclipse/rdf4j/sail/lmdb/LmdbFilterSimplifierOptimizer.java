@@ -70,6 +70,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -329,6 +332,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (condition instanceof Or or) {
 			return isSmallLiteralAnchorCandidate(or.getLeftArg()) || isSmallLiteralAnchorCandidate(or.getRightArg());
 		}
+		if (condition instanceof And and) {
+			return isSmallLiteralAnchorCandidate(and.getLeftArg()) || isSmallLiteralAnchorCandidate(and.getRightArg());
+		}
 		return false;
 	}
 
@@ -579,27 +585,142 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION, "finite-filter-relation");
 		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=1, selected=finite-filter-relation");
+		annotateFiniteFilterRelationProof(relation, condition, assignmentValues);
 		return relation;
+	}
+
+	private static void annotateFiniteFilterRelationProof(BindingSetAssignment relation, ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		LmdbRewriteProof.RewriteKind kind;
+		String ruleId;
+		String originalNodeId;
+		String fact;
+		String reason;
+		if (containsListMemberOperator(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.FILTER_IN_TO_VALUES;
+			ruleId = "10";
+			originalNodeId = "filter-in-finite-relation";
+			fact = "filterIn";
+			reason = "filter-in-finite-relation-is-materialized-as-values";
+		} else if (isTupleDisjunction(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.TUPLE_DISJUNCTION_TO_VALUES;
+			ruleId = "12";
+			originalNodeId = "tuple-disjunction-finite-relation";
+			fact = "tupleDisjunction";
+			reason = "tuple-disjunction-finite-relation-is-materialized-as-values";
+		} else if (isCorrelatedValuesConstruction(condition, assignmentValues)) {
+			kind = LmdbRewriteProof.RewriteKind.CORRELATED_VALUES_CONSTRUCTION;
+			ruleId = "14";
+			originalNodeId = "independent-values-filter-correlation";
+			fact = "correlatedValues";
+			reason = "independent-values-correlation-is-materialized-as-values";
+		} else if (isEqualityDisjunction(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.EQUALITY_DISJUNCTION_TO_VALUES;
+			ruleId = "11";
+			originalNodeId = "equality-disjunction-finite-relation";
+			fact = "equalityDisjunction";
+			reason = "equality-disjunction-finite-relation-is-materialized-as-values";
+		} else {
+			return;
+		}
+		relation.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(kind,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("finiteRelation", "conditionVarsAssured", fact),
+						reason,
+						new RewriteCertificate(ruleId, originalNodeId, "values-finite-relation",
+								RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)))
+										.metricFragment());
+	}
+
+	private static boolean containsListMemberOperator(ValueExpr condition) {
+		if (condition instanceof ListMemberOperator) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return containsListMemberOperator(and.getLeftArg()) || containsListMemberOperator(and.getRightArg());
+		}
+		if (condition instanceof Or or) {
+			return containsListMemberOperator(or.getLeftArg()) || containsListMemberOperator(or.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean isEqualityDisjunction(ValueExpr condition) {
+		return condition instanceof Or && containsOnlyEqualityTerms(condition);
+	}
+
+	private static boolean isTupleDisjunction(ValueExpr condition) {
+		return condition instanceof Or && containsConjunctiveEqualityTerm(condition) && containsOnlyEqualityTerms(
+				condition);
+	}
+
+	private static boolean isCorrelatedValuesConstruction(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		if (!containsOnlySameTermEqualities(condition)) {
+			return false;
+		}
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (conditionVars.size() < 2) {
+			return false;
+		}
+		for (String bindingName : conditionVars) {
+			LinkedHashSet<Value> values = assignmentValues.get(bindingName);
+			if (values == null || values.isEmpty()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsOnlySameTermEqualities(ValueExpr condition) {
+		if (condition instanceof And and) {
+			return containsOnlySameTermEqualities(and.getLeftArg()) && containsOnlySameTermEqualities(
+					and.getRightArg());
+		}
+		return condition instanceof SameTerm;
+	}
+
+	private static boolean containsConjunctiveEqualityTerm(ValueExpr condition) {
+		if (condition instanceof And) {
+			return true;
+		}
+		if (condition instanceof Or or) {
+			return containsConjunctiveEqualityTerm(or.getLeftArg())
+					|| containsConjunctiveEqualityTerm(or.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsOnlyEqualityTerms(ValueExpr condition) {
+		if (condition instanceof Or or) {
+			return containsOnlyEqualityTerms(or.getLeftArg()) && containsOnlyEqualityTerms(or.getRightArg());
+		}
+		if (condition instanceof And and) {
+			return containsOnlyEqualityTerms(and.getLeftArg()) && containsOnlyEqualityTerms(and.getRightArg());
+		}
+		if (condition instanceof Compare compare) {
+			return compare.getOperator() == Compare.CompareOp.EQ;
+		}
+		return condition instanceof SameTerm;
 	}
 
 	private static BindingSetAssignment finiteFilterRelation(ValueExpr condition,
 			Map<String, LinkedHashSet<Value>> assignmentValues) {
 		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
-		if (conditionVars.size() < 2 || assignmentValues.isEmpty()) {
+		if (conditionVars.size() < 2) {
 			return null;
 		}
 		LinkedHashMap<String, LinkedHashSet<Value>> domains = new LinkedHashMap<>();
-		boolean hasFiniteInput = false;
 		for (String bindingName : conditionVars) {
 			LinkedHashSet<Value> values = assignmentValues.get(bindingName);
 			if (values != null && !values.isEmpty()) {
 				domains.put(bindingName, new LinkedHashSet<>(values));
-				hasFiniteInput = true;
 			} else {
 				domains.put(bindingName, new LinkedHashSet<>());
 			}
 		}
-		if (!hasFiniteInput || !collectFiniteConditionDomains(condition, domains)) {
+		if (!collectFiniteConditionDomains(condition, domains)) {
 			return null;
 		}
 		for (LinkedHashSet<Value> values : domains.values()) {
@@ -624,6 +745,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (condition instanceof Or or) {
 			return collectFiniteConditionDomains(or.getLeftArg(), domains)
 					&& collectFiniteConditionDomains(or.getRightArg(), domains);
+		}
+		if (condition instanceof And and) {
+			return collectFiniteConditionDomains(and.getLeftArg(), domains)
+					&& collectFiniteConditionDomains(and.getRightArg(), domains);
 		}
 		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
 			return collectFiniteEqualityDomains(compare.getLeftArg(), compare.getRightArg(), domains);
@@ -734,6 +859,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean finiteConditionMatches(ValueExpr condition, Map<String, Value> row) {
 		if (condition instanceof Or or) {
 			return finiteConditionMatches(or.getLeftArg(), row) || finiteConditionMatches(or.getRightArg(), row);
+		}
+		if (condition instanceof And and) {
+			return finiteConditionMatches(and.getLeftArg(), row) && finiteConditionMatches(and.getRightArg(), row);
 		}
 		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
 			return sameFiniteValue(compare.getLeftArg(), compare.getRightArg(), row);
@@ -909,8 +1037,19 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
 						Set.of("finiteFilter", "distinctCount", "unobservedMembershipBinding",
 								directJoinSafe ? "earlyMembershipJoin" : "correlatedExists"),
-						"finite filter membership is duplicate-insensitive under COUNT DISTINCT").metricFragment());
+						"finite filter membership is duplicate-insensitive under COUNT DISTINCT",
+						distinctMembershipSemiFilterCertificate(directJoinSafe)).metricFragment());
 		return replacement;
+	}
+
+	private static RewriteCertificate distinctMembershipSemiFilterCertificate(boolean directJoin) {
+		return new RewriteCertificate("23", "dead-finite-membership-filter",
+				directJoin ? "early-membership-join" : "correlated-exists-semi-filter",
+				RewriteSafety.builder()
+						.preservedMultiplicity(false)
+						.build(),
+				Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+						RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
 	}
 
 	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {

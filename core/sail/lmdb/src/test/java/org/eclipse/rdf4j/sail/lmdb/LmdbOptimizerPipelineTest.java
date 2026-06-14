@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -57,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -457,6 +459,220 @@ class LmdbOptimizerPipelineTest {
 		}
 
 		assertNoUnsafeSplitBindingAssignmentFilter(tupleExpr);
+	}
+
+	@Test
+	void lmdbEligibilityUnionBecomesLiftedExistsForGroupedDistinctCount() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertFalse(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
+		assertFalse(containsVariableName(tupleExpr, "enc"), diagnosticPlan);
+		assertFalse(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertTrue(groupIsWrappedByExistsFilter(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=GROUP_KEY_EXISTS_LIFT"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbEligibilityUnionKeepsRowProducingUnionForGroupedCount() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbEligibilityUnionKeepsRowProducingUnionWhenBranchLocalIsGrouped() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient ?enc (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient ?enc
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertTrue(containsVariableName(tupleExpr, "enc"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbTrivialBindAliasKeepsOptionalSourceAlias() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?optMed) AS ?medCount)
+				WHERE {
+					?patient a medical:Patient .
+					OPTIONAL {
+						?patient medical:hasMedication ?med .
+					}
+					BIND(?med AS ?optMed)
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				""");
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbTrivialBindAliasKeepsAliasUsedByLaterGraphPattern() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+					?x medical:uses ?optMed .
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbPositiveHavingKeepsOptionalOnlyCountFilter() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient a medical:Patient .
+					OPTIONAL {
+						?patient medical:hasMedication ?med .
+					}
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbPositiveHavingKeepsNonIntegralCountThresholdFilter() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) >= 1.5)
+				""");
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(ValueConstant node) {
+				if (node.getValue()instanceof Literal literal && "1.5".equals(literal.getLabel())) {
+					node.setValue(SimpleValueFactory.getInstance().createLiteral(new BigDecimal("1.5")));
+				}
+			}
+		});
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
 	}
 
 	@Test
@@ -1068,6 +1284,18 @@ class LmdbOptimizerPipelineTest {
 		return parsedQuery.getTupleExpr();
 	}
 
+	private static void optimizeWithLmdbPipelineUntil(TupleExpr tupleExpr, String stopBeforeOptimizerName) {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			if (optimizer.getClass().getSimpleName().equals(stopBeforeOptimizerName)) {
+				return;
+			}
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+	}
+
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
 		boolean[] found = { false };
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -1135,6 +1363,65 @@ class LmdbOptimizerPipelineTest {
 			@Override
 			public void meet(Union node) {
 				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsVariableName(QueryModelNode queryModelNode, String name) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Var node) {
+				if (!node.hasValue() && name.equals(node.getName())) {
+					found[0] = true;
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsAnonymousHavingBinding(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node.getSignature().contains("_anon_having_")) {
+					found[0] = true;
+				}
+				super.meetNode(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean groupInputContainsUnion(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Group node) {
+				if (containsUnion(node.getArg())) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean groupIsWrappedByExistsFilter(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg() instanceof Group && containsExists(node.getCondition())) {
+					found[0] = true;
+				}
+				super.meet(node);
 			}
 		});
 		return found[0];

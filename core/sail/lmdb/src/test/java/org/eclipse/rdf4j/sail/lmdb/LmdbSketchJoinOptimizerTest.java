@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -737,6 +738,24 @@ class LmdbSketchJoinOptimizerTest {
 
 		assertInstanceOf(Difference.class, root.getArg(),
 				"Initial bindings can make the RHS filter match, so MINUS must retain compatibility semantics");
+	}
+
+	@Test
+	void rewritesNegatedBoundOptionalToCertifiedAntiJoin() {
+		StatementPattern required = statementPattern("s", "type", "type");
+		StatementPattern optional = statementPattern("s", "name", "optName");
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(required, optional),
+				new Not(new Bound(new Var("optName")))));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		Difference replacement = assertInstanceOf(Difference.class, root.getArg(), () -> root.toString());
+		String rewriteMetric = replacement.getStringMetricPlanned("optimizer.negatedBoundOptionalAlternative");
+		assertTrue(rewriteMetric != null && rewriteMetric.contains("OPTIONAL_NEGATED_BOUND_ANTI_JOIN"),
+				String.valueOf(rewriteMetric));
+		assertTrue(rewriteMetric.contains("selected=anti-join"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("rule=25"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("preservedMultiplicity=true"), rewriteMetric);
 	}
 
 	@Test

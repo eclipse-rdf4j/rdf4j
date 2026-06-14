@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Constructor;
 import java.util.Optional;
 import java.util.Set;
 
@@ -32,6 +33,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.junit.jupiter.api.Test;
 
 class LmdbRewriteProofTest {
@@ -78,6 +82,29 @@ class LmdbRewriteProofTest {
 				() -> root.getArg().toString());
 		assertProof(replacement.getStringMetricPlanned("optimizer.rewriteProof"), "SET_JOIN_IDEMPOTENCE",
 				"SET_EQUIVALENT", "setContext=distinct");
+	}
+
+	@Test
+	void metricFragmentIncludesGenericCertificateSafety() throws Exception {
+		RewriteCertificate certificate = new RewriteCertificate("lmdb-test", "old", "new", RewriteSafety.builder()
+				.preservedMultiplicity(false)
+				.build(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS));
+		Constructor<LmdbRewriteProof> constructor = LmdbRewriteProof.class.getDeclaredConstructor(
+				LmdbRewriteProof.RewriteKind.class, LmdbRewriteProof.EquivalenceScope.class, Set.class,
+				String.class, RewriteCertificate.class);
+		constructor.setAccessible(true);
+		LmdbRewriteProof proof = constructor.newInstance(LmdbRewriteProof.RewriteKind.SET_UNION_IDEMPOTENCE,
+				LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT, Set.of("setContext=distinct"), "reason",
+				certificate);
+
+		String fragment = proof.metricFragment();
+
+		assertTrue(fragment.contains("proofKind=SET_UNION_IDEMPOTENCE"), fragment);
+		assertTrue(fragment.contains("preservedVisibleVars=true"), fragment);
+		assertTrue(fragment.contains("preservedMultiplicity=false"), fragment);
+		assertTrue(fragment.contains("preservedOrder=true"), fragment);
+		assertTrue(fragment.contains("preservedErrors=true"), fragment);
+		assertTrue(fragment.contains("preservedGraphScope=true"), fragment);
 	}
 
 	private static void assertProof(String metric, String kind, String scope, String fact) {

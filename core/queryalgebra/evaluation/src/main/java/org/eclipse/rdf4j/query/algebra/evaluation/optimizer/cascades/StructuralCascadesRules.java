@@ -18,13 +18,19 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -229,6 +235,114 @@ public final class StructuralCascadesRules {
 		}
 	}
 
+	public static final class InlineModifierFreeSubqueryRule extends StandardCascadesRules.AbstractRule {
+		public InlineModifierFreeSubqueryRule() {
+			super("inline-modifier-free-subquery", RuleKind.TRANSFORMATION, 61);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Projection outer
+					&& outer.getArg()instanceof Projection inner
+					&& inner.isSubquery()
+					&& canInlineModifierFreeSubquery(outer, inner);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (!matches(expression, goal, context == null ? null : context.memo())) {
+				return List.of();
+			}
+			Projection outer = (Projection) expression.tupleExpr();
+			Projection inner = (Projection) outer.getArg();
+			Projection alternative = outer.clone();
+			alternative.setArg(inner.getArg().clone());
+			RuleProof proof = new RuleProof("48", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("modifierFreeSubquery", "outerProjectionPreserved", "hiddenVarsRemainProjected"),
+					"a modifier-free subquery projection can be inlined when the enclosing projection still "
+							+ "controls the variables visible above the subquery boundary",
+					new RewriteCertificate("48", "projection-over-subquery", "projection-over-inlined-subquery",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class DropUnusedSubqueryVarsRule extends StandardCascadesRules.AbstractRule {
+		public DropUnusedSubqueryVarsRule() {
+			super("drop-unused-subquery-vars", RuleKind.TRANSFORMATION, 60);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Projection outer
+					&& outer.getArg()instanceof Projection inner
+					&& inner.isSubquery()
+					&& canDropUnusedSubqueryVars(outer, inner);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (!matches(expression, goal, context == null ? null : context.memo())) {
+				return List.of();
+			}
+			Projection outer = (Projection) expression.tupleExpr();
+			Projection inner = (Projection) outer.getArg();
+			List<String> neededNames = orderedIdentityProjectionNames(outer);
+			Projection narrowedSubquery = inner.clone();
+			narrowedSubquery.setProjectionElemList(CascadesRewriteSupport.projectionElemList(neededNames));
+			Projection alternative = outer.clone();
+			alternative.setArg(narrowedSubquery);
+			RuleProof proof = new RuleProof("49", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("unusedSubqueryVarsDropped", "outerProjectionPreserved", "modifierFreeSubquery"),
+					"subquery variables unused above an enclosing identity projection can be removed from the "
+							+ "subquery projection while keeping the subquery boundary",
+					new RewriteCertificate("49", "projection-over-subquery", "projection-over-narrowed-subquery",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class RemoveUnobservableOrderRule extends StandardCascadesRules.AbstractRule {
+		public RemoveUnobservableOrderRule() {
+			super("remove-unobservable-order", RuleKind.TRANSFORMATION, 59);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Projection outer
+					&& outer.getArg()instanceof Projection inner
+					&& inner.isSubquery()
+					&& inner.getArg()instanceof Order order
+					&& canRemoveUnobservableOrder(outer, inner, order);
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (!matches(expression, goal, context == null ? null : context.memo())) {
+				return List.of();
+			}
+			Projection outer = (Projection) expression.tupleExpr();
+			Projection inner = (Projection) outer.getArg();
+			Order order = (Order) inner.getArg();
+			Projection unorderedSubquery = inner.clone();
+			unorderedSubquery.setArg(order.getArg().clone());
+			Projection alternative = outer.clone();
+			alternative.setArg(unorderedSubquery);
+			RuleProof proof = new RuleProof("50", RuleKind.TRANSFORMATION, semanticScope(goal),
+					Set.of("subqueryOrderUnobservable", "noSliceInSubquery", "outerProjectionPreserved"),
+					"ORDER BY inside a subquery without LIMIT/OFFSET is unobservable when an enclosing projection "
+							+ "continues to control visible variables",
+					new RewriteCertificate("50", "projection-over-ordered-subquery",
+							"projection-over-unordered-subquery",
+							RewriteSafety.builder().preservedOrder(false).build(),
+							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
 	private static TupleExpr simplifyUnion(Union union) {
 		if (union == null || union.isVariableScopeChange()) {
 			return null;
@@ -250,6 +364,51 @@ public final class StructuralCascadesRules {
 		Set<String> outerNames = CascadesRewriteSupport.identityProjectionNames(outer);
 		Set<String> innerNames = CascadesRewriteSupport.identityProjectionNames(inner);
 		return outerNames != null && innerNames != null && innerNames.containsAll(outerNames);
+	}
+
+	private static boolean canInlineModifierFreeSubquery(Projection outer, Projection inner) {
+		return outer.getProjectionContext() == null
+				&& inner.getProjectionContext() == null
+				&& canMergeProjections(outer, inner)
+				&& !hasSubqueryModifier(inner.getArg());
+	}
+
+	private static boolean hasSubqueryModifier(TupleExpr tupleExpr) {
+		return tupleExpr instanceof Distinct
+				|| tupleExpr instanceof Reduced
+				|| tupleExpr instanceof Group
+				|| tupleExpr instanceof Order
+				|| tupleExpr instanceof Slice;
+	}
+
+	private static boolean canDropUnusedSubqueryVars(Projection outer, Projection inner) {
+		List<String> neededNames = orderedIdentityProjectionNames(outer);
+		Set<String> innerNames = CascadesRewriteSupport.identityProjectionNames(inner);
+		return outer.getProjectionContext() == null
+				&& inner.getProjectionContext() == null
+				&& neededNames != null
+				&& innerNames != null
+				&& innerNames.containsAll(neededNames)
+				&& innerNames.size() > neededNames.size()
+				&& !hasSubqueryModifier(inner.getArg());
+	}
+
+	private static boolean canRemoveUnobservableOrder(Projection outer, Projection inner, Order order) {
+		return outer.getProjectionContext() == null
+				&& inner.getProjectionContext() == null
+				&& canMergeProjections(outer, inner)
+				&& !(order.getArg() instanceof Slice);
+	}
+
+	private static List<String> orderedIdentityProjectionNames(Projection projection) {
+		if (CascadesRewriteSupport.identityProjectionNames(projection) == null) {
+			return null;
+		}
+		return projection.getProjectionElemList()
+				.getElements()
+				.stream()
+				.map(ProjectionElem::getName)
+				.toList();
 	}
 
 	private static Boolean booleanConstant(ValueExpr condition) {

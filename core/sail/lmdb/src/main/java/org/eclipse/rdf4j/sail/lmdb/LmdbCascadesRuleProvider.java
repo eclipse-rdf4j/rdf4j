@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -70,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingProfile;
@@ -84,6 +86,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ProjectionCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
@@ -122,6 +127,9 @@ final class LmdbCascadesRuleProvider {
 		RuleRegistry.Builder builder = RuleRegistry.builder()
 				.addAllRules(RuleCompiler.compileAll(LmdbRuleSpecs.physicalRules()))
 				.addAllRules(RuleCompiler.compileAll(LmdbSemanticRuleSpecs.logicalRules()))
+				.add(new LmdbFiniteFilterValuesRule(statistics))
+				.add(new LmdbUnionConstantsToValuesRule(statistics))
+				.add(new LmdbPredicateDomainFilterValuesAnchorRule(statistics))
 				.addAllRules(RuleRegistry.standardCompiledDslRules())
 				.add(new LmdbSetSemanticsNormalizationRule(statistics))
 				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
@@ -900,6 +908,87 @@ final class LmdbCascadesRuleProvider {
 		}
 	}
 
+	private static final class LmdbFiniteFilterValuesRule extends LmdbRule {
+		LmdbFiniteFilterValuesRule(EvaluationStatistics statistics) {
+			super("lmdb-finite-filter-values-rewrite", RuleKind.TRANSFORMATION, 93, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression != null && expression.logical();
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			TupleExpr alternative = finiteFilterValuesAlternative(expression.tupleExpr());
+			if (alternative == null) {
+				return List.of();
+			}
+			List<RuleProof> proofs = new ArrayList<>();
+			proofs.add(proof(semanticScope(goal), Set.of("finiteValuesAnchor", "scopeSafe", "subquerySafe"),
+					"finite FILTER relation is represented as a VALUES binding joined with the original pattern"));
+			if (containsFinitePredicateDomainAnchor(alternative)) {
+				proofs.add(finitePredicateDomainProof(semanticScope(goal)));
+			}
+			return List.of(new RuleApplication(expression.groupId(), alternative, RuleKind.TRANSFORMATION,
+					PhysicalProperties.ANY, CostVector.ZERO, proofs, "", null, false));
+		}
+	}
+
+	private static final class LmdbUnionConstantsToValuesRule extends LmdbRule {
+		LmdbUnionConstantsToValuesRule(EvaluationStatistics statistics) {
+			super("lmdb-union-constants-to-values", RuleKind.TRANSFORMATION, 92, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression != null
+					&& expression.logical()
+					&& unionConstantsToValuesAlternative(expression.tupleExpr()) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			TupleExpr alternative = unionConstantsToValuesAlternative(expression.tupleExpr());
+			if (alternative == null) {
+				return List.of();
+			}
+			RuleProof proof = unionConstantsToValuesProof(semanticScope(goal));
+			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	private static final class LmdbPredicateDomainFilterValuesAnchorRule extends LmdbRule {
+		LmdbPredicateDomainFilterValuesAnchorRule(EvaluationStatistics statistics) {
+			super("filter-values-anchor", RuleKind.TRANSFORMATION, 62, statistics);
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression != null
+					&& expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& predicateDomainFilterValuesAnchor(filter) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Filter filter = (Filter) expression.tupleExpr();
+			BindingSetAssignment anchor = predicateDomainFilterValuesAnchor(filter);
+			if (anchor == null) {
+				return List.of();
+			}
+			Join alternative = new Join(anchor, filter.getArg().clone());
+			List<RuleProof> proofs = List.of(
+					proof(semanticScope(goal), Set.of("finiteValuesAnchor", "argumentAssuresFilterVar",
+							"tupleArityPreserved", "valueIdentityPreserved"),
+							"safe RDF-term equality or IN filters can become finite VALUES join alternatives"),
+					finitePredicateDomainProof(semanticScope(goal)));
+			return List.of(new RuleApplication(expression.groupId(), alternative, RuleKind.TRANSFORMATION,
+					PhysicalProperties.ANY, CostVector.ZERO, proofs, "", null, false));
+		}
+	}
+
 	private static final class LmdbSetSemanticsNormalizationRule extends LmdbRule {
 		LmdbSetSemanticsNormalizationRule(EvaluationStatistics statistics) {
 			super("lmdb-set-semantics-normalization", RuleKind.TRANSFORMATION, 75, statistics);
@@ -1140,6 +1229,124 @@ final class LmdbCascadesRuleProvider {
 		}
 		rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-filter-values-rewrite");
 		return rewritten;
+	}
+
+	static TupleExpr unionConstantsToValuesAlternative(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Union union)) {
+			return null;
+		}
+		if (!(union.getLeftArg()instanceof StatementPattern left)
+				|| !(union.getRightArg()instanceof StatementPattern right)
+				|| !sameUnionVar(left.getContextVar(), right.getContextVar())) {
+			return null;
+		}
+		UnionConstantDomain domain = unionConstantDomain(left, right);
+		if (domain == null) {
+			return null;
+		}
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		values.add(domain.leftValue());
+		values.add(domain.rightValue());
+		if (values.size() != 2) {
+			return null;
+		}
+		String helperName = freshUnionConstantName(left, right, domain.position());
+		BindingSetAssignment assignment = valuesAssignment(helperName, values);
+		StatementPattern generalized = generalizedStatementPattern(left, domain.position(), helperName);
+		if (generalized == null) {
+			return null;
+		}
+		TupleExpr joined = new Join(assignment, generalized);
+		return projectToUnionBindings(joined, union.getBindingNames());
+	}
+
+	static RuleProof unionConstantsToValuesProof(String semanticScope) {
+		return new RuleProof("16", RuleKind.TRANSFORMATION, semanticScope,
+				Set.of("sameTripleShape", "singleConstantPosition", "finiteValuesDomain",
+						"helperProjectionPreservesVisibleVars"),
+				"same-shape UNION branches that differ only by one constant triple position can become a "
+						+ "finite VALUES domain joined with the generalized triple pattern",
+				new RewriteCertificate("16", "union-constant-branches",
+						"values-constant-domain-join", RewriteSafety.all(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+	}
+
+	private static UnionConstantDomain unionConstantDomain(StatementPattern left, StatementPattern right) {
+		Var[] leftVars = { left.getSubjectVar(), left.getPredicateVar(), left.getObjectVar() };
+		Var[] rightVars = { right.getSubjectVar(), right.getPredicateVar(), right.getObjectVar() };
+		int constantPosition = -1;
+		Value leftValue = null;
+		Value rightValue = null;
+		for (int i = 0; i < leftVars.length; i++) {
+			Var leftVar = leftVars[i];
+			Var rightVar = rightVars[i];
+			if (sameUnionVar(leftVar, rightVar)) {
+				continue;
+			}
+			if (!constantUnionDifference(leftVar, rightVar) || constantPosition >= 0) {
+				return null;
+			}
+			constantPosition = i;
+			leftValue = leftVar.getValue();
+			rightValue = rightVar.getValue();
+		}
+		if (constantPosition < 0) {
+			return null;
+		}
+		return new UnionConstantDomain(constantPosition, leftValue, rightValue);
+	}
+
+	private static boolean sameUnionVar(Var left, Var right) {
+		if (left == null || right == null) {
+			return left == right;
+		}
+		if (left.hasValue() || right.hasValue()) {
+			return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
+		}
+		return left.getName() != null && left.getName().equals(right.getName());
+	}
+
+	private static boolean constantUnionDifference(Var left, Var right) {
+		return left != null
+				&& right != null
+				&& left.hasValue()
+				&& right.hasValue()
+				&& !left.getValue().equals(right.getValue());
+	}
+
+	private static String freshUnionConstantName(StatementPattern left, StatementPattern right, int position) {
+		Set<String> names = new LinkedHashSet<>();
+		names.addAll(left.getBindingNames());
+		names.addAll(right.getBindingNames());
+		String base = switch (position) {
+		case 0 -> "_unionSubject";
+		case 1 -> "_unionPredicate";
+		case 2 -> "_unionObject";
+		default -> "_unionConstant";
+		};
+		String candidate = base;
+		int counter = 1;
+		while (names.contains(candidate)) {
+			candidate = base + counter++;
+		}
+		return candidate;
+	}
+
+	private static StatementPattern generalizedStatementPattern(StatementPattern pattern, int position,
+			String helperName) {
+		Var subject = position == 0 ? new Var(helperName) : pattern.getSubjectVar().clone();
+		Var predicate = position == 1 ? new Var(helperName) : pattern.getPredicateVar().clone();
+		Var object = position == 2 ? new Var(helperName) : pattern.getObjectVar().clone();
+		Var context = pattern.getContextVar() == null ? null : pattern.getContextVar().clone();
+		return new StatementPattern(pattern.getScope(), subject, predicate, object, context);
+	}
+
+	private static TupleExpr projectToUnionBindings(TupleExpr tupleExpr, Set<String> bindingNames) {
+		ProjectionElemList projectionElemList = new ProjectionElemList();
+		for (String bindingName : bindingNames) {
+			projectionElemList.addElement(new ProjectionElem(bindingName));
+		}
+		return new Projection(tupleExpr, projectionElemList, false);
 	}
 
 	static Group finiteCodeTypeValuesRewrite(Group group) {
@@ -2000,6 +2207,93 @@ final class LmdbCascadesRuleProvider {
 		return found[0];
 	}
 
+	private static boolean containsFinitePredicateDomainAnchor(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return false;
+		}
+		Set<String> predicateBindings = finiteIriAssignmentBindings(tupleExpr);
+		if (predicateBindings.isEmpty()) {
+			return false;
+		}
+		PredicateBindingVisitor visitor = new PredicateBindingVisitor(predicateBindings);
+		tupleExpr.visit(visitor);
+		return visitor.found;
+	}
+
+	private static BindingSetAssignment predicateDomainFilterValuesAnchor(Filter filter) {
+		if (filter == null || filter.isVariableScopeChange() || filter.getArg() == null) {
+			return null;
+		}
+		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(filter.getCondition());
+		if (anchor == null
+				|| anchor.getBindingNames().isEmpty()
+				|| !filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())
+				|| containsBindingSetAssignment(filter.getArg(), anchor.getBindingNames())) {
+			return null;
+		}
+		Join candidate = new Join(anchor.clone(), filter.getArg().clone());
+		return containsFinitePredicateDomainAnchor(candidate) ? anchor : null;
+	}
+
+	private static RuleProof finitePredicateDomainProof(String semanticScope) {
+		return new RuleProof("15", RuleKind.TRANSFORMATION, semanticScope,
+				Set.of("proofKind=FINITE_VARIABLE_PREDICATE_DOMAIN", "finitePredicateDomain",
+						"predicateValuesAreIris", "predicateBindingPreserved"),
+				"finite predicate variable domain is represented as a VALUES binding joined with the original "
+						+ "variable-predicate pattern",
+				new RewriteCertificate("15", "variable-predicate-finite-filter",
+						"values-predicate-domain-join", RewriteSafety.all(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
+	}
+
+	private static Set<String> finiteIriAssignmentBindings(TupleExpr tupleExpr) {
+		Set<String> bindings = new LinkedHashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				for (String bindingName : node.getBindingNames()) {
+					if (allRowsBindIri(node, bindingName)) {
+						bindings.add(bindingName);
+					}
+				}
+				super.meet(node);
+			}
+		});
+		return bindings;
+	}
+
+	private static boolean allRowsBindIri(BindingSetAssignment assignment, String bindingName) {
+		boolean found = false;
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (!(value instanceof IRI)) {
+				return false;
+			}
+			found = true;
+		}
+		return found;
+	}
+
+	private static final class PredicateBindingVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final Set<String> predicateBindings;
+		private boolean found;
+
+		private PredicateBindingVisitor(Set<String> predicateBindings) {
+			this.predicateBindings = predicateBindings;
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			Var predicateVar = node.getPredicateVar();
+			if (predicateVar != null && !predicateVar.hasValue()
+					&& predicateBindings.contains(predicateVar.getName())) {
+				found = true;
+				return;
+			}
+			super.meet(node);
+		}
+	}
+
 	private static TupleExpr removeUnusedOptionals(TupleExpr tupleExpr, Set<String> liveVars, boolean[] changed) {
 		if (tupleExpr instanceof Filter filter) {
 			Set<String> childLiveVars = new LinkedHashSet<>(liveVars);
@@ -2445,6 +2739,9 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private record FiniteRelation(Set<String> bindingNames, BindingSetAssignment assignment) {
+	}
+
+	private record UnionConstantDomain(int position, Value leftValue, Value rightValue) {
 	}
 
 	private static final class LmdbConnectedJoinOrderingRule extends LmdbRule {

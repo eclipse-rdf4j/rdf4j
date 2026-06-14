@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -58,6 +60,73 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 		assertFalse(containsUnion(tupleExpr), diagnosticPlan);
 		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
 				"rule=lmdb-or-filter-values-rewrite"), diagnosticPlan);
+	}
+
+	@Test
+	void cascadesCertifiesFinitePredicateDomainValuesRewrite() {
+		TupleExpr tupleExpr = optimizeWithCascades(PREFIX + """
+				SELECT ?entity ?p ?value WHERE {
+				  ?entity ?p ?value .
+				  FILTER (?p IN (ex:code, ex:status))
+				}
+				""");
+		String diagnosticPlan = tupleExpr.toString();
+
+		assertBindingSetAssignment(tupleExpr, Set.of("p"), 2);
+		assertFalse(containsListMemberOperator(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs", "rule=15"),
+				diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"proofKind=FINITE_VARIABLE_PREDICATE_DOMAIN"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"preservedMultiplicity=true"), diagnosticPlan);
+	}
+
+	@Test
+	void cascadesRewritesSameShapeConstantPredicateUnionToValues() {
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + """
+				SELECT ?entity ?value WHERE {
+				  { ?entity ex:code ?value }
+				  UNION
+				  { ?entity ex:status ?value }
+				}
+				""", null).getTupleExpr();
+		Union union = firstUnion(tupleExpr);
+		assertNotNull(union, tupleExpr.toString());
+
+		TupleExpr rewritten = LmdbCascadesRuleProvider.unionConstantsToValuesAlternative(union);
+		assertNotNull(rewritten, tupleExpr.toString());
+		String diagnosticPlan = rewritten.toString();
+		String proof = LmdbCascadesRuleProvider.unionConstantsToValuesProof("logical-bag").metricFragment();
+
+		assertBindingSetAssignmentRowCount(rewritten, 2);
+		assertFalse(containsUnion(rewritten), diagnosticPlan);
+		assertTrue(proof.contains("rule=16"), proof);
+		assertTrue(proof.contains("preservedVisibleVars=true"), proof);
+	}
+
+	@Test
+	void sameShapeUnionToValuesPreservesNamedGraphScope() {
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + """
+				SELECT ?g ?entity ?value WHERE {
+				  GRAPH ?g {
+				    { ?entity ex:code ?value }
+				    UNION
+				    { ?entity ex:status ?value }
+				  }
+				}
+				""", null).getTupleExpr();
+		Union union = firstUnion(tupleExpr);
+		assertNotNull(union, tupleExpr.toString());
+
+		TupleExpr rewritten = LmdbCascadesRuleProvider.unionConstantsToValuesAlternative(union);
+		assertNotNull(rewritten, tupleExpr.toString());
+		StatementPattern generalizedPattern = firstStatementPattern(rewritten);
+		assertNotNull(generalizedPattern, rewritten.toString());
+
+		assertEquals(StatementPattern.Scope.NAMED_CONTEXTS, generalizedPattern.getScope(), rewritten.toString());
+		assertNotNull(generalizedPattern.getContextVar(), rewritten.toString());
+		assertEquals("g", generalizedPattern.getContextVar().getName(), rewritten.toString());
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -235,6 +304,16 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 		assertEquals(bindingNames + " rows=" + rowCount, assignments.toString(), tupleExpr.toString());
 	}
 
+	private static void assertBindingSetAssignmentRowCount(TupleExpr tupleExpr, int rowCount) {
+		List<BindingSetAssignment> assignments = bindingSetAssignments(tupleExpr);
+		for (BindingSetAssignment assignment : assignments) {
+			if (bindingSetCount(assignment) == rowCount) {
+				return;
+			}
+		}
+		assertEquals("rows=" + rowCount, assignments.toString(), tupleExpr.toString());
+	}
+
 	private static int bindingSetCount(BindingSetAssignment assignment) {
 		int count = 0;
 		for (BindingSet ignored : assignment.getBindingSets()) {
@@ -278,6 +357,34 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 			@Override
 			public void meet(Union node) {
 				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static Union firstUnion(QueryModelNode queryModelNode) {
+		Union[] found = { null };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Union node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static StatementPattern firstStatementPattern(QueryModelNode queryModelNode) {
+		StatementPattern[] found = { null };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(StatementPattern node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
 			}
 		});
 		return found[0];

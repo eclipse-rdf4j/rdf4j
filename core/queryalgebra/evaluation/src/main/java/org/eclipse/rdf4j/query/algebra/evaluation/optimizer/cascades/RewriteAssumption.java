@@ -13,20 +13,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
+/** Explicit assumption used by a rewrite certificate. */
 @Experimental
-public record RuleContext(Memo memo, CascadesCostModel costModel, CascadesTelemetry telemetry,
-		CascadesPlanner.SearchState searchState, RewriteMetadata rewriteMetadata) {
-
-	public RuleContext {
-		rewriteMetadata = rewriteMetadata == null ? RewriteMetadata.empty() : rewriteMetadata;
-	}
-
-	public RuleContext(Memo memo, CascadesCostModel costModel, CascadesTelemetry telemetry,
-			CascadesPlanner.SearchState searchState) {
-		this(memo, costModel, telemetry, searchState, RewriteMetadata.empty());
-	}
-
-	public BindingUniverse universe() {
-		return memo == null ? BindingUniverse.create() : memo.universe();
-	}
+public enum RewriteAssumption {
+	STANDARD_SPARQL_SEMANTICS,
+	DUPLICATE_INSENSITIVE_CONTEXT,
+	SCHEMA_METADATA_COMPLETE,
+	FEDERATION_ENDPOINT_COMPATIBLE,
+	COMPLETE_GRAPH_UNIVERSE,
+	COMPLETE_PREDICATE_UNIVERSE,
+	MATERIALIZED_CLOSURE_COMPLETE,
+	ENGINE_SPECIFIC_ERROR_SEMANTICS
 }

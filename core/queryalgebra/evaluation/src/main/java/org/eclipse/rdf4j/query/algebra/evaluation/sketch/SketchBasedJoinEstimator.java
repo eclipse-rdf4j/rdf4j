@@ -8050,10 +8050,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
 		double existingCostFinalRows = summaryDoubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
 				finalRows);
+		boolean nonExactZeroWithCostFloor = finalRows == 0.0d && existingCostFinalRows > 0.0d;
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
-				finalRows == 0.0d && existingCostFinalRows > 0.0d ? existingCostFinalRows : finalRows);
+				nonExactZeroWithCostFloor ? existingCostFinalRows : finalRows);
+		if (nonExactZeroWithCostFloor) {
+			summaryDoubleMetrics.compute(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
+					(name, confidence) -> capNonExactZeroConfidence(confidence));
+			summaryDoubleMetrics.compute(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE,
+					(name, confidence) -> capNonExactZeroConfidence(confidence));
+			summaryDoubleMetrics.compute(SketchJoinOrderPlanner.PLANNED_COST_CONFIDENCE,
+					(name, confidence) -> capNonExactZeroConfidence(confidence));
+		}
 		return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), finalRows, plan.getEstimatedTotalWork(),
 				plan.getDiagnostics(), plan.getSummaryStringMetrics(), summaryDoubleMetrics, plan.getSteps());
+	}
+
+	private static double capNonExactZeroConfidence(Double confidence) {
+		if (confidence == null || !Double.isFinite(confidence)) {
+			return 0.25d;
+		}
+		return Math.min(confidence, 0.25d);
 	}
 
 	private JoinOrderPlanner.JoinOrderPlan prependJoinPlannerInputDiagnostics(JoinOrderPlanner.JoinOrderPlan plan,

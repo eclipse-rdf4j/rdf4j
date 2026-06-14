@@ -89,6 +89,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -1644,7 +1647,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					Set.of("rhsFreshAssuredBinding=" + bindingName,
 							"sharedBindings=" + LmdbJoinPlanSupport.describeBindingNames(sharedBindings),
 							"rhsScopeSafe"),
-					"not-bound-filter-over-optional-is-anti-join-for-fresh-assured-rhs-binding");
+					"not-bound-filter-over-optional-is-anti-join-for-fresh-assured-rhs-binding",
+					new RewriteCertificate("25", "leftjoin-not-bound-filter", "difference-anti-join",
+							RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
 			return new NegatedBoundOptionalAlternative(bindingName, new Difference(leftJoin.getLeftArg().clone(),
 					leftJoin.getRightArg().clone()), proof);
 		}

@@ -63,17 +63,29 @@ public final class CascadesPlanner {
 	private final RuleRegistry ruleRegistry;
 	private final CascadesTelemetry telemetry;
 	private final int boundedFrontierLimit;
+	private final RewriteMetadata rewriteMetadata;
 
 	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry) {
 		this(costModel, ruleRegistry, telemetry, DEFAULT_FRONTIER_LIMIT);
 	}
 
 	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
+			RewriteMetadata rewriteMetadata) {
+		this(costModel, ruleRegistry, telemetry, DEFAULT_FRONTIER_LIMIT, rewriteMetadata);
+	}
+
+	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
 			int boundedFrontierLimit) {
+		this(costModel, ruleRegistry, telemetry, boundedFrontierLimit, RewriteMetadata.empty());
+	}
+
+	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
+			int boundedFrontierLimit, RewriteMetadata rewriteMetadata) {
 		this.costModel = costModel;
 		this.ruleRegistry = ruleRegistry == null ? RuleRegistry.standardLogicalRules() : ruleRegistry;
 		this.telemetry = telemetry == null ? CascadesTelemetry.NO_OP : telemetry;
 		this.boundedFrontierLimit = Math.max(1, boundedFrontierLimit);
+		this.rewriteMetadata = rewriteMetadata == null ? RewriteMetadata.empty() : rewriteMetadata;
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal) {
@@ -181,7 +193,7 @@ public final class CascadesPlanner {
 
 	private void seedPhysicalWinners(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
 			boolean optimizeSeededPhysical) {
-		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
+		RuleContext context = new RuleContext(memo, costModel, telemetry, state, rewriteMetadata);
 		List<MemoExpr> snapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
 		for (MemoExpr expression : snapshot) {
 			if (!expression.logical()) {
@@ -298,7 +310,7 @@ public final class CascadesPlanner {
 			state.markApproximate("budget while exploring group " + groupId);
 			return;
 		}
-		RuleContext context = new RuleContext(memo, costModel, telemetry, state);
+		RuleContext context = new RuleContext(memo, costModel, telemetry, state, rewriteMetadata);
 		MemoGroup group = memo.group(groupId);
 		int index = 0;
 		while (index < group.mutableExpressionsView().size()) {

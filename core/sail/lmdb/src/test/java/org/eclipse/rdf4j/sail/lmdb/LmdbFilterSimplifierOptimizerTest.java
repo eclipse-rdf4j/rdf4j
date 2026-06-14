@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -50,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -171,6 +173,8 @@ class LmdbFilterSimplifierOptimizerTest {
 						+ root.getArg()));
 		assertEquals(4, countBindingSets(precomputedFilter),
 				"The rewritten filter should keep both target-specific equality rows and literal fallback rows");
+		assertRewriteCertificate(precomputedFilter, "EQUALITY_DISJUNCTION_TO_VALUES", "11", "true",
+				"STANDARD_SPARQL_SEMANTICS");
 		assertFalse(containsFilter(root.getArg()),
 				"Fully precomputed finite disjunction should remove the runtime filter before planning");
 	}
@@ -194,6 +198,8 @@ class LmdbFilterSimplifierOptimizerTest {
 						+ root.getArg()));
 		assertEquals(4, countBindingSets(precomputedFilter),
 				"The rewritten IN filter should keep both target-specific rows and literal fallback rows");
+		assertRewriteCertificate(precomputedFilter, "FILTER_IN_TO_VALUES", "10", "true",
+				"STANDARD_SPARQL_SEMANTICS");
 		assertFalse(containsFilter(root.getArg()),
 				"Fully precomputed finite IN filter should remove the runtime filter before planning");
 	}
@@ -214,6 +220,45 @@ class LmdbFilterSimplifierOptimizerTest {
 						+ root.getArg()));
 		assertEquals(4, countBindingSets(precomputedFilter),
 				"Finite target/literal equality filters are safe to materialize without predicate guarantees");
+		assertFalse(containsFilter(root.getArg()));
+	}
+
+	@Test
+	void precomputesTupleDisjunctionAsFiniteAnchor() {
+		StatementPattern type = statementPattern("entity", "type", "type");
+		StatementPattern status = statementPattern("entity", "status", "status");
+		Filter filter = new Filter(new Join(type, status),
+				new Or(new And(sameTermLiteral("type", "A"), sameTermLiteral("status", "active")),
+						new And(sameTermLiteral("type", "B"), sameTermLiteral("status", "pending"))));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		BindingSetAssignment tupleValues = findBindingSetAssignmentFor(root.getArg(), "type", "status")
+				.orElseThrow(() -> new AssertionError("Expected tuple-disjunction finite relation: "
+						+ root.getArg()));
+		assertEquals(2, countBindingSets(tupleValues));
+		assertRewriteCertificate(tupleValues, "TUPLE_DISJUNCTION_TO_VALUES", "12", "true",
+				"STANDARD_SPARQL_SEMANTICS");
+		assertFalse(containsFilter(root.getArg()));
+	}
+
+	@Test
+	void precomputesIndependentValuesCorrelationAsFiniteAnchor() {
+		BindingSetAssignment leftValues = values("left", "A", "B", "C");
+		BindingSetAssignment rightValues = values("right", "B", "C", "D");
+		Filter filter = new Filter(new Join(leftValues, rightValues), new SameTerm(new Var("left"),
+				new Var("right")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		BindingSetAssignment correlatedValues = findBindingSetAssignmentFor(root.getArg(), "left", "right")
+				.orElseThrow(() -> new AssertionError("Expected correlated VALUES relation: " + root.getArg()));
+		assertEquals(2, countBindingSets(correlatedValues),
+				"The correlated relation should contain only rows allowed by the original VALUES cartesian product");
+		assertRewriteCertificate(correlatedValues, "CORRELATED_VALUES_CONSTRUCTION", "14", "true",
+				"STANDARD_SPARQL_SEMANTICS");
 		assertFalse(containsFilter(root.getArg()));
 	}
 
@@ -584,6 +629,8 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertTrue(rewriteMetric != null && rewriteMetric.contains("source=filter-simplifier"),
 				String.valueOf(rewriteMetric));
 		assertTrue(rewriteMetric.contains("optDisease"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("rule=24"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("preservedMultiplicity=true"), rewriteMetric);
 	}
 
 	@Test
@@ -699,6 +746,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertTrue(containsStatementPatternWithObject(optimizedJoin.getLeftArg(), "optName"));
 		assertFalse(containsFilter(optimizedJoin));
 		assertFalse(containsExists(optimizedJoin));
+		assertRewriteCertificate(optimizedJoin, "DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER", "23", "false");
 	}
 
 	@Test
@@ -771,6 +819,10 @@ class LmdbFilterSimplifierOptimizerTest {
 
 	private static Compare compareLiteral(String varName, String value) {
 		return new Compare(new Var(varName), new ValueConstant(VF.createLiteral(value)), CompareOp.EQ);
+	}
+
+	private static SameTerm sameTermLiteral(String varName, String value) {
+		return new SameTerm(new Var(varName), new ValueConstant(VF.createLiteral(value)));
 	}
 
 	private static Compare compareValue(String varName, Value value) {
@@ -915,6 +967,25 @@ class LmdbFilterSimplifierOptimizerTest {
 			return left.isPresent() ? left : findBindingSetAssignmentFor(join.getRightArg(), bindingNames);
 		}
 		return Optional.empty();
+	}
+
+	private static void assertRewriteCertificate(TupleExpr tupleExpr, String kind, String ruleId,
+			String preservedMultiplicity) {
+		assertRewriteCertificate(tupleExpr, kind, ruleId, preservedMultiplicity, "DUPLICATE_INSENSITIVE_CONTEXT");
+	}
+
+	private static void assertRewriteCertificate(TupleExpr tupleExpr, String kind, String ruleId,
+			String preservedMultiplicity, String requiredAssumption) {
+		String proof = tupleExpr.getStringMetricPlanned("optimizer.rewriteProof");
+		assertNotNull(proof);
+		assertTrue(proof.contains("proofKind=" + kind), proof);
+		assertTrue(proof.contains("rule=" + ruleId), proof);
+		assertTrue(proof.contains("preservedVisibleVars=true"), proof);
+		assertTrue(proof.contains("preservedMultiplicity=" + preservedMultiplicity), proof);
+		assertTrue(proof.contains("preservedOrder=true"), proof);
+		assertTrue(proof.contains("preservedErrors=true"), proof);
+		assertTrue(proof.contains("preservedGraphScope=true"), proof);
+		assertTrue(proof.contains(requiredAssumption), proof);
 	}
 
 	private static int countBindingSets(BindingSetAssignment assignment) {
