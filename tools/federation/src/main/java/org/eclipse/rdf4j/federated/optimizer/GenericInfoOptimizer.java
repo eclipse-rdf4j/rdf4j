@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -128,8 +130,16 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		/*
 		 * Optimization task:
 		 *
-		 * Collect all join arguments recursively and create the NJoin structure for easier join order optimization
+		 * - Replace joins with a TripleRef to FedXTripleTermStatementPattern (recursively) - Collect all join arguments
+		 * recursively and create the NJoin structure for easier join order optimization
 		 */
+
+		var newNode = OptimizerUtil.flattenTripleRefJoins(node, queryInfo);
+		if (!(newNode instanceof Join)) {
+			node.replaceWith(newNode);
+			newNode.visit(this);
+			return;
+		}
 
 		NJoin newJoin = OptimizerUtil.flattenJoin(node, queryInfo);
 		newJoin.visitChildren(this);
@@ -187,6 +197,16 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		newNode.visitChildren(this);
 
 		node.replaceWith(newNode);
+	}
+
+	@Override
+	public void meetOther(QueryModelNode node) throws OptimizationException {
+
+		if (node instanceof TripleRefStatementPattern st) {
+			this.stmts.add(st);
+		}
+
+		super.meetOther(node);
 	}
 
 	public boolean hasService() {
