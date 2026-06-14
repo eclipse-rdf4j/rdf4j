@@ -250,7 +250,7 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 	}
 
 	private void handleStatementConvertTripleTerms(Statement st) {
-		Statements.convertRDF12ReificationToRDF11(st, this::consumeStatement);
+		Statements.convertRDF12ToStandardReification(st, this::consumeStatement);
 	}
 
 	private void handleStatementEncodeTripleTerms(Statement st) {
