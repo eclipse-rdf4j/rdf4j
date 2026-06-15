@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.federated.optimizer.LimitOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.ServiceOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.SourceSelection;
 import org.eclipse.rdf4j.federated.optimizer.StatementGroupAndJoinOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.TripleRefJoinOptimizer;
 import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -259,6 +260,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		optimizeExclusiveExpressions(query, queryInfo, info);
+		
+		// optimize triple ref
+		// TODO conditionally
+		new TripleRefJoinOptimizer(queryInfo).optimize(query);
 
 		// optimize statement groups and join order
 		optimizeJoinOrder(query, queryInfo, info);

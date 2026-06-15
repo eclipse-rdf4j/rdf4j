@@ -114,6 +114,32 @@ public class RDF12Tests extends SPARQLBaseTest {
 			Assertions.assertEquals("Designer", res.get(0).getValue("jobTitle").stringValue());
 		}
 	}
+	
+	@Test
+	public void testRetrieval_sparql1_2_join_multiSource() throws Exception {
+		
+		fedxRule.enableDebug();
+
+		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
+
+		var fedxRepo = fedxRule.getRepository();
+
+		try (var conn = fedxRepo.getConnection()) {
+			var tq = conn.prepareTupleQuery(
+					"""
+							PREFIX ex:    <http://www.example.org/>
+							PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+							SELECT * WHERE {
+							   ?node rdf:reifies <<( ex:bob ex:jobTitle ?jobTitle )>> ;
+							      ex:accordingTo ?title .
+							}
+							""");
+			var res = Iterations.asList(tq.evaluate());
+
+			Assertions.assertEquals(1, res.size());
+			Assertions.assertEquals("Designer", res.get(0).getValue("jobTitle").stringValue());
+		}
+	}
 
 	// real federated queries
 

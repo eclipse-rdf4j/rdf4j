@@ -62,6 +62,13 @@ public class TripleRefStatementPattern extends FedXStatementPattern {
 		}
 	}
 
+	public StatementSource getStatementSource() {
+		if (statementSources.size() != 1) {
+			throw new IllegalStateException("Invalid state in source selection of triple ref statement pattern");
+		}
+		return statementSources.get(0);
+	}
+
 	public TripleRef getTripleRef() {
 		return tripleRef;
 	}
