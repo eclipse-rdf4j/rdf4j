@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -260,10 +261,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		optimizeExclusiveExpressions(query, queryInfo, info);
-		
+
 		// optimize triple ref
-		// TODO conditionally
-		new TripleRefJoinOptimizer(queryInfo).optimize(query);
+		if (info.hasTripleRefExpr()) {
+			new TripleRefJoinOptimizer(queryInfo).optimize(query);
+		}
 
 		// optimize statement groups and join order
 		optimizeJoinOrder(query, queryInfo, info);
@@ -493,6 +495,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			return evaluateService((FedXService) expr, bindings);
 		}
 
+		if (expr instanceof TripleRefJoinGroup tripleRefJoin) {
+			return evaluateTripleRefJoinGroup(tripleRefJoin, bindings);
+		}
+
 		if (expr instanceof FedXArbitraryLengthPath) {
 			return evaluateArbitrayLengthPath((FedXArbitraryLengthPath) expr, bindings);
 		}
@@ -544,6 +550,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		if (expr instanceof FedXService) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof TripleRefJoinGroup) {
 			return QueryEvaluationStep.minimal(this, expr);
 		}
 
@@ -1164,6 +1174,29 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			} else {
 				result = new BindLeftJoinIteration(result, bindings);
 			}
+
+			return result;
+		} catch (Throwable t) {
+			if (result != null) {
+				result.close();
+			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			throw ExceptionUtil.toQueryEvaluationException(t);
+		}
+	}
+
+	public CloseableIteration<BindingSet> evaluateTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup,
+			BindingSet bindings) {
+
+		String preparedQuery = QueryStringUtil.selectQueryStringTripleRefJoinGroup(tripleRefJoinGroup, bindings,
+				tripleRefJoinGroup.getQueryInfo().getDataset());
+
+		CloseableIteration<BindingSet> result = null;
+		try {
+			result = evaluateAtStatementSources(preparedQuery, tripleRefJoinGroup.getStatementSources(),
+					tripleRefJoinGroup.getQueryInfo());
 
 			return result;
 		} catch (Throwable t) {

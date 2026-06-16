@@ -10,7 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.optimizer;
 
+import static org.mockito.Mockito.when;
+
 import org.eclipse.rdf4j.federated.FedXBaseTest;
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
@@ -19,6 +22,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -29,6 +33,15 @@ public class GenericInfoOptimizerTest extends FedXBaseTest {
 
 	@Mock
 	private QueryInfo queryInfo;
+
+	@Mock
+	private FederationContext federationContext;
+
+	@BeforeEach
+	public void setUp() {
+		when(queryInfo.getFederationContext()).thenReturn(federationContext);
+		when(federationContext.getConfig()).thenReturn(new FedXConfig().withEnableTripleRefSupport(true));
+	}
 
 	/**
 	 * Verifies that a query containing a reification triple pattern (RDF 1.2 style) is optimized into a

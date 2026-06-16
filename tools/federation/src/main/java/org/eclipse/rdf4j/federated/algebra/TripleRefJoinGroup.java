@@ -24,18 +24,18 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 
 	private final TripleRefStatementPattern tripleRef;
 	private final List<StatementPattern> stmts;
-	private final StatementSource statementSource;
+	private final List<StatementSource> statementSources;
 	private final QueryInfo queryInfo;
 
 	private Set<String> assuredBindingNames;
 	private List<String> freeVars;
 
 	public TripleRefJoinGroup(TripleRefStatementPattern tripleRef, List<StatementPattern> stmts,
-			StatementSource statementSource, QueryInfo queryInfo) {
+			List<StatementSource> statementSources, QueryInfo queryInfo) {
 		super();
 		this.tripleRef = tripleRef;
 		this.stmts = stmts;
-		this.statementSource = statementSource;
+		this.statementSources = statementSources;
 		this.queryInfo = queryInfo;
 	}
 
@@ -54,8 +54,16 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 		return assuredBindingNames;
 	}
 
-	public StatementSource getSource() {
-		return statementSource;
+	public List<StatementSource> getStatementSources() {
+		return statementSources;
+	}
+
+	public TripleRefStatementPattern getTripleRefStatementPattern() {
+		return this.tripleRef;
+	}
+
+	public List<StatementPattern> getStatementPatterns() {
+		return this.stmts;
 	}
 
 	@Override
@@ -66,7 +74,9 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 
-		statementSource.visit(visitor);
+		for (var source : statementSources) {
+			source.visit(visitor);
+		}
 
 		tripleRef.visit(visitor);
 

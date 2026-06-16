@@ -19,9 +19,24 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.util.Values;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class RDF12Tests extends SPARQLBaseTest {
+
+	// TODO add comparison for query plans
+
+	@BeforeEach
+	public void assumeSparql() {
+		assumeSparqlEndpoint();
+	}
+
+	@Override
+	protected void initFedXConfig() {
+		super.initFedXConfig();
+
+		fedxRule.withConfiguration(config -> config.withEnableTripleRefSupport(true));
+	}
 
 	@Test
 	public void testRetrieval_openVar() throws Exception {
@@ -114,11 +129,9 @@ public class RDF12Tests extends SPARQLBaseTest {
 			Assertions.assertEquals("Designer", res.get(0).getValue("jobTitle").stringValue());
 		}
 	}
-	
+
 	@Test
-	public void testRetrieval_sparql1_2_join_multiSource() throws Exception {
-		
-		fedxRule.enableDebug();
+	public void testRetrieval_sparql1_2_join_singleSourceJoin() throws Exception {
 
 		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
 
@@ -131,13 +144,103 @@ public class RDF12Tests extends SPARQLBaseTest {
 							PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 							SELECT * WHERE {
 							   ?node rdf:reifies <<( ex:bob ex:jobTitle ?jobTitle )>> ;
-							      ex:accordingTo ?title .
+							      ex:accordingTo ?titleSource .
 							}
 							""");
 			var res = Iterations.asList(tq.evaluate());
 
 			Assertions.assertEquals(1, res.size());
 			Assertions.assertEquals("Designer", res.get(0).getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceBobTitle"), res.get(0).getValue("titleSource"));
+		}
+	}
+
+	@Test
+	public void testRetrieval_sparql1_2_variant_singleSourceJoin() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
+
+		var fedxRepo = fedxRule.getRepository();
+
+		try (var conn = fedxRepo.getConnection()) {
+			var tq = conn.prepareTupleQuery(
+					"""
+							PREFIX ex:    <http://www.example.org/>
+							PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+							SELECT * WHERE {
+							   << ex:bob ex:jobTitle ?jobTitle >> ex:accordingTo ?titleSource
+							}
+							""");
+			var res = Iterations.asList(tq.evaluate());
+
+			Assertions.assertEquals(1, res.size());
+			Assertions.assertEquals("Designer", res.get(0).getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceBobTitle"), res.get(0).getValue("titleSource"));
+		}
+	}
+
+	@Test
+	public void testRetrieval_sparql1_2_join_multiSourceJoin() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
+
+		var fedxRepo = fedxRule.getRepository();
+
+		try (var conn = fedxRepo.getConnection()) {
+			var tq = conn.prepareTupleQuery(
+					"""
+							PREFIX ex:    <http://www.example.org/>
+							PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+							SELECT * WHERE {
+							   ?node rdf:reifies <<( ?subject ex:jobTitle ?jobTitle )>> ;
+							      ex:accordingTo ?titleSource .
+							}
+							""");
+			var res = Iterations.asList(tq.evaluate());
+
+			Assertions.assertEquals(2, res.size());
+			var bobBindingSet = res.stream().filter(bs -> bs.getValue("subject").equals(ex("bob"))).findFirst().get();
+			Assertions.assertEquals("Designer", bobBindingSet.getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceBobTitle"), bobBindingSet.getValue("titleSource"));
+
+			var aliceBindingSet = res.stream()
+					.filter(bs -> bs.getValue("subject").equals(ex("alice")))
+					.findFirst()
+					.get();
+			Assertions.assertEquals("HR Manager", aliceBindingSet.getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceAliceTitle"), aliceBindingSet.getValue("titleSource"));
+		}
+	}
+
+	@Test
+	public void testRetrieval_sparql1_2_variant_multiSourceJoin() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
+
+		var fedxRepo = fedxRule.getRepository();
+
+		try (var conn = fedxRepo.getConnection()) {
+			var tq = conn.prepareTupleQuery(
+					"""
+							PREFIX ex:    <http://www.example.org/>
+							PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+							SELECT * WHERE {
+							   << ?subject ex:jobTitle ?jobTitle >> ex:accordingTo ?titleSource
+							}
+							""");
+			var res = Iterations.asList(tq.evaluate());
+
+			Assertions.assertEquals(2, res.size());
+			var bobBindingSet = res.stream().filter(bs -> bs.getValue("subject").equals(ex("bob"))).findFirst().get();
+			Assertions.assertEquals("Designer", bobBindingSet.getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceBobTitle"), bobBindingSet.getValue("titleSource"));
+
+			var aliceBindingSet = res.stream()
+					.filter(bs -> bs.getValue("subject").equals(ex("alice")))
+					.findFirst()
+					.get();
+			Assertions.assertEquals("HR Manager", aliceBindingSet.getValue("jobTitle").stringValue());
+			Assertions.assertEquals(ex("sourceAliceTitle"), aliceBindingSet.getValue("titleSource"));
 		}
 	}
 

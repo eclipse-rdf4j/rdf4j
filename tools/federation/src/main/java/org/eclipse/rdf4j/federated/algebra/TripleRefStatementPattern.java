@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -62,11 +64,8 @@ public class TripleRefStatementPattern extends FedXStatementPattern {
 		}
 	}
 
-	public StatementSource getStatementSource() {
-		if (statementSources.size() != 1) {
-			throw new IllegalStateException("Invalid state in source selection of triple ref statement pattern");
-		}
-		return statementSources.get(0);
+	public List<StatementSource> getStatementSources() {
+		return statementSources;
 	}
 
 	public TripleRef getTripleRef() {

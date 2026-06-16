@@ -50,6 +50,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 	protected boolean hasFilter = false;
 	protected boolean hasUnion = false;
 	protected boolean hasPathExpr = false;
+	protected boolean hasTripleRefExpr = false;
 	protected List<Service> services = null;
 	protected long limit = -1; // set to a positive number if the main query has a limit
 	protected List<StatementPattern> stmts = new ArrayList<>();
@@ -70,6 +71,10 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 
 	public boolean hasUnion() {
 		return hasUnion;
+	}
+
+	public boolean hasTripleRefExpr() {
+		return hasTripleRefExpr;
 	}
 
 	public boolean hasPathExpression() {
@@ -134,11 +139,14 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		 * recursively and create the NJoin structure for easier join order optimization
 		 */
 
-		var newNode = OptimizerUtil.flattenTripleRefJoins(node, queryInfo);
-		if (!(newNode instanceof Join)) {
-			node.replaceWith(newNode);
-			newNode.visit(this);
-			return;
+		// conditionally based on config support RDF 1.2 triple terms
+		if (queryInfo.getFederationContext().getConfig().isEnableTripleRefSupport()) {
+			var newNode = OptimizerUtil.flattenTripleRefJoins(node, queryInfo);
+			if (!(newNode instanceof Join)) {
+				node.replaceWith(newNode);
+				newNode.visit(this);
+				return;
+			}
 		}
 
 		NJoin newJoin = OptimizerUtil.flattenJoin(node, queryInfo);
@@ -203,6 +211,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 	public void meetOther(QueryModelNode node) throws OptimizationException {
 
 		if (node instanceof TripleRefStatementPattern st) {
+			hasTripleRefExpr = true;
 			this.stmts.add(st);
 		}
 

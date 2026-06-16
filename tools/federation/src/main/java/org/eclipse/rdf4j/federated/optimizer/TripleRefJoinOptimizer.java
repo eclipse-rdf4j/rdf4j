@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * The optimizer visits every {@link NJoin} in the query tree (depth-first) and looks for pairs of a
  * {@link TripleRefStatementPattern} and one or more plain {@link StatementPattern}s that share the same unbound subject
  * variable. Matched patterns are collapsed into a single {@link TripleRefJoinGroup} that can be sent as one request to
- * the owning endpoint.
+ * the owning endpoints.
  * </p>
  *
  * @author Andreas Schwarte
@@ -40,7 +40,6 @@ public class TripleRefJoinOptimizer extends AbstractSimpleQueryModelVisitor<Opti
 	private static final Logger log = LoggerFactory.getLogger(TripleRefJoinOptimizer.class);
 
 	protected final QueryInfo queryInfo;
-
 
 	public TripleRefJoinOptimizer(QueryInfo queryInfo) {
 		super(true);
@@ -123,8 +122,7 @@ public class TripleRefJoinOptimizer extends AbstractSimpleQueryModelVisitor<Opti
 			}
 
 			String varName = tref.getSubjectVar().getName();
-			// TODO support multiple sources
-			StatementSource trefSource = tref.getStatementSource();
+			List<StatementSource> trefSources = tref.getStatementSources();
 
 			List<StatementPattern> group = new ArrayList<>();
 			// find StatementPatterns (but not further TripleRefStatementPatterns) sharing the subject variable
@@ -138,7 +136,7 @@ public class TripleRefJoinOptimizer extends AbstractSimpleQueryModelVisitor<Opti
 			}
 
 			if (!group.isEmpty()) {
-				TripleRefJoinGroup trGroup = new TripleRefJoinGroup(tref, group, trefSource, queryInfo);
+				TripleRefJoinGroup trGroup = new TripleRefJoinGroup(tref, group, trefSources, queryInfo);
 				argsCopy.remove(tref);
 				argsCopy.removeAll(group);
 				newArgs.add(trGroup);

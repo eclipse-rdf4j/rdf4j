@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
@@ -472,6 +473,34 @@ public class QueryStringUtil {
 		return res.toString();
 	}
 
+	public static String selectQueryStringTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup, BindingSet bindings,
+			Dataset dataset) {
+
+		Set<String> varNames = new HashSet<>();
+
+		StringBuilder body = new StringBuilder();
+		body.append(constructStatement(tripleRefJoinGroup.getTripleRefStatementPattern(), varNames, bindings));
+		for (var stmt : tripleRefJoinGroup.getStatementPatterns()) {
+			body.append(constructStatement(stmt, varNames, bindings));
+		}
+
+		StringBuilder res = new StringBuilder();
+
+		res.append("SELECT ");
+
+		for (String var : varNames) {
+			res.append(" ?").append(var);
+		}
+
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
+
+		res.append(body).append(" }");
+
+		return res.toString();
+	}
+
 	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
 			List<BindingSet> bindings) {
 
@@ -726,10 +755,10 @@ public class QueryStringUtil {
 			BindingSet bindings) {
 
 		sb.append("<<( ");
-		appendVar(sb, tripleRef.getSubjectVar(), varNames, bindings);
-		appendVar(sb, tripleRef.getPredicateVar(), varNames, bindings);
-		appendVar(sb, tripleRef.getObjectVar(), varNames, bindings);
-		sb.append(" )>> ");
+		appendVar(sb, tripleRef.getSubjectVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getPredicateVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getObjectVar(), varNames, bindings).append(" ");
+		sb.append(" )>> . ");
 		return sb;
 	}
 
