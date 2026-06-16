@@ -1,5 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py AASQueriesBenchmarkTest#cascadesQuery3StartsFromSelectiveRatedPowerBranch --module core/sail/lmdb --retain-logs
-Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.benchmark.AASQueriesBenchmarkTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.benchmark.AASQueriesBenchmarkTest.txt
-Summary: tests=1, failures=1, errors=0, skipped=0, time=5.881s
-Failure: org.eclipse.rdf4j.sail.lmdb.benchmark.AASQueriesBenchmarkTest.cascadesQuery3StartsFromSelectiveRatedPowerBranch: failure: query3 should restrict the component-property branch before walking relationship edges: 12:27:11,558 |-INFO in ch.qos.logback.classic.LoggerContext[default] ...
