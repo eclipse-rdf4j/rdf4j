@@ -31,7 +31,9 @@ assert_not_contains() {
 INPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-input.XXXXXX")"
 FIRST_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-first.XXXXXX")"
 SECOND_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-second.XXXXXX")"
-trap 'rm -f "${INPUT}" "${FIRST_OUTPUT}" "${SECOND_OUTPUT}"' EXIT
+CAPTURE_INPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-capture-input.XXXXXX")"
+CAPTURE_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-capture-output.XXXXXX")"
+trap 'rm -f "${INPUT}" "${FIRST_OUTPUT}" "${SECOND_OUTPUT}" "${CAPTURE_INPUT}" "${CAPTURE_OUTPUT}"' EXIT
 
 cat >"${INPUT}" <<'FIXTURE'
 ```
@@ -98,3 +100,25 @@ assert_contains "${CLEANED}" "62.319 +/- 9.381 ms/op [Average]" \
 if ! cmp -s "${FIRST_OUTPUT}" "${SECOND_OUTPUT}"; then
 	fail "clean should be idempotent"
 fi
+
+cat >"${CAPTURE_INPUT}" <<'FIXTURE'
+# Parameters: (sketchEstimatorEnabled = true, themeName = SPARSE, z_queryIndex = 7)
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  2293.608 +/- 76.134 ms/op [Average]
+
+Benchmark                         (sketchEstimatorEnabled)  (themeName)  (z_queryIndex)  Mode  Cnt     Score    Error  Units
+ThemeQueryBenchmark.executeQuery                      true       SPARSE               7  avgt    5  2293.608 +/- 76.134  ms/op
+ThemeQueryBenchmark.executeQuery                      true       SPARSE               8  avgt    5  1362.811 +/- 29.739  ms/op
+FIXTURE
+
+bash "${RESULTS_SCRIPT}" capture --output "${CAPTURE_OUTPUT}" "${CAPTURE_INPUT}"
+CAPTURED="$(cat "${CAPTURE_OUTPUT}")"
+
+assert_contains "${CAPTURED}" "SPARSE" \
+	"capture should preserve theme/query columns when an extra JMH parameter is present"
+assert_contains "${CAPTURED}" "               7  avgt" \
+	"capture should preserve query index 7 when an extra JMH parameter is present"
+assert_contains "${CAPTURED}" "               8  avgt" \
+	"capture should preserve query index 8 when an extra JMH parameter is present"
+assert_not_contains "${CAPTURED}" "ThemeQueryBenchmark.executeQuery                                       avgt" \
+	"capture should not synthesize blank theme/query rows"

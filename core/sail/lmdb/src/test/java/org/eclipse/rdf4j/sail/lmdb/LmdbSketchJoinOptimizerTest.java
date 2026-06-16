@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -22,13 +23,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -38,7 +44,11 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -49,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -126,6 +137,63 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void distinctRequirementStopsAtServiceJoinBarrier() {
+		StatementPattern local = statementPattern("s", "p", "o");
+		StatementPattern remotePattern = statementPattern("p", "x", "y");
+		Service service = new Service(Var.of("serviceRef", VF.createIRI("urn:service")), remotePattern,
+				"SERVICE <urn:service> { ?p ?x ?y }", Map.of(), null, false);
+		QueryRoot root = new QueryRoot(new Distinct(projection(new Join(local, service), "p")));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertNull(local.getStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS),
+				"SERVICE is a scope/side-effect barrier for DISTINCT cursor skip");
+		assertNull(local.getStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT),
+				"SERVICE is a scope/side-effect barrier for DISTINCT cursor skip proof");
+	}
+
+	@Test
+	void canForceRightDeepJoinTreeForDiagnostics() {
+		BindingSetAssignment boundA = values("a", "user-7", "user-8");
+		BindingSetAssignment boundB = values("b", "user-7", "user-8");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		QueryRoot root = new QueryRoot(new Join(boundA, new Join(boundB, new Join(aFollowsB, bFollowsC))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundA, boundB, aFollowsB, bFollowsC));
+		withJoinTreeShape("right-deep",
+				() -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join finalJoin = assertInstanceOf(Join.class, root.getArg());
+		assertEquals(boundA, finalJoin.getLeftArg());
+		Join secondJoin = assertInstanceOf(Join.class, finalJoin.getRightArg());
+		assertEquals(boundB, secondJoin.getLeftArg());
+		Join thirdJoin = assertInstanceOf(Join.class, secondJoin.getRightArg());
+		assertEquals(aFollowsB, thirdJoin.getLeftArg());
+		assertEquals(bFollowsC, thirdJoin.getRightArg());
+		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void canForceBushyJoinTreeForDiagnostics() {
+		BindingSetAssignment boundA = values("a", "user-7", "user-8");
+		BindingSetAssignment boundB = values("b", "user-7", "user-8");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		QueryRoot root = new QueryRoot(new Join(boundA, new Join(boundB, new Join(aFollowsB, bFollowsC))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundA, boundB, aFollowsB, bFollowsC));
+		withJoinTreeShape("bushy", () -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join finalJoin = assertInstanceOf(Join.class, root.getArg());
+		Join leftJoin = assertInstanceOf(Join.class, finalJoin.getLeftArg());
+		assertEquals(boundA, leftJoin.getLeftArg());
+		assertEquals(boundB, leftJoin.getRightArg());
+		Join rightJoin = assertInstanceOf(Join.class, finalJoin.getRightArg());
+		assertEquals(aFollowsB, rightJoin.getLeftArg());
+		assertEquals(bFollowsC, rightJoin.getRightArg());
+		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
 	void finiteAnchorMaterializationDoesNotReplanSyntheticJoinsForCardinality() {
 		BindingSetAssignment boundDisease = values("disease", "disease-0", "disease-1");
 		StatementPattern studiesDisease = statementPattern("trial", "studiesDisease", "disease");
@@ -138,13 +206,136 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
 
-		assertEquals(0, statistics.planningAttempts);
+		assertEquals(1, statistics.planningAttempts,
+				"The optimizer may ask the join-order planner for the full segment before preserving the local order");
 		assertEquals(0, statistics.joinCardinalityRequests);
 		List<TupleExpr> orderedArgs = joinArgs(root.getArg());
 		assertEquals(boundDisease, orderedArgs.get(0));
 		assertEquals(studiesDisease, orderedArgs.get(1));
 		assertEquals(5, orderedArgs.size());
 		assertTrue(orderedArgs.containsAll(List.of(boundDisease, studiesDisease, trialType, hasArm, armDrug)));
+	}
+
+	@Test
+	void guaranteeAnalysisReusesPredicateDomainsPerSegment() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern related = statementPattern("person", "related", "other");
+		DeferredFilter filter = new DeferredFilter(and(equal("name", "target"), equal("name", "target")),
+				Set.of("name", "target"), Set.of("name", "target"), JoinOrderPlanner.FILTER_COST_CHEAP, 0, name,
+				Set.of(name), null);
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		GuaranteePlanOptionProvider.analyze(List.of(targets, name, related), List.of(filter), statistics);
+
+		assertEquals(1, statistics.knownDomainLookups(VF.createIRI("urn:name")),
+				"Guarantee option analysis should reuse predicate-domain results within one segment");
+	}
+
+	@Test
+	void guaranteeOptionPlanningReusesFixedCandidateCosting() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern related = statementPattern("person", "related", "other");
+		QueryRoot root = new QueryRoot(new Filter(new Join(targets, new Join(name, related)),
+				equal("name", "target")));
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(1, statistics.fixedOrderEstimates,
+				"Fixed guarantee candidates should be costed once and reused during fallback planning");
+	}
+
+	@Test
+	void highFanoutGeneratedFiniteAnchorDoesNotPreselectByDiscountedAssignmentWork() {
+		BindingSetAssignment threshold = values("threshold", "3");
+		StatementPattern nodeType = statementPattern("node", "type", "nodeType");
+		StatementPattern nodeWeight = statementPattern("node", "weight", "w");
+		StatementPattern connectsTo = statementPattern("node", "connectsTo", "n2");
+		StatementPattern neighborWeight = statementPattern("n2", "weight", "w2");
+		Filter lowNeighborFilter = new Filter(new Join(connectsTo, neighborWeight),
+				new Compare(new Var("w2"), new Var("threshold"), Compare.CompareOp.LT));
+		ListMemberOperator weightFilter = new ListMemberOperator();
+		weightFilter.addArgument(new Var("w"));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(1)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(2)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(3)));
+		weightFilter.addArgument(new ValueConstant(VF.createLiteral(4)));
+		QueryRoot root = new QueryRoot(new Filter(new Join(threshold, new Join(nodeType, nodeWeight)),
+				and(new Not(new Exists(lowNeighborFilter)), weightFilter)));
+
+		HighFanoutGeneratedAnchorPlanningStatistics statistics = new HighFanoutGeneratedAnchorPlanningStatistics();
+		DeferredFilter deferredWeightFilter = new DeferredFilter(weightFilter, Set.of("w"),
+				JoinOrderPlanner.FILTER_COST_CHEAP,
+				0, nodeWeight, Set.of(nodeWeight), null);
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(
+				List.of(threshold, nodeType, nodeWeight), List.of(deferredWeightFilter), statistics);
+		assertEquals(List.of("finite-anchor:w"), analysis.finiteAnchorOptions()
+				.stream()
+				.map(GuaranteePlanOptionProvider.PlanOption::name)
+				.toList());
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertFalse(containsBindingSetAssignment(root.getArg(), "w"),
+				"High-fanout generated filter anchors must not be preselected just because planning-time "
+						+ "assignment work is discounted: " + root.getArg());
+		assertTrue(containsSmallLiteralFilter(root.getArg(), "w"),
+				"The high-fanout weight filter should remain a runtime filter so the anti-exists guard can run "
+						+ "before weight fanout: " + root.getArg());
+	}
+
+	@Test
+	void materializedFiniteAnchorRowsStayLazyDuringGuaranteeAnalysis() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		DeferredFilter filter = new DeferredFilter(equal("name", "target"), Set.of("name", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, name, Set.of(name), null);
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets, name),
+				List.of(filter), statistics);
+
+		BindingSetAssignment materializedAnchor = analysis.finiteAnchorOptions()
+				.getFirst()
+				.factors()
+				.stream()
+				.filter(BindingSetAssignment.class::isInstance)
+				.map(BindingSetAssignment.class::cast)
+				.filter(assignment -> assignment.getBindingNames().containsAll(Set.of("name", "target")))
+				.findFirst()
+				.orElseThrow();
+		assertFalse(materializedAnchor.getBindingSets() instanceof List,
+				"Candidate analysis should not preallocate materialized finite-anchor rows");
+	}
+
+	@Test
+	void materializedFiniteAnchorUsesSparqlValueEqualityForNumericCompare() {
+		BindingSetAssignment targets = values("target", VF.createLiteral("7", XSD.INTEGER));
+		StatementPattern name = statementPattern("person", "name", "name");
+		DeferredFilter filter = new DeferredFilter(equal("name", "target"), Set.of("name", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, name, Set.of(name), null);
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets, name),
+				List.of(filter), new CanonicalIntObjectDomainStatistics());
+
+		BindingSetAssignment materializedAnchor = analysis.finiteAnchorOptions()
+				.getFirst()
+				.factors()
+				.stream()
+				.filter(BindingSetAssignment.class::isInstance)
+				.map(BindingSetAssignment.class::cast)
+				.filter(assignment -> assignment.getBindingNames().containsAll(Set.of("name", "target")))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"Numeric SPARQL value equality should produce a materialized equality assignment: "
+								+ analysis.finiteAnchorOptions()));
+		List<BindingSet> rows = new ArrayList<>();
+		materializedAnchor.getBindingSets().forEach(rows::add);
+		assertEquals(1, rows.size(),
+				"SPARQL numeric equality should retain equal values with different integer datatypes");
+		assertEquals(VF.createLiteral("7", XSD.INT), rows.getFirst().getValue("name"));
+		assertEquals(VF.createLiteral("7", XSD.INTEGER), rows.getFirst().getValue("target"));
 	}
 
 	@Test
@@ -179,7 +370,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsVariableVariableOptionalCompareAsLeftJoin() {
+	void rewritesVariableVariableOptionalCompareWhenAliasIsNullRejecting() {
 		StatementPattern section = statementPattern("section", "type", "sectionType");
 		StatementPattern track = statementPattern("section", "hasTrack", "track");
 		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
@@ -190,8 +381,10 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertInstanceOf(Join.class, optimizedFilter.getArg());
+		assertFalse(containsLeftJoin(root.getArg()));
+		String rewriteMetric = optimizedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric.contains("optOp"), rewriteMetric);
 	}
 
 	@Test
@@ -231,7 +424,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsOptionalCompareAgainstConstantWhenFilterUsesOptionalAlias() {
+	void rewritesOptionalCompareAgainstConstantWhenFilterUsesOptionalAlias() {
 		StatementPattern node = statementPattern("node", "type", "nodeType");
 		Extension optional = new Extension(statementPattern("node", "weight", "w"), new ExtensionElem(new Var("w"),
 				"optWeight"));
@@ -242,8 +435,11 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertInstanceOf(Join.class, optimizedFilter.getArg());
+		assertFalse(containsLeftJoin(root.getArg()));
+		String rewriteMetric = optimizedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
+		assertTrue(rewriteMetric.contains("source=sketch-join"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("optWeight"), rewriteMetric);
 	}
 
 	@Test
@@ -301,7 +497,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void rewritesNoNewBindingExistsProbeAboveOptionalFilterToJoinFactor() {
+	void rewritesNoNewBindingExistsProbeAboveNullRejectingOptionalAliasFilterToJoinFactor() {
 		StatementPattern sectionType = statementPattern("section", "type", "sectionType");
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
@@ -318,7 +514,7 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		assertTrue(!containsExistsFilter(root.getArg()));
-		assertTrue(containsLeftJoin(root.getArg()));
+		assertFalse(containsLeftJoin(root.getArg()));
 		assertTrue(joinArgs(root.getArg()).contains(trackType));
 	}
 
@@ -437,7 +633,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
-	void keepsUnionIndependentFiniteSuffixAfterScopedUnion() {
+	void duplicatesConnectedFiniteSuffixBeforeScopedUnionBranches() {
 		BindingSetAssignment users = values("u", "user7", "user8");
 		BindingSetAssignment names = values("optName", "user7", "user8");
 		StatementPattern nameLookup = statementPattern("u", "name", "optName");
@@ -451,16 +647,87 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
-		List<TupleExpr> args = joinArgs(root.getArg());
-		assertEquals(3, args.size());
-		Union distributedUnion = assertInstanceOf(Union.class, args.getFirst());
+		Union distributedUnion = assertInstanceOf(Union.class, root.getArg());
 		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
 		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
-		assertFalse(containsBindingSetAssignment(distributedUnion, "optName"));
-		assertFalse(statementPatterns(distributedUnion).stream()
-				.anyMatch(pattern -> "optName".equals(pattern.getObjectVar().getName())));
-		assertTrue(containsBindingSetAssignment(args.get(1), "optName"));
-		assertEquals("optName", assertInstanceOf(StatementPattern.class, args.get(2)).getObjectVar().getName());
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "optName"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "optName"));
+		assertTrue(containsNameLookup(distributedUnion.getLeftArg()));
+		assertTrue(containsNameLookup(distributedUnion.getRightArg()));
+	}
+
+	@Test
+	void rewrittenOptionalNameAnchorDistributesConnectedGuardIntoScopedUnionBranches() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		Union union = new Union(
+				new Extension(new Join(statementPattern("u", "follows", "v"), statementPattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(statementPattern("post", "authored", "u"), new ExtensionElem(new Var("post"),
+						"activity")));
+		union.setVariableScopeChange(true);
+		StatementPattern optionalName = statementPattern("u", "name", "optName");
+		ListMemberOperator nameFilter = new ListMemberOperator();
+		nameFilter.addArgument(new Var("optName"));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user7")));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user8")));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(users, union), optionalName), nameFilter));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributedUnion = assertInstanceOf(Union.class, root.getArg());
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "optName"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "optName"));
+		assertTrue(containsNameLookup(distributedUnion.getLeftArg()));
+		assertTrue(containsNameLookup(distributedUnion.getRightArg()));
+	}
+
+	@Test
+	void rewritesOptionalLiteralAnchorAfterNestedExistsLeftProbe() {
+		BindingSetAssignment users = values("v", "user12", "user13");
+		StatementPattern typedUser = statementPattern("v", "type", "person");
+		StatementPattern incomingFollow = statementPattern("u", "follows", "v");
+		Filter selfLoopAntiProbe = new Filter(new Join(users, new Join(typedUser, incomingFollow)),
+				new Not(new Exists(statementPattern("v", "follows", "v"))));
+		StatementPattern optionalName = statementPattern("v", "name", "optName");
+		ListMemberOperator nameFilter = new ListMemberOperator();
+		nameFilter.addArgument(new Var("optName"));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user12")));
+		nameFilter.addArgument(new ValueConstant(VF.createLiteral("user13")));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(selfLoopAntiProbe, optionalName), nameFilter));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.selectiveSmallLiteralFilters(), false).optimize(root, null,
+				null);
+
+		assertFalse(containsLeftJoin(root.getArg()));
+		assertTrue(containsBindingSetAssignment(root.getArg(), "optName"));
+		assertFalse(containsSmallLiteralFilter(root.getArg(), "optName"));
+	}
+
+	@Test
+	void distributesScopedUnionRootJoinWithSharedPrefixBeforeFanoutBranch() {
+		StatementPattern department = statementPattern("org", "department", "department");
+		StatementPattern makesOffer = statementPattern("department", "makesOffer", "offer");
+		StatementPattern itemOffered = statementPattern("offer", "itemOffered", "work");
+		StatementPattern about = statementPattern("work", "about", "topic");
+		StatementPattern page = statementPattern("topic", "mainEntityOfPage", "page");
+		TupleExpr sharedPrefix = new Join(department, new Join(makesOffer, new Join(itemOffered,
+				new Join(about, page))));
+		Extension reviewBranch = new Extension(statementPattern("work", "review", "review"),
+				new ExtensionElem(new Var("review"), "fanout"));
+		Extension eventBranch = new Extension(statementPattern("page", "event", "event"),
+				new ExtensionElem(new Var("event"), "fanout"));
+		Union union = new Union(reviewBranch, eventBranch);
+		union.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(new Join(sharedPrefix, union));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributed = assertInstanceOf(Union.class, root.getArg());
+		assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(distributed.getLeftArg());
+		assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(distributed.getRightArg());
 	}
 
 	@Test
@@ -502,6 +769,24 @@ class LmdbSketchJoinOptimizerTest {
 
 		assertInstanceOf(Difference.class, root.getArg(),
 				"Initial bindings can make the RHS filter match, so MINUS must retain compatibility semantics");
+	}
+
+	@Test
+	void rewritesNegatedBoundOptionalToCertifiedAntiJoin() {
+		StatementPattern required = statementPattern("s", "type", "type");
+		StatementPattern optional = statementPattern("s", "name", "optName");
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(required, optional),
+				new Not(new Bound(new Var("optName")))));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		Difference replacement = assertInstanceOf(Difference.class, root.getArg(), () -> root.toString());
+		String rewriteMetric = replacement.getStringMetricPlanned("optimizer.negatedBoundOptionalAlternative");
+		assertTrue(rewriteMetric != null && rewriteMetric.contains("OPTIONAL_NEGATED_BOUND_ANTI_JOIN"),
+				String.valueOf(rewriteMetric));
+		assertTrue(rewriteMetric.contains("selected=anti-join"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("rule=25"), rewriteMetric);
+		assertTrue(rewriteMetric.contains("preservedMultiplicity=true"), rewriteMetric);
 	}
 
 	@Test
@@ -577,6 +862,24 @@ class LmdbSketchJoinOptimizerTest {
 				"Cheaper high-pass filtered anti-probe should not be forced into materialized MINUS");
 	}
 
+	@Test
+	void rewritesTransparentExtensionSelfLoopMinusWhenCorrelatedLookupIsCheaper() {
+		StatementPattern nodeType = statementPattern("node", "type", "nodeType");
+		StatementPattern nodeWeight = statementPattern("node", "weight", "weight");
+		Extension right = new Extension(statementPattern("node", "connectsTo", "node"));
+		right.addElement(new ExtensionElem(new Var("node"), "_anon_path_self_loop"));
+		QueryRoot root = new QueryRoot(new Difference(new Join(nodeType, nodeWeight), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.transparentExtensionSelfLoopAntiProbe(), false)
+				.optimize(root, null, null);
+
+		TupleExpr replacement = root.getArg();
+		assertFalse(containsDifference(replacement),
+				"Transparent path/BIND wrapper should not hide the cheap correlated self-loop lookup");
+		assertTrue(containsNotExistsFilter(replacement),
+				"Cheap correlated self-loop anti-probe should use NOT EXISTS instead of materialized MINUS");
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -589,16 +892,46 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	private static BindingSetAssignment values(String bindingName, String... values) {
+		Value[] literals = new Value[values.length];
+		for (int i = 0; i < values.length; i++) {
+			literals[i] = VF.createLiteral(values[i]);
+		}
+		return values(bindingName, literals);
+	}
+
+	private static BindingSetAssignment values(String bindingName, Value... values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
 		List<BindingSet> bindingSets = new ArrayList<>(values.length);
-		for (String value : values) {
+		for (Value value : values) {
 			MapBindingSet bindingSet = new MapBindingSet(1);
-			bindingSet.addBinding(bindingName, VF.createLiteral(value));
+			bindingSet.addBinding(bindingName, value);
 			bindingSets.add(bindingSet);
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static Projection projection(TupleExpr arg, String... bindingNames) {
+		ProjectionElemList elemList = new ProjectionElemList();
+		for (String bindingName : bindingNames) {
+			elemList.addElement(new ProjectionElem(bindingName));
+		}
+		return new Projection(arg, elemList);
+	}
+
+	private static void withJoinTreeShape(String shape, Runnable runnable) {
+		String previous = System.getProperty("rdf4j.optimizer.lmdb.joinTreeShape");
+		System.setProperty("rdf4j.optimizer.lmdb.joinTreeShape", shape);
+		try {
+			runnable.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.optimizer.lmdb.joinTreeShape");
+			} else {
+				System.setProperty("rdf4j.optimizer.lmdb.joinTreeShape", previous);
+			}
+		}
 	}
 
 	private static ValueExpr and(ValueExpr first, ValueExpr second, ValueExpr... rest) {
@@ -611,6 +944,10 @@ class LmdbSketchJoinOptimizerTest {
 
 	private static Compare notEqual(String leftName, String rightName) {
 		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.NE);
+	}
+
+	private static Compare equal(String leftName, String rightName) {
+		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.EQ);
 	}
 
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
@@ -656,6 +993,13 @@ class LmdbSketchJoinOptimizerTest {
 			collectStatementPatterns(join.getLeftArg(), patterns);
 			collectStatementPatterns(join.getRightArg(), patterns);
 		}
+	}
+
+	private static boolean containsNameLookup(TupleExpr tupleExpr) {
+		return statementPatterns(tupleExpr).stream()
+				.anyMatch(pattern -> "u".equals(pattern.getSubjectVar().getName())
+						&& "name".equals(pattern.getPredicateVar().getName())
+						&& "optName".equals(pattern.getObjectVar().getName()));
 	}
 
 	private static boolean containsFilter(TupleExpr tupleExpr) {
@@ -766,12 +1110,195 @@ class LmdbSketchJoinOptimizerTest {
 		return false;
 	}
 
+	private static boolean containsSmallLiteralFilter(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof Filter filter) {
+			for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
+				BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+				if (anchor != null && anchor.getBindingNames().contains(bindingName)
+						|| listMemberFilterBinds(condition, bindingName)) {
+					return true;
+				}
+			}
+			return containsSmallLiteralFilter(filter.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsSmallLiteralFilter(((Extension) tupleExpr).getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsSmallLiteralFilter(union.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(union.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsSmallLiteralFilter(join.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(join.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsSmallLiteralFilter(leftJoin.getLeftArg(), bindingName)
+					|| containsSmallLiteralFilter(leftJoin.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
+	private static boolean listMemberFilterBinds(ValueExpr condition, String bindingName) {
+		if (!(condition instanceof ListMemberOperator list) || list.getArguments().isEmpty()) {
+			return false;
+		}
+		ValueExpr firstArgument = list.getArguments()
+				.getFirst();
+		return firstArgument instanceof Var var && bindingName.equals(var.getName()) && !var.hasValue();
+	}
+
 	private static void assertScopedBranchBeforeValues(TupleExpr tupleExpr) {
 		assertTrue(containsFilter(tupleExpr));
 		TupleExpr joinRoot = tupleExpr instanceof Filter ? ((Filter) tupleExpr).getArg() : tupleExpr;
 		Join join = assertInstanceOf(Join.class, joinRoot);
 		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
+	}
+
+	private static void assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(TupleExpr tupleExpr) {
+		Join join = assertInstanceOf(Join.class, tupleExpr);
+		assertTrue(statementPatterns(join.getLeftArg()).size() >= 5);
+		assertInstanceOf(Extension.class, join.getRightArg());
+	}
+
+	private static final class CountingGuaranteePlanningStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel, LmdbPredicateObjectDomainSource {
+
+		private final Map<IRI, Integer> knownDomainLookups = new java.util.LinkedHashMap<>();
+		private int planningAttempts;
+		private int fixedOrderEstimates;
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			planningAttempts++;
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(args), 10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+			fixedOrderEstimates++;
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(orderedArgs), 10_000.0d, 10_000.0d));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			knownDomainLookups.merge(predicate, 1, Integer::sum);
+			return Optional.of(RdfTermDomain.LITERAL);
+		}
+
+		private int knownDomainLookups(IRI predicate) {
+			return knownDomainLookups.getOrDefault(predicate, 0);
+		}
+	}
+
+	private static final class HighFanoutGeneratedAnchorPlanningStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel, LmdbPredicateObjectDomainSource {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			return Optional.of(originalPlan(args));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+			return Optional.of(finiteAnchorPlan(orderedArgs));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new FilterPassEstimate(0.01d, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.finiteValues(List.of(
+					VF.createLiteral(0),
+					VF.createLiteral(1),
+					VF.createLiteral(2),
+					VF.createLiteral(3),
+					VF.createLiteral(4),
+					VF.createLiteral(5),
+					VF.createLiteral(6))));
+		}
+
+		private static JoinOrderPlan originalPlan(List<TupleExpr> args) {
+			return new JoinOrderPlan(new ArrayList<>(args), 95.0d, 201_260.0d, List.of(), Map.of(),
+					Map.of(
+							"plannedCostRowQErrorMax", 1.0d,
+							"plannedCostWorkQErrorMax", 1.0d,
+							"plannedCostConfidence", 1.0d,
+							"plannedCostEvidenceCount", 1.0d),
+					List.of(
+							new PlanStep(Set.of(), 1.0d, 1.0d, 2.0d),
+							new PlanStep(Set.of("threshold"), 95.0d, 95.0d, 201_258.0d)));
+		}
+
+		private static JoinOrderPlan finiteAnchorPlan(List<TupleExpr> orderedArgs) {
+			return new JoinOrderPlan(new ArrayList<>(orderedArgs), 3.0d, 750_376.0d, List.of(), Map.of(), Map.of(),
+					List.of(
+							new PlanStep(Set.of("threshold"), 4.0d, 4.0d, 750_330.0d,
+									Map.of("optimizer.guaranteeOption", "finite-anchor:w"), Map.of()),
+							new PlanStep(Set.of("threshold", "w"), 356_400.0d, 356_400.0d, 40.0d,
+									Map.of(
+											TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+											"lmdb-finite-binding-lookup",
+											TelemetryMetricNames.PLANNED_INDEX_NAME, "posc",
+											TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "[P, O]"),
+									Map.of(
+											TelemetryMetricNames.PLANNED_ACCESS_ROWS, 89_102.0d,
+											TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 89_102.0d,
+											"plannedSurfaceRows", 3.0d)),
+							new PlanStep(Set.of("threshold", "w", "node"), 3.0d, 3.0d, 6.0d)));
+		}
+	}
+
+	private static final class CanonicalIntObjectDomainStatistics extends EvaluationStatistics
+			implements LmdbPredicateObjectDomainSource {
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT))));
+		}
 	}
 
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner,
@@ -786,6 +1313,8 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean repeatedFiniteAntiProbeMoreExpensive;
 		private boolean lowPassFilteredAntiProbeLacksWorkProof;
 		private boolean highPassFilteredAntiProbeCheaper;
+		private boolean transparentExtensionSelfLoopAntiProbe;
+		private boolean selectiveSmallLiteralFilters;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -835,6 +1364,19 @@ class LmdbSketchJoinOptimizerTest {
 			return statistics;
 		}
 
+		static PlanningStatistics transparentExtensionSelfLoopAntiProbe() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.transparentExtensionSelfLoopAntiProbe = true;
+			return statistics;
+		}
+
+		static PlanningStatistics selectiveSmallLiteralFilters() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.supportsJoinEstimation = true;
+			statistics.selectiveSmallLiteralFilters = true;
+			return statistics;
+		}
+
 		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
@@ -860,6 +1402,21 @@ class LmdbSketchJoinOptimizerTest {
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (transparentExtensionSelfLoopAntiProbe) {
+				if (factor instanceof Extension) {
+					return Optional.of(new FactorCostEstimate(300_000.0d, 300_000.0d));
+				}
+				if (isConnectsToPattern(factor)) {
+					if (currentlyBoundVars.contains("node")) {
+						return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+					}
+					return Optional.of(new FactorCostEstimate(300_000.0d, 300_000.0d));
+				}
+				if (factor.getBindingNames().contains("node")) {
+					return Optional.of(new FactorCostEstimate(50_000.0d, 10_000.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
 			if (lowPassFilteredAntiProbeLacksWorkProof) {
 				if (factor.getBindingNames().contains("neighbor")) {
 					if (currentlyBoundVars.contains("node")) {
@@ -918,6 +1475,22 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
 			}
 			return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			if (selectiveSmallLiteralFilters) {
+				return new FilterPassEstimate(0.01d, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+			}
+			return super.estimateFilterPass(filter);
+		}
+
+		private static boolean isConnectsToPattern(TupleExpr factor) {
+			if (!(factor instanceof StatementPattern statementPattern)) {
+				return false;
+			}
+			return statementPattern.getPredicateVar().hasValue()
+					&& "urn:connectsTo".equals(statementPattern.getPredicateVar().getValue().stringValue());
 		}
 
 		private static FactorCostEstimate accessPathEstimate(double workRows, double outputRows,

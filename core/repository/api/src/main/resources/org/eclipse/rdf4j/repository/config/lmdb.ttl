@@ -44,6 +44,10 @@
          lmdb:valueEvictionInterval {%Value eviction interval|300000%} ;
          lmdb:valueHashCacheEnabled {%Value hash cache enabled|false|true%} ;
          lmdb:inlineLiterals {%Inline literals|true|false%} ;
+         lmdb:predicateGuaranteeIndexEnabled {%Predicate guarantee index|true|false%} ;
+         lmdb:predicateGuaranteeIndexAutoRebuild {%Predicate guarantee rebuild on startup|true|false%} ;
+         lmdb:predicateGuaranteeExcludedPredicates "{%Predicate guarantee excluded predicates|%}" ;
+         # @workbench.field len=80
          lmdb:sketchEstimatorEnabled {%Sketch estimator enabled|true|false%} ;
          # @workbench.field unset=true
          lmdb:sketchEstimatorSubjectBucketCount {%Sketch estimator subject bucket count|4096%} ;

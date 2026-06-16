@@ -20,24 +20,40 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
+
+	@AfterEach
+	void closeEstimators() {
+		for (SketchBasedJoinEstimator estimator : estimators) {
+			estimator.close();
+		}
+		estimators.clear();
+	}
 
 	@Test
 	void slicePlanEstimateClampsVariableDistinctCountsToLimitedRows() {
@@ -47,7 +63,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			store.add(st(VF.createIRI("urn:encounter:" + i), predicate, VF.createIRI("urn:observation:" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 
 		StatementPattern pattern = new StatementPattern(Var.of("enc"), Var.of("p", predicate), Var.of("obs"));
@@ -73,7 +89,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		store.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o1"), c));
 		store.add(st(VF.createIRI("urn:s1"), p2, VF.createIRI("urn:o2"), c));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Expected populated rebuild to be ready");
 
@@ -93,8 +109,227 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		assertFalse(estimator.isReady(), "Estimator should not be ready without active single-triple sketches");
 	}
 
+	@Test
+	void sketchOnlyJoinSurfaceRowsDoNotOpenStatementSourceAfterRebuild() {
+		IRI value = VF.createIRI("urn:value");
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		FailOnReadSketchStatementSource store = new FailOnReadSketchStatementSource();
+		for (int i = 0; i < 200; i++) {
+			Resource observation = VF.createIRI("urn:observation:" + i);
+			store.add(st(observation, value, VF.createLiteral(i % 10)));
+			store.add(st(VF.createIRI("urn:encounter:" + i), hasObservation, observation));
+		}
+
+		SketchBasedJoinEstimator estimator = estimator(store);
+		estimator.rebuild();
+		int rebuildReads = store.readCalls;
+		store.failOnRead = true;
+
+		StatementPattern valuePattern = new StatementPattern(Var.of("obs"), Var.of("value", value), Var.of("v"));
+		StatementPattern hasObservationPattern = new StatementPattern(Var.of("enc"),
+				Var.of("hasObservation", hasObservation), Var.of("obs"));
+
+		double prefixRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), "obs");
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), hasObservationPattern,
+				"obs");
+
+		assertTrue(prefixRows > 0.0d, "Expected sketch-only prefix surface rows");
+		assertTrue(surfaceRows > 0.0d, "Expected sketch-only join surface rows");
+		assertEquals(rebuildReads, store.readCalls,
+				"Sketch-only surface costing must not perform exact statement-source scans during planning");
+	}
+
+	@Test
+	void sketchOnlyJoinSurfaceUsesOneSigmaUpperBoundWhenIntersectionPointIsZero() {
+		IRI left = VF.createIRI("urn:upper-bound-surface:left");
+		IRI right = VF.createIRI("urn:upper-bound-surface:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(st(VF.createIRI("urn:upper-bound-surface:left-subject:" + i), left,
+					VF.createIRI("urn:upper-bound-surface:left-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-surface:right-subject:" + i), right,
+					VF.createIRI("urn:upper-bound-surface:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = estimator(store);
+		estimator.rebuild();
+		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
+				Var.of("shared"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
+				Var.of("shared"));
+
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern), rightPattern, "shared");
+
+		assertTrue(surfaceRows > 0.0d,
+				"Sketch-only surface costing should use the one-sigma upper bound before returning zero");
+	}
+
+	@Test
+	void sketchOnlyMultiFactorJoinSurfaceCarriesOneSigmaUpperBoundForward() {
+		IRI left = VF.createIRI("urn:upper-bound-multi-surface:left");
+		IRI middle = VF.createIRI("urn:upper-bound-multi-surface:middle");
+		IRI right = VF.createIRI("urn:upper-bound-multi-surface:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:left-subject:" + i), left,
+					VF.createIRI("urn:upper-bound-multi-surface:left-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:middle-subject:" + i), middle,
+					VF.createIRI("urn:upper-bound-multi-surface:middle-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:right-subject:" + i), right,
+					VF.createIRI("urn:upper-bound-multi-surface:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = estimator(store);
+		estimator.rebuild();
+		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
+				Var.of("shared"));
+		StatementPattern middlePattern = new StatementPattern(Var.of("middleSubject"), Var.of("middle", middle),
+				Var.of("shared"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
+				Var.of("shared"));
+
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern, middlePattern), rightPattern,
+				"shared");
+
+		assertTrue(surfaceRows > 0.0d,
+				"Sketch-only surface costing should not collapse an upper-bound-only prefix back to zero");
+	}
+
+	@Test
+	void exactBoundPatternRowsUsesPatternCardinalityProviderForBoundProbe() throws Exception {
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		Resource observation = VF.createIRI("urn:observation:1");
+		AtomicInteger providerCalls = new AtomicInteger();
+
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = estimator(store);
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (hasObservation.equals(pattern.getPredicateVar().getValue())
+					&& observation.equals(pattern.getObjectVar().getValue())) {
+				providerCalls.incrementAndGet();
+				return 7.0d;
+			}
+			return -1.0d;
+		});
+
+		StatementPattern probe = new StatementPattern(Var.of("enc"), Var.of("hasObservation", hasObservation),
+				Var.of("obs"));
+
+		Long rows = invokeExactBoundPatternRows(estimator, probe, "obs", observation);
+
+		assertEquals(7L, rows, "Bound pattern probes should use page-walk cardinality estimates");
+		assertEquals(1, providerCalls.get(), "Expected one bound-pattern cardinality lookup");
+	}
+
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForSingleStatementPatternWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-single-pattern");
+		AtomicInteger providerCalls = new AtomicInteger();
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = estimator(store);
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue())) {
+				providerCalls.incrementAndGet();
+				return 11.0d;
+			}
+			return -1.0d;
+		});
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double rows = estimator.orderedCardinality(List.of(pattern));
+
+		assertEquals(11.0d, rows, 0.0d, "Single statement ordered cardinality should use page-walk estimate");
+		assertEquals(1, providerCalls.get(), "Expected one statement-pattern cardinality lookup");
+	}
+
+	@Test
+	void orderedCardinalityUsesBindingSetAssignmentRowsWhenSketchIsNotReady() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("value", VF.createLiteral(i));
+			rows.add(row);
+		}
+		assignment.setBindingSets(rows);
+
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
+
+		double cardinality = estimator.orderedCardinality(List.of(assignment));
+
+		assertEquals(3.0d, cardinality, 0.0d,
+				"Single binding-set assignment ordered cardinality should use the finite row count");
+	}
+
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForValuesThenStatementPatternWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-values-pattern");
+		Value first = VF.createLiteral("first");
+		Value second = VF.createLiteral("second");
+		Value missing = VF.createLiteral("missing");
+		Map<Value, Double> rowsByObject = Map.of(first, 2.0d, second, 5.0d, missing, 0.0d);
+		AtomicInteger providerCalls = new AtomicInteger();
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
+				providerCalls.incrementAndGet();
+				return rowsByObject.getOrDefault(pattern.getObjectVar().getValue(), -1.0d);
+			}
+			return -1.0d;
+		});
+
+		BindingSetAssignment assignment = assignment("o", first, second, missing);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double rows = estimator.orderedCardinality(List.of(assignment, pattern));
+
+		assertEquals(7.0d, rows, 0.0d,
+				"VALUES followed by a statement pattern should sum page-walk bound-pattern rows");
+		assertEquals(3, providerCalls.get(), "Expected one page-walk lookup per finite assignment row");
+	}
+
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForStatementPatternThenValuesWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-pattern-values");
+		Value first = VF.createLiteral("first");
+		Value second = VF.createLiteral("second");
+		Value missing = VF.createLiteral("missing");
+		Map<Value, Double> rowsByObject = Map.of(first, 3.0d, second, 4.0d, missing, 0.0d);
+		AtomicInteger providerCalls = new AtomicInteger();
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
+				providerCalls.incrementAndGet();
+				return rowsByObject.getOrDefault(pattern.getObjectVar().getValue(), -1.0d);
+			}
+			return -1.0d;
+		});
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		BindingSetAssignment assignment = assignment("o", first, second, missing);
+
+		double rows = estimator.orderedCardinality(List.of(pattern, assignment));
+
+		assertEquals(7.0d, rows, 0.0d,
+				"Statement pattern followed by VALUES should sum page-walk bound-pattern rows");
+		assertEquals(3, providerCalls.get(), "Expected one page-walk lookup per finite assignment row");
+	}
+
 	private static Statement st(Resource s, IRI p, Value o) {
 		return VF.createStatement(s, p, o);
+	}
+
+	private static BindingSetAssignment assignment(String name, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (Value value : values) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding(name, value);
+			rows.add(row);
+		}
+		assignment.setBindingSets(rows);
+		return assignment;
 	}
 
 	private static Statement st(Resource s, IRI p, Value o, Resource c) {
@@ -107,6 +342,12 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private SketchBasedJoinEstimator estimator(StubSketchStatementSource store) {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimators.add(estimator);
+		return estimator;
 	}
 
 	private static void clearActiveSingleTriples(SketchBasedJoinEstimator estimator) throws Exception {
@@ -159,6 +400,14 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		method.invoke(target);
 	}
 
+	private static Long invokeExactBoundPatternRows(SketchBasedJoinEstimator estimator, StatementPattern pattern,
+			String sharedVarName, Value sharedValue) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("exactBoundPatternRows",
+				StatementPattern.class, String.class, Value.class);
+		method.setAccessible(true);
+		return (Long) method.invoke(estimator, pattern, sharedVarName, sharedValue);
+	}
+
 	private static void clearSketchArray(AtomicReferenceArray<?> sketches) {
 		for (int i = 0; i < sketches.length(); i++) {
 			sketches.set(i, null);
@@ -184,6 +433,22 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			return field.getDouble(varPlanStats);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
+		}
+	}
+
+	private static final class FailOnReadSketchStatementSource extends StubSketchStatementSource {
+
+		private boolean failOnRead;
+		private int readCalls;
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (failOnRead) {
+				throw new AssertionError("Statement source opened during sketch-only join-surface estimation");
+			}
+			readCalls++;
+			return super.getStatements(subj, pred, obj, contexts);
 		}
 	}
 }

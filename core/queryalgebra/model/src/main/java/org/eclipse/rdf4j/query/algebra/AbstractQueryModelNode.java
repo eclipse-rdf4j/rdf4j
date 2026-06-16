@@ -45,6 +45,17 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private double resultSizeEstimate = -1;
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
+	private boolean costFeedbackTrackingEnabled;
+	private double costFeedbackExpectedRows = -1;
+	private double costFeedbackExpectedWorkRows = -1;
+	private long costFeedbackActualRows = -1;
+	private double costFeedbackActualWorkRows = -1;
+	private double costFeedbackReportQErrorThreshold = -1;
+	private boolean costFeedbackCompletedActual;
+	private long costFeedbackCloseCountActual = -1;
+	private long costFeedbackLeftRowsWithMatchActual = -1;
+	private long costFeedbackEmptyRightProbeCountActual = -1;
+	private long costFeedbackMaxRightRowsPerLeftActual = -1;
 	private long totalTimeNanosActual = -1;
 	private long hasNextCallCountActual = -1;
 	private long hasNextTrueCountActual = -1;
@@ -194,6 +205,116 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setCostEstimate(double costEstimate) {
 		this.costEstimate = costEstimate;
+	}
+
+	@Override
+	public boolean isCostFeedbackTrackingEnabled() {
+		return costFeedbackTrackingEnabled;
+	}
+
+	@Override
+	public void setCostFeedbackTrackingEnabled(boolean costFeedbackTrackingEnabled) {
+		this.costFeedbackTrackingEnabled = costFeedbackTrackingEnabled;
+	}
+
+	@Override
+	public double getCostFeedbackExpectedRows() {
+		return costFeedbackExpectedRows;
+	}
+
+	@Override
+	public void setCostFeedbackExpectedRows(double costFeedbackExpectedRows) {
+		this.costFeedbackExpectedRows = costFeedbackExpectedRows;
+	}
+
+	@Override
+	public double getCostFeedbackExpectedWorkRows() {
+		return costFeedbackExpectedWorkRows;
+	}
+
+	@Override
+	public void setCostFeedbackExpectedWorkRows(double costFeedbackExpectedWorkRows) {
+		this.costFeedbackExpectedWorkRows = costFeedbackExpectedWorkRows;
+	}
+
+	@Override
+	public long getCostFeedbackActualRows() {
+		return costFeedbackActualRows;
+	}
+
+	@Override
+	public void setCostFeedbackActualRows(long costFeedbackActualRows) {
+		this.costFeedbackActualRows = costFeedbackActualRows;
+	}
+
+	@Override
+	public double getCostFeedbackActualWorkRows() {
+		return costFeedbackActualWorkRows;
+	}
+
+	@Override
+	public void setCostFeedbackActualWorkRows(double costFeedbackActualWorkRows) {
+		this.costFeedbackActualWorkRows = costFeedbackActualWorkRows;
+	}
+
+	@Override
+	public double getCostFeedbackReportQErrorThreshold() {
+		return costFeedbackReportQErrorThreshold;
+	}
+
+	@Override
+	public void setCostFeedbackReportQErrorThreshold(double costFeedbackReportQErrorThreshold) {
+		this.costFeedbackReportQErrorThreshold = costFeedbackReportQErrorThreshold;
+	}
+
+	@Override
+	public boolean isCostFeedbackCompletedActual() {
+		return costFeedbackCompletedActual;
+	}
+
+	@Override
+	public void setCostFeedbackCompletedActual(boolean costFeedbackCompletedActual) {
+		this.costFeedbackCompletedActual = costFeedbackCompletedActual;
+	}
+
+	@Override
+	public long getCostFeedbackCloseCountActual() {
+		return costFeedbackCloseCountActual;
+	}
+
+	@Override
+	public void setCostFeedbackCloseCountActual(long costFeedbackCloseCountActual) {
+		this.costFeedbackCloseCountActual = costFeedbackCloseCountActual;
+	}
+
+	@Override
+	public long getCostFeedbackLeftRowsWithMatchActual() {
+		return costFeedbackLeftRowsWithMatchActual;
+	}
+
+	@Override
+	public void setCostFeedbackLeftRowsWithMatchActual(long costFeedbackLeftRowsWithMatchActual) {
+		this.costFeedbackLeftRowsWithMatchActual = costFeedbackLeftRowsWithMatchActual;
+	}
+
+	@Override
+	public long getCostFeedbackEmptyRightProbeCountActual() {
+		return costFeedbackEmptyRightProbeCountActual;
+	}
+
+	@Override
+	public void setCostFeedbackEmptyRightProbeCountActual(long costFeedbackEmptyRightProbeCountActual) {
+		this.costFeedbackEmptyRightProbeCountActual = costFeedbackEmptyRightProbeCountActual;
+	}
+
+	@Override
+	public long getCostFeedbackMaxRightRowsPerLeftActual() {
+		return costFeedbackMaxRightRowsPerLeftActual;
+	}
+
+	@Override
+	public void setCostFeedbackMaxRightRowsPerLeftActual(long costFeedbackMaxRightRowsPerLeftActual) {
+		this.costFeedbackMaxRightRowsPerLeftActual = costFeedbackMaxRightRowsPerLeftActual;
 	}
 
 	@Override

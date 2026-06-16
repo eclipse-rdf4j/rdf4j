@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -63,6 +64,37 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 				"Planner join estimate should stay positive for object-to-subject chains");
 	}
 
+	@Test
+	void selectiveBridgeDoesNotCarryUnconditionedOtherSideSketch() {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI bridge = VF.createIRI("urn:bridge");
+		IRI target = VF.createIRI("urn:target");
+		Resource marker = VF.createIRI("urn:marker");
+
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 1000; i++) {
+			Resource a = VF.createIRI("urn:a" + i);
+			Resource b = VF.createIRI("urn:b" + i);
+			store.add(st(a, bridge, b));
+			store.add(st(b, target, marker));
+		}
+		store.add(st(VF.createIRI("urn:a0"), selected, marker));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern left = new StatementPattern(Var.of("a"), Var.of("selected", selected),
+				Var.of("marker1", marker));
+		StatementPattern bridgePattern = new StatementPattern(Var.of("a"), Var.of("bridge", bridge), Var.of("b"));
+		StatementPattern right = new StatementPattern(Var.of("b"), Var.of("target", target),
+				Var.of("marker2", marker));
+
+		double estimate = estimator.cardinality(new Join(new Join(left, bridgePattern), right));
+
+		assertEquals(1.0d, estimate, 0.0d,
+				"Bridge output sketches should be conditioned by the selective join on the other bridge variable");
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(64)
@@ -71,7 +103,7 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 				.withRefreshSleepMillis(5);
 	}
 
-	private static org.eclipse.rdf4j.model.Statement st(Resource s, IRI p, Value o) {
+	private static Statement st(Resource s, IRI p, Value o) {
 		return VF.createStatement(s, p, o);
 	}
 }

@@ -14,14 +14,24 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
@@ -36,10 +46,14 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbSketchJoinOptimizerOptionalRewriteTest {
@@ -336,6 +350,57 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 	}
 
 	@Test
+	void rewritesNullRejectingOptionalConjunctWithNestedExists() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern follows = statementPattern("person", "follows", "friend");
+		StatementPattern optional = statementPattern("person", "title", "optTitle");
+		StatementPattern nested = statementPattern("person", "dueDate", "dueDate");
+		ValueExpr condition = new And(
+				new Compare(new Var("optTitle"), new ValueConstant(VF.createLiteral("")), Compare.CompareOp.NE),
+				new Not(new Exists(nested)));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional), condition));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		TupleExpr optimized = root.getArg();
+		TupleExpr rewritten = optimized instanceof Filter ? ((Filter) optimized).getArg() : optimized;
+		assertInstanceOf(Join.class, rewritten);
+		assertTrue(!containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void keepsHavingCountPositiveOptionalAsLeftJoin() {
+		StatementPattern assembly = statementPattern("assembly", "type", "assemblyType");
+		StatementPattern optional = statementPattern("component", "partOf", "assembly");
+		Group group = new Group(new LeftJoin(assembly, optional));
+		group.addGroupBindingName("assembly");
+		group.addGroupElement(new GroupElem("componentCount", new Count(new Var("component"))));
+		Compare having = new Compare(new Var("componentCount"), new ValueConstant(VF.createLiteral(0)),
+				Compare.CompareOp.GT);
+		QueryRoot root = new QueryRoot(new Filter(group, having));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsHavingCountNonRejectingOptionalAsLeftJoin() {
+		StatementPattern assembly = statementPattern("assembly", "type", "assemblyType");
+		StatementPattern optional = statementPattern("component", "partOf", "assembly");
+		Group group = new Group(new LeftJoin(assembly, optional));
+		group.addGroupBindingName("assembly");
+		group.addGroupElement(new GroupElem("componentCount", new Count(new Var("component"))));
+		Compare having = new Compare(new Var("componentCount"), new ValueConstant(VF.createLiteral(0)),
+				Compare.CompareOp.GE);
+		QueryRoot root = new QueryRoot(new Filter(group, having));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()), () -> root.getArg().toString());
+	}
+
+	@Test
 	void rewritesNullRejectingOptionalLanguageFallbackDisjunctionOnDirectBinding() {
 		StatementPattern person = statementPattern("person", "type", "personType");
 		StatementPattern follows = statementPattern("person", "follows", "friend");
@@ -355,9 +420,102 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 		assertTrue(!containsLeftJoin(root.getArg()));
 	}
 
+	@Test
+	void distributesLeftUnionOptionalWhenCostedCheaper() {
+		StatementPattern personType = statementPattern("person", "type", "personType");
+		StatementPattern employeeType = statementPattern("person", "employeeType", "employeeType");
+		StatementPattern optional = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Union(personType, employeeType), optional));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		Union union = assertInstanceOf(Union.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getLeftArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsLeftUnionOptionalWhenOriginalCostsLess() {
+		StatementPattern personType = statementPattern("person", "type", "personType");
+		StatementPattern employeeType = statementPattern("person", "employeeType", "employeeType");
+		StatementPattern optional = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Union(personType, employeeType), optional));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(5.0d, 100.0d), false).optimize(root, null,
+				null);
+
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(Union.class, leftJoin.getLeftArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsRightUnionOptionalWithoutMutualExclusionProof() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern alias = statementPattern("person", "alias", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(person, new Union(name, alias)));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(Union.class, leftJoin.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void distributesMutuallyExclusiveFiniteRightUnionOptionalWhenCostedCheaper() {
+		BindingSetAssignment people = contactKindValues();
+		StatementPattern email = statementPattern("person", "email", "contact");
+		StatementPattern phone = statementPattern("person", "phone", "contact");
+		TupleExpr right = new Union(new Filter(email, sameTermLiteral("contactKind", "email")),
+				new Filter(phone, sameTermLiteral("contactKind", "phone")));
+		QueryRoot root = new QueryRoot(new LeftJoin(people, right));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		Union union = assertInstanceOf(Union.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getLeftArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void plansNestedUnionOptionalRhsWithSafeLeftAnchorsWhenCheaper() {
+		StatementPattern work = statementPattern("work", "about", "topic");
+		StatementPattern page = statementPattern("topic", "mainEntityOfPage", "page");
+		StatementPattern review = statementPattern("work", "review", "shared");
+		StatementPattern event = statementPattern("page", "event", "shared");
+		StatementPattern sharedType = statementPattern("shared", "type", "sharedType");
+		TupleExpr right = new LeftJoin(new Union(review, event), sharedType);
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(work, page), right));
+
+		new LmdbSketchJoinOptimizer(new OptionalRhsAnchoringCostModel(100.0d, 5.0d, Set.of("work", "page")),
+				false).optimize(root, null, null);
+
+		String metric = firstOptionalRhsAnchoringMetric(root.getArg());
+		assertTrue(metric != null && metric.contains("selected=anchored"), () -> root.getArg().toString());
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
+	}
+
+	private static SameTerm sameTermLiteral(String varName, String value) {
+		return new SameTerm(new Var(varName), new ValueConstant(VF.createLiteral(value)));
+	}
+
+	private static BindingSetAssignment contactKindValues() {
+		MapBindingSet email = new MapBindingSet();
+		email.addBinding("person", VF.createIRI("urn:person:1"));
+		email.addBinding("contactKind", VF.createLiteral("email"));
+		MapBindingSet phone = new MapBindingSet();
+		phone.addBinding("person", VF.createIRI("urn:person:2"));
+		phone.addBinding("contactKind", VF.createLiteral("phone"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(email, phone));
+		return assignment;
 	}
 
 	private static boolean containsLeftJoin(TupleExpr tupleExpr) {
@@ -367,9 +525,88 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 		if (tupleExpr instanceof Filter) {
 			return containsLeftJoin(((Filter) tupleExpr).getArg());
 		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return containsLeftJoin(unary.getArg());
+		}
 		if (tupleExpr instanceof Join join) {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
+	}
+
+	private static String firstOptionalRhsAnchoringMetric(TupleExpr tupleExpr) {
+		String metric = tupleExpr.getStringMetricPlanned("optimizer.optionalRhsAnchoring");
+		if (metric != null) {
+			return metric;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return firstOptionalRhsAnchoringMetric(filter.getArg());
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return firstOptionalRhsAnchoringMetric(unary.getArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			String left = firstOptionalRhsAnchoringMetric(join.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(join.getRightArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			String left = firstOptionalRhsAnchoringMetric(leftJoin.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			String left = firstOptionalRhsAnchoringMetric(union.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(union.getRightArg());
+		}
+		return null;
+	}
+
+	private static final class OptionalRhsAnchoringCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final double originalWorkRows;
+		private final double anchoredWorkRows;
+		private final Set<String> anchorNames;
+
+		private OptionalRhsAnchoringCostModel(double originalWorkRows, double anchoredWorkRows,
+				Set<String> anchorNames) {
+			this.originalWorkRows = originalWorkRows;
+			this.anchoredWorkRows = anchoredWorkRows;
+			this.anchorNames = anchorNames;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			double workRows = currentlyBoundVars.containsAll(anchorNames) ? anchoredWorkRows : originalWorkRows;
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d));
+		}
+	}
+
+	private static final class OptionalUnionDistributionCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final double originalWorkRows;
+		private final double distributedWorkRows;
+
+		private OptionalUnionDistributionCostModel(double originalWorkRows, double distributedWorkRows) {
+			this.originalWorkRows = originalWorkRows;
+			this.distributedWorkRows = distributedWorkRows;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			if (factor instanceof LeftJoin leftJoin && leftJoin.getLeftArg() instanceof Union) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(originalWorkRows, 1.0d));
+			}
+			if (factor instanceof LeftJoin leftJoin && leftJoin.getRightArg() instanceof Union) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(originalWorkRows, 1.0d));
+			}
+			if (factor instanceof Union union && union.getLeftArg() instanceof LeftJoin
+					&& union.getRightArg() instanceof LeftJoin) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(distributedWorkRows, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+		}
 	}
 }

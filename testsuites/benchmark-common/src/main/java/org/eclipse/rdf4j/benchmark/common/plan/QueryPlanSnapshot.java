@@ -30,6 +30,7 @@ public class QueryPlanSnapshot {
 	private Map<String, String> metadata = new LinkedHashMap<>();
 	private Map<String, String> featureFlags = new LinkedHashMap<>();
 	private Map<String, QueryPlanExplanation> explanations = new LinkedHashMap<>();
+	private Map<String, Object> optimizerTrace = new LinkedHashMap<>();
 
 	public String getFormatVersion() {
 		return formatVersion;
@@ -93,5 +94,13 @@ public class QueryPlanSnapshot {
 
 	public void setExplanations(Map<String, QueryPlanExplanation> explanations) {
 		this.explanations = explanations;
+	}
+
+	public Map<String, Object> getOptimizerTrace() {
+		return optimizerTrace;
+	}
+
+	public void setOptimizerTrace(Map<String, Object> optimizerTrace) {
+		this.optimizerTrace = optimizerTrace == null ? new LinkedHashMap<>() : optimizerTrace;
 	}
 }

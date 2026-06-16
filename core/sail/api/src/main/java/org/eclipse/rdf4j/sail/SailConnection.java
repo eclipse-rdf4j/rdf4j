@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -120,6 +121,26 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
+
+	/**
+	 * Gets statements for a physical statement pattern. Implementations can use optimizer metadata attached to the
+	 * supplied statement pattern; default behavior delegates to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param includeInferred  if false, no inferred statements are returned; if true, inferred statements are returned
+	 *                         if available
+	 * @param contexts         The context(s) to get the data from.
+	 * @return The statements matching the specified pattern.
+	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+	 * @throws IllegalStateException If the connection has been closed.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return getStatements(subj, pred, obj, includeInferred, contexts);
+	}
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three

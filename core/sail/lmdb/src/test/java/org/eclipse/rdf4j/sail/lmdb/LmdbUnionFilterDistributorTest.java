@@ -19,18 +19,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -39,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -270,6 +274,36 @@ class LmdbUnionFilterDistributorTest {
 	}
 
 	@Test
+	void delaysNonSelectiveExistsUntilAfterPendingFiniteAnchorLookup() {
+		StatementPattern typePattern = statementPattern("med",
+				"http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "kind");
+		BindingSetAssignment codeValues = values("code", "MED-1000", "MED-1001");
+		StatementPattern codePattern = statementPattern("med", "http://example.com/theme/medical/code", "code");
+		DeferredFilter selectiveAntiFilter = new DeferredFilter(
+				new Not(new Exists(statementPattern("med", "http://example.com/theme/medical/dosage", "dose"))),
+				Set.of("med"), JoinOrderPlanner.FILTER_COST_EXPENSIVE, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(0.25d,
+						EvaluationStatistics.FilterPassEstimate.Source.EXACT));
+		DeferredFilter patientExists = new DeferredFilter(
+				new Exists(statementPattern("patient", "http://example.com/theme/medical/hasMedication", "med")),
+				Set.of("med"), JoinOrderPlanner.FILTER_COST_EXPENSIVE, 1, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(typePattern, codeValues, codePattern)),
+				List.of(selectiveAntiFilter, patientExists), Set.of(), Map.of(1, 0));
+
+		List<String> tokens = new ArrayList<>();
+		collectPlanTokens(root, tokens);
+		assertBefore(tokens, "type", "not-exists");
+		assertBefore(tokens, "not-exists", "values:code");
+		assertBefore(tokens, "values:code", "predicate:code");
+		assertBefore(tokens, "predicate:code", "exists");
+	}
+
+	@Test
 	void materializesSplitFiniteInequalityBindingWindow() {
 		BindingSetAssignment userValues = values("u", "user0", "user1", "user2");
 		BindingSetAssignment peerValues = values("v", "user0", "user1", "user2");
@@ -409,6 +443,60 @@ class LmdbUnionFilterDistributorTest {
 			result = new Filter(result, filter.condition.clone());
 		}
 		return result;
+	}
+
+	private static void collectPlanTokens(TupleExpr tupleExpr, List<String> tokens) {
+		if (tupleExpr instanceof Filter filter) {
+			collectPlanTokens(filter.getArg(), tokens);
+			if (filter.getCondition() instanceof Exists) {
+				tokens.add("exists");
+			} else if (filter.getCondition() instanceof Not
+					&& LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+				tokens.add("not-exists");
+			} else {
+				tokens.add("filter");
+			}
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			if (assignment.getBindingNames().contains("code")) {
+				tokens.add("values:code");
+			} else {
+				tokens.add("values");
+			}
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			if ("kind".equals(statementPattern.getObjectVar().getName())) {
+				tokens.add("type");
+			} else if ("code".equals(statementPattern.getObjectVar().getName())) {
+				tokens.add("predicate:code");
+			} else {
+				tokens.add("pattern");
+			}
+			return;
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			collectPlanTokens(leftJoin.getLeftArg(), tokens);
+			collectPlanTokens(leftJoin.getRightArg(), tokens);
+			return;
+		}
+		if (tupleExpr instanceof Join join) {
+			collectPlanTokens(join.getLeftArg(), tokens);
+			collectPlanTokens(join.getRightArg(), tokens);
+			return;
+		}
+		if (tupleExpr instanceof Union union) {
+			collectPlanTokens(union.getLeftArg(), tokens);
+			collectPlanTokens(union.getRightArg(), tokens);
+		}
+	}
+
+	private static void assertBefore(List<String> tokens, String first, String second) {
+		int firstIndex = tokens.indexOf(first);
+		int secondIndex = tokens.indexOf(second);
+		assertTrue(firstIndex >= 0, tokens.toString());
+		assertTrue(secondIndex > firstIndex, tokens.toString());
 	}
 
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {

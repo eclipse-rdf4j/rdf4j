@@ -21,19 +21,21 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public final class BenchmarkJoinEstimatorSupport {
 
-	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
+	private static final String ROBUST_READY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeRegression.sketchReadyTimeoutSeconds";
+	private static final long DEFAULT_ROBUST_READY_TIMEOUT_SECONDS = TimeUnit.MINUTES.toSeconds(5);
 	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
-	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
@@ -51,6 +53,8 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
 	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
+	private static final String LEGACY_SKETCH_OPTIMIZER_PROPERTY = "rdf4j.optimizer.lmdb.legacySketchOptimizer";
+	private static final String CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	private static final Method GET_BACKING_STORE = reflectMethod(LmdbStore.class, "getBackingStore");
 
 	private BenchmarkJoinEstimatorSupport() {
@@ -58,16 +62,16 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void prepareEstimatorForBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
-		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.stop();
-		estimator.discardAndMarkForRebuild();
+		resolveEstimator(store);
 	}
 
 	public static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
 		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.rebuild();
-		awaitEstimatorReady(estimator, "bulk-load rebuild");
+		if (!store.forceFlushSketchEstimator()) {
+			estimator.rebuild();
+			awaitEstimatorReady(estimator, "bulk-load rebuild");
+		}
 		persistReusableEstimatorSnapshot(estimator);
 	}
 
@@ -77,9 +81,33 @@ public final class BenchmarkJoinEstimatorSupport {
 		invoke(persistEstimatorState, backingStore);
 	}
 
+	public static void prepareStableEstimatorForBenchmark(LmdbStore store) throws IOException {
+		SketchBasedJoinEstimator estimator = resolveEstimator(store);
+		estimator.stop();
+		if (!store.forceFlushSketchEstimator()) {
+			estimator.rebuild();
+		}
+		if (!estimator.isReadyNonBlocking()) {
+			estimator.rebuild();
+		}
+		while (!estimator.isReadyNonBlocking()) {
+			try {
+				Thread.sleep(100);
+				System.out.println(".");
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+		}
+		if (!estimator.isReadyNonBlocking()) {
+			throw new IOException("LMDB sketch-based join estimator is not ready after stable benchmark preparation");
+		}
+		persistStoreStatistics(store);
+	}
+
 	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator != null) {
+			estimator.stop();
 			estimator.unload();
 		}
 	}
@@ -136,34 +164,22 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void assertQueryRegressionPassesWithinThirtySeconds(String queryKey,
 			QueryRegressionAssertion assertion) throws Exception {
-		// Tight retry loop for plan-regression checks: return immediately on pass, hard-timeout on persistent drift.
-		long deadlineNanos = System.nanoTime() + QUERY_REGRESSION_PASS_TIMEOUT_NANOS;
-		AssertionError lastAssertionError = null;
-		int attempts = 0;
-		while (true) {
-			attempts++;
-			try {
-				assertion.assertPasses();
-				return;
-			} catch (AssertionError assertionError) {
-				lastAssertionError = assertionError;
-			}
-			if (System.nanoTime() >= deadlineNanos) {
-				AssertionError timeoutError = new AssertionError(
-						"Query regression " + queryKey + " did not pass within 30 seconds after " + attempts
-								+ " attempts");
-				if (lastAssertionError != null) {
-					timeoutError.initCause(lastAssertionError);
-				}
-				throw timeoutError;
-			}
-			try {
-				Thread.sleep(QUERY_REGRESSION_PASS_POLL_MILLIS);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while waiting for query regression " + queryKey
-						+ " to pass within 30 seconds", e);
-			}
+		LmdbPlannerAwait.awaitPlannerAssertion("query regression " + queryKey,
+				Duration.ofNanos(QUERY_REGRESSION_PASS_TIMEOUT_NANOS), assertion::assertPasses);
+	}
+
+	public static ScopedSystemProperties enableLegacySketchOptimizer() {
+		ScopedSystemProperties scope = new ScopedSystemProperties(
+				LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				CASCADES_MODE_PROPERTY);
+		System.setProperty(LEGACY_SKETCH_OPTIMIZER_PROPERTY, "true");
+		System.setProperty(CASCADES_MODE_PROPERTY, "off");
+		return scope;
+	}
+
+	public static void withLegacySketchOptimizer(QueryRegressionAssertion assertion) throws Exception {
+		try (ScopedSystemProperties ignored = enableLegacySketchOptimizer()) {
+			assertion.assertPasses();
 		}
 	}
 
@@ -202,6 +218,9 @@ public final class BenchmarkJoinEstimatorSupport {
 		if (estimator == null) {
 			return;
 		}
+		if (store.forceFlushSketchEstimator()) {
+			return;
+		}
 		awaitEstimatorReady(estimator, phase, timeout, unit);
 	}
 
@@ -213,19 +232,26 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase) throws IOException {
-		awaitEstimatorReady(estimator, phase, ROBUST_READY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+		awaitEstimatorReady(estimator, phase, robustReadyTimeoutSeconds(), TimeUnit.SECONDS);
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase, long timeout,
 			TimeUnit unit) throws IOException {
 		try {
 			if (!estimator.awaitReady(timeout, unit)) {
-				throw new IOException("Join estimator was not ready after " + phase);
+				throw new IOException("Join estimator was not ready after " + phase
+						+ " within " + timeout + " " + unit.toString().toLowerCase()
+						+ "; ready=" + estimator.isReadyNonBlocking()
+						+ ", staleness=" + estimator.staleness());
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for join estimator readiness after " + phase, e);
 		}
+	}
+
+	private static long robustReadyTimeoutSeconds() {
+		return Long.getLong(ROBUST_READY_TIMEOUT_SECONDS_PROPERTY, DEFAULT_ROBUST_READY_TIMEOUT_SECONDS);
 	}
 
 	private static void writeExpectedDbFileSizes(File storeDirectory) throws IOException {
@@ -436,6 +462,31 @@ public final class BenchmarkJoinEstimatorSupport {
 	@FunctionalInterface
 	public interface QueryRegressionAssertion {
 		void assertPasses() throws Exception;
+	}
+
+	public static final class ScopedSystemProperties implements AutoCloseable {
+
+		private final String[] names;
+		private final String[] previousValues;
+
+		private ScopedSystemProperties(String... names) {
+			this.names = names.clone();
+			this.previousValues = new String[names.length];
+			for (int i = 0; i < names.length; i++) {
+				previousValues[i] = System.getProperty(names[i]);
+			}
+		}
+
+		@Override
+		public void close() {
+			for (int i = names.length - 1; i >= 0; i--) {
+				if (previousValues[i] == null) {
+					System.clearProperty(names[i]);
+				} else {
+					System.setProperty(names[i], previousValues[i]);
+				}
+			}
+		}
 	}
 
 	public record ThemeRegressionStore(Path storeDirectory, boolean persistent, boolean reused) {

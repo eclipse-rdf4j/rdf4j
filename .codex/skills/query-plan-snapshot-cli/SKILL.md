@@ -77,6 +77,26 @@ Example focused run:
 
 - `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbThemeQueryRegressionTest#socialMediaFiveCycleInterleavesValuesWithFollowsEdges -Drdf4j.lmdb.themeRegression.persistentStore.enabled=true test`
 
+## Install command standard
+
+Use this root clean install when a clean build is needed:
+
+```bash
+mvn -B -ntp \
+  -Dmaven.compiler.showWarnings=false \
+  -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 \
+  | tee maven-build.log \
+  | awk '
+     /\[WARNING\]/ { next }
+      /\[ERROR\]/ { print; next }
+
+      /Reactor Summary/ { summary=1 }
+      summary { print }
+    '
+```
+
+For install without clean, replace `clean install` with `install`. For a module install, add `-pl <module> -am` before `-Pquick`. Keep the `2>&1 | tee maven-build.log | awk ...` tail on every install variant; keep snapshot logs for CLI output only.
+
 ## Snapshot diff workflow
 
 Use this when you need semantic plan diffs between two controlled captures of the same query.

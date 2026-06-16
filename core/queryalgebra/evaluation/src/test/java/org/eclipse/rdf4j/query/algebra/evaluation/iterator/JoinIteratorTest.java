@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -90,15 +93,9 @@ public class JoinIteratorTest {
 		CountingTripleSource tripleSource = new CountingTripleSource();
 		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
 		BindingSetAssignment left = new BindingSetAssignment();
-		List<BindingSet> rows = new ArrayList<>();
-		for (int i = 0; i < 3; i++) {
-			QueryBindingSet row = new QueryBindingSet();
-			row.addBinding("s", tripleSource.statement.getSubject());
-			row.addBinding("p", tripleSource.statement.getPredicate());
-			row.addBinding("o", tripleSource.statement.getObject());
-			rows.add(row);
-		}
-		left.setBindingSets(rows);
+		left.setBindingSets(boundRows(tripleSource, 3));
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 3.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
 
 		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
 		CloseableIteration<BindingSet> result = evaluator
@@ -109,6 +106,44 @@ public class JoinIteratorTest {
 		assertEquals(3, Iterations.asList(result).size());
 		assertEquals(1, tripleSource.countLookupCount);
 		assertEquals(0, tripleSource.statementLookupCount);
+	}
+
+	@Test
+	public void testBoundStatementPatternJoinSkipsGuardWhenLeftEstimateUnknown() {
+		CountingTripleSource tripleSource = new CountingTripleSource();
+		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(boundRows(tripleSource, 3));
+
+		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		CloseableIteration<BindingSet> result = evaluator
+				.precompile(join)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		assertEquals("JoinIterator", join.getAlgorithmName());
+		assertEquals(3, Iterations.asList(result).size());
+		assertEquals(0, tripleSource.countLookupCount);
+		assertTrue(tripleSource.statementLookupCount > 0);
+	}
+
+	@Test
+	public void testBoundStatementPatternJoinSkipsGuardWhenPlannedRowsOverBudget() {
+		CountingTripleSource tripleSource = new CountingTripleSource();
+		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(boundRows(tripleSource, 3));
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1_024.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
+
+		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		CloseableIteration<BindingSet> result = evaluator
+				.precompile(join)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		assertEquals("JoinIterator", join.getAlgorithmName());
+		assertEquals(3, Iterations.asList(result).size());
+		assertEquals(0, tripleSource.countLookupCount);
+		assertTrue(tripleSource.statementLookupCount > 0);
 	}
 
 	@Test
@@ -156,6 +191,8 @@ public class JoinIteratorTest {
 			rows.add(row);
 		}
 		left.setBindingSets(rows);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 3.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
 
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
@@ -187,6 +224,8 @@ public class JoinIteratorTest {
 
 		Filter filteredLeft = new Filter(left,
 				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1.0d);
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 1.0d);
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
@@ -215,6 +254,8 @@ public class JoinIteratorTest {
 
 		Filter filteredLeft = new Filter(left,
 				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1.0d);
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 1.0d);
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"),
 						Var.of("p", tripleSource.statement.getPredicate(), true, true), Var.of("o")),
@@ -252,6 +293,18 @@ public class JoinIteratorTest {
 		for (BindingSet row : rows) {
 			assertNotEqual(row.getValue("a"), row.getValue("b"));
 		}
+	}
+
+	private List<BindingSet> boundRows(CountingTripleSource tripleSource, int count) {
+		List<BindingSet> rows = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("s", tripleSource.statement.getSubject());
+			row.addBinding("p", tripleSource.statement.getPredicate());
+			row.addBinding("o", tripleSource.statement.getObject());
+			rows.add(row);
+		}
+		return rows;
 	}
 
 	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings)
@@ -331,10 +384,10 @@ public class JoinIteratorTest {
 						|| !candidate.getObject().equals(obj)) {
 					continue;
 				}
-				return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+				return new CloseableIteratorIteration<>(
 						List.of(candidate).iterator());
 			}
-			return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+			return new CloseableIteratorIteration<>(
 					List.<Statement>of().iterator());
 		}
 

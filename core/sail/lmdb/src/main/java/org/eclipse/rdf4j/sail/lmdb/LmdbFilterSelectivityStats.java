@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -787,6 +788,9 @@ class LmdbFilterSelectivityStats
 		if (patternBindings.isEmpty()) {
 			return false;
 		}
+		if (isFiniteAnchorCondition(filter.getCondition(), patternBindings)) {
+			return false;
+		}
 
 		final boolean[] supported = { true };
 		filter.getCondition().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
@@ -816,6 +820,23 @@ class LmdbFilterSelectivityStats
 			}
 		});
 		return supported[0];
+	}
+
+	private boolean isFiniteAnchorCondition(ValueExpr condition, Set<String> patternBindings) {
+		if (!(condition instanceof ListMemberOperator listMemberOperator)) {
+			return false;
+		}
+		List<ValueExpr> arguments = listMemberOperator.getArguments();
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var var)
+				|| var.hasValue() || var.getName() == null || !patternBindings.contains(var.getName())) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			if (!(arguments.get(i)instanceof ValueConstant constant) || constant.getValue() == null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private PatternFilterKey samplingKey(Filter filter, StatementPattern pattern) {

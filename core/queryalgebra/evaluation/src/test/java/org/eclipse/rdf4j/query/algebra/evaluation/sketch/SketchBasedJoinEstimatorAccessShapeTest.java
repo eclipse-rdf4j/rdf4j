@@ -27,7 +27,9 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
@@ -110,7 +112,7 @@ class SketchBasedJoinEstimatorAccessShapeTest {
 		return estimator;
 	}
 
-	private static Compare equality(String patternVar, org.eclipse.rdf4j.query.algebra.ValueExpr lookupExpr) {
+	private static Compare equality(String patternVar, ValueExpr lookupExpr) {
 		return new Compare(Var.of(patternVar), lookupExpr, Compare.CompareOp.EQ);
 	}
 
@@ -130,7 +132,7 @@ class SketchBasedJoinEstimatorAccessShapeTest {
 			Filter filter, Set<String> initiallyBoundVars) {
 		try {
 			Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("estimateTupleExprPlan",
-					org.eclipse.rdf4j.query.algebra.TupleExpr.class, Set.class);
+					TupleExpr.class, Set.class);
 			method.setAccessible(true);
 			return (SketchBasedJoinEstimator.TuplePlanEstimate) method.invoke(estimator, filter, initiallyBoundVars);
 		} catch (ReflectiveOperationException e) {

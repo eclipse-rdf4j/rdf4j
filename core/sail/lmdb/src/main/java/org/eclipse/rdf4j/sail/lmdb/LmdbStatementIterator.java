@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
 
+	private static final long EMPTY_CACHE_ID = Long.MIN_VALUE;
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -35,6 +37,14 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 	private final ValueStore valueStore;
 	private Statement nextElement;
+	private long previousSubjectID = EMPTY_CACHE_ID;
+	private Resource previousSubject;
+	private long previousPredicateID = EMPTY_CACHE_ID;
+	private IRI previousPredicate;
+	private long previousObjectID = EMPTY_CACHE_ID;
+	private Value previousObject;
+	private long previousContextID = EMPTY_CACHE_ID;
+	private Resource previousContext;
 
 	/*--------------*
 	 * Constructors *
@@ -46,6 +56,28 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
+	}
+
+	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore,
+			long subjectID, Resource subject, long predicateID, IRI predicate, long objectID, Value object,
+			long contextID, Resource context) {
+		this(recordIt, valueStore);
+		if (subject != null) {
+			previousSubjectID = subjectID;
+			previousSubject = subject;
+		}
+		if (predicate != null) {
+			previousPredicateID = predicateID;
+			previousPredicate = predicate;
+		}
+		if (object != null) {
+			previousObjectID = objectID;
+			previousObject = object;
+		}
+		if (contextID == 0 || context != null) {
+			previousContextID = contextID;
+			previousContext = context;
+		}
 	}
 
 	/*---------*
@@ -60,24 +92,64 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			}
 
 			long subjID = quad[TripleStore.SUBJ_IDX];
-			Resource subj = (Resource) valueStore.getLazyValue(subjID);
+			Resource subj = getSubject(subjID);
 
 			long predID = quad[TripleStore.PRED_IDX];
-			IRI pred = (IRI) valueStore.getLazyValue(predID);
+			IRI pred = getPredicate(predID);
 
 			long objID = quad[TripleStore.OBJ_IDX];
-			Value obj = valueStore.getLazyValue(objID);
+			Value obj = getObject(objID);
 
-			Resource context = null;
 			long contextID = quad[TripleStore.CONTEXT_IDX];
-			if (contextID != 0) {
-				context = (Resource) valueStore.getLazyValue(contextID);
-			}
+			Resource context = getContext(contextID);
 
 			return valueStore.createStatement(subj, pred, obj, context);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
+	}
+
+	private Resource getSubject(long subjectID) throws IOException {
+		if (subjectID == previousSubjectID) {
+			return previousSubject;
+		}
+		Resource subject = (Resource) valueStore.getLazyValue(subjectID);
+		previousSubjectID = subjectID;
+		previousSubject = subject;
+		return subject;
+	}
+
+	private IRI getPredicate(long predicateID) throws IOException {
+		if (predicateID == previousPredicateID) {
+			return previousPredicate;
+		}
+		IRI predicate = valueStore.getLazyPredicate(predicateID);
+		previousPredicateID = predicateID;
+		previousPredicate = predicate;
+		return predicate;
+	}
+
+	private Value getObject(long objectID) throws IOException {
+		if (objectID == previousObjectID) {
+			return previousObject;
+		}
+		Value object = valueStore.getLazyValue(objectID);
+		previousObjectID = objectID;
+		previousObject = object;
+		return object;
+	}
+
+	private Resource getContext(long contextID) throws IOException {
+		if (contextID == previousContextID) {
+			return previousContext;
+		}
+		Resource context = null;
+		if (contextID != 0) {
+			context = (Resource) valueStore.getLazyValue(contextID);
+		}
+		previousContextID = contextID;
+		previousContext = context;
+		return context;
 	}
 
 	@Override
@@ -155,5 +227,20 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	@Override
 	public long getSourceRowsFilteredActual() {
 		return recordIt.getSourceRowsFilteredActual();
+	}
+
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		return recordIt.getDistinctCursorSkipCountActual();
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		return recordIt.getDistinctCursorSkipSeekCountActual();
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		return recordIt.getSkipAheadSeekCountActual();
 	}
 }

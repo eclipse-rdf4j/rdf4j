@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -409,6 +410,34 @@ public abstract class AbstractSailConnection implements SailConnection {
 			CloseableIteration<? extends Statement> iteration = null;
 			try {
 				iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+				return registerIteration(iteration);
+			} catch (Throwable t) {
+				if (iteration != null) {
+					iteration.close();
+				}
+				throw t;
+			}
+		} finally {
+			try {
+				activeThread.setRelease(null);
+			} finally {
+				unblockClose.increment();
+			}
+		}
+	}
+
+	@Override
+	public final CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		flushPendingUpdates();
+
+		blockClose.increment();
+		try {
+			activeThread.setRelease(Thread.currentThread());
+			verifyIsOpen();
+			CloseableIteration<? extends Statement> iteration = null;
+			try {
+				iteration = getStatementsInternal(statementPattern, subj, pred, obj, includeInferred, contexts);
 				return registerIteration(iteration);
 			} catch (Throwable t) {
 				if (iteration != null) {
@@ -1071,6 +1100,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract CloseableIteration<? extends Statement> getStatementsInternal(Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
+
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+	}
 
 	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {

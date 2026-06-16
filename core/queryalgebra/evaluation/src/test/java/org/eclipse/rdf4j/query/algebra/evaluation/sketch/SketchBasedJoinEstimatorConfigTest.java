@@ -26,9 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.function.BooleanSupplier;
 
-import org.apache.datasketches.common.ResizeFactor;
-import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -56,6 +55,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	private static final String OBJECT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX + "objectBucketCount";
 	private static final String CONTEXT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX + "contextBucketCount";
 	private static final String CONTEXT_PAIR_SKETCHES_ENABLED_PROPERTY = PROPERTY_PREFIX + "contextPairSketchesEnabled";
+	private static final String SKETCH_STRATEGY_PROPERTY = PROPERTY_PREFIX + "sketchStrategy";
 
 	private StubSketchStatementSource store;
 	private Resource s1;
@@ -76,6 +76,184 @@ class SketchBasedJoinEstimatorConfigTest {
 
 	private void rebuild(SketchBasedJoinEstimator est) {
 		est.rebuild();
+	}
+
+	@Test
+	void defaultSketchStrategyIsOmni() throws Exception {
+		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, defaults);
+
+		assertEquals("omni", defaults.sketchStrategy.configValue());
+		assertEquals("omni",
+				((SketchBasedJoinEstimator.SketchStrategy) objectField(estimator, "sketchStrategy")).configValue());
+	}
+
+	@Test
+	void omniConfigValueSelectsOmniStrategy() {
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+
+		assertEquals("omni", strategy.configValue());
+	}
+
+	@Test
+	void builderSelectsRetainedSketchStrategies() throws Exception {
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : SketchBasedJoinEstimator.SketchStrategy.values()) {
+			SketchBasedJoinEstimator.Config config = SketchBasedJoinEstimator.Config.defaults()
+					.withSketchStrategy(strategy);
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config);
+			SketchBasedJoinEstimator.SketchStrategy expected = switch (strategy) {
+			case OMNI, FAST_AGMS, COUNT_MIN, COUNT_MIN_DUAL -> strategy;
+			case TUPLE, JOIN_SKETCH -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL;
+			};
+
+			assertEquals(expected, config.sketchStrategy);
+			assertEquals(expected, objectField(estimator, "sketchStrategy"));
+		}
+	}
+
+	@Test
+	void legacySketchStrategiesDoNotAllocateJoinSketchSideState() throws Exception {
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : SketchBasedJoinEstimator.SketchStrategy.values()) {
+			StubSketchStatementSource localStore = new StubSketchStatementSource();
+			localStore.add(st(s1, p1, o1));
+			localStore.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o2")));
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(strategy)
+							.withThrottleEveryN(1)
+							.withThrottleMillis(0));
+
+			rebuild(estimator);
+
+			int allocatedJoinSketches = joinSketchCount(estimator);
+			assertEquals(0, allocatedJoinSketches,
+					strategy + " should not allocate JoinSketch side state");
+		}
+	}
+
+	@Test
+	void countMinStrategiesAllocateCountMinSideState() throws Exception {
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : List.of(
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN,
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)) {
+			StubSketchStatementSource localStore = new StubSketchStatementSource();
+			localStore.add(st(s1, p1, o1));
+			localStore.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o2")));
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(strategy)
+							.withThrottleEveryN(1)
+							.withThrottleMillis(0));
+
+			rebuild(estimator);
+
+			assertTrue(countMinSketchCount(estimator) > 0, strategy + " should allocate Count-Min side state");
+		}
+	}
+
+	@Test
+	void omniStrategyAllocatesOmniJoinEstimatorSideState() throws Exception {
+		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
+				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		localStore.add(st(s1, p1, o1));
+		localStore.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o2")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(strategy)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		assertEquals("omni", estimator.getSketchStrategy().configValue());
+		assertEquals(0, omniSketchCount(estimator), "OMNI should not allocate legacy OmniFrequencySketch state");
+		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
+				"OMNI should allocate Omni join-estimator state");
+	}
+
+	@Test
+	void explicitOmniStrategyUsesOmniRuntimePath() throws Exception {
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		for (int i = 0; i < 16; i++) {
+			localStore.add(st(VF.createIRI("urn:omni-fastagms:s" + i), p1,
+					VF.createIRI("urn:omni-fastagms:o" + (i % 4))));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		assertEquals("omni", estimator.getSketchStrategy().configValue());
+		assertEquals(16.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d);
+		assertEquals(4.0d, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(),
+				"urn:omni-fastagms:o0"), 0.0d);
+		assertEquals(4.0d, estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(),
+				"urn:omni-fastagms:o0", null), 0.0d);
+		assertEquals(0, estimator.debugResidentSketches().size(),
+				"OMNI should not populate resident FastAGMS sketches");
+		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
+				"OMNI should populate the join-estimator side state");
+	}
+
+	@Test
+	void countMinDualExposesJoinEvidenceWithoutChangingDefaultEstimatePath() throws Exception {
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		Value object = VF.createIRI("urn:o:shared");
+		localStore.add(st(s1, p1, object));
+		localStore.add(st(VF.createIRI("urn:s2"), p1, object));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		Object estimate = invokeCountMinJoinEvidence(estimator, SketchBasedJoinEstimator.Component.O,
+				SketchBasedJoinEstimator.Component.P, p1.stringValue(), SketchBasedJoinEstimator.Component.P,
+				p1.stringValue());
+
+		assertEquals("countmin-sketch-surface", invokeString(estimate, "source"));
+		assertEquals(invokeDouble(estimate, "upperBoundRows"), invokeDouble(estimate, "calibratedRows"), 0.0d);
+		assertTrue(invokeDouble(estimate, "upperBoundRows") >= 4.0d);
+		assertTrue(invokeDouble(estimate, "confidence") < 0.5d);
+	}
+
+	@Test
+	void systemPropertyOverridesSketchStrategy() throws Exception {
+		PropertyState properties = PropertyState.capture(SKETCH_STRATEGY_PROPERTY);
+		try {
+			System.setProperty(SKETCH_STRATEGY_PROPERTY, "tuple");
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH));
+
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					objectField(estimator, "sketchStrategy"));
+		} finally {
+			properties.restore();
+		}
+	}
+
+	@Test
+	void invalidSystemPropertySketchStrategyFallsBackToConfiguredStrategy() throws Exception {
+		PropertyState properties = PropertyState.capture(SKETCH_STRATEGY_PROPERTY);
+		try {
+			System.setProperty(SKETCH_STRATEGY_PROPERTY, "not-a-strategy");
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.JOIN_SKETCH));
+
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					objectField(estimator, "sketchStrategy"));
+		} finally {
+			properties.restore();
+		}
 	}
 
 	@Test
@@ -346,20 +524,9 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void sketchesUseResizeFactorX8() throws Exception {
-		var newSkMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("newSk", int.class);
-		newSkMethod.setAccessible(true);
-		var defaultKField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_SKETCH_NOMINAL_ENTRIES");
-		defaultKField.setAccessible(true);
-		ArrayOfDoublesUpdatableSketch sketch = (ArrayOfDoublesUpdatableSketch) newSkMethod.invoke(null,
-				defaultKField.getInt(null));
-		assertEquals(ResizeFactor.X8, sketch.getResizeFactor());
-	}
-
-	@Test
 	void lowMemorySupplierApiRemoved() {
 		assertThrows(NoSuchMethodException.class, () -> SketchBasedJoinEstimator.class
-				.getMethod("setLowMemorySupplier", java.util.function.BooleanSupplier.class));
+				.getMethod("setLowMemorySupplier", BooleanSupplier.class));
 	}
 
 	@Test
@@ -391,7 +558,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
 		assertEquals(64, defaults.zeroIntersectionExactDistinctLimit);
 		assertEquals(128.0d, defaults.zeroIntersectionSkewRatio, 0.0d);
-		assertEquals(1_000_000L, defaults.zeroIntersectionRowBudget);
+		assertEquals(4096L, defaults.zeroIntersectionRowBudget);
 		assertEquals(128, defaults.zeroIntersectionSampleSize);
 
 		SketchBasedJoinEstimator.Config configured = SketchBasedJoinEstimator.Config.defaults()
@@ -432,12 +599,13 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void tupleSketchJoinSurvivesWhenRareOverlapFallbackDisabled() throws Exception {
+	void legacyTupleStrategyUsesRetainedCountMinRuntimePath() throws Exception {
 		PropertyState properties = PropertyState.capture(EXACT_LIMIT_PROPERTY, SKEW_RATIO_PROPERTY, ROW_BUDGET_PROPERTY,
 				SAMPLE_SIZE_PROPERTY);
 		try {
 			properties.clearAll();
 			RareOverlapFixture fixture = buildRareOverlapFixture(SketchBasedJoinEstimator.Config.defaults()
+					.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 					.withNominalEntries(512)
 					.withSubjectBucketCount(128)
 					.withPredicateBucketCount(128)
@@ -451,15 +619,8 @@ class SketchBasedJoinEstimatorConfigTest {
 					.withZeroIntersectionRowBudget(0L)
 					.withZeroIntersectionSampleSize(32));
 
-			double estimate = fixture.estimator.cardinality(fixture.join);
-			double relativeError = Math.abs(estimate - fixture.actualJoinRows) / fixture.actualJoinRows;
-
-			assertTrue(estimate > 0.0d,
-					() -> "Tuple sketch dot products should estimate rare overlap without fallback sampling. actual="
-							+ fixture.actualJoinRows);
-			assertTrue(relativeError <= 0.35d,
-					() -> "Sampled tuple-sketch rare-overlap estimate should stay bounded. estimate=" + estimate
-							+ ", actual=" + fixture.actualJoinRows + ", error=" + relativeError);
+			assertEquals(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL,
+					fixture.estimator.getSketchStrategy());
 		} finally {
 			properties.restore();
 		}
@@ -546,6 +707,77 @@ class SketchBasedJoinEstimatorConfigTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static int joinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object joinSketches = objectField(state, "joinSketches");
+		Object[] sketches = (Object[]) objectField(joinSketches, "sketches");
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int countMinSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object countMinSketches = objectField(state, "countMinSketches");
+		Object[] sketches = (Object[]) objectField(countMinSketches, "sketches");
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object omniSketches = objectField(state, "omniSketches");
+		Object[] sketches = (Object[]) objectField(omniSketches, "sketches");
+		int count = 0;
+		for (Object sketch : sketches) {
+			if (sketch != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int omniJoinEstimatorRelationCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Object state = objectField(estimator, "current");
+		Object omniJoinEstimator = objectField(state, "omniJoinEstimator");
+		if (omniJoinEstimator == null) {
+			return 0;
+		}
+		Map<?, ?> relations = (Map<?, ?>) objectField(omniJoinEstimator, "relations");
+		return relations.size();
+	}
+
+	private static Object invokeCountMinJoinEvidence(SketchBasedJoinEstimator estimator,
+			SketchBasedJoinEstimator.Component join, SketchBasedJoinEstimator.Component a, String av,
+			SketchBasedJoinEstimator.Component b, String bv) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("estimateCountMinJoinOn",
+				SketchBasedJoinEstimator.Component.class, SketchBasedJoinEstimator.Component.class, String.class,
+				SketchBasedJoinEstimator.Component.class, String.class);
+		method.setAccessible(true);
+		return method.invoke(estimator, join, a, av, b, bv);
+	}
+
+	private static double invokeDouble(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (double) method.invoke(target);
+	}
+
+	private static String invokeString(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (String) method.invoke(target);
 	}
 
 	private static Object component(Object stateComponents, String component) throws Exception {

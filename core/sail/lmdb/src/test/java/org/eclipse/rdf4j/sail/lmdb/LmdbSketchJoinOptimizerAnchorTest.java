@@ -12,21 +12,29 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -50,6 +58,88 @@ class LmdbSketchJoinOptimizerAnchorTest {
 		assertEquals(1, planner.countCapturedAssignments("optName"));
 	}
 
+	@Test
+	void selectsOptionalRightAnchoringWhenCheaper() {
+		StatementPattern left = statementPattern("person", "type", "type");
+		StatementPattern right = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(left, right));
+
+		new LmdbSketchJoinOptimizer(new OptionalAnchoringCostModel(right, 100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		assertTrue(right.getStringMetricPlanned("optimizer.optionalRhsAnchoring")
+				.startsWith("selected=anchored, originalWork=100, anchoredWork=5"));
+	}
+
+	@Test
+	void keepsOptionalRightUnanchoredWhenCheaper() {
+		StatementPattern left = statementPattern("person", "type", "type");
+		StatementPattern right = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(left, right));
+
+		new LmdbSketchJoinOptimizer(new OptionalAnchoringCostModel(right, 5.0d, 100.0d), false).optimize(root, null,
+				null);
+
+		assertTrue(right.getStringMetricPlanned("optimizer.optionalRhsAnchoring")
+				.startsWith("selected=original, originalWork=5, anchoredWork=100"));
+	}
+
+	@Test
+	void skipsOptionalRightAnchoringForScopeChangingRightSide() {
+		StatementPattern left = statementPattern("person", "type", "type");
+		StatementPattern rightPattern = statementPattern("person", "name", "name");
+		Extension extension = new Extension(rightPattern, new ExtensionElem(new Var("name"), "person"));
+		Service service = new Service(Var.of("serviceRef", VF.createIRI("urn:service")),
+				statementPattern("person", "remoteName", "remoteName"),
+				"SERVICE <urn:service> { ?person <urn:remoteName> ?remoteName }", null, null, false);
+
+		new LmdbSketchJoinOptimizer(new OptionalAnchoringCostModel(rightPattern, 100.0d, 5.0d), false)
+				.optimize(new QueryRoot(new LeftJoin(left.clone(), extension)), null, null);
+		new LmdbSketchJoinOptimizer(new OptionalAnchoringCostModel(service.getServiceExpr(), 100.0d, 5.0d), false)
+				.optimize(new QueryRoot(new LeftJoin(left.clone(), service)), null, null);
+
+		assertNull(rightPattern.getStringMetricPlanned("optimizer.optionalRhsAnchoring"));
+		assertNull(service.getStringMetricPlanned("optimizer.optionalRhsAnchoring"));
+	}
+
+	@Test
+	void passesOptionalLeftPrefixFactorsToRightSideCostingWithoutFiniteValues() {
+		StatementPattern orgType = statementPattern("org", "type", "type");
+		StatementPattern personOrg = statementPattern("person", "memberOf", "org");
+		StatementPattern employee = statementPattern("org", "employee", "employee");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(orgType, personOrg), employee));
+		CapturingOptionalRightCostModel statistics = new CapturingOptionalRightCostModel(employee);
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertTrue(statistics.capturedContexts
+				.stream()
+				.anyMatch(context -> context.isNestedIteratorInvocation()
+						&& context.getFiniteBindingValues().isEmpty()
+						&& context.getPrefixFactors().size() == 2),
+				"Expected optional RHS costing to receive left prefix factors without finite VALUES");
+	}
+
+	@Test
+	void passesAssuredPrefixFactorsThroughPriorOptionalToFollowingOptionalRightSide() {
+		StatementPattern orgType = statementPattern("org", "type", "type");
+		StatementPattern personOrg = statementPattern("person", "memberOf", "org");
+		StatementPattern personName = statementPattern("person", "name", "name");
+		StatementPattern employee = statementPattern("org", "employee", "employee");
+		LeftJoin priorOptional = new LeftJoin(new Join(orgType, personOrg), personName);
+		QueryRoot root = new QueryRoot(new LeftJoin(priorOptional, employee));
+		CapturingOptionalRightCostModel statistics = new CapturingOptionalRightCostModel(employee);
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertTrue(statistics.capturedContexts
+				.stream()
+				.anyMatch(context -> context.isNestedIteratorInvocation()
+						&& context.getFiniteBindingValues().isEmpty()
+						&& context.getPrefixFactors().size() == 2),
+				"Expected following OPTIONAL RHS costing to receive assured prefix factors from the prior OPTIONAL left side");
+	}
+
 	private static BindingSetAssignment values(String bindingName, String... values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
@@ -61,6 +151,35 @@ class LmdbSketchJoinOptimizerAnchorTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
+		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
+				new Var(objectName));
+	}
+
+	private static final class OptionalAnchoringCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final TupleExpr rightArg;
+		private final double unanchoredWorkRows;
+		private final double anchoredWorkRows;
+
+		private OptionalAnchoringCostModel(TupleExpr rightArg, double unanchoredWorkRows, double anchoredWorkRows) {
+			this.rightArg = rightArg;
+			this.unanchoredWorkRows = unanchoredWorkRows;
+			this.anchoredWorkRows = anchoredWorkRows;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			if (factor == rightArg || factor.equals(rightArg)) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						currentlyBoundVars.contains("person") ? anchoredWorkRows : unanchoredWorkRows, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+		}
 	}
 
 	private static final class CapturingPlanner extends EvaluationStatistics implements JoinOrderPlanner {
@@ -80,6 +199,32 @@ class LmdbSketchJoinOptimizerAnchorTest {
 					.map(BindingSetAssignment.class::cast)
 					.filter(assignment -> assignment.getBindingNames().contains(bindingName))
 					.count();
+		}
+	}
+
+	private static final class CapturingOptionalRightCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final TupleExpr rightArg;
+		private final List<JoinFactorCostModel.CostContext> capturedContexts = new ArrayList<>();
+
+		private CapturingOptionalRightCostModel(TupleExpr rightArg) {
+			this.rightArg = rightArg;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				JoinFactorCostModel.CostContext context) {
+			if (factor == rightArg || factor.equals(rightArg)) {
+				capturedContexts.add(context);
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d, Map.of(), Map.of()));
 		}
 	}
 }

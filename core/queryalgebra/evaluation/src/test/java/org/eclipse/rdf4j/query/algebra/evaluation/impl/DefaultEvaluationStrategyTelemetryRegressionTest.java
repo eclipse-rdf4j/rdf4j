@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -60,6 +61,38 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 
 		assertThat(prepared.isConstant()).isTrue();
 		assertThat(prepared.evaluate(EmptyBindingSet.getInstance()).stringValue()).isEqualTo("3");
+	}
+
+	@Test
+	void timedTupleStepIncludesIteratorConstructionTime() {
+		long constructionNanos = 20_000_000L;
+		QueryBindingSet binding = new QueryBindingSet();
+		binding.addBinding("value", SimpleValueFactory.getInstance().createLiteral("result"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(binding));
+
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context) {
+				return bindings -> {
+					long started = System.nanoTime();
+					while (System.nanoTime() - started < constructionNanos) {
+						Thread.onSpinWait();
+					}
+					return new CloseableIteratorIteration<>(node.getBindingSets().iterator());
+				};
+			}
+		};
+		strategy.setTrackTime(true);
+
+		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("value").stringValue()).isEqualTo("result");
+			assertThat(results.hasNext()).isFalse();
+		}
+
+		assertThat(assignment.getTotalTimeNanosActual()).isGreaterThanOrEqualTo(constructionNanos);
 	}
 
 	@Test

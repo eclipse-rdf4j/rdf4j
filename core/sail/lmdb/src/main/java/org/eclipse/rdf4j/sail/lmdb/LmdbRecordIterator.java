@@ -77,6 +77,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final long[] quad;
 	private final long[] originalQuad;
+	private final LmdbValueIdFilter idFilter;
+	private final int distinctPrefixLength;
 
 	private boolean fetchNext = false;
 
@@ -87,13 +89,29 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
+	private long distinctCursorSkipCountActual;
+	private long distinctCursorSkipSeekCountActual;
+	private long skipAheadSeekCountActual;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, LmdbValueIdFilter.none());
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, idFilter, 0);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter, int distinctPrefixLength)
+			throws IOException {
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
+		this.idFilter = idFilter == null ? LmdbValueIdFilter.none() : idFilter;
+		this.distinctPrefixLength = Math.max(0, distinctPrefixLength);
 		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
 		this.pool = Pool.get();
@@ -184,7 +202,7 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				lastResult = fetchNextCursorPosition();
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
@@ -205,11 +223,16 @@ class LmdbRecordIterator implements RecordIterator {
 					lastResult = MDB_NOTFOUND;
 				} else if (matches()) {
 					sourceRowsFilteredActual++;
-					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					// value doesn't match search key/mask, fetch next candidate value
+					lastResult = fetchNextFilteredCursorPosition();
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					if (!idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+						sourceRowsFilteredActual++;
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						continue;
+					}
 					sourceRowsMatchedActual++;
 					// fetch next value
 					fetchNext = true;
@@ -221,6 +244,51 @@ class LmdbRecordIterator implements RecordIterator {
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+	}
+
+	private int fetchNextCursorPosition() {
+		if (distinctPrefixLength > 0) {
+			distinctCursorSkipCountActual++;
+			if (minKeyBuf == null) {
+				minKeyBuf = pool.getKeyBuffer();
+			}
+			if (!LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad, originalQuad,
+					distinctPrefixLength)) {
+				return MDB_NOTFOUND;
+			}
+			keyData.mv_data(minKeyBuf);
+			distinctCursorSkipSeekCountActual++;
+			return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+	}
+
+	private int fetchNextFilteredCursorPosition() {
+		if (distinctPrefixLength > 0) {
+			index.keyToQuad(keyData.mv_data(), quad);
+			int suffixComparison = LmdbDistinctCursorSkipSupport.compareFixedSuffixAfterPrefix(index.getFieldSeq(),
+					quad, originalQuad, distinctPrefixLength);
+			if (suffixComparison != 0) {
+				if (minKeyBuf == null) {
+					minKeyBuf = pool.getKeyBuffer();
+				}
+				boolean hasSeekKey;
+				if (suffixComparison < 0) {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeCurrentPrefixLowerBoundKey(minKeyBuf, index,
+							quad, originalQuad, distinctPrefixLength);
+				} else {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad,
+							originalQuad, distinctPrefixLength);
+				}
+				if (!hasSeekKey) {
+					return MDB_NOTFOUND;
+				}
+				keyData.mv_data(minKeyBuf);
+				distinctCursorSkipSeekCountActual++;
+				return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			}
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 	}
 
 	private boolean matches() {
@@ -292,5 +360,42 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public long getSourceRowsFilteredActual() {
 		return sourceRowsFilteredActual;
+	}
+
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		if (distinctPrefixLength <= 0) {
+			return -1;
+		}
+		return Math.max(distinctCursorSkipCountActual, Math.max(0L, sourceRowsMatchedActual - 1L));
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		if (distinctPrefixLength <= 0) {
+			return -1;
+		}
+		return Math.max(distinctCursorSkipSeekCountActual, Math.max(0L, sourceRowsMatchedActual - 1L));
+	}
+
+	@Override
+	public boolean skipTo(long subject, long predicate, long object, long context) {
+		if (closed) {
+			return false;
+		}
+		if (minKeyBuf == null) {
+			minKeyBuf = pool.getKeyBuffer();
+		}
+		minKeyBuf.clear();
+		index.toKey(minKeyBuf, subject, predicate, object, context);
+		minKeyBuf.flip();
+		fetchNext = false;
+		skipAheadSeekCountActual++;
+		return true;
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		return skipAheadSeekCountActual;
 	}
 }

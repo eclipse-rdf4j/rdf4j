@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.lang.foreign.MemorySegment;
-import java.util.Arrays;
 
 import org.apache.datasketches.common.ResizeFactor;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesCombiner;
@@ -30,13 +29,12 @@ final class TupleSketchOps {
 
 	private static final int NUMBER_OF_VALUES = 1;
 	private static final int SMALL_INTERSECTION_RETAINED_ENTRY_THRESHOLD = 1024;
-	private static final long EMPTY_KEY = Long.MIN_VALUE;
 	private static final double[] POSITIVE_ONE = { 1.0d };
 	private static final double[] NEGATIVE_ONE = { -1.0d };
 	private static final ArrayOfDoublesCombiner MULTIPLY_POSITIVE_SUMMARIES = (left, right) -> new double[] {
 			Math.max(0.0d, left[0]) * Math.max(0.0d, right[0]) };
 	private static final ArrayOfDoublesCombiner MIN_POSITIVE_SUMMARIES = (left, right) -> new double[] {
-			Math.min(Math.max(0.0d, left[0]), Math.max(0.0d, right[0])) };
+			Math.clamp(left[0], 0.0d, Math.max(0.0d, right[0])) };
 
 	private TupleSketchOps() {
 	}
@@ -99,6 +97,23 @@ final class TupleSketchOps {
 			return 0.0d;
 		}
 		return sketch.getEstimate();
+	}
+
+	static double estimatePositiveDistinct(ArrayOfDoublesSketch sketch) {
+		return summarizePositiveEntries(sketch).positiveDistinct();
+	}
+
+	static double estimateF2(ArrayOfDoublesSketch sketch) {
+		if (sketch == null || sketch.getRetainedEntries() == 0) {
+			return 0.0d;
+		}
+		double sum = 0.0d;
+		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
+		while (iterator.next()) {
+			double value = Math.max(0.0d, iterator.getValues()[0]);
+			sum += value * value;
+		}
+		return scaleByTheta(sum, sketch);
 	}
 
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
@@ -193,22 +208,22 @@ final class TupleSketchOps {
 		}
 		long[] keys = new long[capacity];
 		double[] values = new double[capacity];
-		Arrays.fill(keys, EMPTY_KEY);
+		boolean[] occupied = new boolean[capacity];
 		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
 		while (iterator.next()) {
-			insert(keys, values, iterator.getKey(), iterator.getValues()[0]);
+			insert(keys, values, occupied, iterator.getKey(), iterator.getValues()[0]);
 		}
-		return new DirectLookupTable(keys, values);
+		return new DirectLookupTable(keys, values, occupied);
 	}
 
-	private static void insert(long[] keys, double[] values, long key, double value) {
+	private static void insert(long[] keys, double[] values, boolean[] occupied, long key, double value) {
 		int mask = keys.length - 1;
 		int slot = mixSlot(key) & mask;
 		while (true) {
-			long existing = keys[slot];
-			if (existing == EMPTY_KEY || existing == key) {
+			if (!occupied[slot] || keys[slot] == key) {
 				keys[slot] = key;
 				values[slot] = value;
+				occupied[slot] = true;
 				return;
 			}
 			slot = (slot + 1) & mask;
@@ -224,17 +239,16 @@ final class TupleSketchOps {
 		return (int) mixed;
 	}
 
-	private record DirectLookupTable(long[] keys, double[] values) {
+	private record DirectLookupTable(long[] keys, double[] values, boolean[] occupied) {
 
 		private double find(long targetKey) {
 			int mask = keys.length - 1;
 			int slot = mixSlot(targetKey) & mask;
 			while (true) {
-				long key = keys[slot];
-				if (key == EMPTY_KEY) {
+				if (!occupied[slot]) {
 					return 0.0d;
 				}
-				if (key == targetKey) {
+				if (keys[slot] == targetKey) {
 					return values[slot];
 				}
 				slot = (slot + 1) & mask;
@@ -280,11 +294,13 @@ final class TupleSketchOps {
 		private final ArrayOfDoublesSketch sketch;
 		private final double positiveDistinct;
 		private final double positiveSum;
+		private final double upperBoundDistinct1StdDev;
 
 		private IntersectionStats(ArrayOfDoublesSketch sketch, double positiveDistinct, double positiveSum) {
 			this.sketch = sketch;
 			this.positiveDistinct = positiveDistinct;
 			this.positiveSum = positiveSum;
+			this.upperBoundDistinct1StdDev = computeUpperBoundDistinct1StdDev(sketch);
 		}
 
 		ArrayOfDoublesSketch sketch() {
@@ -298,6 +314,22 @@ final class TupleSketchOps {
 		double positiveSum() {
 			return positiveSum;
 		}
+
+		double upperBoundDistinct1StdDev() {
+			return upperBoundDistinct1StdDev;
+		}
+
+		boolean upperBoundOnly() {
+			return positiveDistinct == 0.0d && upperBoundDistinct1StdDev > 0.0d;
+		}
+	}
+
+	private static double computeUpperBoundDistinct1StdDev(ArrayOfDoublesSketch sketch) {
+		if (sketch == null) {
+			return 0.0d;
+		}
+		double upperBound = sketch.getUpperBound(1);
+		return Double.isFinite(upperBound) && upperBound > 0.0d ? upperBound : 0.0d;
 	}
 
 }

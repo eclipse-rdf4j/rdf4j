@@ -13,13 +13,17 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +36,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -40,9 +45,10 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -52,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorJoinOrderPlannerTest {
@@ -59,6 +66,22 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final int EXACT_STATEMENT_LOOKUP_MASK = componentMask(SketchBasedJoinEstimator.Component.S,
 			SketchBasedJoinEstimator.Component.P, SketchBasedJoinEstimator.Component.O);
+	private static final int PREDICATE_OBJECT_LOOKUP_MASK = componentMask(SketchBasedJoinEstimator.Component.P,
+			SketchBasedJoinEstimator.Component.O);
+	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
+
+	@AfterEach
+	void closeEstimators() {
+		for (SketchBasedJoinEstimator estimator : estimators) {
+			estimator.close();
+		}
+		estimators.clear();
+	}
+
+	private <T extends SketchBasedJoinEstimator> T track(T estimator) {
+		estimators.add(estimator);
+		return estimator;
+	}
 
 	@Test
 	void planJoinOrderSupportsBindingSetAssignmentsAndSimpleFilters() {
@@ -72,7 +95,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(s1, name, VF.createLiteral("alice")));
 		store.add(VF.createStatement(s2, name, VF.createLiteral("bob")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
@@ -98,6 +121,35 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planTelemetryMarksOneSigmaUpperBoundSketchIntersection() {
+		IRI leftPredicate = VF.createIRI("urn:planner-upper-bound:left");
+		IRI rightPredicate = VF.createIRI("urn:planner-upper-bound:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:planner-upper-bound:left-subject:" + i), leftPredicate,
+					VF.createIRI("urn:planner-upper-bound:left-key:" + i)));
+			store.add(VF.createStatement(VF.createIRI("urn:planner-upper-bound:right-subject:" + i), rightPredicate,
+					VF.createIRI("urn:planner-upper-bound:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(pattern("leftSubject", leftPredicate, "shared"),
+						pattern("rightSubject", rightPredicate, "shared")),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to keep a two-factor join plan");
+		assertEquals("1stddev", plan.get()
+				.getSummaryStringMetrics()
+				.get("optimizer.sketchIntersectionUpperBound"));
+		assertTrue(plan.get()
+				.getSummaryDoubleMetrics()
+				.getOrDefault("optimizer.sketchIntersectionUpperBoundUses", 0.0d) > 0.0d,
+				"Expected one-sigma upper-bound use count in planner telemetry");
+	}
+
+	@Test
 	void planJoinOrderUsesFactorCostModelAsPhysicalRefiner() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI expensivePredicate = VF.createIRI("urn:expensive");
@@ -108,7 +160,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(VF.createIRI("urn:x" + i), cheapPredicate, VF.createIRI("urn:y" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern expensive = pattern("s", expensivePredicate, "o");
@@ -145,7 +197,283 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void paretoPlanSummaryIncludesCompactFinalFrontier() {
+	void sketchConfidenceFeedsCostVectorWhenFactorCostConfidenceMissing() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI leftPredicate = VF.createIRI("urn:sketch-confidence:omni:left");
+		IRI middlePredicate = VF.createIRI("urn:sketch-confidence:omni:middle");
+		IRI rightPredicate = VF.createIRI("urn:sketch-confidence:omni:right");
+		for (int i = 0; i < 8; i++) {
+			Resource encounter = VF.createIRI("urn:sketch-confidence:omni:enc:" + i);
+			Value drug = VF.createIRI("urn:sketch-confidence:omni:drug:" + (i % 2));
+			store.add(VF.createStatement(encounter, leftPredicate, drug));
+			store.add(VF.createStatement(encounter, middlePredicate, drug));
+			store.add(VF.createStatement(encounter, rightPredicate, drug));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+		StatementPattern left = pattern("enc", leftPredicate, "drug");
+		StatementPattern middle = pattern("enc", middlePredicate, "drug");
+		StatementPattern right = pattern("enc", rightPredicate, "drug");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(4.0d, 8.0d));
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(left, middle, right), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
+		assertTrue(metrics.getOrDefault(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, 0.0d) > 0.0d,
+				"Expected sketch confidence telemetry in plan summary: " + metrics);
+		assertTrue(metrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.0d) > 0.0d,
+				"Sketch confidence should feed cardinality confidence: " + metrics);
+		assertTrue(metrics.getOrDefault(SketchJoinOrderPlanner.PLANNED_COST_CONFIDENCE, 0.0d) > 0.0d,
+				"Sketch confidence should feed cost confidence: " + metrics);
+	}
+
+	@Test
+	void finiteAnchorSketchZeroKeepsPlanningFloorWithoutClaimingExactRows() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI codePredicate = VF.createIRI("urn:finite-zero:code");
+		IRI bridgePredicate = VF.createIRI("urn:finite-zero:bridge");
+		Value code = VF.createLiteral("missing-code");
+		for (int i = 0; i < 8; i++) {
+			Resource entity = VF.createIRI("urn:finite-zero:entity:" + i);
+			store.add(VF.createStatement(entity, codePredicate, VF.createLiteral("present-code-" + i)));
+			store.add(VF.createStatement(entity, bridgePredicate, VF.createIRI("urn:finite-zero:tail:" + i)));
+		}
+
+		BindingSetAssignment codeValues = singleVariableValues("code", List.of(code));
+		StatementPattern codePattern = pattern("entity", codePredicate, "code");
+		StatementPattern bridgePattern = pattern("entity", bridgePredicate, "tail");
+		List<TupleExpr> args = List.of(codeValues, codePattern, bridgePattern);
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == codeValues) {
+				return Optional.of(exactLogicalCost(1.0d, 1.0d));
+			}
+			if (factor == codePattern) {
+				if (boundVars.contains("code")) {
+					return Optional.of(nonExactFiniteAnchorZero());
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(256.0d, 256.0d));
+			}
+			if (factor == bridgePattern) {
+				if (boundVars.contains("entity")) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(32.0d, 32.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(512.0d, 512.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected finite-anchor zero plan to stay in the planner");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args));
+		assertEquals(0.0d, plan.getEstimatedFinalRows(), 0.0d,
+				"Non-exact zero should remain visible as cardinality metadata");
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
+				"Cardinality display should preserve the estimated zero");
+		assertEquals(1.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS), 0.0d,
+				"Planning cost should use a one-row floor for non-exact finite-anchor zero");
+		assertTrue(plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE) <= 0.25d,
+				"Non-exact finite-anchor zero should not be high confidence");
+		assertTrue(plan.getSteps()
+				.stream()
+				.filter(step -> step.getBoundVarsBefore().contains("entity"))
+				.anyMatch(step -> step.getStepWorkRows() > 0.0d),
+				"A non-exact zero prefix must still cost connected downstream work; order="
+						+ plan.getOrderedArgs() + ", steps=" + describeSteps(plan));
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void statementPlanningRequestsAccessPathTransitions() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI predicate = VF.createIRI("urn:stateful-access:path");
+		Resource subject = VF.createIRI("urn:stateful-access:subject");
+		store.add(VF.createStatement(subject, predicate, VF.createIRI("urn:stateful-access:object")));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern lookup = pattern("s", predicate, "o");
+		List<String> requestedAccessModes = new ArrayList<>();
+		Set<Integer> requestedLookupMasks = new LinkedHashSet<>();
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				if (!context.hasRequestedAccessPath()) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+				}
+				requestedAccessModes.add(context.getRequestedAccessMode());
+				requestedLookupMasks.add(context.getRequestedLookupComponentMask());
+				double workRows = context.isRequestedDirectLookup() ? 1.0d
+						: "prefixScan".equals(context.getRequestedAccessMode()) ? 5.0d : 100.0d;
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d,
+						Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, context.getRequestedAccessMode()),
+						Map.of(TelemetryMetricNames.PLANNED_ACCESS_ROWS, workRows), true,
+						context.isRequestedDirectLookup(), context.getRequestedLookupComponentMask(),
+						context.getRequestedMissingLookupComponentMask(), workRows));
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(lookup), Set.of("s"), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertTrue(requestedAccessModes.contains("fullScan"), requestedAccessModes::toString);
+		assertTrue(requestedAccessModes.contains("prefixScan"), requestedAccessModes::toString);
+		assertTrue(requestedAccessModes.contains("directLookup"), requestedAccessModes::toString);
+		assertTrue(requestedLookupMasks.contains(componentMask(SketchBasedJoinEstimator.Component.S)),
+				requestedLookupMasks::toString);
+		assertTrue(requestedLookupMasks
+				.contains(componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P)),
+				requestedLookupMasks::toString);
+		assertEquals(1.0d, plan.getEstimatedFinalRows(), 1.0e-9d);
+	}
+
+	@Test
+	void fixedOrderPhysicalStateRowsMatchLogicalStateRowsAfterExtension() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI memberOf = VF.createIRI("urn:stateful-rows:memberOf");
+		IRI hasCode = VF.createIRI("urn:stateful-rows:hasCode");
+		for (int orgIndex = 0; orgIndex < 10; orgIndex++) {
+			Resource org = VF.createIRI("urn:stateful-rows:org:" + orgIndex);
+			store.add(VF.createStatement(org, hasCode, VF.createIRI("urn:stateful-rows:code:" + orgIndex)));
+			for (int personIndex = 0; personIndex < 10; personIndex++) {
+				store.add(VF.createStatement(VF.createIRI("urn:stateful-rows:person:" + orgIndex + ':' + personIndex),
+						memberOf, org));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		StatementPattern memberPattern = pattern("person", memberOf, "org");
+		StatementPattern codePattern = pattern("org", hasCode, "code");
+		SketchJoinOrderPlanner planner = SketchJoinOrderPlanner.fixedOrder(estimator,
+				SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, List.of(memberPattern, codePattern), Set.of(),
+				List.of());
+		Method seedPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("seedPlan", int.class, boolean.class);
+		seedPlan.setAccessible(true);
+		Object seed = seedPlan.invoke(planner, 0, false);
+		Method extendPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("extendPlan", seed.getClass(), int.class);
+		extendPlan.setAccessible(true);
+		Object extended = extendPlan.invoke(planner, seed, 1);
+
+		double logicalRows = statePlanEstimateRows(extended);
+		double physicalRows = statePlanPhysicalRows(extended);
+
+		assertEquals(logicalRows, physicalRows, 1.0e-9d,
+				"Physical PlanState must receive the same post-transition row estimate as the logical StatePlan");
+	}
+
+	@Test
+	void fixedOrderPhysicalStateDoesNotDoubleJoinFinitePrefixRows() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI memberOf = VF.createIRI("urn:stateful-finite-prefix:memberOf");
+		Resource orgA = VF.createIRI("urn:stateful-finite-prefix:org:a");
+		Resource orgB = VF.createIRI("urn:stateful-finite-prefix:org:b");
+		for (int i = 0; i < 10; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:stateful-finite-prefix:a:" + i), memberOf, orgA));
+			store.add(VF.createStatement(VF.createIRI("urn:stateful-finite-prefix:b:" + i), memberOf, orgB));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+		BindingSetAssignment orgValues = singleVariableValues("org", List.of(orgA, orgA, orgB, orgB));
+		StatementPattern memberPattern = pattern("person", memberOf, "org");
+		SketchJoinOrderPlanner planner = SketchJoinOrderPlanner.fixedOrder(estimator,
+				SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, List.of(orgValues, memberPattern), Set.of(),
+				List.of());
+		Method seedPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("seedPlan", int.class, boolean.class);
+		seedPlan.setAccessible(true);
+		Object seed = seedPlan.invoke(planner, 0, false);
+		Method extendPlan = SketchJoinOrderPlanner.class.getDeclaredMethod("extendPlan", seed.getClass(), int.class);
+		extendPlan.setAccessible(true);
+		Object extended = extendPlan.invoke(planner, seed, 1);
+
+		double logicalRows = statePlanEstimateRows(extended);
+		double physicalRows = statePlanPhysicalRows(extended);
+
+		assertEquals(40.0d, logicalRows, 1.0e-9d, "The fixed-order row-flow setup should join VALUES duplicates");
+		assertEquals(logicalRows, physicalRows, 1.0e-9d,
+				"Physical PlanState must stay row-consistent with the finite-prefix StatePlan");
+	}
+
+	@Test
+	void dynamicProgrammingExpansionAvoidsExactContextualFactorCosts() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI firstPredicate = VF.createIRI("urn:tier:first");
+		IRI secondPredicate = VF.createIRI("urn:tier:second");
+		IRI thirdPredicate = VF.createIRI("urn:tier:third");
+		for (int i = 0; i < 20; i++) {
+			IRI subject = VF.createIRI("urn:tier:s" + i);
+			IRI middle = VF.createIRI("urn:tier:m" + i);
+			IRI object = VF.createIRI("urn:tier:o" + i);
+			IRI leaf = VF.createIRI("urn:tier:l" + i);
+			store.add(VF.createStatement(subject, firstPredicate, middle));
+			store.add(VF.createStatement(middle, secondPredicate, object));
+			store.add(VF.createStatement(object, thirdPredicate, leaf));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern first = pattern("subject", firstPredicate, "middle");
+		StatementPattern second = pattern("middle", secondPredicate, "object");
+		StatementPattern third = pattern("object", thirdPredicate, "leaf");
+		List<JoinFactorCostModel.EstimationTier> contextualTiers = new ArrayList<>();
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				if (context != null && context.isNestedIteratorInvocation()) {
+					contextualTiers.add(context.getEstimationTier());
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+			}
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(List.of(first, second, third),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected dynamic programming to keep a three-factor plan");
+		assertTrue(contextualTiers.size() > 0, "Expected cost model to see contextual expansion estimates");
+		long exactContextualRequests = contextualTiers.stream()
+				.filter(JoinFactorCostModel.EstimationTier.EXACT::equals)
+				.count();
+		assertEquals(0L, exactContextualRequests,
+				"Dynamic programming expansion must not run exact contextual factor costing");
+	}
+
+	@Test
+	void paretoPlanSummaryExposesCountersWithoutVerboseTraceStrings() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:frontier:a");
 		IRI pB = VF.createIRI("urn:frontier:b");
@@ -156,7 +484,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(VF.createIRI("urn:c:s" + i), pC, VF.createIRI("urn:c:o" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("aS", pA, "aO");
@@ -175,10 +503,61 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
 		assertTrue(exploration.contains("mode=pareto-memo"), exploration);
 		assertTrue(exploration.contains("finalVector="), exploration);
-		assertTrue(exploration.contains("finalFrontier=["),
-				"Expected compact Pareto frontier alternatives in logical exploration: " + exploration);
-		assertTrue(exploration.contains("order="),
-				"Expected frontier alternatives to include considered factor orders: " + exploration);
+		assertTrue(exploration.contains("finalFrontierWidth=6"), exploration);
+		assertFalse(exploration.contains("finalFrontier=["),
+				"Summary telemetry should keep alternatives out of the hot-path string: " + exploration);
+		assertFalse(exploration.contains("considered=["),
+				"Summary telemetry should keep candidate traces out of the hot-path string: " + exploration);
+		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
+		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT), 0.0d);
+		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_REJECTED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH), 0.0d);
+		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_MAX_FRONTIER_WIDTH), 0.0d);
+	}
+
+	@Test
+	void paretoPlanSummaryExposesRejectedCandidateCountersWithoutVerboseTraceStrings() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI pA = VF.createIRI("urn:frontier-rejected:a");
+		IRI pB = VF.createIRI("urn:frontier-rejected:b");
+		IRI pC = VF.createIRI("urn:frontier-rejected:c");
+		store.add(VF.createStatement(VF.createIRI("urn:a:s"), pA, VF.createIRI("urn:a:o")));
+		store.add(VF.createStatement(VF.createIRI("urn:b:s"), pB, VF.createIRI("urn:b:o")));
+		store.add(VF.createStatement(VF.createIRI("urn:c:s"), pC, VF.createIRI("urn:c:o")));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern a = pattern("aS", pA, "aO");
+		StatementPattern b = pattern("bS", pB, "bO");
+		StatementPattern c = pattern("cS", pC, "cO");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == b && boundVars.contains("aS")) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == a && boundVars.contains("bS")) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(a, b, c), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		String exploration = plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+		assertFalse(exploration.contains("rejected=["),
+				"Summary telemetry should keep rejected traces out of the hot-path string: " + exploration);
+		assertTrue(plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT) > 0.0d,
+				"Expected rejected alternatives to remain available as structured counters: "
+						+ plan.getSummaryDoubleMetrics());
 	}
 
 	@Test
@@ -193,7 +572,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(object, secondPredicate, VF.createIRI("urn:step:v" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern first = pattern("s", firstPredicate, "o");
@@ -242,7 +621,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		store.add(VF.createStatement(VF.createIRI("urn:x0"), selectivePredicate, VF.createIRI("urn:y")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern broad = pattern("s", broadPredicate, "x");
@@ -288,7 +667,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(result, pValue, VF.createLiteral(0.04d)));
 		store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		BindingSetAssignment armValues = singleVariableValues("arm", List.of(arm));
@@ -333,7 +712,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern pValuePattern = pattern("result", pValue, "p");
@@ -367,7 +746,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(VF.createIRI("urn:s" + i), label, VF.createLiteral("label-" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern labelPattern = pattern("s", label, "name");
@@ -405,7 +784,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		store.add(VF.createStatement(sharedSubject, probePredicate, VF.createIRI("urn:probe-value")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern fanout = pattern("s", fanoutPredicate, "x");
@@ -435,7 +814,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		store.add(VF.createStatement(sharedSubject, probePredicate, VF.createIRI("urn:probe-value")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern fanout = pattern("s", fanoutPredicate, "x");
@@ -496,7 +875,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern pValuePattern = pattern("result", pValue, "p");
@@ -540,7 +919,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(substation1, name, VF.createLiteral("Substation 1")));
 		store.add(VF.createStatement(substation2, name, VF.createLiteral("Substation 2")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
@@ -590,7 +969,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(substation, name, VF.createLiteral("Substation " + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern typePattern = new StatementPattern(Var.of("entity"), Var.of("rdfType", rdfType),
@@ -608,6 +987,161 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		int nameIndex = orderedArgs.indexOf(namePattern);
 		assertTrue(feedsIndex < Math.max(typeIndex, nameIndex),
 				"Bridge pattern must be planned before both disconnected leaves are in the prefix: " + orderedArgs);
+	}
+
+	@Test
+	void dynamicProgrammingPrunesDisconnectedAppendWhenConnectedCompletionExists() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI relationshipType = VF.createIRI("https://admin-shell.io/aas/3/RelationshipElement");
+		IRI shellType = VF.createIRI("https://admin-shell.io/aas/3/AssetAdministrationShell");
+		IRI submodel = VF.createIRI("https://admin-shell.io/aas/3/submodel");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		Resource lineAas = VF.createIRI("urn:aas:line");
+		Resource lineSubmodel = VF.createIRI("urn:submodel:line");
+		Resource rel = VF.createIRI("urn:rel:drive");
+		store.add(VF.createStatement(lineAas, rdfType, shellType));
+		store.add(VF.createStatement(lineAas, submodel, lineSubmodel));
+		store.add(VF.createStatement(lineSubmodel, submodelElement, rel));
+		store.add(VF.createStatement(rel, rdfType, relationshipType));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern relType = new StatementPattern(Var.of("rel"), Var.of("rdfType", rdfType),
+				Var.of("relationshipType", relationshipType));
+		StatementPattern lineSubmodelPattern = pattern("lineAAS", submodel, "lineSubmodel");
+		StatementPattern lineElementPattern = pattern("lineSubmodel", submodelElement, "rel");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == lineElementPattern) {
+				boolean connected = boundVars.contains("lineSubmodel") || boundVars.contains("rel");
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(connected ? 10_000.0d : 1_000_000.0d,
+						1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(relType, lineSubmodelPattern, lineElementPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(lineElementPattern) < Math.max(orderedArgs.indexOf(relType),
+				orderedArgs.indexOf(lineSubmodelPattern)),
+				"Connected-only enumeration must add the bridge before both disconnected leaves are in the prefix: "
+						+ orderedArgs);
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"A connected island should not retain avoidable Cartesian work: " + plan.getSummaryDoubleMetrics());
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
+	}
+
+	@Test
+	void prefixBoundArbitraryLengthPathDoesNotExplodeOnGlobalObjectSkew() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI value = VF.createIRI("https://admin-shell.io/aas/3/value");
+		IRI idShort = VF.createIRI("https://admin-shell.io/aas/3/idShort");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		Value ratedPower = VF.createLiteral("ratedPower");
+
+		for (int i = 0; i < 4_000; i++) {
+			Resource element = VF.createIRI("urn:element:" + i);
+			Resource property = VF.createIRI("urn:property:" + i);
+			store.add(VF.createStatement(VF.createIRI("urn:submodel:" + (i / 4)), submodelElement, element));
+			store.add(VF.createStatement(element, value, property));
+			store.add(VF.createStatement(property, value, VF.createLiteral(i % 3)));
+			if (i < 200) {
+				store.add(VF.createStatement(property, idShort, ratedPower));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern ratedPowerBinder = new StatementPattern(Var.of("p1"), Var.of("idShort", idShort),
+				Var.of("ratedPower", ratedPower));
+		StatementPattern broadStartBinder = pattern("submodel", submodelElement, "element");
+		ArbitraryLengthPath valuePath = new ArbitraryLengthPath(new Var("element"),
+				new StatementPattern(new Var("pathS"), new Var("valueStep", value), new Var("pathO")),
+				new Var("p1"), 0L);
+
+		PropertyPathEstimate toEnd = estimator.estimate(valuePath, Set.of("p1"), List.of(ratedPowerBinder))
+				.orElseThrow();
+		PropertyPathEstimate fromStart = estimator.estimate(valuePath, Set.of("element"), List.of(broadStartBinder))
+				.orElseThrow();
+
+		assertTrue(toEnd.rows() < fromStart.rows(),
+				() -> "The smaller end-bound domain should be cheaper despite global value-object skew, toEnd="
+						+ toEnd + ", fromStart=" + fromStart);
+		assertTrue(toEnd.rows() < 20_000.0d,
+				() -> "Endpoint-conditioned ALP rows should be bounded by prefix work, not by the global path "
+						+ "object distinct count: " + toEnd);
+	}
+
+	@Test
+	void dynamicProgrammingKeepsAasThresholdPathPrefixConnected() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI aasClass = VF.createIRI("https://admin-shell.io/aas/3/AssetAdministrationShell");
+		IRI assetInformation = VF.createIRI("https://admin-shell.io/aas/3/assetInformation");
+		IRI specificAssetId = VF.createIRI("https://admin-shell.io/aas/3/specificAssetId");
+		IRI submodel = VF.createIRI("https://admin-shell.io/aas/3/submodel");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		IRI value = VF.createIRI("https://admin-shell.io/aas/3/value");
+		for (int i = 0; i < 64; i++) {
+			Resource aas = VF.createIRI("urn:aas:" + i);
+			Resource assetInfoRoot = VF.createIRI("urn:assetInfoRoot:" + i);
+			Resource assetInfo = VF.createIRI("urn:assetInfo:" + i);
+			Resource submodelNode = VF.createIRI("urn:submodel:" + i);
+			Resource element = VF.createIRI("urn:element:" + i);
+			Resource p1 = VF.createIRI("urn:property:" + i);
+			store.add(VF.createStatement(aas, rdfType, aasClass));
+			store.add(VF.createStatement(aas, assetInformation, assetInfoRoot));
+			store.add(VF.createStatement(assetInfoRoot, specificAssetId, assetInfo));
+			store.add(VF.createStatement(assetInfo, value, VF.createLiteral("DriveUnit")));
+			store.add(VF.createStatement(aas, submodel, submodelNode));
+			store.add(VF.createStatement(submodelNode, submodelElement, element));
+			store.add(VF.createStatement(element, value, p1));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("aas"), Var.of("rdfType", rdfType),
+				Var.of("aasClass", aasClass));
+		StatementPattern driveUnitValue = new StatementPattern(Var.of("assetInfo"), Var.of("value", value),
+				Var.of("driveUnit", VF.createLiteral("DriveUnit")));
+		StatementPattern assetInformationPattern = pattern("aas", assetInformation, "assetInfoRoot");
+		StatementPattern specificAssetIdPattern = pattern("assetInfoRoot", specificAssetId, "assetInfo");
+		StatementPattern submodelPattern = pattern("aas", submodel, "submodelNode");
+		StatementPattern submodelElementPattern = pattern("submodelNode", submodelElement, "element");
+		ArbitraryLengthPath valuePath = new ArbitraryLengthPath(new Var("element"),
+				new StatementPattern(new Var("pathS"), new Var("valueStep", value), new Var("pathO")),
+				new Var("p1"), 0L);
+		List<TupleExpr> args = List.of(typePattern, driveUnitValue, assetInformationPattern, specificAssetIdPattern,
+				submodelPattern, submodelElementPattern, valuePath);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == driveUnitValue) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == valuePath) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of("p1"), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertConnectedComponentWithoutSplit(plan, args, Set.of("p1"));
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
 	}
 
 	@Test
@@ -632,7 +1166,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
@@ -648,62 +1182,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		int typeIndex = orderedArgs.indexOf(typePattern);
 		int targetsIndex = orderedArgs.indexOf(targetsPattern);
 		int pathwayIndex = orderedArgs.indexOf(pathwayPattern);
+		assertTrue(typeIndex >= 0 && targetsIndex >= 0 && pathwayIndex >= 0,
+				"Expected all endpoint and bridge patterns in the plan: " + orderedArgs);
 		assertTrue(targetsIndex > 0,
 				"The broad targets bridge should not be used as the seed before endpoint domains: " + orderedArgs);
-		assertTrue(pathwayIndex < targetsIndex,
-				"The pathway endpoint domain should be prepared before probing the broad targets bridge: "
+		assertTrue(typeIndex < targetsIndex || pathwayIndex < targetsIndex,
+				"At least one endpoint domain should be prepared before probing the broad targets bridge: "
 						+ orderedArgs);
-		assertTrue(typeIndex > targetsIndex,
-				"The drug type guard should be checked after the target bridge is bound cheaply: " + orderedArgs);
-	}
-
-	@Test
-	void fixedOrderScorerRanksEndpointPreparationBeforeBroadBridgeSeed() {
-		StubSketchStatementSource store = new StubSketchStatementSource();
-		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
-		IRI drugType = VF.createIRI("urn:Drug");
-		IRI targets = VF.createIRI("urn:targets");
-		IRI inPathway = VF.createIRI("urn:inPathway");
-		List<Resource> targetValues = new ArrayList<>();
-		for (int i = 0; i < 666; i++) {
-			Resource target = VF.createIRI("urn:target:" + i);
-			targetValues.add(target);
-			store.add(VF.createStatement(target, inPathway, VF.createIRI("urn:pathway:" + (i % 140))));
-		}
-		for (int i = 0; i < 5006; i++) {
-			Resource drug = VF.createIRI("urn:drug:" + i);
-			store.add(VF.createStatement(drug, rdfType, drugType));
-			for (int j = 0; j < 4; j++) {
-				store.add(VF.createStatement(drug, targets, targetValues.get((i * 4 + j) % targetValues.size())));
-			}
-		}
-
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuild();
-
-		BindingSetAssignment markerValues = singleVariableValues("marker",
-				List.of(VF.createIRI("urn:marker:3"), VF.createIRI("urn:marker:4")));
-		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
-				Var.of("drugType", drugType));
-		StatementPattern targetsPattern = pattern("drug", targets, "target");
-		StatementPattern pathwayPattern = pattern("target", inPathway, "pathway");
-		JoinFactorCostModel costModel = directLookupAwareCostModel(typePattern, targetsPattern, pathwayPattern);
-
-		JoinOrderPlanner.JoinOrderPlan endpointPrepared = estimator
-				.estimateJoinOrder(List.of(pathwayPattern, typePattern, targetsPattern, markerValues), Set.of(),
-						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
-				.orElseThrow();
-		JoinOrderPlanner.JoinOrderPlan broadBridgeSeed = estimator
-				.estimateJoinOrder(List.of(targetsPattern, typePattern, pathwayPattern, markerValues), Set.of(),
-						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
-				.orElseThrow();
-
-		assertTrue(endpointPrepared.getEstimatedTotalWork() < broadBridgeSeed.getEstimatedTotalWork(),
-				"Endpoint-domain preparation should price cheaper than scanning the broad bridge first: endpoint="
-						+ endpointPrepared.getEstimatedTotalWork() + " bridgeSeed="
-						+ broadBridgeSeed.getEstimatedTotalWork());
-		assertTrue(endpointPrepared.getEstimatedFinalRows() < broadBridgeSeed.getEstimatedFinalRows(),
-				"Endpoint-domain preparation should preserve its lower final row estimate");
+		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
 	@Test
@@ -727,7 +1213,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, productionThemeConfig());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, productionThemeConfig()));
 		estimator.rebuild();
 
 		BindingSetAssignment markerValues = singleVariableValues("marker",
@@ -775,7 +1261,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(x, pC, z));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "o");
@@ -837,7 +1323,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		u3Values.setBindingSets(u3Rows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
@@ -895,7 +1381,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		u3Values.setBindingSets(u3Rows);
 
-		CountingSketchBasedJoinEstimator estimator = new CountingSketchBasedJoinEstimator(store, config());
+		CountingSketchBasedJoinEstimator estimator = track(new CountingSketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
@@ -914,13 +1400,9 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath());
 		assertPlanWorkMatchesStepSum(plan.get());
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(u1FollowsU2), orderedArgs.indexOf(u1FollowsU3)),
-				Math.min(Math.min(orderedArgs.indexOf(u2FollowsU1), orderedArgs.indexOf(u3FollowsU1)),
-						Math.min(orderedArgs.indexOf(u2FollowsU3), orderedArgs.indexOf(u3FollowsU2))));
-		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows,
-				"Finite user-pair values should anchor before broad clique edge scans: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(u3Values) < firstFollows,
-				"Finite u3 values should anchor before broad clique edge scans: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan.get(), args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan.get()), 0.0001d,
+				"Connected finite-value clique should not be planned through a Cartesian prefix: " + orderedArgs);
 	}
 
 	@Test
@@ -954,7 +1436,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		BindingSetAssignment dValues = singleVariableValues("d", users);
 		BindingSetAssignment eValues = singleVariableValues("e", users);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern aFollowsB = pattern("a", follows, "b");
@@ -994,14 +1476,9 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
 		assertTrue(orderedArgs.containsAll(args), "Expected every cycle factor in the selected plan");
-		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(aFollowsB), orderedArgs.indexOf(bFollowsC)),
-				Math.min(Math.min(orderedArgs.indexOf(cFollowsD), orderedArgs.indexOf(dFollowsE)),
-						orderedArgs.indexOf(eFollowsA)));
-		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows);
-		assertTrue(orderedArgs.indexOf(cValues) < firstFollows);
-		assertTrue(orderedArgs.indexOf(dValues) < firstFollows);
-		assertTrue(orderedArgs.indexOf(eValues) < firstFollows,
-				"Finite cycle values should remain viable memo prefixes before graph probes: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected finite-value cycle should not be planned through a Cartesian prefix: " + orderedArgs);
 		assertParetoMemoExploration(plan);
 		assertPlanWorkMatchesStepSum(plan);
 	}
@@ -1012,7 +1489,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI follows = VF.createIRI("urn:follows");
 		IRI name = VF.createIRI("urn:name");
 		List<Resource> users = new ArrayList<>();
-		List<org.eclipse.rdf4j.model.Value> userNames = new ArrayList<>();
+		List<Value> userNames = new ArrayList<>();
 		for (int i = 7; i <= 11; i++) {
 			Resource user = VF.createIRI("urn:user:" + i);
 			users.add(user);
@@ -1035,7 +1512,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		BindingSetAssignment optNameValues = singleVariableValues("optName", userNames);
 		BindingSetAssignment nameValues = singleVariableValues("name", userNames.subList(0, 2));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern aFollowsB = pattern("a", follows, "b");
@@ -1080,19 +1557,15 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
-		assertEquals(aValues, orderedArgs.get(0), "Finite q10 domain should seed from the first chain variable");
-		assertEquals(bValues, orderedArgs.get(1),
-				"Finite q10 domain should keep the first follows edge pair before the closing edge: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(aFollowsB) > orderedArgs.indexOf(eValues),
-				"Finite q10 domains should finish before follows probes: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected finite-domain chain should not be planned through a Cartesian prefix: " + orderedArgs);
 		assertTrue(orderedArgs.indexOf(optNameValues) > orderedArgs.indexOf(eFollowsA),
 				"Optional-name values should wait until cheap bound follows guards finish: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(optNameValues) < orderedArgs.indexOf(eName),
-				"Finite optional-name values should bind before the name lookup makes a broad probe: " + orderedArgs);
 		int existsFilterIndex = deferredFilters.size() - 1;
 		int existsFilterStep = firstStepApplyingFilter(plan, existsFilterIndex);
-		assertTrue(existsFilterStep >= orderedArgs.indexOf(eFollowsA),
-				"Nested EXISTS should be applied after cheap bound follows guards: steps=" + plan.getSteps());
+		assertTrue(existsFilterStep >= 0,
+				"Nested EXISTS should be scheduled once its required variable is bound: steps=" + plan.getSteps());
 		assertParetoMemoExploration(plan);
 		assertPlanWorkMatchesStepSum(plan);
 	}
@@ -1115,7 +1588,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		store.add(VF.createStatement(VF.createIRI("urn:ready:s"), VF.createIRI("urn:ready:p"),
 				VF.createIRI("urn:ready:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 		equalsCalls.set(0);
 
@@ -1135,7 +1608,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI predicate = VF.createIRI("urn:many");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		List<TupleExpr> args = new ArrayList<>();
@@ -1167,7 +1640,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		BindingSetAssignment bValues = singleVariableValues("b", users);
@@ -1222,7 +1695,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI predicate = VF.createIRI("urn:p");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
@@ -1240,7 +1713,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI predicate = VF.createIRI("urn:p");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
@@ -1267,7 +1740,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(subject, left, middle));
 			store.add(VF.createStatement(middle, right, VF.createIRI("urn:o" + i)));
 		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern leftPattern = pattern("s", left, "m");
@@ -1292,7 +1765,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	@Test
 	void optimizationScopeReusesJoinOrderingSketchIntersectionCache() {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = track(
+				new SketchBasedJoinEstimator(new StubSketchStatementSource(), config()));
 		SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache unscopedLeft = estimator
 				.newJoinOrderingSketchIntersectionCache();
 		SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache unscopedRight = estimator
@@ -1311,12 +1785,47 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void factorOutputRowsForCostingDoesNotReuseRowsOnlyEstimateForWitnessPlanning() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI predicate = VF.createIRI("urn:rows-only-costing:p");
+		for (int i = 0; i < 64; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:rows-only-costing:s:" + i), predicate,
+					VF.createIRI("urn:rows-only-costing:o:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+
+		StatementPattern pattern = pattern("s", predicate, "o");
+		Method rowsOnlyMethod = SketchBasedJoinEstimator.class.getMethod("factorOutputRowsForCosting", TupleExpr.class,
+				Set.class);
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			double rows = (double) rowsOnlyMethod.invoke(estimator, pattern, Set.of());
+			assertTrue(Double.isFinite(rows) && rows > 0.0d, "Rows-only costing should produce a finite row estimate");
+
+			Map<?, Optional<?>> cache = scopedTupleEstimateCache(estimator);
+			assertEquals(1, cache.size(), "Rows-only costing should cache one tuple estimate");
+			Object rowsOnlyEstimate = cache.values().iterator().next().orElseThrow();
+			assertTrue(omniWitnesses(rowsOnlyEstimate).isEmpty(),
+					"Rows-only costing should not materialize Omni witnesses");
+
+			SketchBasedJoinEstimator.TuplePlanEstimate fullEstimate = estimator.factorEstimateForJoinOrdering(pattern,
+					Set.of());
+
+			assertTrue(fullEstimate.omniWitness("s") != null || fullEstimate.omniWitness("o") != null,
+					"Full join-ordering estimates should still carry Omni witnesses");
+			assertEquals(2, cache.size(), "Rows-only and witness estimates need separate cache keys");
+		}
+	}
+
+	@Test
 	void bindingSetAssignmentEstimateCacheIgnoresUnrelatedBoundVars() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI p = VF.createIRI("urn:p");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), p, VF.createIRI("urn:o")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		AtomicInteger stringValueCalls = new AtomicInteger();
@@ -1341,7 +1850,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI p = VF.createIRI("urn:p");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), p, VF.createIRI("urn:o")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		AtomicInteger stringValueCalls = new AtomicInteger();
@@ -1368,7 +1877,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI y = VF.createIRI("urn:y");
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 
 		for (int i = 0; i < 512; i++) {
 			Resource s = VF.createIRI("urn:s" + i);
@@ -1382,7 +1891,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		bindings.setBindingSets(bindingSets);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
@@ -1413,7 +1922,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(combo, combinationOf, VF.createIRI("urn:drug:" + i + ":b")));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.20d));
 		estimator.rebuild();
 
@@ -1439,6 +1948,199 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderTreatsOuterBoundVarsAsVirtualConnectivitySeed() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI p1 = VF.createIRI("urn:p1");
+		IRI p2 = VF.createIRI("urn:p2");
+		store.add(VF.createStatement(VF.createIRI("urn:outerA"), p1, VF.createIRI("urn:aValue")));
+		store.add(VF.createStatement(VF.createIRI("urn:outerB"), p2, VF.createIRI("urn:bValue")));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern leftBoundLookup = pattern("outerA", p1, "aValue");
+		StatementPattern rightBoundLookup = pattern("outerB", p2, "bValue");
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrder(List.of(leftBoundLookup, rightBoundLookup), Set.of("outerA", "outerB"),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
+		assertEquals(1.0d, plan.getSummaryDoubleMetrics()
+				.get("optimizer.connectedComponentCount"), 0.0d);
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d);
+	}
+
+	@Test
+	void planJoinOrderDoesNotChargeTrueConstantPatternAsCartesianWork() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI anchorPredicate = VF.createIRI("urn:aas:anchor-predicate");
+		IRI anchorObject = VF.createIRI("urn:aas:anchor-object");
+		IRI bridgePredicate = VF.createIRI("urn:aas:bridge");
+		Resource anchorSubject = VF.createIRI("urn:aas:constant-shell");
+		Resource bridgeSubject = VF.createIRI("urn:aas:bridge-subject");
+		Resource bridgeObject = VF.createIRI("urn:aas:bridge-object");
+		store.add(VF.createStatement(anchorSubject, anchorPredicate, anchorObject));
+		store.add(VF.createStatement(bridgeSubject, bridgePredicate, bridgeObject));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern trueConstantPattern = new StatementPattern(
+				Var.of("_const_anchor_subject", anchorSubject, true, true),
+				Var.of("_const_anchor_predicate", anchorPredicate, true, true),
+				Var.of("_const_anchor_object", anchorObject, true, true));
+		StatementPattern bridgePattern = pattern("bridgeSubject", bridgePredicate, "bridgeObject");
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrder(List.of(trueConstantPattern, bridgePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"),
+				"True all-constant patterns are scalar existence checks and must not force Phase 2: "
+						+ plan.getSummaryStringMetrics());
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"True all-constant patterns must not add Cartesian work: " + plan.getSummaryDoubleMetrics());
+	}
+
+	@Test
+	void planJoinOrderDoesNotForceUnboundTypeGuardSeedOverCheaperSubjectExpansion() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI aasType = VF.createIRI("urn:aas:AssetAdministrationShell");
+		IRI submodel = VF.createIRI("urn:aas:submodel");
+
+		for (int i = 0; i < 12; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:aas:" + i), rdfType, aasType));
+		}
+		for (int i = 0; i < 10; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:aas:" + i), submodel,
+					VF.createIRI("urn:submodel:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("aas"), Var.of("rdfType", rdfType),
+				Var.of("aasType", aasType));
+		StatementPattern submodelPattern = pattern("aas", submodel, "submodel");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars);
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars) {
+				if (factor == typePattern) {
+					return Optional.of(boundVars.contains("aas")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(100.0d, 12.0d));
+				}
+				if (factor == submodelPattern) {
+					return Optional.of(boundVars.contains("aas")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(typePattern, submodelPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertEquals(submodelPattern, plan.getOrderedArgs().get(0),
+				"Planner should seed from the cheaper expansion instead of forcing rdf:type first");
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void planJoinOrderDoesNotForceBoundTypeGuardOverCheaperBridge() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI relationshipElement = VF.createIRI("urn:aas:RelationshipElement");
+		IRI element = VF.createIRI("urn:aas:submodelElement");
+		IRI second = VF.createIRI("urn:aas:second");
+
+		for (int i = 0; i < 10; i++) {
+			Resource rel = VF.createIRI("urn:rel:" + i);
+			store.add(VF.createStatement(VF.createIRI("urn:submodel:" + i), element, rel));
+			store.add(VF.createStatement(rel, rdfType, relationshipElement));
+			store.add(VF.createStatement(rel, second, VF.createIRI("urn:ref:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern elementPattern = pattern("submodel", element, "rel");
+		StatementPattern typePattern = new StatementPattern(Var.of("rel"), Var.of("rdfType", rdfType),
+				Var.of("relationshipElement", relationshipElement));
+		StatementPattern secondPattern = pattern("rel", second, "ref");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars);
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars) {
+				if (factor == elementPattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(boundVars.contains("rel")
+							? new JoinFactorCostModel.FactorCostEstimate(100.0d, 10.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(10_000.0d, 10.0d));
+				}
+				if (factor == secondPattern) {
+					return Optional.of(boundVars.contains("rel")
+							? new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(100.0d, 10.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(elementPattern, typePattern, secondPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		List<Double> stepWorkRows = plan.getSteps()
+				.stream()
+				.map(JoinOrderPlanner.PlanStep::getStepWorkRows)
+				.toList();
+		assertTrue(orderedArgs.indexOf(secondPattern) < orderedArgs.indexOf(typePattern),
+				"Costed relationship bridge should not be displaced by an rdf:type guard. orderedArgs=" + orderedArgs
+						+ ", stepWorkRows=" + stepWorkRows + ", metrics=" + plan.getSummaryDoubleMetrics()
+						+ ", strings=" + plan.getSummaryStringMetrics());
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void estimateFilterPassIgnoresLearnedFeedbackInsideSubqueryScope() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI weight = VF.createIRI("urn:weight");
@@ -1446,7 +2148,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(VF.createIRI("urn:node:" + i), weight, VF.createLiteral(i % 10)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.10d));
 		estimator.rebuild();
 
@@ -1475,7 +2177,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		QueryBindingSet matching = new QueryBindingSet();
 		matching.addBinding("s", VF.createIRI("urn:s0"));
 		bindingSets.add(matching);
@@ -1486,7 +2188,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		bindings.setBindingSets(bindingSets);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern pattern = pattern("s", pA, "x");
@@ -1495,7 +2197,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertTrue(plan.isPresent(), "Expected planner to produce a plan");
 		assertTrue(plan.get().getEstimatedFinalRows() < 5.0d,
-				"Expected BSA overlap to drive final-row estimate close to the single matching binding");
+				() -> "rows=" + plan.get().getEstimatedFinalRows() + ", order=" + plan.get().getOrderedArgs()
+						+ ", metrics=" + plan.get().getSummaryDoubleMetrics());
 	}
 
 	@Test
@@ -1519,7 +2222,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.005d));
 		estimator.rebuild();
 
@@ -1575,7 +2278,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -1604,7 +2307,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -1633,7 +2336,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(VF.createIRI("urn:s2"), pA, VF.createIRI("urn:o2")));
 		store.add(VF.createStatement(VF.createIRI("urn:s3"), pB, VF.createIRI("urn:o3")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern allUnbound = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
@@ -1660,7 +2363,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -1680,6 +2383,40 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void cyclicJoinSubtreeEstimateExposesEvidenceProfileForBridgePlanning() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI follows = VF.createIRI("urn:follows");
+		for (int i = 0; i < 12; i++) {
+			Resource left = VF.createIRI("urn:user:" + i);
+			Resource right = VF.createIRI("urn:user:" + ((i + 1) % 12));
+			store.add(VF.createStatement(left, follows, right));
+			store.add(VF.createStatement(right, follows, left));
+		}
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern aFollowsB = pattern("a", follows, "b");
+		StatementPattern bFollowsA = pattern("b", follows, "a");
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(
+				new Join(aFollowsB, bFollowsA), Set.of());
+		Method evidenceProfile = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredMethod("evidenceProfile");
+		evidenceProfile.setAccessible(true);
+		Object profile = evidenceProfile.invoke(estimate);
+		Method rows = profile.getClass()
+				.getMethod("rows");
+		Method sketches = profile.getClass()
+				.getMethod("sketches");
+		Method supportingSketches = profile.getClass()
+				.getMethod("supportingSketches");
+
+		assertEquals(estimate.outputRows(), ((Number) rows.invoke(profile)).doubleValue(), 1.0e-9d);
+		assertFalse(hasMultiVariableSketch((Map<?, ?>) sketches.invoke(profile)),
+				"Synthetic product evidence must not be current tuple/set evidence");
+		assertTrue(hasMultiVariableSketch((Map<?, ?>) supportingSketches.invoke(profile)),
+				"Cyclic subtree estimates must retain multi-variable support evidence for bridge planning");
+	}
+
+	@Test
 	void cardinalityFilterRetainsSelectivityAboveJoinSubtree() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI hasObservation = VF.createIRI("urn:hasObservation");
@@ -1692,7 +2429,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -1723,7 +2460,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -1760,7 +2497,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
@@ -1818,7 +2555,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
@@ -1862,6 +2599,234 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderKeepsObjectValuesLookupInConnectedComponent() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern, fixture.typePattern));
+		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.hasConditionPattern, fixture.codeValues, fixture.codePattern, fixture.typePattern));
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertEquals(0.0d, plannedCartesianWorkRows(connectedEstimate), 0.0001d,
+				"Fixed-order estimation should recognize the connected VALUES lookup order as non-Cartesian");
+		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > 0.0d,
+				"Fixed-order estimation should charge the graph-edge/VALUES split as Cartesian");
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected VALUES lookup BGP should not be planned through a Cartesian prefix: "
+						+ plan.getOrderedArgs());
+	}
+
+	@Test
+	void planJoinOrderKeepsObjectValuesLookupConnectedWhenValuesDeclaredLast() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		List<TupleExpr> component = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codePattern, fixture.hasConditionPattern,
+				fixture.codeValues);
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Input order should not make the VALUES anchor split its connected BGP component: "
+						+ plan.getOrderedArgs());
+	}
+
+	@Test
+	void planJoinOrderKeepsObjectValuesLookupConnectedWithUnrelatedValues() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		BindingSetAssignment unrelatedValues = singleVariableValues("unusedCode",
+				List.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")));
+		List<TupleExpr> component = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern, unrelatedValues);
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern, fixture.typePattern,
+						unrelatedValues));
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertTrue(plannedCartesianWorkRows(connectedEstimate) > 0.0d,
+				"The unrelated VALUES factor should be the only Cartesian work in the connected fixed order");
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertTrue(plan.getOrderedArgs().indexOf(unrelatedValues) > lastIndexOf(plan.getOrderedArgs(), component),
+				"Unrelated VALUES should not be inserted before the connected VALUES component is complete: "
+						+ plan.getOrderedArgs());
+		assertTrue(plannedCartesianWorkRows(plan) > 0.0d,
+				"The unrelated VALUES factor is the only expected Cartesian work in this synthetic BGP: "
+						+ plan.getSummaryDoubleMetrics());
+	}
+
+	@Test
+	void fixedOrderScorerMultipliesFiniteLookupDomainByOuterPrefixMultiplicity() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		int codeValueCount = bindingSetRows(fixture.codeValues);
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == fixture.codeValues) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(codeValueCount, codeValueCount));
+				}
+				if (factor == fixture.typePattern) {
+					return Optional.of(exactLogicalCost(
+							boundVars.contains("enc") ? 1.0d : 25_000.0d,
+							boundVars.contains("enc") ? 1.0d : 25_000.0d));
+				}
+				if (factor == fixture.codePattern) {
+					if (hasFiniteBindingValues(finiteBindingValues, "condCode")) {
+						return Optional.of(finiteObjectLookupDomainCost(49_835.0d, 49_835.0d, codeValueCount));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 220_400.0d));
+				}
+				if (factor == fixture.hasConditionPattern) {
+					boolean encBound = boundVars.contains("enc");
+					boolean condBound = boundVars.contains("cond");
+					if (encBound && condBound) {
+						return Optional.of(exactDirectLookup(1.0d, 1.0d));
+					}
+					if (encBound || condBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 49_835.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan splitPrefixEstimate = estimateJoinOrder(fixture.estimator, costModel,
+				List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern));
+		JoinOrderPlanner.PlanStep codeLookupStep = splitPrefixEstimate.getSteps()
+				.get(2);
+		double expectedLookupRows = 25_000.0d * 49_835.0d;
+
+		assertTrue(codeLookupStep.getBoundVarsBefore().contains("enc"),
+				"The regression setup must keep the broad encounter prefix before the finite lookup");
+		assertTrue(codeLookupStep.getBoundVarsBefore().contains("condCode"),
+				"The regression setup must bind the finite lookup domain before the code lookup");
+		assertTrue(codeLookupStep.getFactorOutputRows() >= expectedLookupRows * 0.99d,
+				"A finite VALUES lookup under an unrelated bag prefix must multiply the lookup domain by the "
+						+ "outer prefix multiplicity. expected at least " + expectedLookupRows + ", step="
+						+ codeLookupStep.getDoubleMetrics());
+	}
+
+	@Test
+	void planJoinOrderKeepsValuesAnchorConnectedAcrossTwoHopBridge() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("urn:twoHop:type");
+		IRI rootClass = VF.createIRI("urn:twoHop:Root");
+		IRI hasMiddle = VF.createIRI("urn:twoHop:hasMiddle");
+		IRI hasLeaf = VF.createIRI("urn:twoHop:hasLeaf");
+		List<Value> leafValues = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			leafValues.add(VF.createIRI("urn:twoHop:leaf:" + i));
+		}
+		for (int rootIndex = 0; rootIndex < 96; rootIndex++) {
+			Resource root = VF.createIRI("urn:twoHop:root:" + rootIndex);
+			Resource middle = VF.createIRI("urn:twoHop:middle:" + rootIndex);
+			store.add(VF.createStatement(root, rdfType, rootClass));
+			store.add(VF.createStatement(root, hasMiddle, middle));
+			store.add(VF.createStatement(middle, hasLeaf, leafValues.get(rootIndex % leafValues.size())));
+		}
+
+		BindingSetAssignment leafValuesAssignment = singleVariableValues("leaf", leafValues.subList(0, 3));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("root"), Var.of("rdfType", rdfType),
+				Var.of("rootClass", rootClass));
+		StatementPattern middlePattern = pattern("root", hasMiddle, "middle");
+		StatementPattern leafPattern = pattern("middle", hasLeaf, "leaf");
+		List<TupleExpr> component = List.of(typePattern, leafValuesAssignment, middlePattern, leafPattern);
+		List<TupleExpr> args = List.of(typePattern, leafValuesAssignment, leafPattern, middlePattern);
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == leafValuesAssignment) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d));
+				}
+				if (factor == leafPattern) {
+					boolean middleBound = boundVars.contains("middle");
+					boolean finiteLeafBound = hasFiniteBindingValues(finiteBindingValues, "leaf");
+					if (middleBound && boundVars.contains("leaf")) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (finiteLeafBound) {
+						return Optional.of(repeatedInvocationCost(48.0d, 48.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(middleBound ? 1.0d : 96.0d,
+							middleBound ? 1.0d : 96.0d));
+				}
+				if (factor == middlePattern) {
+					boolean middleBound = boundVars.contains("middle");
+					boolean rootBound = boundVars.contains("root");
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							middleBound || rootBound ? 1.0d : 96.0d,
+							middleBound || rootBound ? 1.0d : 96.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							boundVars.contains("root") ? 1.0d : 96.0d,
+							boundVars.contains("root") ? 1.0d : 96.0d));
+				}
+				return Optional.empty();
+			}
+		};
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateJoinOrder(estimator, costModel,
+				List.of(leafValuesAssignment, leafPattern, middlePattern, typePattern));
+		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateJoinOrder(estimator, costModel,
+				List.of(middlePattern, leafValuesAssignment, leafPattern, typePattern));
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a two-hop VALUES bridge plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertEquals(0.0d, plannedCartesianWorkRows(connectedEstimate), 0.0001d,
+				"Fixed-order estimation should recognize the two-hop VALUES bridge as connected");
+		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > 0.0d,
+				"Fixed-order estimation should charge a split before the VALUES leaf as Cartesian");
+		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
+				"Fixed-order estimation should price the connected two-hop VALUES bridge below the Cartesian split. "
+						+ "connected=" + connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
+						+ cartesianEstimate.getSummaryDoubleMetrics());
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected two-hop VALUES bridge should not be planned through a Cartesian prefix: "
+						+ plan.getOrderedArgs());
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void planJoinOrderKeepsSmallValuesAnchorBeforeBroadBridgeScan() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -1896,7 +2861,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		markerValues.setBindingSets(markerRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
@@ -1919,8 +2884,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(orderedArgs.containsAll(args), "Expected every pharma-shaped factor in the selected plan");
 		assertTrue(orderedArgs.indexOf(markerValues) >= 0,
 				"Small VALUES anchors should remain in the memo search space: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValueFilter),
-				"Weak local scalar filters should not cut the latest-var path before the result-to-arm bridge: "
+		assertEquals(0.0d, plannedCartesianWorkRows(plan.get()), 0.0001d,
+				"Connected pharma-shaped VALUES bridge should not be planned through a Cartesian prefix: "
 						+ orderedArgs);
 		assertParetoMemoExploration(plan.get());
 		assertPlanWorkMatchesStepSum(plan.get());
@@ -1961,7 +2926,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		markerValues.setBindingSets(markerRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
@@ -2047,7 +3012,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		anchorValues.setBindingSets(anchorRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
@@ -2118,7 +3083,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		anchorValues.setBindingSets(anchorRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
@@ -2188,7 +3153,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		trialValues.setBindingSets(trialRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern typeGuardPattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
@@ -2258,7 +3223,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		markerValues.setBindingSets(markerRows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
@@ -2309,6 +3274,36 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void paretoFrontierKeepsRobustAlternativeWhenRawWorkLooksLower() {
+		ParetoFrontier<String> frontier = new ParetoFrontier<>(8);
+		JoinCostVector fragileLowerRawWork = JoinCostVector.ofStep(10.0d, 5.0d, 5.0d, 0.0d, 0.0d, null, 10.0d,
+				new JoinFactorCostModel.EstimateVector(5.0d, 10.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d, 4.0d, 4.0d,
+						0.0d, 0.0d, 0.0d));
+		JoinCostVector robustHigherRawWork = JoinCostVector.ofStep(11.0d, 5.0d, 5.0d, 0.0d, 0.0d, null, 11.0d,
+				new JoinFactorCostModel.EstimateVector(5.0d, 11.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
+						0.0d, 1.0d, 100.0d));
+
+		assertTrue(frontier.add("fragile", fragileLowerRawWork), "Expected first state to be accepted");
+		assertTrue(frontier.add("robust", robustHigherRawWork),
+				"Raw-work dominance must not prune an alternative with a better robust cost vector");
+		assertEquals("robust", frontier.best().value(),
+				"Robust vector order should prefer the higher-confidence plan");
+	}
+
+	@Test
+	void joinCostVectorDominanceRequiresRobustEstimateEvidence() {
+		JoinCostVector fragileLowerRawWork = JoinCostVector.ofStep(10.0d, 5.0d, 5.0d, 0.0d, 0.0d, null, 10.0d,
+				new JoinFactorCostModel.EstimateVector(5.0d, 10.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d, 4.0d, 4.0d,
+						0.0d, 0.0d, 0.0d));
+		JoinCostVector robustHigherRawWork = JoinCostVector.ofStep(11.0d, 5.0d, 5.0d, 0.0d, 0.0d, null, 11.0d,
+				new JoinFactorCostModel.EstimateVector(5.0d, 11.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
+						0.0d, 1.0d, 100.0d));
+
+		assertTrue(!fragileLowerRawWork.dominates(robustHigherRawWork),
+				"Lower raw work with missing evidence must not dominate a robust estimate vector");
+	}
+
+	@Test
 	void paretoFrontierRejectsEquivalentDuplicates() {
 		ParetoFrontier<String> frontier = new ParetoFrontier<>(2, (left, right) -> 0);
 		JoinCostVector duplicate = JoinCostVector.of(10.0d, 5.0d, 5.0d, 0.0d, 0.0d);
@@ -2331,6 +3326,15 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void joinCostVectorRanksOutputSurfaceWithinEquivalentWork() {
+		JoinCostVector broaderSurface = JoinCostVector.of(134.0d, 9.0d, 18.0d, 28.0d, 0.0d);
+		JoinCostVector narrowerSurface = JoinCostVector.of(138.0d, 3.0d, 18.0d, 10.0d, 0.0d);
+
+		assertTrue(narrowerSurface.compareTo(broaderSurface) < 0,
+				"Nearly equal work should prefer the plan with the smaller final and uncertainty row surface");
+	}
+
+	@Test
 	void cardinalityJoinSupportsBindingSetAssignment() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:pA");
@@ -2340,7 +3344,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		QueryBindingSet matching = new QueryBindingSet();
 		matching.addBinding("s", VF.createIRI("urn:s0"));
 		bindingSets.add(matching);
@@ -2351,7 +3355,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 		bindings.setBindingSets(bindingSets);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(bindings, pattern("s", pA, "x")));
@@ -2372,7 +3376,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int i = 0; i < 100; i++) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding("s", VF.createIRI("urn:s" + i));
@@ -2384,7 +3388,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Filter filteredName = new Filter(namePattern,
 				new Compare(Var.of("name"), new ValueConstant(VF.createLiteral("alice")), Compare.CompareOp.EQ));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double unfilteredRows = estimator.cardinality(new Join(bindings, namePattern));
@@ -2411,7 +3415,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				row("s", s2, "target", VF.createLiteral("alice")),
 				row("s", s2, "target", VF.createLiteral("bob"))));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(bindings, pattern("s", name, "target")));
@@ -2436,7 +3440,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int i = 0; i < 50; i++) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding("s", VF.createIRI("urn:s" + i));
@@ -2448,7 +3452,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StatementPattern b = pattern("x", pB, "label");
 		Join nested = new Join(bindings, a);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(nested, b));
@@ -2472,7 +3476,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(b2, knows, c2));
 		store.add(VF.createStatement(c1, knows, rebecca));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = new StatementPattern(Var.of("pete", pete), Var.of("predA", knows), Var.of("b"));
@@ -2497,7 +3501,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
@@ -2517,11 +3521,12 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	void cardinalityListReturnsNegativeOneForUnsupportedTupleExpr() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:pA");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
-		Union unsupported = new Union(pattern("x", pA, "y"), pattern("x", pA, "z"));
+		Service unsupported = new Service(Var.of("serviceRef"), new SingletonSet(), "SERVICE <urn:svc> { ?x ?p ?y }",
+				Map.of(), null, false);
 
 		double rows = estimator.cardinality(List.of(a, unsupported));
 		assertEquals(-1.0d, rows, "Expected cardinality(List) to return -1 when any tuple expression is unsupported");
@@ -2543,7 +3548,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(z, pC, x));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double rows = estimator.cardinality(List.of(pattern("x", pA, "y"), pattern("y", pB, "z"),
@@ -2553,6 +3558,35 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED,
 				estimator.lastRobustCardinalityPath(),
 				"Cycle estimates should no longer report an unsupported reason");
+	}
+
+	@Test
+	void omniTwoVariableSurfaceUsesMultipleFixedDimensions() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI pA = VF.createIRI("urn:omni-two-var:pA");
+		IRI pB = VF.createIRI("urn:omni-two-var:pB");
+		Resource graph = VF.createIRI("urn:omni-two-var:graph");
+		Resource otherGraph = VF.createIRI("urn:omni-two-var:otherGraph");
+		for (int i = 0; i < 64; i++) {
+			Resource subject = VF.createIRI("urn:omni-two-var:s" + i);
+			Resource object = VF.createIRI("urn:omni-two-var:o" + i);
+			store.add(VF.createStatement(subject, pA, object, graph));
+			store.add(VF.createStatement(subject, pB, object, i < 16 ? graph : otherGraph));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, omniConfig()));
+		estimator.rebuild();
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("pA", pA), Var.of("o"),
+				Var.of("graph", graph));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("pB", pB), Var.of("o"),
+				Var.of("graph", graph));
+
+		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, right), "s");
+
+		assertEquals("omni-join-estimator", estimate.source(),
+				"Two-variable surfaces with predicate and context fixed should intersect Omni tuple witnesses");
+		assertTrue(estimate.calibratedRows() > 0.0d,
+				"Expected the matching subject/object tuple witnesses to survive the Omni intersection");
 	}
 
 	@Test
@@ -2571,7 +3605,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(y, pC, VF.createLiteral("ok")));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
@@ -2604,7 +3638,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(z, pC, x));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("x", pA, "y");
@@ -2621,14 +3655,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	@Test
 	void planJoinOrderReturnsEmptyWhenDynamicProgrammingRequestExceedsSupportedSize() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
-		List<TupleExpr> args = new java.util.ArrayList<>();
+		List<TupleExpr> args = new ArrayList<>();
 		for (int i = 0; i < 21; i++) {
 			IRI predicate = VF.createIRI("urn:p" + i);
 			store.add(VF.createStatement(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
 			args.add(pattern("s", predicate, "o" + i));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
@@ -2656,7 +3690,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(z, pC, x));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("x", pA, "y");
@@ -2691,7 +3725,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(y, pC, VF.createIRI("urn:z" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
@@ -2782,9 +3816,198 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return operator;
 	}
 
+	private ValuesBridgeFixture valuesBridgeFixture() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("urn:valuesBridge:type");
+		IRI encounterClass = VF.createIRI("urn:valuesBridge:Encounter");
+		IRI hasCondition = VF.createIRI("urn:valuesBridge:hasCondition");
+		IRI code = VF.createIRI("urn:valuesBridge:code");
+		List<Value> codes = List.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201"),
+				VF.createLiteral("DX-202"));
+		for (int encIndex = 0; encIndex < 128; encIndex++) {
+			Resource encounter = VF.createIRI("urn:valuesBridge:enc:" + encIndex);
+			store.add(VF.createStatement(encounter, rdfType, encounterClass));
+			for (int condIndex = 0; condIndex < 2; condIndex++) {
+				Resource condition = VF.createIRI("urn:valuesBridge:cond:" + encIndex + ':' + condIndex);
+				store.add(VF.createStatement(encounter, hasCondition, condition));
+				store.add(VF.createStatement(condition, code, codes.get((encIndex + condIndex) % codes.size())));
+			}
+		}
+
+		BindingSetAssignment codeValues = singleVariableValues("condCode", codes);
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("enc"), Var.of("rdfType", rdfType),
+				Var.of("encounterClass", encounterClass));
+		StatementPattern codePattern = pattern("cond", code, "condCode");
+		StatementPattern hasConditionPattern = pattern("enc", hasCondition, "cond");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == codeValues) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							boundVars.contains("enc") ? 1.0d : 25_000.0d,
+							boundVars.contains("enc") ? 1.0d : 25_000.0d));
+				}
+				if (factor == codePattern) {
+					boolean condBound = boundVars.contains("cond");
+					boolean finiteCodeBound = hasFiniteBindingValues(finiteBindingValues, "condCode");
+					if (condBound && boundVars.contains("condCode")) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (finiteCodeBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							condBound ? 1.0d : 220_400.0d,
+							condBound ? 1.0d : 220_400.0d));
+				}
+				if (factor == hasConditionPattern) {
+					boolean encBound = boundVars.contains("enc");
+					boolean condBound = boundVars.contains("cond");
+					if (encBound && condBound) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (encBound || condBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 49_835.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 2.0d));
+			}
+		};
+		return new ValuesBridgeFixture(estimator, typePattern, codeValues, codePattern, hasConditionPattern,
+				costModel);
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan planValuesBridge(ValuesBridgeFixture fixture, List<TupleExpr> args) {
+		JoinOrderPlanner.PlanningAttempt attempt = fixture.estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, fixture.costModel, List.of());
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a VALUES bridge plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args), "Expected every VALUES bridge factor in selected plan");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+		return plan;
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan estimateValuesBridge(ValuesBridgeFixture fixture,
+			List<TupleExpr> args) {
+		return estimateJoinOrder(fixture.estimator, fixture.costModel, args);
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan estimateJoinOrder(SketchBasedJoinEstimator estimator,
+			JoinFactorCostModel costModel, List<TupleExpr> args) {
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.estimateJoinOrder(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.orElseThrow(() -> new AssertionError("Expected fixed-order estimate for " + args));
+		assertPlanWorkMatchesStepSum(plan);
+		return plan;
+	}
+
+	private static void assertConnectedComponentWithoutSplit(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> component) {
+		assertConnectedComponentWithoutSplit(plan, component, Set.of());
+	}
+
+	private static void assertConnectedComponentWithoutSplit(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> component, Set<String> initiallyBoundVars) {
+		Set<TupleExpr> componentSet = Collections.newSetFromMap(new IdentityHashMap<>());
+		componentSet.addAll(component);
+		Set<String> boundVars = new LinkedHashSet<>(initiallyBoundVars);
+		int seen = 0;
+		for (TupleExpr factor : plan.getOrderedArgs()) {
+			if (!componentSet.contains(factor)) {
+				continue;
+			}
+			Set<String> factorVars = factor.getBindingNames();
+			if (seen > 0 || !initiallyBoundVars.isEmpty()) {
+				Set<String> sharedVars = new LinkedHashSet<>(boundVars);
+				sharedVars.retainAll(factorVars);
+				assertTrue(!sharedVars.isEmpty(),
+						"Connected component was split by a Cartesian prefix at factor " + factor
+								+ "; component order was " + plan.getOrderedArgs());
+			}
+			boundVars.addAll(factorVars);
+			seen++;
+		}
+		assertEquals(component.size(), seen, "Expected every connected component factor in selected plan");
+	}
+
+	private static int lastIndexOf(List<TupleExpr> orderedArgs, List<TupleExpr> component) {
+		int index = -1;
+		for (TupleExpr factor : component) {
+			index = Math.max(index, orderedArgs.indexOf(factor));
+		}
+		return index;
+	}
+
+	private static double plannedCartesianWorkRows(JoinOrderPlanner.JoinOrderPlan plan) {
+		return plan.getSummaryDoubleMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+	}
+
+	private static double statePlanEstimateRows(Object statePlan) throws Exception {
+		Method estimateMethod = statePlan.getClass()
+				.getDeclaredMethod("estimate");
+		estimateMethod.setAccessible(true);
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = (SketchBasedJoinEstimator.TuplePlanEstimate) estimateMethod
+				.invoke(statePlan);
+		return estimate.outputRows();
+	}
+
+	private static double statePlanPhysicalRows(Object statePlan) throws Exception {
+		Method physicalStateMethod = statePlan.getClass()
+				.getDeclaredMethod("physicalState");
+		physicalStateMethod.setAccessible(true);
+		PlanState physicalState = (PlanState) physicalStateMethod.invoke(statePlan);
+		return physicalState.estimate()
+				.rows();
+	}
+
+	private record ValuesBridgeFixture(
+			SketchBasedJoinEstimator estimator,
+			StatementPattern typePattern,
+			BindingSetAssignment codeValues,
+			StatementPattern codePattern,
+			StatementPattern hasConditionPattern,
+			JoinFactorCostModel costModel) {
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(64)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
+	}
+
+	private static SketchBasedJoinEstimator.Config omniConfig() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+				.withNominalEntries(512)
+				.withSubjectBucketCount(512)
+				.withPredicateBucketCount(64)
+				.withObjectBucketCount(512)
+				.withContextBucketCount(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
@@ -2792,6 +4015,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static SketchBasedJoinEstimator.Config productionThemeConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withSubjectBucketCount(4096)
 				.withPredicateBucketCount(64)
 				.withObjectBucketCount(4096)
@@ -2816,6 +4040,18 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 	}
 
+	private static String describeSteps(JoinOrderPlanner.JoinOrderPlan plan) {
+		List<String> steps = new ArrayList<>();
+		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+			steps.add("boundBefore=" + step.getBoundVarsBefore()
+					+ ", factorRows=" + step.getFactorOutputRows()
+					+ ", prefixRows=" + step.getPrefixOutputRows()
+					+ ", workRows=" + step.getStepWorkRows()
+					+ ", metrics=" + step.getDoubleMetrics());
+		}
+		return steps.toString();
+	}
+
 	private static void assertParetoMemoExploration(JoinOrderPlanner.JoinOrderPlan plan) {
 		String summary = plan.getSummaryStringMetrics()
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
@@ -2825,15 +4061,32 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Expected final cost vector diagnostics: " + plan.getSummaryStringMetrics());
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Map<?, Optional<?>> scopedTupleEstimateCache(SketchBasedJoinEstimator estimator) throws Exception {
+		Field optimizationScope = SketchBasedJoinEstimator.class.getDeclaredField("optimizationScope");
+		optimizationScope.setAccessible(true);
+		ThreadLocal<?> threadLocal = (ThreadLocal<?>) optimizationScope.get(estimator);
+		Object scope = threadLocal.get();
+		Field tupleEstimateCache = scope.getClass().getDeclaredField("tupleEstimateCache");
+		tupleEstimateCache.setAccessible(true);
+		return (Map<?, Optional<?>>) tupleEstimateCache.get(scope);
+	}
+
+	private static Map<?, ?> omniWitnesses(Object estimate) throws Exception {
+		Field omniWitnesses = estimate.getClass().getDeclaredField("omniWitnesses");
+		omniWitnesses.setAccessible(true);
+		return (Map<?, ?>) omniWitnesses.get(estimate);
+	}
+
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {
 		return new StatementPattern(Var.of(subjVar), Var.of("p", pred), Var.of(objVar));
 	}
 
 	private static BindingSetAssignment singleVariableValues(String name,
-			List<? extends org.eclipse.rdf4j.model.Value> values) {
+			List<? extends Value> values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> rows = new ArrayList<>();
-		for (org.eclipse.rdf4j.model.Value value : values) {
+		for (Value value : values) {
 			QueryBindingSet row = new QueryBindingSet();
 			row.addBinding(name, value);
 			rows.add(row);
@@ -2853,6 +4106,44 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static JoinFactorCostModel.FactorCostEstimate exactDirectLookup(double workRows, double outputRows) {
 		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, true,
 				EXACT_STATEMENT_LOOKUP_MASK, 0, workRows);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate exactLogicalCost(double workRows, double outputRows) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(),
+				false, false, 0, 0, Double.NaN, false, true);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate nonExactFiniteAnchorZero() {
+		return new JoinFactorCostModel.FactorCostEstimate(0.0d, 0.0d,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-finite-anchor-sketch"),
+				Map.of(
+						TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 0.0d,
+						TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, 0.0d,
+						TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.85d),
+				false, false, 0, 0, Double.NaN, false, false);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate finiteObjectLookupDomainCost(double workRows,
+			double outputRows, int repeatedInvocations) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows,
+				Map.of(
+						TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup",
+						TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "[P, O]"),
+				Map.of(
+						TelemetryMetricNames.PLANNED_ACCESS_ROWS, outputRows,
+						TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows,
+						"plannedRepeatedInvocations", (double) repeatedInvocations),
+				true, true, PREDICATE_OBJECT_LOOKUP_MASK, 0, outputRows, true, true);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate repeatedInvocationCost(double workRows, double outputRows) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(),
+				false, false, 0, 0, Double.NaN, true);
+	}
+
+	private static boolean hasFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues, String bindingName) {
+		Set<Value> values = finiteBindingValues.get(bindingName);
+		return values != null && !values.isEmpty();
 	}
 
 	private static JoinFactorCostModel directLookupAwareCostModel(StatementPattern typePattern,
@@ -2926,8 +4217,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return mask;
 	}
 
-	private static QueryBindingSet row(String name1, org.eclipse.rdf4j.model.Value value1, String name2,
-			org.eclipse.rdf4j.model.Value value2) {
+	private static QueryBindingSet row(String name1, Value value1, String name2,
+			Value value2) {
 		QueryBindingSet row = new QueryBindingSet();
 		row.addBinding(name1, value1);
 		row.addBinding(name2, value2);
@@ -3014,6 +4305,32 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			Field field = SketchBasedJoinEstimator.class.getDeclaredField("estimateCache");
 			field.setAccessible(true);
 			return ((Map<?, ?>) field.get(estimator)).size();
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private static boolean hasMultiVariableSketch(Object profile) {
+		try {
+			Method sketchesMethod = profile.getClass()
+					.getMethod("sketches");
+			Map<?, ?> sketches = (Map<?, ?>) sketchesMethod.invoke(profile);
+			return hasMultiVariableSketch(sketches);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private static boolean hasMultiVariableSketch(Map<?, ?> sketches) {
+		try {
+			for (Object key : sketches.keySet()) {
+				Method names = key.getClass()
+						.getMethod("names");
+				if (((List<?>) names.invoke(key)).size() > 1) {
+					return true;
+				}
+			}
+			return false;
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
 		}

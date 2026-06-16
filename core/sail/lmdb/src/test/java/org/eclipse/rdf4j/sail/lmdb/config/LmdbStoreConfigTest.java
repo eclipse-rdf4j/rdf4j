@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -62,6 +63,9 @@ class LmdbStoreConfigTest {
 	private static final IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleMillis");
 
+	private static final IRI SKETCH_ESTIMATOR_STRATEGY = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorStrategy");
+
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
 
@@ -77,9 +81,27 @@ class LmdbStoreConfigTest {
 	private static final IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
 
+	private static final IRI PREDICATE_GUARANTEE_INDEX_ENABLED = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexEnabled");
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexAutoRebuild");
+
+	private static final IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeExcludedPredicates");
+
 	@Test
 	void pageCardinalityEstimatorDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
+	}
+
+	@Test
+	void predicateGuaranteeIndexDefaultsToEnabledWithStartupRebuildsAndNoExclusions() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexEnabled")).isTrue();
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexAutoRebuild")).isTrue();
+		assertThat(invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates")).isEmpty();
 	}
 
 	@Test
@@ -105,6 +127,13 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleEveryN")).isEqualTo(1024L * 1024L);
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleMillis")).isEqualTo(2L);
+	}
+
+	@Test
+	void sketchEstimatorStrategyDefaultsToOmni() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
 	}
 
 	@Test
@@ -308,6 +337,50 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual" })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
+		testParseAndExport(
+				SKETCH_ESTIMATOR_STRATEGY,
+				Values.literal(strategy),
+				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
+				strategy,
+				!"omni".equals(strategy)
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "tuple", "joinsketch" })
+	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal(strategy))
+				.build();
+
+		lmdbStoreConfig.parse(configModel, implNode);
+		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("countmin-dual");
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY,
+				Values.literal("countmin-dual"))).isTrue();
+	}
+
+	@Test
+	void invalidSketchEstimatorStrategyFailsClearly() {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal("bad-sketch"))
+				.build();
+
+		assertThatThrownBy(() -> lmdbStoreConfig.parse(configModel, implNode))
+				.hasMessageContaining("Sketch estimator strategy value required")
+				.hasMessageContaining("bad-sketch");
+	}
+
+	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
 	void testThatLmdbStoreConfigParseAndExportOptimizerSamplingEnabled(final boolean enabled) {
 		testParseAndExportReflective(
@@ -364,6 +437,43 @@ class LmdbStoreConfigTest {
 				"getBackgroundRawSamplingMaxMillisPerCycle",
 				maxMillis,
 				maxMillis != 10L
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexEnabled(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_ENABLED,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexEnabled",
+				enabled,
+				!enabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexAutoRebuild(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexAutoRebuild",
+				enabled,
+				!enabled
+		);
+	}
+
+	@Test
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeExcludedPredicates() {
+		Literal excludedPredicates = Values.literal("http://example.com/a, http://example.com/b");
+
+		testParseAndExport(
+				PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+				excludedPredicates,
+				config -> invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates"),
+				excludedPredicates.getLabel(),
+				true
 		);
 	}
 
@@ -516,6 +626,15 @@ class LmdbStoreConfigTest {
 		try {
 			Method getter = config.getClass().getMethod(getterName);
 			return (int) getter.invoke(config);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private String invokeStringGetter(LmdbStoreConfig config, String getterName) {
+		try {
+			Method getter = config.getClass().getMethod(getterName);
+			return (String) getter.invoke(config);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}

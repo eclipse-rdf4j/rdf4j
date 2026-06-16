@@ -43,6 +43,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	static final byte FILE_KIND_GLOBAL = 1;
 	static final byte FILE_KIND_SINGLES = 2;
 	static final byte FILE_KIND_PAIRS = 3;
+	static final byte FILE_KIND_OMNI_JOIN = 4;
 
 	private static final int INDEX_VERSION = 2;
 	private static final byte[] INDEX_MAGIC = new byte[] { 'R', 'J', 'E', 'I' };
@@ -53,7 +54,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	private final Path directory;
 	private final Logger logger;
 	private final SketchFileChunks sketchFileChunks;
-	private final long[][] appendOffsets = new long[2][4];
+	private final long[][] appendOffsets = new long[2][5];
 	private final Map<MappedSketchChunkKey, MappedSketchChunk> mappedSketchFiles = new HashMap<>();
 	private int mappedSketchFileMapCount;
 
@@ -122,7 +123,14 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	SketchEstimatorMetadata readMetadata() throws IOException {
 		byte[] payload = readWholeFile(metadataPath());
 		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
-			return SketchEstimatorMetadata.readFrom(in);
+			SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(in);
+			if (metadata.omniJoinEstimatorRefA != null) {
+				observeRef(metadata.omniJoinEstimatorRefA);
+			}
+			if (metadata.omniJoinEstimatorRefB != null) {
+				observeRef(metadata.omniJoinEstimatorRefB);
+			}
+			return metadata;
 		}
 	}
 
@@ -155,6 +163,17 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 
 	synchronized Ref appendFramedPayload(byte slot, byte fileKind, int formatMarker, byte[] payload, long generation)
 			throws IOException {
+		int payloadLength = payload.length;
+		long frameLength = framedPayloadLength(slot, fileKind, payloadLength);
+		if (fileKind == FILE_KIND_OMNI_JOIN && frameLength > sketchFileChunks.chunkBytes(fileKind)) {
+			long offset = reserveStreamingPayloadRange(slot, fileKind, (int) frameLength);
+			ByteBuffer header = ByteBuffer.allocate(FRAMED_PAYLOAD_HEADER_BYTES);
+			header.putInt(formatMarker);
+			header.putInt(payloadLength);
+			writeBytesAcrossChunks(slot, fileKind, offset, header.array(), 0, FRAMED_PAYLOAD_HEADER_BYTES);
+			writeBytesAcrossChunks(slot, fileKind, offset + FRAMED_PAYLOAD_HEADER_BYTES, payload, 0, payloadLength);
+			return new Ref(slot, fileKind, offset, (int) frameLength, generation);
+		}
 		FramedPayloadAllocation allocation = allocateFramedPayload(slot, fileKind, formatMarker, payload.length,
 				generation);
 		if (payload.length > 0) {
@@ -215,16 +234,18 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 			throw new IOException("Persisted sketch ref exceeds store bounds: slot=" + ref.slot + " fileKind="
 					+ ref.fileKind + " offset=" + ref.offset + " length=" + ref.length);
 		}
-		MappedSketchSlice frame = mappedSketchSlice(ref.slot, ref.fileKind, ref.offset, ref.length, false);
-		int actualFormatMarker = readIntBigEndian(frame.segment, 0L);
+		MemorySegment frame = crossesChunkBoundary(ref)
+				? MemorySegment.ofArray(readBytesAcrossChunks(ref.slot, ref.fileKind, ref.offset, ref.length))
+				: mappedSketchSlice(ref.slot, ref.fileKind, ref.offset, ref.length, false).segment;
+		int actualFormatMarker = readIntBigEndian(frame, 0L);
 		if (actualFormatMarker != expectedFormatMarker) {
 			throw new IOException("Unsupported sketch payload format: " + actualFormatMarker);
 		}
-		int payloadLength = readIntBigEndian(frame.segment, Integer.BYTES);
+		int payloadLength = readIntBigEndian(frame, Integer.BYTES);
 		if (payloadLength < 0 || payloadLength != ref.length - FRAMED_PAYLOAD_HEADER_BYTES) {
 			throw new IOException("Invalid sketch payload length: " + payloadLength + " frameLength=" + ref.length);
 		}
-		return reader.read(frame.segment.asSlice(FRAMED_PAYLOAD_HEADER_BYTES, payloadLength));
+		return reader.read(frame.asSlice(FRAMED_PAYLOAD_HEADER_BYTES, payloadLength));
 	}
 
 	void writeIndex(byte slot, List<IndexEntry> entries) throws IOException {
@@ -301,6 +322,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 			size += appendOffsets[slot][FILE_KIND_GLOBAL];
 			size += appendOffsets[slot][FILE_KIND_SINGLES];
 			size += appendOffsets[slot][FILE_KIND_PAIRS];
+			size += appendOffsets[slot][FILE_KIND_OMNI_JOIN];
 		}
 		size += Files.exists(metadataPath()) ? Files.size(metadataPath()) : 0L;
 		return size;
@@ -332,6 +354,70 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		}
 		appendOffsets[slot][fileKind] = end;
 		return offset;
+	}
+
+	private long reserveStreamingPayloadRange(byte slot, byte fileKind, int payloadLength) throws IOException {
+		if (payloadLength < 0) {
+			throw new IOException("Persisted sketch payload length is negative: slot=" + slot + " fileKind="
+					+ fileKind + " length=" + payloadLength);
+		}
+		long offset = appendOffsets[slot][fileKind];
+		long end = offset + payloadLength;
+		if (end < offset) {
+			throw new IOException("Persisted sketch payload offset overflow: slot=" + slot + " fileKind=" + fileKind);
+		}
+		appendOffsets[slot][fileKind] = end;
+		return offset;
+	}
+
+	private static long framedPayloadLength(byte slot, byte fileKind, int payloadLength) throws IOException {
+		if (payloadLength < 0) {
+			throw new IOException("Persisted sketch frame length is negative: slot=" + slot + " fileKind=" + fileKind
+					+ " length=" + payloadLength);
+		}
+		long frameLength = FRAMED_PAYLOAD_HEADER_BYTES + (long) payloadLength;
+		if (frameLength > Integer.MAX_VALUE) {
+			throw new IOException("Persisted sketch frame too large: slot=" + slot + " fileKind=" + fileKind
+					+ " length=" + frameLength);
+		}
+		return frameLength;
+	}
+
+	private boolean crossesChunkBoundary(Ref ref) {
+		return offsetInChunk(ref.fileKind, ref.offset) + ref.length > sketchFileChunks.chunkBytes(ref.fileKind);
+	}
+
+	private void writeBytesAcrossChunks(byte slot, byte fileKind, long offset, byte[] source, int sourceOffset,
+			int length) throws IOException {
+		MemorySegment sourceSegment = MemorySegment.ofArray(source);
+		long position = offset;
+		int copied = 0;
+		while (copied < length) {
+			long chunkBytes = sketchFileChunks.chunkBytes(fileKind);
+			long chunkOffset = offsetInChunk(fileKind, position);
+			int chunkLength = (int) Math.min(length - copied, chunkBytes - chunkOffset);
+			MappedSketchChunk mapped = mappedSketchFile(slot, fileKind, chunkStart(fileKind, position), true);
+			MemorySegment.copy(sourceSegment, sourceOffset + copied, mapped.segment, chunkOffset, chunkLength);
+			position += chunkLength;
+			copied += chunkLength;
+		}
+	}
+
+	private byte[] readBytesAcrossChunks(byte slot, byte fileKind, long offset, int length) throws IOException {
+		byte[] target = new byte[length];
+		MemorySegment targetSegment = MemorySegment.ofArray(target);
+		long position = offset;
+		int copied = 0;
+		while (copied < length) {
+			long chunkBytes = sketchFileChunks.chunkBytes(fileKind);
+			long chunkOffset = offsetInChunk(fileKind, position);
+			int chunkLength = (int) Math.min(length - copied, chunkBytes - chunkOffset);
+			MappedSketchChunk mapped = mappedSketchFile(slot, fileKind, chunkStart(fileKind, position), false);
+			MemorySegment.copy(mapped.segment, chunkOffset, targetSegment, copied, chunkLength);
+			position += chunkLength;
+			copied += chunkLength;
+		}
+		return target;
 	}
 
 	private MappedSketchSlice mappedSketchSlice(byte slot, byte fileKind, long offset, int length, boolean create)
@@ -455,6 +541,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		case FILE_KIND_GLOBAL -> "global";
 		case FILE_KIND_SINGLES -> "singles";
 		case FILE_KIND_PAIRS -> "pairs";
+		case FILE_KIND_OMNI_JOIN -> "omni-join";
 		default -> throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
 		};
 	}
@@ -546,10 +633,9 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof MappedSketchChunkKey)) {
+			if (!(other instanceof MappedSketchChunkKey that)) {
 				return false;
 			}
-			MappedSketchChunkKey that = (MappedSketchChunkKey) other;
 			return slot == that.slot && fileKind == that.fileKind && chunkStart == that.chunkStart;
 		}
 
@@ -626,19 +712,31 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		private final long globalChunkBytes;
 		private final long singlesChunkBytes;
 		private final long pairsChunkBytes;
+		private final long omniJoinChunkBytes;
 
 		private SketchFileChunks(long globalChunkBytes, long singlesChunkBytes, long pairsChunkBytes) {
+			this(globalChunkBytes, singlesChunkBytes, pairsChunkBytes, pairsChunkBytes);
+		}
+
+		private SketchFileChunks(long globalChunkBytes, long singlesChunkBytes, long pairsChunkBytes,
+				long omniJoinChunkBytes) {
 			this.globalChunkBytes = Math.max(1L, globalChunkBytes);
 			this.singlesChunkBytes = Math.max(1L, singlesChunkBytes);
 			this.pairsChunkBytes = Math.max(1L, pairsChunkBytes);
+			this.omniJoinChunkBytes = Math.max(1L, omniJoinChunkBytes);
 		}
 
 		static SketchFileChunks of(long globalChunkBytes, long singlesChunkBytes, long pairsChunkBytes) {
 			return new SketchFileChunks(globalChunkBytes, singlesChunkBytes, pairsChunkBytes);
 		}
 
+		static SketchFileChunks of(long globalChunkBytes, long singlesChunkBytes, long pairsChunkBytes,
+				long omniJoinChunkBytes) {
+			return new SketchFileChunks(globalChunkBytes, singlesChunkBytes, pairsChunkBytes, omniJoinChunkBytes);
+		}
+
 		static SketchFileChunks uniform(long chunkBytes) {
-			return new SketchFileChunks(chunkBytes, chunkBytes, chunkBytes);
+			return new SketchFileChunks(chunkBytes, chunkBytes, chunkBytes, chunkBytes);
 		}
 
 		long chunkBytes(byte fileKind) {
@@ -646,6 +744,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 			case FILE_KIND_GLOBAL -> globalChunkBytes;
 			case FILE_KIND_SINGLES -> singlesChunkBytes;
 			case FILE_KIND_PAIRS -> pairsChunkBytes;
+			case FILE_KIND_OMNI_JOIN -> omniJoinChunkBytes;
 			default -> throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
 			};
 		}

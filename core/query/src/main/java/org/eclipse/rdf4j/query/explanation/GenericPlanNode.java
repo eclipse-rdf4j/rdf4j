@@ -46,7 +46,7 @@ public class GenericPlanNode {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
-	private static final String spoc[] = { "s", "p", "o", "c" };
+	private static final String[] spoc = { "s", "p", "o", "c" };
 
 	private final static String newLine = System.getProperty("line.separator");
 	private static final Pattern OFFSET_PATTERN = Pattern.compile("offset=([0-9]+)");
@@ -102,7 +102,9 @@ public class GenericPlanNode {
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
 			TelemetryMetricNames.INDEX_NAME,
-			TelemetryMetricNames.INDEX_NAMES);
+			TelemetryMetricNames.INDEX_NAMES,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
@@ -191,6 +193,7 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
+	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -206,6 +209,7 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
+	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -237,19 +241,19 @@ public class GenericPlanNode {
 	 * @return time in milliseconds that was used to execute the query
 	 */
 	public Double getTotalTimeActual() {
-		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
-		// (recursively). We need this value to calculate the selfTimeActual.
+		double childTime = getChildTimeActual();
 		if (totalTimeActual == null) {
-			double sum = plans.stream()
-					.map(GenericPlanNode::getTotalTimeActual)
-					.filter(Objects::nonNull)
-					.mapToDouble(d -> d)
-					.sum();
-
-			if (sum > 0) {
-				return sum;
+			// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child
+			// plans (recursively)
+			if (childTime > 0) {
+				return childTime;
 			}
+			return null;
 		}
+		if (childTime > totalTimeActual) {
+			return childTime + totalTimeActual;
+		}
+
 		return totalTimeActual;
 	}
 
@@ -587,15 +591,24 @@ public class GenericPlanNode {
 			return null;
 		}
 
-		double childTime = plans
-				.stream()
-				.map(GenericPlanNode::getTotalTimeActual)
-				.filter(Objects::nonNull)
-				.mapToDouble(t -> t)
-				.sum();
+		double childTime = getChildTimeActual();
+		if (childTime > totalTimeActual) {
+			return totalTimeActual;
+		}
+		return getTotalTimeActual() - childTime;
 
-		return totalTimeActual - childTime;
+	}
 
+	private double getChildTimeActual() {
+		double res = 0;
+		for (GenericPlanNode plan : plans) {
+			Double childTotalTimeActual = plan.getTotalTimeActual();
+			if (childTotalTimeActual != null) {
+				res += childTotalTimeActual;
+			}
+		}
+
+		return res;
 	}
 
 	/**
@@ -703,8 +716,9 @@ public class GenericPlanNode {
 			{
 				String[] split = left.split(newLine);
 				sb.append(start).append(horizontal).append(" ").append(split[0]);
-				if (join)
+				if (join) {
 					sb.append(" [left]");
+				}
 				sb.append(newLine);
 				for (int i = 1; i < split.length; i++) {
 					sb.append(vertical).append("  ").append(split[i]).append(newLine);
@@ -714,8 +728,9 @@ public class GenericPlanNode {
 			{
 				String[] split = right.split(newLine);
 				sb.append(end).append(horizontal).append(" ").append(split[0]);
-				if (join)
+				if (join) {
 					sb.append(" [right]");
+				}
 				sb.append(newLine);
 
 				for (int i = 1; i < split.length; i++) {
@@ -849,8 +864,6 @@ public class GenericPlanNode {
 		Long sourceRowsFiltered = sourceRowsFilteredForDisplay();
 		Map<String, String> metrics = new LinkedHashMap<>();
 
-		putIfKnown(metrics, "costEstimate", toHumanReadableNumber(getCostEstimate()));
-		putIfKnown(metrics, "resultSizeEstimate", toHumanReadableNumber(getResultSizeEstimate()));
 		putIfKnown(metrics, "resultSizeActual", toHumanReadableNumber(getResultSizeActual()));
 		putIfKnown(metrics, "totalTimeActual", toHumanReadableTime(getTotalTimeActual()));
 		putIfKnown(metrics, "selfTimeActual", toHumanReadableTime(getSelfTimeActual()));
@@ -1039,14 +1052,16 @@ public class GenericPlanNode {
 	private void appendPlannedMapTelemetry(Map<String, String> metrics) {
 		for (Map.Entry<String, Long> entry : longMetricsPlanned.entrySet()) {
 			Long metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
 		}
 		for (Map.Entry<String, Double> entry : doubleMetricsPlanned.entrySet()) {
 			Double metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
@@ -1054,15 +1069,32 @@ public class GenericPlanNode {
 		for (Map.Entry<String, String> entry : orderedStringMetricsPlanned()) {
 			String metricName = entry.getKey();
 			String metricValue = entry.getValue();
-			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)) {
+			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)
+					|| !displayPlannedMetric(metricName)) {
 				continue;
 			}
 			metrics.put(metricName, metricValue);
 		}
 	}
 
+	private boolean displayPlannedMetric(String metricName) {
+		return hasPlannerEstimateUsage() || !TelemetryMetricNames.isPlannerEstimateMetric(metricName);
+	}
+
+	private boolean hasPlannerEstimateUsage() {
+		String usage = stringMetricsPlanned.get(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
 	private List<Map.Entry<String, String>> orderedStringMetricsPlanned() {
 		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_COST_SHAPE);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_INDEX_NAME);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
 				TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
@@ -1548,9 +1580,6 @@ public class GenericPlanNode {
 				+ StringEscapeUtils.escapeHtml4(type) + "</U></td></tr>");
 		rows.add("<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>");
 		rows.add("<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
-				+ "</td></tr>");
-		rows.add("<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>");
-		rows.add("<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate())
 				+ "</td></tr>");
 		rows.add("<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual())
 				+ "</td></tr>");

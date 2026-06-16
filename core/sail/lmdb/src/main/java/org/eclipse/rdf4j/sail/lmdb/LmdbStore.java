@@ -190,10 +190,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		EvaluationStrategyFactory factory;
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
-		} else if (isSketchEstimatorReadyNonBlocking()) {
-			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		} else {
-			factory = getAutomaticDefaultEvaluationStrategyFactory();
+			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		}
 		configureEvaluationStrategyFactory(factory);
 		return factory;
@@ -447,6 +445,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return disabledIsolationLockManager.isActiveLock();
 	}
 
+	synchronized boolean usesDefaultAutomaticOptimizerPipeline() {
+		return explicitEvalStratFactory == null && automaticOptimizerPipeline == null;
+	}
+
 	SailStore getSailStore() {
 		return store;
 	}
@@ -472,6 +474,16 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
 		return estimator != null && estimator.awaitReady(timeout, unit);
+	}
+
+	/**
+	 * Forces committed LMDB state through to the sketch-based join estimator.
+	 *
+	 * @return {@code true} when the estimator is enabled and ready after the forced flush
+	 */
+	public boolean forceFlushSketchEstimator() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore != null && backingStore.forceFlushSketchEstimator();
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {

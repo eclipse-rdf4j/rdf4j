@@ -148,4 +148,21 @@ public class VarintTest {
 		long decoded = Varint.readUnsigned(bb, 0);
 		assertEquals("Encoded and decoded value using positional read should match", value, decoded);
 	}
+
+	@Test
+	public void testByteArrayUnsignedMatchesByteBufferEncoding() {
+		long[] values = { 0, 1, 240, 241, 2287, 2288, 67823, 67824, 4299999999L, Long.MAX_VALUE };
+		for (long value : values) {
+			ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value))
+					.order(ByteOrder.nativeOrder());
+			byte[] bytes = new byte[Varint.calcLengthUnsigned(value)];
+
+			Varint.writeUnsigned(bb, value);
+			int offset = Varint.writeUnsigned(bytes, 0, value);
+
+			assertEquals("Byte array offset should match encoded length", bytes.length, offset);
+			assertArrayEquals("Byte array encoding should match ByteBuffer encoding for " + value, bb.array(), bytes);
+			assertEquals("Byte array decoded value should match", value, Varint.readUnsigned(bytes, 0));
+		}
+	}
 }

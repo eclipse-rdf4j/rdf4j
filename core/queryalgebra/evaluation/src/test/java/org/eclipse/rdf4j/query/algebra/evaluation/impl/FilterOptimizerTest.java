@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -210,7 +213,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
+			if (optimizer instanceof QueryJoinOptimizer) {
 				break;
 			}
 		}
@@ -401,11 +404,11 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private static <T extends TupleExpr> T findFirst(TupleExpr root, Class<T> type,
-			java.util.function.Predicate<T> predicate) {
+			Predicate<T> predicate) {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					T candidate = type.cast(node);
 					if (predicate.test(candidate)) {
@@ -422,7 +425,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					matches.add(type.cast(node));
 				}

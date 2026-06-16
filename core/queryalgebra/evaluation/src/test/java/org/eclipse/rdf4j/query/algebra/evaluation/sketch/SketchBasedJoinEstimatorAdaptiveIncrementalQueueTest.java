@@ -21,7 +21,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -66,6 +69,7 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 
 			assertEquals(8, activeIncrementalQueueLimit(estimator),
 					"Second queue should use the doubled best-effort limit");
+			estimator.debugFlushPendingIncremental();
 			for (int i = 4; i < 12; i++) {
 				estimator.addStatement(statement("urn:adaptive:growth:" + i, predicate, "urn:adaptive:growth:o:" + i));
 			}
@@ -114,6 +118,84 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 		assertTrue(estimator.isReadyNonBlocking(), "Bulk exact ingest should leave the estimator ready");
 		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 100.0,
 				"Bulk exact ingest should update predicate sketches");
+	}
+
+	@Test
+	void bulkStatementAddsUseOnePendingChunkInsteadOfPerStatementWork() throws Exception {
+		SketchBasedJoinEstimator estimator = newEstimator();
+		IRI predicate = VF.createIRI("urn:adaptive:bulk-chunk:p");
+		List<Statement> statements = new ArrayList<>();
+		for (int i = 0; i < 512; i++) {
+			statements.add(statement("urn:adaptive:bulk-chunk:" + i, predicate,
+					"urn:adaptive:bulk-chunk:o:" + i));
+		}
+
+		estimator.addStatements(statements);
+
+		assertEquals(512, estimator.debugPendingIncrementalCount(),
+				"Debug pending count should still report retained exact statement updates");
+		assertEquals(1, debugPendingIncrementalChunkCount(estimator),
+				"Bulk committed adds should retain one chunk-level async unit, not one unit per statement");
+		estimator.debugFlushPendingIncremental();
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 100.0,
+				"Chunk-level exact ingest should update predicate sketches after drain");
+	}
+
+	@Test
+	void exactBacklogGrowsWhileMemoryIsAvailableAndWorkerIsBacklogged() throws Exception {
+		withProperty("incrementalQueueInitialLimit", "4", () -> {
+			SketchBasedJoinEstimator estimator = newEstimator();
+			IRI predicate = VF.createIRI("urn:adaptive:backlog:p");
+			Object current = privateFieldValue(estimator, "current");
+			CountDownLatch stateLocked = new CountDownLatch(1);
+			Thread holder = new Thread(() -> {
+				synchronized (current) {
+					stateLocked.countDown();
+					try {
+						Thread.sleep(250L);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			}, "SketchEstimator-TestStateHolder");
+			holder.start();
+			assertTrue(stateLocked.await(1, TimeUnit.SECONDS), "Test holder should block async sketch application");
+			try {
+				for (int i = 0; i < 16; i++) {
+					estimator.addStatement(statement("urn:adaptive:backlog:" + i, predicate,
+							"urn:adaptive:backlog:o:" + i));
+				}
+
+				AtomicBoolean rebuildRequired = (AtomicBoolean) privateFieldValue(estimator, "rebuildRequired");
+				assertFalse(rebuildRequired.get(),
+						"Backlogged async ingestion should retain exact updates while memory is available");
+				assertFalse((boolean) privateFieldValue(estimator, "exactIncrementalUpdatesDropped"),
+						"Backlogged async ingestion should not drop exact updates while memory is available");
+				assertTrue((int) privateFieldValue(estimator, "nextStatementQueueLimit") <= 8,
+						"Backpressure should stop growing exact backlog batches");
+			} finally {
+				holder.join();
+			}
+
+			estimator.debugFlushPendingIncremental();
+			assertTrue(
+					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 10.0,
+					"Backlogged exact ingestion should update predicate sketches after drain");
+		});
+	}
+
+	@Test
+	void blockingBudgetUsesConfigAndSystemProperties() throws Exception {
+		SketchBasedJoinEstimator defaults = newEstimator();
+		assertEquals(25_000, privateFieldValue(defaults, "incrementalQueueBlockWindowUpdates"));
+		assertEquals(10L, privateFieldValue(defaults, "incrementalQueueBlockBudgetMillis"));
+
+		withProperty("incrementalQueueBlockWindowUpdates", "7",
+				() -> withProperty("incrementalQueueBlockBudgetMillis", "3", () -> {
+					SketchBasedJoinEstimator estimator = newEstimator();
+					assertEquals(7, privateFieldValue(estimator, "incrementalQueueBlockWindowUpdates"));
+					assertEquals(3L, privateFieldValue(estimator, "incrementalQueueBlockBudgetMillis"));
+				}));
 	}
 
 	@Test
@@ -196,6 +278,63 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	}
 
 	@Test
+	void estimatorDoesNotUseVirtualThreadPerTaskFanoutForCpuBoundChunkIngest() throws Exception {
+		String source = Files.readString(Path.of(
+				"src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/sketch/SketchBasedJoinEstimator.java"));
+
+		assertFalse(source.contains("newThreadPerTaskExecutor"),
+				"CPU-bound chunk ingest should use bounded long-lived workers instead of per-task virtual threads");
+		assertFalse(source.contains("new StatementUpdate(statement"),
+				"Bulk exact ingest should not allocate one StatementUpdate wrapper per retained statement");
+	}
+
+	@Test
+	void incrementalTransformIngestUsesSingleWorkerToAvoidStateLockContention() throws Exception {
+		SketchBasedJoinEstimator estimator = newEstimator();
+		try {
+			Object executor = privateFieldValue(estimator, "asyncIncrementalExecutor");
+			assertTrue(executor instanceof ThreadPoolExecutor,
+					"Incremental transform ingest should use a bounded worker pool");
+			ThreadPoolExecutor transformExecutor = (ThreadPoolExecutor) executor;
+			assertEquals(1, transformExecutor.getCorePoolSize(),
+					"Incremental transform ingest should avoid parallel workers contending on the state lock");
+			assertEquals(1, transformExecutor.getMaximumPoolSize(),
+					"Incremental transform ingest should avoid parallel workers contending on the state lock");
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void incrementalWorkersStartLazilyAndTimeOutAfterIdle() throws Exception {
+		withProperty("incrementalQueueInitialLimit", "4",
+				() -> withProperty("incrementalWorkerKeepAliveMillis", "25", () -> {
+					int partitionThreadsBefore = threadCount("RdfJoinEstimator-Partition-");
+					int transformThreadsBefore = threadCount("RdfJoinEstimator-Transform-");
+					SketchBasedJoinEstimator estimator = newEstimator();
+					try {
+						assertEquals(partitionThreadsBefore, threadCount("RdfJoinEstimator-Partition-"),
+								"Estimator construction should not start partition workers before there is work");
+						IRI predicate = VF.createIRI("urn:adaptive:lazy-workers:p");
+						for (int i = 0; i < 4; i++) {
+							estimator.addStatement(statement("urn:adaptive:lazy-workers:" + i, predicate,
+									"urn:adaptive:lazy-workers:o:" + i));
+						}
+						estimator.debugFlushPendingIncremental();
+						assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+								predicate.stringValue()) > 0.0,
+								"Lazy workers should still publish incremental updates");
+						assertTrue(awaitThreadCount("RdfJoinEstimator-Partition-", partitionThreadsBefore, 2,
+								TimeUnit.SECONDS), "Partition workers should retire after the keep-alive timeout");
+						assertTrue(awaitThreadCount("RdfJoinEstimator-Transform-", transformThreadsBefore, 2,
+								TimeUnit.SECONDS), "Transform workers should retire after the keep-alive timeout");
+					} finally {
+						estimator.close();
+					}
+				}));
+	}
+
+	@Test
 	void idleMonitorFlushesPartialQueueAndResetsGrowth() throws Exception {
 		withProperty("incrementalQueueInitialLimit", "4",
 				() -> withProperty("incrementalQueueIdleResetMillis", "25", () -> {
@@ -242,10 +381,38 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 		return estimator.debugPendingIncrementalCount() == expected;
 	}
 
+	private static boolean awaitThreadCount(String prefix, int expected, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (System.nanoTime() < deadline) {
+			if (threadCount(prefix) == expected) {
+				return true;
+			}
+			Thread.sleep(10);
+		}
+		return threadCount(prefix) == expected;
+	}
+
+	private static int threadCount(String prefix) {
+		int count = 0;
+		for (Thread thread : Thread.getAllStackTraces().keySet()) {
+			if (thread.isAlive() && thread.getName().startsWith(prefix)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	private static int activeIncrementalQueueLimit(SketchBasedJoinEstimator estimator) throws Exception {
 		Object[] queues = (Object[]) privateFieldValue(estimator, "incrementalStatementQueues");
 		int activeQueueIndex = (int) privateFieldValue(estimator, "activeStatementQueueIndex");
 		return (int) privateFieldValue(queues[activeQueueIndex], "limit");
+	}
+
+	private static int debugPendingIncrementalChunkCount(SketchBasedJoinEstimator estimator) throws Exception {
+		return (int) estimator.getClass()
+				.getDeclaredMethod("debugPendingIncrementalChunkCount")
+				.invoke(estimator);
 	}
 
 	private static Object privateFieldValue(Object target, String fieldName) throws Exception {

@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
 class QueryPlanSnapshotCliTest {
@@ -76,6 +77,33 @@ class QueryPlanSnapshotCliTest {
 		assertEquals("true", options.getSystemProperties().get("alpha"));
 		assertEquals("2", options.getSystemProperties().get("beta"));
 		assertEquals("local", options.getMetadata().get("run"));
+	}
+
+	@Test
+	void lmdbStoreRuntimeUsesThemeBenchmarkIndexAndSketchConfig() throws Exception {
+		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-config-");
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme-query", "ELECTRICAL_GRID:7",
+					"--persist", "false"
+			});
+
+			try (QueryPlanSnapshotStoreSupport.StoreRuntime runtime = QueryPlanSnapshotStoreSupport
+					.createStoreRuntime(options)) {
+				LmdbStoreConfig config = runtime.lmdbStoreConfig;
+				assertEquals("spoc,ospc,psoc,posc", config.getTripleIndexes());
+				assertEquals(4096, config.getSketchEstimatorSubjectBucketCount());
+				assertEquals(64, config.getSketchEstimatorPredicateBucketCount());
+				assertEquals(4096, config.getSketchEstimatorObjectBucketCount());
+				assertEquals(16, config.getSketchEstimatorContextBucketCount());
+				assertFalse(config.getSketchEstimatorContextPairSketchesEnabled());
+			}
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
 	}
 
 	@Test

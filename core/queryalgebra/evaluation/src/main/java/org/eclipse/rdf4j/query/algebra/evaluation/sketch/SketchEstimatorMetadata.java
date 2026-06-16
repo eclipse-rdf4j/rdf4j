@@ -16,18 +16,21 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 final class SketchEstimatorMetadata {
 
 	static final byte[] MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	static final int VERSION = 2;
+	static final int VERSION = 5;
 
+	final int version;
 	final int bucketCount;
 	final int subjectBucketCount;
 	final int predicateBucketCount;
 	final int objectBucketCount;
 	final int contextBucketCount;
 	final boolean contextPairSketchesEnabled;
+	final SketchBasedJoinEstimator.SketchStrategy sketchStrategy;
 	final int sketchNominalEntries;
 	final String defaultContext;
 	final byte activeSlot;
@@ -36,12 +39,43 @@ final class SketchEstimatorMetadata {
 	final long lastPublishTime;
 	final long slotGenerationA;
 	final long slotGenerationB;
+	final SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA;
+	final SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB;
 
 	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
-			int contextBucketCount, boolean contextPairSketchesEnabled, int sketchNominalEntries,
+			int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
 			String defaultContext, byte activeSlot,
 			long seenCount, long approxStoreSize, long lastPublishTime,
 			long slotGenerationA, long slotGenerationB) {
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB, null, null);
+	}
+
+	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
+			int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
+			String defaultContext, byte activeSlot,
+			long seenCount, long approxStoreSize, long lastPublishTime,
+			long slotGenerationA, long slotGenerationB,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB) {
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB,
+				omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+	}
+
+	private SketchEstimatorMetadata(int version, int subjectBucketCount, int predicateBucketCount,
+			int objectBucketCount, int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
+			String defaultContext, byte activeSlot,
+			long seenCount, long approxStoreSize, long lastPublishTime,
+			long slotGenerationA, long slotGenerationB,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB) {
+		this.version = version;
 		this.bucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
 				Math.max(objectBucketCount, contextBucketCount));
 		this.subjectBucketCount = subjectBucketCount;
@@ -49,6 +83,7 @@ final class SketchEstimatorMetadata {
 		this.objectBucketCount = objectBucketCount;
 		this.contextBucketCount = contextBucketCount;
 		this.contextPairSketchesEnabled = contextPairSketchesEnabled;
+		this.sketchStrategy = sketchStrategy;
 		this.sketchNominalEntries = sketchNominalEntries;
 		this.defaultContext = defaultContext;
 		this.activeSlot = activeSlot;
@@ -58,6 +93,8 @@ final class SketchEstimatorMetadata {
 
 		this.slotGenerationA = slotGenerationA;
 		this.slotGenerationB = slotGenerationB;
+		this.omniJoinEstimatorRefA = omniJoinEstimatorRefA;
+		this.omniJoinEstimatorRefB = omniJoinEstimatorRefB;
 	}
 
 	void writeTo(DataOutput out) throws IOException {
@@ -69,6 +106,7 @@ final class SketchEstimatorMetadata {
 		out.writeInt(objectBucketCount);
 		out.writeInt(contextBucketCount);
 		out.writeBoolean(contextPairSketchesEnabled);
+		writeString(out, sketchStrategy == null ? "" : sketchStrategy.configValue());
 		out.writeInt(sketchNominalEntries);
 		writeString(out, defaultContext);
 		out.writeByte(activeSlot);
@@ -78,6 +116,8 @@ final class SketchEstimatorMetadata {
 
 		out.writeLong(slotGenerationA);
 		out.writeLong(slotGenerationB);
+		writeRef(out, omniJoinEstimatorRefA);
+		writeRef(out, omniJoinEstimatorRefB);
 	}
 
 	static SketchEstimatorMetadata readFrom(DataInput in) throws IOException {
@@ -87,7 +127,7 @@ final class SketchEstimatorMetadata {
 			}
 		}
 		int version = in.readInt();
-		if (version != 1 && version != VERSION) {
+		if (version != 1 && version != 2 && version != 3 && version != VERSION) {
 			throw new IOException("Unsupported join estimator directory metadata version: " + version);
 		}
 		int bucketCount = in.readInt();
@@ -103,6 +143,13 @@ final class SketchEstimatorMetadata {
 			contextBucketCount = in.readInt();
 			contextPairSketchesEnabled = in.readBoolean();
 		}
+		SketchBasedJoinEstimator.SketchStrategy sketchStrategy = null;
+		if (version >= 3) {
+			sketchStrategy = readPersistedSketchStrategy(readString(in));
+			if (sketchStrategy == null) {
+				throw new IOException("Unsupported join estimator sketch strategy in metadata");
+			}
+		}
 		int sketchNominalEntries = in.readInt();
 		String defaultContext = readString(in);
 		byte activeSlot = in.readByte();
@@ -111,10 +158,29 @@ final class SketchEstimatorMetadata {
 		long lastPublishTime = in.readLong();
 		long slotGenerationA = in.readLong();
 		long slotGenerationB = in.readLong();
-		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
-				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries, defaultContext, activeSlot,
-				seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
-				slotGenerationB);
+		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA = version >= 4 ? readRef(in) : null;
+		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB = version >= 4 ? readRef(in) : null;
+		return new SketchEstimatorMetadata(version, subjectBucketCount, predicateBucketCount, objectBucketCount,
+				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext,
+				activeSlot, seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
+				slotGenerationB, omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+	}
+
+	private static SketchBasedJoinEstimator.SketchStrategy readPersistedSketchStrategy(String value) {
+		if (value == null) {
+			return null;
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "omni" -> SketchBasedJoinEstimator.SketchStrategy.OMNI;
+		case "fastagms" -> SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS;
+		case "countmin" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN;
+		case "countmindual" -> SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL;
+		default -> null;
+		};
 	}
 
 	private static void writeString(DataOutput out, String value) throws IOException {
@@ -131,5 +197,29 @@ final class SketchEstimatorMetadata {
 		byte[] bytes = new byte[length];
 		in.readFully(bytes);
 		return new String(bytes, StandardCharsets.UTF_8);
+	}
+
+	private static void writeRef(DataOutput out, SketchEstimatorPersistenceStore.Ref ref) throws IOException {
+		out.writeBoolean(ref != null);
+		if (ref == null) {
+			return;
+		}
+		out.writeByte(ref.slot());
+		out.writeByte(ref.fileKind());
+		out.writeLong(ref.offset());
+		out.writeInt(ref.length());
+		out.writeLong(ref.generation());
+	}
+
+	private static SketchEstimatorPersistenceStore.Ref readRef(DataInput in) throws IOException {
+		if (!in.readBoolean()) {
+			return null;
+		}
+		byte slot = in.readByte();
+		byte fileKind = in.readByte();
+		long offset = in.readLong();
+		int length = in.readInt();
+		long generation = in.readLong();
+		return new SketchEstimatorPersistenceStore.Ref(slot, fileKind, offset, length, generation);
 	}
 }

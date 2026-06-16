@@ -94,6 +94,10 @@ final class ParetoFrontier<T> {
 		return new Entry<>(valueAt(0), costVectors[0]);
 	}
 
+	T bestValue() {
+		return valueAt(0);
+	}
+
 	List<Entry<T>> entries() {
 		List<Entry<T>> entries = new ArrayList<>(size);
 		for (int i = 0; i < size; i++) {

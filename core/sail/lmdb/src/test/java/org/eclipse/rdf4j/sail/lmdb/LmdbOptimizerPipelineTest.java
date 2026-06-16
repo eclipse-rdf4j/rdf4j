@@ -14,24 +14,32 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -39,15 +47,27 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,30 +82,39 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+	void automaticLmdbStoreUsesLmdbEvaluationStrategyFactoryBeforeSketchesAreReady() {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 	}
 
 	@Test
@@ -100,9 +129,9 @@ class LmdbOptimizerPipelineTest {
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
-			assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitSketchesReady(store);
+			LmdbPlannerAwait.awaitLmdbOptimizerPipeline(store, Duration.ofSeconds(10));
 		} finally {
 			store.shutDown();
 		}
@@ -123,15 +152,16 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitPlannerAssertion("long-lived connection chooses LMDB factory",
+					() -> assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory)));
 		} finally {
 			store.shutDown();
 		}
@@ -149,8 +179,10 @@ class LmdbOptimizerPipelineTest {
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitPlannerAssertion("automatic factory preserves configured pipeline",
+					() -> assertSame(customPipeline,
+							store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null)));
 		} finally {
 			store.shutDown();
 		}
@@ -167,28 +199,192 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineRunsPushdownBeforeSketchAndDoesNotOverrideSketchPlacement() {
+	void lmdbPipelineRunsPushdownAndBaselineCaptureBeforeCascadesByDefault() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
-		int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
+		int sketchInputBaselineIndex = indexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
+		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
+		int handoffBaselineIndex = lastIndexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
+		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
-		assertTrue(sketchIndex >= 0);
-		assertTrue(filterIndex < sketchIndex);
+		assertTrue(sketchInputBaselineIndex >= 0);
+		assertTrue(filterSimplifierIndex >= 0);
+		assertTrue(handoffBaselineIndex >= 0);
+		assertTrue(cascadesIndex >= 0);
+		assertTrue(filterIndex < cascadesIndex);
+		assertTrue(sketchInputBaselineIndex < filterSimplifierIndex);
+		assertTrue(filterSimplifierIndex < handoffBaselineIndex);
+		assertTrue(handoffBaselineIndex < cascadesIndex);
+		assertTrue(indexOf(optimizers, CompareOptimizer.class) < cascadesIndex);
+		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < cascadesIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) >= 0);
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
+				LmdbFilterSimplifierOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbProjectionPushdownOptimizer.class) >= 0);
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
+				LmdbProjectionPushdownOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbProjectionPushdownOptimizer.class) < indexOf(optimizers,
+				LmdbSetSemanticsOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
+				LmdbFilterSimplifierOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
+		assertTrue(optimizers.subList(handoffBaselineIndex + 1, cascadesIndex)
+				.stream()
+				.allMatch(ParentReferenceChecker.class::isInstance),
+				"Default fallback policy needs a clean LMDB no-Cascades baseline at the Cascades handoff");
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
-		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
+		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(FilterOptimizer.class::isInstance));
-		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
+		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, sketchIndex));
+		assertEquals(List.of(OrderLimitOptimizer.class, LmdbCascadesExplainFinalizer.class),
+				nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
+		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void lmdbPipelineCanEnableLegacySketchOptimizerExplicitly() {
+		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			List<QueryOptimizer> optimizers = optimizers(
+					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
+
+			int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
+			int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
+
+			assertTrue(cascadesIndex >= 0);
+			assertTrue(sketchIndex >= 0);
+			assertTrue(cascadesIndex < sketchIndex);
+			assertEquals(List.of(LmdbSketchJoinOptimizer.class, OrderLimitOptimizer.class),
+					nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
+		}
+	}
+
+	@Test
+	void lmdbPipelineEnablesCascadesByDefault() {
+		String previousMode = System.clearProperty("rdf4j.optimizer.lmdb.cascades.mode");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			List<String> optimizers = optimizers(
+					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers())
+							.stream()
+							.map(optimizer -> optimizer.getClass().getSimpleName())
+							.collect(Collectors.toList());
+
+			int cascadesIndex = optimizers.indexOf("LmdbCascadesOptimizer");
+			int filterSimplifierIndex = optimizers.indexOf("LmdbFilterSimplifierOptimizer");
+			int orderLimitIndex = optimizers.indexOf("OrderLimitOptimizer");
+
+			assertTrue(cascadesIndex >= 0, optimizers.toString());
+			assertTrue(filterSimplifierIndex < cascadesIndex, optimizers.toString());
+			assertTrue(cascadesIndex < orderLimitIndex, optimizers.toString());
+			assertFalse(optimizers.contains("LmdbSketchJoinOptimizer"), optimizers.toString());
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
+		}
+	}
+
+	@Test
+	void lmdbPipelineAddsSemanticDependencyOptimizerOnlyWhenConfigured() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		List<QueryOptimizer> defaultOptimizers = optimizers(
+				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
+
+		assertFalse(defaultOptimizers.stream().anyMatch(LmdbSemanticDependencyOptimizer.class::isInstance));
+
+		LmdbSemanticDependencies dependencies = LmdbSemanticDependencies.builder()
+				.functionalBySubject(SimpleValueFactory.getInstance().createIRI("urn:ssn"))
+				.build();
+		List<QueryOptimizer> configuredOptimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics(), dependencies).getOptimizers());
+
+		int semanticIndex = indexOf(configuredOptimizers, LmdbSemanticDependencyOptimizer.class);
+		assertTrue(semanticIndex >= 0);
+		assertTrue(indexOf(configuredOptimizers, LmdbSetSemanticsOptimizer.class) < semanticIndex);
+		assertTrue(semanticIndex < indexOf(configuredOptimizers, LmdbFilterSimplifierOptimizer.class));
+	}
+
+	@Test
+	void lmdbPipelineDoesNotRunEagerDomainFilterOptimizer() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		List<String> optimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers())
+						.stream()
+						.map(optimizer -> optimizer.getClass().getSimpleName())
+						.collect(Collectors.toList());
+
+		int guaranteeIndex = optimizers.indexOf("Lmdb" + "GuaranteeFilterOptimizer");
+
+		assertEquals(-1, guaranteeIndex, optimizers.toString());
+	}
+
+	@Test
+	void lmdbPipelineAttachesReadOnlyLmdbLookupMetadataBeforeCompare(@TempDir File dataDir) throws Exception {
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI missingSubject = vf.createIRI("urn:lmdb-normalize:missing-subject");
+			IRI missingPredicate = vf.createIRI("urn:lmdb-normalize:missing-predicate");
+			IRI missingFilterIri = vf.createIRI("urn:lmdb-normalize:missing-filter");
+			Literal filterLiteral = vf.createLiteral("filter-value");
+			Literal valuesLiteral = vf.createLiteral("values-value");
+
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingSubject));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingFilterIri));
+
+			StatementPattern statementPattern = new StatementPattern(Var.of("s", missingSubject),
+					Var.of("p", missingPredicate), Var.of("o"));
+			BindingSetAssignment values = new BindingSetAssignment();
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("choice", missingFilterIri);
+			row.addBinding("literalChoice", valuesLiteral);
+			values.setBindingSets(List.of(row));
+
+			Compare literalFilter = new Compare(Var.of("o"), new ValueConstant(filterLiteral), Compare.CompareOp.EQ);
+			Compare varFilter = new Compare(Var.of("fixed", missingFilterIri), Var.of("o"), Compare.CompareOp.NE);
+			Filter query = new Filter(new Join(statementPattern, values), new And(literalFilter, varFilter));
+
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new LmdbEvaluationStatistics(valueStore, null, null)).getOptimizers()) {
+				if (optimizer instanceof CompareOptimizer) {
+					break;
+				}
+				optimizer.optimize(query, null, EmptyBindingSet.getInstance());
+			}
+
+			assertLmdbVarResolvedMissing(valueStore, statementPattern.getSubjectVar(), missingSubject);
+			assertLmdbVarResolvedMissing(valueStore, statementPattern.getPredicateVar(), missingPredicate);
+			assertOwnedLmdbValue(valueStore, ((ValueConstant) literalFilter.getRightArg()).getValue());
+			assertLmdbVarResolvedMissing(valueStore, (Var) varFilter.getLeftArg(), missingFilterIri);
+
+			BindingSet normalizedRow = values.getBindingSets().iterator().next();
+			assertOwnedLmdbValue(valueStore, normalizedRow.getValue("choice"));
+			assertOwnedLmdbValue(valueStore, normalizedRow.getValue("literalChoice"));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingSubject));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingFilterIri));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(normalizedRow.getValue("choice")));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 
 	@Test
@@ -199,13 +395,13 @@ class LmdbOptimizerPipelineTest {
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
 
-		assertRetainedEngineeringNameFilter(tupleExpr, "initial parse");
+		assertEngineeringNameEvidence(tupleExpr, "initial parse");
 		for (QueryOptimizer optimizer : optimizers) {
 			if (optimizer instanceof LmdbSketchJoinOptimizer) {
 				break;
 			}
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
-			assertRetainedEngineeringNameFilter(tupleExpr, optimizer.getClass().getSimpleName());
+			assertEngineeringNameEvidence(tupleExpr, optimizer.getClass().getSimpleName());
 		}
 	}
 
@@ -239,7 +435,791 @@ class LmdbOptimizerPipelineTest {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		assertRetainedEngineeringNameFilter(tupleExpr, "LMDB sketch planning");
+		assertEngineeringNameEvidence(tupleExpr, "LMDB sketch planning");
+	}
+
+	@Test
+	void lmdbSketchPipelineDoesNotSplitPrefixFilterOntoBindingAssignmentOnlyRoot() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  { ?entity a <urn:test:Condition> ; <urn:test:code> ?code . }
+				  UNION
+				  { ?entity a <urn:test:Medication> ; <urn:test:code> ?code . }
+				  FILTER(?code = ?target || ?code = "DX-202")
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		assertNoUnsafeSplitBindingAssignmentFilter(tupleExpr);
+	}
+
+	@Test
+	void lmdbEligibilityUnionBecomesLiftedExistsForGroupedDistinctCount() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertFalse(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
+		assertFalse(containsVariableName(tupleExpr, "enc"), diagnosticPlan);
+		assertFalse(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertTrue(groupIsWrappedByExistsFilter(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=GROUP_KEY_EXISTS_LIFT"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbEligibilityUnionKeepsRowProducingUnionForGroupedCount() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbEligibilityUnionKeepsRowProducingUnionWhenBranchLocalIsGrouped() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient ?enc (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+
+					{
+						?patient a medical:Patient .
+					}
+					UNION
+					{
+						?patient medical:hasEncounter ?enc .
+					}
+
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient ?enc
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertTrue(containsVariableName(tupleExpr, "enc"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbTrivialBindAliasKeepsOptionalSourceAlias() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?optMed) AS ?medCount)
+				WHERE {
+					?patient a medical:Patient .
+					OPTIONAL {
+						?patient medical:hasMedication ?med .
+					}
+					BIND(?med AS ?optMed)
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				""");
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbTrivialBindAliasKeepsAliasUsedByLaterGraphPattern() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(DISTINCT ?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+					BIND(?med AS ?optMed)
+					?x medical:uses ?optMed .
+					FILTER (?optMed != ?patient)
+				}
+				GROUP BY ?patient
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbPositiveHavingKeepsOptionalOnlyCountFilter() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient a medical:Patient .
+					OPTIONAL {
+						?patient medical:hasMedication ?med .
+					}
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbPositiveHavingKeepsNonIntegralCountThresholdFilter() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX medical: <http://example.com/theme/medical/>
+
+				SELECT ?patient (COUNT(?med) AS ?medCount)
+				WHERE {
+					?patient medical:hasMedication ?med .
+				}
+				GROUP BY ?patient
+				HAVING (COUNT(?med) >= 1.5)
+				""");
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(ValueConstant node) {
+				if (node.getValue()instanceof Literal literal && "1.5".equals(literal.getLabel())) {
+					node.setValue(SimpleValueFactory.getInstance().createLiteral(new BigDecimal("1.5")));
+				}
+			}
+		});
+		repairParentReferences(tupleExpr);
+
+		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
+				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesCostsUnusedOptionalRemovalForDistinctAggregate() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	@Test
+	void lmdbCascadesPresentsUnusedOptionalRemovalWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"lmdb-remove-unused-optional"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesRemovesGroupedPositiveHavingUnusedOptionalWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
+				  VALUES ?date {
+				    "2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>
+				    "2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
+				  }
+				  ?enc <http://example.com/theme/medical/recordedOn> ?date .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  }
+				}
+				GROUP BY ?practitioner
+				HAVING (COUNT(?enc) > 0)
+				""");
+		repairParentReferences(tupleExpr);
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("hasCondition"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-remove-unused-optional"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesPresentsFiniteFilterValuesRewriteWithFallbackPolicy() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  {
+				    ?entity a <http://example.com/theme/medical/Condition> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  UNION
+				  {
+				    ?entity a <http://example.com/theme/medical/Medication> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  FILTER ((?code = ?target) || (?code = "DX-202"))
+				  OPTIONAL {
+				    ?entity <http://example.com/theme/medical/code> ?alt .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "code"), diagnosticPlan);
+		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "type"), diagnosticPlan);
+		assertFalse(containsBindingSetAssignmentFor(tupleExpr, "target"), diagnosticPlan);
+		assertFalse(containsUnion(tupleExpr), diagnosticPlan);
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-finite-code-type-values-rewrite"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesRemovesUnusedOptionalAndPreservesExistsWhenSemiDoesNotWin() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertTrue(containsExists(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-remove-unused-optional"), diagnosticPlan);
+		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void finiteFilterValuesRewriteDoesNotRescanPlainJoinTreesExponentially() {
+		TupleExpr tree = new StatementPattern(new Var("s0"), new Var("p0"), new Var("o0"));
+		for (int i = 1; i <= 24; i++) {
+			tree = new Join(tree, new StatementPattern(new Var("s" + i), new Var("p" + i), new Var("o" + i)));
+		}
+		TupleExpr deepJoin = tree;
+
+		assertTimeout(Duration.ofMillis(500),
+				() -> assertNull(LmdbCascadesRuleProvider.finiteFilterValuesAlternative(deepJoin)));
+	}
+
+	@Test
+	void lmdbCascadesComposesOrFilterValuesAndExistsJoinForDistinctAggregateWithFallbackPolicy(@TempDir File dataDir)
+			throws Exception {
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			TupleExpr tupleExpr = parseTupleExpr("""
+					SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+					  ?cond <http://example.com/theme/medical/code> ?code .
+					  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+					  ?enc a <http://example.com/theme/medical/Encounter> .
+					  OPTIONAL {
+					    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+					  }
+					  FILTER EXISTS {
+					    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+					  }
+					  FILTER(?code = "DX-200" || ?code = "DX-201")
+					}
+					""");
+
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new LmdbEvaluationStatistics(valueStore, null, null))
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertTrue(containsBindingSetAssignmentFor(tupleExpr, "code"), diagnosticPlan);
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertTrue(containsExists(tupleExpr), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"rule=lmdb-materialized-exists-semi"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"materializedExists"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.semanticRewrite",
+					"lmdb-finite-filter-values-distinct-rewrite"), diagnosticPlan);
+			assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.semanticRewrite",
+					"lmdb-distinct-exists-join"), diagnosticPlan);
+		} finally {
+			valueStore.close();
+		}
+	}
+
+	@Test
+	void lmdbCascadesPushesFiniteMembershipBelowMinusBeforeMaterializedExists(@TempDir File dataDir)
+			throws Exception {
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			TupleExpr tupleExpr = parseTupleExpr("""
+					SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
+					  ?requirement a <http://example.com/theme/engineering/Requirement> .
+					  MINUS {
+					    ?requirement <http://example.com/theme/engineering/verifiedBy> ?test .
+					    ?test <http://example.com/theme/engineering/verifiedBy> ?measurement .
+					  }
+					  FILTER EXISTS {
+					    VALUES ?name { "REQ-1000" "REQ-1001" }
+					    ?requirement <http://example.com/theme/engineering/name> ?name .
+					  }
+					  FILTER EXISTS {
+					    ?requirement <http://example.com/theme/engineering/satisfies> ?component .
+					  }
+					}
+					""");
+
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new LmdbEvaluationStatistics(valueStore, null, null))
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertTrue(minusProbeInputContainsExistsPredicate(tupleExpr,
+					"http://example.com/theme/engineering/name"), diagnosticPlan);
+			assertFalse(existsPredicateFilterWrapsMinusProbe(tupleExpr,
+					"http://example.com/theme/engineering/name"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"rule=lmdb-filter-minus-left-pushdown"), diagnosticPlan);
+		} finally {
+			valueStore.close();
+		}
+	}
+
+	@Test
+	void lmdbCascadesRepairsUnusedOptionalAndExistsAfterStandardFallback() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new FallbackJoinFactorStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+		assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+		assertFalse(containsExists(tupleExpr), diagnosticPlan);
+		assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-distinct-exists-join"), diagnosticPlan);
+	}
+
+	@Test
+	void lmdbCascadesRepairsUnusedOptionalAndExistsWithFullStandardAnnotations() {
+		String previousFullAnnotations = System.setProperty(
+				"rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations", "true");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond <http://example.com/theme/medical/code> ?code .
+				  ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+				  ?enc a <http://example.com/theme/medical/Encounter> .
+				  OPTIONAL {
+				    ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+				  }
+				  FILTER EXISTS {
+				    ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new FallbackJoinFactorStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertFalse(containsExists(tupleExpr), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"rule=lmdb-distinct-exists-join"), diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations", previousFullAnnotations);
+		}
+	}
+
+	@Test
+	void lmdbCascadesPipelineCarriesRealOmniThreeWaySurfaceEvidence(@TempDir File dataDir) throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI leftPredicate = vf.createIRI("urn:omni:pipeline:three-way:left");
+		IRI middlePredicate = vf.createIRI("urn:omni:pipeline:three-way:middle");
+		IRI rightPredicate = vf.createIRI("urn:omni:pipeline:three-way:right");
+		IRI encounterClass = vf.createIRI("urn:omni:pipeline:three-way:Encounter");
+		Value sharedDrug = vf.createIRI("urn:omni:pipeline:three-way:drug:shared");
+		Value otherDrug = vf.createIRI("urn:omni:pipeline:three-way:drug:other");
+		SimpleSketchStatementSource sketchSource = new SimpleSketchStatementSource();
+		addThreeWayOmniRow(sketchSource, "urn:omni:pipeline:three-way:enc:1", leftPredicate, middlePredicate,
+				rightPredicate, encounterClass, sharedDrug);
+		addThreeWayOmniRow(sketchSource, "urn:omni:pipeline:three-way:enc:2", leftPredicate, middlePredicate,
+				rightPredicate, encounterClass, sharedDrug);
+		addThreeWayOmniRow(sketchSource, "urn:omni:pipeline:three-way:enc:3", leftPredicate, middlePredicate,
+				rightPredicate, encounterClass, otherDrug);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(sketchSource,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			TupleExpr tupleExpr = parseTupleExpr("""
+					SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+					  ?enc a <urn:omni:pipeline:three-way:Encounter> .
+					  ?enc <urn:omni:pipeline:three-way:left> ?drug .
+					  ?enc <urn:omni:pipeline:three-way:middle> ?drug .
+					  ?enc <urn:omni:pipeline:three-way:right> ?drug .
+					}
+					""");
+
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new LmdbEvaluationStatistics(valueStore, null, estimator, null, null))
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertTrue(containsPlannedStringMetric(tupleExpr, "plannedSketchStrategy", "omni"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "plannedSketchEstimateSource", "omni-join-estimator"),
+					diagnosticPlan);
+		} finally {
+			valueStore.close();
+		}
+	}
+
+	@Test
+	void lmdbSketchEnrichmentKeepsNonExactFiniteAnchorZeroCostFloor(@TempDir File dataDir) throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI codePredicate = vf.createIRI("urn:omni:pipeline:finite-zero:code");
+		IRI bridgePredicate = vf.createIRI("urn:omni:pipeline:finite-zero:bridge");
+		SimpleSketchStatementSource sketchSource = new SimpleSketchStatementSource();
+		for (int i = 0; i < 8; i++) {
+			Resource entity = vf.createIRI("urn:omni:pipeline:finite-zero:entity:" + i);
+			sketchSource.add(vf.createStatement(entity, codePredicate,
+					vf.createLiteral("present-code-" + i)));
+			sketchSource.add(vf.createStatement(entity, bridgePredicate,
+					vf.createIRI("urn:omni:pipeline:finite-zero:tail:" + i)));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(sketchSource,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		estimator.rebuild();
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			BindingSetAssignment codeValues = singleValueAssignment("code", vf.createLiteral("missing-code"));
+			StatementPattern codePattern = new StatementPattern(Var.of("entity"),
+					Var.of("codePredicate", codePredicate), Var.of("code"));
+			StatementPattern bridgePattern = new StatementPattern(Var.of("entity"),
+					Var.of("bridgePredicate", bridgePredicate), Var.of("tail"));
+			JoinOrderPlanner planner = (JoinOrderPlanner) new LmdbEvaluationStatistics(valueStore, null, estimator,
+					null, null);
+			JoinOrderPlanner.JoinOrderPlan plan = planner
+					.estimateJoinOrder(List.of(codeValues, codePattern, bridgePattern), Set.of(),
+							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
+					.orElseThrow();
+
+			assertEquals(0.0d, plan.getEstimatedFinalRows(), 0.0d,
+					"Cardinality display should keep the non-exact zero");
+			assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+					.get(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
+					"Summary cardinality rows should remain the estimated zero");
+			assertEquals(1.0d, plan.getSummaryDoubleMetrics()
+					.get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS), 0.0d,
+					"LMDB access enrichment must preserve the non-exact zero planning floor");
+			assertTrue(plan.getSummaryDoubleMetrics()
+					.get(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE) <= 0.25d,
+					"Non-exact zero cost floors should remain low confidence: " + plan.getSummaryDoubleMetrics());
+			assertTrue(plan.getSteps()
+					.stream()
+					.filter(step -> step.getBoundVarsBefore().contains("entity"))
+					.anyMatch(step -> step.getStepWorkRows() > 0.0d),
+					"A non-exact zero prefix must not make connected downstream work free. plan=" + plan);
+		} finally {
+			valueStore.close();
+		}
+	}
+
+	@Test
+	void lmdbCascadesCostsFiniteCodeTypeRewriteForDistinctAggregateUnion() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  {
+				    ?entity a <http://example.com/theme/medical/Condition> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  UNION
+				  {
+				    ?entity a <http://example.com/theme/medical/Medication> .
+				    ?entity <http://example.com/theme/medical/code> ?code .
+				  }
+				  FILTER ((?code = ?target) || (?code = "DX-202"))
+				  OPTIONAL {
+				    ?entity <http://example.com/theme/medical/code> ?alt .
+				  }
+				}
+				""");
+
+		try {
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertTrue(containsBindingSetAssignmentFor(tupleExpr, "code"), diagnosticPlan);
+			assertTrue(containsBindingSetAssignmentFor(tupleExpr, "type"), diagnosticPlan);
+			assertFalse(containsBindingSetAssignmentFor(tupleExpr, "target"), diagnosticPlan);
+			assertFalse(containsUnion(tupleExpr), diagnosticPlan);
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	@Test
+	void lmdbSketchPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT * WHERE {
+				  ?book <http://example.com/theme/library/name> ?name .
+				  ?book a <http://example.com/theme/library/Book> .
+				  FILTER (?name IN ("Book 1", "Book 2"))
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new FixedFilterPassStatistics(0.50d))
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		assertFalse(containsBindingSetAssignmentFor(tupleExpr, "name"), tupleExpr.toString());
+		assertTrue(hasLiteralFilterFor(tupleExpr, "name", Set.of("Book 1", "Book 2")), tupleExpr.toString());
+	}
+
+	@Test
+	void lmdbSketchPipelineRemovesProjectionDeadOptionalUnderDistinct() {
+		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			TupleExpr tupleExpr = parseTupleExpr("""
+					PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+					SELECT DISTINCT ?p WHERE {
+					  ?a a foaf:Person ;
+					     ?p ?o .
+					  OPTIONAL {
+					    ?o a ?type .
+					  }
+					}
+					""");
+
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+
+			assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
+		}
 	}
 
 	@Test
@@ -267,6 +1247,29 @@ class LmdbOptimizerPipelineTest {
 		return -1;
 	}
 
+	private static int lastIndexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
+		for (int i = optimizers.size() - 1; i >= 0; i--) {
+			if (optimizerType.isInstance(optimizers.get(i))) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static void assertLmdbVarResolvedMissing(ValueStore valueStore, Var var, Value originalValue)
+			throws Exception {
+		LmdbValueVar lmdbValueVar = assertInstanceOf(LmdbValueVar.class, var);
+		assertEquals(originalValue, var.getValue());
+		assertOwnedLmdbValue(valueStore, var.getValue());
+		assertTrue(lmdbValueVar.isLmdbValueResolved());
+		assertEquals(null, lmdbValueVar.getLmdbValue());
+	}
+
+	private static void assertOwnedLmdbValue(ValueStore valueStore, Value value) {
+		LmdbValue lmdbValue = assertInstanceOf(LmdbValue.class, value);
+		assertSame(valueStore, lmdbValue.getValueStoreRevision().getValueStore());
+	}
+
 	private static List<Class<? extends QueryOptimizer>> nonCheckerOptimizerTypesAfter(List<QueryOptimizer> optimizers,
 			int index) {
 		return optimizers.subList(index + 1, optimizers.size())
@@ -279,6 +1282,364 @@ class LmdbOptimizerPipelineTest {
 	private static TupleExpr parseTupleExpr(String query) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		return parsedQuery.getTupleExpr();
+	}
+
+	private static void optimizeWithLmdbPipelineUntil(TupleExpr tupleExpr, String stopBeforeOptimizerName) {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			if (optimizer.getClass().getSimpleName().equals(stopBeforeOptimizerName)) {
+				return;
+			}
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+	}
+
+	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (node.getBindingNames().contains(bindingName)) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static void assertNoUnsafeSplitBindingAssignmentFilter(TupleExpr tupleExpr) {
+		List<String> unsafeFilters = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg()instanceof BindingSetAssignment assignment) {
+					Set<String> conditionVars = VarNameCollector.process(node.getCondition());
+					if (!assignment.getBindingNames().containsAll(conditionVars)
+							&& !isJoinRightBindingPrefixFilter(node, assignment, conditionVars)) {
+						unsafeFilters.add(node.toString());
+					}
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(unsafeFilters.isEmpty(), "Unsafe split binding-prefix filter(s):\n" + unsafeFilters
+				+ "\nOptimized query:\n" + tupleExpr);
+	}
+
+	private static boolean isJoinRightBindingPrefixFilter(Filter filter, BindingSetAssignment assignment,
+			Set<String> conditionVars) {
+		QueryModelNode parent = filter.getParentNode();
+		if (!(parent instanceof Join join) || join.getRightArg() != filter) {
+			return false;
+		}
+		Set<String> availableVars = new HashSet<>(join.getLeftArg().getBindingNames());
+		availableVars.addAll(assignment.getBindingNames());
+		return availableVars.containsAll(conditionVars)
+				&& conditionVars.stream().anyMatch(assignment.getBindingNames()::contains)
+				&& conditionVars.stream().anyMatch(join.getLeftArg().getBindingNames()::contains);
+	}
+
+	private static boolean containsLeftJoin(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(LeftJoin node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsUnion(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Union node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsVariableName(QueryModelNode queryModelNode, String name) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Var node) {
+				if (!node.hasValue() && name.equals(node.getName())) {
+					found[0] = true;
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsAnonymousHavingBinding(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node.getSignature().contains("_anon_having_")) {
+					found[0] = true;
+				}
+				super.meetNode(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean groupInputContainsUnion(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Group node) {
+				if (containsUnion(node.getArg())) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean groupIsWrappedByExistsFilter(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg() instanceof Group && containsExists(node.getCondition())) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsExists(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Exists node) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean minusProbeInputContainsExistsPredicate(QueryModelNode queryModelNode, String predicate) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Difference node) {
+				if (containsExistsPredicate(node.getLeftArg(), predicate)) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				if (containsNotExistsConjunct(node.getCondition())
+						&& containsExistsPredicate(node.getArg(), predicate)) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean existsPredicateFilterWrapsMinusProbe(QueryModelNode queryModelNode, String predicate) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (containsExistsPredicate(node.getCondition(), predicate)
+						&& (node.getArg() instanceof Difference || containsNotExistsFilter(node.getArg()))) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsNotExistsFilter(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (containsNotExistsConjunct(node.getCondition())) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsExistsPredicate(QueryModelNode queryModelNode, String predicate) {
+		if (containsStatementPredicate(queryModelNode, predicate)
+				|| queryModelNode != null && queryModelNode.toString().contains(predicate)) {
+			return true;
+		}
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (containsExistsPredicate(node.getCondition(), predicate)) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Exists node) {
+				if (node.toString().contains(predicate)) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsExistsPredicate(ValueExpr condition, String predicate) {
+		if (condition == null) {
+			return false;
+		}
+		if (condition instanceof Exists exists) {
+			return containsStatementPredicate(exists.getSubQuery(), predicate)
+					|| condition.toString().contains(predicate);
+		}
+		if (condition instanceof And and) {
+			return containsExistsPredicate(and.getLeftArg(), predicate)
+					|| containsExistsPredicate(and.getRightArg(), predicate);
+		}
+		if (condition instanceof Or or) {
+			return containsExistsPredicate(or.getLeftArg(), predicate)
+					|| containsExistsPredicate(or.getRightArg(), predicate);
+		}
+		if (condition instanceof Not not) {
+			return containsExistsPredicate(not.getArg(), predicate);
+		}
+		return containsStatementPredicate(condition, predicate) || condition.toString().contains(predicate);
+	}
+
+	private static boolean containsStatementPredicate(QueryModelNode queryModelNode, String predicate) {
+		if (queryModelNode == null || predicate == null) {
+			return false;
+		}
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(StatementPattern node) {
+				Var predicateVar = node.getPredicateVar();
+				if (predicateVar != null && predicateVar.hasValue()
+						&& predicate.equals(predicateVar.getValue().stringValue())) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsNotExistsConjunct(ValueExpr condition) {
+		if (condition instanceof Not not && not.getArg() instanceof Exists) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return containsNotExistsConjunct(and.getLeftArg()) || containsNotExistsConjunct(and.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsPlannedStringMetric(QueryModelNode queryModelNode, String metricName,
+			String expectedFragment) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				String metricValue = node.getStringMetricPlanned(metricName);
+				if (metricValue != null && metricValue.contains(expectedFragment)) {
+					found[0] = true;
+					return;
+				}
+				super.meetNode(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static String diagnosticPlan(TupleExpr tupleExpr) {
+		return "traceJson=" + tupleExpr.getStringMetricPlanned("optimizer.cascadesTraceJson")
+				+ "\nmetrics=" + plannedMetricSummary(tupleExpr)
+				+ "\n" + tupleExpr;
+	}
+
+	private static void repairParentReferences(TupleExpr tupleExpr) {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			private final Deque<QueryModelNode> ancestors = new ArrayDeque<>();
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!ancestors.isEmpty() && !(node instanceof Var)) {
+					QueryModelNode expectedParent = ancestors.peekLast();
+					if (node.getParentNode() != expectedParent) {
+						node.setParentNode(expectedParent);
+					}
+				}
+				ancestors.addLast(node);
+				node.visitChildren(this);
+				ancestors.removeLast();
+			}
+		});
+	}
+
+	private static String plannedMetricSummary(TupleExpr tupleExpr) {
+		List<String> metrics = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				String rule = node.getStringMetricPlanned("optimizer.cascadesRule");
+				String proofs = node.getStringMetricPlanned("optimizer.cascadesProofs");
+				String rewrite = node.getStringMetricPlanned("optimizer.semanticRewrite");
+				if (rule != null || proofs != null || rewrite != null) {
+					metrics.add(node.getSignature() + "{rule=" + rule + ", proofs=" + proofs
+							+ ", semanticRewrite=" + rewrite + "}");
+				}
+				super.meetNode(node);
+			}
+		});
+		return metrics.toString();
 	}
 
 	private static StatementPattern firstStatementPattern(IRI predicate) {
@@ -329,6 +1690,24 @@ class LmdbOptimizerPipelineTest {
 		}
 	}
 
+	private static void addThreeWayOmniRow(SimpleSketchStatementSource source, String encounter,
+			IRI leftPredicate, IRI middlePredicate, IRI rightPredicate, IRI encounterClass, Value drug) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Resource encounterResource = vf.createIRI(encounter);
+		source.add(vf.createStatement(encounterResource, RDF.TYPE, encounterClass));
+		source.add(vf.createStatement(encounterResource, leftPredicate, drug));
+		source.add(vf.createStatement(encounterResource, middlePredicate, drug));
+		source.add(vf.createStatement(encounterResource, rightPredicate, drug));
+	}
+
+	private static BindingSetAssignment singleValueAssignment(String bindingName, Value value) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		MapBindingSet bindingSet = new MapBindingSet();
+		bindingSet.addBinding(bindingName, value);
+		assignment.setBindingSets(List.of(bindingSet));
+		return assignment;
+	}
+
 	private static EvaluationStrategyFactory capturedEvaluationStrategyFactory(NotifyingSailConnection connection)
 			throws Exception {
 		Field field = SailSourceConnection.class.getDeclaredField("evalStratFactory");
@@ -338,6 +1717,14 @@ class LmdbOptimizerPipelineTest {
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
 		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
 	}
 
 	public static final class LowHeapSketchGateProbe {
@@ -357,8 +1744,8 @@ class LmdbOptimizerPipelineTest {
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 					throw new AssertionError("Low heap should not allocate the sketch estimator");
 				}
-				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
-					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				if (!(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the LMDB evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
@@ -386,9 +1773,9 @@ class LmdbOptimizerPipelineTest {
 		}
 	}
 
-	private static void assertRetainedEngineeringNameFilter(TupleExpr tupleExpr, String stage) {
-		assertTrue(hasRetainedEngineeringNameFilter(tupleExpr),
-				"Expected retained engineering name filter after " + stage + ":\n" + tupleExpr);
+	private static void assertEngineeringNameEvidence(TupleExpr tupleExpr, String stage) {
+		assertTrue(hasRetainedEngineeringNameFilter(tupleExpr) || hasPrecomputedEngineeringNameAssignment(tupleExpr),
+				"Expected engineering name filter evidence after " + stage + ":\n" + tupleExpr);
 	}
 
 	private static boolean hasRetainedEngineeringNameFilter(TupleExpr tupleExpr) {
@@ -407,21 +1794,75 @@ class LmdbOptimizerPipelineTest {
 		return found[0];
 	}
 
+	private static boolean hasPrecomputedEngineeringNameAssignment(TupleExpr tupleExpr) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(BindingSetAssignment node) {
+				Set<String> values = new HashSet<>();
+				for (BindingSet bindingSet : node.getBindingSets()) {
+					Value value = bindingSet.getValue("name");
+					if (value instanceof Literal literal) {
+						values.add(literal.getLabel());
+					}
+				}
+				if (values.containsAll(Set.of("Component 1", "Component 2"))) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean hasLiteralFilterFor(TupleExpr tupleExpr, String bindingName, Set<String> expectedValues) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				Set<String> values = literalFilterValues(node.getCondition(), bindingName);
+				if (values.containsAll(expectedValues)) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
 	private static Set<String> engineeringNameFilterLiterals(ValueExpr valueExpr) {
+		return literalFilterValues(valueExpr, "name");
+	}
+
+	private static Set<String> literalFilterValues(ValueExpr valueExpr, String bindingName) {
 		Set<String> values = new HashSet<>();
-		collectEngineeringNameFilterLiterals(valueExpr, values);
+		collectLiteralFilterValues(valueExpr, bindingName, values);
 		return values;
 	}
 
-	private static void collectEngineeringNameFilterLiterals(ValueExpr valueExpr, Set<String> values) {
+	private static void collectLiteralFilterValues(ValueExpr valueExpr, String bindingName, Set<String> values) {
 		if (valueExpr instanceof Or or) {
-			collectEngineeringNameFilterLiterals(or.getLeftArg(), values);
-			collectEngineeringNameFilterLiterals(or.getRightArg(), values);
+			collectLiteralFilterValues(or.getLeftArg(), bindingName, values);
+			collectLiteralFilterValues(or.getRightArg(), bindingName, values);
 			return;
 		}
 		if (valueExpr instanceof And and) {
-			collectEngineeringNameFilterLiterals(and.getLeftArg(), values);
-			collectEngineeringNameFilterLiterals(and.getRightArg(), values);
+			collectLiteralFilterValues(and.getLeftArg(), bindingName, values);
+			collectLiteralFilterValues(and.getRightArg(), bindingName, values);
+			return;
+		}
+		if (valueExpr instanceof ListMemberOperator list) {
+			if (!list.getArguments().isEmpty() && list.getArguments().getFirst()instanceof Var var
+					&& bindingName.equals(var.getName())) {
+				for (int i = 1; i < list.getArguments().size(); i++) {
+					ValueExpr argument = list.getArguments().get(i);
+					if (argument instanceof ValueConstant constant && constant.getValue()instanceof Literal literal) {
+						values.add(literal.getLabel());
+					}
+				}
+			}
 			return;
 		}
 		if (!(valueExpr instanceof Compare compare)) {
@@ -430,16 +1871,16 @@ class LmdbOptimizerPipelineTest {
 		if (compare.getOperator() != Compare.CompareOp.EQ) {
 			return;
 		}
-		collectEngineeringNameFilterLiteral(compare.getLeftArg(), compare.getRightArg(), values);
-		collectEngineeringNameFilterLiteral(compare.getRightArg(), compare.getLeftArg(), values);
+		collectLiteralFilterValue(compare.getLeftArg(), compare.getRightArg(), bindingName, values);
+		collectLiteralFilterValue(compare.getRightArg(), compare.getLeftArg(), bindingName, values);
 	}
 
-	private static void collectEngineeringNameFilterLiteral(ValueExpr possibleName, ValueExpr possibleLiteral,
-			Set<String> values) {
+	private static void collectLiteralFilterValue(ValueExpr possibleName, ValueExpr possibleLiteral,
+			String bindingName, Set<String> values) {
 		if (!(possibleName instanceof Var) || !(possibleLiteral instanceof ValueConstant)) {
 			return;
 		}
-		if (!"name".equals(((Var) possibleName).getName())) {
+		if (!bindingName.equals(((Var) possibleName).getName())) {
 			return;
 		}
 		Value value = ((ValueConstant) possibleLiteral).getValue();
@@ -473,6 +1914,57 @@ class LmdbOptimizerPipelineTest {
 		@Override
 		public double estimateFilterPassRatio(Filter filter) {
 			throw new AssertionError("Pre-sketch LMDB FilterOptimizer must not estimate broad filter telemetry");
+		}
+	}
+
+	private static final class FixedFilterPassStatistics extends EvaluationStatistics {
+
+		private final double passRatio;
+
+		private FixedFilterPassStatistics(double passRatio) {
+			this.passRatio = passRatio;
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new FilterPassEstimate(passRatio, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		}
+	}
+
+	private static final class FallbackJoinFactorStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+	}
+
+	private static final class SimpleSketchStatementSource implements SketchStatementSource {
+
+		private final List<Statement> statements = new ArrayList<>();
+
+		private void add(Statement statement) {
+			statements.add(statement);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			List<Statement> matches = new ArrayList<>();
+			for (Statement statement : statements) {
+				if (subject != null && !subject.equals(statement.getSubject())) {
+					continue;
+				}
+				if (predicate != null && !predicate.equals(statement.getPredicate())) {
+					continue;
+				}
+				if (object != null && !object.equals(statement.getObject())) {
+					continue;
+				}
+				matches.add(statement);
+			}
+			return new CloseableIteratorIteration<>(matches.iterator());
 		}
 	}
 
