@@ -24,8 +24,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -305,6 +307,35 @@ class LmdbSketchJoinOptimizerTest {
 				.orElseThrow();
 		assertFalse(materializedAnchor.getBindingSets() instanceof List,
 				"Candidate analysis should not preallocate materialized finite-anchor rows");
+	}
+
+	@Test
+	void materializedFiniteAnchorUsesSparqlValueEqualityForNumericCompare() {
+		BindingSetAssignment targets = values("target", VF.createLiteral("7", XSD.INTEGER));
+		StatementPattern name = statementPattern("person", "name", "name");
+		DeferredFilter filter = new DeferredFilter(equal("name", "target"), Set.of("name", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, name, Set.of(name), null);
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets, name),
+				List.of(filter), new CanonicalIntObjectDomainStatistics());
+
+		BindingSetAssignment materializedAnchor = analysis.finiteAnchorOptions()
+				.getFirst()
+				.factors()
+				.stream()
+				.filter(BindingSetAssignment.class::isInstance)
+				.map(BindingSetAssignment.class::cast)
+				.filter(assignment -> assignment.getBindingNames().containsAll(Set.of("name", "target")))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"Numeric SPARQL value equality should produce a materialized equality assignment: "
+								+ analysis.finiteAnchorOptions()));
+		List<BindingSet> rows = new ArrayList<>();
+		materializedAnchor.getBindingSets().forEach(rows::add);
+		assertEquals(1, rows.size(),
+				"SPARQL numeric equality should retain equal values with different integer datatypes");
+		assertEquals(VF.createLiteral("7", XSD.INT), rows.getFirst().getValue("name"));
+		assertEquals(VF.createLiteral("7", XSD.INTEGER), rows.getFirst().getValue("target"));
 	}
 
 	@Test
@@ -861,12 +892,20 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	private static BindingSetAssignment values(String bindingName, String... values) {
+		Value[] literals = new Value[values.length];
+		for (int i = 0; i < values.length; i++) {
+			literals[i] = VF.createLiteral(values[i]);
+		}
+		return values(bindingName, literals);
+	}
+
+	private static BindingSetAssignment values(String bindingName, Value... values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
 		List<BindingSet> bindingSets = new ArrayList<>(values.length);
-		for (String value : values) {
+		for (Value value : values) {
 			MapBindingSet bindingSet = new MapBindingSet(1);
-			bindingSet.addBinding(bindingName, VF.createLiteral(value));
+			bindingSet.addBinding(bindingName, value);
 			bindingSets.add(bindingSet);
 		}
 		assignment.setBindingSets(bindingSets);
@@ -1245,6 +1284,20 @@ class LmdbSketchJoinOptimizerTest {
 											TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 89_102.0d,
 											"plannedSurfaceRows", 3.0d)),
 							new PlanStep(Set.of("threshold", "w", "node"), 3.0d, 3.0d, 6.0d)));
+		}
+	}
+
+	private static final class CanonicalIntObjectDomainStatistics extends EvaluationStatistics
+			implements LmdbPredicateObjectDomainSource {
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT))));
 		}
 	}
 

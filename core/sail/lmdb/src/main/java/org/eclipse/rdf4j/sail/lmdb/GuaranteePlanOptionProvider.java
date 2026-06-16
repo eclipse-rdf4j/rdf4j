@@ -50,7 +50,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -675,8 +677,11 @@ final class GuaranteePlanOptionProvider {
 			if (left == null || right == null) {
 				return null;
 			}
-			boolean equal = left.equals(right);
-			return compare.getOperator() == Compare.CompareOp.EQ ? equal : !equal;
+			try {
+				return QueryEvaluationUtil.compare(left, right, compare.getOperator(), false);
+			} catch (ValueExprEvaluationException e) {
+				return false;
+			}
 		}
 		if (condition instanceof ListMemberOperator list) {
 			List<ValueExpr> arguments = list.getArguments();
