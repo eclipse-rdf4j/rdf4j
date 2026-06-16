@@ -51,6 +51,8 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.backup.BackupCapableSail;
+import org.eclipse.rdf4j.sail.backup.SailBackupService;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
@@ -68,7 +70,8 @@ import org.slf4j.LoggerFactory;
  *           from one release to the next.
  */
 @Experimental
-public class LmdbStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+public class LmdbStore extends AbstractNotifyingSail
+		implements FederatedServiceResolverClient, BackupCapableSail {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbStore.class);
 
@@ -128,6 +131,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private SailStore store;
 
 	private LmdbSailStore backingStore;
+	private LmdbBackupServiceImpl backupService;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -363,6 +367,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			backupService = new LmdbBackupServiceImpl(this, backingStore, config);
 
 			// update version afer loading and potential internal migration within value and triple store
 			if (updateVersion) {
@@ -419,7 +424,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Shutting down LmdbStore...");
 
 		try {
-			store.close();
+			try {
+				if (backupService != null) {
+					backupService.close();
+					backupService = null;
+				}
+			} finally {
+				store.close();
+			}
 		} finally {
 			dirLock.release();
 			if (dependentServiceResolver != null) {
@@ -565,6 +577,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	LmdbSailStore getBackingStore() {
 		return backingStore;
+	}
+
+	@Override
+	public SailBackupService getBackupService() {
+		if (backupService == null) {
+			throw new IllegalStateException("LmdbStore is not initialized");
+		}
+		return backupService;
 	}
 
 	EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {
