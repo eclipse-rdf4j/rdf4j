@@ -157,6 +157,33 @@ final class OmniWitnessSet {
 				fallbackReason, minimumDetectableRows);
 	}
 
+	static OmniWitnessSet fromTrustedSortedUnsigned(long[] hashes, double[] weights, int length,
+			double samplingProbability, double confidence, FallbackReason fallbackReason, double minimumDetectableRows,
+			double estimatedRows) {
+		if (hashes == null || weights == null || length <= 0) {
+			double estimate = Double.isFinite(estimatedRows) && estimatedRows > 0.0d
+					? estimatedRows
+					: fallbackReason == FallbackReason.NONE ? 0.0d : minimumDetectableRows;
+			return new OmniWitnessSet(new long[0], new double[0], samplingProbability, estimate, confidence,
+					fallbackReason, minimumDetectableRows);
+		}
+		if (length > hashes.length || length > weights.length) {
+			throw new IllegalArgumentException("length exceeds array length");
+		}
+		long[] compactHashes = length == hashes.length ? hashes : Arrays.copyOf(hashes, length);
+		double[] compactWeights = length == weights.length ? weights : Arrays.copyOf(weights, length);
+		double retainedWeight = 0.0d;
+		for (int i = 0; i < compactWeights.length; i++) {
+			retainedWeight += compactWeights[i];
+		}
+		double probability = clampProbability(samplingProbability);
+		double estimate = Double.isFinite(estimatedRows) && estimatedRows >= 0.0d
+				? estimatedRows
+				: probability > 0.0d ? retainedWeight / probability : retainedWeight;
+		return new OmniWitnessSet(compactHashes, compactWeights, probability, estimate, confidence, fallbackReason,
+				minimumDetectableRows);
+	}
+
 	boolean containsHash(long hash) {
 		return indexOf(hash) >= 0;
 	}

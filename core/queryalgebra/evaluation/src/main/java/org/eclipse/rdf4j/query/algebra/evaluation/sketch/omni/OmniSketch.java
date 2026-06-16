@@ -167,7 +167,7 @@ public abstract class OmniSketch implements MemorySegmentStatus {
 
 	/** Returns retained witness identifiers and sampling metadata for a pre-hashed value. */
 	public final OmniSketchProbeResult probeHash(final long valueHash) {
-		return probe(OmniSketchPredicate.equalToHash(valueHash));
+		return OmniSketchProbeResult.fromSummary(summaryForValueHash(valueHash));
 	}
 
 	/** Returns an immutable compact representation on the Java heap. */
@@ -213,12 +213,13 @@ public abstract class OmniSketch implements MemorySegmentStatus {
 	}
 
 	final OmniSketchSummary summaryForValueHash(final long valueHash) {
-		final List<OmniSketchCell> rowCells = new ArrayList<>(getNumRows());
-		for (int row = 0; row < getNumRows(); row++) {
+		final int numRows = getNumRows();
+		final OmniSketchCell[] rowCells = new OmniSketchCell[numRows];
+		for (int row = 0; row < numRows; row++) {
 			final int column = OmniSketchHash.indexFor(OmniSketchHash.rowHash(valueHash, row, getSeed()), getLgWidth());
-			rowCells.add(getCell(row, column));
+			rowCells[row] = getCell(row, column);
 		}
-		return OmniSketchSummary.fromCells(rowCells, getNominalEntries());
+		return OmniSketchSummary.fromCells(rowCells, numRows, getNominalEntries());
 	}
 
 	private OmniSketchSummary summaryAll() {

@@ -23,10 +23,12 @@ import java.nio.ByteOrder;
 final class OmniWitnessLayout {
 
 	static final int ATTRIBUTE_MAGIC = 0x4f574941;
-	static final int ATTRIBUTE_VERSION = 1;
+	static final int ATTRIBUTE_VERSION = 2;
+	static final int MIN_ATTRIBUTE_VERSION = 1;
 	static final int VALUE_HASH_SLOT_BYTES = Long.BYTES + Integer.BYTES + Integer.BYTES;
-	static final int VALUE_RECORD_BYTES = Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES
+	static final int VALUE_RECORD_V1_BYTES = Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES
 			+ Double.BYTES;
+	static final int VALUE_RECORD_BYTES = VALUE_RECORD_V1_BYTES + Double.BYTES;
 	static final int POSTING_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	static final int ATTRIBUTE_HEADER_BYTES = Integer.BYTES * 10;
 	static final ValueLayout.OfLong BE_LONG = JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
@@ -35,6 +37,10 @@ final class OmniWitnessLayout {
 	static final ValueLayout.OfDouble BE_DOUBLE = JAVA_DOUBLE_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
 	private OmniWitnessLayout() {
+	}
+
+	static int valueRecordBytes(int attributeVersion) {
+		return attributeVersion >= 2 ? VALUE_RECORD_BYTES : VALUE_RECORD_V1_BYTES;
 	}
 
 	static int hashTableSize(int valueCount) {

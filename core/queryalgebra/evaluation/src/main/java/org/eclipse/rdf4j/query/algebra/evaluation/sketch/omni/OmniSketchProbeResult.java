@@ -28,11 +28,19 @@ public final class OmniSketchProbeResult {
 
 	OmniSketchProbeResult(double estimate, long count, double samplingProbability, int retainedEntries,
 			long[] identifierHashes, long minCount, long maxCount, double minimumDetectableEstimate) {
+		this(estimate, count, samplingProbability, retainedEntries, identifierHashes, minCount, maxCount,
+				minimumDetectableEstimate, true);
+	}
+
+	private OmniSketchProbeResult(double estimate, long count, double samplingProbability, int retainedEntries,
+			long[] identifierHashes, long minCount, long maxCount, double minimumDetectableEstimate,
+			boolean copyIdentifierHashes) {
 		this.estimate = Math.max(0.0d, estimate);
 		this.count = Math.max(0L, count);
 		this.samplingProbability = clampProbability(samplingProbability);
 		this.retainedEntries = Math.max(0, retainedEntries);
-		this.identifierHashes = identifierHashes == null ? new long[0] : identifierHashes.clone();
+		this.identifierHashes = identifierHashes == null ? new long[0]
+				: copyIdentifierHashes ? identifierHashes.clone() : identifierHashes;
 		this.minCount = Math.max(0L, minCount);
 		this.maxCount = Math.max(0L, maxCount);
 		this.minimumDetectableEstimate = Math.max(0.0d, minimumDetectableEstimate);
@@ -40,14 +48,13 @@ public final class OmniSketchProbeResult {
 
 	static OmniSketchProbeResult fromSummary(OmniSketchSummary summary) {
 		if (summary == null || summary.count() <= 0L) {
-			return new OmniSketchProbeResult(0.0d, 0L, 1.0d, 0, new long[0], 0L, 0L, 0.0d);
+			return new OmniSketchProbeResult(0.0d, 0L, 1.0d, 0, new long[0], 0L, 0L, 0.0d, false);
 		}
 		double population = Math.max(summary.count(), summary.maxCount());
 		double probability = population <= 0.0d ? 1.0d : Math.min(1.0d, summary.retained() / population);
 		double minimumDetectable = probability > 0.0d ? 1.0d / probability : summary.count();
 		return new OmniSketchProbeResult(summary.count(), summary.count(), probability, summary.retained(),
-				summary.hashes(),
-				summary.minCount(), summary.maxCount(), minimumDetectable);
+				summary.hashes(), summary.minCount(), summary.maxCount(), minimumDetectable, false);
 	}
 
 	/** Estimated rows represented by this predicate probe. */
@@ -73,6 +80,18 @@ public final class OmniSketchProbeResult {
 	/** Sorted retained witness identifier hashes. */
 	public long[] getIdentifierHashes() {
 		return identifierHashes.clone();
+	}
+
+	/**
+	 * Returns the backing retained witness hash array without copying.
+	 *
+	 * <p>
+	 * This is intended for estimator internals that treat probe results as immutable. Callers must not modify the
+	 * returned array.
+	 * </p>
+	 */
+	public long[] getIdentifierHashesUnsafe() {
+		return identifierHashes;
 	}
 
 	/** Minimum matching cell count across sketch rows. */

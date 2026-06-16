@@ -135,9 +135,10 @@ final class OmniSketchSerializationUtil {
 		offset += Integer.BYTES;
 		seg.set(JAVA_INT_UNALIGNED, offset, 0);
 		offset += Integer.BYTES;
-		final long[] hashes = cell.copyHashes();
-		for (final long hash : hashes) {
-			seg.set(JAVA_LONG_UNALIGNED, offset, hash);
+		final long[] hashes = cell.hashesArray();
+		final int retained = cell.getRetainedEntries();
+		for (int i = 0; i < retained; i++) {
+			seg.set(JAVA_LONG_UNALIGNED, offset, hashes[i]);
 			offset += Long.BYTES;
 		}
 		return offset;

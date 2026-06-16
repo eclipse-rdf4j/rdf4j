@@ -28,6 +28,18 @@ interface WitnessCursor {
 
 	double weight();
 
+	/**
+	 * Returns an advisory upper bound for entries this cursor can still produce.
+	 *
+	 * <p>
+	 * Implementations should return {@code -1} when the remaining cardinality is not known cheaply. The estimator uses
+	 * this only to size transient merge buffers; correctness must not depend on an exact value.
+	 * </p>
+	 */
+	default int estimatedRemaining() {
+		return -1;
+	}
+
 	static WitnessCursor empty() {
 		return EmptyWitnessCursor.INSTANCE;
 	}
@@ -52,6 +64,11 @@ final class EmptyWitnessCursor implements WitnessCursor {
 	@Override
 	public double weight() {
 		return 0.0d;
+	}
+
+	@Override
+	public int estimatedRemaining() {
+		return 0;
 	}
 }
 
@@ -167,6 +184,11 @@ final class ArrayWitnessCursor implements WitnessCursor {
 	public double weight() {
 		return weights[index];
 	}
+
+	@Override
+	public int estimatedRemaining() {
+		return Math.max(0, witnessHashes.length - index - 1);
+	}
 }
 
 final class MergedWitnessCursor implements WitnessCursor {
@@ -220,5 +242,22 @@ final class MergedWitnessCursor implements WitnessCursor {
 	@Override
 	public double weight() {
 		return weight;
+	}
+
+	@Override
+	public int estimatedRemaining() {
+		int leftRemaining = left.estimatedRemaining();
+		int rightRemaining = right.estimatedRemaining();
+		if (leftRemaining < 0 || rightRemaining < 0) {
+			return -1;
+		}
+		long remaining = (long) leftRemaining + rightRemaining;
+		if (leftReady) {
+			remaining++;
+		}
+		if (rightReady) {
+			remaining++;
+		}
+		return remaining > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
 	}
 }

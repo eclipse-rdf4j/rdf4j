@@ -33,8 +33,6 @@ import org.junit.jupiter.api.io.TempDir;
 class OmniWitnessPersistenceStoreTest {
 
 	private static final long SEED = 0x51E7C0DEL;
-	private static final int VALUE_RECORD_FIXED_BYTES = Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES
-			+ Double.BYTES;
 
 	@Test
 	void valueRecordsStoreSamplingProbabilityAndMinimumDetectableEstimate(@TempDir Path tempDir) throws Exception {
@@ -49,16 +47,20 @@ class OmniWitnessPersistenceStoreTest {
 
 		ByteBuffer data = ByteBuffer.wrap(Files.readAllBytes(generationDataPath(tempDir, 1L)))
 				.order(ByteOrder.BIG_ENDIAN);
+		int version = data.getInt(Integer.BYTES);
 		int valueRecordOffset = data.getInt(Integer.BYTES * 6);
 		int postingOffset = data.getInt(Integer.BYTES * 7);
 
-		assertEquals(VALUE_RECORD_FIXED_BYTES, postingOffset - valueRecordOffset,
+		assertEquals(OmniWitnessLayout.ATTRIBUTE_VERSION, version);
+		assertEquals(OmniWitnessLayout.valueRecordBytes(version), postingOffset - valueRecordOffset,
 				"Value records need room for sampling probability and min-detectable estimate");
 		float samplingProbability = data.getFloat(valueRecordOffset + Long.BYTES + Long.BYTES + Integer.BYTES);
 		double minDetectableEstimate = data
 				.getDouble(valueRecordOffset + Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES);
+		double postingWeight = data.getDouble(valueRecordOffset + OmniWitnessLayout.VALUE_RECORD_V1_BYTES);
 		assertTrue(samplingProbability > 0.0f && samplingProbability <= 1.0f);
 		assertTrue(minDetectableEstimate >= 0.0d);
+		assertTrue(postingWeight > 0.0d);
 	}
 
 	@Test

@@ -116,9 +116,20 @@ final class OmniWitnessSnapshotWriter {
 			buffer.putInt(value.witnessHashes().length);
 			buffer.putFloat(value.samplingProbability());
 			buffer.putDouble(value.minimumDetectableEstimate());
+			buffer.putDouble(postingWeight(value));
 			nextPosting += value.witnessHashes().length;
 		}
 		flush(channel, buffer);
+	}
+
+	private static double postingWeight(OmniJoinEstimator.ValuePostings value) {
+		double retainedWeight = 0.0d;
+		for (double weight : value.weights()) {
+			if (Double.isFinite(weight) && weight > 0.0d) {
+				retainedWeight += weight;
+			}
+		}
+		return retainedWeight;
 	}
 
 	private static void writePostings(FileChannel channel, List<OmniJoinEstimator.ValuePostings> values)

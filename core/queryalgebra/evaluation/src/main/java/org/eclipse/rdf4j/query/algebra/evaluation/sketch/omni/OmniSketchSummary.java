@@ -32,7 +32,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni;
 
 import static java.lang.Long.compareUnsigned;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -57,23 +56,38 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 		if (cells.isEmpty()) {
 			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
 		}
+		return fromCells(cells.toArray(OmniSketchCell[]::new), cells.size(), nominalEntries);
+	}
+
+	static OmniSketchSummary fromCells(final OmniSketchCell[] cells, final int cellCount, final int nominalEntries) {
+		if (cells == null || cellCount <= 0) {
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+		}
 		long minCount = Long.MAX_VALUE;
 		long maxCount = 0L;
-		OmniSketchCell maxCell = cells.get(0);
-		final List<long[]> sampleLists = new ArrayList<>(cells.size());
-		final List<Integer> sampleLengths = new ArrayList<>(cells.size());
-		for (final OmniSketchCell cell : cells) {
+		OmniSketchCell maxCell = cells[0];
+		final long[][] sampleLists = new long[cellCount][];
+		final int[] sampleLengths = new int[cellCount];
+		int samples = 0;
+		for (int i = 0; i < cellCount; i++) {
+			final OmniSketchCell cell = cells[i];
+			if (cell == null) {
+				continue;
+			}
 			final long count = cell.getCount();
 			minCount = Math.min(minCount, count);
 			if (count >= maxCount) {
 				maxCount = count;
 				maxCell = cell;
 			}
-			final long[] sample = cell.copyHashes();
-			sampleLists.add(sample);
-			sampleLengths.add(sample.length);
+			sampleLists[samples] = cell.hashesArray();
+			sampleLengths[samples] = cell.getRetainedEntries();
+			samples++;
 		}
-		final long[] intersection = intersectSamples(sampleLists, sampleLengths, nominalEntries);
+		if (samples == 0) {
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+		}
+		final long[] intersection = intersectSamples(sampleLists, sampleLengths, samples, nominalEntries);
 		final int referenceSampleCount = maxCell.getRetainedEntries();
 		final long estimate;
 		if (maxCount == 0L || minCount == 0L) {
@@ -115,8 +129,9 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 		long maxCount = 0L;
 		OmniSketchSummary maxSummary = summaries.get(0);
 		int nominalEntries = Integer.MAX_VALUE;
-		final List<long[]> sampleLists = new ArrayList<>(summaries.size());
-		final List<Integer> sampleLengths = new ArrayList<>(summaries.size());
+		final long[][] sampleLists = new long[summaries.size()][];
+		final int[] sampleLengths = new int[summaries.size()];
+		int samples = 0;
 		for (final OmniSketchSummary summary : summaries) {
 			minCount = Math.min(minCount, summary.count);
 			if (summary.count >= maxCount) {
@@ -124,13 +139,14 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 				maxSummary = summary;
 			}
 			nominalEntries = Math.min(nominalEntries, summary.nominalEntries);
-			sampleLists.add(summary.hashes);
-			sampleLengths.add(summary.retained);
+			sampleLists[samples] = summary.hashes;
+			sampleLengths[samples] = summary.retained;
+			samples++;
 		}
 		if (nominalEntries == Integer.MAX_VALUE) {
 			nominalEntries = 0;
 		}
-		final long[] intersection = intersectSamples(sampleLists, sampleLengths, nominalEntries);
+		final long[] intersection = intersectSamples(sampleLists, sampleLengths, samples, nominalEntries);
 		final double estimate;
 		final double samplingProbability;
 		if (maxCount == 0L || minCount == 0L) {
@@ -149,14 +165,15 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 				maxCount, resultSummary);
 	}
 
-	private static long[] intersectSamples(final List<long[]> samples, final List<Integer> lengths, final int limit) {
-		if (samples.isEmpty() || limit <= 0) {
+	private static long[] intersectSamples(final long[][] samples, final int[] lengths, final int sampleCount,
+			final int limit) {
+		if (samples == null || lengths == null || sampleCount <= 0 || limit <= 0) {
 			return new long[0];
 		}
-		long[] current = Arrays.copyOf(samples.get(0), Math.min(lengths.get(0), limit));
+		long[] current = Arrays.copyOf(samples[0], Math.min(lengths[0], limit));
 		int currentLen = current.length;
-		for (int i = 1; i < samples.size() && currentLen > 0; i++) {
-			current = intersectTwo(current, currentLen, samples.get(i), lengths.get(i), limit);
+		for (int i = 1; i < sampleCount && currentLen > 0; i++) {
+			current = intersectTwo(current, currentLen, samples[i], lengths[i], limit);
 			currentLen = current.length;
 		}
 		return current;
@@ -180,6 +197,6 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 				bi++;
 			}
 		}
-		return Arrays.copyOf(out, oi);
+		return oi == out.length ? out : Arrays.copyOf(out, oi);
 	}
 }

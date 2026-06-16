@@ -68,6 +68,10 @@ final class OmniSketchCell {
 		return Arrays.copyOf(hashes, retained);
 	}
 
+	long[] hashesArray() {
+		return hashes;
+	}
+
 	void update(final long identifierHash) {
 		updateAndCheckRetained(identifierHash);
 	}

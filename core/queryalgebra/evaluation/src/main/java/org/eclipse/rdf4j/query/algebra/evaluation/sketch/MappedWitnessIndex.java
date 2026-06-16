@@ -18,17 +18,21 @@ import java.lang.foreign.MemorySegment;
 final class MappedWitnessIndex implements WitnessIndex {
 	private final MemorySegment segment;
 	private final MemorySegment sketchSegment;
+	private final int version;
 	private final int valueCount;
 	private final int tableSize;
+	private final int valueRecordBytes;
 	private final long hashTableOffset;
 	private final long valueRecordOffset;
 
-	private MappedWitnessIndex(MemorySegment segment, MemorySegment sketchSegment, int valueCount, int tableSize,
-			long hashTableOffset, long valueRecordOffset) {
+	private MappedWitnessIndex(MemorySegment segment, MemorySegment sketchSegment, int version, int valueCount,
+			int tableSize, int valueRecordBytes, long hashTableOffset, long valueRecordOffset) {
 		this.segment = segment;
 		this.sketchSegment = sketchSegment;
+		this.version = version;
 		this.valueCount = valueCount;
 		this.tableSize = tableSize;
+		this.valueRecordBytes = valueRecordBytes;
 		this.hashTableOffset = hashTableOffset;
 		this.valueRecordOffset = valueRecordOffset;
 	}
@@ -39,7 +43,7 @@ final class MappedWitnessIndex implements WitnessIndex {
 			throw new IOException("Unsupported Omni witness attribute magic: " + magic);
 		}
 		int version = segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES);
-		if (version != OmniWitnessLayout.ATTRIBUTE_VERSION) {
+		if (version < OmniWitnessLayout.MIN_ATTRIBUTE_VERSION || version > OmniWitnessLayout.ATTRIBUTE_VERSION) {
 			throw new IOException("Unsupported Omni witness attribute version: " + version);
 		}
 		int sketchLength = segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES * 2L);
@@ -48,8 +52,8 @@ final class MappedWitnessIndex implements WitnessIndex {
 		int hashTableOffset = segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES * 5L);
 		int valueRecordOffset = segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES * 6L);
 		MemorySegment sketchSegment = segment.asSlice(OmniWitnessLayout.ATTRIBUTE_HEADER_BYTES, sketchLength);
-		return new MappedWitnessIndex(segment, sketchSegment, valueCount, tableSize, hashTableOffset,
-				valueRecordOffset);
+		return new MappedWitnessIndex(segment, sketchSegment, version, valueCount, tableSize,
+				OmniWitnessLayout.valueRecordBytes(version), hashTableOffset, valueRecordOffset);
 	}
 
 	MemorySegment sketchSegment() {
@@ -90,7 +94,7 @@ final class MappedWitnessIndex implements WitnessIndex {
 	}
 
 	private ValueRecord readValueRecord(int recordIndex) {
-		long recordOffset = valueRecordOffset + (long) recordIndex * OmniWitnessLayout.VALUE_RECORD_BYTES;
+		long recordOffset = valueRecordOffset + (long) recordIndex * valueRecordBytes;
 		long valueHash = segment.get(OmniWitnessLayout.BE_LONG, recordOffset);
 		long postings = segment.get(OmniWitnessLayout.BE_LONG, recordOffset + Long.BYTES);
 		int count = segment.get(OmniWitnessLayout.BE_INT, recordOffset + Long.BYTES + Long.BYTES);
@@ -98,12 +102,21 @@ final class MappedWitnessIndex implements WitnessIndex {
 				recordOffset + Long.BYTES + Long.BYTES + Integer.BYTES);
 		double minimumDetectableEstimate = segment.get(OmniWitnessLayout.BE_DOUBLE,
 				recordOffset + Long.BYTES + Long.BYTES + Integer.BYTES + Float.BYTES);
-		return new ValueRecord(valueHash, new MappedPostingCursor(segment, postings, count), samplingProbability,
-				minimumDetectableEstimate);
+		double postingWeight = Double.NaN;
+		if (version >= 2) {
+			postingWeight = segment.get(OmniWitnessLayout.BE_DOUBLE,
+					recordOffset + OmniWitnessLayout.VALUE_RECORD_V1_BYTES);
+		}
+		return new ValueRecord(segment, valueHash, postings, count, samplingProbability,
+				minimumDetectableEstimate, postingWeight);
 	}
 
-	record ValueRecord(long valueHash, WitnessCursor cursor, double samplingProbability,
-			double minimumDetectableEstimate) {
+	record ValueRecord(MemorySegment segment, long valueHash, long postingsOffset, int count,
+			double samplingProbability,
+			double minimumDetectableEstimate, double postingWeight) {
+		WitnessCursor cursor() {
+			return count <= 0 ? WitnessCursor.empty() : new MappedPostingCursor(segment, postingsOffset, count);
+		}
 	}
 
 	interface ValuePostingsConsumer {
@@ -144,6 +157,11 @@ final class MappedWitnessIndex implements WitnessIndex {
 		@Override
 		public double weight() {
 			return weight;
+		}
+
+		@Override
+		public int estimatedRemaining() {
+			return Math.max(0, count - index - 1);
 		}
 	}
 }
