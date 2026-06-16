@@ -30,7 +30,6 @@
  */
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni;
 
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 
@@ -201,13 +200,6 @@ final class OmniSketchSerializationUtil {
 		}
 	}
 
-	private static final class ReadCellResult {
-		final OmniSketchCell cell;
-		final long nextOffset;
-
-		ReadCellResult(final OmniSketchCell cell, final long nextOffset) {
-			this.cell = cell;
-			this.nextOffset = nextOffset;
-		}
+	private record ReadCellResult(OmniSketchCell cell, long nextOffset) {
 	}
 }

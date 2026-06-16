@@ -4370,17 +4370,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* Pattern statistics */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static final class PatternStats {
-		final FastAgmsBindingSummary sketch;
-		final double distinct;
-		final double card; // relation size |R|
-
+	/**
+	 * @param card relation size |R|
+	 */
+	private record PatternStats(FastAgmsBindingSummary sketch, double distinct, double card) {
 		PatternStats(FastAgmsBindingSummary s, double card) {
 			this(s, s == null ? 0.0d : s.effectiveDistinct(), card);
 		}
 
-		PatternStats(FastAgmsBindingSummary s, double distinct, double card) {
-			this.sketch = s;
+		private PatternStats(FastAgmsBindingSummary sketch, double distinct, double card) {
+			this.sketch = sketch;
 			this.distinct = Math.max(0.0d, distinct);
 			this.card = card;
 		}
@@ -11621,7 +11620,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars,
-			EstimateDetail detail) {
+	                                               EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}
@@ -11680,7 +11679,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
-			long initiallyBoundVarMask, EstimateDetail detail) {
+	                                               long initiallyBoundVarMask, EstimateDetail detail) {
 		if (tupleExpr == null) {
 			return null;
 		}

@@ -913,16 +913,8 @@ final class OmniJoinEstimator {
 	private record SnapshotWeights(Long2DoubleOpenHashMap weights, OmniSketchProbeResult probe) {
 	}
 
-	private static final class CachedWitnessPostings {
+	private record CachedWitnessPostings(long[] witnessHashes, double[] weights) {
 		private static final CachedWitnessPostings EMPTY = new CachedWitnessPostings(new long[0], new double[0]);
-
-		private final long[] witnessHashes;
-		private final double[] weights;
-
-		private CachedWitnessPostings(long[] witnessHashes, double[] weights) {
-			this.witnessHashes = witnessHashes;
-			this.weights = weights;
-		}
 
 		private WitnessCursor cursor() {
 			if (witnessHashes.length == 0) {
@@ -942,10 +934,7 @@ final class OmniJoinEstimator {
 		private SortedCursorSource(WitnessCursor cursor, double multiplier) {
 			this.cursor = cursor == null ? WitnessCursor.empty() : cursor;
 			this.multiplier = multiplier;
-			if (!Double.isFinite(multiplier) || multiplier <= 0.0d) {
-				this.returnFalse = true;
-			}else  				this.returnFalse = false;
-
+			this.returnFalse = !Double.isFinite(multiplier) || multiplier <= 0.0d;
 		}
 
 		private boolean advance() {
@@ -1149,16 +1138,6 @@ final class OmniJoinEstimator {
 		AttributeIndex indexPredicateContext(long predicateHash, long contextHash) {
 			Long2ObjectOpenHashMap<AttributeIndex> byContext = predicateContextAttributes.get(predicateHash);
 			return byContext == null ? null : byContext.get(contextHash);
-		}
-
-		AttributeIndex index(OmniAttributeRef ref) {
-			Objects.requireNonNull(ref, "ref");
-			return switch (ref.kind()) {
-			case OmniAttributeRef.KIND_STATIC -> indexStatic(ref.staticId());
-			case OmniAttributeRef.KIND_PREDICATE -> indexPredicate(ref.first());
-			case OmniAttributeRef.KIND_PREDICATE_CONTEXT -> indexPredicateContext(ref.first(), ref.second());
-			default -> throw new IllegalArgumentException("Unsupported Omni attribute kind: " + ref.kind());
-			};
 		}
 
 		private AttributeIndex attribute(OmniAttributeRef ref) {
@@ -1384,17 +1363,6 @@ final class OmniJoinEstimator {
 			return mappedWeight;
 		}
 
-		private void loadHash(long valueHash, long identifierHash, double estimatedMultiplicity) {
-			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
-				return;
-			}
-			totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
-			sketch.updateHash(valueHash, identifierHash);
-			invalidateProbeCache();
-			invalidateWitnessCache(valueHash);
-			weightsForValue(valueHash).put(identifierHash, estimatedMultiplicity);
-		}
-
 		private void loadSketch(byte[] payload) {
 			sketch.reset();
 			if (payload != null && payload.length > 0) {
@@ -1552,10 +1520,7 @@ final class OmniJoinEstimator {
 				double samplingProbability = mappedValue.samplingProbability();
 				return Double.isFinite(samplingProbability) && samplingProbability >= 1.0d;
 			}
-			if (mappedBase != null && !hasOverlayWeights) {
-				return false;
-			}
-			return true;
+			return mappedBase == null || hasOverlayWeights;
 		}
 
 		private synchronized OmniSketchProbeResult probeValue(long valueHash) {
@@ -1769,19 +1734,6 @@ final class OmniJoinEstimator {
 						outputWeights.addTo(witnessHash, weight * multiplier);
 						added = true;
 					}
-				}
-			}
-			return added;
-		}
-
-		private boolean addCursorWeights(WitnessCursor cursor, double multiplier,
-				Long2DoubleOpenHashMap outputWeights) {
-			boolean added = false;
-			while (cursor.next()) {
-				double weight = cursor.weight();
-				if (Double.isFinite(weight) && weight > 0.0d) {
-					outputWeights.addTo(cursor.witnessHash(), weight * multiplier);
-					added = true;
 				}
 			}
 			return added;
@@ -2049,18 +2001,7 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	private static final class LazyWeightPayload {
-		private final byte[] payload;
-		private final long[] valueHashes;
-		private final int[] witnessOffsets;
-		private final int[] witnessCounts;
-
-		private LazyWeightPayload(byte[] payload, long[] valueHashes, int[] witnessOffsets, int[] witnessCounts) {
-			this.payload = payload;
-			this.valueHashes = valueHashes;
-			this.witnessOffsets = witnessOffsets;
-			this.witnessCounts = witnessCounts;
-		}
+	private record LazyWeightPayload(byte[] payload, long[] valueHashes, int[] witnessOffsets, int[] witnessCounts) {
 
 		private Long2DoubleOpenHashMap load(long valueHash) {
 			for (int i = 0; i < valueHashes.length; i++) {

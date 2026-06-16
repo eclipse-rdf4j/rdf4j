@@ -34,7 +34,7 @@ final class TupleSketchOps {
 	private static final ArrayOfDoublesCombiner MULTIPLY_POSITIVE_SUMMARIES = (left, right) -> new double[] {
 			Math.max(0.0d, left[0]) * Math.max(0.0d, right[0]) };
 	private static final ArrayOfDoublesCombiner MIN_POSITIVE_SUMMARIES = (left, right) -> new double[] {
-			Math.min(Math.max(0.0d, left[0]), Math.max(0.0d, right[0])) };
+			Math.clamp(left[0], 0.0d, Math.max(0.0d, right[0])) };
 
 	private TupleSketchOps() {
 	}

@@ -65,35 +65,8 @@ final class FrequencySummaryOps {
 		return left.intersectProductStats(right);
 	}
 
-	static final class IntersectionStats {
-		private final FastAgmsBindingSummary sketch;
-		private final double positiveDistinct;
-		private final double positiveSum;
-		private final double upperBoundDistinct1StdDev;
-
-		IntersectionStats(FastAgmsBindingSummary sketch, double positiveDistinct, double positiveSum,
-				double upperBoundDistinct1StdDev) {
-			this.sketch = sketch;
-			this.positiveDistinct = positiveDistinct;
-			this.positiveSum = positiveSum;
-			this.upperBoundDistinct1StdDev = upperBoundDistinct1StdDev;
-		}
-
-		FastAgmsBindingSummary sketch() {
-			return sketch;
-		}
-
-		double positiveDistinct() {
-			return positiveDistinct;
-		}
-
-		double positiveSum() {
-			return positiveSum;
-		}
-
-		double upperBoundDistinct1StdDev() {
-			return upperBoundDistinct1StdDev;
-		}
+	record IntersectionStats(FastAgmsBindingSummary sketch, double positiveDistinct, double positiveSum,
+			double upperBoundDistinct1StdDev) {
 
 		boolean upperBoundOnly() {
 			return positiveDistinct == 0.0d && upperBoundDistinct1StdDev > 0.0d;

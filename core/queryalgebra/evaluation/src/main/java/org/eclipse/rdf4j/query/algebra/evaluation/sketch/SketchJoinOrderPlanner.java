@@ -3774,12 +3774,9 @@ final class SketchJoinOrderPlanner {
 			return false;
 		}
 		long conditionVars = variableMask(VarNameCollector.process(filter.getCondition()), variableIds);
-		if (conditionVars == 0L
-				|| (previousBound & conditionVars) == conditionVars
-				|| (nextBound & conditionVars) != conditionVars) {
-			return false;
-		}
-		return true;
+		return conditionVars != 0L
+				&& (previousBound & conditionVars) != conditionVars
+				&& (nextBound & conditionVars) == conditionVars;
 	}
 
 	private static boolean isCheapFilterCondition(ValueExpr condition) {
@@ -3804,10 +3801,7 @@ final class SketchJoinOrderPlanner {
 		long objectVars = statementObjectVarMask(factorIndex) & variableUniverseMask;
 		boolean subjectBound = (subjectVars & boundVarMask) != 0L;
 		boolean objectBound = (objectVars & boundVarMask) != 0L;
-		if (subjectBound == objectBound) {
-			return false;
-		}
-		return true;
+		return subjectBound != objectBound;
 	}
 
 	private long delayFiniteCompletableLookupCandidates(StatePlan plan, long candidates) {
@@ -6710,8 +6704,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
-		if (tupleExpr instanceof Join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
 			flattenJoinFactors(join.getLeftArg(), factors);
 			flattenJoinFactors(join.getRightArg(), factors);
 			return;
@@ -7917,26 +7910,9 @@ final class SketchJoinOrderPlanner {
 			JoinFactorCostModel.EstimationTier estimationTier) {
 	}
 
-	private static final class ContextualFactorCostEntry {
-		private final long boundVarMask;
-		private final long outerPrefixRows;
-		private final long distinctLookupBindings;
-		private final boolean nestedIteratorInvocation;
-		private final JoinFactorCostModel.EstimationTier estimationTier;
-		private final Optional<JoinFactorCostModel.FactorCostEstimate> estimate;
-		private final ContextualFactorCostEntry next;
-
-		private ContextualFactorCostEntry(long boundVarMask, long outerPrefixRows, long distinctLookupBindings,
-				boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier,
-				Optional<JoinFactorCostModel.FactorCostEstimate> estimate, ContextualFactorCostEntry next) {
-			this.boundVarMask = boundVarMask;
-			this.outerPrefixRows = outerPrefixRows;
-			this.distinctLookupBindings = distinctLookupBindings;
-			this.nestedIteratorInvocation = nestedIteratorInvocation;
-			this.estimationTier = estimationTier;
-			this.estimate = estimate;
-			this.next = next;
-		}
+	private record ContextualFactorCostEntry(long boundVarMask, long outerPrefixRows, long distinctLookupBindings,
+			boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier,
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate, ContextualFactorCostEntry next) {
 
 		private boolean matches(long boundVarMask, long outerPrefixRows, long distinctLookupBindings,
 				boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier) {

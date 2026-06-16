@@ -633,10 +633,9 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof MappedSketchChunkKey)) {
+			if (!(other instanceof MappedSketchChunkKey that)) {
 				return false;
 			}
-			MappedSketchChunkKey that = (MappedSketchChunkKey) other;
 			return slot == that.slot && fileKind == that.fileKind && chunkStart == that.chunkStart;
 		}
 

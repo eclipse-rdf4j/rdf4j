@@ -194,28 +194,27 @@ final class PreambleUtil {
 	static String preambleToString(final MemorySegment seg) {
 		checkPreamble(seg);
 		final String nl = System.lineSeparator();
-		final StringBuilder sb = new StringBuilder();
-		sb.append(nl);
-		sb.append("### OMNISKETCH PREAMBLE SUMMARY:").append(nl);
-		sb.append("Byte  0: Preamble Longs       : ").append(extractPreLongs(seg)).append(nl);
-		sb.append("Byte  1: Serialization Version: ").append(extractSerVer(seg)).append(nl);
-		sb.append("Byte  2: Family               : ")
-				.append(extractFamilyId(seg))
-				.append(", ")
-				.append(OmniSketchFamily.idToFamily(extractFamilyId(seg)))
-				.append(nl);
-		sb.append("Byte  3: LgWidth              : ").append(extractLgWidth(seg)).append(nl);
-		sb.append("Byte  4: NumRows              : ").append(extractNumRows(seg)).append(nl);
-		sb.append("Byte  5: Flags                : ").append(extractFlags(seg)).append(nl);
-		sb.append("Bytes 6-7: Seed Hash          : ")
-				.append(Integer.toHexString(extractSeedHash(seg) & 0xFFFF))
-				.append(nl);
-		sb.append("Bytes 8-11: Nominal Entries   : ").append(extractNominalEntries(seg)).append(nl);
-		sb.append("Bytes 12-15: Retained Entries : ").append(extractRetainedEntries(seg)).append(nl);
-		sb.append("Bytes 16-23: Total Updates    : ").append(extractTotalUpdates(seg)).append(nl);
-		sb.append("Bytes 24-31: Seed             : ").append(extractSeed(seg)).append(nl);
-		sb.append("Bytes 32-35: Serialized Bytes : ").append(extractSerializationBytes(seg)).append(nl);
-		sb.append("### END OMNISKETCH PREAMBLE SUMMARY").append(nl);
-		return sb.toString();
+		String sb = nl +
+				"### OMNISKETCH PREAMBLE SUMMARY:" + nl +
+				"Byte  0: Preamble Longs       : " + extractPreLongs(seg) + nl +
+				"Byte  1: Serialization Version: " + extractSerVer(seg) + nl +
+				"Byte  2: Family               : " +
+				extractFamilyId(seg) +
+				", " +
+				OmniSketchFamily.idToFamily(extractFamilyId(seg)) +
+				nl +
+				"Byte  3: LgWidth              : " + extractLgWidth(seg) + nl +
+				"Byte  4: NumRows              : " + extractNumRows(seg) + nl +
+				"Byte  5: Flags                : " + extractFlags(seg) + nl +
+				"Bytes 6-7: Seed Hash          : " +
+				Integer.toHexString(extractSeedHash(seg) & 0xFFFF) +
+				nl +
+				"Bytes 8-11: Nominal Entries   : " + extractNominalEntries(seg) + nl +
+				"Bytes 12-15: Retained Entries : " + extractRetainedEntries(seg) + nl +
+				"Bytes 16-23: Total Updates    : " + extractTotalUpdates(seg) + nl +
+				"Bytes 24-31: Seed             : " + extractSeed(seg) + nl +
+				"Bytes 32-35: Serialized Bytes : " + extractSerializationBytes(seg) + nl +
+				"### END OMNISKETCH PREAMBLE SUMMARY" + nl;
+		return sb;
 	}
 }

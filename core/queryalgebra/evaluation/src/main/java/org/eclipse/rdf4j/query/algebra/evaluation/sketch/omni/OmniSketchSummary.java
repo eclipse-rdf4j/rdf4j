@@ -37,14 +37,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Internal query summary used to combine dimensions. */
-final class OmniSketchSummary {
-	final long count;
-	final long[] hashes;
-	final int retained;
-	final int nominalEntries;
-	final long minCount;
-	final long maxCount;
-
+record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEntries, long minCount, long maxCount) {
 	OmniSketchSummary(final long count, final long[] hashes, final int retained, final int nominalEntries,
 			final long minCount, final long maxCount) {
 		this.count = Math.max(0L, count);
