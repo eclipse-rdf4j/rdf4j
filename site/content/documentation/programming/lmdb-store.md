@@ -109,19 +109,31 @@ config.setForceSync(true);
 config.setAutoGrow(false);
 // persist value hash codes across restarts, disabled by default
 config.setValueHashCacheEnabled(true);
+// enable sketch-based join estimation, disabled by default
+config.setSketchEstimatorEnabled(true);
 // set maximum size of value db to 1 GiB
 
 config.setValueDBSize(1_073_741_824L);
 // set maximum size of triple db to 1 GiB
 config.setTripleDBSize(1_073_741_824L);
 
-Repository repo = new SailRepository(new LmdbStore(dataDir), config);
+Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 ```
 
 The optional value hash cache stores precomputed `Value.hashCode()` results in `hashes.dat`. It is disabled by default.
 When enabled, LMDB writes a `hashes.dat.integrity` sidecar on clean shutdown and only trusts the cache again on the
 next startup if that integrity metadata validates. Invalid or stale hash cache files are discarded automatically and
 the store falls back to recomputing hashes lazily.
+
+Sketch-based join estimation is disabled by default. To enable it, set
+`LmdbStoreConfig.setSketchEstimatorEnabled(true)` when creating the store. Repository configuration files can enable it
+with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:sketchEstimatorEnabled true .
+```
 
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store
