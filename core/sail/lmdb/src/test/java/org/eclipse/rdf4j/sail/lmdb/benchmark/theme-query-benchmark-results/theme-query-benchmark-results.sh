@@ -188,7 +188,10 @@ synthesize_summary_table() {
 		query = trim(parts[2])
 		next
 	}
-	/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\.ThemeQueryBenchmark\.executeQuery":$/ {
+	/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\.(ThemeQueryBenchmark|ThemeQueryHexaBenchmark|QueryThemeBenchmark)\.executeQuery":$/ {
+		benchmark = $0
+		sub(/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\./, "", benchmark)
+		sub(/\.executeQuery":$/, "", benchmark)
 		expect_score = 1
 		next
 	}
@@ -196,8 +199,9 @@ synthesize_summary_table() {
 		line = trim($0)
 		split(line, parts, /[[:space:]]+/)
 		rows[++count] = sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
-			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], "", "ms/op")
+			benchmark ".executeQuery", theme, query, "avgt", "", parts[1], "", "ms/op")
 		expect_score = 0
+		benchmark = ""
 	}
 	END {
 		if (count == 0) {

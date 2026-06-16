@@ -8,12 +8,15 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-DATED_FILE_RE = re.compile(r"results-(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md$")
+RESULT_FILE_RE = re.compile(r"results-(\d{4}-\d{2}-\d{2}|today)(?:-(\d+))?\.md$")
 SUMMARY_ROW_RE = re.compile(
-    r"^ThemeQueryBenchmark\.executeQuery\s+([A-Z_]+)\s+(\d+)\s+avgt\s+(?:\d+\s+)?([0-9.]+)"
+    r"^(?:[A-Za-z_][\w$]*\.)*"
+    r"(?:ThemeQueryBenchmark|ThemeQueryHexaBenchmark|QueryThemeBenchmark)\.executeQuery\s+([A-Z_]+)\s+(\d+)\s+avgt\s+"
+    r"(?:\d+\s+)?([0-9.]+)"
 )
 PARAM_RE = re.compile(r"^# Parameters: \(themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
 QUERY_MARKER_RE = re.compile(r"^.*### (Optimized|Telemetry) Query ###\s*$", re.MULTILINE)
@@ -96,7 +99,7 @@ class QueryComparison:
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Analyze theme query benchmark history. Default mode compares the newest dated result "
+            "Analyze theme query benchmark history. Default mode compares the newest result "
             "file against all older files in the same directory."
         )
     )
@@ -281,14 +284,15 @@ def trim_block(lines: Iterable[str]) -> Optional[str]:
     return "\n".join(collected) if collected else None
 
 
-def newest_dated_file(files: Dict[str, ResultFile]) -> ResultFile:
+def newest_result_file(files: Dict[str, ResultFile]) -> ResultFile:
     dated: List[Tuple[str, int, str]] = []
     for name in files:
-        match = DATED_FILE_RE.match(name)
+        match = RESULT_FILE_RE.match(name)
         if match:
-            dated.append((match.group(1), int(match.group(2) or 0), name))
+            day = date.today().isoformat() if match.group(1) == "today" else match.group(1)
+            dated.append((day, int(match.group(2) or 0), name))
     if not dated:
-        raise SystemExit("No dated results-YYYY-MM-DD(-N).md files found")
+        raise SystemExit("No results-YYYY-MM-DD(-N).md or results-today(-N).md files found")
     return files[sorted(dated)[-1][2]]
 
 
@@ -322,7 +326,7 @@ def historical_matches(
 
 def query_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatch]:
     rows: List[HistoricalMatch] = []
-    latest = newest_dated_file(files)
+    latest = newest_result_file(files)
     latest_score = latest.summary_rows.get(key)
     if latest_score is None:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
@@ -622,7 +626,7 @@ def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     results_dir = Path(args.results_dir).resolve()
     files = load_result_files(results_dir)
-    latest = newest_dated_file(files)
+    latest = newest_result_file(files)
 
     if args.theme is not None:
         output = render_query_mode(
