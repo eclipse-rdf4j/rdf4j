@@ -71,7 +71,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 
 	@Test
 	void estimatorMatchesManualJoinAcrossAllThemes(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -144,7 +144,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 
 	@Test
 	void plannerPrefersSelectiveChainEndForPathologicalLmdbJoin(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -197,7 +197,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 
 	@Test
 	void estimatorDoesNotZeroLibraryLocatedAtNameJoinAfterReload(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LibraryJoinLoadResult loadResult = loadLibraryThemeIntoDefaultContext(dataDir, config);
 		assertTrue(loadResult.persisted(),
 				"Expected explicit persist after library-theme load to produce a reloadable snapshot");
@@ -303,6 +303,10 @@ class SketchEstimatorThemeJoinAccuracyIT {
 		System.out.println("Direct counts leftStatements=" + leftStatements + ", leftDistinctSubjects="
 				+ leftSubjects.size() + ", rightStatements=" + rightStatements + ", rightDistinctSubjects="
 				+ rightSubjects.size());
+	}
+
+	private static LmdbStoreConfig sketchEnabledConfig(String indexes) {
+		return new LmdbStoreConfig(indexes).setSketchEstimatorEnabled(true);
 	}
 
 	private static double estimateScenarioJoin(SketchBasedJoinEstimator estimator, JoinScenario scenario) {
