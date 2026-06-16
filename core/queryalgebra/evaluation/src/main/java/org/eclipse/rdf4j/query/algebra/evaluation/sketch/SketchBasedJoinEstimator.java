@@ -9665,6 +9665,37 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return stats != null && stats.sketch != null && !stats.sketch.isEmpty();
 		}
 
+		private TuplePlanEstimate copyForCacheReturn() {
+			Map<String, VarPlanStats> copiedStats;
+			if (varStats.isEmpty()) {
+				copiedStats = Collections.emptyMap();
+			} else {
+				copiedStats = new LinkedHashMap<>(varStats.size());
+				for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+					VarPlanStats stats = entry.getValue();
+					if (stats == null) {
+						copiedStats.put(entry.getKey(), null);
+						continue;
+					}
+					FastAgmsBindingSummary sketch = stats.sketch == null ? null : stats.sketch.copy();
+					copiedStats.put(entry.getKey(), new VarPlanStats(stats.distinct, sketch, stats.pattern));
+				}
+			}
+
+			Map<String, OmniWitnessSet> copiedWitnesses;
+			if (omniWitnesses.isEmpty()) {
+				copiedWitnesses = Map.of();
+			} else {
+				copiedWitnesses = new LinkedHashMap<>(omniWitnesses.size());
+				for (Map.Entry<String, OmniWitnessSet> entry : omniWitnesses.entrySet()) {
+					copiedWitnesses.put(entry.getKey(), entry.getValue().copy());
+				}
+			}
+
+			return new TuplePlanEstimate(baseRows, outputRows, localFilterMultiplier, copiedStats, null,
+					sketchEstimateSource, sketchEstimateConfidence, copiedWitnesses);
+		}
+
 		private static double clampTupleDistinct(double distinct, double rows) {
 			if (!Double.isFinite(distinct) || distinct <= 0.0d || rows <= 0.0d) {
 				return 0.0d;
@@ -10273,6 +10304,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
 		private final Map<BindingSetAssignmentEstimateCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentEstimateCache = new HashMap<>();
+		private final Map<BindingSetAssignmentJoinPlanCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentJoinPlanCache = new HashMap<>();
 		private final Map<FiniteAnchorPrefixCacheKey, Optional<TuplePlanEstimate>> finiteAnchorPrefixEstimateCache = new HashMap<>();
 		private final Map<FiniteAnchorPrefixCacheKey, Optional<List<Map<String, Value>>>> finiteAnchorPrefixRowsCache = new HashMap<>();
 		private final Map<FiniteAnchorPrefixSurfaceCacheKey, Optional<Double>> finiteAnchorPrefixSurfaceCache = new HashMap<>();
@@ -10356,6 +10388,56 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return false;
 			}
 			return bindingSets == that.bindingSets && bindingNames.equals(that.bindingNames) && detail == that.detail;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class BindingSetAssignmentJoinPlanCacheKey {
+		private final Iterable<BindingSet> bindingSets;
+		private final Set<String> bindingNames;
+		private final TupleExpr otherArg;
+		private final boolean assignmentOnLeft;
+		private final boolean leftJoin;
+		private final long boundVarMask;
+		private final EstimateDetail detail;
+		private final int hashCode;
+
+		private BindingSetAssignmentJoinPlanCacheKey(BindingSetAssignment assignment, TupleExpr otherArg,
+				boolean assignmentOnLeft, boolean leftJoin, long boundVarMask, EstimateDetail detail) {
+			this.bindingSets = assignment.getBindingSets();
+			this.bindingNames = Set.copyOf(assignment.getBindingNames());
+			this.otherArg = Objects.requireNonNull(otherArg, "otherArg");
+			this.assignmentOnLeft = assignmentOnLeft;
+			this.leftJoin = leftJoin;
+			this.boundVarMask = boundVarMask;
+			this.detail = Objects.requireNonNull(detail, "detail");
+			int result = 31 * System.identityHashCode(bindingSets) + bindingNames.hashCode();
+			result = 31 * result + System.identityHashCode(otherArg);
+			result = 31 * result + Boolean.hashCode(assignmentOnLeft);
+			result = 31 * result + Boolean.hashCode(leftJoin);
+			result = 31 * result + Long.hashCode(boundVarMask);
+			this.hashCode = 31 * result + detail.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof BindingSetAssignmentJoinPlanCacheKey that)) {
+				return false;
+			}
+			return bindingSets == that.bindingSets
+					&& bindingNames.equals(that.bindingNames)
+					&& otherArg == that.otherArg
+					&& assignmentOnLeft == that.assignmentOnLeft
+					&& leftJoin == that.leftJoin
+					&& boundVarMask == that.boundVarMask
+					&& detail == that.detail;
 		}
 
 		@Override
@@ -11996,6 +12078,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
 			boolean leftJoin, Set<String> initiallyBoundVars, EstimateDetail detail) {
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope != null) {
+			long initiallyBoundVarMask = scope.variableDictionary.maskOf(initiallyBoundVars);
+			if (initiallyBoundVarMask != BOUND_VAR_MASK_OVERFLOW) {
+				return estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope, initiallyBoundVarMask,
+						detail);
+			}
+		}
+		return computeBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, initiallyBoundVars, detail);
+	}
+
+	private TuplePlanEstimate computeBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
+			boolean leftJoin, Set<String> initiallyBoundVars, EstimateDetail detail) {
 		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
 		boolean rightAssignment = rightArg instanceof BindingSetAssignment;
 		if (leftAssignment == rightAssignment) {
@@ -12092,6 +12187,60 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
+			boolean leftJoin, OptimizationScopeState scope, long initiallyBoundVarMask, EstimateDetail detail) {
+		if (scope == null || initiallyBoundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope, initiallyBoundVarMask,
+					detail);
+		}
+
+		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
+		boolean rightAssignment = rightArg instanceof BindingSetAssignment;
+		if (leftAssignment == rightAssignment) {
+			return null;
+		}
+		if (leftJoin && !leftAssignment) {
+			return null;
+		}
+
+		BindingSetAssignment assignment = (BindingSetAssignment) (leftAssignment ? leftArg : rightArg);
+		TupleExpr otherArg = leftAssignment ? rightArg : leftArg;
+		long cacheBoundVarMask = canonicalBindingSetAssignmentJoinPlanBoundMask(scope, otherArg,
+				initiallyBoundVarMask);
+		if (cacheBoundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope, initiallyBoundVarMask,
+					detail);
+		}
+
+		BindingSetAssignmentJoinPlanCacheKey key = new BindingSetAssignmentJoinPlanCacheKey(assignment, otherArg,
+				leftAssignment, leftJoin, cacheBoundVarMask, detail);
+		Optional<TuplePlanEstimate> cached = scope.bindingSetAssignmentJoinPlanCache.get(key);
+		if (cached != null) {
+			return cached.map(TuplePlanEstimate::copyForCacheReturn).orElse(null);
+		}
+
+		TuplePlanEstimate estimate = computeBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope,
+				cacheBoundVarMask, detail);
+		scope.bindingSetAssignmentJoinPlanCache.put(key, Optional.ofNullable(estimate));
+		return estimate == null ? null : estimate.copyForCacheReturn();
+	}
+
+	private long canonicalBindingSetAssignmentJoinPlanBoundMask(OptimizationScopeState scope, TupleExpr otherArg,
+			long initiallyBoundVarMask) {
+		if (initiallyBoundVarMask == 0L || initiallyBoundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return initiallyBoundVarMask;
+		}
+		Set<String> otherVarNames = VarNameCollector.process(otherArg);
+		if (otherVarNames.isEmpty()) {
+			return 0L;
+		}
+		long otherMask = scope.variableDictionary.maskOf(otherVarNames);
+		if (otherMask == BOUND_VAR_MASK_OVERFLOW) {
+			return BOUND_VAR_MASK_OVERFLOW;
+		}
+		return initiallyBoundVarMask & otherMask;
+	}
+
+	private TuplePlanEstimate computeBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
 			boolean leftJoin, OptimizationScopeState scope, long initiallyBoundVarMask, EstimateDetail detail) {
 		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
 		boolean rightAssignment = rightArg instanceof BindingSetAssignment;

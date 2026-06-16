@@ -185,6 +185,11 @@ final class OmniWitnessSet {
 		return minimumDetectableRows;
 	}
 
+	OmniWitnessSet copy() {
+		return new OmniWitnessSet(hashes.clone(), weights.clone(), samplingProbability, estimatedRows, confidence,
+				fallbackReason, minimumDetectableRows);
+	}
+
 	boolean isEmpty() {
 		return hashes.length == 0 && estimatedRows <= 0.0d;
 	}

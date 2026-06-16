@@ -44,6 +44,11 @@ LMDB currently has a partial Omni migration: the estimator can build Omni side-s
   Evidence: `logs/mvnf/20260609-032637-verify.log` reported `Tests run: 1647, Failures: 17, Errors: 6, Skipped: 55`.
 - Observation: The `Unknown function 'urn:rdf4j:native:org.eclipse.rdf4j.query.algebra.Count'` errors came from the cascades IR scalar fallback converting aggregate `Count` expressions into synthetic function calls. A guard in `TupleExprToIr` now keeps aggregate-valued `ExtensionElem`s as native tuple boundaries.
   Evidence: After the guard, `LmdbSubSelectDirectLookupEstimateTest` changed from `Unknown function Count` errors to two plan-estimate assertion failures and zero errors.
+- Observation: The later count-min cleanup sketch is superseded. OMNI is the active/default estimator, and replacing
+  `omni` with `countmin-dual` is not a cleanup unless count-min passes the OMNI accuracy suite unchanged.
+  Evidence: `SketchBasedJoinEstimatorOmniAccuracyRegressionTest` and `SketchJoinSketchAccuracyComparisonTest` pass for
+  OMNI; a 2026-06-14 attempt to delete resident `OmniFrequencySketch` side-state broke queryalgebra module tests for
+  readiness, sketch-only join surfaces, cross-component joins, and memory layout. The production deletion was backed out.
 
 ## Decision Log
 
@@ -59,6 +64,12 @@ LMDB currently has a partial Omni migration: the estimator can build Omni side-s
 - Decision: Treat benchmark acceptance as a performance gate, not only a correctness gate.
   Rationale: The current user goal requires `ThemeQueryPlanRunBenchmark.runQuery` plans to use Omni and to beat May/June averages. Passing unit tests is necessary but insufficient.
   Date/Author: 2026-06-09 / Codex.
+- Decision: Keep `OmniFrequencySketch` resident side-state until a replacement passes the existing sketch-only and
+  full queryalgebra tests.
+  Rationale: It is not merely dead legacy state; broader tests depend on it for non-witness fallback behavior and
+  readiness/memory-layout invariants. The safe cleanup is to mark count-min-retention planning as superseded, not to
+  delete active OMNI support code.
+  Date/Author: 2026-06-14 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -68,7 +79,7 @@ Partial implementation exists. Queryalgebra is green with 1132 tests passing aft
 
 The sketch estimator core is `core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/sketch/SketchBasedJoinEstimator.java`. It builds summaries over statement components: subject (`S`), predicate (`P`), object (`O`), and context (`C`). A “join surface” is the bag of values for one join variable after applying pattern constants or previously joined factors; estimating the intersection of two join surfaces gives a duplicate-aware join cardinality.
 
-The existing estimator stores `FastAgmsBindingSummary` in global, single-component, and pair-component arrays. It also maintains optional side-state arrays for `JoinFrequencySketch` and `CountMinFrequencySketch`. `OmniFrequencySketch` already implements `FrequencySketch`, but is not currently selected by `SketchStrategy` or persisted. LMDB wires the estimator config in `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java` and validates config values in `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig.java`.
+The existing estimator stores `FastAgmsBindingSummary` in global, single-component, and pair-component arrays. It also maintains optional side-state arrays for `JoinFrequencySketch`, `CountMinFrequencySketch`, and resident `OmniFrequencySketch` fallback behavior. The active OMNI path additionally uses `OmniJoinEstimator` witness state. LMDB wires the estimator config in `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java` and validates config values in `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig.java`.
 
 The local contribution zip is `/Users/havardottestad/Downloads/OmniSketchDataSketchesContribution.zip`. Its sources have been copied into `core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/sketch/omni`. Its `OmniSketches.intersection(...)` API demonstrates the desired semantics: build one sketch per predicate dimension, convert predicates to summaries, then estimate the intersection of the summaries.
 

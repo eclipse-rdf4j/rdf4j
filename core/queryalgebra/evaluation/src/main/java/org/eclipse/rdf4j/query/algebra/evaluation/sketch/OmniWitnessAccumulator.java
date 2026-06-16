@@ -179,6 +179,91 @@ final class OmniWitnessAccumulator {
 	}
 
 	private static void sortByUnsignedHash(long[] hashes, double[] weights) {
+		final int length = hashes.length;
+		if (length < 2) {
+			return;
+		}
+
+		// For tiny arrays, insertion sort is usually faster than allocating scratch arrays.
+		if (length <= 64) {
+			insertionSortByUnsignedHash(hashes, weights);
+			return;
+		}
+
+		final int radix = 1 << Byte.SIZE; // 256
+		final int mask = radix - 1;
+
+		/*
+		 * Precompute byte histograms for all eight bytes in one pass.
+		 *
+		 * LSD radix sorting bytes from least significant to most significant gives the same order as
+		 * Long.compareUnsigned, because the most significant byte is compared as an unsigned 0..255 value in the final
+		 * pass.
+		 */
+		final int[] offsets = new int[Long.BYTES * radix];
+		for (int i = 0; i < length; i++) {
+			long hash = hashes[i];
+
+			offsets[(int) (hash & mask)]++;
+			offsets[radix + (int) ((hash >>> 8) & mask)]++;
+			offsets[(radix << 1) + (int) ((hash >>> 16) & mask)]++;
+			offsets[(radix * 3) + (int) ((hash >>> 24) & mask)]++;
+			offsets[(radix << 2) + (int) ((hash >>> 32) & mask)]++;
+			offsets[(radix * 5) + (int) ((hash >>> 40) & mask)]++;
+			offsets[(radix * 6) + (int) ((hash >>> 48) & mask)]++;
+			offsets[(radix * 7) + (int) (hash >>> 56)]++;
+		}
+
+		long[] sourceHashes = hashes;
+		double[] sourceWeights = weights;
+		long[] targetHashes = new long[length];
+		double[] targetWeights = new double[length];
+
+		for (int pass = 0, shift = 0; pass < Long.BYTES; pass++, shift += Byte.SIZE) {
+			final int base = pass * radix;
+
+			// Skip a byte pass if every key has the same byte value.
+			int firstNonEmptyBucket = 0;
+			while (firstNonEmptyBucket < radix && offsets[base + firstNonEmptyBucket] == 0) {
+				firstNonEmptyBucket++;
+			}
+			if (firstNonEmptyBucket == radix || offsets[base + firstNonEmptyBucket] == length) {
+				continue;
+			}
+
+			int nextOffset = 0;
+			for (int bucket = 0; bucket < radix; bucket++) {
+				int count = offsets[base + bucket];
+				offsets[base + bucket] = nextOffset;
+				nextOffset += count;
+			}
+
+			for (int i = 0; i < length; i++) {
+				long hash = sourceHashes[i];
+				int bucket = (int) ((hash >>> shift) & mask);
+				int target = offsets[base + bucket]++;
+
+				targetHashes[target] = hash;
+				targetWeights[target] = sourceWeights[i];
+			}
+
+			long[] hashScratch = sourceHashes;
+			sourceHashes = targetHashes;
+			targetHashes = hashScratch;
+
+			double[] weightScratch = sourceWeights;
+			sourceWeights = targetWeights;
+			targetWeights = weightScratch;
+		}
+
+		// If an odd number of radix passes ran, the sorted data is in the scratch arrays.
+		if (sourceHashes != hashes) {
+			System.arraycopy(sourceHashes, 0, hashes, 0, length);
+			System.arraycopy(sourceWeights, 0, weights, 0, length);
+		}
+	}
+
+	private static void insertionSortByUnsignedHash(long[] hashes, double[] weights) {
 		for (int i = 1; i < hashes.length; i++) {
 			long hash = hashes[i];
 			double weight = weights[i];

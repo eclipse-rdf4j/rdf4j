@@ -35,10 +35,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.OmniSketchProbeRes
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.UpdateOmniSketch;
 
 import it.unimi.dsi.fastutil.longs.Long2DoubleMap;
+import it.unimi.dsi.fastutil.longs.Long2DoubleMaps;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
 
 /** Paper-style Omni join estimator over sampled weighted witnesses. */
 final class OmniJoinEstimator {
@@ -556,38 +558,198 @@ final class OmniJoinEstimator {
 					fallbackReason, fallbackReason == OmniWitnessSet.FallbackReason.NONE ? 0.0d
 							: minimumDetectableRows);
 		}
-		PriorityQueue<SortedCursorSource> queue = new PriorityQueue<>(sourceCount,
-				(left, right) -> Long.compareUnsigned(left.hash(), right.hash()));
+		/*
+		 * Prime every source once. This preserves SortedCursorSource.advance() semantics: invalid multipliers,
+		 * non-finite weights and non-positive cursor weights are skipped before the merge sees a source.
+		 *
+		 * The sources array is private scratch here, so compacting active sources into the front also gives us a
+		 * zero-allocation heap for the general case.
+		 */
+		int activeCount = 0;
 		for (int i = 0; i < sourceCount; i++) {
 			SortedCursorSource source = sources[i];
 			if (source.advance()) {
-				queue.add(source);
+				sources[activeCount++] = source;
 			}
 		}
-		SortedWitnessAccumulator output = new SortedWitnessAccumulator(Math.max(1, queue.size()));
-		while (!queue.isEmpty()) {
-			SortedCursorSource source = queue.poll();
-			long hash = source.hash();
-			double weight = source.weight();
-			if (source.advance()) {
-				queue.add(source);
-			}
-			while (!queue.isEmpty() && queue.peek().hash() == hash) {
-				SortedCursorSource duplicate = queue.poll();
-				weight += duplicate.weight();
-				if (duplicate.advance()) {
-					queue.add(duplicate);
-				}
-			}
-			if (!output.add(hash, weight, maxRetainedWitnesses)) {
-				return null;
-			}
+		if (activeCount == 0) {
+			return OmniWitnessSet.fromSortedUnsigned(new long[0], new double[0], 0, probability, confidence,
+					fallbackReason, minimumDetectableRows);
+		}
+		int initialCapacity = activeCount;
+		if (maxRetainedWitnesses >= 0 && maxRetainedWitnesses < initialCapacity) {
+			initialCapacity = Math.max(1, maxRetainedWitnesses);
+		}
+		SortedWitnessAccumulator output = new SortedWitnessAccumulator(initialCapacity);
+		boolean complete;
+		if (activeCount == 1) {
+			complete = drainSortedSource(sources[0], output, maxRetainedWitnesses);
+		} else if (activeCount == 2) {
+			complete = mergeTwoSortedSources(sources[0], sources[1], output, maxRetainedWitnesses);
+		} else if (activeCount <= 4) {
+			complete = mergeSmallSortedSources(sources, activeCount, output, maxRetainedWitnesses);
+		} else {
+			complete = mergeHeapSortedSources(sources, activeCount, output, maxRetainedWitnesses);
+		}
+		if (!complete) {
+			return null;
 		}
 		double effectiveMinimumDetectableRows = !output.isEmpty()
 				&& fallbackReason == OmniWitnessSet.FallbackReason.NONE
 						? Math.max(minimumDetectableRows, 1.0d)
 						: minimumDetectableRows;
 		return output.toWitnessSet(probability, confidence, fallbackReason, effectiveMinimumDetectableRows);
+	}
+
+	private static boolean drainSortedSource(SortedCursorSource source, SortedWitnessAccumulator output,
+			int maxRetainedWitnesses) {
+		boolean hasCurrent = true;
+		while (hasCurrent) {
+			long hash = source.hash;
+			double weight = source.weight;
+			hasCurrent = source.advance();
+			while (hasCurrent && source.hash == hash) {
+				weight += source.weight;
+				hasCurrent = source.advance();
+			}
+			if (!output.add(hash, weight, maxRetainedWitnesses)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean mergeTwoSortedSources(SortedCursorSource left, SortedCursorSource right,
+			SortedWitnessAccumulator output, int maxRetainedWitnesses) {
+		boolean hasLeft = true;
+		boolean hasRight = true;
+		while (hasLeft && hasRight) {
+			long leftHash = left.hash;
+			long rightHash = right.hash;
+			long hash;
+			double weight;
+			int cmp = Long.compareUnsigned(leftHash, rightHash);
+			if (cmp <= 0) {
+				hash = leftHash;
+				weight = left.weight;
+				hasLeft = left.advance();
+				while (hasLeft && left.hash == hash) {
+					weight += left.weight;
+					hasLeft = left.advance();
+				}
+				if (cmp == 0) {
+					weight += right.weight;
+					hasRight = right.advance();
+					while (hasRight && right.hash == hash) {
+						weight += right.weight;
+						hasRight = right.advance();
+					}
+				}
+			} else {
+				hash = rightHash;
+				weight = right.weight;
+				hasRight = right.advance();
+				while (hasRight && right.hash == hash) {
+					weight += right.weight;
+					hasRight = right.advance();
+				}
+			}
+			if (!output.add(hash, weight, maxRetainedWitnesses)) {
+				return false;
+			}
+		}
+		if (hasLeft && !drainSortedSource(left, output, maxRetainedWitnesses)) {
+			return false;
+		}
+		return !hasRight || drainSortedSource(right, output, maxRetainedWitnesses);
+	}
+
+	private static boolean mergeSmallSortedSources(SortedCursorSource[] sources, int activeCount,
+			SortedWitnessAccumulator output, int maxRetainedWitnesses) {
+		while (activeCount > 0) {
+			long hash = sources[0].hash;
+			for (int i = 1; i < activeCount; i++) {
+				long candidate = sources[i].hash;
+				if (Long.compareUnsigned(candidate, hash) < 0) {
+					hash = candidate;
+				}
+			}
+			double weight = 0.0d;
+			for (int i = 0; i < activeCount;) {
+				SortedCursorSource source = sources[i];
+				if (source.hash == hash) {
+					boolean hasCurrent;
+					do {
+						weight += source.weight;
+						hasCurrent = source.advance();
+					} while (hasCurrent && source.hash == hash);
+					if (hasCurrent) {
+						i++;
+					} else {
+						sources[i] = sources[--activeCount];
+					}
+				} else {
+					i++;
+				}
+			}
+			if (!output.add(hash, weight, maxRetainedWitnesses)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean mergeHeapSortedSources(SortedCursorSource[] heap, int heapSize,
+			SortedWitnessAccumulator output, int maxRetainedWitnesses) {
+		heapifySortedSources(heap, heapSize);
+		while (heapSize > 0) {
+			long hash = heap[0].hash;
+			double weight = 0.0d;
+			do {
+				SortedCursorSource source = heap[0];
+				weight += source.weight;
+				if (source.advance()) {
+					if (source.hash != hash) {
+						siftDownSortedSources(heap, 0, heapSize);
+					}
+				} else {
+					heap[0] = heap[--heapSize];
+					if (heapSize > 0) {
+						siftDownSortedSources(heap, 0, heapSize);
+					}
+				}
+			} while (heapSize > 0 && heap[0].hash == hash);
+			if (!output.add(hash, weight, maxRetainedWitnesses)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static void heapifySortedSources(SortedCursorSource[] heap, int heapSize) {
+		for (int i = (heapSize >>> 1) - 1; i >= 0; i--) {
+			siftDownSortedSources(heap, i, heapSize);
+		}
+	}
+
+	private static void siftDownSortedSources(SortedCursorSource[] heap, int index, int heapSize) {
+		SortedCursorSource source = heap[index];
+		int half = heapSize >>> 1;
+		while (index < half) {
+			int child = (index << 1) + 1;
+			SortedCursorSource smallestChild = heap[child];
+			int right = child + 1;
+			if (right < heapSize && Long.compareUnsigned(heap[right].hash, smallestChild.hash) < 0) {
+				child = right;
+				smallestChild = heap[right];
+			}
+			if (Long.compareUnsigned(source.hash, smallestChild.hash) <= 0) {
+				break;
+			}
+			heap[index] = smallestChild;
+			index = child;
+		}
+		heap[index] = source;
 	}
 
 	private static CachedWitnessPostings mergeSortedSourcesToCachedPostings(SortedCursorSource[] sources,
@@ -690,14 +852,61 @@ final class OmniJoinEstimator {
 			List<ValuePostings> values) {
 	}
 
-	record ValuePostings(long valueHash, long[] witnessHashes, double[] weights, float samplingProbability,
-			double minimumDetectableEstimate) {
-		ValuePostings {
-			witnessHashes = witnessHashes == null ? new long[0] : witnessHashes.clone();
-			weights = weights == null ? new double[0] : weights.clone();
-			if (witnessHashes.length != weights.length) {
+	static final class ValuePostings {
+		private static final long[] EMPTY_HASHES = new long[0];
+		private static final double[] EMPTY_WEIGHTS = new double[0];
+
+		private final long valueHash;
+		private final long[] witnessHashes;
+		private final double[] weights;
+		private final float samplingProbability;
+		private final double minimumDetectableEstimate;
+
+		ValuePostings(long valueHash, long[] witnessHashes, double[] weights, float samplingProbability,
+				double minimumDetectableEstimate) {
+			this(valueHash, witnessHashes, weights, samplingProbability, minimumDetectableEstimate, true);
+		}
+
+		private static ValuePostings wrap(long valueHash, long[] witnessHashes, double[] weights,
+				float samplingProbability, double minimumDetectableEstimate) {
+			return new ValuePostings(valueHash, witnessHashes, weights, samplingProbability, minimumDetectableEstimate,
+					false);
+		}
+
+		private ValuePostings(long valueHash, long[] witnessHashes, double[] weights, float samplingProbability,
+				double minimumDetectableEstimate, boolean copyArrays) {
+			long[] normalizedHashes = witnessHashes == null ? EMPTY_HASHES : witnessHashes;
+			double[] normalizedWeights = weights == null ? EMPTY_WEIGHTS : weights;
+			if (normalizedHashes.length != normalizedWeights.length) {
 				throw new IllegalArgumentException("witness hash and weight arrays must have equal length");
 			}
+			this.valueHash = valueHash;
+			this.witnessHashes = copyArrays && normalizedHashes.length != 0 ? normalizedHashes.clone()
+					: normalizedHashes;
+			this.weights = copyArrays && normalizedWeights.length != 0 ? normalizedWeights.clone()
+					: normalizedWeights;
+			this.samplingProbability = samplingProbability;
+			this.minimumDetectableEstimate = minimumDetectableEstimate;
+		}
+
+		long valueHash() {
+			return valueHash;
+		}
+
+		long[] witnessHashes() {
+			return witnessHashes;
+		}
+
+		double[] weights() {
+			return weights;
+		}
+
+		float samplingProbability() {
+			return samplingProbability;
+		}
+
+		double minimumDetectableEstimate() {
+			return minimumDetectableEstimate;
 		}
 	}
 
@@ -726,16 +935,21 @@ final class OmniJoinEstimator {
 	private static final class SortedCursorSource {
 		private final WitnessCursor cursor;
 		private final double multiplier;
+		private final boolean returnFalse;
 		private long hash;
 		private double weight;
 
 		private SortedCursorSource(WitnessCursor cursor, double multiplier) {
 			this.cursor = cursor == null ? WitnessCursor.empty() : cursor;
 			this.multiplier = multiplier;
+			if (!Double.isFinite(multiplier) || multiplier <= 0.0d) {
+				this.returnFalse = true;
+			}else  				this.returnFalse = false;
+
 		}
 
 		private boolean advance() {
-			if (!Double.isFinite(multiplier) || multiplier <= 0.0d) {
+			if (returnFalse) {
 				return false;
 			}
 			while (cursor.next()) {
@@ -1307,7 +1521,7 @@ final class OmniJoinEstimator {
 					Math.min(retainedHashes.length, exactWeights.size()));
 			for (long retainedHash : retainedHashes) {
 				double weight = exactWeights.get(retainedHash);
-				if (weight > 0.0d) {
+				if (Double.isFinite(weight) && weight > 0.0d) {
 					retainedWeights.put(retainedHash, weight);
 				}
 			}
@@ -1574,6 +1788,9 @@ final class OmniJoinEstimator {
 		}
 
 		private List<ValuePostings> snapshotValuePostings() {
+			if (mappedBase == null && lazyWeights == null) {
+				return snapshotInMemoryValuePostings();
+			}
 			List<ValuePostings> postings = new ArrayList<>();
 			LongOpenHashSet emittedValues = new LongOpenHashSet();
 			if (mappedBase != null) {
@@ -1619,9 +1836,44 @@ final class OmniJoinEstimator {
 					if (!emittedValues.contains(valueHash)) {
 						double totalWeight = totalWeightByValueHash.get(valueHash);
 						if (Double.isFinite(totalWeight) && totalWeight > 0.0d) {
-							postings.add(new ValuePostings(valueHash, new long[] { TOTAL_ONLY_WITNESS_HASH },
+							postings.add(ValuePostings.wrap(valueHash, new long[] { TOTAL_ONLY_WITNESS_HASH },
 									new double[] { totalWeight }, 1.0f, 1.0d));
 						}
+					}
+				}
+			}
+			return postings;
+		}
+
+		private List<ValuePostings> snapshotInMemoryValuePostings() {
+			int expectedPostings = totalOnlyValueHashes.size();
+			if (weightsByValueHash != null) {
+				expectedPostings += weightsByValueHash.size();
+			}
+			List<ValuePostings> postings = new ArrayList<>(expectedPostings);
+			LongOpenHashSet emittedValues = totalOnlyValueHashes.isEmpty() ? null : new LongOpenHashSet();
+			if (weightsByValueHash != null) {
+				for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> valueEntry : weightsByValueHash
+						.long2ObjectEntrySet()) {
+					long valueHash = valueEntry.getLongKey();
+					ValuePostings valuePostings = toValuePostings(valueHash, valueEntry.getValue());
+					if (valuePostings.witnessHashes().length > 0) {
+						postings.add(valuePostings);
+						if (emittedValues != null) {
+							emittedValues.add(valueHash);
+						}
+					}
+				}
+			}
+			if (!totalOnlyValueHashes.isEmpty()) {
+				for (long valueHash : totalOnlyValueHashes) {
+					if (emittedValues != null && emittedValues.contains(valueHash)) {
+						continue;
+					}
+					double totalWeight = totalWeightByValueHash.get(valueHash);
+					if (Double.isFinite(totalWeight) && totalWeight > 0.0d) {
+						postings.add(ValuePostings.wrap(valueHash, new long[] { TOTAL_ONLY_WITNESS_HASH },
+								new double[] { totalWeight }, 1.0f, 1.0d));
 					}
 				}
 			}
@@ -1645,26 +1897,35 @@ final class OmniJoinEstimator {
 		}
 
 		private ValuePostings toExactValuePostings(long valueHash, Long2DoubleOpenHashMap weightsByWitnessHash) {
-			int size = weightsByWitnessHash == null ? 0 : weightsByWitnessHash.size();
+			if (weightsByWitnessHash == null || weightsByWitnessHash.isEmpty()) {
+				return ValuePostings.wrap(valueHash, ValuePostings.EMPTY_HASHES, ValuePostings.EMPTY_WEIGHTS, 1.0f,
+						1.0d);
+			}
+			int size = weightsByWitnessHash.size();
 			long[] witnessHashes = new long[size];
 			double[] weights = new double[size];
 			int offset = 0;
-			if (weightsByWitnessHash != null) {
-				for (Long2DoubleMap.Entry entry : weightsByWitnessHash.long2DoubleEntrySet()) {
-					double weight = entry.getDoubleValue();
-					if (Double.isFinite(weight) && weight > 0.0d) {
-						witnessHashes[offset] = entry.getLongKey();
-						weights[offset] = weight;
-						offset++;
-					}
+			ObjectIterator<Long2DoubleMap.Entry> iterator = Long2DoubleMaps.fastIterator(weightsByWitnessHash);
+			while (iterator.hasNext()) {
+				Long2DoubleMap.Entry entry = iterator.next();
+				double weight = entry.getDoubleValue();
+				if (Double.isFinite(weight) && weight > 0.0d) {
+					witnessHashes[offset] = entry.getLongKey();
+					weights[offset] = weight;
+					offset++;
 				}
+			}
+			if (offset == 0) {
+				return ValuePostings.wrap(valueHash, ValuePostings.EMPTY_HASHES, ValuePostings.EMPTY_WEIGHTS, 1.0f,
+						1.0d);
 			}
 			if (offset != witnessHashes.length) {
 				witnessHashes = Arrays.copyOf(witnessHashes, offset);
 				weights = Arrays.copyOf(weights, offset);
 			}
+			assert hasOnlyPositiveFiniteWeights(weights, offset);
 			sortByUnsignedHash(witnessHashes, weights);
-			return new ValuePostings(valueHash, witnessHashes, weights, 1.0f, 1.0d);
+			return ValuePostings.wrap(valueHash, witnessHashes, weights, 1.0f, 1.0d);
 		}
 
 		private ValuePostings toValuePostings(long valueHash, SnapshotWeights snapshotWeights) {
@@ -1673,17 +1934,36 @@ final class OmniJoinEstimator {
 			long[] witnessHashes = new long[retainedWeights.size()];
 			double[] weights = new double[retainedWeights.size()];
 			int offset = 0;
-			for (Long2DoubleMap.Entry entry : retainedWeights.long2DoubleEntrySet()) {
-				witnessHashes[offset] = entry.getLongKey();
-				weights[offset] = entry.getDoubleValue();
-				offset++;
+			ObjectIterator<Long2DoubleMap.Entry> iterator = Long2DoubleMaps.fastIterator(retainedWeights);
+			while (iterator.hasNext()) {
+				Long2DoubleMap.Entry entry = iterator.next();
+				double weight = entry.getDoubleValue();
+				if (Double.isFinite(weight) && weight > 0.0d) {
+					witnessHashes[offset] = entry.getLongKey();
+					weights[offset] = weight;
+					offset++;
+				}
+			}
+			if (offset != witnessHashes.length) {
+				witnessHashes = Arrays.copyOf(witnessHashes, offset);
+				weights = Arrays.copyOf(weights, offset);
 			}
 			sortByUnsignedHash(witnessHashes, weights);
 			OmniSketchProbeResult probe = snapshotWeights.probe();
 			double samplingProbability = effectiveSamplingProbability(valueHash, probe, retainedWeight);
-			return new ValuePostings(valueHash, witnessHashes, weights,
+			return ValuePostings.wrap(valueHash, witnessHashes, weights,
 					(float) samplingProbability,
 					minimumDetectableEstimate(valueHash, probe, samplingProbability));
+		}
+
+		private static boolean hasOnlyPositiveFiniteWeights(double[] weights, int size) {
+			for (int i = 0; i < size; i++) {
+				double weight = weights[i];
+				if (!Double.isFinite(weight) || weight <= 0.0d) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private SnapshotWeights retainedWeightsForValueWithProbe(long valueHash, WitnessCursor cursor) {

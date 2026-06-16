@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -420,6 +421,21 @@ class OmniJoinEstimatorTest {
 				snapshot.close();
 			}
 		}
+	}
+
+	@Test
+	void valuePostingsConstructorDefensivelyCopiesArrays() {
+		long[] witnessHashes = { 1L, 2L };
+		double[] weights = { 3.0d, 4.0d };
+
+		OmniJoinEstimator.ValuePostings postings = new OmniJoinEstimator.ValuePostings(11L, witnessHashes, weights,
+				1.0f, 1.0d);
+		witnessHashes[0] = 99L;
+		weights[0] = 99.0d;
+
+		assertEquals(11L, postings.valueHash());
+		assertArrayEquals(new long[] { 1L, 2L }, postings.witnessHashes());
+		assertArrayEquals(new double[] { 3.0d, 4.0d }, postings.weights(), 0.0d);
 	}
 
 	@Test

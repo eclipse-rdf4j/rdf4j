@@ -149,6 +149,52 @@ class OmniWitnessPersistenceStoreTest {
 	}
 
 	@Test
+	void exactInMemorySnapshotDoesNotPersistOverflowedWeights(@TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 4, 64, SEED);
+		OmniJoinEstimator.Relation events = estimator.relation(OmniRelation.SUBJECT_STAR);
+		byte component = OmniAttributeRef.component(1);
+		long code = OmniJoinEstimator.stableHash("A");
+		long witness = OmniJoinEstimator.stableHash("event:overflow");
+		events.updateStatic(component, code, witness, Double.MAX_VALUE);
+		events.updateStatic(component, code, witness, Double.MAX_VALUE);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, estimator, 1L);
+		}
+
+		ByteBuffer data = ByteBuffer.wrap(Files.readAllBytes(generationDataPath(tempDir, 1L)))
+				.order(ByteOrder.BIG_ENDIAN);
+
+		assertEquals(0, data.getInt(Integer.BYTES * 3),
+				"Overflowed exact weights must not be persisted as finite witness postings");
+		assertEquals(0, data.getInt(Integer.BYTES * 8));
+	}
+
+	@Test
+	void inMemorySnapshotKeepsTotalOnlyPostingWhenExactWeightsDoNotEmit(@TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 4, 64, SEED);
+		OmniJoinEstimator.Relation events = estimator.relation(OmniRelation.SUBJECT_STAR);
+		byte component = OmniAttributeRef.component(1);
+		long code = OmniJoinEstimator.stableHash("A");
+		long witness = OmniJoinEstimator.stableHash("event:overflow");
+		events.updateStatic(component, code, witness, Double.MAX_VALUE);
+		events.updateStatic(component, code, witness, Double.MAX_VALUE);
+		events.updateStaticTotalOnly(component, code, 7.0d);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, estimator, 1L);
+		}
+
+		ByteBuffer data = ByteBuffer.wrap(Files.readAllBytes(generationDataPath(tempDir, 1L)))
+				.order(ByteOrder.BIG_ENDIAN);
+		int postingOffset = data.getInt(Integer.BYTES * 7);
+
+		assertEquals(1, data.getInt(Integer.BYTES * 3));
+		assertEquals(1, data.getInt(Integer.BYTES * 8));
+		assertEquals(7.0d, data.getDouble(postingOffset + Long.BYTES), 0.0d);
+	}
+
+	@Test
 	void mappedSnapshotCompactsMappedBaseBeforeRewriting(@TempDir Path tempDir) throws Exception {
 		int exactWitnesses = 1_000;
 		OmniJoinEstimator sketchSource = new OmniJoinEstimator(64, 4, 64, SEED);

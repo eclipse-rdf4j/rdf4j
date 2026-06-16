@@ -40,6 +40,7 @@ public class OmniJoinEstimatorBenchmark {
 	private static final byte ATTR_O = OmniAttributeRef.component(2);
 
 	private OmniJoinEstimator estimator;
+	private OmniJoinEstimator exactSnapshotEstimator;
 	private OmniJoinEstimator.Relation statement;
 	private OmniJoinEstimator.Relation edgeForward;
 	private long singleValue;
@@ -54,6 +55,7 @@ public class OmniJoinEstimatorBenchmark {
 	@Setup(Level.Trial)
 	public void setup() {
 		estimator = new OmniJoinEstimator(1024, 4, 4096, SEED);
+		exactSnapshotEstimator = new OmniJoinEstimator(1024, 4, 4096, SEED);
 		statement = estimator.relation(OmniRelation.STATEMENT);
 		edgeForward = estimator.relation(OmniRelation.EDGE_FORWARD);
 		singleValue = OmniJoinEstimator.stableHash("single-value");
@@ -71,6 +73,11 @@ public class OmniJoinEstimatorBenchmark {
 			for (int output = 0; output < 8; output++) {
 				edgeForward.updatePredicate(predicateHash, joinValue, witnessHash((i * 8) + output), 1.0d);
 			}
+		}
+		OmniJoinEstimator.Relation subjectStar = exactSnapshotEstimator.relation(OmniRelation.SUBJECT_STAR);
+		long exactSnapshotValue = OmniJoinEstimator.stableHash("exact-snapshot-value");
+		for (int i = 0; i < 4096; i++) {
+			subjectStar.updateStatic(ATTR_P, exactSnapshotValue, witnessHash(i), 1.0d);
 		}
 		long[] joinHashes = new long[512];
 		double[] joinWeights = new double[512];
@@ -101,6 +108,17 @@ public class OmniJoinEstimatorBenchmark {
 	public double exactMultiValueProbe() {
 		return estimator.estimateRows(estimator.probeStatic(statement, ATTR_O,
 				OmniJoinEstimator.Predicate.anyOfHashes(multiValueA, multiValueB)));
+	}
+
+	@Benchmark
+	public int exactSnapshotPersistence() {
+		int postingCount = 0;
+		for (OmniJoinEstimator.AttributeSnapshot attribute : exactSnapshotEstimator.snapshotAttributes()) {
+			for (OmniJoinEstimator.ValuePostings value : attribute.values()) {
+				postingCount += value.witnessHashes().length;
+			}
+		}
+		return postingCount;
 	}
 
 	@Benchmark
