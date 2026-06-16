@@ -30,10 +30,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS = 512.0d;
+	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS = 4_096.0d;
 
 	private final Function<BindingSet, CloseableIteration<BindingSet>> eval;
 	private final BoundStatementPatternGuardJoinIteration.GuardCounter guardCounter;
@@ -44,10 +46,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
 		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
+		boolean metricsTrackingActive = runtimeTelemetryTrackingActive || costFeedbackTrackingActive(join);
 		QueryEvaluationStep leftPrepared = JoinMetricsTracking
-				.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive);
+				.wrapLeftInput(leftRaw, join, join.getLeftArg(), metricsTrackingActive);
 		QueryEvaluationStep rightPrepared = JoinMetricsTracking
-				.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive);
+				.wrapRightInput(rightRaw, join, join.getRightArg(), metricsTrackingActive);
 		BoundStatementPatternGuardJoinIteration.GuardCounter leftGuardCounter = getGuardCounter(join.getLeftArg(),
 				leftRaw);
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
@@ -58,6 +61,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
+		} else if (isHashJoinHint(join)) {
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+					joinAttributes, context);
+			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
@@ -113,6 +121,20 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return eval.apply(bindings);
 	}
 
+	private static boolean costFeedbackTrackingActive(Join join) {
+		return join != null && (join.isCostFeedbackTrackingEnabled()
+				|| join.getLeftArg().isCostFeedbackTrackingEnabled()
+				|| join.getRightArg().isCostFeedbackTrackingEnabled());
+	}
+
+	private static boolean isHashJoinHint(Join join) {
+		if (!"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
+			return false;
+		}
+		return !isOutOfScopeForLeftArgBindings(join.getRightArg())
+				&& HashJoinIteration.hashJoinAttributeNames(join).length > 0;
+	}
+
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
 		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
 	}
@@ -124,11 +146,14 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isBoundStatementGuardInvocationBudgetReasonable(Join join) {
-		double leftRows = join.getLeftArg()
-				.getResultSizeEstimate();
-		return !Double.isFinite(leftRows)
-				|| leftRows < 0.0d
-				|| leftRows <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+		RuntimeEstimate leftEstimate = RuntimeEstimate.of(join.getLeftArg());
+		if (leftEstimate.hasRows()) {
+			return leftEstimate.rows() <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+		}
+		if (leftEstimate.hasWorkRows()) {
+			return leftEstimate.workRows() <= MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS;
+		}
+		return false;
 	}
 
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
@@ -208,6 +233,57 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				return -1;
 			}
 		};
+	}
+
+	private static final class RuntimeEstimate {
+
+		private static final double UNKNOWN = -1.0d;
+
+		private final double rows;
+		private final double workRows;
+
+		private RuntimeEstimate(double rows, double workRows) {
+			this.rows = rows;
+			this.workRows = workRows;
+		}
+
+		private static RuntimeEstimate of(TupleExpr tupleExpr) {
+			double rows = firstKnown(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
+					tupleExpr.getResultSizeEstimate());
+			double workRows = firstKnown(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
+					tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
+					tupleExpr.getCostEstimate());
+			return new RuntimeEstimate(rows, workRows);
+		}
+
+		private boolean hasRows() {
+			return isKnown(rows);
+		}
+
+		private double rows() {
+			return rows;
+		}
+
+		private boolean hasWorkRows() {
+			return isKnown(workRows);
+		}
+
+		private double workRows() {
+			return workRows;
+		}
+
+		private static double firstKnown(double... values) {
+			for (double value : values) {
+				if (isKnown(value)) {
+					return value;
+				}
+			}
+			return UNKNOWN;
+		}
+
+		private static boolean isKnown(double value) {
+			return Double.isFinite(value) && value >= 0.0d;
+		}
 	}
 
 }

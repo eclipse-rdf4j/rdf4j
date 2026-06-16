@@ -33,4 +33,16 @@ public interface IndexReportingIterator {
 		return -1;
 	}
 
+	default long getDistinctCursorSkipCountActual() {
+		return -1;
+	}
+
+	default long getDistinctCursorSkipSeekCountActual() {
+		return -1;
+	}
+
+	default long getSkipAheadSeekCountActual() {
+		return -1;
+	}
+
 }

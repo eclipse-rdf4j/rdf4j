@@ -25,23 +25,23 @@ final class JoinMetricsTracking {
 	}
 
 	static QueryEvaluationStep wrapLeftInput(QueryEvaluationStep delegate, QueryModelNode joinNode,
-			QueryModelNode leftNode, boolean runtimeTelemetryTrackingActive) {
-		return wrap(delegate, joinNode, leftNode, false, runtimeTelemetryTrackingActive);
+			QueryModelNode leftNode, boolean metricsTrackingActive) {
+		return wrap(delegate, joinNode, leftNode, false, metricsTrackingActive);
 	}
 
 	static QueryEvaluationStep wrapRightInput(QueryEvaluationStep delegate, QueryModelNode joinNode,
-			QueryModelNode rightNode, boolean runtimeTelemetryTrackingActive) {
-		return wrap(delegate, joinNode, rightNode, true, runtimeTelemetryTrackingActive);
+			QueryModelNode rightNode, boolean metricsTrackingActive) {
+		return wrap(delegate, joinNode, rightNode, true, metricsTrackingActive);
 	}
 
 	private static QueryEvaluationStep wrap(QueryEvaluationStep delegate, QueryModelNode joinNode,
 			QueryModelNode sideNode,
-			boolean rightSide, boolean runtimeTelemetryTrackingActive) {
+			boolean rightSide, boolean metricsTrackingActive) {
 		return bindings -> {
-			if (!runtimeTelemetryTrackingActive) {
+			if (!metricsTrackingActive) {
 				return delegate.evaluate(bindings);
 			}
-			if (!runtimeTelemetryEnabled(joinNode) && !runtimeTelemetryEnabled(sideNode)) {
+			if (!metricsEnabled(joinNode) && !metricsEnabled(sideNode)) {
 				return delegate.evaluate(bindings);
 			}
 
@@ -97,9 +97,20 @@ final class JoinMetricsTracking {
 		if (rightSide) {
 			if (consumedBindings <= 0) {
 				incrementLongMetric(joinNode, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
+				if (joinNode != null && joinNode.isCostFeedbackTrackingEnabled()) {
+					joinNode.setCostFeedbackEmptyRightProbeCountActual(
+							Math.max(0L, joinNode.getCostFeedbackEmptyRightProbeCountActual()) + 1L);
+				}
 			} else {
 				incrementLongMetric(joinNode, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
 				setLongMetricMax(joinNode, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL, consumedBindings);
+				if (joinNode != null && joinNode.isCostFeedbackTrackingEnabled()) {
+					joinNode.setCostFeedbackLeftRowsWithMatchActual(
+							Math.max(0L, joinNode.getCostFeedbackLeftRowsWithMatchActual()) + 1L);
+					joinNode.setCostFeedbackMaxRightRowsPerLeftActual(
+							Math.max(Math.max(0L, joinNode.getCostFeedbackMaxRightRowsPerLeftActual()),
+									consumedBindings));
+				}
 			}
 		}
 		if (consumedBindings <= 0) {
@@ -129,10 +140,18 @@ final class JoinMetricsTracking {
 		joinNode.setJoinRightIteratorsCreatedActual(Math.max(0, joinNode.getJoinRightIteratorsCreatedActual()));
 		joinNode.setJoinLeftBindingsConsumedActual(Math.max(0, joinNode.getJoinLeftBindingsConsumedActual()));
 		joinNode.setJoinRightBindingsConsumedActual(Math.max(0, joinNode.getJoinRightBindingsConsumedActual()));
+		if (joinNode.isCostFeedbackTrackingEnabled()) {
+			joinNode.setCostFeedbackLeftRowsWithMatchActual(
+					Math.max(0L, joinNode.getCostFeedbackLeftRowsWithMatchActual()));
+			joinNode.setCostFeedbackEmptyRightProbeCountActual(
+					Math.max(0L, joinNode.getCostFeedbackEmptyRightProbeCountActual()));
+			joinNode.setCostFeedbackMaxRightRowsPerLeftActual(
+					Math.max(0L, joinNode.getCostFeedbackMaxRightRowsPerLeftActual()));
+		}
 	}
 
-	private static boolean runtimeTelemetryEnabled(QueryModelNode node) {
-		return node != null && node.isRuntimeTelemetryEnabled();
+	private static boolean metricsEnabled(QueryModelNode node) {
+		return node != null && (node.isRuntimeTelemetryEnabled() || node.isCostFeedbackTrackingEnabled());
 	}
 
 	private static long longMetric(QueryModelNode queryModelNode, String metricName) {

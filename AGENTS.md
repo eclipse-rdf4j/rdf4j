@@ -225,19 +225,20 @@ To avoid losing the first test evidence when later runs overwrite `target/*-repo
 
 • On a fully green verify run:
 
-- Capture and store the last 200 lines of the verify output.
+- Capture compact evidence; keep full logs/reports on disk.
 - Example (mvnf):
-    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream`
-    - `tail -200 "$(ls -t logs/mvnf/*-verify.log | head -1)" > initial-evidence.txt`
+    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs`
+    - `python3 scripts/agent-evidence.py --command "python3 .codex/skills/mvnf/scripts/mvnf.py <module>" --log logs/mvnf/<verify-log> <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
+    - Keep `logs/mvnf/*-verify.log` for the full Maven output; use `--stream` only for hangs/no-progress debugging.
 - Example (manual Maven):
-    - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .initial-verify.log`
-    - `tail -200 .initial-verify.log > initial-evidence.txt`
+    - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
+    - `python3 scripts/agent-evidence.py --command "mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify" --log <full-log> <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
 
 • On any failing verify run (unit or IT failures):
 
-- Concatenate the Surefire and/or Failsafe report text files into `initial-evidence.txt`.
+- Write compact report evidence into `initial-evidence.txt`; keep Surefire/Failsafe reports untouched.
 - Example (repo‑root):
-    - `find . -type f \( -path "*/target/surefire-reports/*.txt" -o -path "*/target/failsafe-reports/*.txt" \) -print0 | xargs -0 cat > initial-evidence.txt`
+    - `python3 scripts/agent-evidence.py --command "<failed command>" <module>/target/surefire-reports <module>/target/failsafe-reports > initial-evidence.txt`
 
 Notes
 
@@ -281,14 +282,14 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+    * Use the module clean-install template below with `-pl <module> -am`.
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+   Use the module clean-install template below.
 2. **Run tests:**
-   `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream` or `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` 
+   `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
@@ -301,10 +302,34 @@ Always keep untracked artifacts!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
-* If offline resolution fails due to a missing dependency or plugin, run the command without `-o`: `mvn -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`, then return offline.
-* If it fails for any other reason, run the command without `-T 1C`: `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`.
+* Always run this root clean install before you start working. It typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
+
+```bash
+mvn -B -ntp \
+  -Dmaven.compiler.showWarnings=false \
+  -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 \
+  | tee maven-build.log \
+  | awk '
+     /\[WARNING\]/ { next }
+      /\[ERROR\]/ { print; next }
+
+      /Reactor Summary/ { summary=1 }
+      summary { print }
+    '
+```
+
+* Always run the same root clean install before any direct/manual `verify` or test runs.
+  When using `mvnf`, a separate pre-test root install is typically redundant because `mvnf`
+  already performs the required root `-Pquick` install before verify. Still run the initial
+  root clean install when a conversation first starts.
+* If you need install without clean, keep the same flags and output filter, but replace `clean install` with `install`.
+* If you need install for just one module and its dependencies, keep the same flags and output filter, but add `-pl <module> -am` before `-Pquick`. Use `clean install` or `install` as needed.
+  * Root install without clean: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick install`.
+  * Module clean install: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`.
+  * Module install without clean: replace the Maven args before `2>&1` with `mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`.
+* All install/build output belongs in `maven-build.log`. Skills with their own test logs should keep verify/test output in those logs, not Maven install output.
+* If offline resolution fails due to a missing dependency or plugin, rerun the exact install command without `-o`, then return offline.
+* If it fails for any other reason, rerun the exact install command without `-T 1C`.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
@@ -314,15 +339,15 @@ Why this is mandatory
 
 - Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run the root clean-install template above at the repository root.
+- In tight loops you may also install a specific module and its deps using the module clean-install template to iterate quickly, but before executing tests anywhere that depend on your changes, run the root clean-install template so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Skills (Preferred Runners)
 
 Prefer these skills over manual Maven test commands. Manual commands remain available as a fallback when needed.
 
-- `mvnf`: Consistent test runner that does module clean, root `-Pquick` install, then module verify or a single test class/method. Use this as the default way to run tests. Logs are deleted on success unless `--retain-logs`.
+- `mvnf`: Consistent test runner that deletes stale module test artifacts, runs root `-Pquick` install, then module verify or a single test class/method. Use this as the default way to run tests. Logs are deleted on success unless `--retain-logs`; compact Surefire/Failsafe summaries print to stdout.
 - `debug-surefire`: Runs Surefire tests in JDWP wait-for-debugger mode so you can attach a debugger (jdb/IDE) and step through tests.
 
 If you need manual control or a skill does not fit, use the Maven commands below.
@@ -333,9 +358,10 @@ If you need manual control or a skill does not fit, use the Maven commands below
 
 1. **Discover**
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
-    * Search fast with ripgrep: `rg -n "<symbol or string>"`
+    * Search fast with ripgrep: start with `rg -l "<pattern>" <path>`, then inspect hits with `rg -n -m 20 "<pattern>" <narrowed/path>`.
+      Avoid broad `rg -n` over large test trees for common tokens.
 2. **Build sanity (fast, skip tests)**
-    * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+    * Use the root clean-install template.
 3. **Format (Java, imports, XML)**
     * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources`
     * Ensure every touched Java file has the correct agent signature comment (`// Some portions generated by Codex` for Codex, `// Some portions generated by Co-Pilot` for GitHub Co-Pilot) inserted immediately below the header before formatting.
@@ -344,10 +370,10 @@ If you need manual control or a skill does not fit, use the Maven commands below
     * Module: `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
     * Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName`
     * Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method`
+    * Extra Maven flags/profiles: append after `--`, e.g. `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method -- -Pjacoco`
     * Optional Maven fallback:
-      * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
-      * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
-      * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
+      * Prefer mvnf passthrough: `python3 .codex/skills/mvnf/scripts/mvnf.py <module> -- <extra Maven args>`
+      * Raw Maven only when mvnf does not fit; then summarize reports with `python3 scripts/agent-evidence.py ...`.
 5. **Inspect failures**
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
@@ -450,9 +476,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Working Loop
 
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
+* **Status:** routine checks use `git status --short --untracked-files=no`; use full untracked status only for pre-stage/final audit.
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
+* **Compile (fast):** use the module clean-install template with `-pl <module> -am`.
 * **Test (prefer `mvnf`):** start smallest (class/method → module); use `--it` for integration tests. Use manual Maven only when you need profiles/flags not supported by `mvnf`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
@@ -481,7 +508,8 @@ Always keep untracked artifacts!
 
 ### Optional: Redirect test stdout/stderr to files (manual Maven)
 ```bash
-mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
+mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify
+python3 scripts/agent-evidence.py --command "<manual Maven command>" --log <full-log> <module>/target/surefire-reports
 ````
 
 Logs under:
@@ -565,7 +593,7 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Pre‑Commit Checklist
 
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+* **Compile (fast path):** use the root clean-install template.
 * **Tests (targeted, prefer `mvnf`):** `python3 .codex/skills/mvnf/scripts/mvnf.py <module>` (broaden as needed; use Maven fallback if you need profiles/flags)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
@@ -634,7 +662,7 @@ Immediately after creating any new Java source file, add the signature comment (
 
 **Defaults**
 
-* **Tests:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method` (or `--it ITClass#method`), then broaden to class/module. Use Maven flags only when `mvnf` cannot express the required profile/flags.
+* **Tests:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method` (or `--it ITClass#method`), then broaden to class/module. Pass extra Maven flags after `--`.
 * **Build:** use `-o`; drop `-o` once only to fetch; return offline.
 * **Formatting:** run formatter/import/XML before verify.
 * **Reports:** read surefire/failsafe locally; expand scope only when necessary.
@@ -667,21 +695,22 @@ Immediately after creating any new Java source file, add the signature comment (
 * Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest#testSomething`
 * Integration test: `python3 .codex/skills/mvnf/scripts/mvnf.py --it ShaclSailIT#testSomething`
 * Keep logs on success: add `--retain-logs`
+* Extra Maven flags/profiles: append after `--`, e.g. `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest#testSomething -- -Pjacoco`
 
 **Manual Maven fallback (profiles/extra flags/full repo)**
 
-* By module: `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl verify | tail -500`
+* By module: prefer `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/shacl`
 * Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (long; only when appropriate)
 * Slow tests (entire repo):
-  `mvn -o -Dmaven.repo.local=.m2_repo verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PslowTestsOnly,-skipSlowTests`
 * Slow tests (by module):
-  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `python3 .codex/skills/mvnf/scripts/mvnf.py <module> -- -PslowTestsOnly,-skipSlowTests`
 * Slow tests (specific test):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
+    * `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method --module core/sail/shacl -- -PslowTestsOnly,-skipSlowTests`
 * Integration tests (entire repo):
-  `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests`
 * Integration tests (by module):
-  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PskipUnitTests | tail -500`
+  `python3 .codex/skills/mvnf/scripts/mvnf.py --it ITClass#method --module <module>`
 * Useful flags:
 
     * `-Dtest=ClassName`
@@ -694,7 +723,7 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
+  Use the root clean-install template.
 * **Verify with tests (prefer `mvnf`):**
   Targeted module(s): `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
   Entire repo (fallback): `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
@@ -707,12 +736,10 @@ Immediately after creating any new Java source file, add the signature comment (
 
 JaCoCo is configured via the `jacoco` Maven profile in the root POM. Surefire/Failsafe honor the prepared agent `argLine`, so no extra flags are required beyond `-Pjacoco`.
 
-- Use manual Maven here (profiles are not supported by `mvnf`).
-
 - Run with coverage
-    - Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco verify | tail -500`
-    - Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco -Dtest=ClassName verify | tail -500`
-    - Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco -Dtest=ClassName#method verify | tail -500`
+    - Module: `python3 .codex/skills/mvnf/scripts/mvnf.py <module> -- -Pjacoco`
+    - Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName --module <module> -- -Pjacoco`
+    - Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method --module <module> -- -Pjacoco`
 
 - Where to find reports (per module)
     - Exec data: `<module>/target/jacoco.exec`

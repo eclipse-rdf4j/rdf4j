@@ -11,7 +11,7 @@ Examples:
     --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0
 
 Notes:
-  - Always runs root install first: mvn -T 1C [-o] -Dmaven.repo.local=.m2_repo -Pquick clean install
+  - Always runs root install first and stores build output in maven-build.log.
   - Pass QueryPlanSnapshotCli args after '--'
 USAGE
 }
@@ -59,7 +59,7 @@ raw_cli_args=("$@")
 printf -v cli_args '%q ' "${raw_cli_args[@]}"
 cli_args="${cli_args% }"
 
-install_cmd=(mvn -T 1C)
+install_cmd=(mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C)
 if [[ -n "$offline_flag" ]]; then
   install_cmd+=("$offline_flag")
 fi
@@ -73,7 +73,15 @@ cli_cmd+=(-Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:
 cli_cmd+=(-Dexec.args="$cli_args")
 
 echo ">>> Refreshing artifacts"
-"${install_cmd[@]}" | tail -200
+"${install_cmd[@]}" 2>&1 \
+  | tee maven-build.log \
+  | awk '
+     /\[WARNING\]/ { next }
+      /\[ERROR\]/ { print; next }
+
+      /Reactor Summary/ { summary=1 }
+      summary { print }
+    '
 
 echo ">>> Running QueryPlanSnapshotCli"
 echo ">>> args: $cli_args"
