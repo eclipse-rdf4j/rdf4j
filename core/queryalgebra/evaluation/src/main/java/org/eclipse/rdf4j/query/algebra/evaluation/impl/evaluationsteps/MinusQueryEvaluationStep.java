@@ -80,6 +80,9 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		protected BindingSet getNextElement() {
+			if (!initialized && !leftIter.hasNext()) {
+				return null;
+			}
 			initialize();
 			if (!overflowed) {
 				if (materializedMinus.hasNext()) {

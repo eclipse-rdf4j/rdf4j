@@ -187,7 +187,8 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Difference difference) {
 			super.meet(difference);
-			if (setContext && samePureSubtree(difference.getLeftArg(), difference.getRightArg())) {
+			if (setContext && samePureSubtree(difference.getLeftArg(), difference.getRightArg())
+					&& hasAssuredResultBinding(difference.getLeftArg())) {
 				EmptySet replacement = new EmptySet();
 				annotateProof(replacement, LmdbRewriteProof.RewriteKind.SET_DIFFERENCE_SELF,
 						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
@@ -466,6 +467,46 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 
 	private static boolean samePureSubtree(TupleExpr left, TupleExpr right) {
 		return left.equals(right) && hasSafeStructuralFingerprint(left) && hasSafeStructuralFingerprint(right);
+	}
+
+	private static boolean hasAssuredResultBinding(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			return isResultBinding(statementPattern.getSubjectVar())
+					|| isResultBinding(statementPattern.getPredicateVar())
+					|| isResultBinding(statementPattern.getObjectVar())
+					|| isResultBinding(statementPattern.getContextVar());
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			return everyAssignmentRowHasResultBinding(assignment);
+		}
+		if (tupleExpr instanceof Join join) {
+			return hasAssuredResultBinding(join.getLeftArg()) || hasAssuredResultBinding(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return hasAssuredResultBinding(union.getLeftArg()) && hasAssuredResultBinding(union.getRightArg());
+		}
+		if (tupleExpr instanceof Difference difference) {
+			return hasAssuredResultBinding(difference.getLeftArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return hasAssuredResultBinding(leftJoin.getLeftArg());
+		}
+		return false;
+	}
+
+	private static boolean everyAssignmentRowHasResultBinding(BindingSetAssignment assignment) {
+		boolean sawRow = false;
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			sawRow = true;
+			if (bindingSet.getBindingNames().isEmpty()) {
+				return false;
+			}
+		}
+		return sawRow;
+	}
+
+	private static boolean isResultBinding(Var var) {
+		return var != null && !var.isConstant();
 	}
 
 	private static boolean hasSafeStructuralFingerprint(TupleExpr tupleExpr) {

@@ -29,6 +29,23 @@ import org.junit.jupiter.api.Test;
 
 class MinusQueryEvaluationStepTest {
 	@Test
+	void emptyLeftDoesNotEvaluateRight() {
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+		};
+
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 10);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(drain(iteration)).isEmpty();
+		}
+		assertThat(rightEvaluations).hasValue(0);
+	}
+
+	@Test
 	void materializedRightOverflowFallsBackWithoutLeftRowCorrelation() {
 		String previousLimit = System.setProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY, "1");
 		try {

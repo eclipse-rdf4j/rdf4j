@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.junit.jupiter.api.Test;
 
 class TupleExprIrRoundTripTest {
@@ -84,6 +85,17 @@ class TupleExprIrRoundTripTest {
 		TupleExpr rendered = IrToTupleExpr.convert(TupleExprToIr.convert(filter));
 
 		assertFalse(((Filter) rendered).isVariableScopeChange());
+	}
+
+	@Test
+	void roundTripPreservesStatementPatternConstantFlag() {
+		StatementPattern pattern = new StatementPattern(TupleExprs.createConstVar(VF.createIRI("urn:subject")),
+				new Var("predicate"), new Var("object"));
+
+		TupleExpr rendered = IrToTupleExpr.convert(TupleExprToIr.convert(pattern));
+
+		assertTrue(((StatementPattern) rendered).getSubjectVar().isConstant());
+		assertFalse(((StatementPattern) rendered).getPredicateVar().isConstant());
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {

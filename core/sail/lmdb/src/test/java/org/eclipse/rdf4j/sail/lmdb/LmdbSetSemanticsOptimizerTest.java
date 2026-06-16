@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -102,6 +104,24 @@ class LmdbSetSemanticsOptimizerTest {
 
 		Distinct distinct = assertInstanceOf(Distinct.class, root.getArg(), () -> root.toString());
 		assertInstanceOf(EmptySet.class, distinct.getArg(), () -> root.toString());
+	}
+
+	@Test
+	void keepsDifferenceOfEmptyDomainSubtreeUnderDistinct() {
+		SingletonSet singleton = new SingletonSet();
+		QueryRoot root = optimizeBeforeSketch(new Distinct(new Difference(singleton, singleton.clone())));
+
+		Distinct distinct = assertInstanceOf(Distinct.class, root.getArg(), () -> root.toString());
+		assertInstanceOf(Difference.class, distinct.getArg(), () -> root.toString());
+	}
+
+	@Test
+	void keepsDifferenceOfConstantStatementPatternUnderDistinct() {
+		StatementPattern pattern = constantStatementPattern("s", "p", "o");
+		QueryRoot root = optimizeBeforeSketch(new Distinct(new Difference(pattern, pattern.clone())));
+
+		Distinct distinct = assertInstanceOf(Distinct.class, root.getArg(), () -> root.toString());
+		assertInstanceOf(Difference.class, distinct.getArg(), () -> root.toString());
 	}
 
 	@Test
@@ -227,6 +247,12 @@ class LmdbSetSemanticsOptimizerTest {
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
+	}
+
+	private static StatementPattern constantStatementPattern(String subject, String predicate, String object) {
+		return new StatementPattern(TupleExprs.createConstVar(VF.createIRI("urn:" + subject)),
+				TupleExprs.createConstVar(VF.createIRI("urn:" + predicate)),
+				TupleExprs.createConstVar(VF.createIRI("urn:" + object)));
 	}
 
 	private static BindingSetAssignment values(String bindingName, String... values) {

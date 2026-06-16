@@ -109,7 +109,7 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 		}
 	}
 
-	record VarTerm(String name, BindingSymbol symbol, Value value, boolean anonymous) {
+	record VarTerm(String name, BindingSymbol symbol, Value value, boolean anonymous, boolean constant) {
 		public VarTerm {
 			if (symbol == null && value == null && (name == null || name.isBlank())) {
 				throw new IllegalArgumentException("a variable term needs a symbol, a value, or a preserved name");
@@ -121,11 +121,7 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 			Objects.requireNonNull(universe, "universe");
 			Value value = var.hasValue() ? var.getValue() : null;
 			BindingSymbol symbol = value == null ? universe.intern(var.getName()) : null;
-			return new VarTerm(var.getName(), symbol, value, var.isAnonymous());
-		}
-
-		public boolean constant() {
-			return value != null;
+			return new VarTerm(var.getName(), symbol, value, var.isAnonymous(), var.isConstant());
 		}
 
 		public Var asVar() {
@@ -133,7 +129,7 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 			if (varName == null || varName.isBlank()) {
 				varName = "_const_ir";
 			}
-			return value == null ? Var.of(varName, anonymous) : Var.of(varName, value, anonymous);
+			return value == null ? Var.of(varName, anonymous) : Var.of(varName, value, anonymous, constant);
 		}
 	}
 
