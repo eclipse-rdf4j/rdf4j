@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CP_COMPACT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -34,6 +35,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_copy2;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
@@ -54,6 +56,8 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -1840,6 +1844,16 @@ class ValueStore extends AbstractValueFactory {
 
 	public void rollback() throws IOException {
 		endTransaction(false, false);
+	}
+
+	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
+		Files.createDirectories(targetDir);
+		txnLock.readLock().lock();
+		try {
+			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+		} finally {
+			txnLock.readLock().unlock();
+		}
 	}
 
 	/**
