@@ -23,6 +23,7 @@ import static org.lwjgl.system.MemoryUtil.memAlloc;
 import static org.lwjgl.system.MemoryUtil.memFree;
 import static org.lwjgl.system.MemoryUtil.memGetByte;
 import static org.lwjgl.util.lmdb.LMDB.MDB_APPEND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CP_COMPACT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -49,6 +50,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_copy2;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
@@ -549,6 +551,7 @@ class TripleStore implements Closeable {
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
+	private volatile long lastCommittedTxnId;
 	private final AtomicLong mappingGeneration = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
@@ -799,6 +802,7 @@ class TripleStore implements Closeable {
 			cleanupAfterInitializationFailure(e);
 			throw e;
 		}
+		lastCommittedTxnId = getCurrentCommittedTransactionId();
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -2392,6 +2396,20 @@ class TripleStore implements Closeable {
 			memFree(data);
 		}
 	}
+
+	long getCurrentCommittedTransactionId() throws IOException {
+		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
+	}
+
+	long getLastCommittedTxnId() {
+		return lastCommittedTxnId;
+	}
+
+	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
+		Files.createDirectories(targetDir);
+		E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+	}
+
 
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
 		return txnManager.doWith((stack, txn) -> {
@@ -8006,6 +8024,7 @@ class TripleStore implements Closeable {
 								lockManager.unlockWrite(stamp);
 							}
 							if (result == MDB_SUCCESS) {
+								lastCommittedTxnId = getCurrentCommittedTransactionId();
 								break;
 							}
 							if (result != MDB_MAP_FULL || !autoGrow) {
