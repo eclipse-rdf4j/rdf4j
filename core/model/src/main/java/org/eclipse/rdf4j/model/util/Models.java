@@ -832,7 +832,7 @@ public class Models {
 	 */
 	@Experimental
 	public static void convertRDF12ReificationToRDF11(ValueFactory vf, Model model, Consumer<Statement> consumer) {
-		model.forEach(st -> Statements.convertRDF12ReificationToRDF11(vf, st, consumer));
+		model.forEach(st -> Statements.convertRDF12ToStandardReification(vf, st, consumer));
 	}
 
 	/**
