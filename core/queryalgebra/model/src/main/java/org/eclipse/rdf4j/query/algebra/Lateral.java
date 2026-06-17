@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -19,6 +20,8 @@ import java.util.Set;
  */
 public class Lateral extends BinaryTupleOperator {
 
+	private Set<String> rightInputBindingNames = Set.of();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -27,12 +30,25 @@ public class Lateral extends BinaryTupleOperator {
 	}
 
 	public Lateral(TupleExpr leftArg, TupleExpr rightArg) {
+		this(leftArg, rightArg, leftArg.getBindingNames());
+	}
+
+	public Lateral(TupleExpr leftArg, TupleExpr rightArg, Set<String> rightInputBindingNames) {
 		super(leftArg, rightArg);
+		setRightInputBindingNames(rightInputBindingNames);
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	public Set<String> getRightInputBindingNames() {
+		return rightInputBindingNames;
+	}
+
+	public void setRightInputBindingNames(Set<String> rightInputBindingNames) {
+		this.rightInputBindingNames = Collections.unmodifiableSet(new LinkedHashSet<>(rightInputBindingNames));
+	}
 
 	@Override
 	public Set<String> getBindingNames() {
@@ -62,15 +78,13 @@ public class Lateral extends BinaryTupleOperator {
 
 	@Override
 	public boolean equals(Object other) {
-		if (other instanceof Lateral && super.equals(other)) {
-			return true;
-		}
-		return false;
+		return other instanceof Lateral && super.equals(other)
+				&& rightInputBindingNames.equals(((Lateral) other).rightInputBindingNames);
 	}
 
 	@Override
 	public int hashCode() {
-		return super.hashCode() ^ "Lateral".hashCode();
+		return super.hashCode() ^ "Lateral".hashCode() ^ rightInputBindingNames.hashCode();
 	}
 
 	@Override

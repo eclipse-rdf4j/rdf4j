@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -264,6 +265,28 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
 	}
 
+	@Test
+	public void keepsLateralBeforeFollowingJoinArgument() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?s ex:pExpensive ?o .",
+				"  LATERAL { ?s ex:pLateral ?l . }",
+				"  ?z ex:pCheap ?cheap .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new LateralBarrierStatistics(), new EmptyTripleSource());
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		optimizer.optimize(root, null, null);
+
+		JoinFinder joinFinder = new JoinFinder();
+		root.visit(joinFinder);
+		Join join = joinFinder.getJoin();
+
+		assertThat(join.getLeftArg()).isInstanceOf(Lateral.class);
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
@@ -395,6 +418,31 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				if (predicateVar != null && predicateVar.hasValue()) {
 					return predicateVar.getValue().stringValue();
 				}
+			}
+			return null;
+		}
+	}
+
+	private static final class LateralBarrierStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Lateral) {
+				return 1000;
+			}
+			if (expr instanceof StatementPattern pattern) {
+				String predicate = predicate(pattern);
+				if ("ex:pCheap".equals(predicate)) {
+					return 1;
+				}
+				return 100;
+			}
+			return super.getCardinality(expr);
+		}
+
+		private String predicate(StatementPattern pattern) {
+			Var predicateVar = pattern.getPredicateVar();
+			if (predicateVar != null && predicateVar.hasValue()) {
+				return predicateVar.getValue().stringValue();
 			}
 			return null;
 		}

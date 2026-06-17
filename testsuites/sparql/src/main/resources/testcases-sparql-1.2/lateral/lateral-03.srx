@@ -21,10 +21,5 @@
 			<binding name="o"><uri>http://example.org/object2</uri></binding>
 			<binding name="alt"><literal>Alt 2</literal></binding>
 		</result>
-		<result>
-			<binding name="s"><uri>http://example.org/subject3</uri></binding>
-			<binding name="o"><uri>http://example.org/object3</uri></binding>
-		</result>
 	</results>
 </sparql>
-

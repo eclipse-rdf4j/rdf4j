@@ -10,11 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * Lateral join iterator.
@@ -31,35 +36,42 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 	private final QueryEvaluationStep preparedRight;
 
+	private final Set<String> rightInputBindingNames;
+
+	private BindingSet currentLeftBindings;
+
 	public LateralIterator(QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep preparedRight, BindingSet bindings) throws QueryEvaluationException {
+			QueryEvaluationStep preparedRight, BindingSet bindings, Set<String> rightInputBindingNames)
+			throws QueryEvaluationException {
 		leftIter = leftPrepared.evaluate(bindings);
 		this.preparedRight = preparedRight;
+		this.rightInputBindingNames = rightInputBindingNames;
 	}
 
-	private LateralIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight)
-			throws QueryEvaluationException {
+	private LateralIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight,
+			Set<String> rightInputBindingNames) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.preparedRight = preparedRight;
+		this.rightInputBindingNames = rightInputBindingNames;
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep preparedRight, BindingSet bindings) {
+			QueryEvaluationStep preparedRight, BindingSet bindings, Set<String> rightInputBindingNames) {
 		CloseableIteration<BindingSet> leftIter = leftPrepared.evaluate(bindings);
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		}
 
-		return new LateralIterator(leftIter, preparedRight);
+		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames);
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(CloseableIteration<BindingSet> leftIter,
-			QueryEvaluationStep preparedRight) {
+			QueryEvaluationStep preparedRight, Set<String> rightInputBindingNames) {
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		}
 
-		return new LateralIterator(leftIter, preparedRight);
+		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames);
 	}
 
 	/*---------*
@@ -68,24 +80,74 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		if (rightIter != null) {
-			if (rightIter.hasNext()) {
-				return rightIter.next();
-			} else {
-				rightIter.close();
+		while (rightIter != null) {
+			while (rightIter.hasNext()) {
+				BindingSet joined = merge(currentLeftBindings, rightIter.next());
+				if (joined != null) {
+					return joined;
+				}
 			}
+			rightIter.close();
+			rightIter = null;
 		}
 
 		while (leftIter.hasNext()) {
-			rightIter = preparedRight.evaluate(leftIter.next());
-			if (rightIter.hasNext()) {
-				return rightIter.next();
-			} else {
+			currentLeftBindings = leftIter.next();
+			rightIter = preparedRight.evaluate(filterRightInput(currentLeftBindings));
+			while (rightIter.hasNext()) {
+				BindingSet joined = merge(currentLeftBindings, rightIter.next());
+				if (joined != null) {
+					return joined;
+				}
+			}
+			if (rightIter != null) {
 				rightIter.close();
+				rightIter = null;
 			}
 		}
 
 		return null;
+	}
+
+	private BindingSet filterRightInput(BindingSet bindings) {
+		if (rightInputBindingNames.isEmpty()) {
+			return EmptyBindingSet.getInstance();
+		}
+
+		boolean allBindingsAllowed = true;
+		for (String bindingName : bindings.getBindingNames()) {
+			if (!rightInputBindingNames.contains(bindingName)) {
+				allBindingsAllowed = false;
+				break;
+			}
+		}
+		if (allBindingsAllowed) {
+			return bindings;
+		}
+
+		QueryBindingSet filtered = new QueryBindingSet(Math.min(bindings.size(), rightInputBindingNames.size()));
+		for (String bindingName : rightInputBindingNames) {
+			Binding binding = bindings.getBinding(bindingName);
+			if (binding != null) {
+				filtered.addBinding(binding);
+			}
+		}
+		return filtered;
+	}
+
+	private static BindingSet merge(BindingSet leftBindings, BindingSet rightBindings) {
+		if (!leftBindings.isCompatible(rightBindings)) {
+			return null;
+		}
+
+		QueryBindingSet merged = new QueryBindingSet(leftBindings.size() + rightBindings.size());
+		merged.addAll(leftBindings);
+		for (Binding binding : rightBindings) {
+			if (!merged.hasBinding(binding.getName())) {
+				merged.addBinding(binding);
+			}
+		}
+		return merged;
 	}
 
 	@Override

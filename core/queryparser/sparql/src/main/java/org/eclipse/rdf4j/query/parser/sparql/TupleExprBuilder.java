@@ -15,8 +15,10 @@ import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.OBJECT;
 import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.PREDICATE;
 import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.SUBJECT;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -177,6 +179,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	protected ValueFactory valueFactory;
 
 	GraphPattern graphPattern = new GraphPattern();
+
+	private final Deque<Set<String>> lateralLeftBindingNames = new ArrayDeque<>();
 
 	/*--------------*
 	 * Constructors *
@@ -574,6 +578,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 			String alias = projElemNode.getAlias();
 			if (alias != null) {
+				verifyLateralAssignment(alias, "projection alias");
+
 				// aliased projection element
 				if (aliasesInProjection.contains(alias)) {
 					throw new VisitorException("duplicate use of alias '" + alias + "' in projection.");
@@ -2277,6 +2283,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		bsa.setBindingNames(bindingNames);
+		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
 		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
@@ -2308,6 +2315,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		bsa.setBindingNames(bindingNames);
+		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
 		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
@@ -2598,6 +2606,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// name to bind the expression outcome to
 		Node aliasNode = node.jjtGetChild(1);
 		String alias = ((ASTVar) aliasNode).getName();
+		verifyLateralAssignment(alias, "BIND clause alias");
 
 		Extension extension = new Extension();
 		extension.addElement(new ExtensionElem(ve.clone(), alias));
@@ -3090,17 +3099,42 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Materialize the graph pattern built so far as the left argument
 		TupleExpr leftArg = graphPattern.buildTupleExpr();
+		Set<String> leftBindingNames = new LinkedHashSet<>(leftArg.getBindingNames());
 
 		// Build the right argument in a new graph pattern (inherits context/scope)
 		graphPattern = new GraphPattern(parentGP);
-		node.jjtGetChild(0).jjtAccept(this, null);
-		TupleExpr rightArg = graphPattern.buildTupleExpr();
+		Node rightNode = node.jjtGetChild(0);
+		lateralLeftBindingNames.push(leftBindingNames);
+		TupleExpr rightArg;
+		try {
+			rightNode.jjtAccept(this, null);
+			rightArg = graphPattern.buildTupleExpr();
+		} finally {
+			lateralLeftBindingNames.pop();
+		}
+
+		Set<String> rightInputBindingNames = new LinkedHashSet<>(leftBindingNames);
+		if (rightNode instanceof ASTSelectQuery) {
+			rightInputBindingNames.retainAll(rightArg.getBindingNames());
+		}
 
 		// Reset: subsequent patterns should join with the LATERAL result, not re-join the left arg again
 		parentGP = new GraphPattern(parentGP);
-		parentGP.addRequiredTE(new Lateral(leftArg, rightArg));
+		parentGP.addRequiredTE(new Lateral(leftArg, rightArg, rightInputBindingNames));
 		graphPattern = parentGP;
 
 		return null;
+	}
+
+	private void verifyLateralAssignments(Set<String> aliases, String assignmentType) throws VisitorException {
+		for (String alias : aliases) {
+			verifyLateralAssignment(alias, assignmentType);
+		}
+	}
+
+	private void verifyLateralAssignment(String alias, String assignmentType) throws VisitorException {
+		if (!lateralLeftBindingNames.isEmpty() && lateralLeftBindingNames.peek().contains(alias)) {
+			throw new VisitorException(assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+		}
 	}
 }

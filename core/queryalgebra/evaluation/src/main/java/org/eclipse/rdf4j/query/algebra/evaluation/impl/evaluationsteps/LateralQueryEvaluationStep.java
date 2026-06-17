@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -21,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LateralIterator;
 public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep left;
 	private final QueryEvaluationStep right;
-	private final Lateral lateral;
+	private final Set<String> rightInputBindingNames;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, Lateral lateral,
 			QueryEvaluationContext context) {
@@ -33,7 +35,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 	public LateralQueryEvaluationStep(QueryEvaluationStep left, QueryEvaluationStep right, Lateral lateral) {
 		this.left = left;
 		this.right = right;
-		this.lateral = lateral;
+		this.rightInputBindingNames = lateral.getRightInputBindingNames();
 	}
 
 	@Override
@@ -42,6 +44,6 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		CloseableIteration<BindingSet> leftResults = left.evaluate(bindings);
 
 		// For each left result, evaluate right side with injected bindings and union all results
-		return LateralIterator.getInstance(leftResults, right);
+		return LateralIterator.getInstance(leftResults, right, rightInputBindingNames);
 	}
 }
