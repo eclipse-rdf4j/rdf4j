@@ -1,3 +1,13 @@
+/*******************************************************************************
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.ArrayList;
@@ -16,7 +26,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  * A join group around a {@link TripleRefStatementPattern}: besides the {@link TripleRefStatementPattern} it contains
  * the list of {@link StatementPattern} sharing the same subject (typically a blank node).
  *
- * {@link TripleRefJoinGroup} are exclusive to a single {@link StatementSource}.
+ * {@link TripleRefJoinGroup} can be associated to multiple {@link StatementSource}s, where on each it gets executed in
+ * a single expression.
  */
 public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTupleExpr {
 

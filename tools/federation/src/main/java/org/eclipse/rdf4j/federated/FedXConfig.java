@@ -537,9 +537,9 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Whether the support for RDF 1.2 triple term evaluation is enabled not
+	 * Whether the support for RDF 1.2 triple term evaluation is enabled or not
 	 *
-	 * @return
+	 * @return whether triple ref support is enabled
 	 */
 	public boolean isEnableTripleRefSupport() {
 		return this.enableTripleRefSupport;
@@ -551,7 +551,7 @@ public class FedXConfig {
 	 *
 	 * @param flag to enable RDF 1.2 triple term support.
 	 * @return the current config
-	 * @see #getEn
+	 * @see #isEnableTripleRefSupport()
 	 */
 	public FedXConfig withEnableTripleRefSupport(boolean flag) {
 		this.enableTripleRefSupport = flag;

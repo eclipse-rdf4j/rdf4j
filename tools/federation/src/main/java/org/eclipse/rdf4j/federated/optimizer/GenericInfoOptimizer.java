@@ -135,7 +135,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		/*
 		 * Optimization task:
 		 *
-		 * - Replace joins with a TripleRef to FedXTripleTermStatementPattern (recursively) - Collect all join arguments
+		 * - Replace joins with a TripleRef to TripleRefStatementPattern (recursively) - Collect all join arguments
 		 * recursively and create the NJoin structure for easier join order optimization
 		 */
 

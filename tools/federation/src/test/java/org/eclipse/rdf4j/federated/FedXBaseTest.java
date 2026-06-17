@@ -148,8 +148,8 @@ public abstract class FedXBaseTest {
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 
 		// comparison of anon bnode variables
-		expectedQueryPlan = expectedQueryPlan.replaceAll("name=_anon_.*,", "name=_anon_");
-		actualQueryPlan = actualQueryPlan.replaceAll("name=_anon_.*,", "name=_anon_");
+		expectedQueryPlan = expectedQueryPlan.replaceAll("name=_anon_[^,]*,", "name=_anon_");
+		actualQueryPlan = actualQueryPlan.replaceAll("name=_anon_[^,]*,", "name=_anon_");
 
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
 	}
