@@ -12,6 +12,9 @@
     (
     :lateral-01
     :lateral-02
+    :lateral-03
+    :lateral-04
+    :lateral-05
 ) .
 
 :lateral-01 rdf:type mf:QueryEvaluationTest ;
@@ -28,6 +31,33 @@
 	mf:feature sparql:lateral ;
     mf:action
          [ qt:query  <lateral-02.rq> ;
-           qt:data   <data.ttl> ] ;
+            qt:data   <data.ttl> ] ;
     mf:result  <lateral-02.srx>
+    .
+
+:lateral-03 rdf:type mf:QueryEvaluationTest ;
+	mf:name "LATERAL join with alternative values" ;
+	mf:feature sparql:lateral ;
+    mf:action
+         [ qt:query  <lateral-03.rq> ;
+            qt:data   <data.ttl> ] ;
+    mf:result  <lateral-03.srx>
+    .
+
+:lateral-04 rdf:type mf:QueryEvaluationTest ;
+	mf:name "LATERAL join with union branch alternatives" ;
+	mf:feature sparql:lateral ;
+    mf:action
+         [ qt:query  <lateral-04.rq> ;
+            qt:data   <data.ttl> ] ;
+    mf:result  <lateral-04.srx>
+    .
+
+:lateral-05 rdf:type mf:QueryEvaluationTest ;
+	mf:name "LATERAL join filter inside subquery" ;
+	mf:feature sparql:lateral ;
+    mf:action
+         [ qt:query  <lateral-05.rq> ;
+            qt:data   <data.ttl> ] ;
+    mf:result  <lateral-05.srx>
     .

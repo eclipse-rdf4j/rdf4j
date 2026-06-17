@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
@@ -21,6 +22,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -146,8 +148,8 @@ public class LateralTest extends AbstractComplianceTest {
 			assertNotNull(result);
 
 			List<BindingSet> results = QueryResults.asList(result);
-			// Should have 4 results: subject1 with 2 alternatives, subject2 with 1,
-			// subject3 with none
+			// Should have 3 results: subject1 with 2 alternatives, subject2 with 1;
+			// subject3 has no alternatives so produces no solutions
 			assertEquals(3, results.size());
 
 		} catch (QueryEvaluationException e) {
@@ -236,12 +238,144 @@ public class LateralTest extends AbstractComplianceTest {
 		}
 	}
 
+	private void testLateralParseErrorOnRebindingVariable(RepositoryConnection conn) {
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "\n"
+				+ "SELECT * {\n"
+				+ "   ?s ex:predicate ?o\n"
+				+ "   LATERAL {\n"
+				+ "      ?s ex:alternative ?alt\n"
+				+ "      BIND(\"rebinding\" AS ?alt)\n"
+				+ "   }\n"
+				+ "}\n";
+
+		assertThrows(MalformedQueryException.class, () -> conn.prepareTupleQuery(QueryLanguage.SPARQL, query));
+	}
+
+	private void testLateralUnboundVariableWithCoalesce(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "\n"
+				+ "ex:subject1 ex:predicate ex:object1 .\n"
+				+ "ex:subject2 ex:predicate ex:object2 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "\n"
+				+ "SELECT * {\n"
+				+ "   ?s ex:predicate ?o\n"
+				+ "   LATERAL {\n"
+				+ "      VALUES ?alt { UNDEF }\n"
+				+ "   }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(2, results.size());
+			long unboundAltRows = results.stream()
+					.filter(bs -> !bs.hasBinding("alt"))
+					.count();
+			assertEquals(2, unboundAltRows);
+
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testLateralComplexUnionInteraction(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "\n"
+				+ "ex:s1 ex:p ex:o1 .\n"
+				+ "ex:s1 ex:related ex:r1 .\n"
+				+ "ex:r1 ex:data \"data1\" .\n"
+				+ "ex:r1 ex:rank 1 .\n"
+				+ "\n"
+				+ "ex:s2 ex:p ex:o2 .\n"
+				+ "ex:s2 ex:related ex:r2 .\n"
+				+ "ex:r2 ex:data \"data2\" .\n"
+				+ "\n"
+				+ "ex:s3 ex:p ex:o3 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "\n"
+				+ "SELECT * {\n"
+				+ "   ?s ex:p ?o\n"
+				+ "   LATERAL {\n"
+				+ "      { ?s ex:related ?related . ?related ex:data ?data }\n"
+				+ "      UNION\n"
+				+ "      { ?s ex:related ?related . OPTIONAL { ?related ex:rank ?rank } FILTER(BOUND(?rank)) }\n"
+				+ "   }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(3, results.size());
+			long ranked = results.stream().filter(bs -> bs.hasBinding("rank")).count();
+			assertEquals(1, ranked);
+
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	private void testLateralLargeDatasetCorrelation(RepositoryConnection conn) throws Exception {
+		StringBuilder data = new StringBuilder("@prefix ex: <http://example.org/> .\n")
+				.append("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\n");
+
+		int datasetSize = 250;
+		for (int i = 1; i <= datasetSize; i++) {
+			data.append("ex:subject").append(i).append(" ex:predicate ex:object").append(i).append(" .\n");
+			data.append("ex:subject").append(i).append(" rdfs:label \"Label-").append(i).append("-A\" .\n");
+			data.append("ex:subject").append(i).append(" rdfs:label \"Label-").append(i).append("-B\" .\n");
+		}
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "\n"
+				+ "SELECT (COUNT(*) AS ?count) {\n"
+				+ "   ?s ex:predicate ?o\n"
+				+ "   LATERAL {\n"
+				+ "      ?s rdfs:label ?label\n"
+				+ "      FILTER(STRENDS(STR(?label), \"-A\"))\n"
+				+ "   }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data.toString()), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			assertNotNull(result);
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(1, results.size());
+			assertThat(results.get(0).getValue("count").stringValue()).isEqualTo(String.valueOf(datasetSize));
+
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("LateralBasic", this::testLateralBasic),
 				makeTest("LateralWithOptional", this::testLateralWithOptional),
 				makeTest("LateralMultipleResults", this::testLateralMultipleResults),
 				makeTest("LateralWithFilter", this::testLateralWithFilter),
-				makeTest("LateralVariableScoping", this::testLateralVariableScoping));
+				makeTest("LateralVariableScoping", this::testLateralVariableScoping),
+				makeTest("LateralParseErrorOnRebindingVariable", this::testLateralParseErrorOnRebindingVariable),
+				makeTest("LateralUnboundVariableWithCoalesce", this::testLateralUnboundVariableWithCoalesce),
+				makeTest("LateralComplexUnionInteraction", this::testLateralComplexUnionInteraction),
+				makeTest("LateralLargeDatasetCorrelation", this::testLateralLargeDatasetCorrelation));
 	}
 }

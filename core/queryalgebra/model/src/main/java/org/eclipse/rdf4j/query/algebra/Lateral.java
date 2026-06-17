@@ -44,7 +44,10 @@ public class Lateral extends BinaryTupleOperator {
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		return getLeftArg().getAssuredBindingNames();
+		Set<String> bindingNames = new LinkedHashSet<>(16);
+		bindingNames.addAll(getLeftArg().getAssuredBindingNames());
+		bindingNames.addAll(getRightArg().getAssuredBindingNames());
+		return bindingNames;
 	}
 
 	@Override
