@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.BNode;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -470,6 +473,34 @@ public class QueryStringUtil {
 		return res.toString();
 	}
 
+	public static String selectQueryStringTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup, BindingSet bindings,
+			Dataset dataset) {
+
+		Set<String> varNames = new HashSet<>();
+
+		StringBuilder body = new StringBuilder();
+		body.append(constructStatement(tripleRefJoinGroup.getTripleRefStatementPattern(), varNames, bindings));
+		for (var stmt : tripleRefJoinGroup.getStatementPatterns()) {
+			body.append(constructStatement(stmt, varNames, bindings));
+		}
+
+		StringBuilder res = new StringBuilder();
+
+		res.append("SELECT ");
+
+		for (String var : varNames) {
+			res.append(" ?").append(var);
+		}
+
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
+
+		res.append(body).append(" }");
+
+		return res.toString();
+	}
+
 	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
 			List<BindingSet> bindings) {
 
@@ -641,7 +672,7 @@ public class QueryStringUtil {
 		}
 		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
 		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings).append(" ");
-		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+		appendStmtObjectOrTripleRef(sb, stmt, varNames, bindings);
 
 		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
 			sb.append("} ");
@@ -706,6 +737,29 @@ public class QueryStringUtil {
 		sb.append(" FILTER (?o_").append(_varID).append(" = ").append(objValue).append(" )");
 
 		return sb.toString();
+	}
+
+	protected static StringBuilder appendStmtObjectOrTripleRef(StringBuilder sb, StatementPattern stmt,
+			Set<String> varNames, BindingSet bindings) {
+
+		if (stmt instanceof TripleRefStatementPattern tstmt) {
+			appendTripleRef(sb, tstmt.getTripleRef(), varNames, bindings);
+		} else {
+			sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+		}
+
+		return sb;
+	}
+
+	protected static StringBuilder appendTripleRef(StringBuilder sb, TripleRef tripleRef, Set<String> varNames,
+			BindingSet bindings) {
+
+		sb.append("<<( ");
+		appendVar(sb, tripleRef.getSubjectVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getPredicateVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getObjectVar(), varNames, bindings).append(" ");
+		sb.append(" )>> . ");
+		return sb;
 	}
 
 	/**

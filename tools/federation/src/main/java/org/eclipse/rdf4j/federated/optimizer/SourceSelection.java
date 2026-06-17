@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
@@ -193,13 +194,18 @@ public class SourceSelection {
 			// otherwise: No resource seems to provide results
 
 			if (sources.size() > 1) {
-				StatementSourcePattern stmtNode = new StatementSourcePattern(stmt, queryInfo);
+				var stmtNode = stmt instanceof FedXStatementPattern ? (FedXStatementPattern) stmt
+						: new StatementSourcePattern(stmt, queryInfo);
 				for (StatementSource s : sources) {
 					stmtNode.addStatementSource(s);
 				}
 				stmt.replaceWith(stmtNode);
 			} else if (sources.size() == 1) {
-				stmt.replaceWith(new ExclusiveStatement(stmt, sources.get(0), queryInfo));
+				if (stmt instanceof FedXStatementPattern fstmt) {
+					fstmt.addStatementSource(sources.get(0));
+				} else {
+					stmt.replaceWith(new ExclusiveStatement(stmt, sources.get(0), queryInfo));
+				}
 			} else {
 				if (log.isDebugEnabled()) {
 					log.debug("Statement " + QueryStringUtil.toString(stmt)

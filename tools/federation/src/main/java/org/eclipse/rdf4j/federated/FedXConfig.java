@@ -60,6 +60,11 @@ public class FedXConfig {
 
 	private boolean enableGroupedSourceSelection = true;
 
+	/**
+	 * Enable support for RDF 1.2 triple term queries
+	 */
+	private boolean enableTripleRefSupport = false;
+
 	private String sourceSelectionCacheSpec = null;
 
 	private SourceSelectionCacheFactory sourceSelectionCacheFactory = null;
@@ -530,4 +535,27 @@ public class FedXConfig {
 		this.enableGroupedSourceSelection = flag;
 		return this;
 	}
+
+	/**
+	 * Whether the support for RDF 1.2 triple term evaluation is enabled or not
+	 *
+	 * @return whether triple ref support is enabled
+	 */
+	public boolean isEnableTripleRefSupport() {
+		return this.enableTripleRefSupport;
+	}
+
+	/**
+	 * Enable or disable the support for RDF 1.2 triple term evaluation
+	 *
+	 *
+	 * @param flag to enable RDF 1.2 triple term support.
+	 * @return the current config
+	 * @see #isEnableTripleRefSupport()
+	 */
+	public FedXConfig withEnableTripleRefSupport(boolean flag) {
+		this.enableTripleRefSupport = flag;
+		return this;
+	}
+
 }
