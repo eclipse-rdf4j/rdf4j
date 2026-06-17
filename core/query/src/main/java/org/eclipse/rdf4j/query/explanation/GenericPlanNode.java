@@ -46,7 +46,7 @@ public class GenericPlanNode {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
-	private static final String spoc[] = { "s", "p", "o", "c" };
+	private static final String[] spoc = { "s", "p", "o", "c" };
 
 	private final static String newLine = System.getProperty("line.separator");
 	private static final Pattern OFFSET_PATTERN = Pattern.compile("offset=([0-9]+)");
@@ -191,6 +191,7 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
+	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -206,6 +207,7 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
+	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -237,19 +239,19 @@ public class GenericPlanNode {
 	 * @return time in milliseconds that was used to execute the query
 	 */
 	public Double getTotalTimeActual() {
-		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
-		// (recursively). We need this value to calculate the selfTimeActual.
+		double childTime = getChildTimeActual();
 		if (totalTimeActual == null) {
-			double sum = plans.stream()
-					.map(GenericPlanNode::getTotalTimeActual)
-					.filter(Objects::nonNull)
-					.mapToDouble(d -> d)
-					.sum();
-
-			if (sum > 0) {
-				return sum;
+			// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child
+			// plans (recursively)
+			if (childTime > 0) {
+				return childTime;
 			}
+			return null;
 		}
+		if (childTime > totalTimeActual) {
+			return childTime + totalTimeActual;
+		}
+
 		return totalTimeActual;
 	}
 
@@ -587,15 +589,24 @@ public class GenericPlanNode {
 			return null;
 		}
 
-		double childTime = plans
-				.stream()
-				.map(GenericPlanNode::getTotalTimeActual)
-				.filter(Objects::nonNull)
-				.mapToDouble(t -> t)
-				.sum();
+		double childTime = getChildTimeActual();
+		if (childTime > totalTimeActual) {
+			return totalTimeActual;
+		}
+		return getTotalTimeActual() - childTime;
 
-		return totalTimeActual - childTime;
+	}
 
+	private double getChildTimeActual() {
+		double res = 0;
+		for (GenericPlanNode plan : plans) {
+			Double childTotalTimeActual = plan.getTotalTimeActual();
+			if (childTotalTimeActual != null) {
+				res += childTotalTimeActual;
+			}
+		}
+
+		return res;
 	}
 
 	/**
@@ -703,8 +714,9 @@ public class GenericPlanNode {
 			{
 				String[] split = left.split(newLine);
 				sb.append(start).append(horizontal).append(" ").append(split[0]);
-				if (join)
+				if (join) {
 					sb.append(" [left]");
+				}
 				sb.append(newLine);
 				for (int i = 1; i < split.length; i++) {
 					sb.append(vertical).append("  ").append(split[i]).append(newLine);
@@ -714,8 +726,9 @@ public class GenericPlanNode {
 			{
 				String[] split = right.split(newLine);
 				sb.append(end).append(horizontal).append(" ").append(split[0]);
-				if (join)
+				if (join) {
 					sb.append(" [right]");
+				}
 				sb.append(newLine);
 
 				for (int i = 1; i < split.length; i++) {

@@ -14,6 +14,15 @@
 target/
 */target/
 **/.cache
+**/__pycache__/
+/logs/
+/maven-build.log
+/initial-evidence.txt
+/.verify.log
+/.initial-verify.log
+/*.verify.log
+/tmp/
+/*.trace
 pom.xml.versionsBackup
 dependency-reduced-pom.xml
 
@@ -60,3 +69,4 @@ e2e/test-results
 /.m2_repo_linux_j26/
 /core/sail/lmdb/persistent-lmdb-theme-store/
 /persistent-lmdb-theme-store/
+papers/
