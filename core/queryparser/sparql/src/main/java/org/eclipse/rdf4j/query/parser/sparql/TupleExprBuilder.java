@@ -180,7 +180,21 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	GraphPattern graphPattern = new GraphPattern();
 
-	private final Deque<Set<String>> lateralLeftBindingNames = new ArrayDeque<>();
+	private final Deque<LateralScope> lateralScopes = new ArrayDeque<>();
+
+	private static final class LateralScope {
+
+		private final Set<String> inputBindingNames;
+		private final Set<String> assignmentConflictBindingNames;
+		private boolean verifyAssignments;
+
+		private LateralScope(Set<String> inputBindingNames, Set<String> assignmentConflictBindingNames,
+				boolean verifyAssignments) {
+			this.inputBindingNames = new LinkedHashSet<>(inputBindingNames);
+			this.assignmentConflictBindingNames = new LinkedHashSet<>(assignmentConflictBindingNames);
+			this.verifyAssignments = verifyAssignments;
+		}
+	}
 
 	/*--------------*
 	 * Constructors *
@@ -396,7 +410,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
-		node.getWhereClause().jjtAccept(this, null);
+		boolean previousLateralAssignmentCheck = setLateralAssignmentChecks(false);
+		try {
+			node.getWhereClause().jjtAccept(this, null);
+		} finally {
+			restoreLateralAssignmentChecks(previousLateralAssignmentCheck);
+		}
 		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
 
 		// Apply grouping
@@ -3096,25 +3115,33 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	@Override
 	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
 		GraphPattern parentGP = graphPattern;
+		boolean hasEnclosingLateralScope = !lateralScopes.isEmpty();
 
 		// Materialize the graph pattern built so far as the left argument
 		TupleExpr leftArg = graphPattern.buildTupleExpr();
 		Set<String> leftBindingNames = new LinkedHashSet<>(leftArg.getBindingNames());
+		Set<String> rightInputBindingNames = new LinkedHashSet<>();
+		boolean verifyAssignments = true;
+		if (hasEnclosingLateralScope) {
+			LateralScope enclosingScope = lateralScopes.peek();
+			rightInputBindingNames.addAll(enclosingScope.inputBindingNames);
+			verifyAssignments = enclosingScope.verifyAssignments;
+		}
+		rightInputBindingNames.addAll(leftBindingNames);
 
 		// Build the right argument in a new graph pattern (inherits context/scope)
 		graphPattern = new GraphPattern(parentGP);
-		Node rightNode = node.jjtGetChild(0);
-		lateralLeftBindingNames.push(leftBindingNames);
+		boolean directSubSelect = node.jjtGetNumChildren() == 1 && node.jjtGetChild(0) instanceof ASTSelectQuery;
+		lateralScopes.push(new LateralScope(rightInputBindingNames, rightInputBindingNames, verifyAssignments));
 		TupleExpr rightArg;
 		try {
-			rightNode.jjtAccept(this, null);
+			node.childrenAccept(this, null);
 			rightArg = graphPattern.buildTupleExpr();
 		} finally {
-			lateralLeftBindingNames.pop();
+			lateralScopes.pop();
 		}
 
-		Set<String> rightInputBindingNames = new LinkedHashSet<>(leftBindingNames);
-		if (rightNode instanceof ASTSelectQuery) {
+		if (directSubSelect && !hasEnclosingLateralScope) {
 			rightInputBindingNames.retainAll(rightArg.getBindingNames());
 		}
 
@@ -3133,8 +3160,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private void verifyLateralAssignment(String alias, String assignmentType) throws VisitorException {
-		if (!lateralLeftBindingNames.isEmpty() && lateralLeftBindingNames.peek().contains(alias)) {
-			throw new VisitorException(assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+		if (!lateralScopes.isEmpty()) {
+			LateralScope lateralScope = lateralScopes.peek();
+			if (lateralScope.verifyAssignments && lateralScope.assignmentConflictBindingNames.contains(alias)) {
+				throw new VisitorException(assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+			}
+		}
+	}
+
+	private boolean setLateralAssignmentChecks(boolean verifyAssignments) {
+		if (lateralScopes.isEmpty()) {
+			return true;
+		}
+		LateralScope lateralScope = lateralScopes.peek();
+		boolean previous = lateralScope.verifyAssignments;
+		lateralScope.verifyAssignments = verifyAssignments;
+		return previous;
+	}
+
+	private void restoreLateralAssignmentChecks(boolean verifyAssignments) {
+		if (!lateralScopes.isEmpty()) {
+			lateralScopes.peek().verifyAssignments = verifyAssignments;
 		}
 	}
 }

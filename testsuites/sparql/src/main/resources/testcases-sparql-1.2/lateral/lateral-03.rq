@@ -7,4 +7,3 @@ SELECT * {
       SELECT * { ?s ex:alternative ?alt }
    }
 }
-

@@ -9,4 +9,3 @@ SELECT * {
       {SELECT * { ?s ex:alternative ?alt } LIMIT 1}
    }
 }
-
