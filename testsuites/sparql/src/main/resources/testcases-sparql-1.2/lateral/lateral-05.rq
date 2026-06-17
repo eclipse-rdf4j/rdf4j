@@ -3,7 +3,9 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT * {
    ?s ex:predicate ?o
    LATERAL {
-      SELECT * { ?s rdfs:label ?label } LIMIT 1
-      FILTER(CONTAINS(STR(?label), "1"))
+      SELECT * {
+         ?s rdfs:label ?label .
+         FILTER(CONTAINS(STR(?label), "1"))
+      } LIMIT 1
    }
 }

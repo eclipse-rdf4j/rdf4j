@@ -6,7 +6,6 @@ SELECT * {
    LATERAL {
       {SELECT * { ?s rdfs:label ?label } LIMIT 1}
       UNION
-      {SELECT * { ?s ex:alternative ?alt } LIMIT 1}
+      {SELECT * { ?s ex:alternative ?alt } ORDER BY ?alt LIMIT 1}
    }
 }
-
