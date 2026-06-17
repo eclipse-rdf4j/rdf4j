@@ -34,6 +34,11 @@ public class LmdbStoreSchema {
 	public final static IRI TRIPLE_INDEXES;
 
 	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#tripleTermIndexes</tt>
+	 */
+	public final static IRI TRIPLE_TERM_INDEXES;
+
+	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#tripleDBSize</tt>
 	 */
 	public final static IRI TRIPLE_DB_SIZE;
@@ -132,6 +137,7 @@ public class LmdbStoreSchema {
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
+		TRIPLE_TERM_INDEXES = factory.createIRI(NAMESPACE, "tripleTermIndexes");
 		TRIPLE_DB_SIZE = factory.createIRI(NAMESPACE, "tripleDBSize");
 		FORCE_SYNC = factory.createIRI(NAMESPACE, "forceSync");
 		NO_READAHEAD = factory.createIRI(NAMESPACE, "noReadahead");

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -28,31 +30,108 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Represents statements that can produce results at a some particular endpoints, the statement sources.
- *
- * @author Andreas Schwarte
- *
- * @see StatementSource
+ * A {@link FedXStatementPattern} representing a {@link StatementPattern} together with a {@link TripleRef}, i.e. a
+ * SPARQL / RDF 1.2 triple term expression.
  */
-public class StatementSourcePattern extends FedXStatementPattern {
+public class TripleRefStatementPattern extends FedXStatementPattern {
 
-	private static final long serialVersionUID = 7548505818766482715L;
-
-	protected boolean usePreparedQuery = false;
+	private static final long serialVersionUID = 841877125206379474L;
+	protected final TripleRef tripleRef;
 	protected final FederationContext federationContext;
 
-	public StatementSourcePattern(StatementPattern node, QueryInfo queryInfo) {
+	private Set<String> assuredBindingNames;
+
+	public TripleRefStatementPattern(StatementPattern node, TripleRef tripleRef, QueryInfo queryInfo) {
 		super(node, queryInfo);
+		this.tripleRef = tripleRef;
 		this.federationContext = queryInfo.getFederationContext();
+		refineFreeVars();
+	}
+
+	protected void refineFreeVars() {
+		freeVars.clear();
+
+		// main statement subject
+		if (getSubjectVar().getValue() == null) {
+			freeVars.add(getSubjectVar().getName());
+		}
+
+		// main statement predicate
+		if (getPredicateVar().getValue() == null) {
+			freeVars.add(getPredicateVar().getName());
+		}
+
+		// triple ref subject
+		if (tripleRef.getSubjectVar().getValue() == null) {
+			freeVars.add(tripleRef.getSubjectVar().getName());
+		}
+
+		// triple ref predicate
+		if (tripleRef.getPredicateVar().getValue() == null) {
+			freeVars.add(tripleRef.getPredicateVar().getName());
+		}
+
+		// triple ref object
+		if (tripleRef.getObjectVar().getValue() == null) {
+			freeVars.add(tripleRef.getObjectVar().getName());
+		}
 	}
 
 	@Override
-	public CloseableIteration<BindingSet> evaluate(BindingSet bindings)
-			throws QueryEvaluationException {
+	public Set<String> getAssuredBindingNames() {
+		Set<String> assuredBindingNames = this.assuredBindingNames;
+		if (assuredBindingNames == null) {
+			// take assured binding names as defined for StatementPattern
+			assuredBindingNames = new HashSet<>();
+
+			if (!getSubjectVar().hasValue()) {
+				assuredBindingNames.add(getSubjectVar().getName());
+			}
+			if (!getPredicateVar().hasValue()) {
+				assuredBindingNames.add(getPredicateVar().getName());
+			}
+			if (getContextVar() != null && !getContextVar().hasValue()) {
+				assuredBindingNames.add(getContextVar().getName());
+			}
+
+			// Note: ; the statement's object var is an internal join id
+
+			// include triple term component variables
+			if (!tripleRef.getSubjectVar().hasValue()) {
+				assuredBindingNames.add(tripleRef.getSubjectVar().getName());
+			}
+			if (!tripleRef.getPredicateVar().hasValue()) {
+				assuredBindingNames.add(tripleRef.getPredicateVar().getName());
+			}
+			if (!tripleRef.getObjectVar().hasValue()) {
+				assuredBindingNames.add(tripleRef.getObjectVar().getName());
+			}
+
+			this.assuredBindingNames = assuredBindingNames;
+		}
+		return assuredBindingNames;
+	}
+
+	public TripleRef getTripleRef() {
+		return tripleRef;
+	}
+
+	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+
+		super.visitChildren(visitor);
+
+		tripleRef.visit(visitor);
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) throws QueryEvaluationException {
 
 		WorkerUnionBase<BindingSet> union = null;
 		try {
@@ -67,13 +146,6 @@ public class StatementSourcePattern extends FedXStatementPattern {
 						.getEndpointManager()
 						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
-
-				/*
-				 * Implementation note: for some endpoint types it is much more efficient to use prepared queries as
-				 * there might be some overhead (obsolete optimization) in the native implementation. This is for
-				 * instance the case for SPARQL connections. In contrast for NativeRepositories it is much more
-				 * efficient to use getStatements(subj, pred, obj) instead of evaluating a prepared query.
-				 */
 
 				if (t.usePreparedQuery(this, queryInfo)) {
 
@@ -130,7 +202,6 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 		// if at least one source has statements, we can return this binding set as result
 
-		// XXX do this in parallel for the number of endpoints ?
 		for (StatementSource source : statementSources) {
 			Endpoint ownedEndpoint = queryInfo.getFederationContext()
 					.getEndpointManager()
@@ -143,4 +214,5 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 		return new EmptyIteration<>();
 	}
+
 }

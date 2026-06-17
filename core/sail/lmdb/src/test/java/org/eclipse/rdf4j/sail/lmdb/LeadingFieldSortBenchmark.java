@@ -51,7 +51,7 @@ public class LeadingFieldSortBenchmark {
 
 	private File dataDir;
 	private TripleStore tripleStore;
-	private TripleStore.TripleIndex targetIndex;
+	private TripleIndex targetIndex;
 	private long[] subj;
 	private long[] pred;
 	private long[] obj;
@@ -135,7 +135,7 @@ public class LeadingFieldSortBenchmark {
 	}
 
 	private void initializeScenario() throws Exception {
-		List<TripleStore.TripleIndex> indexes = getIndexes();
+		List<TripleIndex> indexes = getIndexes();
 		switch (pattern) {
 		case "alreadyOrdered":
 			targetIndex = findIndex(indexes, "psoc");
@@ -160,20 +160,20 @@ public class LeadingFieldSortBenchmark {
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<TripleStore.TripleIndex> getIndexes() throws Exception {
+	private List<TripleIndex> getIndexes() throws Exception {
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
-		return (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		return (List<TripleIndex>) indexesField.get(tripleStore);
 	}
 
-	private TripleStore.TripleIndex findIndex(List<TripleStore.TripleIndex> indexes, String fieldSeq) {
+	private TripleIndex findIndex(List<TripleIndex> indexes, String fieldSeq) {
 		return indexes.stream()
 				.filter(index -> fieldSeq.equals(new String(index.getFieldSeq())))
 				.findFirst()
 				.orElseThrow(() -> new IllegalArgumentException("Missing index " + fieldSeq));
 	}
 
-	private int[] stableSortByLeadingField(int[] statementIndices, TripleStore.TripleIndex index) {
+	private int[] stableSortByLeadingField(int[] statementIndices, TripleIndex index) {
 		Integer[] boxed = Arrays.stream(statementIndices).boxed().toArray(Integer[]::new);
 		Arrays.sort(boxed,
 				Comparator.comparingLong((Integer statementIndex) -> leadingFieldValue(index, statementIndex)));
@@ -185,7 +185,7 @@ public class LeadingFieldSortBenchmark {
 		return sorted;
 	}
 
-	private long leadingFieldValue(TripleStore.TripleIndex index, int statementIndex) {
+	private long leadingFieldValue(TripleIndex index, int statementIndex) {
 		switch (index.getFieldSeq()[0]) {
 		case 's':
 			return subj[statementIndex];

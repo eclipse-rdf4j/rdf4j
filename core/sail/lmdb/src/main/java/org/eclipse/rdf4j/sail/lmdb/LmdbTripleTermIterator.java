@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -18,41 +18,31 @@ import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 
 /**
- * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
- * {@link Statement} objects.
+ * An iterator that wraps a RecordIterator containing triple term records and translates these records to
+ * {@link TripleTerm} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+class LmdbTripleTermIterator extends AbstractCloseableIteration<TripleTerm> implements IndexReportingIterator {
 
 	private final RecordIterator recordIt;
 
 	private final ValueStore valueStore;
-	private Statement nextElement;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	private TripleTerm nextElement;
 
 	/**
-	 * Creates a new LmdbStatementIterator.
+	 * Creates a new LmdbTripleTermIterator.
 	 */
-	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
+	public LmdbTripleTermIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	public Statement getNextElement() throws SailException {
+	public TripleTerm getNextElement() throws SailException {
 		try {
 			long[] quad = recordIt.next();
 			if (quad == null) {
@@ -68,13 +58,8 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			long objID = quad[TripleIndex.OBJ_IDX];
 			Value obj = valueStore.getLazyValue(objID);
 
-			Resource context = null;
-			long contextID = quad[TripleIndex.CONTEXT_IDX];
-			if (contextID != 0) {
-				context = (Resource) valueStore.getLazyValue(contextID);
-			}
-
-			return valueStore.createStatement(subj, pred, obj, context);
+			long termID = quad[TripleIndex.CONTEXT_IDX];
+			return new LmdbTripleTerm(valueStore.getRevision(), subj, pred, obj, termID);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
@@ -99,11 +84,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	}
 
 	@Override
-	public final Statement next() {
+	public final TripleTerm next() {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		Statement result = lookAhead();
+		TripleTerm result = lookAhead();
 
 		if (result != null) {
 			nextElement = null;
@@ -118,7 +103,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	 *
 	 * @return The next element, or null if there are no more results.
 	 */
-	private Statement lookAhead() {
+	private TripleTerm lookAhead() {
 		if (nextElement == null) {
 			nextElement = getNextElement();
 

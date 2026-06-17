@@ -225,7 +225,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public BaseDirection getBaseDirection() {
+		init();
 		return baseDirection;
+	}
+
+	public void setBaseDirection(BaseDirection baseDirection) {
+		this.baseDirection = baseDirection;
 	}
 
 	public void setLanguage(String language) {

@@ -72,11 +72,11 @@ class LmdbStoreSketchEstimatorConfigTest {
 	}
 
 	@Test
-	void unsetSketchEstimatorEnabledKeepsHeapThreshold() {
+	void unsetSketchEstimatorEnabledDefaultsToDisabled() {
 		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
 
 		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES - 1)).isFalse();
-		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES)).isTrue();
+		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES)).isFalse();
 	}
 
 	@Test
@@ -95,7 +95,7 @@ class LmdbStoreSketchEstimatorConfigTest {
 
 	@Test
 	void sketchEstimatorThrottleConfigIsAppliedToBackingEstimator(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(true);
 		invokeLongSetter(config, "setSketchEstimatorThrottleEveryN", 7L);
 		invokeLongSetter(config, "setSketchEstimatorThrottleMillis", 11L);
 

@@ -91,12 +91,12 @@ public class StatementsTest {
 		Model reifiedModel = ModelReificationTestHelper.createRDF11ReificationModel();
 
 		Model convertedModel1 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(s, convertedModel1::add));
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ToStandardReification(s, convertedModel1::add));
 		assertTrue("RDF 1.2 conversion to reification with implicit VF",
 				Models.isomorphic(reifiedModel, convertedModel1));
 
 		Model convertedModel2 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(vf, s, convertedModel2::add));
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ToStandardReification(vf, s, convertedModel2::add));
 		assertTrue("RDF 1.2 conversion to reification with explicit VF",
 				Models.isomorphic(reifiedModel, convertedModel2));
 	}
