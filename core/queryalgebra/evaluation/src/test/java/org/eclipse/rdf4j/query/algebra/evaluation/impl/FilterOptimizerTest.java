@@ -327,9 +327,9 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-				break;
-			}
+//			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
+//				break;
+//			}
 		}
 
 		Filter notExistsFilter = findFirst(root, Filter.class,
