@@ -44,6 +44,6 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		CloseableIteration<BindingSet> leftResults = left.evaluate(bindings);
 
 		// For each left result, evaluate right side with injected bindings and union all results
-		return LateralIterator.getInstance(leftResults, right, rightInputBindingNames);
+		return LateralIterator.getInstance(leftResults, right, rightInputBindingNames, bindings);
 	}
 }

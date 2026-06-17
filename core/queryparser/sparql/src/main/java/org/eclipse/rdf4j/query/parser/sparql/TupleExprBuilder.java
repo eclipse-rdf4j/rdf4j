@@ -3118,6 +3118,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		boolean hasEnclosingLateralScope = !lateralScopes.isEmpty();
 
 		// Materialize the graph pattern built so far as the left argument
+		List<ValueExpr> lateralConstraints = graphPattern.removeAllConstraints();
 		TupleExpr leftArg = graphPattern.buildTupleExpr();
 		Set<String> leftBindingNames = new LinkedHashSet<>(leftArg.getBindingNames());
 		Set<String> rightInputBindingNames = new LinkedHashSet<>();
@@ -3148,6 +3149,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// Reset: subsequent patterns should join with the LATERAL result, not re-join the left arg again
 		parentGP = new GraphPattern(parentGP);
 		parentGP.addRequiredTE(new Lateral(leftArg, rightArg, rightInputBindingNames));
+		parentGP.addConstraints(lateralConstraints);
 		graphPattern = parentGP;
 
 		return null;

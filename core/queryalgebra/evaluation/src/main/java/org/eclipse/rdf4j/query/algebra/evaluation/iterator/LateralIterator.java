@@ -38,6 +38,8 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 	private final Set<String> rightInputBindingNames;
 
+	private final BindingSet originalBindings;
+
 	private BindingSet currentLeftBindings;
 
 	public LateralIterator(QueryEvaluationStep leftPrepared,
@@ -46,13 +48,15 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 		leftIter = leftPrepared.evaluate(bindings);
 		this.preparedRight = preparedRight;
 		this.rightInputBindingNames = rightInputBindingNames;
+		this.originalBindings = bindings;
 	}
 
 	private LateralIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight,
-			Set<String> rightInputBindingNames) throws QueryEvaluationException {
+			Set<String> rightInputBindingNames, BindingSet originalBindings) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.preparedRight = preparedRight;
 		this.rightInputBindingNames = rightInputBindingNames;
+		this.originalBindings = originalBindings;
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
@@ -62,16 +66,21 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 			return leftIter;
 		}
 
-		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames);
+		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames, bindings);
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(CloseableIteration<BindingSet> leftIter,
 			QueryEvaluationStep preparedRight, Set<String> rightInputBindingNames) {
+		return getInstance(leftIter, preparedRight, rightInputBindingNames, EmptyBindingSet.getInstance());
+	}
+
+	public static CloseableIteration<BindingSet> getInstance(CloseableIteration<BindingSet> leftIter,
+			QueryEvaluationStep preparedRight, Set<String> rightInputBindingNames, BindingSet originalBindings) {
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		}
 
-		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames);
+		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames, originalBindings);
 	}
 
 	/*---------*
@@ -111,9 +120,25 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 	private BindingSet filterRightInput(BindingSet bindings) {
 		if (rightInputBindingNames.isEmpty()) {
-			return EmptyBindingSet.getInstance();
+			return originalBindings.isEmpty() ? EmptyBindingSet.getInstance() : originalBindings;
 		}
 
+		if (originalBindings.isEmpty()) {
+			return filterLateralInputBindings(bindings);
+		}
+
+		QueryBindingSet filtered = new QueryBindingSet(originalBindings.size() + rightInputBindingNames.size());
+		filtered.addAll(originalBindings);
+		for (String bindingName : rightInputBindingNames) {
+			Binding binding = bindings.getBinding(bindingName);
+			if (binding != null && !filtered.hasBinding(bindingName)) {
+				filtered.addBinding(binding);
+			}
+		}
+		return filtered;
+	}
+
+	private BindingSet filterLateralInputBindings(BindingSet bindings) {
 		boolean allBindingsAllowed = true;
 		for (String bindingName : bindings.getBindingNames()) {
 			if (!rightInputBindingNames.contains(bindingName)) {
