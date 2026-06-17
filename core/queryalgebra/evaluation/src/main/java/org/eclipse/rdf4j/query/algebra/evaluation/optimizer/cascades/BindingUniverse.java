@@ -99,7 +99,7 @@ public final class BindingUniverse {
 			}
 			words[wordIndex] |= 1L << symbol.id();
 		}
-		return BindingMask.of(words);
+		return BindingMask.fromOwned(words);
 	}
 
 	public Set<String> names(BindingMask mask) {

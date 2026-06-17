@@ -170,9 +170,30 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 		if (samples == null || lengths == null || sampleCount <= 0 || limit <= 0) {
 			return new long[0];
 		}
-		long[] current = Arrays.copyOf(samples[0], Math.min(lengths[0], limit));
-		int currentLen = current.length;
-		for (int i = 1; i < sampleCount && currentLen > 0; i++) {
+		int seedIndex = 0;
+		int seedLen = Math.min(lengths[0], limit);
+		if (seedLen <= 0) {
+			return new long[0];
+		}
+		for (int i = 1; i < sampleCount; i++) {
+			final int len = Math.min(lengths[i], limit);
+			if (len <= 0) {
+				return new long[0];
+			}
+			if (len < seedLen) {
+				seedIndex = i;
+				seedLen = len;
+			}
+		}
+		if (sampleCount == 1) {
+			return Arrays.copyOf(samples[seedIndex], seedLen);
+		}
+		long[] current = samples[seedIndex];
+		int currentLen = seedLen;
+		for (int i = 0; i < sampleCount && currentLen > 0; i++) {
+			if (i == seedIndex) {
+				continue;
+			}
 			current = intersectTwo(current, currentLen, samples[i], lengths[i], limit);
 			currentLen = current.length;
 		}

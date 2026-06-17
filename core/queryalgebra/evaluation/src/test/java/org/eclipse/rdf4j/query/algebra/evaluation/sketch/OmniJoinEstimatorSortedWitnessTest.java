@@ -133,6 +133,42 @@ class OmniJoinEstimatorSortedWitnessTest {
 	}
 
 	@Test
+	void exactDirectedJoinMergesManyShortSortedOutputPostings() {
+		OmniJoinEstimator estimator = newEstimator();
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
+		long predicate = OmniJoinEstimator.stableHash("knows");
+		long sharedOutput = 7L;
+		long[] inputHashes = new long[40];
+		double[] inputWeights = new double[40];
+		double sharedWeight = 0.0d;
+		for (int i = 0; i < inputHashes.length; i++) {
+			long source = i + 1L;
+			double inputWeight = i + 1.0d;
+			inputHashes[i] = source;
+			inputWeights[i] = inputWeight;
+			sharedWeight += inputWeight;
+			relation.updatePredicate(predicate, source, sharedOutput, 1.0d);
+			relation.updatePredicate(predicate, source, 100L + i, 1.0d);
+		}
+
+		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(inputHashes, inputWeights, inputHashes.length,
+				1.0d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 1.0d);
+
+		OmniWitnessSet output = estimator.probeJoinPredicate(input, relation, predicate,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+
+		assertSortedUnsigned(output);
+		assertEquals(41, output.retainedWitnessCount());
+		assertEquals(sharedOutput, output.hashAt(0));
+		assertEquals(sharedWeight, output.weightAt(0), 0.0d);
+		assertEquals(100L, output.hashAt(1));
+		assertEquals(1.0d, output.weightAt(1), 0.0d);
+		assertEquals(139L, output.hashAt(40));
+		assertEquals(40.0d, output.weightAt(40), 0.0d);
+		assertEquals(sharedWeight * 2.0d, estimator.estimateRows(output), 0.0d);
+	}
+
+	@Test
 	void accumulatorBuildsSortedWitnessSetAndCombinesDuplicates() {
 		OmniWitnessAccumulator accumulator = OmniWitnessAccumulator.unordered();
 

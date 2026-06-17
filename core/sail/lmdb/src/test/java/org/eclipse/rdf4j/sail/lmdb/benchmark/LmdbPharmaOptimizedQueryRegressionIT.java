@@ -51,6 +51,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final Pattern DIRECT_LOOKUP_ACCESS_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedAccessWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern PLANNED_WORK_ROWS = Pattern.compile("plannedWorkRows=([^,\\n]+)");
 
 	@Test
 	@Timeout(120)
@@ -220,6 +221,43 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
+	@Test
+	@Timeout(120)
+	void pharmaQ7OptimizedPlanKeepsBoundLookupWorkEstimate(@TempDir Path dataDir) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(THEME.name()),
+						PERSISTENT_STORE_KEY,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		Path themeDir = preparedStore.storeDirectory();
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + themeDir + " for PHARMA q7 regression. "
+					+ PERSISTENT_STORE_HINT);
+		}
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, 7);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
 	private static void loadData(SailRepository repository) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -286,19 +324,23 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static void assertPlannerCostInvariants(int queryIndex, OptimizerSnapshot snapshot) {
 		String key = "PHARMA query " + queryIndex;
 		assertTrue(snapshot.renderedQuery.contains("SELECT"), key + " should still render an optimized query");
-		boolean sketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED")
-				|| snapshot.plan.contains("optimizer.logicalExploration");
+		boolean robustSketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED");
+		boolean cascadesPlan = snapshot.plan.contains("plannerId=lmdb-cascades");
 		boolean finiteAnchorPlan = snapshot.plan.contains("plannerId=lmdb-finite-anchor");
-		assertTrue(sketchPlan || finiteAnchorPlan, key + " should use LMDB planning:\n" + snapshot.plan);
-		if (sketchPlan) {
-			assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"),
-					key + " should use the robust planner path:\n" + snapshot.plan);
-		} else {
+		assertTrue(robustSketchPlan || cascadesPlan || finiteAnchorPlan,
+				key + " should use LMDB planning:\n" + snapshot.plan);
+		if (finiteAnchorPlan) {
 			assertTrue(snapshot.plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR"),
 					key + " should mark canonical finite-anchor planning:\n" + snapshot.plan);
 			assertFalse(snapshot.plan.contains("optimizer.logicalExploration"),
 					key + " should not spend Pareto memo work on a canonical finite-anchor chain:\n"
 							+ snapshot.plan);
+		} else if (cascadesPlan) {
+			assertTrue(snapshot.plan.contains("optimizer.cascadesRule"),
+					key + " should expose the Cascades physical rule:\n" + snapshot.plan);
+		} else {
+			assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"),
+					key + " should use the robust planner path:\n" + snapshot.plan);
 		}
 		assertFalse(snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + snapshot.plan);
@@ -310,12 +352,23 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 							+ snapshot.plan);
 		}
 		if (queryIndex == 7) {
+			assertPlannedWorkRowsAtMost(snapshot.plan, 30_000.0d,
+					key + " should keep repeated comparator/name lookup work inside the physical lookup envelope\n"
+							+ snapshot.plan);
 			assertBefore(snapshot.plan,
 					"value=http://example.com/theme/pharma/hasResult",
 					"value=http://example.com/theme/pharma/pValue",
 					key + " correlated NOT EXISTS should use the bound ?arm hasResult probe before pValue filtering\n"
 							+ snapshot.plan);
 		}
+	}
+
+	private static void assertPlannedWorkRowsAtMost(String plan, double maxRows, String message) {
+		Matcher matcher = PLANNED_WORK_ROWS.matcher(plan);
+		assertTrue(matcher.find(), "Expected root plannedWorkRows metric in:\n" + plan);
+		double workRows = parsePlanRows(matcher.group(1));
+		assertTrue(workRows <= maxRows,
+				message + "\nExpected plannedWorkRows <= " + maxRows + " but got " + workRows);
 	}
 
 	private static void assertDirectLookupAccessWorkRowsBelow(String plan, double maxWorkRows, String key) {

@@ -81,6 +81,15 @@ final class OmniSketchCell {
 		if (nominalEntries <= 0) {
 			return false;
 		}
+		if (retained == nominalEntries) {
+			final int cmp = compareUnsigned(identifierHash, hashes[retained - 1]);
+			if (cmp > 0) {
+				return false;
+			}
+			if (cmp == 0) {
+				return true;
+			}
+		}
 		final int pos = binarySearch(identifierHash);
 		if (pos >= 0) {
 			return true; // The min-hash sample is set-valued even when stream count is not.

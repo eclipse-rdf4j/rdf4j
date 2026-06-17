@@ -27,7 +27,11 @@ public final class BindingMask {
 	private final int hash;
 
 	private BindingMask(long[] words) {
-		this.words = trim(words);
+		this(words, true);
+	}
+
+	private BindingMask(long[] words, boolean copy) {
+		this.words = trim(copy ? Arrays.copyOf(words, words.length) : words);
 		this.hash = Arrays.hashCode(this.words);
 	}
 
@@ -35,8 +39,14 @@ public final class BindingMask {
 		if (words == null || words.length == 0) {
 			return EMPTY;
 		}
-		long[] copy = Arrays.copyOf(words, words.length);
-		return new BindingMask(copy);
+		return new BindingMask(words);
+	}
+
+	static BindingMask fromOwned(long[] words) {
+		if (words == null || words.length == 0) {
+			return EMPTY;
+		}
+		return new BindingMask(words, false);
 	}
 
 	static BindingMask single(int symbolId) {
@@ -45,7 +55,7 @@ public final class BindingMask {
 		}
 		long[] words = new long[(symbolId >>> 6) + 1];
 		words[symbolId >>> 6] = 1L << symbolId;
-		return new BindingMask(words);
+		return new BindingMask(words, false);
 	}
 
 	public boolean isEmpty() {
@@ -110,7 +120,7 @@ public final class BindingMask {
 		for (int i = 0; i < other.words.length; i++) {
 			merged[i] |= other.words[i];
 		}
-		return new BindingMask(merged);
+		return new BindingMask(merged, false);
 	}
 
 	public BindingMask intersect(BindingMask other) {
@@ -122,7 +132,7 @@ public final class BindingMask {
 		for (int i = 0; i < length; i++) {
 			intersection[i] = words[i] & other.words[i];
 		}
-		return new BindingMask(intersection);
+		return new BindingMask(intersection, false);
 	}
 
 	public BindingMask minus(BindingMask other) {
@@ -134,7 +144,7 @@ public final class BindingMask {
 		for (int i = 0; i < limit; i++) {
 			difference[i] &= ~other.words[i];
 		}
-		return new BindingMask(difference);
+		return new BindingMask(difference, false);
 	}
 
 	void forEachSymbolId(IntConsumer consumer) {
@@ -153,7 +163,10 @@ public final class BindingMask {
 		while (length > 0 && source[length - 1] == 0L) {
 			length--;
 		}
-		return length == 0 ? new long[0] : Arrays.copyOf(source, length);
+		if (length == 0) {
+			return new long[0];
+		}
+		return length == source.length ? source : Arrays.copyOf(source, length);
 	}
 
 	@Override
