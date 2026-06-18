@@ -186,6 +186,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		private final Set<String> inputBindingNames;
 		private final Set<String> assignmentConflictBindingNames;
+		private final Deque<Set<String>> suppressedAssignmentConflictBindingNames = new ArrayDeque<>();
 		private boolean verifyAssignments;
 
 		private LateralScope(Set<String> inputBindingNames, Set<String> assignmentConflictBindingNames,
@@ -407,78 +408,82 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	@Override
 	public TupleExpr visit(ASTSelectQuery node, Object data) throws VisitorException {
 		final GraphPattern parentGP = graphPattern;
+		LateralAssignmentChecksState assignmentChecksState = suspendLateralAssignmentChecks();
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
-		boolean previousLateralAssignmentCheck = setLateralAssignmentChecks(false);
 		try {
-			node.getWhereClause().jjtAccept(this, null);
+			try {
+				node.getWhereClause().jjtAccept(this, null);
+			} finally {
+				restoreLateralAssignmentChecks(assignmentChecksState);
+			}
+			TupleExpr tupleExpr = graphPattern.buildTupleExpr();
+
+			// Apply grouping
+			Group group = null;
+			ASTGroupClause groupNode = node.getGroupClause();
+			if (groupNode != null) {
+				tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
+				group = (Group) tupleExpr;
+			}
+
+			final ASTHavingClause havingClause = node.getHavingClause();
+			if (havingClause != null) {
+				if (group == null) {
+					// create implicit group
+					group = new Group(tupleExpr);
+				}
+
+				// Apply HAVING group filter condition
+				tupleExpr = processHavingClause(havingClause, tupleExpr, group);
+			}
+
+			// process external VALUES clause
+			final ASTBindingsClause bindingsClause = node.getBindingsClause();
+			if (bindingsClause != null) {
+				// values clause should be treated as scoped to the where clause
+				((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
+				tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
+			}
+
+			final ASTOrderClause orderClause = node.getOrderClause();
+			if (orderClause != null) {
+				if (group == null) {
+					// create implicit group
+					group = new Group(tupleExpr);
+				}
+
+				// Apply result ordering
+				tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
+			}
+
+			// Apply projection
+			tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
+
+			// Process limit and offset clauses
+			ASTLimit limitNode = node.getLimit();
+			long limit = -1L;
+			if (limitNode != null) {
+				limit = (Long) limitNode.jjtAccept(this, null);
+			}
+
+			ASTOffset offsetNode = node.getOffset();
+			long offset = -1L;
+			if (offsetNode != null) {
+				offset = (Long) offsetNode.jjtAccept(this, null);
+			}
+
+			if (offset >= 1L || limit >= 0L) {
+				tupleExpr = new Slice(tupleExpr, offset, limit);
+			}
+
+			parentGP.addRequiredTE(tupleExpr);
+			graphPattern = parentGP;
+			return tupleExpr;
 		} finally {
-			restoreLateralAssignmentChecks(previousLateralAssignmentCheck);
+			finishLateralAssignmentChecks(assignmentChecksState);
 		}
-		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
-
-		// Apply grouping
-		Group group = null;
-		ASTGroupClause groupNode = node.getGroupClause();
-		if (groupNode != null) {
-			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
-			group = (Group) tupleExpr;
-		}
-
-		final ASTHavingClause havingClause = node.getHavingClause();
-		if (havingClause != null) {
-			if (group == null) {
-				// create implicit group
-				group = new Group(tupleExpr);
-			}
-
-			// Apply HAVING group filter condition
-			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
-		}
-
-		// process external VALUES clause
-		final ASTBindingsClause bindingsClause = node.getBindingsClause();
-		if (bindingsClause != null) {
-			// values clause should be treated as scoped to the where clause
-			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
-			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
-		}
-
-		final ASTOrderClause orderClause = node.getOrderClause();
-		if (orderClause != null) {
-			if (group == null) {
-				// create implicit group
-				group = new Group(tupleExpr);
-			}
-
-			// Apply result ordering
-			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
-		}
-
-		// Apply projection
-		tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
-
-		// Process limit and offset clauses
-		ASTLimit limitNode = node.getLimit();
-		long limit = -1L;
-		if (limitNode != null) {
-			limit = (Long) limitNode.jjtAccept(this, null);
-		}
-
-		ASTOffset offsetNode = node.getOffset();
-		long offset = -1L;
-		if (offsetNode != null) {
-			offset = (Long) offsetNode.jjtAccept(this, null);
-		}
-
-		if (offset >= 1L || limit >= 0L) {
-			tupleExpr = new Slice(tupleExpr, offset, limit);
-		}
-
-		parentGP.addRequiredTE(tupleExpr);
-		graphPattern = parentGP;
-		return tupleExpr;
 	}
 
 	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)
@@ -667,6 +672,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				throw new IllegalStateException("required alias for non-Var projection elements not found");
 			}
 		}
+
+		verifyLateralProjectedAssignments(projElemList);
 
 		if (!extension.getElements().isEmpty()) {
 			if (orderClause != null) {
@@ -3164,25 +3171,61 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private void verifyLateralAssignment(String alias, String assignmentType) throws VisitorException {
 		if (!lateralScopes.isEmpty()) {
 			LateralScope lateralScope = lateralScopes.peek();
-			if (lateralScope.verifyAssignments && lateralScope.assignmentConflictBindingNames.contains(alias)) {
-				throw new VisitorException(assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+			if (lateralScope.assignmentConflictBindingNames.contains(alias)) {
+				if (lateralScope.verifyAssignments) {
+					throw new VisitorException(
+							assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+				}
+				if (!lateralScope.suppressedAssignmentConflictBindingNames.isEmpty()) {
+					lateralScope.suppressedAssignmentConflictBindingNames.peek().add(alias);
+				}
 			}
 		}
 	}
 
-	private boolean setLateralAssignmentChecks(boolean verifyAssignments) {
+	private void verifyLateralProjectedAssignments(ProjectionElemList projElemList) throws VisitorException {
+		if (!lateralScopes.isEmpty()) {
+			LateralScope lateralScope = lateralScopes.peek();
+			if (!lateralScope.suppressedAssignmentConflictBindingNames.isEmpty()) {
+				Set<String> assignmentConflictBindingNames = lateralScope.suppressedAssignmentConflictBindingNames
+						.peek();
+				for (ProjectionElem elem : projElemList.getElements()) {
+					String name = elem.getName();
+					if (assignmentConflictBindingNames.contains(name)) {
+						throw new VisitorException("projection variable '" + name
+								+ "' exposes an assignment that conflicts with an outer LATERAL binding");
+					}
+				}
+			}
+		}
+	}
+
+	private LateralAssignmentChecksState suspendLateralAssignmentChecks() {
 		if (lateralScopes.isEmpty()) {
-			return true;
+			return null;
 		}
 		LateralScope lateralScope = lateralScopes.peek();
 		boolean previous = lateralScope.verifyAssignments;
-		lateralScope.verifyAssignments = verifyAssignments;
-		return previous;
+		Set<String> suppressedAssignmentConflictBindingNames = new LinkedHashSet<>();
+		lateralScope.suppressedAssignmentConflictBindingNames.push(suppressedAssignmentConflictBindingNames);
+		lateralScope.verifyAssignments = false;
+		return new LateralAssignmentChecksState(lateralScope, previous, suppressedAssignmentConflictBindingNames);
 	}
 
-	private void restoreLateralAssignmentChecks(boolean verifyAssignments) {
-		if (!lateralScopes.isEmpty()) {
-			lateralScopes.peek().verifyAssignments = verifyAssignments;
+	private void restoreLateralAssignmentChecks(LateralAssignmentChecksState state) {
+		if (state != null) {
+			state.lateralScope.verifyAssignments = state.previousVerifyAssignments;
 		}
+	}
+
+	private void finishLateralAssignmentChecks(LateralAssignmentChecksState state) {
+		if (state != null) {
+			Deque<Set<String>> assignmentConflictFrames = state.lateralScope.suppressedAssignmentConflictBindingNames;
+			assignmentConflictFrames.removeIf(frame -> frame == state.suppressedAssignmentConflictBindingNames);
+		}
+	}
+
+	private record LateralAssignmentChecksState(LateralScope lateralScope, boolean previousVerifyAssignments,
+			Set<String> suppressedAssignmentConflictBindingNames) {
 	}
 }
