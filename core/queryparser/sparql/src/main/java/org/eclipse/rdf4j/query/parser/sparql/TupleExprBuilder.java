@@ -409,15 +409,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public TupleExpr visit(ASTSelectQuery node, Object data) throws VisitorException {
 		final GraphPattern parentGP = graphPattern;
 		LateralAssignmentChecksState assignmentChecksState = suspendLateralAssignmentChecks();
+		boolean assignmentChecksRestored = false;
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
 		try {
-			try {
-				node.getWhereClause().jjtAccept(this, null);
-			} finally {
-				restoreLateralAssignmentChecks(assignmentChecksState);
-			}
+			node.getWhereClause().jjtAccept(this, null);
 			TupleExpr tupleExpr = graphPattern.buildTupleExpr();
 
 			// Apply grouping
@@ -459,6 +456,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 
 			// Apply projection
+			restoreLateralAssignmentChecks(assignmentChecksState);
+			assignmentChecksRestored = true;
 			tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
 
 			// Process limit and offset clauses
@@ -482,6 +481,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			graphPattern = parentGP;
 			return tupleExpr;
 		} finally {
+			if (!assignmentChecksRestored) {
+				restoreLateralAssignmentChecks(assignmentChecksState);
+			}
 			finishLateralAssignmentChecks(assignmentChecksState);
 		}
 	}

@@ -4,8 +4,8 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT * {
    ?s ex:predicate ?o
    LATERAL {
-      {SELECT * { ?s rdfs:label ?label } LIMIT 1}
+      {SELECT * { ?s rdfs:label ?label } ORDER BY ?label LIMIT 1}
       UNION
-      {SELECT * { ?s ex:alternative ?alt } LIMIT 1}
+      {SELECT * { ?s ex:alternative ?alt } ORDER BY ?alt LIMIT 1}
    }
 }

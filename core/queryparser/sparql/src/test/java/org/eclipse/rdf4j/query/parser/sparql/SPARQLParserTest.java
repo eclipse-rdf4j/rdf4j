@@ -1228,6 +1228,22 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void lateralAllowsHiddenSubSelectValuesForLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL {
+				    SELECT ?label { BIND("local" AS ?label) }
+				    VALUES ?o { ex:o1 }
+				  }
+				}
+				""";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
 	public void lateralRejectsGroupByAliasForLeftVariable() {
 		String query = """
 				PREFIX ex: <http://example.org/>
