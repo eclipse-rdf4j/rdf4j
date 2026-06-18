@@ -174,7 +174,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public void meet(Lateral node) {
-			node.getLeftArg().visit(this);
+			node.visitChildren(this);
 		}
 
 		@Override

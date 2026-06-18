@@ -3152,7 +3152,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			lateralScopes.pop();
 		}
 
-		if (directSubSelect && !hasEnclosingLateralScope) {
+		if (directSubSelect) {
 			rightInputBindingNames.retainAll(rightArg.getBindingNames());
 		}
 

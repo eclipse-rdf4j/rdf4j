@@ -319,7 +319,7 @@ public class LateralTest extends AbstractComplianceTest {
 		}
 	}
 
-	private void testNestedLateralSubSelectCanSeeOuterBinding(RepositoryConnection conn) throws Exception {
+	private void testNestedLateralSubSelectDoesNotSeeHiddenOuterBinding(RepositoryConnection conn) throws Exception {
 		String data = "@prefix ex: <http://example.org/> .\n"
 				+ "\n"
 				+ "ex:s1 ex:p ex:o1 .\n"
@@ -349,14 +349,8 @@ public class LateralTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = tq.evaluate()) {
 			List<BindingSet> results = QueryResults.asList(result);
 			assertEquals(2, results.size());
-			assertThat(results).anySatisfy(bs -> {
-				assertThat(bs.getValue("s").stringValue()).contains("s1");
-				assertThat(bs.getValue("r").stringValue()).isEqualTo("http://example.org/r1");
-			});
-			assertThat(results).anySatisfy(bs -> {
-				assertThat(bs.getValue("s").stringValue()).contains("s2");
-				assertThat(bs.getValue("r").stringValue()).isEqualTo("http://example.org/r2");
-			});
+			assertThat(results).allSatisfy(
+					bs -> assertThat(bs.getValue("r").stringValue()).isEqualTo("http://example.org/r1"));
 		}
 	}
 
@@ -601,8 +595,8 @@ public class LateralTest extends AbstractComplianceTest {
 						this::testLateralSubSelectDoesNotSeeHiddenOuterVariable),
 				makeTest("LateralGroupedSubSelectDoesNotSeeHiddenOuterVariable",
 						this::testLateralGroupedSubSelectDoesNotSeeHiddenOuterVariable),
-				makeTest("NestedLateralSubSelectCanSeeOuterBinding",
-						this::testNestedLateralSubSelectCanSeeOuterBinding),
+				makeTest("NestedLateralSubSelectDoesNotSeeHiddenOuterBinding",
+						this::testNestedLateralSubSelectDoesNotSeeHiddenOuterBinding),
 				makeTest("LateralParseErrorOnRebindingVariable", this::testLateralParseErrorOnRebindingVariable),
 				makeTest("LateralAllowsHiddenSubSelectAssignmentToOuterName",
 						this::testLateralAllowsHiddenSubSelectAssignmentToOuterName),
