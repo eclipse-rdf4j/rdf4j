@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -129,6 +130,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 */
 	private final Stack<IRI> predicateStack = new Stack<>();
 
+	private boolean prettyPrintingDisabled = false;
+
 	private boolean writingEnded;
 
 	/*--------------*
@@ -202,8 +205,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			try {
 				flushPendingStatements();
 			} catch (RDFHandlerException e) {
-				if (e.getCause() != null && e.getCause() instanceof IOException) {
-					throw (IOException) e.getCause();
+				if (e.getCause() != null && e.getCause()instanceof IOException ioe) {
+					throw ioe;
 				} else {
 					throw new IOException(e);
 				}
@@ -244,6 +247,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 		if (!nodeStack.isEmpty()) {
 			popStacks(null);
 		}
+		super.flushPendingStatements();
 	}
 
 	/**
@@ -340,6 +344,35 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	@Override
 	public void consumeStatement(Statement st) throws RDFHandlerException {
+		// Once we’ve turned off pretty printing, just delegate everything.
+		if (prettyPrintingDisabled) {
+			super.consumeStatement(st);
+			return;
+		}
+
+		// TripleTerm objects are RDF 1.2 features that the pretty-printing
+		// striped/typed logic was not designed for.
+		if (st.getObject() instanceof TripleTerm) {
+			try {
+				if (!headerWritten) {
+					writeHeader();
+				}
+
+				// Close any open pretty-writer stacks AND any open base-writer subject.
+				flushPendingStatements();
+
+				// From now on, never use striped/typed syntax again in this document.
+				prettyPrintingDisabled = true;
+
+				super.consumeStatement(st);
+				return;
+			} catch (IOException e) {
+				throw new RDFHandlerException(e);
+			}
+		}
+
+		// Original pretty-writer striped/typed logic unchanged below:
+
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -369,9 +402,9 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			// element is possible
 			// FIXME: verify that an XML namespace-qualified name can be created
 			// for the type URI
-			if (pred.equals(RDF.TYPE) && obj instanceof IRI && !topSubject.hasType() && !topSubject.isWritten()) {
+			if (pred.equals(RDF.TYPE) && obj instanceof IRI iri && !topSubject.hasType() && !topSubject.isWritten()) {
 				// Use typed node element
-				topSubject.setType((IRI) obj);
+				topSubject.setType(iri);
 			} else {
 				if (!nodeStack.isEmpty() && pred.equals(nodeStack.peek().nextLi())) {
 					pred = RDF.LI;
@@ -385,6 +418,12 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
+	}
+
+	private void writeNodeStartTag(Node node) throws IOException, RDFHandlerException {
+		writeNodeStartOfStartTag(node);
+		writeEndOfStartTag();
+		writeNewLine();
 	}
 
 	/**
@@ -404,24 +443,14 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			writeStartOfStartTag(RDF.NAMESPACE, "Description");
 		}
 
-		if (value instanceof IRI) {
-			IRI uri = (IRI) value;
-			writeAttribute("about", uri.toString());
+		if (value instanceof IRI iri) {
+			writeAttribute(RDF.NAMESPACE, "about", iri.toString());
 		} else {
 			BNode bNode = (BNode) value;
 			if (!inlineBlankNodes) {
-				writeAttribute("nodeID", getValidNodeId(bNode));
+				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
 			}
 		}
-	}
-
-	/**
-	 * Write out the opening tag of the subject or object of a statement.
-	 */
-	private void writeNodeStartTag(Node node) throws IOException, RDFHandlerException {
-		writeNodeStartOfStartTag(node);
-		writeEndOfStartTag();
-		writeNewLine();
 	}
 
 	/**
@@ -452,20 +481,16 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 		var predQName = new QName(pred);
 		writeStartOfStartTag(predQName.getNamespace(), predQName.getLocalName());
 
-		if (obj instanceof Resource) {
-			Resource objRes = (Resource) obj;
-
-			if (objRes instanceof IRI) {
-				IRI uri = (IRI) objRes;
-				writeAttribute("resource", uri.toString());
+		if (obj instanceof Resource objRes) {
+			if (objRes instanceof IRI iri) {
+				writeAttribute(RDF.NAMESPACE, "resource", iri.toString());
 			} else {
 				BNode bNode = (BNode) objRes;
-				writeAttribute("nodeID", getValidNodeId(bNode));
+				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
 			}
 
 			writeEndOfEmptyTag();
-		} else if (obj instanceof Literal) {
-			Literal objLit = (Literal) obj;
+		} else if (obj instanceof Literal objLit) {
 			// datatype attribute
 			CoreDatatype datatype = objLit.getCoreDatatype();
 			// Check if datatype is rdf:XMLLiteral
@@ -473,12 +498,12 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 			// language attribute
 			if (Literals.isLanguageLiteral(objLit)) {
-				writeAttribute(objLit.getLanguage().get());
+				writeXmlLangAttribute(objLit.getLanguage().get());
 			} else {
 				if (isXmlLiteral) {
-					writeAttribute("parseType", "Literal");
+					writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
 				} else {
-					writeAttribute("datatype", objLit.getDatatype().toString());
+					writeAttribute(RDF.NAMESPACE, "datatype", objLit.getDatatype().toString());
 				}
 			}
 

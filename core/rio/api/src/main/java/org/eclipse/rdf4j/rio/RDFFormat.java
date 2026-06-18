@@ -83,7 +83,7 @@ public class RDFFormat extends FileFormat {
 			Arrays.asList("application/rdf+xml", "application/xml", "text/xml"), StandardCharsets.UTF_8,
 			Arrays.asList("rdf", "rdfs", "owl", "xml"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_XML"), SUPPORTS_NAMESPACES,
-			NO_CONTEXTS, NO_TRIPLE_TERMS
+			NO_CONTEXTS, SUPPORTS_TRIPLE_TERMS
 	);
 
 	/**

@@ -20,7 +20,13 @@ import java.util.*;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -312,11 +318,10 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	void startElement(String namespaceURI, String localName, String qName, Atts atts)
 			throws RDFParseException, RDFHandlerException {
 		Att rdfVersion = atts.removeAtt(RDF.NAMESPACE, "version");
-		if (rdfVersion != null) {
-			if ("1.2".equals(rdfVersion.getValue())) {
-				rdf12Mode = true;
-			}
+		if (rdfVersion != null && "1.2".equals(rdfVersion.getValue())) {
+			rdf12Mode = true;
 		}
+
 		if (topIsProperty()) {
 			// this element represents the subject and/or object of a statement
 			processNodeElt(namespaceURI, localName, qName, atts, false);
@@ -360,7 +365,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 					if (!tripleStack.isEmpty()) {
 						TripleContext parent = tripleStack.peek();
 						parent.capturedTriple = st;
-					} else {
+					} else if (rdfHandler != null) {
 						rdfHandler.handleStatement(st);
 					}
 					elementStack.pop();

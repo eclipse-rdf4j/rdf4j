@@ -424,4 +424,20 @@ public class XMLUtil {
 	private static boolean _charInRange(char c, int start, int end) {
 		return c >= start && c <= end;
 	}
+
+	/**
+	 * Strips the provided direction of the leading dashes.
+	 * @param direction - literal direction
+	 * @return the direction without the leading dashes
+	 */
+	public static String sanitizeLiteralDirection(String direction) {
+		if (direction == null) {
+			return null;
+		}
+		String result = direction.trim();
+		if (result.startsWith("--")) {
+			result = result.substring(2);
+		}
+		return result;
+	}
 }
