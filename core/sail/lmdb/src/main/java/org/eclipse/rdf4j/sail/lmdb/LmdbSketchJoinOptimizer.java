@@ -90,6 +90,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final double HIGH_PASS_FILTERED_CORRELATED_ANTI_PROBE_THRESHOLD = 0.95d;
 	private static final double CORRELATED_NOT_EXISTS_FILTER_PREFIX_MAX_PASS_RATIO = 0.50d;
 	private static final double CORRELATED_NOT_EXISTS_FILTER_PREFIX_WORK_TOLERANCE = 1.15d;
+	private static final double LOCAL_FILTER_PREFIX_MAX_PASS_RATIO = 0.75d;
+	private static final double LOCAL_FILTER_FALLBACK_SEED_WORK_TOLERANCE = 4.0d;
 	private static final long CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE = 100L;
 	private static final long SAMPLED_ZERO_PASS_RATIO_MIN_EVIDENCE = 1_024L;
 	private static final int CANONICAL_FINITE_ANCHOR_LITERAL_FILTER_SCORE = 50;
@@ -97,6 +99,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final int CORRELATED_ANTI_JOIN_COMPLEX_SUFFIX_PATTERN_LIMIT = 3;
 	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
 	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
+	private static final String LOCAL_FILTER_PREFIX_PLANNER_PATH = "LOCAL_FILTER_PREFIX_FALLBACK";
 	private static final String LMDB_PHYSICAL_REFINEMENT = "costModel=lmdb, accessPathSelection=per-step";
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -2534,16 +2537,15 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (segment.size() < 2 || !(statistics instanceof JoinOrderPlanner planner)) {
 				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
 			}
-			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
+			Optional<List<TupleExpr>> localFilterPrefixOrder = localFilterPrefixOrder(segment, boundBeforeSegment,
+					segmentFilters);
+			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation()
+					&& localFilterPrefixOrder.isEmpty();
 			if (preferFiniteAnchorFastPath) {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
-					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
-					applyFiniteAnchorPlannerMetrics(orderedArgs);
-					FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-							orderedArgs, boundBeforeSegment);
-					return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
+					return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
 				}
 			}
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
@@ -2552,22 +2554,59 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
 			if (plan.isEmpty() || !isValidPlannerOrder(segment, plan.get())) {
 				if (!preferFiniteAnchorFastPath) {
-					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
-							boundBeforeSegment, plannerFilters);
-					if (canonicalFiniteAnchorOrder.isPresent()) {
-						List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
-						applyFiniteAnchorPlannerMetrics(orderedArgs);
+					Optional<JoinOrderPlanner.JoinOrderPlan> localPrefixPlan = localFilterPrefixPlan(segment,
+							boundBeforeSegment, plannerFilters, segmentFilters, algorithm, planner);
+					if (localPrefixPlan.isPresent()) {
+						JoinOrderPlanner.JoinOrderPlan selectedPlan = localPrefixPlan.get();
+						applyPlannerStepEstimates(selectedPlan);
+						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
+								selectedPlan.getOrderedArgs(), boundBeforeSegment);
+						List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
+						Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed()
+								? Map.of()
+								: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
+						return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+					}
+					if (localFilterPrefixOrder.isPresent()) {
+						List<TupleExpr> orderedArgs = localFilterPrefixOrder.get();
+						applyLocalFilterPrefixFallbackMetrics(orderedArgs);
 						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 								orderedArgs, boundBeforeSegment);
 						return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(),
-								true);
+								false);
+					}
+					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
+							boundBeforeSegment, plannerFilters);
+					if (canonicalFiniteAnchorOrder.isPresent()) {
+						return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
 					}
 				}
-				return locallySelectiveFallbackOrder(segment);
+				return connectivityFallbackOrder(segment, boundBeforeSegment);
 			}
-			JoinOrderPlanner.JoinOrderPlan selectedPlan = selectiveLocalFilterPrefixPlan(segment, boundBeforeSegment,
-					plannerFilters, segmentFilters, plan.get(), algorithm, planner)
-							.orElse(plan.get());
+			Optional<JoinOrderPlanner.JoinOrderPlan> localPrefixPlan = localFilterPrefixPlan(segment,
+					boundBeforeSegment, plannerFilters, segmentFilters, plan.get(), algorithm, planner);
+			Optional<JoinOrderPlanner.JoinOrderPlan> selectivePrefixPlan = Optional.empty();
+			JoinOrderPlanner.JoinOrderPlan selectedPlan;
+			if (localPrefixPlan.isPresent()) {
+				selectedPlan = localPrefixPlan.get();
+			} else {
+				selectivePrefixPlan = selectiveLocalFilterPrefixPlan(segment, boundBeforeSegment, plannerFilters,
+						segmentFilters, plan.get(), algorithm, planner);
+				selectedPlan = selectivePrefixPlan.orElse(plan.get());
+			}
+			boolean selectedLocalFilterPrefix = localPrefixPlan.isPresent()
+					|| selectivePrefixPlan.isPresent()
+					|| (localFilterPrefixOrder.isPresent()
+							&& localFilterPrefixOrder.get().equals(selectedPlan.getOrderedArgs()));
+			if (statistics.supportsJoinEstimation()
+					&& localFilterPrefixOrder.isPresent()
+					&& !selectedLocalFilterPrefix) {
+				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
+						boundBeforeSegment, plannerFilters);
+				if (canonicalFiniteAnchorOrder.isPresent()) {
+					return finiteAnchorOrderedSegment(canonicalFiniteAnchorOrder.get(), boundBeforeSegment);
+				}
+			}
 			selectedPlan = sampledZeroFanoutGuardPlan(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
@@ -2579,6 +2618,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					? Map.of()
 					: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+		}
+
+		private OrderedSegment finiteAnchorOrderedSegment(List<TupleExpr> orderedArgs, Set<String> boundBeforeSegment) {
+			applyFiniteAnchorPlannerMetrics(orderedArgs);
+			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(orderedArgs,
+					boundBeforeSegment);
+			return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
 		}
 
 		private FiniteAssignmentReorder deferFiniteAssignmentsAfterBoundExactLookups(List<TupleExpr> orderedArgs,
@@ -2705,8 +2751,181 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& (contextVar == null || isFixedOrBoundPatternVar(contextVar, boundNames));
 		}
 
-		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment) {
-			return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+		private OrderedSegment connectivityFallbackOrder(List<TupleExpr> segment, Set<String> boundBeforeSegment) {
+			if (!isConnectivityFallbackSafe(segment)) {
+				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+			}
+			if (!(statistics instanceof JoinFactorCostModel costModel)) {
+				return new OrderedSegment(
+						new ArrayDeque<>(connectedOrderWithPrefix(segment, List.of(), boundBeforeSegment)), Map.of(),
+						false);
+			}
+			return new OrderedSegment(
+					new ArrayDeque<>(costedConnectedOrderWithPrefix(segment,
+							connectivityFallbackSeed(segment, boundBeforeSegment, costModel), boundBeforeSegment,
+							costModel)),
+					Map.of(), false);
+		}
+
+		private boolean isConnectivityFallbackSafe(List<TupleExpr> segment) {
+			for (TupleExpr tupleExpr : segment) {
+				if (TupleExprs.isVariableScopeChange(tupleExpr) || tupleExpr instanceof BindingSetAssignment) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private List<TupleExpr> connectivityFallbackSeed(List<TupleExpr> segment, Set<String> boundBeforeSegment,
+				JoinFactorCostModel costModel) {
+			if (!boundBeforeSegment.isEmpty() && firstConnectedIndex(segment, boundBeforeSegment) >= 0) {
+				return List.of();
+			}
+			TupleExpr seed = cheapestFallbackSeed(segment, boundBeforeSegment, costModel);
+			return seed == null ? List.of() : List.of(seed);
+		}
+
+		private TupleExpr cheapestFallbackSeed(List<TupleExpr> segment, Set<String> boundBeforeSegment,
+				JoinFactorCostModel costModel) {
+			FallbackSeedCandidate best = null;
+			FallbackSeedCandidate bestLocalFilterAnchor = null;
+			for (TupleExpr tupleExpr : segment) {
+				if (tupleExpr instanceof Filter || singleStatementPattern(tupleExpr) == null) {
+					continue;
+				}
+				Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
+						new JoinFactorCostModel.CostContext(boundBeforeSegment, Double.NaN, Double.NaN, false, false));
+				if (estimate.isEmpty()) {
+					continue;
+				}
+				double workRows = estimate.get().getWorkRows();
+				double outputRows = estimate.get().getOutputRows();
+				if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+					continue;
+				}
+				FallbackSeedCandidate candidate = new FallbackSeedCandidate(tupleExpr, workRows, outputRows,
+						unlocksLocalFilter(tupleExpr, segment));
+				if (betterFallbackSeed(candidate, best)) {
+					best = candidate;
+				}
+				if (candidate.localFilterAnchor() && betterFallbackSeed(candidate, bestLocalFilterAnchor)) {
+					bestLocalFilterAnchor = candidate;
+				}
+			}
+			if (localFilterAnchorWithinSeedTolerance(bestLocalFilterAnchor, best)) {
+				return bestLocalFilterAnchor.tupleExpr();
+			}
+			return best == null ? null : best.tupleExpr();
+		}
+
+		private record FallbackSeedCandidate(TupleExpr tupleExpr, double workRows, double outputRows,
+				boolean localFilterAnchor) {
+		}
+
+		private boolean betterFallbackSeed(FallbackSeedCandidate candidate, FallbackSeedCandidate best) {
+			if (best == null) {
+				return true;
+			}
+			if (candidate.workRows() < best.workRows()) {
+				return true;
+			}
+			return candidate.workRows() == best.workRows()
+					&& LmdbJoinPlanSupport.isFiniteNonNegative(candidate.outputRows())
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(best.outputRows())
+							|| candidate.outputRows() < best.outputRows());
+		}
+
+		private boolean localFilterAnchorWithinSeedTolerance(FallbackSeedCandidate localFilterAnchor,
+				FallbackSeedCandidate best) {
+			if (localFilterAnchor == null) {
+				return false;
+			}
+			if (best == null) {
+				return true;
+			}
+			return localFilterAnchor.workRows() <= best.workRows() * LOCAL_FILTER_FALLBACK_SEED_WORK_TOLERANCE;
+		}
+
+		private boolean unlocksLocalFilter(TupleExpr candidate, List<TupleExpr> segment) {
+			Set<String> candidateBindings = plannerBindingNames(candidate.getBindingNames());
+			if (candidateBindings.isEmpty()) {
+				return false;
+			}
+			for (TupleExpr tupleExpr : segment) {
+				if (tupleExpr != candidate
+						&& tupleExpr instanceof Filter
+						&& singleStatementPattern(tupleExpr) != null
+						&& !Collections.disjoint(candidateBindings, plannerBindingNames(tupleExpr.getBindingNames()))) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private Optional<JoinOrderPlanner.JoinOrderPlan> localFilterPrefixPlan(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> plannerFilters,
+				List<DeferredFilter> segmentFilters, JoinOrderPlanner.JoinOrderPlan selectedPlan,
+				JoinOrderPlanner.Algorithm algorithm, JoinOrderPlanner planner) {
+			Optional<DeferredFilter> selectiveFilter = strongestLocalPrefixFilter(segmentFilters, segment);
+			if (selectiveFilter.isEmpty()) {
+				return Optional.empty();
+			}
+			Optional<List<TupleExpr>> candidateOrder = localFilterPrefixOrder(segment, selectiveFilter.get(),
+					boundBeforeSegment);
+			if (candidateOrder.isEmpty()
+					|| candidateOrder.get().equals(selectedPlan.getOrderedArgs())) {
+				return Optional.empty();
+			}
+			Optional<JoinOrderPlanner.JoinOrderPlan> candidatePlan = planner.estimateJoinOrder(candidateOrder.get(),
+					new HashSet<>(boundBeforeSegment), algorithm, plannerFilters);
+			if (candidatePlan.isEmpty() || !isValidPlannerOrder(segment, candidatePlan.get())) {
+				return Optional.empty();
+			}
+			if (!withinSelectiveLocalFilterPrefixBudget(selectedPlan, candidatePlan.get())) {
+				return Optional.empty();
+			}
+			return candidatePlan;
+		}
+
+		private Optional<JoinOrderPlanner.JoinOrderPlan> localFilterPrefixPlan(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> plannerFilters,
+				List<DeferredFilter> segmentFilters, JoinOrderPlanner.Algorithm algorithm,
+				JoinOrderPlanner planner) {
+			Optional<DeferredFilter> selectiveFilter = strongestLocalPrefixFilter(segmentFilters, segment);
+			if (selectiveFilter.isEmpty()) {
+				return Optional.empty();
+			}
+			Optional<List<TupleExpr>> candidateOrder = localFilterPrefixOrder(segment, selectiveFilter.get(),
+					boundBeforeSegment);
+			if (candidateOrder.isEmpty()) {
+				return Optional.empty();
+			}
+			Optional<JoinOrderPlanner.JoinOrderPlan> candidatePlan = planner.estimateJoinOrder(candidateOrder.get(),
+					new HashSet<>(boundBeforeSegment), algorithm, plannerFilters);
+			if (candidatePlan.isEmpty() || !isValidPlannerOrder(segment, candidatePlan.get())) {
+				return Optional.empty();
+			}
+			return candidatePlan;
+		}
+
+		private Optional<List<TupleExpr>> localFilterPrefixOrder(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<DeferredFilter> segmentFilters) {
+			Optional<DeferredFilter> selectiveFilter = strongestLocalPrefixFilter(segmentFilters, segment);
+			if (selectiveFilter.isEmpty()) {
+				return Optional.empty();
+			}
+			return localFilterPrefixOrder(segment, selectiveFilter.get(), boundBeforeSegment);
+		}
+
+		private Optional<List<TupleExpr>> localFilterPrefixOrder(List<TupleExpr> segment, DeferredFilter filter,
+				Set<String> boundBeforeSegment) {
+			Optional<List<TupleExpr>> candidateOrder = selectiveLocalFilterPrefixOrder(segment, filter,
+					boundBeforeSegment);
+			if (candidateOrder.isEmpty()
+					|| !startsWithConstantFilterConnector(candidateOrder.get(), filter)) {
+				return Optional.empty();
+			}
+			return candidateOrder;
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> selectiveLocalFilterPrefixPlan(List<TupleExpr> segment,
@@ -2861,6 +3080,57 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return false;
 		}
 
+		private Optional<DeferredFilter> strongestLocalPrefixFilter(List<DeferredFilter> segmentFilters,
+				List<TupleExpr> segment) {
+			DeferredFilter best = null;
+			double bestPassRatio = Double.POSITIVE_INFINITY;
+			Set<TupleExpr> segmentIdentities = Collections.newSetFromMap(new IdentityHashMap<>());
+			segmentIdentities.addAll(segment);
+			for (DeferredFilter filter : segmentFilters) {
+				if (!isLocalPrefixFilter(filter) || !segmentIdentities.contains(filter.patternLocalBase)) {
+					continue;
+				}
+				double passRatio = filter.passEstimate.getPlanningPassRatio();
+				if (best == null || passRatio < bestPassRatio) {
+					best = filter;
+					bestPassRatio = passRatio;
+				}
+			}
+			return Optional.ofNullable(best);
+		}
+
+		private boolean isLocalPrefixFilter(DeferredFilter filter) {
+			if (filter.patternLocalBase == null
+					|| filter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
+					|| LmdbJoinPlanSupport.containsExists(filter.condition)
+					|| !LmdbJoinPlanSupport.isValidPassRatio(filter.passEstimate.getPlanningPassRatio())
+					|| filter.passEstimate.getPlanningPassRatio() > LOCAL_FILTER_PREFIX_MAX_PASS_RATIO) {
+				return false;
+			}
+			return !filter.requiredVars.isEmpty();
+		}
+
+		private boolean startsWithConstantFilterConnector(List<TupleExpr> candidateOrder, DeferredFilter filter) {
+			if (candidateOrder.size() < 2 || candidateOrder.get(1) != filter.patternLocalBase) {
+				return false;
+			}
+			StatementPattern connector = singleStatementPattern(candidateOrder.getFirst());
+			StatementPattern filteredPattern = singleStatementPattern(filter.patternLocalBase);
+			return connector != null
+					&& filteredPattern != null
+					&& !Collections.disjoint(plannerBindingNames(connector.getBindingNames()),
+							plannerBindingNames(filteredPattern.getBindingNames()))
+					&& hasFixedNonPredicateEndpoint(connector);
+		}
+
+		private boolean hasFixedNonPredicateEndpoint(StatementPattern statementPattern) {
+			return hasFixedValue(statementPattern.getSubjectVar()) || hasFixedValue(statementPattern.getObjectVar());
+		}
+
+		private boolean hasFixedValue(Var var) {
+			return var != null && var.hasValue();
+		}
+
 		private Optional<DeferredFilter> strongestLocalLearnedFilter(List<DeferredFilter> segmentFilters,
 				List<TupleExpr> segment) {
 			DeferredFilter best = null;
@@ -2919,22 +3189,43 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (filterIndex < 0 || filterBindings.isEmpty()) {
 				return null;
 			}
+			TupleExpr fixedConnector = precedingFilterConnector(segment, filteredPattern, filterBindings, true);
+			if (fixedConnector != null) {
+				return fixedConnector;
+			}
+			return precedingFilterConnector(segment, filteredPattern, filterBindings, false);
+		}
+
+		private TupleExpr precedingFilterConnector(List<TupleExpr> segment, TupleExpr filteredPattern,
+				Set<String> filterBindings, boolean requireFixedEndpoint) {
+			int filterIndex = segment.indexOf(filteredPattern);
 			for (int i = filterIndex - 1; i >= 0; i--) {
 				TupleExpr candidate = segment.get(i);
-				if (!Collections.disjoint(filterBindings, plannerBindingNames(candidate.getBindingNames()))
-						&& !isSubjectTypeGuardPattern(candidate)) {
+				if (isFilterConnectorCandidate(candidate, filteredPattern, filterBindings, requireFixedEndpoint)) {
 					return candidate;
 				}
 			}
 			for (int i = 0; i < segment.size(); i++) {
 				TupleExpr candidate = segment.get(i);
-				if (candidate != filteredPattern
-						&& !Collections.disjoint(filterBindings, plannerBindingNames(candidate.getBindingNames()))
-						&& !isSubjectTypeGuardPattern(candidate)) {
+				if (isFilterConnectorCandidate(candidate, filteredPattern, filterBindings, requireFixedEndpoint)) {
 					return candidate;
 				}
 			}
 			return null;
+		}
+
+		private boolean isFilterConnectorCandidate(TupleExpr candidate, TupleExpr filteredPattern,
+				Set<String> filterBindings, boolean requireFixedEndpoint) {
+			if (candidate == filteredPattern
+					|| isSubjectTypeGuardPattern(candidate)
+					|| Collections.disjoint(filterBindings, plannerBindingNames(candidate.getBindingNames()))) {
+				return false;
+			}
+			if (!requireFixedEndpoint) {
+				return true;
+			}
+			StatementPattern statementPattern = singleStatementPattern(candidate);
+			return statementPattern != null && hasFixedNonPredicateEndpoint(statementPattern);
 		}
 
 		private List<TupleExpr> connectedOrderWithPrefix(List<TupleExpr> segment, List<TupleExpr> prefix,
@@ -2965,6 +3256,66 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				bound.addAll(plannerBindingNames(selected.getBindingNames()));
 			}
 			return ordered;
+		}
+
+		private List<TupleExpr> costedConnectedOrderWithPrefix(List<TupleExpr> segment, List<TupleExpr> prefix,
+				Set<String> boundBeforeSegment, JoinFactorCostModel costModel) {
+			List<TupleExpr> ordered = new ArrayList<>(segment.size());
+			Set<TupleExpr> used = Collections.newSetFromMap(new IdentityHashMap<>());
+			Set<String> bound = new HashSet<>(boundBeforeSegment);
+			for (TupleExpr tupleExpr : prefix) {
+				if (used.add(tupleExpr)) {
+					ordered.add(tupleExpr);
+					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
+				}
+			}
+
+			List<TupleExpr> remaining = new ArrayList<>(segment.size() - ordered.size());
+			for (TupleExpr tupleExpr : segment) {
+				if (!used.contains(tupleExpr)) {
+					remaining.add(tupleExpr);
+				}
+			}
+			while (!remaining.isEmpty()) {
+				int selectedIndex = cheapestConnectedIndex(remaining, bound, costModel);
+				if (selectedIndex < 0) {
+					selectedIndex = 0;
+				}
+				TupleExpr selected = remaining.remove(selectedIndex);
+				ordered.add(selected);
+				bound.addAll(plannerBindingNames(selected.getBindingNames()));
+			}
+			return ordered;
+		}
+
+		private int cheapestConnectedIndex(List<TupleExpr> remaining, Set<String> bound,
+				JoinFactorCostModel costModel) {
+			int selectedIndex = -1;
+			double selectedWorkRows = Double.NaN;
+			double selectedOutputRows = Double.NaN;
+			for (int i = 0; i < remaining.size(); i++) {
+				TupleExpr candidate = remaining.get(i);
+				if (Collections.disjoint(bound, plannerBindingNames(candidate.getBindingNames()))) {
+					continue;
+				}
+				Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(candidate,
+						new JoinFactorCostModel.CostContext(bound, Double.NaN, Double.NaN, false, false));
+				double workRows = estimate.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+						.orElse(Double.POSITIVE_INFINITY);
+				double outputRows = estimate.map(JoinFactorCostModel.FactorCostEstimate::getOutputRows)
+						.orElse(Double.NaN);
+				if (selectedIndex < 0
+						|| workRows < selectedWorkRows
+						|| (workRows == selectedWorkRows
+								&& LmdbJoinPlanSupport.isFiniteNonNegative(outputRows)
+								&& (!LmdbJoinPlanSupport.isFiniteNonNegative(selectedOutputRows)
+										|| outputRows < selectedOutputRows))) {
+					selectedIndex = i;
+					selectedWorkRows = workRows;
+					selectedOutputRows = outputRows;
+				}
+			}
+			return selectedIndex;
 		}
 
 		private int firstConnectedIndex(List<TupleExpr> remaining, Set<String> bound) {
@@ -3688,8 +4039,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (prefixBindingNames.containsAll(conditionBindingNames)
 					|| !availableNames.containsAll(conditionBindingNames)
 					|| Collections.disjoint(assignmentBindingNames, conditionBindingNames)
-					|| (!assignmentBindingNames.containsAll(conditionBindingNames)
-							&& containsNotEquals(deferredFilter.condition))) {
+					|| !assignmentBindingNames.containsAll(conditionBindingNames)) {
 				return null;
 			}
 			join.setRightArg(applyFilter(join.getRightArg(), deferredFilter, "bindingPrefix"));
@@ -3702,20 +4052,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
 			}
 			return bindingNames;
-		}
-
-		private boolean containsNotEquals(ValueExpr condition) {
-			boolean[] contains = { false };
-			condition.visit(new AbstractSimpleQueryModelVisitor<>() {
-				@Override
-				public void meet(Compare node) {
-					if (node.getOperator() == Compare.CompareOp.NE) {
-						contains[0] = true;
-					}
-					super.meet(node);
-				}
-			});
-			return contains[0];
 		}
 
 		private Join createJoin(TupleExpr left, TupleExpr right) {
@@ -3937,6 +4273,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			TupleExpr root = orderedArgs.getFirst();
 			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, FINITE_ANCHOR_PLANNER_ID);
 			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_PATH, FINITE_ANCHOR_PLANNER_PATH);
+			root.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+					LMDB_PHYSICAL_REFINEMENT);
+		}
+
+		private void applyLocalFilterPrefixFallbackMetrics(List<TupleExpr> orderedArgs) {
+			if (orderedArgs.isEmpty()) {
+				return;
+			}
+			TupleExpr root = orderedArgs.getFirst();
+			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, "lmdb-sketch");
+			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_PATH, LOCAL_FILTER_PREFIX_PLANNER_PATH);
 			root.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 					LMDB_PHYSICAL_REFINEMENT);
 		}
