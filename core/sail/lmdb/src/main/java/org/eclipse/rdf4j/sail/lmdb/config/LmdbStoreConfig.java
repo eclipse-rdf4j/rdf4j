@@ -63,8 +63,6 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
-	public static final String VALUE_HASH_CACHE_ENABLED_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.valueHashCache";
-
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;

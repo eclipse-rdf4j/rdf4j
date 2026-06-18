@@ -254,8 +254,7 @@ class ValueStore extends AbstractValueFactory {
 		this.autoGrow = config.getAutoGrow();
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
-		this.valueHashCacheEnabled = config.getValueHashCacheEnabled()
-				&& Boolean.getBoolean(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
 		open();
 

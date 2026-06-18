@@ -100,6 +100,7 @@ class MemoryMappedTxnStatusFile extends TxnStatusFile {
 	 * @param txnStatus The transaction status to write.
 	 * @param forceSync If true, forces a sync to disk after writing the status.
 	 */
+	@Override
 	public void setTxnStatus(TxnStatus txnStatus, boolean forceSync) {
 		if (disabled) {
 			return;

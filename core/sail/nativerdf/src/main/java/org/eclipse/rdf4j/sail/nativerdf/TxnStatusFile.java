@@ -113,6 +113,17 @@ class TxnStatusFile {
 	 * @throws IOException If the transaction status could not be written to file.
 	 */
 	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
+		setTxnStatus(txnStatus, false);
+	}
+
+	/**
+	 * Writes the specified transaction status to file.
+	 *
+	 * @param txnStatus The transaction status to write.
+	 * @param force     If true, forces a sync to disk after writing the status.
+	 * @throws IOException If the transaction status could not be written to file.
+	 */
+	public void setTxnStatus(TxnStatus txnStatus, boolean force) throws IOException {
 		if (disabled) {
 			return;
 		}
@@ -120,6 +131,9 @@ class TxnStatusFile {
 			nioFile.truncate(0);
 		} else {
 			nioFile.writeBytes(txnStatus.onDisk, 0);
+		}
+		if (force) {
+			nioFile.force(false);
 		}
 	}
 

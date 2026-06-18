@@ -12,11 +12,18 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.sail.nativerdf.TxnStatusFile.TxnStatus;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.testutil.FailureInjectingFileChannel;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +34,11 @@ public class TripleStoreRecoveryTest {
 
 	@TempDir
 	File dataDir;
+
+	@AfterEach
+	public void resetNioFileFactory() {
+		NioFile.setChannelFactoryForTesting(null);
+	}
 
 	@Test
 	public void testRollbackRecovery() throws Exception {
@@ -79,6 +91,46 @@ public class TripleStoreRecoveryTest {
 			}
 		} finally {
 			tripleStore.close();
+		}
+	}
+
+	@Test
+	public void forceSyncForcesDefaultTxnStatusFile() throws Exception {
+		AtomicReference<TrackingFileChannel> txnStatusChannel = new AtomicReference<>();
+		NioFile.setChannelFactoryForTesting((path, options) -> {
+			FileChannel channel = FileChannel.open(path, options);
+			if (TxnStatusFile.FILE_NAME.equals(path.getFileName().toString())) {
+				TrackingFileChannel trackingChannel = new TrackingFileChannel(channel);
+				txnStatusChannel.set(trackingChannel);
+				return trackingChannel;
+			}
+			return channel;
+		});
+
+		try (TripleStore tripleStore = new TripleStore(dataDir, "spoc", true)) {
+			tripleStore.startTransaction();
+		}
+
+		TrackingFileChannel trackingChannel = txnStatusChannel.get();
+		assertNotNull(trackingChannel);
+		assertTrue(trackingChannel.forceFalseCount > 0,
+				"forceSync=true should force txn status writes on the default NIO status file");
+	}
+
+	private static final class TrackingFileChannel extends FailureInjectingFileChannel {
+
+		private int forceFalseCount;
+
+		private TrackingFileChannel(FileChannel delegate) {
+			super(delegate);
+		}
+
+		@Override
+		public void force(boolean metaData) throws IOException {
+			if (!metaData) {
+				forceFalseCount++;
+			}
+			super.force(metaData);
 		}
 	}
 }

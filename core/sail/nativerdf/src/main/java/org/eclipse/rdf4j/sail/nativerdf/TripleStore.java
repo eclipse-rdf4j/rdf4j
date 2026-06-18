@@ -949,7 +949,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void startTransaction() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE);
+		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE, forceSync);
 
 		// Create a record cache for storing updated triples with a maximum of
 		// some 10% of the number of triples
@@ -964,7 +964,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void commit() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
+		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING, forceSync);
 
 		// updatedTriplesCache will be null when recovering from a crashed commit
 		boolean validCache = updatedTriplesCache != null && updatedTriplesCache.isValid();
@@ -1019,7 +1019,7 @@ class TripleStore implements Closeable {
 
 		sync();
 
-		txnStatusFile.setTxnStatus(TxnStatus.NONE);
+		txnStatusFile.setTxnStatus(TxnStatus.NONE, forceSync);
 		// checkAllCommitted();
 	}
 
@@ -1042,7 +1042,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void rollback() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK);
+		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK, forceSync);
 
 		// updatedTriplesCache will be null when recovering from a crash
 		boolean validCache = updatedTriplesCache != null && updatedTriplesCache.isValid();
@@ -1096,7 +1096,7 @@ class TripleStore implements Closeable {
 
 		sync();
 
-		txnStatusFile.setTxnStatus(TxnStatus.NONE);
+		txnStatusFile.setTxnStatus(TxnStatus.NONE, forceSync);
 	}
 
 	protected void sync() throws IOException {
