@@ -287,6 +287,31 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(join.getLeftArg()).isInstanceOf(Lateral.class);
 	}
 
+	@Test
+	public void optimizesLateralRightSideWithInputBindings() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?s ex:pOuter ?o .",
+				"  LATERAL {",
+				"    ?floating ex:pLoose ?loose .",
+				"    ?s ex:pBound ?bound .",
+				"  }",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new LateralRightBoundStatistics(),
+				new EmptyTripleSource());
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		optimizer.optimize(root, null, null);
+
+		LateralFinder lateralFinder = new LateralFinder();
+		root.visit(lateralFinder);
+		Join lateralRight = (Join) lateralFinder.getLateral().getRightArg();
+
+		assertThat(getPredicateValue(lateralRight.getLeftArg())).isEqualTo("ex:pBound");
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
@@ -343,6 +368,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		public List<StatementPattern> getStatements() {
 			return statements;
+		}
+	}
+
+	class LateralFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private Lateral lateral;
+
+		@Override
+		public void meet(Lateral lateral) {
+			this.lateral = lateral;
+		}
+
+		public Lateral getLateral() {
+			return lateral;
 		}
 	}
 
@@ -435,6 +474,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					return 1;
 				}
 				return 100;
+			}
+			return super.getCardinality(expr);
+		}
+
+		private String predicate(StatementPattern pattern) {
+			Var predicateVar = pattern.getPredicateVar();
+			if (predicateVar != null && predicateVar.hasValue()) {
+				return predicateVar.getValue().stringValue();
+			}
+			return null;
+		}
+	}
+
+	private static final class LateralRightBoundStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern pattern) {
+				String predicate = predicate(pattern);
+				if ("ex:pLoose".equals(predicate)) {
+					return 100;
+				}
+				if ("ex:pBound".equals(predicate)) {
+					return 1000;
+				}
 			}
 			return super.getCardinality(expr);
 		}

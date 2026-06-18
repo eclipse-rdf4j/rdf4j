@@ -133,6 +133,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Lateral lateral) {
+			lateral.getLeftArg().visit(this);
+
+			Set<String> origBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				boundVars.addAll(lateral.getRightInputBindingNames());
+
+				lateral.getRightArg().visit(this);
+			} finally {
+				boundVars = origBoundVars;
+			}
+		}
+
+		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}

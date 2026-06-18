@@ -1227,6 +1227,22 @@ public class SPARQLParserTest {
 		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
 	}
 
+	@Test
+	public void lateralRejectsGroupByAliasForLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL {
+				    SELECT ?o { ?s ex:q ?x }
+				    GROUP BY ("rebinding" AS ?o)
+				  }
+				}
+				""";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
 	private AggregateFunctionFactory buildDummyFactory() {
 		return new AggregateFunctionFactory() {
 			@Override

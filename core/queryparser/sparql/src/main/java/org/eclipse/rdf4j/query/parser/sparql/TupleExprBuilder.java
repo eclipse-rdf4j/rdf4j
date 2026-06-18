@@ -1263,6 +1263,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		if (aliased) {
+			verifyLateralAssignment(name, "GROUP BY alias");
 			ExtensionElem elem = new ExtensionElem(ve, name);
 			extension.addElement(elem);
 		}
