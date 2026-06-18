@@ -341,6 +341,25 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
+	@Test
+	void renderPreservesLateral() {
+		String q = "SELECT ?s ?o ?label WHERE {\n" +
+				"  ?s ex:p ?o .\n" +
+				"  LATERAL {\n" +
+				"    SELECT ?label WHERE {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"    ORDER BY ?label\n" +
+				"    LIMIT 1\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+
+		assertThat(rendered).contains("LATERAL");
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
 	@RepeatedTest(10)
 	void union_of_groups() {
 		String q = "SELECT ?who WHERE {\n" +

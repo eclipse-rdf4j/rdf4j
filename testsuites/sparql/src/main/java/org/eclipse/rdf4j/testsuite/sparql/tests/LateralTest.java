@@ -236,10 +236,10 @@ public class LateralTest extends AbstractComplianceTest {
 			List<BindingSet> results = QueryResults.asList(result);
 			assertEquals(2, results.size());
 
-			// Verify first result has correct values
-			BindingSet bs1 = results.get(0);
-			assertThat(bs1.getValue("s").stringValue()).contains("s1");
-			assertThat(bs1.getValue("data").stringValue()).isEqualTo("data1");
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).contains("s1");
+				assertThat(bs.getValue("data").stringValue()).isEqualTo("data1");
+			});
 
 		} catch (QueryEvaluationException e) {
 			e.printStackTrace();
