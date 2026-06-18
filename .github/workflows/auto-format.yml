@@ -12,7 +12,8 @@ jobs:
   auto-format:
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, 'format please')
+      contains(github.event.comment.body, 'format please') &&
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     steps:
       - name: Get PR details
@@ -27,8 +28,10 @@ jobs:
             });
             core.setOutput('ref', pr.data.head.ref);
             core.setOutput('repo', pr.data.head.repo.full_name);
+            core.setOutput('same_repo', String(pr.data.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`));
 
       - name: Checkout PR branch
+        if: steps.pr.outputs.same_repo == 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.pr.outputs.ref }}
@@ -37,6 +40,7 @@ jobs:
           fetch-depth: 2
 
       - name: Set up JDK
+        if: steps.pr.outputs.same_repo == 'true'
         uses: actions/setup-java@v4
         with:
           java-version: 11
@@ -44,15 +48,18 @@ jobs:
           cache: maven
 
       - name: Apply formatting
+        if: steps.pr.outputs.same_repo == 'true'
         run: mvn -B -Pformatting spotless:apply
 
       - name: Get last commit author
+        if: steps.pr.outputs.same_repo == 'true'
         id: author
         run: |
           echo "name=$(git log -1 --format='%an')" >> "$GITHUB_OUTPUT"
           echo "email=$(git log -1 --format='%ae')" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push formatting changes
+        if: steps.pr.outputs.same_repo == 'true'
         run: |
           git config user.name "${{ steps.author.outputs.name }}"
           git config user.email "${{ steps.author.outputs.email }}"
