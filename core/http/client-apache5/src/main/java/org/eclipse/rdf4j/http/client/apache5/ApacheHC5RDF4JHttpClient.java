@@ -94,7 +94,7 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 		}
 	}
 
-	private HttpUriRequestBase buildRequest(HttpRequest request) throws IOException {
+	protected HttpUriRequestBase buildRequest(HttpRequest request) throws IOException {
 		String method = request.getMethod();
 		String uri = request.getUri().toASCIIString();
 
