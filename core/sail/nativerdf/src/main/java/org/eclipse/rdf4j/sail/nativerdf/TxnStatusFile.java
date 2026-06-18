@@ -96,7 +96,7 @@ class TxnStatusFile {
 		nioFile = new NioFile(statusFile, "rwd");
 	}
 
-	public TxnStatusFile() {
+	protected TxnStatusFile() {
 		nioFile = null;
 	}
 
@@ -112,20 +112,14 @@ class TxnStatusFile {
 	 * @param txnStatus The transaction status to write.
 	 * @throws IOException If the transaction status could not be written to file.
 	 */
-	public void setTxnStatus(TxnStatus txnStatus, boolean force) throws IOException {
+	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
 		if (disabled) {
 			return;
 		}
 		if (txnStatus == TxnStatus.NONE) {
-			// noinspection DataFlowIssue
 			nioFile.truncate(0);
 		} else {
-			// noinspection DataFlowIssue
 			nioFile.writeBytes(txnStatus.onDisk, 0);
-		}
-
-		if (force) {
-			nioFile.force(false);
 		}
 	}
 
@@ -140,28 +134,41 @@ class TxnStatusFile {
 		if (disabled) {
 			return TxnStatus.NONE;
 		}
+		byte[] bytes;
 		try {
-			// noinspection DataFlowIssue
-			return statusMapping[nioFile.readBytes(0, 1)[0]];
+			bytes = nioFile.readBytes(0, 1);
 		} catch (EOFException e) {
 			// empty file = NONE status
 			return TxnStatus.NONE;
-		} catch (IndexOutOfBoundsException e) {
-			// fall back to deprecated reading method
-			return getTxnStatusDeprecated();
 		}
 
-	}
+		TxnStatus status;
 
-	final static TxnStatus[] statusMapping = new TxnStatus[17];
+		switch (bytes[0]) {
+		case TxnStatus.NONE_BYTE:
+			status = TxnStatus.NONE;
+			break;
+		case TxnStatus.OLD_NONE_BYTE:
+			status = TxnStatus.NONE;
+			break;
+		case TxnStatus.ACTIVE_BYTE:
+			status = TxnStatus.ACTIVE;
+			break;
+		case TxnStatus.COMMITTING_BYTE:
+			status = TxnStatus.COMMITTING;
+			break;
+		case TxnStatus.ROLLING_BACK_BYTE:
+			status = TxnStatus.ROLLING_BACK;
+			break;
+		case TxnStatus.UNKNOWN_BYTE:
+			status = TxnStatus.UNKNOWN;
+			break;
+		default:
+			status = getTxnStatusDeprecated();
+		}
 
-	static {
-		statusMapping[TxnStatus.NONE_BYTE] = TxnStatus.NONE;
-		statusMapping[TxnStatus.OLD_NONE_BYTE] = TxnStatus.NONE;
-		statusMapping[TxnStatus.ACTIVE_BYTE] = TxnStatus.ACTIVE;
-		statusMapping[TxnStatus.COMMITTING_BYTE] = TxnStatus.COMMITTING;
-		statusMapping[TxnStatus.ROLLING_BACK_BYTE] = TxnStatus.ROLLING_BACK;
-		statusMapping[TxnStatus.UNKNOWN_BYTE] = TxnStatus.UNKNOWN;
+		return status;
+
 	}
 
 	private TxnStatus getTxnStatusDeprecated() throws IOException {
@@ -169,7 +176,6 @@ class TxnStatusFile {
 			return TxnStatus.NONE;
 		}
 
-		// noinspection DataFlowIssue
 		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
 
 		String s = new String(bytes, US_ASCII);

@@ -64,7 +64,7 @@ public class TripleStoreRecoveryTest {
 		// Pretend that commit was called
 		TxnStatusFile txnStatusFile = new TxnStatusFile(dataDir);
 		try {
-			txnStatusFile.setTxnStatus(TxnStatus.COMMITTING, true);
+			txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
 		} finally {
 			txnStatusFile.close();
 		}
