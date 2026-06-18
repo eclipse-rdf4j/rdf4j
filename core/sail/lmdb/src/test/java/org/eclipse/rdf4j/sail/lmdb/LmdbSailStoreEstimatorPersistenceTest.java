@@ -289,6 +289,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		repository.init();
 		try {
 			loadNameData(repository);
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 			recordLearnedFilterPassRatio(store, learnedFilter);
 		} finally {
 			repository.shutDown();
