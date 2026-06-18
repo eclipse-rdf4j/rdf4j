@@ -3139,7 +3139,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Build the right argument in a new graph pattern (inherits context/scope)
 		graphPattern = new GraphPattern(parentGP);
-		boolean directSubSelect = node.jjtGetNumChildren() == 1 && node.jjtGetChild(0) instanceof ASTSelectQuery;
+		boolean directSubSelect = node.jjtGetNumChildren() == 1 && isDirectSubSelect(node.jjtGetChild(0));
 		lateralScopes.push(new LateralScope(rightInputBindingNames, rightInputBindingNames, verifyAssignments));
 		TupleExpr rightArg;
 		try {
@@ -3160,6 +3160,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		graphPattern = parentGP;
 
 		return null;
+	}
+
+	private boolean isDirectSubSelect(Node node) {
+		if (node instanceof ASTSelectQuery) {
+			return true;
+		}
+
+		return node instanceof ASTGraphPatternGroup
+				&& node.jjtGetNumChildren() == 1
+				&& isDirectSubSelect(node.jjtGetChild(0));
 	}
 
 	private void verifyLateralAssignments(Set<String> aliases, String assignmentType) throws VisitorException {

@@ -286,6 +286,39 @@ public class LateralTest extends AbstractComplianceTest {
 		}
 	}
 
+	private void testLateralGroupedSubSelectDoesNotSeeHiddenOuterVariable(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "\n"
+				+ "ex:subject1 ex:predicate ex:object1 .\n"
+				+ "ex:subject1 rdfs:label \"Label 1\" .\n"
+				+ "ex:subject2 ex:predicate ex:object2 .\n"
+				+ "ex:subject2 rdfs:label \"Label 2\" .\n"
+				+ "ex:subject3 ex:predicate ex:object3 .\n"
+				+ "ex:subject3 rdfs:label \"Label 3\" .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "\n"
+				+ "SELECT * {\n"
+				+ "   ?s ex:predicate ?o\n"
+				+ "   LATERAL {\n"
+				+ "      { SELECT ?label { ?s rdfs:label ?label } ORDER BY ?label LIMIT 1 }\n"
+				+ "   }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(3, results.size());
+			assertThat(results)
+					.allSatisfy(bs -> assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1"));
+		}
+	}
+
 	private void testNestedLateralSubSelectCanSeeOuterBinding(RepositoryConnection conn) throws Exception {
 		String data = "@prefix ex: <http://example.org/> .\n"
 				+ "\n"
@@ -566,6 +599,8 @@ public class LateralTest extends AbstractComplianceTest {
 				makeTest("LateralVariableScoping", this::testLateralVariableScoping),
 				makeTest("LateralSubSelectDoesNotSeeHiddenOuterVariable",
 						this::testLateralSubSelectDoesNotSeeHiddenOuterVariable),
+				makeTest("LateralGroupedSubSelectDoesNotSeeHiddenOuterVariable",
+						this::testLateralGroupedSubSelectDoesNotSeeHiddenOuterVariable),
 				makeTest("NestedLateralSubSelectCanSeeOuterBinding",
 						this::testNestedLateralSubSelectCanSeeOuterBinding),
 				makeTest("LateralParseErrorOnRebindingVariable", this::testLateralParseErrorOnRebindingVariable),
