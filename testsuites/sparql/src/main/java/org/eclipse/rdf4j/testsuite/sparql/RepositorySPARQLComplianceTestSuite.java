@@ -108,6 +108,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	}
 
 	@TestFactory
+	Stream<DynamicTest> lateralScope() throws RDF4JException, IOException {
+		return new LateralScopeTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
 	Stream<DynamicTest> propertyPath() throws RDF4JException, IOException {
 		return new PropertyPathTest(this::getEmptyInitializedRepository).tests();
 	}

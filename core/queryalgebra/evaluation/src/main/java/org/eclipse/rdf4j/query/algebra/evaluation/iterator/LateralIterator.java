@@ -30,11 +30,16 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  */
 public class LateralIterator extends LookAheadIteration<BindingSet> {
 
+	@FunctionalInterface
+	public interface RightEvaluator {
+		CloseableIteration<BindingSet> evaluate(BindingSet leftBindings);
+	}
+
 	private final CloseableIteration<BindingSet> leftIter;
 
 	private CloseableIteration<BindingSet> rightIter;
 
-	private final QueryEvaluationStep preparedRight;
+	private final RightEvaluator rightEvaluator;
 
 	private final Set<String> rightInputBindingNames;
 
@@ -46,17 +51,25 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 			QueryEvaluationStep preparedRight, BindingSet bindings, Set<String> rightInputBindingNames)
 			throws QueryEvaluationException {
 		leftIter = leftPrepared.evaluate(bindings);
-		this.preparedRight = preparedRight;
 		this.rightInputBindingNames = rightInputBindingNames;
 		this.originalBindings = bindings;
+		this.rightEvaluator = leftBindings -> preparedRight.evaluate(filterRightInput(leftBindings));
 	}
 
 	private LateralIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight,
 			Set<String> rightInputBindingNames, BindingSet originalBindings) throws QueryEvaluationException {
 		this.leftIter = leftIter;
-		this.preparedRight = preparedRight;
 		this.rightInputBindingNames = rightInputBindingNames;
 		this.originalBindings = originalBindings;
+		this.rightEvaluator = leftBindings -> preparedRight.evaluate(filterRightInput(leftBindings));
+	}
+
+	private LateralIterator(CloseableIteration<BindingSet> leftIter, RightEvaluator rightEvaluator)
+			throws QueryEvaluationException {
+		this.leftIter = leftIter;
+		this.rightEvaluator = rightEvaluator;
+		this.rightInputBindingNames = Set.of();
+		this.originalBindings = EmptyBindingSet.getInstance();
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
@@ -83,6 +96,15 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 		return new LateralIterator(leftIter, preparedRight, rightInputBindingNames, originalBindings);
 	}
 
+	public static CloseableIteration<BindingSet> getInstance(CloseableIteration<BindingSet> leftIter,
+			RightEvaluator rightEvaluator) {
+		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
+			return leftIter;
+		}
+
+		return new LateralIterator(leftIter, rightEvaluator);
+	}
+
 	/*---------*
 	 * Methods *
 	 *---------*/
@@ -102,7 +124,7 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 		while (leftIter.hasNext()) {
 			currentLeftBindings = leftIter.next();
-			rightIter = preparedRight.evaluate(filterRightInput(currentLeftBindings));
+			rightIter = rightEvaluator.evaluate(currentLeftBindings);
 			while (rightIter.hasNext()) {
 				BindingSet joined = merge(currentLeftBindings, rightIter.next());
 				if (joined != null) {
