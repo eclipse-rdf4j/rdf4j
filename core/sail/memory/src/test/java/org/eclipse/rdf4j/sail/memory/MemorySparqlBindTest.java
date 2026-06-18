@@ -1,0 +1,107 @@
+/*******************************************************************************
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.sail.memory;
+
+import java.io.StringReader;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+public class MemorySparqlBindTest {
+
+	@Test
+	public void testBind() throws Exception {
+
+		String data = """
+								@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+				@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+				@prefix schema: <https://schema.org/> .
+				@prefix ex: <http://www.example.com/resource/> .
+
+
+				ex:CompanyA a schema:Organization ;
+				    schema:name "Company A" .
+
+				ex:Alice a schema:Person ;
+				    schema:name "Alice Smith";
+				    schema:memberOf ex:CompanyA ;
+				    schema:affiliation ex:CompanyA .
+
+				ex:Bob a schema:Person ;
+				    schema:name "Bob Jones";
+				    schema:memberOf ex:CompanyA ;
+				    schema:affiliation ex:CompanyA .
+
+
+				ex:Paper2 a schema:CreativeWork ;
+				    schema:name "A Benchmark Suite for Distributed Systems" ;
+				    schema:citation ex:Paper3, ex:Paper4 ;
+				    schema:author ex:Alice, ex:Carol, ex:Bob, ex:Dave ;
+				    schema:sourceOrganization ex:UniversityA, ex:CompanyA .
+
+				ex:Paper3 a schema:CreativeWork ;
+				    schema:name "Optimization Techniques for Distributed Systems" ;
+				    schema:citation ex:Paper5 .
+								""";
+
+		String testQuery = """
+				SELECT DISTINCT ?node0 ?prop1 ?node1 ?prop2 ?node2 ?prop3 ?node3
+				WHERE {
+				  BIND(<http://www.example.com/resource/Alice> as ?node0)
+				  BIND(<http://www.example.com/resource/Bob> as ?node3)
+
+
+				  { ?node0 ?prop1 ?node1 . FILTER(ISIRI(?node1))  }
+				  { ?node1 ?prop2 ?node2 } UNION { ?node2 ?prop2 ?node1 }
+				  { ?node2 ?prop3 ?node3 } UNION { ?node3 ?prop3 ?node2 }
+
+
+				  # avoid cycles
+				  FILTER(?node1 != ?node0)
+				  FILTER(?node2 != ?node0)
+				  FILTER(?node2 != ?node1)
+				  FILTER(?node3 != ?node0)
+				  FILTER(?node3 != ?node1)
+				  FILTER(?node3 != ?node2)
+				} LIMIT 100
+				                """;
+
+		Repository repository = new SailRepository(new MemoryStore());
+
+		try (var conn = repository.getConnection()) {
+
+			// load test data
+			try (var reader = new StringReader(data)) {
+				conn.add(reader, RDFFormat.TRIG);
+			}
+
+			// query
+			var tq = conn.prepareTupleQuery(testQuery);
+			var res = Iterations.asList(tq.evaluate());
+
+			Assertions.assertEquals(Set.of(Values.iri("http://www.example.com/resource/Bob")),
+					res.stream().map(bs -> bs.getValue("node3")).collect(Collectors.toSet()));
+
+			// the expected result is two paths
+			Assertions.assertEquals(2, res.size());
+		}
+
+		repository.shutDown();
+	}
+
+}

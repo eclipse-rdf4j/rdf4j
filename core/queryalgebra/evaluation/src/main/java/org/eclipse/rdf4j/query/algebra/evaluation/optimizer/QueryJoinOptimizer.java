@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -546,7 +548,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsExtension(expr)) {
+				if (joinArgContainsExtension(expr)) {
 					if (extensions.isEmpty()) {
 						extensions = List.of(expr);
 					} else {
@@ -558,6 +560,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return extensions;
+		}
+
+		/**
+		 * Returns true if the join arg contains an Extension (BIND clause) that contributes bindings to the current
+		 * join scope. Unlike {@link TupleExprs#containsExtension}, this also looks through Filter and Join wrappers
+		 * that a pre-pass filter optimizer may have introduced around Extension-containing subtrees.
+		 */
+		private static boolean joinArgContainsExtension(TupleExpr expr) {
+			if (expr instanceof Extension) {
+				return true;
+			}
+			if (expr instanceof Filter filter) {
+				return joinArgContainsExtension(filter.getArg());
+			}
+			if (expr instanceof Join join) {
+				return joinArgContainsExtension(join.getLeftArg()) || joinArgContainsExtension(join.getRightArg());
+			}
+			return false;
 		}
 
 		/**
