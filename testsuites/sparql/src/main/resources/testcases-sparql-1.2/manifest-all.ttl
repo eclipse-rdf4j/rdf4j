@@ -14,5 +14,4 @@
 <http://www.w3.org/TR/sparql11-query/> rdfs:label "SPARQL 1.1 Query Language" ;
 	mf:conformanceRequirement (
 		<aggregates/manifest.ttl>
-		<lateral/manifest.ttl>
 	).
