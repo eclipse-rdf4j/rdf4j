@@ -83,8 +83,8 @@ class LmdbThemeQueryRegressionIT {
 			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
-			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName()
-			+ "=<path> to change the cache root.";
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
 			Theme.SOCIAL_MEDIA, List.of(0, 1, 2, 3, 4, 6, 8, 9, 10),
@@ -2143,7 +2143,8 @@ class LmdbThemeQueryRegressionIT {
 	private static Path prepareThemeStore(Path dataDir, Theme theme, List<Integer> primeIndexes) throws Exception {
 		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primeIndexes);
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
-				.preparePersistentThemeRegressionStore(
+				.prepareThemeRegressionStore(
+						dataDir.resolve("theme-query-regression-" + theme.name() + "-" + primeIndexKey(primeIndexes)),
 						storeKey,
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
