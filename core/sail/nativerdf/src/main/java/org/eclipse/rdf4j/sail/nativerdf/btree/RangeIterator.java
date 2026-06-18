@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.ConcurrentModificationException;
 import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -28,6 +30,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	private final byte[] minValue;
 
 	private final byte[] maxValue;
+
+	private final long generation;
 
 	private volatile boolean started;
 
@@ -46,12 +50,22 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	private volatile boolean closed = false;
 
+	/**
+	 * Snapshot of the record most recently returned to the caller. Used to make {@link #set(byte[])} update the record
+	 * that was actually returned, rather than whatever record happens to be at the current cursor position after an
+	 * intervening structural update.
+	 */
+	private byte[] lastReturnedValue;
+
+	private boolean canSet;
+
 	public RangeIterator(BTree tree, byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
 		this.tree = tree;
 		this.searchKey = searchKey;
 		this.searchMask = searchMask;
 		this.minValue = minValue;
 		this.maxValue = maxValue;
+		this.generation = tree.getGeneration();
 		this.started = false;
 	}
 
@@ -59,29 +73,44 @@ class RangeIterator implements RecordIterator, NodeListener {
 	public byte[] next() throws IOException {
 		tree.btreeLock.readLock().lock();
 		try {
-			if (!started) {
-				started = true;
-				findMinimum();
-			}
-
-			byte[] value = findNext(revisitValue.getAndSet(false));
-			while (value != null) {
-				if (maxValue != null && tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
-					// Reached maximum value, stop iterating
-					close();
-					value = null;
-					break;
-				} else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
-					// Value doesn't match search key/mask
-					value = findNext(false);
-					continue;
-				} else {
-					// Matching value found
-					break;
+			synchronized (this) {
+				if (closed) {
+					return null;
 				}
-			}
 
-			return value;
+				checkGeneration();
+
+				if (!started) {
+					started = true;
+					findMinimum();
+				}
+
+				byte[] value = findNext(revisitValue.getAndSet(false));
+				while (value != null) {
+					if (maxValue != null && tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
+						// Reached maximum value, stop iterating
+						closeIterator();
+						value = null;
+						break;
+					} else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
+						// Value doesn't match search key/mask
+						value = findNext(false);
+						continue;
+					} else {
+						// Matching value found
+						break;
+					}
+				}
+
+				if (value != null) {
+					lastReturnedValue = value.clone();
+					canSet = true;
+				} else {
+					closeIterator();
+				}
+
+				return value;
+			}
 		} finally {
 			tree.btreeLock.readLock().unlock();
 		}
@@ -149,36 +178,83 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public void set(byte[] value) {
-		tree.btreeLock.readLock().lock();
-		try {
-			Node nextCurrentNode = currentNode;
-			if (nextCurrentNode == null || currentIdx > nextCurrentNode.getValueCount()) {
-				throw new IllegalStateException();
-			}
+	public void set(byte[] value) throws IOException {
+		if (value == null) {
+			throw new IllegalArgumentException("value must not be null");
+		}
+		if (value.length != tree.valueSize) {
+			throw new IllegalArgumentException(
+					"value must be exactly " + tree.valueSize + " bytes, is: " + value.length);
+		}
 
-			nextCurrentNode.setValue(currentIdx - 1, value);
+		tree.btreeLock.writeLock().lock();
+		try {
+			synchronized (this) {
+				if (closed) {
+					throw new IllegalStateException("Iterator has been closed");
+				}
+
+				checkGeneration();
+
+				if (!canSet || lastReturnedValue == null) {
+					throw new IllegalStateException();
+				}
+
+				Node nextCurrentNode = currentNode;
+				int valueIdx = currentIdx - 1;
+				if (nextCurrentNode == null || valueIdx < 0 || valueIdx >= nextCurrentNode.getValueCount()) {
+					throw new ConcurrentModificationException("Iterator position no longer refers to a BTree value");
+				}
+
+				byte[] currentValue = nextCurrentNode.getValue(valueIdx);
+				if (!Arrays.equals(currentValue, lastReturnedValue)) {
+					throw new ConcurrentModificationException("Last returned record was modified before set()");
+				}
+
+				if (tree.comparator.compareBTreeValues(lastReturnedValue, value, 0, value.length) != 0) {
+					throw new IllegalArgumentException(
+							"Replacement record must compare equal to the last returned record");
+				}
+
+				nextCurrentNode.setValue(valueIdx, value);
+				lastReturnedValue = value.clone();
+			}
 		} finally {
-			tree.btreeLock.readLock().unlock();
+			tree.btreeLock.writeLock().unlock();
 		}
 	}
 
 	@Override
 	public void close() throws IOException {
-		if (!closed) {
+		tree.btreeLock.readLock().lock();
+		try {
 			synchronized (this) {
-				if (!closed) {
-					closed = true;
-					tree.btreeLock.readLock().lock();
-					try {
-						clearTraversalState();
-						assert parentStack.isEmpty();
-					} finally {
-						tree.btreeLock.readLock().unlock();
-					}
-				}
+				closeIterator();
 			}
+		} finally {
+			tree.btreeLock.readLock().unlock();
 		}
+	}
+
+	private void closeIterator() throws IOException {
+		if (!closed) {
+			closed = true;
+			invalidateSetPosition();
+			clearTraversalState();
+			assert parentStack.isEmpty();
+		}
+	}
+
+	private void checkGeneration() throws IOException {
+		if (generation != tree.getGeneration()) {
+			closeIterator();
+			throw new ConcurrentModificationException("BTree changed structurally while iterator was active");
+		}
+	}
+
+	private void invalidateSetPosition() {
+		lastReturnedValue = null;
+		canSet = false;
 	}
 
 	private void pushStacks(Node newChildNode) {
@@ -240,6 +316,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	public boolean valueAdded(Node node, int addedIndex) {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
+		invalidateSetPosition();
+
 		if (node == currentNode) {
 			if (addedIndex < currentIdx) {
 				currentIdx++;
@@ -262,6 +340,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	public boolean valueRemoved(Node node, int removedIndex) {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
 
+		invalidateSetPosition();
+
 		if (node == currentNode) {
 			if (removedIndex < currentIdx) {
 				currentIdx--;
@@ -283,6 +363,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
+		invalidateSetPosition();
+
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == node) {
 			if (valueIndex == currentIdx - 1) {
@@ -334,6 +416,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
+		invalidateSetPosition();
+
 		for (StackFrame frame : parentStack) {
 			if (frame.node == leftChildNode) {
 				int stackIdx = frame.childIndex;
@@ -364,6 +448,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	@Override
 	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
+
+		invalidateSetPosition();
 
 		boolean deregister = false;
 
@@ -417,6 +503,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	@Override
 	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException {
 		assert tree.btreeLock.isWriteLockedByCurrentThread();
+
+		invalidateSetPosition();
 
 		boolean deregister = false;
 

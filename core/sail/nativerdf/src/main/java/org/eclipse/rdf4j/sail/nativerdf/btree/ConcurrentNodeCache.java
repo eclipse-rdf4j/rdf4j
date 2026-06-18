@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -53,23 +54,29 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		});
 	}
 
-	public boolean discardEmptyUnused(int nodeId) {
+	public boolean discardEmptyUnused(Node node) {
+		AtomicBoolean discarded = new AtomicBoolean(false);
 
-		Node nn = cache.computeIfPresent(nodeId, (k, v) -> {
-
-			if (v.getUsageCount() == 0 && v.isEmpty() && v.isLeaf()) {
+		cache.computeIfPresent(node.getID(), (k, v) -> {
+			if (v == node && v.getUsageCount() == 0 && v.isEmpty() && v.isLeaf()) {
 				writeNode.accept(v);
+				discarded.set(true);
 				return null;
-			} else {
-				return v;
 			}
+			return v;
 		});
-		return nn == null;
+
+		return discarded.get();
 	}
 
 	public void release(Node node, boolean forceSync) {
 		if (forceSync) {
-			writeNode.accept(node);
+			cache.computeIfPresent(node.getID(), (k, v) -> {
+				if (v == node) {
+					writeNode.accept(v);
+				}
+				return v;
+			});
 		}
 		cleanUp();
 	}
@@ -83,6 +90,12 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		}
 
 		if (node.getUsageCount() > 0) {
+			return false;
+		}
+
+		if (node.isEmpty() && node.isLeaf()) {
+			// Empty leaf nodes must be removed through discardEmptyUnused(Node), so the node ID can be freed
+			// atomically with the cache removal by BTree.releaseNode(Node).
 			return false;
 		}
 
