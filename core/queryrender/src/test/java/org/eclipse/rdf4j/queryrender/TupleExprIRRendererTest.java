@@ -360,6 +360,25 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
+	@Test
+	void renderPreservesGroupedLateralBoundary() {
+		String q = "SELECT ?a ?x WHERE {\n" +
+				"  ?a ex:p ?b .\n" +
+				"  {\n" +
+				"    ?s ex:r ?o .\n" +
+				"    LATERAL {\n" +
+				"      SELECT ?a ?x WHERE {\n" +
+				"        ?a ex:q ?x .\n" +
+				"      }\n" +
+				"      ORDER BY ?x\n" +
+				"      LIMIT 1\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
 	@RepeatedTest(10)
 	void union_of_groups() {
 		String q = "SELECT ?who WHERE {\n" +

@@ -2737,7 +2737,6 @@ public class TupleExprToIrConverter {
 		// Exclude containers: they already carry their own block syntax
 		if (e instanceof Service
 				|| e instanceof Union
-				|| e instanceof Lateral
 				|| e instanceof Projection
 				|| e instanceof Slice
 				|| e instanceof Distinct

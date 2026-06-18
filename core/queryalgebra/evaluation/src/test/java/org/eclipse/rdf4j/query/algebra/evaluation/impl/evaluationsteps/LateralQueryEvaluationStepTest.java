@@ -12,7 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -21,10 +25,20 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +70,40 @@ class LateralQueryEvaluationStepTest {
 				.satisfies(result -> assertThat(result.getValue("seen")).isEqualTo(parentValue));
 	}
 
+	@Test
+	void renamesNestedLateralInputMetadataWhenHidingProjectionSourceBinding() {
+		Value lateralValue = SimpleValueFactory.getInstance().createIRI("urn:lateral");
+		QueryBindingSet leftBindings = new QueryBindingSet();
+		leftBindings.addBinding("lateral", lateralValue);
+
+		Lateral nestedLateral = new Lateral(statementUsing("lateral"), statementUsing("lateral"), Set.of("lateral"));
+		Projection hidingProjection = new Projection(nestedLateral,
+				new ProjectionElemList(new ProjectionElem("visible")));
+		TupleExpr rightArg = new Join(hidingProjection, new SingletonSet());
+		Lateral outerLateral = new Lateral(new SingletonSet(), rightArg, Set.of("lateral"));
+
+		QueryEvaluationStep left = bindings -> iteration(leftBindings);
+		QueryEvaluationStep emptyRight = bindings -> QueryEvaluationStep.EMPTY_ITERATION;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = mock(QueryEvaluationContext.class);
+		List<TupleExpr> precompiled = new ArrayList<>();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleExpr tupleExpr = invocation.getArgument(0);
+			precompiled.add(tupleExpr);
+			return precompiled.size() == 1 ? left : emptyRight;
+		});
+
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, outerLateral, context);
+		step.evaluate(EmptyBindingSet.getInstance()).close();
+
+		assertThat(precompiled).hasSize(3);
+		assertThat(firstLateral(precompiled.get(2)).getRightInputBindingNames())
+				.singleElement()
+				.asString()
+				.startsWith("-lateral-hidden-")
+				.endsWith("-lateral");
+	}
+
 	private static CloseableIteration<BindingSet> iteration(BindingSet bindingSet) {
 		return new CloseableIteratorIteration<>(List.of(bindingSet).iterator());
 	}
@@ -64,5 +112,23 @@ class LateralQueryEvaluationStepTest {
 		try (iteration) {
 			return iteration.stream().toList();
 		}
+	}
+
+	private static StatementPattern statementUsing(String bindingName) {
+		return new StatementPattern(new Var(bindingName), new Var("predicate"), new Var("visible"));
+	}
+
+	private static Lateral firstLateral(TupleExpr tupleExpr) {
+		List<Lateral> laterals = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Lateral node) {
+				laterals.add(node);
+				node.visitChildren(this);
+			}
+		});
+		assertThat(laterals).hasSize(1);
+		return laterals.get(0);
 	}
 }

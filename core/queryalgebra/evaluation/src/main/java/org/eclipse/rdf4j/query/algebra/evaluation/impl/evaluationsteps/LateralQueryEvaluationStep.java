@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -174,6 +175,10 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public void meet(Lateral node) {
+			Set<String> rightInputBindingNames = renamedBindingNames(node.getRightInputBindingNames());
+			if (rightInputBindingNames != node.getRightInputBindingNames()) {
+				node.setRightInputBindingNames(rightInputBindingNames);
+			}
 			node.visitChildren(this);
 		}
 
@@ -250,6 +255,21 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 			return null;
+		}
+
+		private Set<String> renamedBindingNames(Set<String> bindingNames) {
+			LinkedHashSet<String> renamed = new LinkedHashSet<>(bindingNames.size());
+			boolean changed = false;
+			for (String bindingName : bindingNames) {
+				String replacementName = replacementName(bindingName);
+				if (replacementName == null) {
+					renamed.add(bindingName);
+				} else {
+					renamed.add(replacementName);
+					changed = true;
+				}
+			}
+			return changed ? renamed : bindingNames;
 		}
 
 		private String nextReplacementName(String bindingName) {
