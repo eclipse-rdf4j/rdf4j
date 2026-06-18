@@ -29,12 +29,20 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ValueStoreHashCacheTest {
 
 	private ValueStore valueStore;
+	private String previousHashCacheProperty;
+
+	@BeforeEach
+	void before() {
+		previousHashCacheProperty = System.getProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+		System.clearProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+	}
 
 	@Test
 	void defaultConfigShouldNotPersistHashCache(@TempDir File dataDir) throws Exception {
@@ -58,7 +66,26 @@ class ValueStoreHashCacheTest {
 	}
 
 	@Test
+	void configAloneShouldNotEnableHashCache(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = hashCacheEnabledConfig();
+		valueStore = createValueStore(dataDir, config);
+
+		IRI iri = Values.iri("urn:hash:config-only-disabled");
+		long id = storeValue(iri);
+
+		valueStore.close();
+		valueStore = createValueStore(dataDir, config);
+
+		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
+		assertEquals(iri.hashCode(), lazyValue.hashCode());
+		assertTrue("config alone must not enable the mmap hash cache", isInitialized(lazyValue));
+		assertFalse(hashFile(dataDir).exists());
+		assertFalse(integrityFile(dataDir).exists());
+	}
+
+	@Test
 	void enabledHashCacheShouldWriteIntegrityFileAndClearItOnOpen(@TempDir File dataDir) throws Exception {
+		enableHashCacheProperty();
 		LmdbStoreConfig config = hashCacheEnabledConfig();
 		valueStore = createValueStore(dataDir, config);
 
@@ -138,6 +165,7 @@ class ValueStoreHashCacheTest {
 
 	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
 			boolean corruptHashFile) throws Exception {
+		enableHashCacheProperty();
 		LmdbStoreConfig config = hashCacheEnabledConfig();
 		valueStore = createValueStore(dataDir, config);
 
@@ -173,6 +201,10 @@ class ValueStoreHashCacheTest {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
 	}
 
+	private void enableHashCacheProperty() {
+		System.setProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY, "true");
+	}
+
 	private File hashFile(File dataDir) {
 		return new File(new File(dataDir, "values"), ValueStoreHashFile.FILE_NAME);
 	}
@@ -203,6 +235,11 @@ class ValueStoreHashCacheTest {
 	void after() throws Exception {
 		if (valueStore != null) {
 			valueStore.close();
+		}
+		if (previousHashCacheProperty == null) {
+			System.clearProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+		} else {
+			System.setProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY, previousHashCacheProperty);
 		}
 	}
 }

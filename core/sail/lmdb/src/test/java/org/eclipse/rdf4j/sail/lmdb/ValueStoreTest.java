@@ -68,9 +68,12 @@ public class ValueStoreTest {
 
 	private ValueStore valueStore;
 	private File dataDir;
+	private String previousHashCacheProperty;
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
+		previousHashCacheProperty = System.getProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+		System.clearProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
 		this.dataDir = dataDir;
 		this.valueStore = createValueStore();
 	}
@@ -84,6 +87,7 @@ public class ValueStoreTest {
 	}
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
+		System.setProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY, "true");
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
 	}
 
@@ -526,6 +530,11 @@ public class ValueStoreTest {
 		try {
 			valueStore.close();
 		} finally {
+			if (previousHashCacheProperty == null) {
+				System.clearProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY);
+			} else {
+				System.setProperty(LmdbStoreConfig.VALUE_HASH_CACHE_ENABLED_PROPERTY, previousHashCacheProperty);
+			}
 			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
