@@ -51,7 +51,7 @@ public class OrValueEvaluationStep implements QueryValueEvaluationStep {
 			if (QueryEvaluationUtil.getEffectiveBooleanValue(rightValue)) {
 				return BooleanLiteral.TRUE;
 			} else {
-				throw new ValueExprEvaluationException();
+				throw ValueExprEvaluationException.getInstance();
 			}
 		}
 		// Left argument evaluated to 'false', result is determined

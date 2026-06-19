@@ -29,6 +29,10 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 //TODO: at 5.0 move to subpackage values
 public class RegexValueEvaluationStepSupplier {
+
+	public static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION = ValueExprEvaluationException
+			.getInstance();
+
 	/**
 	 * Returns value evaluation steps that determines whether the two operands match according to the <code>regex</code>
 	 * operator.
@@ -66,7 +70,7 @@ public class RegexValueEvaluationStepSupplier {
 				boolean result = pattern.matcher(text).find();
 				return BooleanLiteral.valueOf(result);
 			}
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 
 		private Pattern getPattern(Literal parg, Value farg) {
@@ -127,10 +131,10 @@ public class RegexValueEvaluationStepSupplier {
 					boolean result = pattern.matcher(text).find();
 					return BooleanLiteral.valueOf(result);
 				}
-				throw new ValueExprEvaluationException();
+				throw VALUE_EXPR_EVALUATION_EXCEPTION;
 			};
 		}
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	private static QueryValueEvaluationStep allRegexPartsAreConstant(QueryValueEvaluationStep argStep,
@@ -152,7 +156,7 @@ public class RegexValueEvaluationStepSupplier {
 			BooleanLiteral valueOf = BooleanLiteral.valueOf(result);
 			return new ConstantQueryValueEvaluationStep(valueOf);
 		}
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	private static int extractRegexFlags(Value farg) {

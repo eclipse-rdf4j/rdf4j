@@ -59,7 +59,7 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 			if (QueryEvaluationUtility.getEffectiveBooleanValue(rightValue) == QueryEvaluationUtility.Result._false) {
 				return BooleanLiteral.FALSE;
 			} else {
-				throw new ValueExprEvaluationException();
+				throw ValueExprEvaluationException.getInstance();
 			}
 		}
 

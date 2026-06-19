@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  */
 public class ValueExprEvaluationException extends QueryEvaluationException {
 
+	private static ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION;
+
 	private static final long serialVersionUID = -3633440570594631529L;
 
 	public ValueExprEvaluationException() {
@@ -43,5 +45,11 @@ public class ValueExprEvaluationException extends QueryEvaluationException {
 	public Throwable fillInStackTrace() {
 		// Exception used for excessive flow control. Collecting the stack trace is a slow operation, so skip it.
 		return this;
+	}
+
+	public static ValueExprEvaluationException getInstance() {
+		if (VALUE_EXPR_EVALUATION_EXCEPTION == null)
+			VALUE_EXPR_EVALUATION_EXCEPTION = new ValueExprEvaluationException();
+		return VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 }

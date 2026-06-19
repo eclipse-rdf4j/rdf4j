@@ -108,7 +108,7 @@ public class QueryValueEvaluationStepSupplier {
 				return vf.createLiteral(literal.getLabel());
 			}
 		} else {
-			throw new ValueExprEvaluationException();
+			throw ValueExprEvaluationException.getInstance();
 		}
 	}
 
@@ -128,7 +128,7 @@ public class QueryValueEvaluationStepSupplier {
 			}
 
 		}
-		throw new ValueExprEvaluationException();
+		throw ValueExprEvaluationException.getInstance();
 	}
 
 	public static QueryValueEvaluationStep prepareVar(Var var, QueryEvaluationContext context) {
@@ -139,7 +139,7 @@ public class QueryValueEvaluationStepSupplier {
 			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bindings -> {
 				Value val = getValue.apply(bindings);
 				if (val == null) {
-					throw new ValueExprEvaluationException();
+					throw ValueExprEvaluationException.getInstance();
 				}
 				return val;
 			});
@@ -156,7 +156,7 @@ public class QueryValueEvaluationStepSupplier {
 		if (argValue instanceof IRI uri) {
 			return valueFactory.createIRI(uri.getNamespace());
 		} else {
-			throw new ValueExprEvaluationException();
+			throw ValueExprEvaluationException.getInstance();
 		}
 	}
 
@@ -169,7 +169,7 @@ public class QueryValueEvaluationStepSupplier {
 		if (argValue instanceof IRI uri) {
 			return valueFactory.createLiteral(uri.getLocalName());
 		} else {
-			throw new ValueExprEvaluationException();
+			throw ValueExprEvaluationException.getInstance();
 		}
 	}
 
@@ -205,7 +205,7 @@ public class QueryValueEvaluationStepSupplier {
 			return valueFactory.createLiteral(literal.getLanguage().orElse(""));
 		}
 
-		throw new ValueExprEvaluationException();
+		throw ValueExprEvaluationException.getInstance();
 	}
 
 	private static Value langDir(QueryValueEvaluationStep arg, BindingSet bindings, ValueFactory vf) {
@@ -223,7 +223,7 @@ public class QueryValueEvaluationStepSupplier {
 			return vf.createLiteral(sep >= 0 ? lang.substring(sep + 2) : "");
 		}
 
-		throw new ValueExprEvaluationException();
+		throw ValueExprEvaluationException.getInstance();
 	}
 
 	private static Value strLangDir(
@@ -355,7 +355,7 @@ public class QueryValueEvaluationStepSupplier {
 							.getEffectiveBooleanValue(rightValue) == QueryEvaluationUtility.Result._false) {
 						return BooleanLiteral.FALSE;
 					} else {
-						throw new ValueExprEvaluationException();
+						throw ValueExprEvaluationException.getInstance();
 					}
 				}
 
@@ -401,6 +401,6 @@ public class QueryValueEvaluationStepSupplier {
 			return (IRI) argValue;
 		}
 
-		throw new ValueExprEvaluationException();
+		throw ValueExprEvaluationException.getInstance();
 	}
 }

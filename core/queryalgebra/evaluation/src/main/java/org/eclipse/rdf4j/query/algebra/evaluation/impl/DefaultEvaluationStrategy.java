@@ -13,10 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -191,6 +189,13 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  * @author Andreas Schwarte
  */
 public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient {
+
+	private static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION = ValueExprEvaluationException
+			.getInstance();
+	private static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION_BOTH_LITERALS = new ValueExprEvaluationException(
+			"Both arguments must be literals");
+	private static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION_COALESCE = new ValueExprEvaluationException(
+			"COALESCE arguments do not evaluate to a value");
 
 	protected final TripleSource tripleSource;
 
@@ -1062,13 +1067,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return new ConstantQueryValueEvaluationStep(value);
 		} else {
 			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
-			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
-				if (hasValue.test(bindings)) {
-					return getValue.apply(bindings);
-				} else {
-					throw new ValueExprEvaluationException();
+				try {
+					Value apply = getValue.apply(bindings);
+					if (apply != null) {
+						return getValue.apply(bindings);
+					}
+				} catch (Exception e) {
+					throw new ValueExprEvaluationException(e);
 				}
+				throw VALUE_EXPR_EVALUATION_EXCEPTION;
 			};
 		}
 
@@ -1241,7 +1249,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return BooleanLiteral.valueOf(result);
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
@@ -1387,8 +1395,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				}
 			}
 
-			throw new ValueExprEvaluationException(
-					"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+			throw VALUE_EXPR_EVALUATION_EXCEPTION_COALESCE;
 		};
 	}
 
@@ -1431,7 +1438,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				if (l instanceof Literal && r instanceof Literal) {
 					return MathUtil.compute((Literal) l, (Literal) r, operator);
 				} else {
-					throw new ValueExprEvaluationException("Both arguments must be literals");
+					throw VALUE_EXPR_EVALUATION_EXCEPTION_BOTH_LITERALS;
 				}
 			};
 		}
@@ -1442,7 +1449,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				if (l instanceof Literal && r instanceof Literal) {
 					return XMLDatatypeMathUtil.compute((Literal) l, (Literal) r, operator, vf);
 				} else {
-					throw new ValueExprEvaluationException("Both arguments must be literals");
+					throw VALUE_EXPR_EVALUATION_EXCEPTION_BOTH_LITERALS;
 				}
 			};
 		}
