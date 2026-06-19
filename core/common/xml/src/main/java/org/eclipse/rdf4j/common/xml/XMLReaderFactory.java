@@ -29,6 +29,41 @@ public class XMLReaderFactory {
 
 	public static final String XERCES_SAXPARSER = "org.apache.xerces.parsers.SAXParser";
 
+	/**
+	 * System property for configuring {@link XMLConstants#FEATURE_SECURE_PROCESSING}.
+	 * <p>
+	 * Defaults to {@code true}.
+	 */
+	public static final String SECURE_PROCESSING_PROPERTY = "org.eclipse.rdf4j.common.xml.secure-processing";
+
+	/**
+	 * System property for configuring the Apache Xerces {@code disallow-doctype-decl} feature.
+	 * <p>
+	 * Defaults to {@code true}.
+	 */
+	public static final String DISALLOW_DOCTYPE_DECL_PROPERTY = "org.eclipse.rdf4j.common.xml.disallow-doctype-decl";
+
+	/**
+	 * System property for configuring the Apache Xerces {@code load-external-dtd} feature.
+	 * <p>
+	 * Defaults to {@code false}.
+	 */
+	public static final String LOAD_EXTERNAL_DTD_PROPERTY = "org.eclipse.rdf4j.common.xml.load-external-dtd";
+
+	/**
+	 * System property for configuring the SAX {@code external-general-entities} feature.
+	 * <p>
+	 * Defaults to {@code false}.
+	 */
+	public static final String EXTERNAL_GENERAL_ENTITIES_PROPERTY = "org.eclipse.rdf4j.common.xml.external-general-entities";
+
+	/**
+	 * System property for configuring the SAX {@code external-parameter-entities} feature.
+	 * <p>
+	 * Defaults to {@code false}.
+	 */
+	public static final String EXTERNAL_PARAMETER_ENTITIES_PROPERTY = "org.eclipse.rdf4j.common.xml.external-parameter-entities";
+
 	private static final String DISALLOW_DOCTYPE_DECL = "http://apache.org/xml/features/disallow-doctype-decl";
 
 	private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
@@ -133,12 +168,20 @@ public class XMLReaderFactory {
 	}
 
 	private static XMLReader configureSecureXMLReader(XMLReader reader) throws SAXException {
-		setRequiredFeature(reader, XMLConstants.FEATURE_SECURE_PROCESSING, true);
-		setRequiredFeature(reader, DISALLOW_DOCTYPE_DECL, true);
-		setRequiredFeature(reader, LOAD_EXTERNAL_DTD, false);
-		setRequiredFeature(reader, EXTERNAL_GENERAL_ENTITIES, false);
-		setRequiredFeature(reader, EXTERNAL_PARAMETER_ENTITIES, false);
+		setRequiredFeature(reader, XMLConstants.FEATURE_SECURE_PROCESSING,
+				getBooleanProperty(SECURE_PROCESSING_PROPERTY, true));
+		setRequiredFeature(reader, DISALLOW_DOCTYPE_DECL, getBooleanProperty(DISALLOW_DOCTYPE_DECL_PROPERTY, true));
+		setRequiredFeature(reader, LOAD_EXTERNAL_DTD, getBooleanProperty(LOAD_EXTERNAL_DTD_PROPERTY, false));
+		setRequiredFeature(reader, EXTERNAL_GENERAL_ENTITIES,
+				getBooleanProperty(EXTERNAL_GENERAL_ENTITIES_PROPERTY, false));
+		setRequiredFeature(reader, EXTERNAL_PARAMETER_ENTITIES,
+				getBooleanProperty(EXTERNAL_PARAMETER_ENTITIES_PROPERTY, false));
 		return reader;
+	}
+
+	private static boolean getBooleanProperty(String property, boolean defaultValue) {
+		String value = System.getProperty(property);
+		return value == null ? defaultValue : Boolean.parseBoolean(value);
 	}
 
 	private static void setRequiredFeature(XMLReader reader, String feature, boolean value) throws SAXException {
