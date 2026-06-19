@@ -229,7 +229,7 @@ class TripleStore implements Closeable {
 		if (Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP)) {
 			return new MemoryMappedTxnStatusFile(dir, forceSync);
 		}
-		return new TxnStatusFile(dir);
+		return new TxnStatusFile(dir, forceSync);
 	}
 
 	/*---------*
