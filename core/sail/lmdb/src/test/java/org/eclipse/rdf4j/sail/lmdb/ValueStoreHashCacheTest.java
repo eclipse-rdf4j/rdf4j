@@ -58,6 +58,30 @@ class ValueStoreHashCacheTest {
 	}
 
 	@Test
+	void configAloneShouldEnableHashCache(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = hashCacheEnabledConfig();
+		valueStore = createValueStore(dataDir, config);
+
+		IRI iri = Values.iri("urn:hash:config-only-enabled");
+		long id = storeValue(iri);
+
+		valueStore.close();
+		valueStore = null;
+
+		assertTrue(hashFile(dataDir).exists());
+		assertTrue(integrityFile(dataDir).exists());
+
+		valueStore = createValueStore(dataDir, config);
+
+		assertFalse("startup should remove integrity metadata until the next clean shutdown",
+				integrityFile(dataDir).exists());
+
+		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
+		assertEquals(iri.hashCode(), lazyValue.hashCode());
+		assertFalse("config alone should enable the mmap hash cache", isInitialized(lazyValue));
+	}
+
+	@Test
 	void enabledHashCacheShouldWriteIntegrityFileAndClearItOnOpen(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = hashCacheEnabledConfig();
 		valueStore = createValueStore(dataDir, config);
@@ -111,6 +135,28 @@ class ValueStoreHashCacheTest {
 		}, false);
 	}
 
+	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
+			boolean corruptHashFile) throws Exception {
+		LmdbStoreConfig config = hashCacheEnabledConfig();
+		valueStore = createValueStore(dataDir, config);
+
+		IRI iri = Values.iri("urn:hash:corrupt");
+		int expectedHash = iri.hashCode();
+		long id = storeValue(iri);
+
+		valueStore.close();
+		valueStore = null;
+
+		corruptor.accept(corruptHashFile ? hashFile(dataDir) : integrityFile(dataDir));
+
+		valueStore = createValueStore(dataDir, config);
+
+		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazyValue));
+		assertEquals(expectedHash, lazyValue.hashCode());
+		assertTrue("invalid cache metadata should force lazy IRIs to recompute their hash", isInitialized(lazyValue));
+	}
+
 	@Test
 	void deleteShouldCleanMappedSegments(@TempDir File dataDir) throws Exception {
 		File valuesDir = new File(dataDir, "values");
@@ -134,28 +180,6 @@ class ValueStoreHashCacheTest {
 		} finally {
 			reopened.close();
 		}
-	}
-
-	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
-			boolean corruptHashFile) throws Exception {
-		LmdbStoreConfig config = hashCacheEnabledConfig();
-		valueStore = createValueStore(dataDir, config);
-
-		IRI iri = Values.iri("urn:hash:corrupt");
-		int expectedHash = iri.hashCode();
-		long id = storeValue(iri);
-
-		valueStore.close();
-		valueStore = null;
-
-		corruptor.accept(corruptHashFile ? hashFile(dataDir) : integrityFile(dataDir));
-
-		valueStore = createValueStore(dataDir, config);
-
-		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
-		assertFalse(isInitialized(lazyValue));
-		assertEquals(expectedHash, lazyValue.hashCode());
-		assertTrue("invalid cache metadata should force lazy IRIs to recompute their hash", isInitialized(lazyValue));
 	}
 
 	private ValueStore createValueStore(File dataDir, LmdbStoreConfig config) throws IOException {
