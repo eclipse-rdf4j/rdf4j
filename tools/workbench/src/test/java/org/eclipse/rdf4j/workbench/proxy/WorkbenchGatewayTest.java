@@ -178,6 +178,27 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void changeServerAcceptsSubmittedRelativeDefaultServer() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+
+		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
+		changeRequest.addParameter("workbench-server", "https://example.org/rdf4j-server");
+		CapturedResponse response = new CapturedResponse();
+
+		gateway.service(changeRequest, response);
+
+		assertThat(response.getRedirect()).isEqualTo("/workbench");
+		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://example.org/rdf4j-server");
+	}
+
+	@Test
 	void gatewayFactoriesFixedServersAndFallbackPathsAreCovered() throws Exception {
 		WorkbenchGateway real = new WorkbenchGateway();
 		ServletConfig config = TestServletConfig.withParams("gateway",
