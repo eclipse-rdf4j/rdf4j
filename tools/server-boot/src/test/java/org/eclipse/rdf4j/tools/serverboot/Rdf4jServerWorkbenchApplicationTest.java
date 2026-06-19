@@ -14,12 +14,15 @@ package org.eclipse.rdf4j.tools.serverboot;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.io.StringReader;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -56,8 +59,13 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.web.server.LocalServerPort;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.servlet.DispatcherServlet;
 
 import ch.qos.logback.classic.Level;
@@ -65,6 +73,8 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@ContextConfiguration(initializers = Rdf4jServerWorkbenchApplicationTest.IsolatedAppDataInitializer.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class Rdf4jServerWorkbenchApplicationTest {
 
@@ -432,6 +442,47 @@ class Rdf4jServerWorkbenchApplicationTest {
 			cursor = next;
 		}
 		return false;
+	}
+
+	static final class IsolatedAppDataInitializer
+			implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+
+		@Override
+		public void initialize(ConfigurableApplicationContext applicationContext) {
+			TempAppDataDir appDataDir = createAppDataDir();
+			String previousAppDataBaseDir = System.getProperty(Platform.APPDATA_BASEDIR_PROPERTY);
+			System.setProperty(Platform.APPDATA_BASEDIR_PROPERTY, appDataDir.directory().toString());
+			applicationContext.addApplicationListener(event -> {
+				if (event instanceof ContextClosedEvent) {
+					restoreAppDataBaseDir(previousAppDataBaseDir);
+					closeAppDataDir(appDataDir);
+				}
+			});
+		}
+
+		private static TempAppDataDir createAppDataDir() {
+			try {
+				return TempAppDataDir.create("rdf4j-server-boot-app-");
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
+		private static void restoreAppDataBaseDir(String previousAppDataBaseDir) {
+			if (previousAppDataBaseDir == null) {
+				System.clearProperty(Platform.APPDATA_BASEDIR_PROPERTY);
+			} else {
+				System.setProperty(Platform.APPDATA_BASEDIR_PROPERTY, previousAppDataBaseDir);
+			}
+		}
+
+		private static void closeAppDataDir(TempAppDataDir appDataDir) {
+			try {
+				appDataDir.close();
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
 	}
 
 }

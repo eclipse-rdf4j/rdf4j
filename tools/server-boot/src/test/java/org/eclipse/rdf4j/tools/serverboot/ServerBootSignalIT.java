@@ -60,7 +60,7 @@ class ServerBootSignalIT {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
 
 	private ExecutorService streamExecutor;
-	private final List<Runnable> cleanupActions = new ArrayList<>();
+	private final List<CleanupAction> cleanupActions = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -73,15 +73,23 @@ class ServerBootSignalIT {
 	}
 
 	@AfterEach
-	void tearDown() {
-		for (Runnable cleanup : cleanupActions) {
+	void tearDown() throws Exception {
+		Exception cleanupFailure = null;
+		for (int i = cleanupActions.size() - 1; i >= 0; i--) {
 			try {
-				cleanup.run();
-			} catch (Exception ignored) {
-				// best-effort cleanup
+				cleanupActions.get(i).run();
+			} catch (Exception e) {
+				if (cleanupFailure == null) {
+					cleanupFailure = e;
+				} else {
+					cleanupFailure.addSuppressed(e);
+				}
 			}
 		}
 		streamExecutor.shutdownNow();
+		if (cleanupFailure != null) {
+			throw cleanupFailure;
+		}
 	}
 
 	@Test
@@ -108,6 +116,8 @@ class ServerBootSignalIT {
 		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		int serverPort = findFreePort();
 		int managementPort = findFreePort();
+		TempAppDataDir appDataDir = TempAppDataDir.create("rdf4j-server-boot-signal-");
+		cleanupActions.add(appDataDir::close);
 
 		// Find the executable JAR
 		Path targetDir = projectRoot.resolve("target");
@@ -119,14 +129,15 @@ class ServerBootSignalIT {
 				.findFirst()
 				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
 
-		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
+		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, appDataDir.systemPropertyArgument(), "-jar",
+				jarPath.toString(),
 				"--server.port=" + serverPort,
 				"--management.server.port=" + managementPort);
 		processBuilder.directory(projectRoot.toFile());
 		processBuilder.redirectErrorStream(true);
 
 		Process process = processBuilder.start();
-		cleanupActions.add(() -> process.destroyForcibly());
+		cleanupActions.add(() -> destroyProcess(process));
 
 		CountDownLatch started = new CountDownLatch(1);
 		StringBuilder outputBuffer = new StringBuilder();
@@ -189,10 +200,17 @@ class ServerBootSignalIT {
 	private void sendSignal(long pid, String signalName) throws IOException, InterruptedException {
 		Process signalProcess = new ProcessBuilder("kill", "-s", signalName, Long.toString(pid))
 				.start();
-		cleanupActions.add(() -> signalProcess.destroyForcibly());
+		cleanupActions.add(() -> destroyProcess(signalProcess));
 		if (!signalProcess.waitFor(5, SECONDS)) {
 			signalProcess.destroyForcibly();
 			signalProcess.waitFor(5, SECONDS);
+		}
+	}
+
+	private void destroyProcess(Process process) throws InterruptedException {
+		if (process.isAlive()) {
+			process.destroyForcibly();
+			process.waitFor(5, SECONDS);
 		}
 	}
 
@@ -275,5 +293,10 @@ class ServerBootSignalIT {
 			socket.setReuseAddress(true);
 			return socket.getLocalPort();
 		}
+	}
+
+	@FunctionalInterface
+	private interface CleanupAction {
+		void run() throws Exception;
 	}
 }

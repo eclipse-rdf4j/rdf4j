@@ -87,6 +87,7 @@ final class SignalShutdownHandler implements AutoCloseable {
 		} else {
 			logger.warn("SIG{} received before application context became available; shutting down immediately.",
 					signalName);
+			System.exit(0);
 		}
 
 	}
