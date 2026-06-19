@@ -4,9 +4,16 @@ set -euo pipefail
 usage() {
         cat <<USAGE
 Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodName> [options]
+       $0 --theme-plan-run --theme-query <THEME:INDEX> [options]
+       $0 --aas-run [--aas-query <queryName>] [options]
 
 Options:
+  --theme-plan-run                  Shortcut for ThemeQueryPlanRunBenchmark.runQuery
+  --theme-query <THEME:INDEX>       Add themeName/z_queryIndex params, e.g. SOCIAL_MEDIA:5
+  --aas-run                         Shortcut for AASQueriesBenchmark.runQuery
+  --aas-query <queryName>           Add AAS query param, e.g. query3LineAggregates
   --clean                           Force a clean rebuild before packaging
+  --no-build, --skip-build          Skip Maven packaging and run an existing benchmark jar
   --dry-run                         Print the Maven and JMH commands without executing them
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
@@ -20,6 +27,9 @@ Options:
   --enable-jmh-jfr                  Enable JMH's Java Flight Recorder profiler
   --jmh-jfr-output-dir <path>       Override the destination directory for JMH JFR recordings
   --                                Treat the remaining arguments as raw JMH arguments
+
+Environment:
+  RDF4J_BENCHMARK_PLAN_GUARD=false  Disable early query-plan risk detection
 USAGE
 }
 
@@ -29,7 +39,12 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 module=""
 benchmark_class=""
 benchmark_method=""
+theme_plan_run=false
+theme_query=""
+aas_run=false
+aas_query=""
 clean_build=false
+no_build=false
 dry_run=false
 warmup_iterations=1
 measurement_iterations=3
@@ -53,8 +68,29 @@ mvn_threads="${RDF4J_BENCHMARK_MVN_THREADS:-2C}"
 
 while [[ $# -gt 0 ]]; do
         case "$1" in
+        --theme-plan-run)
+                theme_plan_run=true
+                shift
+                ;;
+        --theme-query)
+                theme_query="$2"
+                shift 2
+                ;;
+        --aas-run)
+                aas_run=true
+                shift
+                ;;
+        --aas-query)
+                aas_query="$2"
+                aas_run=true
+                shift 2
+                ;;
         --clean)
                 clean_build=true
+                shift
+                ;;
+        --no-build|--skip-build)
+                no_build=true
                 shift
                 ;;
         --module|-m)
@@ -139,9 +175,104 @@ while [[ $# -gt 0 ]]; do
         esac
 done
 
+has_jvm_property() {
+        local property="$1"
+        local arg
+        for arg in "${jvm_args[@]}"; do
+                if [[ "${arg}" == "-D${property}="* ]]; then
+                        return 0
+                fi
+        done
+        return 1
+}
+
+has_jvm_arg_prefix() {
+        local prefix="$1"
+        local arg
+        for arg in "${jvm_args[@]}"; do
+                if [[ "${arg}" == "${prefix}"* ]]; then
+                        return 0
+                fi
+        done
+        return 1
+}
+
+if ${theme_plan_run}; then
+        if [[ -z "${module}" ]]; then
+                module="core/sail/lmdb"
+        fi
+        if [[ -z "${benchmark_class}" ]]; then
+                benchmark_class="org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryPlanRunBenchmark"
+        fi
+        if [[ -z "${benchmark_method}" ]]; then
+                benchmark_method="runQuery"
+        fi
+        if ! ${warmup_overridden}; then
+                warmup_iterations=2
+        fi
+        if ! ${measurement_overridden}; then
+                measurement_iterations=2
+        fi
+fi
+
+if ${aas_run}; then
+        if [[ -z "${module}" ]]; then
+                module="core/sail/lmdb"
+        fi
+        if [[ -z "${benchmark_class}" ]]; then
+                benchmark_class="org.eclipse.rdf4j.sail.lmdb.benchmark.AASQueriesBenchmark"
+        fi
+        if [[ -z "${benchmark_method}" ]]; then
+                benchmark_method="runQuery"
+        fi
+        if ! ${warmup_overridden}; then
+                warmup_iterations=2
+        fi
+        if ! ${measurement_overridden}; then
+                measurement_iterations=2
+        fi
+        if ! has_jvm_arg_prefix "-Xmx"; then
+                jvm_args+=("-Xmx8G")
+        fi
+        if ! has_jvm_property "rdf4j.lmdb.aasQueriesBenchmark.printExplain"; then
+                jvm_args+=("-Drdf4j.lmdb.aasQueriesBenchmark.printExplain=false")
+        fi
+        if ! has_jvm_property "rdf4j.lmdb.aasQueriesBenchmark.printOptimizedPlan"; then
+                jvm_args+=("-Drdf4j.lmdb.aasQueriesBenchmark.printOptimizedPlan=true")
+        fi
+fi
+
+if [[ -n "${theme_query}" ]]; then
+        if [[ "${theme_query}" != *:* ]]; then
+                echo "Error: --theme-query expects THEME:INDEX." >&2
+                exit 1
+        fi
+        theme_query_theme="${theme_query%%:*}"
+        theme_query_index="${theme_query##*:}"
+        if [[ -z "${theme_query_theme}" || -z "${theme_query_index}" ]]; then
+                echo "Error: --theme-query expects THEME:INDEX." >&2
+                exit 1
+        fi
+        if ! [[ "${theme_query_index}" =~ ^[0-9]+$ ]]; then
+                echo "Error: --theme-query index must be numeric." >&2
+                exit 1
+        fi
+        benchmark_params+=("themeName=${theme_query_theme}")
+        benchmark_params+=("z_queryIndex=${theme_query_index}")
+fi
+
+if [[ -n "${aas_query}" ]]; then
+        benchmark_params+=("query=${aas_query}")
+fi
+
 if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
         echo "Error: --module, --class, and --method are required." >&2
         usage >&2
+        exit 1
+fi
+
+if ${clean_build} && ${no_build}; then
+        echo "Error: --clean and --no-build cannot be combined." >&2
         exit 1
 fi
 
@@ -208,7 +339,7 @@ if ${enable_jfr}; then
         start_flight_recording_options+=("settings=profile")
         start_flight_recording_options+=("dumponexit=true")
         start_flight_recording_options+=("filename=${jfr_output}")
-        start_flight_recording_options+=("duration=120s")
+        start_flight_recording_options+=("duration=1200s")
 
         if ${enable_jfr_cpu_times}; then
                 start_flight_recording_options+=("jdk.CPUTimeSample#enabled=true")
@@ -346,9 +477,133 @@ require_linux_java25_for_cpu_time_jfr() {
         fi
 }
 
+check_jmh_fork_socket_support() {
+        if [[ "${forks}" == "0" ]]; then
+                return 0
+        fi
+
+        if [[ "${RDF4J_BENCHMARK_SKIP_FORK_SOCKET_PREFLIGHT:-false}" == "true" ]]; then
+                return 0
+        fi
+
+        local output
+        local status
+        set +e
+        if [[ -n "${RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD:-}" ]]; then
+                output="$(bash -c "${RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD}" 2>&1)"
+                status=$?
+        else
+                local tmp_dir
+                local source_file
+                tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/rdf4j-jmh-preflight.XXXXXX")"
+                source_file="${tmp_dir}/JmhForkSocketPreflight.java"
+                cat > "${source_file}" <<'JAVA'
+import java.net.ServerSocket;
+
+public class JmhForkSocketPreflight {
+	public static void main(String[] args) throws Exception {
+		try (ServerSocket serverSocket = new ServerSocket(0)) {
+			serverSocket.setReuseAddress(true);
+		}
+	}
+}
+JAVA
+                output="$(java "${source_file}" 2>&1)"
+                status=$?
+                rm -rf "${tmp_dir}"
+        fi
+        set -e
+
+        if [[ ${status} -ne 0 ]]; then
+                echo "Error: JMH fork socket preflight failed." >&2
+                echo "JMH opens a local ServerSocket before forked benchmark runs. This environment will likely fail later with BinaryLinkServer/SocketException after packaging." >&2
+                echo "Escalate or run outside the restricted sandbox before rerunning this benchmark, or pass --forks 0 for an in-process diagnostic run." >&2
+                if [[ -n "${output}" ]]; then
+                        echo "Preflight output:" >&2
+                        echo "${output}" >&2
+                fi
+                exit 1
+        fi
+}
+
 print_command() {
         printf '%q ' "$@"
         printf '\n'
+}
+
+plan_guard_enabled() {
+        case "${RDF4J_BENCHMARK_PLAN_GUARD:-true}" in
+        false|FALSE|0|no|NO)
+                return 1
+                ;;
+        *)
+                return 0
+                ;;
+        esac
+}
+
+resolve_plan_guard_python() {
+        if [[ -n "${RDF4J_BENCHMARK_PLAN_GUARD_PYTHON:-}" ]]; then
+                command -v "${RDF4J_BENCHMARK_PLAN_GUARD_PYTHON}"
+                return
+        fi
+
+        command -v python3 || command -v python
+}
+
+run_benchmark_command() {
+        if ! plan_guard_enabled; then
+                "${java_cmd[@]}"
+                return
+        fi
+
+        local guard_script="${REPO_ROOT}/scripts/query-plan-risk-guard.py"
+        local benchmark_log="${module_dir}/target/benchmark-output.log"
+        local guard_python
+        mkdir -p "$(dirname "${benchmark_log}")"
+
+        if ! guard_python="$(resolve_plan_guard_python)"; then
+                echo "Warning: query-plan risk guard disabled because no Python interpreter was found." >&2
+                set +e
+                "${java_cmd[@]}" 2>&1 | tee "${benchmark_log}"
+                local pipeline_status=("${PIPESTATUS[@]}")
+                local java_status=${pipeline_status[0]:-1}
+                set -e
+                return "${java_status}"
+        fi
+
+        set +e
+        "${java_cmd[@]}" 2>&1 | "${guard_python}" "${guard_script}" --compact --log "${benchmark_log}"
+        local pipeline_status=("${PIPESTATUS[@]}")
+        local java_status=${pipeline_status[0]:-1}
+        local guard_status=${pipeline_status[1]:-1}
+        set -e
+
+        if [[ ${guard_status} -ne 0 ]]; then
+                return "${guard_status}"
+        fi
+        return "${java_status}"
+}
+
+run_maven_packaging_command() {
+        local append_mode="$1"
+        shift
+        local log_path="${REPO_ROOT}/maven-build.log"
+        local tee_args=()
+        if [[ "${append_mode}" == "append" ]]; then
+                tee_args=(-a)
+        fi
+
+        set +e
+        "$@" 2>&1 | tee "${tee_args[@]}" "${log_path}" | awk '
+                /\[WARNING\]/ { next }
+                /\[ERROR\]/ { print; next }
+                /Reactor Summary/ { summary=1 }
+                summary { print }
+        '
+        local status=${PIPESTATUS[0]}
+        set -e
+        return "${status}"
 }
 
 if ${dry_run}; then
@@ -359,21 +614,31 @@ if ${dry_run}; then
                 echo "${jmh_jfr_notice}"
         fi
         jar_path="$(find_benchmark_jar "${module_dir}" false)"
-        print_command "${mvn_cmd_parallel[@]}"
-        echo "# On failure, reruns single-threaded:"
-        print_command "${mvn_cmd_single_threaded[@]}"
+        if ${no_build}; then
+                echo "# Maven packaging skipped by --no-build."
+        else
+                print_command "${mvn_cmd_parallel[@]}"
+                echo "# On failure, reruns single-threaded:"
+                print_command "${mvn_cmd_single_threaded[@]}"
+        fi
         java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
         print_command "${java_cmd[@]}"
         exit 0
 fi
 
-(
-        cd "${REPO_ROOT}"
-        if ! "${mvn_cmd_parallel[@]}"; then
-                echo "Parallel install failed. Retrying single-threaded install..." >&2
-                "${mvn_cmd_single_threaded[@]}"
-        fi
-)
+check_jmh_fork_socket_support
+
+if ${no_build}; then
+        echo "Maven packaging skipped by --no-build."
+else
+        (
+                cd "${REPO_ROOT}"
+                if ! run_maven_packaging_command truncate "${mvn_cmd_parallel[@]}"; then
+                        echo "Parallel install failed. Retrying single-threaded install..." >&2
+                        run_maven_packaging_command append "${mvn_cmd_single_threaded[@]}"
+                fi
+        )
+fi
 
 if ${enable_jfr_cpu_times}; then
         require_linux_java25_for_cpu_time_jfr
@@ -397,4 +662,4 @@ if ${enable_jmh_jfr}; then
 fi
 
 printf 'Running benchmark with jar %s\n' "${jar_path}"
-"${java_cmd[@]}"
+run_benchmark_command

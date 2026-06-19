@@ -24,14 +24,18 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -189,6 +194,118 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void standardPipelineConvertsStringLiteralEqualityAndInFiltersToValues() {
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\"} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label = \"Eclipse\")}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\"@en} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label = \"Eclipse\"@en)}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\" \"RDF4J\"} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label IN (\"Eclipse\", \"RDF4J\"))}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\"@en \"RDF4J\"@en} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label IN (\"Eclipse\"@en, \"RDF4J\"@en))}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\" \"RDF4J\"} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+						+ "FILTER(?label IN (\"Eclipse\", \"RDF4J\", \"Eclipse\"))}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\"@en \"RDF4J\"@en} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+						+ "FILTER(?label IN (\"Eclipse\"@en, \"RDF4J\"@en, \"Eclipse\"@en))}");
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"RDF4J\"} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+						+ "FILTER(?label IN (\"Eclipse\", \"RDF4J\")) "
+						+ "FILTER(?label IN (\"RDF4J\", \"SPARQL\", \"RDF4J\"))}");
+	}
+
+	@Test
+	public void standardPipelineTurnsDisjointSameVariableInFiltersIntoEmptySet() {
+		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+				+ "FILTER(?label IN (\"Eclipse\")) FILTER(?label IN (\"RDF4J\"))}");
+
+		assertThat(findAll(optimized, EmptySet.class)).singleElement();
+	}
+
+	@Test
+	public void standardPipelineIntersectsUserValuesWithSameVariableInFilter() {
+		assertStandardPipelineFilterInValues(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"RDF4J\"} ?s <urn:label> ?label .}",
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\" \"RDF4J\"} ?s <urn:label> ?label . "
+						+ "FILTER(?label IN (\"RDF4J\", \"SPARQL\", \"RDF4J\"))}");
+	}
+
+	@Test
+	public void standardPipelineKeepsParentReferencesValidAfterValuesMerge() {
+		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+				+ "FILTER(?label IN (\"Eclipse\", \"RDF4J\")) "
+				+ "FILTER(?label IN (\"RDF4J\", \"SPARQL\", \"RDF4J\"))}");
+
+		new ParentReferenceChecker(null).optimize(optimized, null, EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	public void standardPipelineKeepsPlainAndLanguageTaggedStringValuesDistinct() {
+		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s ?label WHERE {?s <urn:label> ?label . "
+				+ "FILTER(?label IN (\"chat\", \"chat\"@fr, \"chat\"))}");
+
+		List<String> values = new ArrayList<>();
+		for (var bindingSet : singleValuesAnchor(optimized, "label").getBindingSets()) {
+			values.add(bindingSet.getValue("label").toString());
+		}
+
+		assertThat(values).containsExactly("\"chat\"", "\"chat\"@fr");
+	}
+
+	@Test
+	public void standardPipelineDoesNotConvertUnsafeTypedEqualityToValues() {
+		TupleExpr optimized = optimizeWithStandardPipeline(String.join("\n",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT ?s ?age WHERE {",
+				"  ?s <urn:age> ?age .",
+				"  FILTER(?age = \"1\"^^xsd:int)",
+				"}"));
+
+		assertThat(findAll(optimized, BindingSetAssignment.class)).isEmpty();
+		assertThat(findAll(optimized, Filter.class)).singleElement();
+	}
+
+	@Test
+	public void standardPipelineConvertsSameTermStringFilterToValues() {
+		TupleExpr optimized = optimizeWithStandardPipeline(
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER sameTerm(?label, \"Eclipse\")}");
+
+		List<String> values = values(singleValuesAnchor(optimized, "label"), "label");
+
+		assertThat(values).containsExactly("\"Eclipse\"");
+		assertThat(findAll(optimized, Filter.class)).isEmpty();
+		new ParentReferenceChecker(null).optimize(optimized, null, EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	public void standardPipelineDoesNotConvertFiltersWhenVariableIsNotAssuredBound() {
+		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s ?label WHERE {?s <urn:name> ?name . "
+				+ "OPTIONAL {?s <urn:label> ?label} FILTER(?label IN (\"Eclipse\"))}");
+
+		assertThat(findAll(optimized, BindingSetAssignment.class)).isEmpty();
+		assertThat(findAll(optimized, Filter.class)).singleElement();
+	}
+
+	@Test
+	public void standardPipelineKeepsExistsValuesInsideScopeBoundary() {
+		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s WHERE {?s <urn:name> ?name . "
+				+ "FILTER EXISTS {?s <urn:label> ?label . FILTER(?label IN (\"Eclipse\"))}}");
+
+		assertThat(findAll(optimized, BindingSetAssignment.class))
+				.singleElement()
+				.satisfies(assignment -> assertThat(hasAncestor(assignment, Exists.class)).isTrue());
+		assertThat(findAll(optimized, ListMemberOperator.class)).isEmpty();
+	}
+
+	@Test
 	public void standardPipelineShowsInScopeFilterInsideJoinGroup() {
 		String query = String.join("\n",
 				"PREFIX med: <http://example.com/theme/medical/>",
@@ -210,9 +327,9 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-				break;
-			}
+//			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
+//				break;
+//			}
 		}
 
 		Filter notExistsFilter = findFirst(root, Filter.class,
@@ -283,6 +400,42 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		opt.optimize(pq.getTupleExpr(), null, null);
 
 		assertEquals(expectedQuery, pq.getTupleExpr());
+	}
+
+	private void assertStandardPipelineFilterInValues(String expectedQuery, String actualQuery) {
+		TupleExpr optimized = optimizeWithStandardPipeline(actualQuery);
+
+		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
+		assertEquals(expectedParsedQuery.getTupleExpr(), optimized);
+	}
+
+	private TupleExpr optimizeWithStandardPipeline(String actualQuery) {
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
+		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
+				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
+				new EmptyTripleSource(),
+				new EvaluationStatistics());
+
+		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+			optimizer.optimize(pq.getTupleExpr(), null, EmptyBindingSet.getInstance());
+		}
+
+		return pq.getTupleExpr();
+	}
+
+	private BindingSetAssignment singleValuesAnchor(TupleExpr tupleExpr, String bindingName) {
+		return findAll(tupleExpr, BindingSetAssignment.class).stream()
+				.filter(assignment -> Set.of(bindingName).equals(assignment.getBindingNames()))
+				.findFirst()
+				.orElseThrow();
+	}
+
+	private static List<String> values(BindingSetAssignment assignment, String bindingName) {
+		List<String> values = new ArrayList<>();
+		for (var bindingSet : assignment.getBindingSets()) {
+			values.add(bindingSet.getValue(bindingName).toString());
+		}
+		return values;
 	}
 
 	private static class SelectiveJoinStatistics extends EvaluationStatistics {
@@ -400,7 +553,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		leaves.add(tupleExpr);
 	}
 
-	private static <T extends TupleExpr> T findFirst(TupleExpr root, Class<T> type,
+	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type,
 			java.util.function.Predicate<T> predicate) {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -418,7 +571,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		return matches.getFirst();
 	}
 
-	private static <T extends TupleExpr> List<T> findAll(TupleExpr root, Class<T> type) {
+	private static <T extends QueryModelNode> List<T> findAll(QueryModelNode root, Class<T> type) {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -430,5 +583,16 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			}
 		});
 		return matches;
+	}
+
+	private static boolean hasAncestor(QueryModelNode node, Class<? extends QueryModelNode> type) {
+		QueryModelNode parent = node.getParentNode();
+		while (parent != null) {
+			if (type.isInstance(parent)) {
+				return true;
+			}
+			parent = parent.getParentNode();
+		}
+		return false;
 	}
 }

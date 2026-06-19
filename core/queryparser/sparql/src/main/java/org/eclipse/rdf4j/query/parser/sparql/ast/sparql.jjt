@@ -264,6 +264,7 @@ TOKEN [IGNORE_CASE] :
 |	<LIMIT: "limit">
 |	<OFFSET: "offset">
 |	<OPTIONAL: "optional">
+|	<LATERAL: "lateral">
 |	<GRAPH: "graph">
 |	<UNION: "union">
 |	<MINUS_SETOPER: "minus">
@@ -792,6 +793,7 @@ void GraphPatternNotTriples() #void :
 |	MinusGraphPattern()
 |	ServiceGraphPattern()
 | 	InlineData()
+|	LateralGraphPattern()
 }
 
 void OptionalGraphPattern() :
@@ -800,6 +802,14 @@ void OptionalGraphPattern() :
 	// Note: does not refer GroupGraphPattern() because constraints are not limited
 	// to the optional graph pattern, but can also reference the operator's LHS
 	<OPTIONAL> <LBRACE> (SubSelect() | GraphPattern()) <RBRACE>
+}
+
+void LateralGraphPattern() :
+{}
+{
+	// Note: does not refer GroupGraphPattern() because constraints are not limited
+	// to the lateral graph pattern, but can also reference the operator's LHS
+	<LATERAL> <LBRACE> (SubSelect() | GraphPattern()) <RBRACE>
 }
 
 void GraphGraphPattern() :

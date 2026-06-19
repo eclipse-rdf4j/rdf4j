@@ -16,6 +16,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -34,11 +35,18 @@ class StoreProperties {
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
 
+	/**
+	 * The key used to store the triple term indexes specification that specifies which triple indexes exist.
+	 */
+	static final String TRIPLE_TERM_INDEXES_KEY = "triple-term-indexes";
+
 	protected final File propertiesFile;
 
 	protected String version;
 
 	protected String tripleIndexes;
+
+	protected String tripleTermIndexes;
 
 	protected boolean loaded;
 
@@ -67,6 +75,7 @@ class StoreProperties {
 			}
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
+			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -86,6 +95,9 @@ class StoreProperties {
 			}
 			if (tripleIndexes != null) {
 				properties.setProperty(INDEXES_KEY, tripleIndexes);
+			}
+			if (tripleTermIndexes != null) {
+				properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -109,8 +121,8 @@ class StoreProperties {
 	}
 
 	StoreProperties setVersion(String version) {
+		this.dirty = !Objects.equals(this.version, version);
 		this.version = version;
-		this.dirty = true;
 		return this;
 	}
 
@@ -119,8 +131,18 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
+		this.dirty = !Objects.equals(this.tripleIndexes, tripleIndexes);
 		this.tripleIndexes = tripleIndexes;
-		this.dirty = true;
+		return this;
+	}
+
+	String getTripleTermIndexes() {
+		return tripleTermIndexes;
+	}
+
+	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
+		this.dirty = !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
+		this.tripleTermIndexes = tripleTermIndexes;
 		return this;
 	}
 }

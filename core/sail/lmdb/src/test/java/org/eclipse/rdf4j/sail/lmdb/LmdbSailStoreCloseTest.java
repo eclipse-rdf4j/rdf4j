@@ -35,7 +35,9 @@ class LmdbSailStoreCloseTest {
 
 	@Test
 	void closeDrainsRunningScheduledPersistBeforeClosingEstimator(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc").setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setSketchEstimatorEnabled(true)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		store.init();
 

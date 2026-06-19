@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -67,6 +68,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			if (mergeWithExistingValuesAnchor(filter, assignment)) {
+				return;
+			}
+
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
 		}
 	}
@@ -104,11 +109,76 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return null;
 			}
 			Value value = ((ValueConstant) arguments.get(i)).getValue();
-			if (!isSafeValuesAnchorValue(value) || !values.add(value) || values.size() > MAX_VALUES) {
+			if (!isSafeValuesAnchorValue(value)) {
+				return null;
+			}
+			values.add(value);
+			if (values.size() > MAX_VALUES) {
 				return null;
 			}
 		}
 		return valuesAnchor(var.getName(), values);
+	}
+
+	private static boolean mergeWithExistingValuesAnchor(Filter filter, BindingSetAssignment assignment) {
+		String bindingName = singleBindingName(assignment);
+		if (bindingName == null) {
+			return false;
+		}
+
+		BindingSetAssignment existingAssignment = findExistingValuesAnchor(filter.getArg(), bindingName);
+		if (existingAssignment == null) {
+			return false;
+		}
+
+		LinkedHashSet<Value> allowedValues = valuesForBinding(assignment, bindingName);
+		List<BindingSet> mergedBindingSets = new ArrayList<>();
+		for (BindingSet bindingSet : existingAssignment.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (allowedValues.remove(value)) {
+				mergedBindingSets.add(bindingSet);
+			}
+		}
+
+		if (mergedBindingSets.isEmpty()) {
+			filter.replaceWith(new EmptySet());
+			return true;
+		}
+
+		existingAssignment.setBindingSets(mergedBindingSets);
+		filter.replaceWith(filter.getArg().clone());
+		return true;
+	}
+
+	private static BindingSetAssignment findExistingValuesAnchor(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& Set.of(bindingName).equals(assignment.getBindingNames())) {
+			return assignment;
+		}
+		if (tupleExpr instanceof Join join) {
+			BindingSetAssignment left = findExistingValuesAnchor(join.getLeftArg(), bindingName);
+			if (left != null) {
+				return left;
+			}
+			return findExistingValuesAnchor(join.getRightArg(), bindingName);
+		}
+		return null;
+	}
+
+	private static String singleBindingName(BindingSetAssignment assignment) {
+		Set<String> bindingNames = assignment.getBindingNames();
+		if (bindingNames.size() != 1) {
+			return null;
+		}
+		return bindingNames.iterator().next();
+	}
+
+	private static LinkedHashSet<Value> valuesForBinding(BindingSetAssignment assignment, String bindingName) {
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			values.add(bindingSet.getValue(bindingName));
+		}
+		return values;
 	}
 
 	private static BindingSetAssignment singleValueAnchor(ValueExpr left, ValueExpr right) {

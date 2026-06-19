@@ -405,6 +405,11 @@ public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
 	}
 
 	@Override
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
+		return node.childrenAccept(this, data);
+	}
+
+	@Override
 	public Object visit(ASTIRIFunc node, Object data) throws VisitorException {
 		return node.childrenAccept(this, data);
 	}

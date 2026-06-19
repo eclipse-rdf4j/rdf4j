@@ -15,8 +15,10 @@ import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.OBJECT;
 import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.PREDICATE;
 import static org.eclipse.rdf4j.query.algebra.TripleComponent.Role.SUBJECT;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -79,6 +81,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -176,6 +179,23 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	protected ValueFactory valueFactory;
 
 	GraphPattern graphPattern = new GraphPattern();
+
+	private final Deque<LateralScope> lateralScopes = new ArrayDeque<>();
+
+	private static final class LateralScope {
+
+		private final Set<String> inputBindingNames;
+		private final Set<String> assignmentConflictBindingNames;
+		private final Deque<Set<String>> suppressedAssignmentConflictBindingNames = new ArrayDeque<>();
+		private boolean verifyAssignments;
+
+		private LateralScope(Set<String> inputBindingNames, Set<String> assignmentConflictBindingNames,
+				boolean verifyAssignments) {
+			this.inputBindingNames = new LinkedHashSet<>(inputBindingNames);
+			this.assignmentConflictBindingNames = new LinkedHashSet<>(assignmentConflictBindingNames);
+			this.verifyAssignments = verifyAssignments;
+		}
+	}
 
 	/*--------------*
 	 * Constructors *
@@ -388,73 +408,84 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	@Override
 	public TupleExpr visit(ASTSelectQuery node, Object data) throws VisitorException {
 		final GraphPattern parentGP = graphPattern;
+		LateralAssignmentChecksState assignmentChecksState = suspendLateralAssignmentChecks();
+		boolean assignmentChecksRestored = false;
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
-		node.getWhereClause().jjtAccept(this, null);
-		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
+		try {
+			node.getWhereClause().jjtAccept(this, null);
+			TupleExpr tupleExpr = graphPattern.buildTupleExpr();
 
-		// Apply grouping
-		Group group = null;
-		ASTGroupClause groupNode = node.getGroupClause();
-		if (groupNode != null) {
-			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
-			group = (Group) tupleExpr;
-		}
-
-		final ASTHavingClause havingClause = node.getHavingClause();
-		if (havingClause != null) {
-			if (group == null) {
-				// create implicit group
-				group = new Group(tupleExpr);
+			// Apply grouping
+			Group group = null;
+			ASTGroupClause groupNode = node.getGroupClause();
+			if (groupNode != null) {
+				tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
+				group = (Group) tupleExpr;
 			}
 
-			// Apply HAVING group filter condition
-			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
-		}
+			final ASTHavingClause havingClause = node.getHavingClause();
+			if (havingClause != null) {
+				if (group == null) {
+					// create implicit group
+					group = new Group(tupleExpr);
+				}
 
-		// process external VALUES clause
-		final ASTBindingsClause bindingsClause = node.getBindingsClause();
-		if (bindingsClause != null) {
-			// values clause should be treated as scoped to the where clause
-			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
-			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
-		}
-
-		final ASTOrderClause orderClause = node.getOrderClause();
-		if (orderClause != null) {
-			if (group == null) {
-				// create implicit group
-				group = new Group(tupleExpr);
+				// Apply HAVING group filter condition
+				tupleExpr = processHavingClause(havingClause, tupleExpr, group);
 			}
 
-			// Apply result ordering
-			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
+			// process external VALUES clause
+			final ASTBindingsClause bindingsClause = node.getBindingsClause();
+			if (bindingsClause != null) {
+				// values clause should be treated as scoped to the where clause
+				((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
+				tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
+			}
+
+			final ASTOrderClause orderClause = node.getOrderClause();
+			if (orderClause != null) {
+				if (group == null) {
+					// create implicit group
+					group = new Group(tupleExpr);
+				}
+
+				// Apply result ordering
+				tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
+			}
+
+			// Apply projection
+			restoreLateralAssignmentChecks(assignmentChecksState);
+			assignmentChecksRestored = true;
+			tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
+
+			// Process limit and offset clauses
+			ASTLimit limitNode = node.getLimit();
+			long limit = -1L;
+			if (limitNode != null) {
+				limit = (Long) limitNode.jjtAccept(this, null);
+			}
+
+			ASTOffset offsetNode = node.getOffset();
+			long offset = -1L;
+			if (offsetNode != null) {
+				offset = (Long) offsetNode.jjtAccept(this, null);
+			}
+
+			if (offset >= 1L || limit >= 0L) {
+				tupleExpr = new Slice(tupleExpr, offset, limit);
+			}
+
+			parentGP.addRequiredTE(tupleExpr);
+			graphPattern = parentGP;
+			return tupleExpr;
+		} finally {
+			if (!assignmentChecksRestored) {
+				restoreLateralAssignmentChecks(assignmentChecksState);
+			}
+			finishLateralAssignmentChecks(assignmentChecksState);
 		}
-
-		// Apply projection
-		tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
-
-		// Process limit and offset clauses
-		ASTLimit limitNode = node.getLimit();
-		long limit = -1L;
-		if (limitNode != null) {
-			limit = (Long) limitNode.jjtAccept(this, null);
-		}
-
-		ASTOffset offsetNode = node.getOffset();
-		long offset = -1L;
-		if (offsetNode != null) {
-			offset = (Long) offsetNode.jjtAccept(this, null);
-		}
-
-		if (offset >= 1L || limit >= 0L) {
-			tupleExpr = new Slice(tupleExpr, offset, limit);
-		}
-
-		parentGP.addRequiredTE(tupleExpr);
-		graphPattern = parentGP;
-		return tupleExpr;
 	}
 
 	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)
@@ -573,6 +604,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 			String alias = projElemNode.getAlias();
 			if (alias != null) {
+				verifyLateralAssignment(alias, "projection alias");
+
 				// aliased projection element
 				if (aliasesInProjection.contains(alias)) {
 					throw new VisitorException("duplicate use of alias '" + alias + "' in projection.");
@@ -641,6 +674,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				throw new IllegalStateException("required alias for non-Var projection elements not found");
 			}
 		}
+
+		verifyLateralProjectedAssignments(projElemList);
 
 		if (!extension.getElements().isEmpty()) {
 			if (orderClause != null) {
@@ -1230,6 +1265,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		if (aliased) {
+			verifyLateralAssignment(name, "GROUP BY alias");
 			ExtensionElem elem = new ExtensionElem(ve, name);
 			extension.addElement(elem);
 		}
@@ -2276,6 +2312,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		bsa.setBindingNames(bindingNames);
+		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
 		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
@@ -2307,6 +2344,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		bsa.setBindingNames(bindingNames);
+		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
 		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
@@ -2597,6 +2635,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// name to bind the expression outcome to
 		Node aliasNode = node.jjtGetChild(1);
 		String alias = ((ASTVar) aliasNode).getName();
+		verifyLateralAssignment(alias, "BIND clause alias");
 
 		Extension extension = new Extension();
 		extension.addElement(new ExtensionElem(ve.clone(), alias));
@@ -3081,5 +3120,125 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		public PathSequenceContext() {
 		}
+	}
+
+	@Override
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
+		GraphPattern parentGP = graphPattern;
+		boolean hasEnclosingLateralScope = !lateralScopes.isEmpty();
+
+		// Materialize the graph pattern built so far as the left argument
+		List<ValueExpr> lateralConstraints = graphPattern.removeAllConstraints();
+		TupleExpr leftArg = graphPattern.buildTupleExpr();
+		Set<String> leftBindingNames = new LinkedHashSet<>(leftArg.getBindingNames());
+		Set<String> rightInputBindingNames = new LinkedHashSet<>();
+		boolean verifyAssignments = true;
+		if (hasEnclosingLateralScope) {
+			LateralScope enclosingScope = lateralScopes.peek();
+			rightInputBindingNames.addAll(enclosingScope.inputBindingNames);
+			verifyAssignments = enclosingScope.verifyAssignments;
+		}
+		rightInputBindingNames.addAll(leftBindingNames);
+
+		// Build the right argument in a new graph pattern (inherits context/scope)
+		graphPattern = new GraphPattern(parentGP);
+		boolean directSubSelect = node.jjtGetNumChildren() == 1 && isDirectSubSelect(node.jjtGetChild(0));
+		lateralScopes.push(new LateralScope(rightInputBindingNames, rightInputBindingNames, verifyAssignments));
+		TupleExpr rightArg;
+		try {
+			node.childrenAccept(this, null);
+			rightArg = graphPattern.buildTupleExpr();
+		} finally {
+			lateralScopes.pop();
+		}
+
+		if (directSubSelect) {
+			rightInputBindingNames.retainAll(rightArg.getBindingNames());
+		}
+
+		// Reset: subsequent patterns should join with the LATERAL result, not re-join the left arg again
+		parentGP = new GraphPattern(parentGP);
+		parentGP.addRequiredTE(new Lateral(leftArg, rightArg, rightInputBindingNames));
+		parentGP.addConstraints(lateralConstraints);
+		graphPattern = parentGP;
+
+		return null;
+	}
+
+	private boolean isDirectSubSelect(Node node) {
+		if (node instanceof ASTSelectQuery) {
+			return true;
+		}
+
+		return node instanceof ASTGraphPatternGroup
+				&& node.jjtGetNumChildren() == 1
+				&& isDirectSubSelect(node.jjtGetChild(0));
+	}
+
+	private void verifyLateralAssignments(Set<String> aliases, String assignmentType) throws VisitorException {
+		for (String alias : aliases) {
+			verifyLateralAssignment(alias, assignmentType);
+		}
+	}
+
+	private void verifyLateralAssignment(String alias, String assignmentType) throws VisitorException {
+		if (!lateralScopes.isEmpty()) {
+			LateralScope lateralScope = lateralScopes.peek();
+			if (lateralScope.assignmentConflictBindingNames.contains(alias)) {
+				if (lateralScope.verifyAssignments) {
+					throw new VisitorException(
+							assignmentType + " '" + alias + "' conflicts with an outer LATERAL binding");
+				}
+				if (!lateralScope.suppressedAssignmentConflictBindingNames.isEmpty()) {
+					lateralScope.suppressedAssignmentConflictBindingNames.peek().add(alias);
+				}
+			}
+		}
+	}
+
+	private void verifyLateralProjectedAssignments(ProjectionElemList projElemList) throws VisitorException {
+		if (!lateralScopes.isEmpty()) {
+			LateralScope lateralScope = lateralScopes.peek();
+			if (!lateralScope.suppressedAssignmentConflictBindingNames.isEmpty()) {
+				Set<String> assignmentConflictBindingNames = lateralScope.suppressedAssignmentConflictBindingNames
+						.peek();
+				for (ProjectionElem elem : projElemList.getElements()) {
+					String name = elem.getName();
+					if (assignmentConflictBindingNames.contains(name)) {
+						throw new VisitorException("projection variable '" + name
+								+ "' exposes an assignment that conflicts with an outer LATERAL binding");
+					}
+				}
+			}
+		}
+	}
+
+	private LateralAssignmentChecksState suspendLateralAssignmentChecks() {
+		if (lateralScopes.isEmpty()) {
+			return null;
+		}
+		LateralScope lateralScope = lateralScopes.peek();
+		boolean previous = lateralScope.verifyAssignments;
+		Set<String> suppressedAssignmentConflictBindingNames = new LinkedHashSet<>();
+		lateralScope.suppressedAssignmentConflictBindingNames.push(suppressedAssignmentConflictBindingNames);
+		lateralScope.verifyAssignments = false;
+		return new LateralAssignmentChecksState(lateralScope, previous, suppressedAssignmentConflictBindingNames);
+	}
+
+	private void restoreLateralAssignmentChecks(LateralAssignmentChecksState state) {
+		if (state != null) {
+			state.lateralScope.verifyAssignments = state.previousVerifyAssignments;
+		}
+	}
+
+	private void finishLateralAssignmentChecks(LateralAssignmentChecksState state) {
+		if (state != null) {
+			Deque<Set<String>> assignmentConflictFrames = state.lateralScope.suppressedAssignmentConflictBindingNames;
+			assignmentConflictFrames.removeIf(frame -> frame == state.suppressedAssignmentConflictBindingNames);
+		}
+	}
+
+	private record LateralAssignmentChecksState(LateralScope lateralScope, boolean previousVerifyAssignments,
+			Set<String> suppressedAssignmentConflictBindingNames) {
 	}
 }

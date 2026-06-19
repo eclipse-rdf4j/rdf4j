@@ -33,7 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 class BenchmarkJoinEstimatorSupportLowHeapTest {
 
 	@Test
-	void lowHeapAwaitEstimatorReadySkipsMissingHeapGatedEstimator(@TempDir File dataDir) throws Exception {
+	void awaitEstimatorReadySkipsDisabledEstimator(@TempDir File dataDir) throws Exception {
 		ProcessResult result = runLowHeapProbe(dataDir);
 
 		assertEquals(0, result.exitCode, result.output);
@@ -66,7 +66,7 @@ class BenchmarkJoinEstimatorSupportLowHeapTest {
 
 		public static void main(String[] args) throws Exception {
 			File dataDir = new File(args[0]);
-			LmdbStore store = new LmdbStore(dataDir, ConfigUtil.createConfig());
+			LmdbStore store = new LmdbStore(dataDir, ConfigUtil.createConfig().setSketchEstimatorEnabled(false));
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 			try {

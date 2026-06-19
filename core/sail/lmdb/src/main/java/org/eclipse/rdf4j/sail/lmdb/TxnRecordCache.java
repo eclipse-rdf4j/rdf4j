@@ -65,6 +65,7 @@ final class TxnRecordCache {
 	private final long env;
 	private final int dbiExplicit;
 	private final int dbiInferred;
+	private final int dbiTerms;
 	private long writeTxn;
 	private long mapSize = 1048576; // 1 MiB
 	private long pageSize;
@@ -75,7 +76,7 @@ final class TxnRecordCache {
 			E(mdb_env_create(pp));
 			env = pp.get(0);
 
-			E(mdb_env_set_maxdbs(env, 2));
+			E(mdb_env_set_maxdbs(env, 3));
 			E(mdb_env_set_mapsize(env, mapSize));
 
 			int flags = MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC;
@@ -84,6 +85,7 @@ final class TxnRecordCache {
 			E(mdb_env_open(env, dbDir.toAbsolutePath().toString(), flags, 0664));
 			dbiExplicit = openDatabase(env, "quads", MDB_CREATE);
 			dbiInferred = openDatabase(env, "quads-inf", MDB_CREATE);
+			dbiTerms = openDatabase(env, "terms", MDB_CREATE);
 
 			MDBStat stat = MDBStat.malloc(stack);
 			readTransaction(env, (stack2, txn) -> {
@@ -118,16 +120,41 @@ final class TxnRecordCache {
 		update(quad, explicit, OP_REMOVE, contextDelta);
 	}
 
+	boolean storeTripleTerm(long[] quad) throws IOException {
+		return updateTripleTerm(quad, OP_ADD);
+	}
+
+	void removeTripleTerm(long[] quad) throws IOException {
+		updateTripleTerm(quad, OP_REMOVE);
+	}
+
 	RecordState getRecordState(long[] quad, boolean explicit) {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			Varint.writeListUnsigned(keyBuf, quad);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
 			if (mdb_get(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal) != MDB_SUCCESS) {
+				return RecordState.ABSENT;
+			}
+
+			return isAdd(Objects.requireNonNull(dataVal.mv_data()).get(0)) ? RecordState.ADD : RecordState.REMOVE;
+		}
+	}
+
+	RecordState getTripleTermState(long[] quad) {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			Varint.writeListUnsigned(keyBuf, quad);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			if (mdb_get(writeTxn, dbiTerms, keyVal, dataVal) != MDB_SUCCESS) {
 				return RecordState.ABSENT;
 			}
 
@@ -151,7 +178,7 @@ final class TxnRecordCache {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			// use calloc to get an empty data value
 			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			Varint.writeListUnsigned(keyBuf, quad);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
@@ -181,6 +208,50 @@ final class TxnRecordCache {
 					// mark as remove
 					dataVal.mv_data(stack.bytes(encode(operation, contextDelta)));
 					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
+				}
+				return true;
+			}
+		}
+	}
+
+	private boolean updateTripleTerm(long[] quad, byte operation) throws IOException {
+		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
+			// resize map if required
+			E(mdb_txn_commit(writeTxn));
+			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+			E(mdb_env_set_mapsize(env, mapSize));
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, 0, pp));
+				writeTxn = pp.get(0);
+			}
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			// use calloc to get an empty data value
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			Varint.writeListUnsigned(keyBuf, quad);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			boolean found = mdb_get(writeTxn, dbiTerms, keyVal, dataVal) == MDB_SUCCESS &&
+					isAdd(Objects.requireNonNull(dataVal.mv_data()).get(0));
+			if (operation == OP_ADD) {
+				if (!found) {
+					// mark as add
+					dataVal.mv_data(stack.bytes(encode(operation, false)));
+					E(mdb_put(writeTxn, dbiTerms, keyVal, dataVal, 0));
+				}
+				return !found;
+			} else {
+				if (found) {
+					// simply delete quad from cache
+					E(mdb_del(writeTxn, dbiTerms, keyVal, dataVal));
+				} else {
+					// mark as remove
+					dataVal.mv_data(stack.bytes(encode(operation, false)));
+					E(mdb_put(writeTxn, dbiTerms, keyVal, dataVal, 0));
 				}
 				return true;
 			}
