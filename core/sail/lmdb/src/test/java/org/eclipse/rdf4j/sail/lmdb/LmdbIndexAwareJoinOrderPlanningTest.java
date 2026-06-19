@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -114,7 +115,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(electricalGridQuery())
@@ -148,7 +149,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(plannedIndexMetricsQuery())
@@ -176,7 +177,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel.FactorCostEstimate filteredNameCost = costModel
@@ -207,7 +208,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			StatementPattern typePattern = transformerTypePattern();
 			StatementPattern feedsPattern = transformerFeedsPattern();
@@ -240,7 +241,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
 
@@ -277,7 +278,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticSocialMediaQ4Data(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -328,7 +329,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticSocialMediaQ4Data(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			StatementPattern followsByPredicate = new StatementPattern(Var.of("u"),
@@ -358,7 +359,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticSocialMediaChainData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			BindingSetAssignment tuples = socialChainTupleBindings();
 			StatementPattern followsAB = followsPattern("a", "b");
@@ -405,8 +406,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			estimator.rebuild();
+			rebuildSketchesForPlanning(store);
 
 			StatementPattern typePattern = generatorTypePattern();
 			StatementPattern feedsPattern = feedsPattern();
@@ -449,6 +449,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static LmdbStoreConfig sketchEnabledConfig(String indexes) {
 		return new LmdbStoreConfig(indexes).setSketchEstimatorEnabled(true);
+	}
+
+	private static void rebuildSketchesForPlanning(LmdbStore store) throws InterruptedException {
+		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+		estimator.stop();
+		estimator.rebuild();
+		assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS),
+				"Expected manually rebuilt sketches to be ready before planning");
 	}
 
 	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {

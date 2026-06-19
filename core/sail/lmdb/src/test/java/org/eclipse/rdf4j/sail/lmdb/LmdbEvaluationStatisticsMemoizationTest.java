@@ -91,9 +91,9 @@ import org.junit.jupiter.api.Test;
 class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
-	void memoizesSupportsJoinEstimationAndInvalidatesAfterCacheWindow() throws Exception {
+	void checksSupportsJoinEstimationReadinessOnEachCall() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.isReadyNonBlocking()).thenReturn(true, false, false);
+		when(estimator.isReadyNonBlocking()).thenReturn(true, false);
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);
 		when(valueStore.getRevision()).thenReturn(revision);
@@ -105,12 +105,27 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				estimator);
 
 		assertTrue(statistics.supportsJoinEstimation(), "Expected initial readiness probe");
-		assertTrue(statistics.supportsJoinEstimation(), "Expected second probe to use cached readiness");
-		verify(estimator, times(1)).isReadyNonBlocking();
+		assertFalse(statistics.supportsJoinEstimation(),
+				"Expected later not-ready sketches to be observed immediately");
+		verify(estimator, times(2)).isReadyNonBlocking();
+	}
 
-		Thread.sleep(300);
+	@Test
+	void doesNotCacheFalseSupportsJoinEstimationWhenSketchesBecomeReady() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReadyNonBlocking()).thenReturn(false, true);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
 
-		assertFalse(statistics.supportsJoinEstimation(), "Expected readiness cache invalidation after cache window");
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(
+				valueStore,
+				mock(TripleStore.class),
+				estimator);
+
+		assertFalse(statistics.supportsJoinEstimation(), "Expected not-ready sketches before rebuild");
+		assertTrue(statistics.supportsJoinEstimation(), "Expected ready sketches to be observed immediately");
 		verify(estimator, times(2)).isReadyNonBlocking();
 	}
 
