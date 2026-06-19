@@ -239,6 +239,17 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void standardPipelinePreservesDuplicateUserValuesRowsWhenIntersectingFilter() {
+		TupleExpr optimized = optimizeWithStandardPipeline(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"RDF4J\" \"RDF4J\" \"Eclipse\"} "
+						+ "?s <urn:label> ?label . FILTER(?label IN (\"RDF4J\"))}");
+
+		List<String> values = values(singleValuesAnchor(optimized, "label"), "label");
+
+		assertThat(values).containsExactly("\"RDF4J\"", "\"RDF4J\"");
+	}
+
+	@Test
 	public void standardPipelineKeepsParentReferencesValidAfterValuesMerge() {
 		TupleExpr optimized = optimizeWithStandardPipeline("SELECT ?s ?label WHERE {?s <urn:label> ?label . "
 				+ "FILTER(?label IN (\"Eclipse\", \"RDF4J\")) "

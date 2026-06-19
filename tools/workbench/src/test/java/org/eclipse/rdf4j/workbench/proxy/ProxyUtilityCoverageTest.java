@@ -270,6 +270,16 @@ class ProxyUtilityCoverageTest {
 	}
 
 	@Test
+	void serverValidatorDefaultPrefixRejectsSiblingPaths() {
+		ServerValidator defaultValidator = new ServerValidator(
+				new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+						"validator", new MockServletContext(), Map.of()));
+
+		assertThat(defaultValidator.isValidServer("/rdf4j-server")).isTrue();
+		assertThat(defaultValidator.isValidServer("/rdf4j-server2")).isFalse();
+	}
+
+	@Test
 	void serverValidatorDefaultPrefixesRejectRemoteEndpointBeforeConnecting() throws Exception {
 		AtomicInteger requests = new AtomicInteger();
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

@@ -135,7 +135,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		List<BindingSet> mergedBindingSets = new ArrayList<>();
 		for (BindingSet bindingSet : existingAssignment.getBindingSets()) {
 			Value value = bindingSet.getValue(bindingName);
-			if (allowedValues.remove(value)) {
+			if (allowedValues.contains(value)) {
 				mergedBindingSets.add(bindingSet);
 			}
 		}

@@ -90,7 +90,7 @@ class ServerValidator {
 			if (prefix.isBlank() || isBroadSchemePrefix(prefix)) {
 				continue;
 			}
-			if (server.startsWith(prefix)) {
+			if (matchesServerPrefix(server, prefix)) {
 				accept = true;
 				break;
 			}
@@ -99,6 +99,20 @@ class ServerValidator {
 			LOGGER.warn("server URL {} does not have a prefix {}", server, prefixes);
 		}
 		return accept;
+	}
+
+	private boolean matchesServerPrefix(String server, String prefix) {
+		if (!server.startsWith(prefix)) {
+			return false;
+		}
+		if (prefix.endsWith(":") || prefix.endsWith("/") || prefix.endsWith("?") || prefix.endsWith("#")) {
+			return true;
+		}
+		if (server.length() == prefix.length()) {
+			return true;
+		}
+		char next = server.charAt(prefix.length());
+		return next == '/' || next == '?' || next == '#';
 	}
 
 	private boolean isBroadSchemePrefix(String prefix) {

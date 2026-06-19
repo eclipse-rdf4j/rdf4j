@@ -159,6 +159,25 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void mutableRelativeDefaultServerIsAcceptedByDefaultPrefix() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+
+		CapturedResponse response = new CapturedResponse();
+		gateway.service(request("GET", "/workbench/repositories", "/repositories"), response);
+
+		assertThat(response.getRedirect()).isNull();
+		assertThat(gateway.createdServlets).hasSize(1);
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"https://example.org/rdf4j-server");
+	}
+
+	@Test
 	void gatewayFactoriesFixedServersAndFallbackPathsAreCovered() throws Exception {
 		WorkbenchGateway real = new WorkbenchGateway();
 		ServletConfig config = TestServletConfig.withParams("gateway",
