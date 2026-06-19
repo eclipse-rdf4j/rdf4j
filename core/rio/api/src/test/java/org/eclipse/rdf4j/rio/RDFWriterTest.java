@@ -749,14 +749,6 @@ public abstract class RDFWriterTest {
 			}
 
 			IRI pred = potentialPredicates.get(prng.nextInt(potentialPredicates.size()));
-			while (obj instanceof TripleTerm && pred.equals(RDF.TYPE)) {
-				// Avoid statements "x rdf:type <<triple>>" as those use the shorter syntax in RDFXMLPrettyWriter
-				// and the writer produces invalid XML in that case. Even though the triples are encoded as
-				// valid IRIs, XML has limitations on what characters may form an XML tag name and thus a limitation
-				// on what IRIs may be used in predicates (predicates are XML tags) or the short form of rdf:type
-				// (where the type is also an XML tag).
-				obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
-			}
 			model.add(potentialSubjects.get(prng.nextInt(potentialSubjects.size())),
 					pred, obj);
 		}
