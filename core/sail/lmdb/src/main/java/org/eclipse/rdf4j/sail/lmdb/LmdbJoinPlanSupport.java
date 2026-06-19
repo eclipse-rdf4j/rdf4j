@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -412,7 +413,8 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
-		return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsExtension(tupleExpr)
+		return tupleExpr instanceof Lateral || TupleExprs.isVariableScopeChange(tupleExpr)
+				|| TupleExprs.containsExtension(tupleExpr)
 				|| TupleExprs.containsSubquery(tupleExpr);
 	}
 

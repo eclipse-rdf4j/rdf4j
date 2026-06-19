@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.LocalName;
@@ -138,6 +139,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSe
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NativeTripleTermQueryEvaluationStep;
@@ -149,7 +151,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQuer
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.*;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.AndValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.CompareAllQueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.CompareAnyValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ExistsQueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.IfValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.InValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ListMemberValueOperationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.OrValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.QueryValueEvaluationStepSupplier;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleRefEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleTermComponentEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
@@ -381,6 +393,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				} else if (expr instanceof Intersection) {
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof Difference) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Lateral) {
 					result = precompile(expr).evaluate(bindings);
 				} else {
 					throw new QueryEvaluationException(
@@ -879,6 +893,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((Intersection) expr, context);
 		} else if (expr instanceof Difference) {
 			return prepare((Difference) expr, context);
+		} else if (expr instanceof Lateral) {
+			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {

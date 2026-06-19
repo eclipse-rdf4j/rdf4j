@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -132,6 +133,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Lateral lateral) {
+			lateral.getLeftArg().visit(this);
+
+			Set<String> origBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				boundVars.addAll(lateral.getRightInputBindingNames());
+
+				lateral.getRightArg().visit(this);
+			} finally {
+				boundVars = origBoundVars;
+			}
+		}
+
+		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
@@ -149,6 +165,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
+			if (containsLateral(node)) {
+				node.visitChildren(this);
+				return;
+			}
+
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
@@ -328,6 +349,26 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		private boolean containsLateral(TupleExpr tupleExpr) {
+			LateralFinder finder = new LateralFinder();
+			tupleExpr.visit(finder);
+			return finder.found;
+		}
+
+		private class LateralFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+			private boolean found;
+
+			private LateralFinder() {
+				super(false);
+			}
+
+			@Override
+			public void meet(Lateral node) {
+				found = true;
 			}
 		}
 
