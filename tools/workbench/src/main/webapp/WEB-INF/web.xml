@@ -45,6 +45,13 @@
 			<param-name>default-server</param-name>
 			<param-value>/rdf4j-server</param-value>
 		</init-param>
+		<!--
+			Whitespace-separated prefixes for server URLs that Workbench users may select.
+			Use concrete path, HTTP(S), or file prefixes; avoid broad HTTP(S) prefixes unless
+			Workbench users should be allowed to trigger server-side connections to arbitrary hosts.
+			The system property org.eclipse.rdf4j.workbench.accepted-server-prefixes overrides this
+			init-param for administrators who cannot or should not edit the deployed WAR.
+		-->
 		<init-param>
 			<param-name>accepted-server-prefixes</param-name>
 			<param-value>/rdf4j-server</param-value>

@@ -34,12 +34,20 @@ class ServerValidator {
 
 	private static final String ACCEPTED_SERVER = "accepted-server-prefixes";
 
+	/**
+	 * JVM-wide override for the {@code accepted-server-prefixes} servlet init-param.
+	 */
+	static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
+
 	private static final String DEFAULT_ACCEPTED_SERVER_PREFIXES = "/rdf4j-server";
 
 	private final String prefixes;
 
 	protected ServerValidator(final ServletConfig config) {
-		String configuredPrefixes = config.getInitParameter(ACCEPTED_SERVER);
+		String configuredPrefixes = System.getProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+		if (configuredPrefixes == null || configuredPrefixes.isBlank()) {
+			configuredPrefixes = config.getInitParameter(ACCEPTED_SERVER);
+		}
 		if (configuredPrefixes == null || configuredPrefixes.isBlank()) {
 			configuredPrefixes = DEFAULT_ACCEPTED_SERVER_PREFIXES;
 		}
@@ -78,8 +86,8 @@ class ServerValidator {
 	}
 
 	/**
-	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated
-	 * configuration parameter value for 'accepted-server-prefixes'.
+	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated system
+	 * property or configuration parameter value for 'accepted-server-prefixes'.
 	 *
 	 * @param server the server for which to check the prefix
 	 * @return whether the server prefix is in the list of acceptable prefixes

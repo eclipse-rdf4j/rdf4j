@@ -159,7 +159,8 @@ public class WorkbenchGateway extends AbstractServlet {
 		}
 
 		server = server.trim();
-		if (!isSubmittedRelativeDefaultServer(server, req) && !this.serverValidator.isValidServer(server)) {
+		boolean submittedDefaultServer = isSubmittedDefaultServer(server, req);
+		if (!submittedDefaultServer && !this.serverValidator.isValidServer(server)) {
 			// Invalid server was submitted by form. Present entry form again
 			// with error message.
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
@@ -169,6 +170,9 @@ public class WorkbenchGateway extends AbstractServlet {
 			builder.end();
 			return;
 
+		}
+		if (submittedDefaultServer) {
+			server = getDefaultServer(req);
 		}
 
 		// Valid server was submitted by form. Set cookie and redirect to
@@ -264,8 +268,9 @@ public class WorkbenchGateway extends AbstractServlet {
 		return selection.defaultServer && getDefaultServerPath().startsWith("/");
 	}
 
-	private boolean isSubmittedRelativeDefaultServer(String server, HttpServletRequest req) {
-		return getDefaultServerPath().startsWith("/") && getDefaultServer(req).equals(server);
+	private boolean isSubmittedDefaultServer(String server, HttpServletRequest req) {
+		return getDefaultServerPath().startsWith("/")
+				&& (getDefaultServerPath().equals(server) || getDefaultServer(req).equals(server));
 	}
 
 	/**

@@ -47,6 +47,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 class ProxyUtilityCoverageTest {
 
+	private static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
+
 	@Test
 	void cacheFilterAppliesConfiguredExpiryAndCanReset() throws Exception {
 		CacheFilter filter = new CacheFilter();
@@ -297,6 +299,43 @@ class ProxyUtilityCoverageTest {
 			assertThat(requests).hasValue(0);
 		} finally {
 			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorUsesSystemPropertyPrefixesForRemoteServers() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			requests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, baseUrl);
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of()));
+
+			assertThat(validator.isValidServer(baseUrl)).isTrue();
+			assertThat(requests).hasValue(1);
+		} finally {
+			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorSystemPropertyOverridesServletConfigPrefixes() {
+		try {
+			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, "/admin-rdf4j-server");
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of("accepted-server-prefixes", "/rdf4j-server")));
+
+			assertThat(validator.isValidServer("/admin-rdf4j-server")).isTrue();
+			assertThat(validator.isValidServer("/rdf4j-server")).isFalse();
+		} finally {
+			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
 		}
 	}
 
