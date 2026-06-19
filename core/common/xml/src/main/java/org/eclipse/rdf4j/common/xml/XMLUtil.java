@@ -427,6 +427,7 @@ public class XMLUtil {
 
 	/**
 	 * Strips the provided direction of the leading dashes.
+	 *
 	 * @param direction - literal direction
 	 * @return the direction without the leading dashes
 	 */
