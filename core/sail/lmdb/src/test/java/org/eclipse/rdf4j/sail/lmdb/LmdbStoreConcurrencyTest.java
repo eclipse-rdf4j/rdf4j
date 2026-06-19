@@ -41,4 +41,9 @@ public class LmdbStoreConcurrencyTest extends SailConcurrencyTest {
 		config.setTripleDBSize(config.getValueDBSize());
 		return new LmdbStore(dataDir, config);
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

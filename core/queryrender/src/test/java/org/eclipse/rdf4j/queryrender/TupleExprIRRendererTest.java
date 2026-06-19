@@ -341,6 +341,44 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
+	@Test
+	void renderPreservesLateral() {
+		String q = "SELECT ?s ?o ?label WHERE {\n" +
+				"  ?s ex:p ?o .\n" +
+				"  LATERAL {\n" +
+				"    SELECT ?label WHERE {\n" +
+				"      ?s rdfs:label ?label .\n" +
+				"    }\n" +
+				"    ORDER BY ?label\n" +
+				"    LIMIT 1\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+
+		assertThat(rendered).contains("LATERAL");
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void renderPreservesGroupedLateralBoundary() {
+		String q = "SELECT ?a ?x WHERE {\n" +
+				"  ?a ex:p ?b .\n" +
+				"  {\n" +
+				"    ?s ex:r ?o .\n" +
+				"    LATERAL {\n" +
+				"      SELECT ?a ?x WHERE {\n" +
+				"        ?a ex:q ?x .\n" +
+				"      }\n" +
+				"      ORDER BY ?x\n" +
+				"      LIMIT 1\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
 	@RepeatedTest(10)
 	void union_of_groups() {
 		String q = "SELECT ?who WHERE {\n" +
@@ -458,9 +496,11 @@ public class TupleExprIRRendererTest {
 	}
 
 	@RepeatedTest(10)
-	void rdf_star_triple_terms_render_verbatim() {
-		String q = "SELECT * WHERE {\n" +
-				"  <<ex:s ex:p ex:o>> ex:q ?x .\n" +
+	void rdf_12_triple_terms_render_verbatim() {
+		String q = "SELECT ?s ?x WHERE {\n" +
+				"  ?s rdf:reifies <<(ex:s ex:p ex:o)>> ." +
+				"  ?s ex:q ?x ." +
+				"\n" +
 				"}";
 		String rendered = render(SPARQL_PREFIX + q, cfg());
 //		assertTrue(rendered.contains("<<ex:s ex:p ex:o>>"), "RDF-star triple term must render as <<...>>");

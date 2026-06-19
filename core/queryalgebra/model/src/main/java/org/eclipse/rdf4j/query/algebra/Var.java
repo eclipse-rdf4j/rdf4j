@@ -15,6 +15,8 @@ import java.util.ServiceLoader;
 
 import org.eclipse.rdf4j.model.Value;
 
+import com.google.common.annotations.VisibleForTesting;
+
 /**
  * A variable that can contain a Value.
  *
@@ -51,6 +53,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	private boolean constant = false;
 
+	private boolean isBNode = false;
+
 	private int cachedHashCode = 0;
 
 	/*
@@ -61,35 +65,46 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 * Factory mirroring {@link #Var(String)}.
 	 */
 	public static Var of(String name) {
-		return Holder.PROVIDER.newVar(name, null, false, false);
+		return Holder.PROVIDER.newVar(name, null, false, false, false);
 	}
 
 	/**
 	 * Factory mirroring {@link #Var(String, boolean)}.
 	 */
 	public static Var of(String name, boolean anonymous) {
-		return Holder.PROVIDER.newVar(name, null, anonymous, false);
+		return Holder.PROVIDER.newVar(name, null, anonymous, false, false);
 	}
 
 	/**
 	 * Factory mirroring {@link #Var(String, Value)}.
 	 */
 	public static Var of(String name, Value value) {
-		return Holder.PROVIDER.newVar(name, value, false, false);
+		return Holder.PROVIDER.newVar(name, value, false, false, false);
 	}
 
 	/**
 	 * Factory mirroring {@link #Var(String, Value, boolean)}.
 	 */
 	public static Var of(String name, Value value, boolean anonymous) {
-		return Holder.PROVIDER.newVar(name, value, anonymous, false);
+		return Holder.PROVIDER.newVar(name, value, anonymous, false, false);
 	}
 
 	/**
-	 * Factory mirroring {@link #Var(String, Value, boolean, boolean)}.
+	 * Factory mirroring {@link #Var(String, Value, boolean, boolean, boolean)}.
 	 */
 	public static Var of(String name, Value value, boolean anonymous, boolean constant) {
-		return Holder.PROVIDER.newVar(name, value, anonymous, constant);
+		return Holder.PROVIDER.newVar(name, value, anonymous, constant, false);
+	}
+
+	/**
+	 * Factory mirroring {@link #Var(String, Value, boolean, boolean, boolean)}.
+	 */
+	public static Var of(String name, Value value, boolean anonymous, boolean constant, boolean isBNode) {
+		return Holder.PROVIDER.newVar(name, value, anonymous, constant, isBNode);
+	}
+
+	public static Var of(String name, boolean anonymous, boolean isBNode) {
+		return Holder.PROVIDER.newVar(name, null, anonymous, false, isBNode);
 	}
 
 	/*
@@ -106,10 +121,15 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, Value value, boolean anonymous, boolean constant) {
+		this(name, value, anonymous, constant, false);
+	}
+
+	public Var(String name, Value value, boolean anonymous, boolean constant, boolean isBNode) {
 		this.name = name;
 		this.value = value;
 		this.anonymous = anonymous;
 		this.constant = constant;
+		this.isBNode = isBNode;
 	}
 
 	/**
@@ -118,7 +138,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name) {
-		this(name, null, false, false);
+		this(name, null, false, false, false);
 	}
 
 	/**
@@ -128,7 +148,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, boolean anonymous) {
-		this(name, null, anonymous, false);
+		this(name, null, anonymous, false, false);
 	}
 
 	/**
@@ -138,7 +158,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, Value value) {
-		this(name, value, false, false);
+		this(name, value, false, false, false);
 	}
 
 	/**
@@ -149,7 +169,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, Value value, boolean anonymous) {
-		this(name, value, anonymous, false);
+		this(name, value, anonymous, false, false);
 	}
 
 	/*
@@ -177,7 +197,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		/**
 		 * Mirror of the primary 4-argument {@link Var} constructor.
 		 */
-		Var newVar(String name, Value value, boolean anonymous, boolean constant);
+		Var newVar(String name, Value value, boolean anonymous, boolean constant, boolean isBNode);
 
 		/**
 		 * Creates a copy of the supplied {@link Var}. Implementations should ensure the clone is consistent with
@@ -189,7 +209,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		 * </p>
 		 */
 		default Var cloneVar(Var original) {
-			return newVar(original.getName(), original.getValue(), original.isAnonymous(), original.isConstant());
+			return newVar(original.getName(), original.getValue(), original.isAnonymous(), original.isConstant(),
+					original.isBNode);
 		}
 	}
 
@@ -312,10 +333,41 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return constant;
 	}
 
+	public boolean isBNode() {
+		return isBNode;
+	}
+
+	public void setBNode(boolean isBnode) {
+		isBNode = isBnode;
+	}
+
+	/**
+	 * Installs a custom {@link Provider} to be used by {@link Var#of} and {@link Var#clone}. Intended for test use
+	 * only. Always call {@link #resetProvider()} in a corresponding teardown.
+	 */
+	@VisibleForTesting
+	/* package */ static void setProvider(Provider provider) {
+		Holder.PROVIDER = provider;
+	}
+
+	/**
+	 * Resets the {@link Provider} to the one resolved from the system property and {@link ServiceLoader}. Intended for
+	 * test use only to undo a prior {@link #setProvider} call.
+	 */
+	@VisibleForTesting
+	/* package */ static void resetProvider() {
+		Holder.reset();
+	}
+
 	private static final class Holder {
 		private static final Provider DEFAULT = Var::new;
 
-		static final Provider PROVIDER = initProvider();
+		// Not final so that Var.setProvider() can replace it during tests
+		static Provider PROVIDER = initProvider();
+
+		private static void reset() {
+			PROVIDER = initProvider();
+		}
 
 		private static Provider initProvider() {
 			// 1) Explicit override via system property (FQCN of Var.Provider)

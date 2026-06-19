@@ -95,8 +95,12 @@ public abstract class TupleQueryResultTest {
 		} finally {
 			System.gc();
 			Thread.sleep(1);
-			rep.shutDown();
-			rep = null;
+			try {
+				rep.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(rep);
+				rep = null;
+			}
 		}
 	}
 
@@ -110,6 +114,16 @@ public abstract class TupleQueryResultTest {
 	}
 
 	protected abstract Repository newRepository();
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
+	}
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.

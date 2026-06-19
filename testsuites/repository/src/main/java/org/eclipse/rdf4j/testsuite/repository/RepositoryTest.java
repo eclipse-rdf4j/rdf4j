@@ -29,12 +29,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.*;
 
 /**
  * Integration test suite for implementations of Repository.
@@ -117,10 +112,19 @@ public abstract class RepositoryTest {
 
 	@AfterEach
 	public void tearDown() {
+		if (testRepository == null) {
+			return;
+		}
+
 		try (RepositoryConnection connection = testRepository.getConnection()) {
 			connection.clear();
+		} finally {
+			try {
+				testRepository.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(testRepository);
+			}
 		}
-		testRepository.shutDown();
 	}
 
 	/**
@@ -129,6 +133,16 @@ public abstract class RepositoryTest {
 	 * @return an uninitialized repository.
 	 */
 	protected abstract Repository createRepository();
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
+	}
 
 	@Test
 	public void testShutdownFollowedByInit() {

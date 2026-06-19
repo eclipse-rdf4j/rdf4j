@@ -34,13 +34,18 @@ public class TripleStoreManyIndexesTest {
 	public void testSixIndexes() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp"), null);
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(1, 2, 3, 1, true);
-		tripleStore.commit();
+		try {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 1, true);
+			tripleStore.commit();
 
-		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			var it = tripleStore.getTriples(txn, 1, 2, 3, 1, true);
-			assertNotNull("Store should have a stored statement", it.next());
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				var it = tripleStore.getTriples(txn, 1, 2, 3, 1, true);
+				assertNotNull("Store should have a stored statement", it.next());
+			}
+		} finally {
+			tripleStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 }

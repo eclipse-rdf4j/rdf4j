@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import javax.xml.datatype.DatatypeConstants;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -69,7 +70,14 @@ public class QueryEvaluationUtil {
 				return !label.isEmpty();
 			}
 			if (dt == CoreDatatype.XSD.BOOLEAN) {
-				return "true".equals(label) || "1".equals(label);
+				if ("true".equals(label) || "1".equals(label)) {
+					return true;
+				} else if ("false".equals(label) || "0".equals(label)) {
+					return false;
+				} else {
+					// ill-typed literal — "z"^^xsd:boolean must be a type error per SPARQL spec
+					throw new ValueExprEvaluationException();
+				}
 			}
 
 			try {
@@ -141,6 +149,13 @@ public class QueryEvaluationUtil {
 		if (l.isLiteral() && r.isLiteral()) {
 			return doCompareLiteralsEQ((Literal) l, (Literal) r, strict);
 		}
+		if (l.isTripleTerm() && r.isTripleTerm()) {
+			TripleTerm leftTerm = (TripleTerm) l;
+			TripleTerm rightTerm = (TripleTerm) r;
+			return compareEQ(leftTerm.getSubject(), rightTerm.getSubject(), strict) &&
+					compareEQ(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) &&
+					compareEQ(leftTerm.getObject(), rightTerm.getObject(), strict);
+		}
 		return l.equals(r);
 	}
 
@@ -159,6 +174,13 @@ public class QueryEvaluationUtil {
 		}
 		if (l.isLiteral() && r.isLiteral()) {
 			return doCompareLiteralsNE((Literal) l, (Literal) r, strict);
+		}
+		if (l.isTripleTerm() && r.isTripleTerm()) {
+			TripleTerm leftTerm = (TripleTerm) l;
+			TripleTerm rightTerm = (TripleTerm) r;
+			return compareNE(leftTerm.getSubject(), rightTerm.getSubject(), strict) ||
+					compareNE(leftTerm.getPredicate(), rightTerm.getPredicate(), strict) ||
+					compareNE(leftTerm.getObject(), rightTerm.getObject(), strict);
 		}
 		return !l.equals(r);
 	}
@@ -179,6 +201,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsLT((Literal) l, (Literal) r, strict);
 		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -198,6 +221,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsLE((Literal) l, (Literal) r, strict);
 		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -217,6 +241,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsGT((Literal) l, (Literal) r, strict);
 		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -236,6 +261,7 @@ public class QueryEvaluationUtil {
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsGE((Literal) l, (Literal) r, strict);
 		}
+
 		throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 	}
 
@@ -408,6 +434,11 @@ public class QueryEvaluationUtil {
 			}
 			if (ld == CoreDatatype.RDF.LANGSTRING) {
 				return l.getLanguage().equals(r.getLanguage()) && l.getLabel().equals(r.getLabel());
+			}
+			if (ld == CoreDatatype.RDF.DIRLANGSTRING) {
+				return l.getLanguage().equals(r.getLanguage()) &&
+						l.getLabel().equals(r.getLabel()) &&
+						l.getBaseDirection() == r.getBaseDirection();
 			}
 		}
 

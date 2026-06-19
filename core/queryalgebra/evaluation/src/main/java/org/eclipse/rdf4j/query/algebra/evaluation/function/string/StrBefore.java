@@ -43,9 +43,7 @@ public class StrBefore implements Function {
 		Value leftArg = args[0];
 		Value rightArg = args[1];
 
-		if (leftArg instanceof Literal && rightArg instanceof Literal) {
-			Literal leftLit = (Literal) leftArg;
-			Literal rightLit = (Literal) rightArg;
+		if (leftArg instanceof Literal leftLit && rightArg instanceof Literal rightLit) {
 
 			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {
 				Optional<String> leftLanguage = leftLit.getLanguage();

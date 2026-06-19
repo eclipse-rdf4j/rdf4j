@@ -13,10 +13,10 @@ package org.eclipse.rdf4j.common.webapp.system.proxy;
 import java.io.IOException;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.app.net.ProxySettings;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * @author Herko ter Horst

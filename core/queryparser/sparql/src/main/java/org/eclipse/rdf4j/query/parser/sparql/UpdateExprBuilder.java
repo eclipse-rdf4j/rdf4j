@@ -10,11 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.Add;
+import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Clear;
 import org.eclipse.rdf4j.query.algebra.Copy;
 import org.eclipse.rdf4j.query.algebra.Create;
@@ -25,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Load;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Move;
+import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -48,10 +54,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLoad;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMove;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuadsNotTriples;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReifiedTriple;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleTerm;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdate;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
@@ -65,6 +73,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 public class UpdateExprBuilder extends TupleExprBuilder {
 
 	TupleExpr where;
+	private final Map<String, BNodeGenerator> bNodeGenerators = new HashMap<>();
 
 	/**
 	 * @param valueFactory
@@ -309,6 +318,20 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		ASTInsertClause insertNode = node.getInsertClause();
 		if (insertNode != null) {
 			insert = (TupleExpr) insertNode.jjtAccept(this, data);
+			var tripleBNodes = TripleRefBNodeVarCollector.process(where);
+			if (!tripleBNodes.isEmpty()) {
+				List<ExtensionElem> elems = new ArrayList<>();
+				for (Var tripleBNode : tripleBNodes) {
+					createBNodeExtensionElem(tripleBNode, elems);
+				}
+				Extension ext = prependExtensions(where, elems);
+
+				if (ext == null) {
+					ext = new Extension(where);
+					ext.addElements(elems);
+				}
+				where = ext;
+			}
 		}
 
 		return new Modify(delete, insert, where);
@@ -378,19 +401,135 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	@Override
-	public TupleExpr visit(ASTTripleRef node, Object data) throws VisitorException {
+	protected Var buildReifiedTripleVar(Object reifier, Var subjVar, Var predVar, Var objVar) throws VisitorException {
+		if (where == null) {
+			return super.buildReifiedTripleVar(reifier, subjVar, predVar, objVar);
+		}
+		AnnotationTripleRef rtr = buildReifiedTripleRef(subjVar, predVar, objVar, reifier);
+		Extension ext = new Extension(where);
+		ext.addElement(new ExtensionElem(castToValueExpr(rtr), rtr.getExprVar().getName()));
+		graphPattern.addRequiredSP(rtr.getReifVar().clone(), REIFIES_VAR.clone(), rtr.getExprVar().clone());
+		where = ext;
+		return rtr.getReifVar();
+	}
+
+	@Override
+	public TupleExpr visit(ASTTripleTerm node, Object data) throws VisitorException {
 		if (where == null) {
 			return super.visit(node, data);
 		}
-		TripleRef ret = new TripleRef();
-		ret.setSubjectVar(mapValueExprToVar(node.getSubj().jjtAccept(this, ret)));
-		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));
-		ret.setObjectVar(mapValueExprToVar(node.getObj().jjtAccept(this, ret)));
-		ret.setExprVar(createAnonVar());
+		TripleRef ret = constructTripleRefFromAST(node);
+
 		Extension ext = new Extension(where);
 		ext.addElement(new ExtensionElem(castToValueExpr(ret), ret.getExprVar().getName()));
 		where = ext;
 
 		return ret;
+	}
+
+	@Override
+	public TupleExpr visit(ASTReifiedTriple node, Object data) throws VisitorException {
+		if (where == null) {
+			return super.visit(node, data);
+		}
+		ReifiedTripleRef ret = new ReifiedTripleRef();
+
+		SimpleNode subjNode = node.getSubj();
+		// Recursively handle nested reified triples in subject position
+		if (subjNode instanceof ASTReifiedTriple) {
+			ReifiedTripleRef nestedRef = new ReifiedTripleRef();
+			var retSubj = mapValueExprToVar(subjNode.jjtAccept(this, nestedRef));
+			// Mark nested reifier as blank node so it gets collected
+			// by TripleRefBNodeVarCollector and bound to a BNodeGenerator in INSERT/WHERE
+			retSubj.setBNode(true);
+			ret.setSubjectVar(retSubj);
+		} else {
+			ret.setSubjectVar(mapValueExprToVar(subjNode.jjtAccept(this, data)));
+		}
+		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));
+
+		SimpleNode objNode = node.getObj();
+		// Recursively handle nested reified triples in object position
+		if (objNode instanceof ASTReifiedTriple) {
+			ReifiedTripleRef nestedRef = new ReifiedTripleRef();
+			var retObj = mapValueExprToVar(objNode.jjtAccept(this, nestedRef));
+			// Mark nested reifier as blank node so it gets collected
+			// by TripleRefBNodeVarCollector and bound to a BNodeGenerator in INSERT/WHERE
+			retObj.setBNode(true);
+			ret.setObjectVar(retObj);
+		} else {
+			ret.setObjectVar(mapValueExprToVar(objNode.jjtAccept(this, ret)));
+		}
+		ret.setExprVar(createAnonVar());
+
+		// Use explicit reifier if provided; otherwise generate an anonymous blank node reifier
+		Var reifier;
+		if (node.getReifier() != null) {
+			reifier = mapValueExprToVar(node.getReifier().jjtAccept(this, ret));
+		} else {
+			reifier = createAnonVar();
+		}
+		ret.setReifVar(reifier);
+
+		Extension ext = new Extension(where);
+		ext.addElement(new ExtensionElem(castToValueExpr(ret), ret.getExprVar().getName()));
+
+		// Add the reification statement: reifier rdf:reifies <triple-expression>
+		graphPattern.addRequiredSP(ret.getReifVar().clone(), REIFIES_VAR.clone(), ret.getExprVar().clone());
+		where = ext;
+
+		return ret;
+	}
+
+	/**
+	 * Creates and registers an {@link ExtensionElem} that binds a blank node variable to a {@link BNodeGenerator}, if
+	 * the variable has not been encountered before.
+	 * <p>
+	 * Blank node variables used in SPARQL UPDATE templates (e.g. INSERT or DELETE) must be associated with a
+	 * {@link BNodeGenerator} so that a fresh RDF blank node is produced during evaluation. The generated value is then
+	 * reused for all subsequent references to the same variable within the operation.
+	 * <p>
+	 * The {@code bNodeGenerators} map acts as a registry of variables that have already been assigned a generator. When
+	 * a variable is first encountered, a new {@link BNodeGenerator} is created and an {@link ExtensionElem} binding is
+	 * added to the supplied list. If the variable was already registered, no additional element is created.
+	 *
+	 * @param var   the variable representing a blank node in the update template
+	 * @param elems the list to which a new {@link ExtensionElem} binding should be added if this is the first
+	 *              occurrence of the variable
+	 */
+	private void createBNodeExtensionElem(Var var, List<ExtensionElem> elems) {
+		// computeIfAbsent only creates a new BNodeGenerator on first encounter;
+		// if already present the existing generator is returned but not re-added to the extension.
+		if (!bNodeGenerators.containsKey(var.getName())) {
+			ValueExpr valueExpr = bNodeGenerators.computeIfAbsent(var.getName(),
+					ignored -> new BNodeGenerator());
+			elems.add(new ExtensionElem(valueExpr, var.getName()));
+		}
+	}
+
+	private Extension prependExtensions(TupleExpr expr, List<ExtensionElem> topElems) {
+
+		if (!(expr instanceof Extension)) {
+			return null;
+		}
+
+		List<ExtensionElem> elems = new ArrayList<>();
+		TupleExpr arg = expr;
+
+		// walk down the chain
+		while (arg instanceof Extension) {
+			elems.addAll(0, ((Extension) arg).getElements());
+			arg = ((Extension) arg).getArg();
+		}
+
+		Extension flat = new Extension(arg);
+
+		flat.addElements(topElems);
+
+		for (ExtensionElem e : elems) {
+			flat.addElement(e);
+		}
+
+		return flat;
 	}
 }

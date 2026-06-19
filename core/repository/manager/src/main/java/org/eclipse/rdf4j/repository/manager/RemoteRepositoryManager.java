@@ -17,9 +17,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
@@ -106,7 +106,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		SharedHttpClientSessionManager nextClient = client;
 		if (nextClient == null) {
 			return null;
@@ -116,7 +116,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public void setHttpClient(HttpClient protocolSession) {
+	public void setHttpClient(RDF4JHttpClient protocolSession) {
 		getSharedHttpClientSessionManager().setHttpClient(protocolSession);
 	}
 

@@ -457,7 +457,7 @@ class NativeSailStore implements SailStore {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0);
-				} else if (!context.isTriple()) {
+				} else if (!context.isTripleTerm()) {
 					int contextID = valueStore.getID(context);
 
 					if (contextID != NativeValue.UNKNOWN_ID) {

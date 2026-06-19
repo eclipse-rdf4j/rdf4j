@@ -22,6 +22,10 @@ import org.eclipse.rdf4j.query.parser.ParsedOperation;
 
 public abstract class SPARQL11SyntaxComplianceTest extends SPARQLSyntaxComplianceTest {
 
+	public SPARQL11SyntaxComplianceTest() {
+		setTestsSource("testcases-sparql-1.1-w3c/manifest-all.ttl");
+	}
+
 	@Override
 	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
 }

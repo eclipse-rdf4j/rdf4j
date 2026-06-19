@@ -30,9 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.servlet.ServletOutputStream;
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.xml.DocumentUtil;
@@ -46,6 +44,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * @author Dale Visser
@@ -187,15 +189,23 @@ public class CreateServletTest {
 				.filter(field -> field.getId().equals("lmdb_tripleDBSize"))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Missing Triple DB size field"));
+		CreateTemplateConfig.Field bulkOperationSize = template.getFields()
+				.stream()
+				.filter(field -> field.getId().equals("lmdb_bulkOperationSize"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing bulk operation size field"));
 
 		assertThat(tripleDbSize.getName()).isEqualTo("Triple DB size");
 		assertThat(tripleDbSize.getSize()).isEqualTo(16);
+		assertThat(bulkOperationSize.getName()).isEqualTo("Bulk operation size");
+		assertThat(bulkOperationSize.getSize()).isEqualTo(16);
 
 		String rendered = template.render(Map.ofEntries(
 				Map.entry("Repository ID", "lmdb-inline"),
 				Map.entry("Repository title", "LMDB inline"),
 				Map.entry("Query Iteration Cache sync threshold", "512"),
 				Map.entry("Triple indexes", "spoc"),
+				Map.entry("Bulk operation size", "0"),
 				Map.entry("Triple DB size", "20971520"),
 				Map.entry("Value DB size", "31457280"),
 				Map.entry("Value cache size", "128"),
@@ -210,6 +220,7 @@ public class CreateServletTest {
 				Map.entry("Query Evaluation Mode", "STRICT")));
 
 		assertThat(rendered)
+				.contains("lmdb:bulkOperationSize 0")
 				.contains("20971520")
 				.doesNotContain("Triple DB size[len=16]");
 	}
@@ -358,6 +369,21 @@ public class CreateServletTest {
 						Map.entry("No readahead", "true"),
 						Map.entry("Page cardinality estimator", "false"),
 						Map.entry("Value eviction interval", "15000"),
+						Map.entry("Value hash cache enabled", "true"),
+						Map.entry("Inline literals", "false"),
+						Map.entry("Sketch estimator enabled", "true"),
+						Map.entry("Sketch estimator subject bucket count", "8192"),
+						Map.entry("Sketch estimator predicate bucket count", "128"),
+						Map.entry("Sketch estimator object bucket count", "16384"),
+						Map.entry("Sketch estimator context bucket count", "32"),
+						Map.entry("Sketch estimator context pair sketches enabled", "true"),
+						Map.entry("Sketch estimator throttle every N", "17"),
+						Map.entry("Sketch estimator throttle millis", "3"),
+						Map.entry("Optimizer sampling enabled", "false"),
+						Map.entry("Optimizer sampling max millis", "9"),
+						Map.entry("Optimizer sampling max rows", "11"),
+						Map.entry("Background raw sampling enabled", "false"),
+						Map.entry("Background raw sampling max millis per cycle", "13"),
 						Map.entry("Query Evaluation Mode", "STRICT")));
 
 		RepositoryConfig config = servlet.updateRepositoryConfig(rendered);
@@ -390,10 +416,40 @@ public class CreateServletTest {
 				.contains("pageCardinalityEstimator")
 				.contains("valueEvictionInterval")
 				.contains("15000")
+				.contains("valueHashCacheEnabled")
+				.contains("inlineLiterals")
+				.contains("sketchEstimatorEnabled")
+				.contains("sketchEstimatorSubjectBucketCount")
+				.contains("sketchEstimatorPredicateBucketCount")
+				.contains("sketchEstimatorObjectBucketCount")
+				.contains("sketchEstimatorContextBucketCount")
+				.contains("sketchEstimatorContextPairSketchesEnabled")
+				.contains("sketchEstimatorThrottleEveryN")
+				.contains("sketchEstimatorThrottleMillis")
+				.contains("optimizerSamplingEnabled")
+				.contains("optimizerSamplingMaxMillis")
+				.contains("optimizerSamplingMaxRows")
+				.contains("backgroundRawSamplingEnabled")
+				.contains("backgroundRawSamplingMaxMillisPerCycle")
 				.contains("defaultQueryEvaluationMode")
 				.contains("STRICT");
 
 		assertThat(invokeBooleanGetter(sailConfig, "getNoReadahead")).isTrue();
+		assertThat(invokeBooleanGetter(sailConfig, "getValueHashCacheEnabled")).isTrue();
+		assertThat(invokeBooleanGetter(sailConfig, "getInlineLiterals")).isFalse();
+		assertThat(invokeObjectGetter(sailConfig, "getSketchEstimatorEnabled")).isEqualTo(Boolean.TRUE);
+		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorSubjectBucketCount")).isEqualTo(8192);
+		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorPredicateBucketCount")).isEqualTo(128);
+		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorObjectBucketCount")).isEqualTo(16384);
+		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorContextBucketCount")).isEqualTo(32);
+		assertThat(invokeBooleanGetter(sailConfig, "getSketchEstimatorContextPairSketchesEnabled")).isTrue();
+		assertThat(invokeLongGetter(sailConfig, "getSketchEstimatorThrottleEveryN")).isEqualTo(17L);
+		assertThat(invokeLongGetter(sailConfig, "getSketchEstimatorThrottleMillis")).isEqualTo(3L);
+		assertThat(invokeBooleanGetter(sailConfig, "getOptimizerSamplingEnabled")).isFalse();
+		assertThat(invokeLongGetter(sailConfig, "getOptimizerSamplingMaxMillis")).isEqualTo(9L);
+		assertThat(invokeIntGetter(sailConfig, "getOptimizerSamplingMaxRows")).isEqualTo(11);
+		assertThat(invokeBooleanGetter(sailConfig, "getBackgroundRawSamplingEnabled")).isFalse();
+		assertThat(invokeLongGetter(sailConfig, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(13L);
 	}
 
 	@Test
@@ -538,6 +594,33 @@ public class CreateServletTest {
 		try {
 			Method getter = target.getClass().getMethod(getterName);
 			return (boolean) getter.invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static int invokeIntGetter(Object target, String getterName) {
+		try {
+			Method getter = target.getClass().getMethod(getterName);
+			return (int) getter.invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static long invokeLongGetter(Object target, String getterName) {
+		try {
+			Method getter = target.getClass().getMethod(getterName);
+			return (long) getter.invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static Object invokeObjectGetter(Object target, String getterName) {
+		try {
+			Method getter = target.getClass().getMethod(getterName);
+			return getter.invoke(target);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}

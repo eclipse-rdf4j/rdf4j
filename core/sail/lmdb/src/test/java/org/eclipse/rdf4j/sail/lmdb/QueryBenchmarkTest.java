@@ -45,6 +45,7 @@ import org.junit.rules.TemporaryFolder;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static File dataDir;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
 	static List<Statement> statementList;
@@ -118,20 +119,25 @@ public class QueryBenchmarkTest {
 
 	@BeforeAll
 	public static void beforeClass() throws IOException {
-		tempDir.create();
-		File file = tempDir.newFolder();
+		try {
+			tempDir.create();
+			dataDir = tempDir.newFolder();
 
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-		repository = new SailRepository(new LmdbStore(file, config));
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+			repository = new SailRepository(new LmdbStore(dataDir, config));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.commit();
+			}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			}
+		} catch (IOException | RuntimeException | Error e) {
+			cleanupStore();
+			throw e;
 		}
 	}
 
@@ -144,11 +150,26 @@ public class QueryBenchmarkTest {
 
 	@AfterAll
 	public static void afterClass() {
-		repository.shutDown();
-		tempDir.delete();
-		tempDir = null;
-		repository = null;
-		statementList = null;
+		cleanupStore();
+	}
+
+	private static void cleanupStore() {
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (dataDir != null) {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+			if (tempDir != null) {
+				tempDir.delete();
+			}
+			tempDir = null;
+			dataDir = null;
+			repository = null;
+			statementList = null;
+		}
 	}
 
 	@Test

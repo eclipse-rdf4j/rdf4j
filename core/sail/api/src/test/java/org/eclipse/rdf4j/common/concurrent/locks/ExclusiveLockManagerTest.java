@@ -91,24 +91,7 @@ class ExclusiveLockManagerTest {
 
 		Thread thread = null;
 		try {
-			thread = new Thread(() -> {
-				Lock lock1 = null;
-				Lock lock2 = null;
-				try {
-					lock1 = lockManagerTracking.getExclusiveLock();
-					lock2 = lockManagerTracking.getExclusiveLock();
-				} catch (InterruptedException ignored) {
-
-				} finally {
-					if (lock1 != null) {
-						lock1.release();
-					}
-					if (lock2 != null) {
-						lock2.release();
-					}
-				}
-			});
-
+			thread = new Thread(() -> acquireTwoLocks(lockManagerTracking));
 			thread.setDaemon(true);
 			thread.start();
 
@@ -125,7 +108,7 @@ class ExclusiveLockManagerTest {
 		assertThat(memoryAppender.countEventsForLogger(ExclusiveLockManager.class.getName())).isEqualTo(1);
 		memoryAppender.assertContains("is possibly deadlocked waiting on \"ExclusiveLockManager\" with id", Level.WARN);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.lambda$deadlockTest$0(ExclusiveLockManagerTest.",
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.acquireTwoLocks(",
 				Level.WARN);
 	}
 
@@ -165,6 +148,23 @@ class ExclusiveLockManagerTest {
 				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.stalledTest(ExclusiveLockManagerTest.java:",
 				Level.INFO);
 
+	}
+
+	private void acquireTwoLocks(ExclusiveLockManager lockManager) {
+		Lock lock1 = null;
+		Lock lock2 = null;
+		try {
+			lock1 = lockManager.getExclusiveLock();
+			lock2 = lockManager.getExclusiveLock();
+		} catch (InterruptedException ignored) {
+		} finally {
+			if (lock1 != null) {
+				lock1.release();
+			}
+			if (lock2 != null) {
+				lock2.release();
+			}
+		}
 	}
 
 	private void lock(ExclusiveLockManager lockManager) throws InterruptedException {

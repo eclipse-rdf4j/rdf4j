@@ -19,8 +19,10 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
 import org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest;
@@ -34,6 +36,8 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.FilterScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.LateralScopeTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.LateralTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
@@ -120,6 +124,16 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	}
 
 	@TestFactory
+	Stream<DynamicTest> lateral() throws RDF4JException, IOException {
+		return new LateralTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> lateralScope() throws RDF4JException, IOException {
+		return new LateralScopeTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
 	Stream<DynamicTest> propertyPath() throws RDF4JException, IOException {
 		return new PropertyPathTest(this::getEmptyInitializedRepository).tests();
 	}
@@ -194,11 +208,43 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 				con.clear();
 				con.clearNamespaces();
 			}
-			return repository;
+			if (!deleteDataDirAfterShutdown()) {
+				return repository;
+			}
+			return new RepositoryWrapper(repository) {
+				@Override
+				public void shutDown() {
+					try {
+						super.shutDown();
+					} finally {
+						deleteDataDir(getDelegate().getDataDir());
+					}
+				}
+			};
 
 		} catch (RDF4JException e) {
 			fail(e);
 			return null;
+		}
+	}
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void deleteDataDir(File dataDir) {
+		if (dataDir == null || !dataDir.exists()) {
+			return;
+		}
+
+		try {
+			FileUtil.deleteDir(dataDir);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to delete SPARQL repository data dir " + dataDir, e);
+		}
+
+		if (dataDir.exists()) {
+			throw new AssertionError("Expected SPARQL repository data dir to be deleted: " + dataDir);
 		}
 	}
 }

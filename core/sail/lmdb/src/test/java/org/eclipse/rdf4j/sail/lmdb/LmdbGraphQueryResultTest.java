@@ -26,4 +26,9 @@ public class LmdbGraphQueryResultTest extends GraphQueryResultTest {
 	protected Repository newRepository() {
 		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

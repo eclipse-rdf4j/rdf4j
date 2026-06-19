@@ -40,8 +40,7 @@ public class EncodeForUri implements Function {
 			throw new ValueExprEvaluationException("ENCODE_FOR_URI requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal) args[0];
+		if (args[0]instanceof Literal literal) {
 
 			if (QueryEvaluationUtility.isStringLiteral(literal)) {
 				String lexValue = literal.getLabel();

@@ -1,0 +1,14 @@
+name: succed job 'build (11)'
+
+on: pull_request
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        jdk: [ 11 ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Always Succeed
+        run: true

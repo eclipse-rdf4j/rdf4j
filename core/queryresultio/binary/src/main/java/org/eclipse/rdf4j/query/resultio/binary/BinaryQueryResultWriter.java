@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.common.io.ByteSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -211,8 +211,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 			writeBNode((BNode) value);
 		} else if (value instanceof Literal) {
 			writeLiteral((Literal) value);
-		} else if (value instanceof Triple) {
-			writeTriple((Triple) value);
+		} else if (value instanceof TripleTerm) {
+			writeTriple((TripleTerm) value);
 		} else {
 			throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
 		}
@@ -277,11 +277,11 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		}
 	}
 
-	private void writeTriple(Triple triple) throws IOException {
+	private void writeTriple(TripleTerm tripleTerm) throws IOException {
 		out.writeByte(TRIPLE_RECORD_MARKER);
-		writeValue(triple.getSubject());
-		writeValue(triple.getPredicate());
-		writeValue(triple.getObject());
+		writeValue(tripleTerm.getSubject());
+		writeValue(tripleTerm.getPredicate());
+		writeValue(tripleTerm.getObject());
 	}
 
 	/**

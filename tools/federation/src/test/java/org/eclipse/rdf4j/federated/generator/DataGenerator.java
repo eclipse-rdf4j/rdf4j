@@ -11,30 +11,63 @@
 package org.eclipse.rdf4j.federated.generator;
 
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
 /**
- * Data generator for 4 endpoints
+ * Synthetic RDF data generator for a 4-endpoint federation benchmark.
  *
- * Endpoint1: Person Data (rdf:type={foaf:Person, ns1:Person}, foaf:project, foaf:name, owl:sameAs{author in ns4)
+ * <p>
+ * Generates Turtle files for four thematically distinct endpoints:
+ * </p>
+ * <ul>
+ * <li><b>Endpoint 1</b> – persons {@code 1..PERSONS_1} (namespace {@code ns1}), typed as {@code foaf:Person} and
+ * {@code ns1:Person}, with a {@code foaf:name} literal.</li>
+ * <li><b>Endpoint 2</b> – persons {@code PERSONS_1+1..PERSONS_1+PERSONS_2} (namespace {@code ns2}), same schema as
+ * endpoint 1.</li>
+ * <li><b>Endpoint 3</b> – projects (namespace {@code ns3}), typed as {@code ns3:Project}, with an {@code rdfs:label}
+ * and an optional {@code ns3:responsible} link to a person in endpoint 1 or 2.</li>
+ * <li><b>Endpoint 4</b> – authors and publications (namespace {@code ns4}); authors carry an optional
+ * {@code owl:sameAs} link back to a person in endpoint 1 or 2, enabling cross-endpoint joins.</li>
+ * </ul>
  *
+ * <p>
+ * All random decisions are seeded deterministically so that repeated runs produce identical data. The generated files
+ * are written to {@code src/test/resources/tests/performance/} by default (see {@link #run()}).
+ * </p>
  *
- * @author andreas_s
+ * <p>
+ * Run via {@link #main(String[])} to (re-)generate the benchmark dataset, or call {@link #run(File)} directly to write
+ * to a custom location.
+ * </p>
  *
+ * @author Andreas Schwarte
  */
 public class DataGenerator {
 
-	public static final int PERSONS_1 = 500; // Number of persons in endpoint 1
-	public static final int PERSONS_2 = 1500; // Number of persons in endpoint 2
-	public static final int PROJECTS = 100; // Number of projects in endpoint 3
-	public static final int PUBLICATIONS = 500; // Number of publications in endpoint 4
-	public static final int AUTHORS = 600; // Number of authors
-	public static final int PROBABILITY_IS_AUTHOR = 70; // probability in % that a person is an author (owl_sameAs)
-	public static final int PROBABILITY_HAS_PERSON = 80; // probability in % that a project has a responsible person
+	/** Number of persons generated in endpoint 1 (namespace {@code ns1}). */
+	public static final int PERSONS_1 = 500;
+	/** Number of persons generated in endpoint 2 (namespace {@code ns2}). */
+	public static final int PERSONS_2 = 1500;
+	/** Number of projects generated in endpoint 3. */
+	public static final int PROJECTS = 100;
+	/** Number of publications generated in endpoint 4. */
+	public static final int PUBLICATIONS = 500;
+	/** Number of authors generated in endpoint 4. */
+	public static final int AUTHORS = 600;
+	/**
+	 * Probability (in percent) that an author in endpoint 4 has an {@code owl:sameAs} link to a person in endpoint 1 or
+	 * 2.
+	 */
+	public static final int PROBABILITY_IS_AUTHOR = 70;
+	/**
+	 * Probability (in percent) that a project in endpoint 3 has a {@code ns3:responsible} link to a person.
+	 */
+	public static final int PROBABILITY_HAS_PERSON = 80;
 
 	protected Random rand = new Random(64352342);
 
@@ -44,7 +77,33 @@ public class DataGenerator {
 	protected StringBuilder endpoint3 = new StringBuilder();
 	protected StringBuilder endpoint4 = new StringBuilder();
 
+	/**
+	 * Generates the benchmark dataset and writes it to {@code src/test/resources/tests/performance/}.
+	 *
+	 * @throws Exception if data generation or file I/O fails
+	 */
 	public void run() throws Exception {
+
+		String testResources = "src/test/resources/";
+
+		File baseFolder = new File(testResources + "tests/performance");
+		run(baseFolder);
+	}
+
+	/**
+	 * Generates the benchmark dataset and writes the four Turtle files to {@code baseFolder}.
+	 *
+	 * <p>
+	 * The folder is created if it does not exist. After writing the data files, the SPARQL query files from
+	 * {@code src/test/resources/tests/medium/} are copied into the same folder.
+	 * </p>
+	 *
+	 * @param baseFolder target directory for the generated files; created if absent
+	 * @throws Exception if data generation or file I/O fails
+	 */
+	public void run(File baseFolder) throws Exception {
+
+		baseFolder.mkdirs();
 
 		init();
 
@@ -54,12 +113,17 @@ public class DataGenerator {
 
 		createPublications();
 
-		write(endpoint1, "data1.ttl");
-		write(endpoint2, "data2.ttl");
-		write(endpoint3, "data3.ttl");
-		write(endpoint4, "data4.ttl");
+		write(endpoint1, baseFolder, "data1.ttl");
+		write(endpoint2, baseFolder, "data2.ttl");
+		write(endpoint3, baseFolder, "data3.ttl");
+		write(endpoint4, baseFolder, "data4.ttl");
+
+		copyQueries(baseFolder);
 	}
 
+	/**
+	 * Initialises the Turtle namespace prefix declarations for all four endpoint {@link StringBuilder}s.
+	 */
 	protected void init() {
 
 		// initialize namespaces
@@ -98,6 +162,14 @@ public class DataGenerator {
 		appendLine(endpoint4, "");
 	}
 
+	/**
+	 * Appends person triples to the endpoint 1 and endpoint 2 buffers.
+	 *
+	 * <p>
+	 * Persons {@code 1..PERSONS_1} are written to endpoint 1; persons {@code PERSONS_1+1..PERSONS_1+PERSONS_2} are
+	 * written to endpoint 2.
+	 * </p>
+	 */
 	protected void createPersons() {
 
 		// endpoint 1
@@ -111,6 +183,14 @@ public class DataGenerator {
 		}
 	}
 
+	/**
+	 * Appends project triples to the endpoint 3 buffer.
+	 *
+	 * <p>
+	 * Each project optionally links to a responsible person in endpoint 1 or 2 with probability
+	 * {@link #PROBABILITY_HAS_PERSON}.
+	 * </p>
+	 */
 	protected void createProjects() {
 
 		// endpoint 3
@@ -119,6 +199,14 @@ public class DataGenerator {
 		}
 	}
 
+	/**
+	 * Appends author and publication triples to the endpoint 4 buffer.
+	 *
+	 * <p>
+	 * Authors are generated first ({@link #AUTHORS} entries), followed by {@link #PUBLICATIONS} publications each with
+	 * up to four randomly selected authors.
+	 * </p>
+	 */
 	protected void createPublications() {
 
 		// endpoint 4
@@ -133,6 +221,17 @@ public class DataGenerator {
 
 	}
 
+	/**
+	 * Builds the Turtle triples for a single person.
+	 *
+	 * <p>
+	 * Each person receives an {@code rdf:type foaf:Person}, an {@code rdf:type :Person}, and a {@code foaf:name}
+	 * literal.
+	 * </p>
+	 *
+	 * @param id 1-based person identifier
+	 * @return Turtle snippet for the person
+	 */
 	protected String createPerson(int id) {
 
 		StringBuilder sb = new StringBuilder();
@@ -145,6 +244,18 @@ public class DataGenerator {
 		return sb.toString();
 	}
 
+	/**
+	 * Builds the Turtle triples for a single project.
+	 *
+	 * <p>
+	 * Each project receives an {@code rdf:type :Project} and an {@code rdfs:label}. With probability
+	 * {@link #PROBABILITY_HAS_PERSON} a {@code :responsible} link is added to a randomly chosen person from endpoint 1
+	 * or 2.
+	 * </p>
+	 *
+	 * @param id 1-based project identifier
+	 * @return Turtle snippet for the project
+	 */
 	protected String createProject(int id) {
 
 		StringBuilder sb = new StringBuilder();
@@ -166,10 +277,15 @@ public class DataGenerator {
 	}
 
 	/**
-	 * Create a publication for endpoint 3, and randomly assign up to 4 authors
+	 * Builds the Turtle triples for a single publication.
 	 *
-	 * @param id
-	 * @return
+	 * <p>
+	 * Each publication receives an {@code rdf:type :Publication} and a {@code :title}. Up to four authors are randomly
+	 * selected from the author pool and linked via {@code :hasAuthor}.
+	 * </p>
+	 *
+	 * @param id 1-based publication identifier
+	 * @return Turtle snippet for the publication
 	 */
 	protected String createPublication(int id) {
 
@@ -194,6 +310,18 @@ public class DataGenerator {
 		return sb.toString();
 	}
 
+	/**
+	 * Builds the Turtle triples for a single author.
+	 *
+	 * <p>
+	 * Each author receives an {@code rdf:type :Author} and an {@code :authorId} literal. With probability
+	 * {@link #PROBABILITY_IS_AUTHOR} an {@code owl:sameAs} link is added to the corresponding person in endpoint 1 or
+	 * 2.
+	 * </p>
+	 *
+	 * @param id 1-based author identifier
+	 * @return Turtle snippet for the author
+	 */
 	protected String createAuthor(int id) {
 
 		StringBuilder sb = new StringBuilder();
@@ -214,11 +342,8 @@ public class DataGenerator {
 		return sb.toString();
 	}
 
-	private void write(StringBuilder sb, String file) throws IOException {
-		FileWriter fw = new FileWriter(new File(file));
-		fw.write(sb.toString());
-		fw.flush();
-		fw.close();
+	private void write(StringBuilder sb, File baseFolder, String file) throws IOException {
+		Files.writeString(new File(baseFolder, file).toPath(), sb.toString());
 	}
 
 	private void appendLine(StringBuilder sb, String line) {
@@ -226,25 +351,53 @@ public class DataGenerator {
 	}
 
 	/**
-	 * Return an integer between 1 and upper (inclusive)
+	 * Returns a pseudo-random integer between {@code 1} and {@code upperInclusive} (inclusive), using the seeded
+	 * {@link #rand} generator.
 	 *
-	 * @param upperInclusive
-	 * @return
+	 * @param upperInclusive upper bound (inclusive)
+	 * @return random integer in {@code [1, upperInclusive]}
 	 */
 	private int rand(int upperInclusive) {
 		return rand.nextInt(upperInclusive) + 1;
 	}
 
 	/**
-	 * Returns true if the the event is probable using random generator. True iff rand(100)<probability, false otherwise
+	 * Returns {@code true} with the given probability using the seeded {@link #rand} generator.
 	 *
-	 * @param probability
-	 * @return
+	 * @param probability desired probability in percent (0–100)
+	 * @return {@code true} iff {@code rand(100) < probability}
 	 */
 	private boolean isProbable(int probability) {
 		return rand(100) < probability;
 	}
 
+	/**
+	 * Copies all {@code *.rq} SPARQL query files from {@code src/test/resources/tests/medium/} into
+	 * {@code targetFolder}.
+	 *
+	 * @param targetFolder destination directory (must already exist)
+	 * @throws IOException if any file cannot be copied
+	 */
+	private void copyQueries(File targetFolder) throws IOException {
+		File queryBaseDir = new File("src/test/resources/tests/medium");
+		var queries = queryBaseDir.listFiles(new FilenameFilter() {
+
+			@Override
+			public boolean accept(File dir, String name) {
+				return name.endsWith(".rq");
+			}
+		});
+		for (var queryFile : queries) {
+			Files.copy(queryFile.toPath(), new File(targetFolder, queryFile.getName()).toPath());
+		}
+	}
+
+	/**
+	 * Entry point: generates the benchmark dataset in {@code src/test/resources/tests/performance/}.
+	 *
+	 * @param args ignored
+	 * @throws Exception if data generation or file I/O fails
+	 */
 	public static void main(String[] args) throws Exception {
 
 		new DataGenerator().run();

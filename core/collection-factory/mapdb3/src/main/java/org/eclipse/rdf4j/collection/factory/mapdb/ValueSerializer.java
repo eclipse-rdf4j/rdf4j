@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -69,9 +69,9 @@ class ValueSerializer implements Serializer<Value> {
 		} else if (value instanceof Literal) {
 			si.serialize(out, IS_LITERAL);
 			serializeLiteral(out, (Literal) value);
-		} else if (value instanceof Triple) {
+		} else if (value instanceof TripleTerm) {
 			si.serialize(out, IS_TRIPLE);
-			serializeTriple(out, (Triple) value);
+			serializeTriple(out, (TripleTerm) value);
 		} else {
 			si.serialize(out, IS_NULL);
 		}
@@ -115,7 +115,7 @@ class ValueSerializer implements Serializer<Value> {
 		ss.serialize(out, value.stringValue());
 	}
 
-	private void serializeTriple(DataOutput2 out, Triple value) throws IOException {
+	private void serializeTriple(DataOutput2 out, TripleTerm value) throws IOException {
 		serialize(out, value.getSubject());
 		serialize(out, value.getPredicate());
 		serialize(out, value.getObject());
@@ -143,7 +143,7 @@ class ValueSerializer implements Serializer<Value> {
 		final Resource subj = (Resource) deserialize(input, available);
 		final IRI pred = (IRI) deserialize(input, available);
 		final Value obj = deserialize(input, available);
-		return vf.createTriple(subj, pred, obj);
+		return vf.createTripleTerm(subj, pred, obj);
 	}
 
 	private Value deserializeLiteral(DataInput2 input, int available) throws IOException {

@@ -48,23 +48,28 @@ public class NQuadsParser extends NTriplesParser {
 			if (!shouldParseLine()) {
 				return;
 			}
-			parseSubject();
+			if (peekVersionDirective()) {
+				parseVersionDirective();
+				return;
+			} else {
+				subject = parseSubject();
 
-			skipWhitespace(true);
+				skipWhitespace(true);
 
-			parsePredicate();
+				predicate = parsePredicate();
 
-			skipWhitespace(true);
+				skipWhitespace(true);
 
-			parseObject();
+				object = parseObject();
 
-			skipWhitespace(true);
+				skipWhitespace(true);
 
-			parseContext();
+				parseContext();
 
-			skipWhitespace(true);
+				skipWhitespace(true);
 
-			assertLineTerminates();
+				assertLineTerminates();
+			}
 		} catch (RDFParseException e) {
 			if (getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {
 				reportError(e, NTriplesParserSettings.FAIL_ON_INVALID_LINES);

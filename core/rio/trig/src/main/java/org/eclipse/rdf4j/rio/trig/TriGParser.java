@@ -91,10 +91,11 @@ public class TriGParser extends TurtleParser {
 			skipWSC();
 			verifyCharacterOrFail(readCodePoint(), ".");
 		} else if ((directive.length() >= 6 && directive.substring(0, 6).equalsIgnoreCase("prefix"))
-				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base"))) {
+				|| (directive.length() >= 4 && directive.substring(0, 4).equalsIgnoreCase("base"))
+				|| (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("version"))) {
 			parseDirective(directive);
 			skipWSC();
-			// SPARQL BASE and PREFIX lines do not end in .
+			// SPARQL BASE and PREFIX and VERSION lines do not end in .
 		} else if (directive.length() >= 6 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")
 				&& directive.substring(5, 6).equals(":")) {
 			// If there was a colon immediately after the graph keyword then
@@ -133,7 +134,8 @@ public class TriGParser extends TurtleParser {
 				unread(c);
 			}
 			c = readCodePoint();
-		} else if (c == '<' || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-') || (c == '_' && c2 == ':')) {
+		} else if ((c == '<' && c2 != '<') || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-')
+				|| (c == '_' && c2 == ':')) {
 			unread(c);
 
 			Value value = parseValue();
@@ -228,6 +230,17 @@ public class TriGParser extends TurtleParser {
 			// subject
 			// of the statement.
 			if (c != '.' && c != '}') {
+				parsePredicateObjectList();
+			}
+		} else if (peekIsReifiedTriple()) {
+			subject = parseReifiedTriple();
+			skipWSC();
+
+			// if this is not the end of the statement, recurse into the list of
+			// predicate and objects, using the subject parsed above as the
+			// subject
+			// of the statement.
+			if (peekCodePoint() != '.' && c != '}') {
 				parsePredicateObjectList();
 			}
 		} else {

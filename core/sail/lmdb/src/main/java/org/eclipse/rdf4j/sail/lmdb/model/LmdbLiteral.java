@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -40,6 +41,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	 * The literal's language tag.
 	 */
 	private String language;
+
+	private BaseDirection baseDirection = BaseDirection.NONE;
 
 	/**
 	 * The literal's datatype.
@@ -81,11 +84,25 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
-		assert label != null;
+		this(revision, label, lang, BaseDirection.NONE, internalID);
+	}
+
+	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, BaseDirection baseDirection) {
+		this(revision, label, lang, baseDirection, UNKNOWN_ID);
+	}
+
+	public LmdbLiteral(ValueStoreRevision revision, String label, String language, BaseDirection baseDirection,
+			long internalID) {
+		Objects.requireNonNull(language, "null language");
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 		this.label = label;
-		this.language = lang;
-		coreDatatype = CoreDatatype.RDF.LANGSTRING;
-		datatype = CoreDatatype.RDF.LANGSTRING.getIri();
+		this.language = language;
+		this.baseDirection = baseDirection;
+		if (baseDirection != BaseDirection.NONE) {
+			setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+		} else {
+			setDatatype(CoreDatatype.RDF.LANGSTRING);
+		}
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -150,8 +167,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
-		if (initializedValue instanceof LmdbLiteral) {
-			LmdbLiteral lmdbLiteral = (LmdbLiteral) initializedValue;
+		if (initializedValue instanceof LmdbLiteral lmdbLiteral) {
 			this.label = lmdbLiteral.label;
 			this.language = lmdbLiteral.language;
 			this.datatype = lmdbLiteral.datatype;
@@ -207,6 +223,16 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return Optional.ofNullable(language);
 	}
 
+	@Override
+	public BaseDirection getBaseDirection() {
+		init();
+		return baseDirection;
+	}
+
+	public void setBaseDirection(BaseDirection baseDirection) {
+		this.baseDirection = baseDirection;
+	}
+
 	public void setLanguage(String language) {
 		this.language = language;
 	}
@@ -229,8 +255,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			return true;
 		}
 
-		if (o instanceof LmdbLiteral && internalID != UNKNOWN_ID) {
-			LmdbLiteral otherLmdbLiteral = (LmdbLiteral) o;
+		if (o instanceof LmdbLiteral otherLmdbLiteral && internalID != UNKNOWN_ID) {
 
 			if (otherLmdbLiteral.internalID != UNKNOWN_ID
 					&& revision.equals(otherLmdbLiteral.revision)) {

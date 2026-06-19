@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>5.3.0-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-core</artifactId>
 	<packaging>pom</packaging>
@@ -12,6 +12,9 @@
 		<module>common</module>
 		<module>model-api</module>
 		<module>model-vocabulary</module>
+		<module>model-vocabulary-annotation</module>
+		<module>model-vocabulary-biblio</module>
+		<module>model-vocabulary-eu</module>
 		<module>model</module>
 		<module>sparqlbuilder</module>
 		<module>rio</module>
@@ -61,8 +64,7 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 11 and higher builds by default -->
-				<jdk>[11,)</jdk>
+				<jdk>[25,)</jdk>
 			</activation>
 			<build>
 				<plugins>

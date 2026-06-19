@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -25,6 +24,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -59,7 +59,7 @@ public class OverflowBenchmarkReal {
 	public void setup() {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.lmdb.MemoryOverflowModel")))
-				.setLevel(ch.qos.logback.classic.Level.DEBUG);
+						.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
 	public static void main(String[] args) throws RunnerException {
@@ -95,7 +95,7 @@ public class OverflowBenchmarkReal {
 					sailRepository.shutDown();
 				}
 			} finally {
-				FileUtils.deleteDirectory(temporaryFolder);
+				LmdbTestUtil.deleteDir(temporaryFolder);
 			}
 		}
 

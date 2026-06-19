@@ -24,4 +24,9 @@ public class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 		return new LmdbStoreConfig();
 	}
 
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
+
 }

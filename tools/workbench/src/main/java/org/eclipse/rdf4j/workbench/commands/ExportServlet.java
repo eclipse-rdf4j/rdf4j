@@ -12,8 +12,6 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.eclipse.rdf4j.rio.RDFWriterRegistry.getInstance;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -23,6 +21,8 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TupleServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 public class ExportServlet extends TupleServlet {
 

@@ -16,13 +16,13 @@ import java.io.IOException;
 import java.util.Locale;
 import java.util.Random;
 
-import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public class BenchmarkBaseFoaf {
 
@@ -57,8 +57,11 @@ public class BenchmarkBaseFoaf {
 			connection.close();
 			connection = null;
 		}
-		repository.shutDown();
-		FileUtils.deleteDirectory(file);
+		try {
+			repository.shutDown();
+		} finally {
+			LmdbTestUtil.deleteDir(file);
+		}
 	}
 
 	void addPersonNameOnly() {

@@ -38,4 +38,9 @@ public class LmdbStoreIsolationLevelTest extends SailIsolationLevelTest {
 	protected NotifyingSail createSail() throws SailException {
 		return new LmdbStore(tempDir, new LmdbStoreConfig("spoc,posc"));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

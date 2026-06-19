@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.helpers;
 
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
@@ -140,18 +138,25 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 	}
 
 	private static void appendCostAnnotation(QueryModelNode node, StringBuilder sb) {
-		String costs = Stream.of(
-				"costEstimate=" + toHumanReadableNumber(node.getCostEstimate()),
-				"resultSizeEstimate=" + toHumanReadableNumber(node.getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()),
-				"totalTimeActual=" + toHumanReadableTime(node.getTotalTimeNanosActual()))
-				.filter(s -> !s.endsWith("UNKNOWN"))
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
+		StringBuilder costs = new StringBuilder();
+		appendKnownCost(costs, "costEstimate", toHumanReadableNumber(node.getCostEstimate()));
+		appendKnownCost(costs, "resultSizeEstimate", toHumanReadableNumber(node.getResultSizeEstimate()));
+		appendKnownCost(costs, "resultSizeActual", toHumanReadableNumber(node.getResultSizeActual()));
+		appendKnownCost(costs, "totalTimeActual", toHumanReadableTime(node.getTotalTimeNanosActual()));
 
-		if (!costs.isEmpty()) {
+		if (costs.length() > 0) {
 			sb.append(" (").append(costs).append(")");
 		}
+	}
+
+	private static void appendKnownCost(StringBuilder costs, String name, String value) {
+		if (value.endsWith("UNKNOWN")) {
+			return;
+		}
+		if (costs.length() > 0) {
+			costs.append(", ");
+		}
+		costs.append(name).append('=').append(value);
 	}
 
 }

@@ -15,6 +15,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
@@ -23,7 +24,10 @@ public final class ThemeQueryCatalog {
 
 	public static final int QUERY_COUNT = 13;
 
+	private static final long NO_EXPECTED_COUNT_BINDING_VALUE = -1L;
+
 	private static final Map<Theme, List<BenchmarkQuery>> QUERIES = new EnumMap<>(Theme.class);
+	private static final Map<Theme, long[]> EXPECTED_COUNT_BINDING_VALUES = new EnumMap<>(Theme.class);
 
 	static {
 		String medicalPrefix = String.join("\n",
@@ -1676,6 +1680,7 @@ public final class ThemeQueryCatalog {
 								"}"),
 						25710L)));
 
+		registerExpectedCountBindingValues();
 		validateQueries();
 	}
 
@@ -1709,6 +1714,15 @@ public final class ThemeQueryCatalog {
 		return benchmarkQueryFor(theme, index).getExpectedCount();
 	}
 
+	public static OptionalLong expectedCountBindingValueFor(Theme theme, int index) {
+		benchmarkQueryFor(theme, index);
+		long value = EXPECTED_COUNT_BINDING_VALUES.get(theme)[index];
+		if (value == NO_EXPECTED_COUNT_BINDING_VALUE) {
+			return OptionalLong.empty();
+		}
+		return OptionalLong.of(value);
+	}
+
 	private static void validateQueries() {
 		for (Theme theme : Theme.values()) {
 			List<BenchmarkQuery> queries = QUERIES.get(theme);
@@ -1718,7 +1732,50 @@ public final class ThemeQueryCatalog {
 			if (queries.size() != QUERY_COUNT) {
 				throw new IllegalStateException("Theme " + theme + " has " + queries.size() + " queries");
 			}
+			long[] expectedCountBindingValues = EXPECTED_COUNT_BINDING_VALUES.get(theme);
+			if (expectedCountBindingValues == null) {
+				throw new IllegalStateException("Missing expected count binding values for theme " + theme);
+			}
+			if (expectedCountBindingValues.length != QUERY_COUNT) {
+				throw new IllegalStateException("Theme " + theme + " has " + expectedCountBindingValues.length
+						+ " expected count binding values");
+			}
+			for (int index = 0; index < expectedCountBindingValues.length; index++) {
+				long expectedCountBindingValue = expectedCountBindingValues[index];
+				if (expectedCountBindingValue < NO_EXPECTED_COUNT_BINDING_VALUE) {
+					throw new IllegalStateException("Theme " + theme + " query " + index
+							+ " has invalid expected count binding value " + expectedCountBindingValue);
+				}
+				if (expectedCountBindingValue != NO_EXPECTED_COUNT_BINDING_VALUE
+						&& !queries.get(index).getQuery().contains(" AS ?count)")) {
+					throw new IllegalStateException("Theme " + theme + " query " + index
+							+ " has an expected count binding value but does not project ?count");
+				}
+			}
 		}
+	}
+
+	private static void registerExpectedCountBindingValues() {
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.MEDICAL_RECORDS, expectedCountBindingValues(
+				7571, 0, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SOCIAL_MEDIA, expectedCountBindingValues(
+				6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.LIBRARY, expectedCountBindingValues(
+				128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ENGINEERING, expectedCountBindingValues(
+				132672, 0, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.HIGHLY_CONNECTED, expectedCountBindingValues(
+				40251, 36767, -1, 39720, 770, 3279, -1, 32513, 119, -1, 59, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.TRAIN, expectedCountBindingValues(
+				8268, 0, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ELECTRICAL_GRID, expectedCountBindingValues(
+				7396, 0, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.PHARMA, expectedCountBindingValues(
+				18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1));
+	}
+
+	private static long[] expectedCountBindingValues(long... values) {
+		return values;
 	}
 
 	private static List<BenchmarkQuery> queriesForTheme(Theme theme) {

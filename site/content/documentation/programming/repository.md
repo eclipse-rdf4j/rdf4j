@@ -226,14 +226,59 @@ Repository repo = new SPARQLRepository(sparqlEndpoint);
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
 
-#### Configuring the HTTP session thread pool
+#### Configuring the HTTP client
 
 Both the HTTPRepository and the SPARQLRepository use the SPARQL Protocol over
 HTTP under the hood (in the case of the HTTPRepository, it uses the extended
 RDF4J REST API). The HTTP client session is managed by the {{< javadoc
 "HttpClientSessionManager"
-"http/client/HttpClientSessionManager.html" >}}, which in turn depends
-on the Apache HttpClient.
+"http/client/HttpClientSessionManager.html" >}}.
+
+##### HTTP client backends
+
+RDF4J ships with two HTTP client backends:
+
+- **Apache HttpComponents 5** (`rdf4j-http-client-apache5`) — the preferred backend when multiple backends are available.
+- **JDK built-in HTTP client** (`rdf4j-http-client-jdk`) — a zero-dependency alternative using `java.net.http.HttpClient`.
+
+Both are included as runtime dependencies of `rdf4j-http-client`. Backend selection works as follows: if the system property `rdf4j.http.client.factory` is set, that backend is used; otherwise RDF4J prefers `apache5` when it is available, and if only one backend factory is present on the classpath, that backend becomes the default.
+
+##### Connection pooling, timeouts, and SSL
+
+HTTP client settings are configured via {{< javadoc "RDF4JHttpClientConfig" "http/client/spi/RDF4JHttpClientConfig.html" >}}, which is built using a fluent builder and passed to the repository:
+
+```java
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
+
+RDF4JHttpClientConfig config = RDF4JHttpClientConfig.newBuilder()
+        .connectTimeoutMs(5_000)
+        .socketTimeoutMs(30_000)
+        .maxConnectionsPerRoute(10)
+        .maxConnectionsTotal(25)
+        .build();
+
+repo.setHttpClient(RDF4JHttpClients.newDefaultClient(config));
+```
+
+Connection pool size and timeouts can also be set globally via system properties on {{< javadoc "SharedHttpClientSessionManager" "http/client/SharedHttpClientSessionManager.html" >}}:
+
+| System property | Default | Description |
+|---|---|---|
+| `org.eclipse.rdf4j.client.http.maxConnPerRoute` | 25 | Max connections per host |
+| `org.eclipse.rdf4j.client.http.maxConnTotal` | 50 | Max total connections |
+| `org.eclipse.rdf4j.client.http.connectionTimeout` | 30 000 ms | TCP connection timeout |
+| `org.eclipse.rdf4j.client.http.connectionRequestTimeout` | — | Time to wait for a pooled connection |
+
+For SSL trust-all (e.g. self-signed certificates in test environments), use the {{< javadoc "HttpClientBuilders" "http/client/util/HttpClientBuilders.html" >}} utility. **Warning:** this disables SSL certificate validation and hostname verification, and must not be used in production.
+
+```java
+import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
+
+repo.setHttpClient(RDF4JHttpClients.newDefaultClient(HttpClientBuilders.getSslTrustAllConfig()));
+```
+
+##### Thread pool
 
 The session uses a caching thread pool executor to handle multithreaded
 access to a remote endpoint, defined by default to use a thread pool with a
@@ -242,6 +287,24 @@ core size of 1.
 To configure this to use a different core pool size, you can specify the
 `org.eclipse.rdf4j.client.executors.corePoolSize` system property with a
 different number.
+
+##### Authentication
+
+For HTTP-based repositories, basic authentication can be configured directly on the repository. If you need bearer-token authentication, configure a custom session manager that installs an {{< javadoc "AuthenticationHandler" "http/client/spi/AuthenticationHandler.html" >}} on each created {{< javadoc "SPARQLProtocolSession" "http/client/SPARQLProtocolSession.html" >}}:
+
+```java
+import org.eclipse.rdf4j.http.client.spi.BasicAuthenticationHandler;
+import org.eclipse.rdf4j.http.client.spi.BearerTokenAuthenticationHandler;
+
+// Basic authentication
+session.setAuthenticationHandler(new BasicAuthenticationHandler("user", "secret"));
+
+// Bearer token (static)
+session.setAuthenticationHandler(new BearerTokenAuthenticationHandler("my-token"));
+
+// Bearer token (dynamic, e.g. refreshing OAuth access token)
+session.setAuthenticationHandler(new BearerTokenAuthenticationHandler(tokenStore::currentToken));
+```
 
 ### The RepositoryManager and RepositoryProvider
 

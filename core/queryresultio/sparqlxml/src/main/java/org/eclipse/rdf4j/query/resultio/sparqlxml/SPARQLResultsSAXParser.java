@@ -235,7 +235,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 		case TRIPLE_TAG:
 		case STATEMENT_TAG:
 			currentTriple = tripleStack.pop();
-			currentValue = valueFactory.createTriple(currentTriple.getSubject(), currentTriple.getPredicate(),
+			currentValue = valueFactory.createTripleTerm(currentTriple.getSubject(), currentTriple.getPredicate(),
 					currentTriple.getObject());
 			break;
 		case RESULT_TAG:

@@ -188,7 +188,7 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 
 		Extension extension = (Extension) projection.getArg();
 		assertThat(extension.getArg()).isInstanceOf(LeftJoin.class);
-		ExtensionElem elem = extension.getElements().iterator().next();
+		ExtensionElem elem = extension.getElements().getFirst();
 		Bound bound = (Bound) elem.getExpr();
 
 		Var datasetVar = bound.getArg();

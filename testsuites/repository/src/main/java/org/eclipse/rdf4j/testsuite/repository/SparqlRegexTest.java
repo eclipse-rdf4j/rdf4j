@@ -135,11 +135,27 @@ public abstract class SparqlRegexTest {
 
 	@AfterEach
 	public void tearDown() {
-		conn.close();
-		conn = null;
+		try {
+			conn.close();
+			conn = null;
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(repository);
+				repository = null;
+			}
+		}
+	}
 
-		repository.shutDown();
-		repository = null;
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
 	}
 
 	private void createUser(String id, String name, String email) throws RepositoryException {

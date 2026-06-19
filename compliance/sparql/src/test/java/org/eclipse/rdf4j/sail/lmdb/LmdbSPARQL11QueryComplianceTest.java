@@ -36,4 +36,9 @@ public class LmdbSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 				new SailRepository(new LmdbStore(temp, new LmdbStoreConfig("spoc"))));
 	}
 
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
+
 }

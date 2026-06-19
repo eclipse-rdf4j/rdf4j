@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.tripleTerm;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.slf4j.Logger;
@@ -162,8 +164,7 @@ class GraphComparisons {
 		// Compatible blank node mapping found. We need to check that statements not involving blank nodes are equal in
 		// both models.
 		Optional<Statement> missingInModel2 = model1.stream()
-				.filter(st -> !(st.getSubject().isBNode() || st.getObject().isBNode()
-						|| st.getContext() instanceof BNode))
+				.filter(st -> !containsBNodeDeep(st))
 				.filter(st -> !model2.contains(st))
 				.findAny();
 
@@ -212,6 +213,18 @@ class GraphComparisons {
 			}
 			if (st.getContext() != null && st.getContext().isBNode()) {
 				blankNodes.add((BNode) st.getContext());
+			}
+
+			TripleTerm t = Values.tripleTerm(st);
+			while (t.getObject().isTripleTerm()) {
+				t = (TripleTerm) t.getObject();
+
+				if (t.getSubject().isBNode()) {
+					blankNodes.add((BNode) t.getSubject());
+				}
+				if (t.getObject().isBNode()) {
+					blankNodes.add((BNode) t.getObject());
+				}
 			}
 		});
 		return blankNodes;
@@ -306,18 +319,31 @@ class GraphComparisons {
 		Model result = new DynamicModelFactory().createEmptyModel();
 
 		for (Statement st : original) {
-			if (st.getSubject().isBNode() || st.getObject().isBNode()
+			if (st.getSubject().isBNode() || st.getObject().isBNode() || st.getObject().isTripleTerm()
 					|| (st.getContext() != null && st.getContext().isBNode())) {
 				Resource subject = st.getSubject().isBNode()
 						? createCanonicalBNode((BNode) st.getSubject(), hash)
 						: st.getSubject();
 				IRI predicate = st.getPredicate();
-				Value object = st.getObject().isBNode()
-						? createCanonicalBNode((BNode) st.getObject(), hash)
-						: st.getObject();
 				Resource context = (st.getContext() != null && st.getContext().isBNode())
 						? createCanonicalBNode((BNode) st.getContext(), hash)
 						: st.getContext();
+				Value object;
+				if (st.getObject().isBNode()) {
+					object = createCanonicalBNode((BNode) st.getObject(), hash);
+				} else if (st.getObject().isTripleTerm()) {
+					TripleTerm tripleTerm = (TripleTerm) st.getObject();
+					object = Values.tripleTerm(
+							tripleTerm.getSubject().isBNode()
+									? createCanonicalBNode((BNode) tripleTerm.getSubject(), hash)
+									: tripleTerm.getSubject(),
+							tripleTerm.getPredicate(),
+							tripleTerm.getObject().isBNode()
+									? createCanonicalBNode((BNode) tripleTerm.getObject(), hash)
+									: tripleTerm.getObject());
+				} else {
+					object = st.getObject();
+				}
 
 				result.add(subject, predicate, object, context);
 			} else {
@@ -357,10 +383,39 @@ class GraphComparisons {
 						partitioning.setCurrentHashCode(b,
 								hashBag(c, partitioning.getCurrentHashCode(b)));
 					}
+
+					for (Statement st : m.getStatements(null, null, null)) {
+						if (st.getObject().isTripleTerm()) {
+							hashBNodeInTripleTerms((TripleTerm) st.getObject(), b, partitioning);
+						}
+					}
+
 				}
 			} while (!partitioning.isFullyDistinguished());
 		}
 		return partitioning;
+	}
+
+	private static void hashBNodeInTripleTerms(TripleTerm t, BNode b, Partitioning partitioning) {
+		if (t.getSubject().equals(b)) {
+			HashCode c = hashTuple(
+					partitioning.getPreviousHashCode(t.getObject()),
+					partitioning.getPreviousHashCode(t.getPredicate()),
+					outgoing);
+			partitioning.setCurrentHashCode(b,
+					hashBag(c, partitioning.getCurrentHashCode(b)));
+		}
+		if (t.getObject().equals(b)) {
+			HashCode c = hashTuple(
+					partitioning.getPreviousHashCode(t.getSubject()),
+					partitioning.getPreviousHashCode(t.getPredicate()),
+					incoming);
+			partitioning.setCurrentHashCode(b,
+					hashBag(c, partitioning.getCurrentHashCode(b)));
+		}
+		if (t.getObject().isTripleTerm()) {
+			hashBNodeInTripleTerms((TripleTerm) t.getObject(), b, partitioning);
+		}
 	}
 
 	protected static HashCode hashTuple(HashCode... hashCodes) {
@@ -429,6 +484,11 @@ class GraphComparisons {
 			}
 			if (value.isLiteral()) {
 				return getStaticLiteralHashCode((Literal) value);
+			}
+			if (value.isTripleTerm()) {
+				return hashTuple(getPreviousHashCode(((TripleTerm) value).getSubject()),
+						getPreviousHashCode(((TripleTerm) value).getPredicate()),
+						getPreviousHashCode(((TripleTerm) value).getObject()));
 			}
 			return staticValueMapping.computeIfAbsent(value,
 					v -> hashFunction.hashString(v.stringValue(), StandardCharsets.UTF_8));
@@ -558,5 +618,55 @@ class GraphComparisons {
 			}
 			return true;
 		}
+	}
+
+	/**
+	 * Checks if a statement contains blank nodes at any level, including nested triple terms.
+	 * <p>
+	 * This deep check is necessary because RDF 1.2 and SPARQL 1.2 now permit blank nodes within triple terms, whereas
+	 * they were forbidden in earlier RDF-star specifications. The method recursively examines nested triple terms to
+	 * detect blank nodes at any depth.
+	 * <p>
+	 * Checks performed:
+	 * <ul>
+	 * <li>Statement subject, object, and context (if present)</li>
+	 * <li>Nested triple term subjects and objects (recursively)</li>
+	 * </ul>
+	 *
+	 * @param st the statement to examine
+	 * @return true if the statement or any nested triple term contains a blank node, false otherwise
+	 */
+	private static boolean containsBNodeDeep(Statement st) {
+		if (st.getSubject().isBNode() || st.getObject().isBNode()
+				|| st.getContext() instanceof BNode) {
+			return true;
+		}
+
+		if (st.getObject().isTripleTerm()) {
+			return tripleContainsBNode((TripleTerm) st.getObject());
+		}
+
+		return false;
+	}
+
+	/**
+	 * Recursively checks if a triple term contains blank nodes at any nesting level.
+	 * <p>
+	 * With RDF 1.2 allowing blank nodes in triple terms, this recursive check ensures blank nodes are detected even in
+	 * deeply nested triple term structures.
+	 *
+	 * @param t the triple term to examine
+	 * @return true if the triple term or any nested triple term contains a blank node, false otherwise
+	 */
+	private static boolean tripleContainsBNode(TripleTerm t) {
+		if (t.getSubject().isBNode() || t.getObject().isBNode()) {
+			return true;
+		}
+
+		if (t.getObject().isTripleTerm()) {
+			return tripleContainsBNode((TripleTerm) t.getObject());
+		}
+
+		return false;
 	}
 }

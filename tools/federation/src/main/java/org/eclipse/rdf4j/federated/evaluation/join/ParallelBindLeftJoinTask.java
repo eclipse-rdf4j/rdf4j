@@ -14,7 +14,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -23,16 +23,16 @@ import org.eclipse.rdf4j.query.BindingSet;
  * A {@link ParallelTaskBase} for executing bind left joins.
  *
  * @author Andreas Schwarte
- * @see FederationEvalStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List)
+ * @see FederationEvaluationStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List)
  */
 public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final StatementTupleExpr rightArg;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
 
-	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.rightArg = expr;

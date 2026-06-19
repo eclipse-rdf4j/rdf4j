@@ -31,6 +31,11 @@ public class LmdbStoreConnectionTest extends RepositoryConnectionTest {
 		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
 
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
+
 	@ParameterizedTest
 	@MethodSource("parameters")
 	public void testSES715(IsolationLevel level) {

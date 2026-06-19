@@ -14,17 +14,18 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
@@ -134,7 +135,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		if (sailConnection instanceof HttpClientDependent) {
 			return ((HttpClientDependent) sailConnection).getHttpClient();
 		} else {
@@ -143,7 +144,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void setHttpClient(HttpClient client) {
+	public void setHttpClient(RDF4JHttpClient client) {
 		if (sailConnection instanceof HttpClientDependent) {
 			((HttpClientDependent) sailConnection).setHttpClient(client);
 		}

@@ -79,8 +79,12 @@ public abstract class GraphQueryResultTest {
 			con.close();
 			con = null;
 		} finally {
-			rep.shutDown();
-			rep = null;
+			try {
+				rep.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(rep);
+				rep = null;
+			}
 		}
 	}
 
@@ -98,6 +102,16 @@ public abstract class GraphQueryResultTest {
 	}
 
 	protected abstract Repository newRepository();
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
+	}
 
 	/*
 	 * build some simple SPARQL queries to use for testing the result set object.

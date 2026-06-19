@@ -269,6 +269,7 @@ class SailSourceBranch implements SailSource {
 				return modelFactory.createEmptyModel();
 			}
 		};
+		changeset.setSinkIsolationLevel(level);
 		try {
 			semaphore.lock();
 			pending.add(changeset);
@@ -315,7 +316,7 @@ class SailSourceBranch implements SailSource {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
 				if (prepared == null && serializable == null) {
-					prepared = backingSource.sink(IsolationLevels.NONE);
+					prepared = backingSource.sink(backingSinkIsolationLevel());
 				} else if (prepared == null) {
 					prepared = serializable;
 				}
@@ -325,6 +326,16 @@ class SailSourceBranch implements SailSource {
 		} finally {
 			semaphore.unlock();
 		}
+	}
+
+	private IsolationLevel backingSinkIsolationLevel() {
+		for (Changeset change : changes) {
+			IsolationLevel level = change.getSinkIsolationLevel();
+			if (!IsolationLevels.NONE.isCompatibleWith(level)) {
+				return level;
+			}
+		}
+		return IsolationLevels.NONE;
 	}
 
 	@Override

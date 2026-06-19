@@ -12,10 +12,69 @@ In this chapter, we explain how you can install RDF4J Server (the actual databas
 
 RDF4J Server and RDF4J Workbench requires the following software:
 
-- Java 11 or newer
+- Java 25 or newer
 - A Java Servlet Container that supports Java Servlet API 3.1 and Java Server Pages (JSP) 2.2, or newer.
 
 We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) (version 9.0) or [Jetty](https://jetty.org) (version 9.4)
+
+## Running with Docker
+
+The quickest way to get RDF4J Server and Workbench running locally is to use the Docker environment included in the `docker/` directory of the source distribution. It builds the project, packages it into a Docker image, and starts it via Docker Compose.
+
+All commands below are run from that directory:
+
+```sh
+cd docker
+```
+
+### Quick start
+
+```sh
+./run.sh
+```
+
+This script builds the Maven project, assembles the SDK, builds the Docker image, and starts the container. Once ready it prints:
+
+```
+Workbench is available at http://localhost:8080/rdf4j-workbench
+```
+
+### Choosing the application server
+
+By default Apache Tomcat is used. To use Jetty instead, set `APP_SERVER` before running:
+
+```sh
+APP_SERVER=jetty ./run.sh
+```
+
+### Access
+
+| Application     | URL                                   |
+|-----------------|---------------------------------------|
+| RDF4J Server    | http://localhost:8080/rdf4j-server    |
+| RDF4J Workbench | http://localhost:8080/rdf4j-workbench |
+
+### Useful Docker Compose commands
+
+Follow logs in real time:
+
+```sh
+docker compose logs -f
+```
+
+Stop the container (data volumes are preserved):
+
+```sh
+docker compose stop
+```
+
+### Stopping and cleaning up
+
+To stop the container and remove the image and all volumes:
+
+```sh
+./shutdown.sh
+```
 
 ## Deploying Server and Workbench
 

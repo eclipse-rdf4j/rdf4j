@@ -15,6 +15,7 @@ import java.io.StringReader;
 
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -37,6 +38,7 @@ public class SPARQLUpdateDataBlockParserTest {
 	}
 
 	@Test
+	@Disabled("pending SPARQL 1.2 implementation and updating test for RDF 1.2")
 	public void testParseRDFStar() throws IOException {
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
 

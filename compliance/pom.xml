@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>5.3.0-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-compliance</artifactId>
 	<packaging>pom</packaging>
@@ -14,7 +14,6 @@
 		<module>model</module>
 		<module>sparql</module>
 		<module>lucene</module>
-		<module>solr</module>
 		<module>elasticsearch</module>
 		<module>geosparql</module>
 	</modules>
@@ -69,8 +68,7 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 11 and higher builds by default -->
-				<jdk>[11,)</jdk>
+				<jdk>[25,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -165,7 +163,7 @@
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
 					<forkCount>1</forkCount>
-					<reuseForks>false</reuseForks>
+					<reuseForks>true</reuseForks>
 					<includes>
 						<include>**/*IT.java</include>
 						<include>**/*Test.java</include>

@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -83,6 +84,72 @@ public class BaseSailConfigTest {
 
 			config.parse(model, implNode);
 			assertThat(config.getDefaultQueryEvaluationMode()).isEmpty();
+		}
+	}
+
+	@Test
+	public void testParseAndExportSlowQuerySettings() {
+		var implNode = bnode();
+		var config = new BaseSailConfig("stub") {
+		};
+
+		var model = new ModelBuilder()
+				.add(implNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(5L))
+				.add(implNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds, literal(3L))
+				.add(implNode, CONFIG.Sail.slowQueryLogFile, literal("logs/slow-query.log"))
+				.build();
+
+		config.parse(model, implNode);
+		assertThat(config.getSlowQueryLogThresholdSeconds()).isEqualTo(5L);
+		assertThat(config.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(3L);
+		assertThat(config.getSlowQueryLogFile()).isEqualTo("logs/slow-query.log");
+
+		var exportedModel = new LinkedHashModel();
+		var exportedNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(5L)))
+				.isTrue();
+		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds,
+				literal(3L))).isTrue();
+		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogFile,
+				literal("logs/slow-query.log"))).isTrue();
+	}
+
+	@Test
+	public void testParseAndExportLegacySlowQuerySettings() {
+		String propertyName = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig";
+		String previousValue = System.getProperty(propertyName);
+		System.setProperty(propertyName, "true");
+		try {
+			var implNode = bnode();
+			var config = new BaseSailConfig("stub") {
+			};
+
+			var model = new ModelBuilder()
+					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS, literal(7L))
+					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS, literal(2L))
+					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_FILE, literal("legacy.log"))
+					.build();
+
+			config.parse(model, implNode);
+			assertThat(config.getSlowQueryLogThresholdSeconds()).isEqualTo(7L);
+			assertThat(config.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(2L);
+			assertThat(config.getSlowQueryLogFile()).isEqualTo("legacy.log");
+
+			var exportedModel = new LinkedHashModel();
+			var exportedNode = config.export(exportedModel);
+			assertThat(exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS,
+					literal(7L))).isTrue();
+			assertThat(
+					exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS,
+							literal(2L))).isTrue();
+			assertThat(exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_FILE,
+					literal("legacy.log"))).isTrue();
+		} finally {
+			if (previousValue == null) {
+				System.clearProperty(propertyName);
+			} else {
+				System.setProperty(propertyName, previousValue);
+			}
 		}
 	}
 }

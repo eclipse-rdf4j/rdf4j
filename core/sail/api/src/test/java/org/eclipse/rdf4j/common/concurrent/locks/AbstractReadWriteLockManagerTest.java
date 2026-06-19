@@ -346,7 +346,7 @@ abstract class AbstractReadWriteLockManagerTest {
 		assertThat(memoryAppender.countEventsForLogger(className)).isEqualTo(1);
 		memoryAppender.assertContains("is possibly deadlocked waiting on \"_READ\" with id ", Level.WARN);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.lambda$getStartedDaemonThread", Level.WARN);
+				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.acquireTwoLocks(", Level.WARN);
 
 	}
 
@@ -370,7 +370,7 @@ abstract class AbstractReadWriteLockManagerTest {
 		assertThat(memoryAppender.countEventsForLogger(className)).isEqualTo(1);
 		memoryAppender.assertContains("is possibly deadlocked waiting on \"_WRITE\" with id ", Level.WARN);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.lambda$getStartedDaemonThread", Level.WARN);
+				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.acquireTwoLocks(", Level.WARN);
 
 	}
 
@@ -394,7 +394,7 @@ abstract class AbstractReadWriteLockManagerTest {
 		assertThat(memoryAppender.countEventsForLogger(className)).isEqualTo(1);
 		memoryAppender.assertContains("is possibly deadlocked waiting on \"_WRITE\" with id ", Level.WARN);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.lambda$getStartedDaemonThread", Level.WARN);
+				"at org.eclipse.rdf4j.common.concurrent.locks.TestHelper.acquireTwoLocks(", Level.WARN);
 
 	}
 

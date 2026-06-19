@@ -27,7 +27,8 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
+import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.BNode;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -61,7 +63,7 @@ public class QueryStringUtil {
 	 * A dummy URI which is used as a replacement for {@link BNode}s in {@link #appendBNode(StringBuilder, BNode)} since
 	 * BNodes cannot be expressed in SPARQL queries
 	 */
-	public static final IRI BNODE_URI = FedXUtil.iri("http://fluidops.com/fedx/bnode");
+	public static final IRI BNODE_URI = FedXUtil.iri("tag:rdf4j.org,2026:bnode");
 
 	/**
 	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable
@@ -346,63 +348,6 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Construct a SELECT query string for a bound union.
-	 *
-	 * Pattern:
-	 *
-	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
-	 *
-	 * Note that the filterExpr is not evaluated at the moment.
-	 *
-	 * @param stmt
-	 * @param unionBindings
-	 * @param filterExpr
-	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
-	 *                      in beginning
-	 *
-	 * @return the SELECT query string
-	 * @deprecated replaced with
-	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
-	 */
-	@Deprecated
-	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
-
-		Set<String> varNames = new HashSet<>();
-		StringBuilder unions = new StringBuilder();
-		for (int i = 0; i < unionBindings.size(); i++) {
-			String s = constructStatementId(stmt, Integer.toString(i), varNames, unionBindings.get(i));
-			if (i > 0) {
-				unions.append(" UNION");
-			}
-			unions.append(" { ").append(s).append(" }");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames) {
-			res.append(" ?").append(var);
-		}
-
-		res.append(" ");
-		appendDatasetClause(res, dataset);
-		res.append("WHERE { ");
-
-		res.append(unions);
-
-		// TODO evaluate filter expression remote
-//		if (filterExpr!=null) {
-//
-//		}
-
-		res.append(" }");
-
-		return res.toString();
-	}
-
-	/**
 	 * Creates a bound join subquery using the SPARQL 1.1 VALUES operator.
 	 * <p>
 	 * Example subquery:
@@ -524,6 +469,34 @@ public class QueryStringUtil {
 		res.append("WHERE {");
 
 		res.append(unions).append(" }");
+
+		return res.toString();
+	}
+
+	public static String selectQueryStringTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup, BindingSet bindings,
+			Dataset dataset) {
+
+		Set<String> varNames = new HashSet<>();
+
+		StringBuilder body = new StringBuilder();
+		body.append(constructStatement(tripleRefJoinGroup.getTripleRefStatementPattern(), varNames, bindings));
+		for (var stmt : tripleRefJoinGroup.getStatementPatterns()) {
+			body.append(constructStatement(stmt, varNames, bindings));
+		}
+
+		StringBuilder res = new StringBuilder();
+
+		res.append("SELECT ");
+
+		for (String var : varNames) {
+			res.append(" ?").append(var);
+		}
+
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
+
+		res.append(body).append(" }");
 
 		return res.toString();
 	}
@@ -699,7 +672,7 @@ public class QueryStringUtil {
 		}
 		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
 		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings).append(" ");
-		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+		appendStmtObjectOrTripleRef(sb, stmt, varNames, bindings);
 
 		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
 			sb.append("} ");
@@ -764,6 +737,29 @@ public class QueryStringUtil {
 		sb.append(" FILTER (?o_").append(_varID).append(" = ").append(objValue).append(" )");
 
 		return sb.toString();
+	}
+
+	protected static StringBuilder appendStmtObjectOrTripleRef(StringBuilder sb, StatementPattern stmt,
+			Set<String> varNames, BindingSet bindings) {
+
+		if (stmt instanceof TripleRefStatementPattern tstmt) {
+			appendTripleRef(sb, tstmt.getTripleRef(), varNames, bindings);
+		} else {
+			sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+		}
+
+		return sb;
+	}
+
+	protected static StringBuilder appendTripleRef(StringBuilder sb, TripleRef tripleRef, Set<String> varNames,
+			BindingSet bindings) {
+
+		sb.append("<<( ");
+		appendVar(sb, tripleRef.getSubjectVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getPredicateVar(), varNames, bindings).append(" ");
+		appendVar(sb, tripleRef.getObjectVar(), varNames, bindings).append(" ");
+		sb.append(" )>> . ");
+		return sb;
 	}
 
 	/**

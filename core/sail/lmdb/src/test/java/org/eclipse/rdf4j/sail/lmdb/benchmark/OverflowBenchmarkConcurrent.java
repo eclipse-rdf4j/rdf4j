@@ -30,7 +30,6 @@ import java.util.stream.Collectors;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,6 +47,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -80,11 +80,11 @@ public class OverflowBenchmarkConcurrent {
 	public void setup() {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.lmdb.MemoryOverflowModel")))
-				.setLevel(ch.qos.logback.classic.Level.DEBUG);
+						.setLevel(ch.qos.logback.classic.Level.DEBUG);
 
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel")))
-				.setLevel(ch.qos.logback.classic.Level.DEBUG);
+						.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
 	@TearDown(Level.Trial)
@@ -208,7 +208,7 @@ public class OverflowBenchmarkConcurrent {
 				try {
 					sailRepository.shutDown();
 				} finally {
-					FileUtil.deleteDir(temporaryFolder);
+					LmdbTestUtil.deleteDir(temporaryFolder);
 				}
 			}
 		}

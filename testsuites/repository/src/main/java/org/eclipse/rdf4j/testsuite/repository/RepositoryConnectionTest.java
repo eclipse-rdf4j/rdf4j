@@ -157,6 +157,8 @@ public abstract class RepositoryConnectionTest {
 
 	protected RepositoryConnection testCon2;
 
+	protected File testRepositoryDataDir;
+
 	protected ValueFactory vf;
 
 	protected Resource bob;
@@ -189,6 +191,7 @@ public abstract class RepositoryConnectionTest {
 
 	@BeforeEach
 	public void setUp(@TempDir File dataDir) throws Exception {
+		testRepositoryDataDir = dataDir;
 		testRepository = createRepository(dataDir);
 
 		testCon = testRepository.getConnection();
@@ -231,12 +234,22 @@ public abstract class RepositoryConnectionTest {
 	@AfterEach
 	public void tearDown() {
 		try {
-			testCon2.close();
+			if (testCon2 != null) {
+				testCon2.close();
+			}
 		} finally {
 			try {
-				testCon.close();
+				if (testCon != null) {
+					testCon.close();
+				}
 			} finally {
-				testRepository.shutDown();
+				try {
+					if (testRepository != null) {
+						testRepository.shutDown();
+					}
+				} finally {
+					cleanupRepositoryDataDir(testRepository, testRepositoryDataDir);
+				}
 			}
 		}
 	}
@@ -247,6 +260,20 @@ public abstract class RepositoryConnectionTest {
 	 * @return an uninitialized repository.
 	 */
 	protected abstract Repository createRepository(File dataDir) throws Exception;
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository, File dataDir) {
+		if (!deleteDataDirAfterShutdown()) {
+			return;
+		}
+
+		File repositoryDataDir = repository != null && repository.getDataDir() != null ? repository.getDataDir()
+				: dataDir;
+		RepositoryDirCleanup.deleteDir(repositoryDataDir);
+	}
 
 	@ParameterizedTest
 	@MethodSource("parameters")
@@ -271,7 +298,11 @@ public abstract class RepositoryConnectionTest {
 			assertTrue(con.hasStatement(bob, name, nameBob, false),
 					"Temp Repository should contain newly added statement");
 		} finally {
-			tempRep.shutDown();
+			try {
+				tempRep.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(tempRep, dataDir);
+			}
 		}
 	}
 

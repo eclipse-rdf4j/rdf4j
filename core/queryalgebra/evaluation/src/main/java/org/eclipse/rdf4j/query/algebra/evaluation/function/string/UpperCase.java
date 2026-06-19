@@ -40,8 +40,7 @@ public class UpperCase implements Function {
 			throw new ValueExprEvaluationException("UCASE requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal) args[0];
+		if (args[0]instanceof Literal literal) {
 
 			// UpperCase function accepts only string literal
 			if (QueryEvaluationUtility.isStringLiteral(literal)) {

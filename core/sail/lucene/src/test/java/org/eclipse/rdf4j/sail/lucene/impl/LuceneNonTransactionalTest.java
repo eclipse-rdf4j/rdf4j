@@ -53,7 +53,16 @@ public class LuceneNonTransactionalTest extends AbstractGenericLuceneTest {
 
 	@Override
 	protected long waitAfterCommitMillis() {
-		return 200;
+		return 0;
+	}
+
+	@Override
+	protected void afterCommitWait() {
+		try {
+			index.syncNow();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	@Test

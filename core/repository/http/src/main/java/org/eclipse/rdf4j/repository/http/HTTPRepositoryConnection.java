@@ -28,12 +28,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
@@ -132,12 +132,12 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 *---------*/
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		return client.getHttpClient();
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		client.setHttpClient(httpClient);
 	}
 
@@ -462,7 +462,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			// default MIME-type.
 			return new RDFFormat(NTRIPLES.getName(), List.of("text/plain"), NTRIPLES.getCharset(),
 					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
-					NTRIPLES.supportsRDFStar());
+					NTRIPLES.supportsTripleTerms());
 		}
 
 		return format;
