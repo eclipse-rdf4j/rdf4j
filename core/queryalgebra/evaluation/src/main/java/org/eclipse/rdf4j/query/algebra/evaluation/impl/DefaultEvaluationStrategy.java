@@ -1066,15 +1066,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (value != null) {
 			return new ConstantQueryValueEvaluationStep(value);
 		} else {
-			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			var getValue = context.getValue(var.getName());
 			return bindings -> {
-				try {
-					Value apply = getValue.apply(bindings);
-					if (apply != null) {
-						return getValue.apply(bindings);
-					}
-				} catch (Exception e) {
-					throw new ValueExprEvaluationException(e);
+				Value apply = getValue.apply(bindings);
+				if (apply != null) {
+					return apply;
 				}
 				throw VALUE_EXPR_EVALUATION_EXCEPTION;
 			};
