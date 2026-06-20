@@ -16,6 +16,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -110,17 +112,56 @@ class ServerValidator {
 	}
 
 	private boolean matchesServerPrefix(String server, String prefix) {
-		if (!server.startsWith(prefix)) {
+		String normalizedServer = normalizePrefixMatchValue(server);
+		String normalizedPrefix = normalizePrefixMatchValue(prefix);
+		if (normalizedServer == null || normalizedPrefix == null) {
 			return false;
 		}
-		if (prefix.endsWith(":") || prefix.endsWith("/") || prefix.endsWith("?") || prefix.endsWith("#")) {
+		if (!normalizedServer.startsWith(normalizedPrefix)) {
+			return false;
+		}
+		if (normalizedPrefix.endsWith(":") || normalizedPrefix.endsWith("/") || normalizedPrefix.endsWith("?")
+				|| normalizedPrefix.endsWith("#")) {
 			return true;
 		}
-		if (server.length() == prefix.length()) {
+		if (normalizedServer.length() == normalizedPrefix.length()) {
 			return true;
 		}
-		char next = server.charAt(prefix.length());
+		char next = normalizedServer.charAt(normalizedPrefix.length());
 		return next == '/' || next == '?' || next == '#';
+	}
+
+	private String normalizePrefixMatchValue(String value) {
+		try {
+			URI uri = new URI(value);
+			if (hasUnsafePathSegment(uri.getRawPath())) {
+				return null;
+			}
+			return uri.normalize().toASCIIString();
+		} catch (URISyntaxException e) {
+			return value;
+		}
+	}
+
+	private boolean hasUnsafePathSegment(String rawPath) {
+		if (rawPath == null || rawPath.isEmpty()) {
+			return false;
+		}
+		for (String segment : rawPath.split("/", -1)) {
+			if (".".equals(segment) || "..".equals(segment)) {
+				return true;
+			}
+			try {
+				String decodedSegment = URLDecoder.decode(segment, StandardCharsets.UTF_8);
+				if (".".equals(decodedSegment) || "..".equals(decodedSegment) || decodedSegment.contains("/")
+						|| decodedSegment.contains("\\")) {
+					return true;
+				}
+			} catch (IllegalArgumentException e) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean isBroadSchemePrefix(String prefix) {

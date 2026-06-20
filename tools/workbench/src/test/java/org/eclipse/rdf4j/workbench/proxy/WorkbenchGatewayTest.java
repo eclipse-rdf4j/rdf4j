@@ -431,6 +431,28 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void changeServerRejectsSameOriginDotSegmentEscapeByRelativePrefix() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+
+		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
+		changeRequest.addParameter("workbench-server", "https://example.org/rdf4j-server/../admin");
+		CapturedResponse response = new CapturedResponse();
+
+		gateway.service(changeRequest, response);
+
+		assertThat(response.getBody()).contains("Invalid Server URL")
+				.contains("https://example.org/rdf4j-server/../admin");
+		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
+	}
+
+	@Test
 	void cookieDifferentOriginServerPathFallsBackToDefault() throws Exception {
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		cookies.cookies.put("workbench-server", "https://evil.example/rdf4j-server/tenant-a");
