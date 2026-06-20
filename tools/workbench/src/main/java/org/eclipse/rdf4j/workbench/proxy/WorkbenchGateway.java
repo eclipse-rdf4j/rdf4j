@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.workbench.proxy;
 import static org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet.SERVER_PARAM;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -158,21 +160,18 @@ public class WorkbenchGateway extends AbstractServlet {
 			return;
 		}
 
-		server = server.trim();
-		boolean submittedDefaultServer = isSubmittedDefaultServer(server, req);
-		if (!submittedDefaultServer && !this.serverValidator.isValidServer(server)) {
+		String submittedServer = server.trim();
+		server = normalizeServer(req, submittedServer);
+		if (server == null) {
 			// Invalid server was submitted by form. Present entry form again
 			// with error message.
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(getTransformationUrl(req), "server.xsl");
 			builder.start("error-message", "server");
-			builder.result("Invalid Server URL", server);
+			builder.result("Invalid Server URL", submittedServer);
 			builder.end();
 			return;
 
-		}
-		if (submittedDefaultServer) {
-			server = getDefaultServer(req);
 		}
 
 		// Valid server was submitted by form. Set cookie and redirect to
@@ -209,20 +208,27 @@ public class WorkbenchGateway extends AbstractServlet {
 	private ServerSelection findServerSelection(final HttpServletRequest req, final HttpServletResponse resp) {
 		final StringBuilder value = new StringBuilder();
 		boolean defaultServer = false;
+		boolean validServer = false;
 		if (isServerFixed()) {
 			value.append(getDefaultServer(req));
 			defaultServer = true;
 		} else {
-			value.append(cookies.getCookie(req, resp, SERVER_COOKIE));
-			if (0 == value.length()) {
+			String server = cookies.getCookie(req, resp, SERVER_COOKIE);
+			if (server == null || server.isEmpty()) {
 				value.append(getDefaultServer(req));
 				defaultServer = true;
-			} else if (!this.serverValidator.isValidServer(value.toString())) {
-				value.replace(0, value.length(), getDefaultServer(req));
-				defaultServer = true;
+			} else {
+				server = normalizeServer(req, server.trim());
+				if (server == null) {
+					value.append(getDefaultServer(req));
+					defaultServer = true;
+				} else {
+					value.append(server);
+					validServer = true;
+				}
 			}
 		}
-		return new ServerSelection(value.toString(), defaultServer);
+		return new ServerSelection(value.toString(), defaultServer, validServer);
 	}
 
 	/**
@@ -241,7 +247,8 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (servlets.containsKey(server)) {
 			servlet = servlets.get(server);
 		} else {
-			if (isServerFixed() || isRelativeDefaultServer(selection) || this.serverValidator.isValidServer(server)) {
+			if (isServerFixed() || isRelativeDefaultServer(selection) || selection.validServer
+					|| this.serverValidator.isValidServer(server)) {
 				synchronized (servlets) {
 					// Even though the map is thread-safe, we only wish one
 					// thread to be in this block at a time, to avoid abandoning
@@ -273,6 +280,23 @@ public class WorkbenchGateway extends AbstractServlet {
 				&& (getDefaultServerPath().equals(server) || getDefaultServer(req).equals(server));
 	}
 
+	private String normalizeServer(HttpServletRequest req, String server) {
+		if (server == null || server.isBlank()) {
+			return null;
+		}
+		if (isSubmittedDefaultServer(server, req)) {
+			return getDefaultServer(req);
+		}
+		String sameOriginPath = getSameOriginPath(req, server);
+		if (sameOriginPath != null && this.serverValidator.isValidServer(sameOriginPath)) {
+			return server;
+		}
+		if (this.serverValidator.isValidServer(server)) {
+			return resolveServerPath(req, server);
+		}
+		return null;
+	}
+
 	/**
 	 * Returns the full URL to the default server on the same server as the given request.
 	 *
@@ -280,14 +304,80 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * @return the full URL to the default server on the same server as the given request
 	 */
 	private String getDefaultServer(final HttpServletRequest req) {
-		String server = getDefaultServerPath();
-		if ('/' == server.charAt(0)) {
-			final StringBuffer url = req.getRequestURL();
-			final StringBuilder path = getServerPath(req);
-			url.setLength(url.indexOf(path.toString()));
-			server = url.append(server).toString();
+		return resolveServerPath(req, getDefaultServerPath());
+	}
+
+	private String resolveServerPath(final HttpServletRequest req, final String server) {
+		if (!server.isEmpty() && '/' == server.charAt(0)) {
+			return getRequestRoot(req) + server;
 		}
 		return server;
+	}
+
+	private String getRequestRoot(final HttpServletRequest req) {
+		final StringBuffer url = req.getRequestURL();
+		final StringBuilder path = getServerPath(req);
+		final int pathStart = path.length() > 0 ? url.indexOf(path.toString()) : -1;
+		if (pathStart > 0) {
+			url.setLength(pathStart);
+			return url.toString();
+		}
+
+		final StringBuilder root = new StringBuilder();
+		root.append(req.getScheme()).append("://").append(req.getServerName());
+		int port = req.getServerPort();
+		if (port > 0 && port != defaultPort(req.getScheme())) {
+			root.append(':').append(port);
+		}
+		return root.toString();
+	}
+
+	private String getSameOriginPath(final HttpServletRequest req, final String server) {
+		try {
+			URI uri = new URI(server);
+			if (!uri.isAbsolute() || uri.getHost() == null || uri.getRawUserInfo() != null || !isSameOrigin(req, uri)) {
+				return null;
+			}
+			String path = uri.getRawPath();
+			if (path == null || path.isEmpty()) {
+				path = "/";
+			}
+			if (uri.getRawQuery() != null) {
+				path += "?" + uri.getRawQuery();
+			}
+			if (uri.getRawFragment() != null) {
+				path += "#" + uri.getRawFragment();
+			}
+			return path;
+		} catch (URISyntaxException e) {
+			return null;
+		}
+	}
+
+	private boolean isSameOrigin(final HttpServletRequest req, final URI uri) {
+		if (req.getScheme() == null || req.getServerName() == null) {
+			return false;
+		}
+		return req.getScheme().equalsIgnoreCase(uri.getScheme())
+				&& req.getServerName().equalsIgnoreCase(uri.getHost())
+				&& effectivePort(req.getScheme(), req.getServerPort()) == effectivePort(uri.getScheme(), uri.getPort());
+	}
+
+	private int effectivePort(String scheme, int port) {
+		if (port > 0) {
+			return port;
+		}
+		return defaultPort(scheme);
+	}
+
+	private int defaultPort(String scheme) {
+		if ("http".equalsIgnoreCase(scheme)) {
+			return 80;
+		}
+		if ("https".equalsIgnoreCase(scheme)) {
+			return 443;
+		}
+		return -1;
 	}
 
 	/**
@@ -334,10 +424,12 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final class ServerSelection {
 		private final String server;
 		private final boolean defaultServer;
+		private final boolean validServer;
 
-		private ServerSelection(String server, boolean defaultServer) {
+		private ServerSelection(String server, boolean defaultServer, boolean validServer) {
 			this.server = server;
 			this.defaultServer = defaultServer;
+			this.validServer = validServer;
 		}
 	}
 }
