@@ -76,7 +76,7 @@ public class QueryEvaluationUtil {
 					return false;
 				} else {
 					// ill-typed literal — "z"^^xsd:boolean must be a type error per SPARQL spec
-					throw ValueExprEvaluationException.getInstance();
+					throw new ValueExprEvaluationException();
 				}
 			}
 
@@ -97,7 +97,7 @@ public class QueryEvaluationUtil {
 				return false;
 			}
 		}
-		throw ValueExprEvaluationException.getInstance();
+		throw new ValueExprEvaluationException();
 	}
 
 	/*
