@@ -175,12 +175,17 @@ public abstract class AbstractLiteral implements Literal {
 		return this == o || o instanceof Literal
 				&& getLabel().equals(((Literal) o).getLabel())
 				&& getDatatype().equals(((Literal) o).getDatatype())
-				&& equals(getLanguage(), ((Literal) o).getLanguage());
+				&& equals(getLanguage(), ((Literal) o).getLanguage())
+				&& getBaseDirection() == ((Literal) o).getBaseDirection();
 	}
 
 	@Override
 	public int hashCode() {
-		return getLabel().hashCode();
+		int result = getLabel().hashCode();
+		if (getBaseDirection() != BaseDirection.NONE) {
+			result = 31 * result + getBaseDirection().hashCode();
+		}
+		return result;
 	}
 
 	@Override
