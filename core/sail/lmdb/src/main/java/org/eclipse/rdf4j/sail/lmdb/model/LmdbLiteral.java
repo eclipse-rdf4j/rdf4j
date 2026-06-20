@@ -170,6 +170,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		if (initializedValue instanceof LmdbLiteral lmdbLiteral) {
 			this.label = lmdbLiteral.label;
 			this.language = lmdbLiteral.language;
+			this.baseDirection = lmdbLiteral.baseDirection;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
 		} else {

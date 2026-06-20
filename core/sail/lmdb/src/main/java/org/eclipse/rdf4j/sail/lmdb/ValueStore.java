@@ -872,6 +872,7 @@ class ValueStore extends AbstractValueFactory {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 			return true;
 		}
 		// Try to get from cache
@@ -2357,7 +2358,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		if (Literals.isLanguageLiteral(l)) {
-			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get());
+			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get(), l.getBaseDirection());
 		} else if (l.getCoreDatatype() != CoreDatatype.NONE) {
 			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype());
 		} else {
