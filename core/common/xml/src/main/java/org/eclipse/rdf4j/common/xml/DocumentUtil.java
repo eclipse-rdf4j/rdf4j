@@ -15,14 +15,21 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.XMLConstants;
+import javax.xml.transform.TransformerConfigurationException;
+import javax.xml.transform.dom.DOMResult;
+import javax.xml.transform.sax.SAXTransformerFactory;
+import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.validation.Schema;
+import javax.xml.validation.ValidatorHandler;
 
 import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
+import org.xml.sax.XMLReader;
 
 /**
  * Utilities to make working with DOM documents easier.
@@ -43,12 +50,23 @@ public class DocumentUtil {
 	}
 
 	/**
+	 * Create a Document representing the XML data from the supplied stream.
+	 *
+	 * @param inputStream an XML input stream. The caller remains responsible for closing it.
+	 * @return a Document representing the XML data
+	 * @throws IOException when there was a problem parsing the document.
+	 */
+	public static Document getDocument(InputStream inputStream) throws IOException {
+		return getDocument(inputStream, null, null);
+	}
+
+	/**
 	 * Create a Document representing the XML file at the specified location.
 	 *
 	 * @param location       the location of an XML document
-	 * @param validating     whether the XML parser used in the construction of the document should validate the XML
-	 * @param namespaceAware whether the XML parser used in the construction of the document should be aware of
-	 *                       namespaces
+	 * @param validating     retained for compatibility; validation is controlled by the supplied {@link Schema}
+	 * @param namespaceAware retained for compatibility; XML readers created by {@link XMLReaderFactory} are namespace
+	 *                       aware
 	 * @return a Document representing the XML file
 	 * @throws IOException when there was a problem retrieving or parsing the document.
 	 */
@@ -70,25 +88,60 @@ public class DocumentUtil {
 
 	private static Document getDocument(URL location, boolean validating, boolean namespaceAware, Schema schema)
 			throws IOException {
-		Document result;
-
-		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-		factory.setValidating(validating);
-		factory.setNamespaceAware(namespaceAware);
-		factory.setSchema(schema);
-
 		try (InputStream in = new BufferedInputStream(location.openConnection().getInputStream())) {
-			DocumentBuilder builder = factory.newDocumentBuilder();
-			result = builder.parse(in);
+			return getDocument(in, location.toExternalForm(), schema);
+		}
+	}
+
+	private static Document getDocument(InputStream inputStream, String systemId, Schema schema) throws IOException {
+		try {
+			DOMResult domResult = new DOMResult();
+			ContentHandler contentHandler = createDomContentHandler(domResult);
+			if (schema != null) {
+				ValidatorHandler validatorHandler = schema.newValidatorHandler();
+				validatorHandler.setContentHandler(contentHandler);
+				contentHandler = validatorHandler;
+			}
+
+			XMLReader reader = XMLReaderFactory.createXMLReader();
+			reader.setContentHandler(contentHandler);
+
+			InputSource inputSource = new InputSource(inputStream);
+			inputSource.setSystemId(systemId);
+			reader.parse(inputSource);
+
+			Node node = domResult.getNode();
+			if (node instanceof Document) {
+				return (Document) node;
+			}
+
+			throw new IOException("XML parser did not produce a DOM Document");
 		} catch (SAXParseException e) {
 			String message = "Parsing error" + ", line " + e.getLineNumber() + ", uri " + e.getSystemId() + ", "
 					+ e.getMessage();
 			throw toIOE(message, e);
-		} catch (SAXException | ParserConfigurationException e) {
+		} catch (SAXException | TransformerConfigurationException e) {
 			throw toIOE(e);
 		}
+	}
 
-		return result;
+	private static ContentHandler createDomContentHandler(DOMResult domResult)
+			throws TransformerConfigurationException {
+		SAXTransformerFactory transformerFactory = (SAXTransformerFactory) SAXTransformerFactory.newInstance();
+		transformerFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+		setTransformerAttribute(transformerFactory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
+		setTransformerAttribute(transformerFactory, XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+		TransformerHandler transformerHandler = transformerFactory.newTransformerHandler();
+		transformerHandler.setResult(domResult);
+		return transformerHandler;
+	}
+
+	private static void setTransformerAttribute(SAXTransformerFactory transformerFactory, String name, String value) {
+		try {
+			transformerFactory.setAttribute(name, value);
+		} catch (IllegalArgumentException ignored) {
+			// Optional JAXP 1.5 hardening attribute; older transformer implementations may not support it.
+		}
 	}
 
 	private static IOException toIOE(Exception e) {

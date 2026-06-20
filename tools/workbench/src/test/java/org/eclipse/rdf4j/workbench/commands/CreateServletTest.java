@@ -16,10 +16,10 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.common.xml.DocumentUtil;
 import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -43,7 +44,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -571,10 +571,8 @@ public class CreateServletTest {
 
 	private static List<String> extractBindingValues(String xml, String bindingName) {
 		try {
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-			factory.setNamespaceAware(true);
-			NodeList bindings = factory.newDocumentBuilder()
-					.parse(new InputSource(new StringReader(xml)))
+			NodeList bindings = DocumentUtil
+					.getDocument(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
 					.getElementsByTagNameNS("*", "binding");
 			List<String> values = new ArrayList<>();
 			for (int i = 0; i < bindings.getLength(); i++) {
