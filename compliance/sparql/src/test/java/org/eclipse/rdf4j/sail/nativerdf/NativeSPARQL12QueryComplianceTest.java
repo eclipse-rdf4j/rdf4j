@@ -17,10 +17,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL12QueryComplianceTest;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.io.TempDir;
 
-@Disabled("NativeStore does not yet store RDF 1.2 triple terms; see SPARQL 1.2 manifest failures in tests()[11..48]")
 public class NativeSPARQL12QueryComplianceTest extends SPARQL12QueryComplianceTest {
 
 	@TempDir

@@ -399,7 +399,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						jp.currentLocation().getColumnNr());
 			}
 			String posName = jp.currentName();
-			if (SUBJECT.equals(posName)) {
+			String normalizedPosName = normalizeTriplePosition(posName);
+			if (SUBJECT.equals(normalizedPosName)) {
 				if (subject != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -407,7 +408,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							jp.currentLocation().getColumnNr());
 				}
 				subject = parseValue(jp, fieldName + ":" + posName);
-			} else if (PREDICATE.equals(posName)) {
+			} else if (PREDICATE.equals(normalizedPosName)) {
 				if (predicate != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -415,7 +416,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							jp.currentLocation().getColumnNr());
 				}
 				predicate = parseValue(jp, fieldName + ":" + posName);
-			} else if (OBJECT.equals(posName)) {
+			} else if (OBJECT.equals(normalizedPosName)) {
 				if (object != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -440,6 +441,15 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 					jp.currentLocation().getLineNr(),
 					jp.currentLocation().getColumnNr());
 		}
+	}
+
+	private String normalizeTriplePosition(String posName) {
+		return switch (posName) {
+		case "s" -> SUBJECT;
+		case "p" -> PREDICATE;
+		case "o" -> OBJECT;
+		default -> posName;
+		};
 	}
 
 	protected TripleTerm parseTripleTermValue(JsonParser jp, String fieldName) throws IOException {

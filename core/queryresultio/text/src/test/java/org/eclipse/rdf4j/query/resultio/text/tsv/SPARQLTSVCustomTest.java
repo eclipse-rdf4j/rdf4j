@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,13 +37,9 @@ public class SPARQLTSVCustomTest {
 
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
-	 * <p>
-	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XSD#STRING} is implied and hence is not generally
-	 * represented.
 	 *
 	 * @throws Exception
 	 */
-	@Disabled("This test does not work with RDF-1.1")
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
 		List<String> bindingNames = List.of("test");

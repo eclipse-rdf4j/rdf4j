@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -59,6 +60,7 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
+import org.eclipse.rdf4j.sail.nativerdf.model.NativeTripleTerm;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
@@ -112,6 +114,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	private static final byte BNODE_VALUE = 0x2; // 0000 0010
 
 	private static final byte LITERAL_VALUE = 0x3; // 0000 0011
+
+	private static final byte TRIPLE_VALUE = 0x4; // 0000 0100
 
 	/*-----------*
 	 * Variables *
@@ -662,6 +666,10 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			} else {
 				return createLiteral(value.stringValue(), lit.getDatatype());
 			}
+		} else if (value instanceof TripleTerm) {
+			TripleTerm tripleTerm = (TripleTerm) value;
+			return createTripleTerm((Resource) copy(tripleTerm.getSubject()), (IRI) copy(tripleTerm.getPredicate()),
+					copy(tripleTerm.getObject()));
 		} else {
 			return createBNode(value.stringValue());
 		}
@@ -689,8 +697,10 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			data = bnode2data((BNode) value, create);
 		} else if (value instanceof Literal) {
 			data = literal2data((Literal) value, create);
+		} else if (value instanceof TripleTerm) {
+			data = tripleTerm2data((TripleTerm) value, create);
 		} else {
-			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+			throw new IllegalArgumentException("value parameter should be a URI, BNode, Literal or TripleTerm");
 		}
 
 		if (logger.isDebugEnabled()) {
@@ -743,6 +753,32 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private byte[] literal2data(Literal literal, boolean create) throws IOException {
 		return literal2data(literal.getLabel(), encodedLanguage(literal), literal.getDatatype(), create);
+	}
+
+	private byte[] tripleTerm2data(TripleTerm tripleTerm, boolean create) throws IOException {
+		int subjID = getID(tripleTerm.getSubject());
+		if (subjID == NativeValue.UNKNOWN_ID && create) {
+			subjID = storeValue(tripleTerm.getSubject());
+		}
+		int predID = getID(tripleTerm.getPredicate());
+		if (predID == NativeValue.UNKNOWN_ID && create) {
+			predID = storeValue(tripleTerm.getPredicate());
+		}
+		int objID = getID(tripleTerm.getObject());
+		if (objID == NativeValue.UNKNOWN_ID && create) {
+			objID = storeValue(tripleTerm.getObject());
+		}
+
+		if (subjID == NativeValue.UNKNOWN_ID || predID == NativeValue.UNKNOWN_ID || objID == NativeValue.UNKNOWN_ID) {
+			return null;
+		}
+
+		byte[] tripleData = new byte[13];
+		tripleData[0] = TRIPLE_VALUE;
+		ByteArrayUtil.putInt(subjID, tripleData, 1);
+		ByteArrayUtil.putInt(predID, tripleData, 5);
+		ByteArrayUtil.putInt(objID, tripleData, 9);
+		return tripleData;
 	}
 
 	private byte[] literal2legacy(Literal literal) throws IOException {
@@ -808,7 +844,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	}
 
 	private boolean isNamespaceData(byte[] data) {
-		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
+		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE && data[0] != TRIPLE_VALUE;
 	}
 
 	@InternalUseOnly
@@ -830,6 +866,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			return data2bnode(id, data);
 		case LITERAL_VALUE:
 			return data2literal(id, data);
+		case TRIPLE_VALUE:
+			return data2tripleTerm(id, data);
 		default:
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Invalid type {} for value with id {}", data[0], id);
@@ -908,6 +946,17 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			throw e;
 		}
 
+	}
+
+	private NativeTripleTerm data2tripleTerm(int id, byte[] data) throws IOException {
+		if (data.length != 13) {
+			throw new SailException("Invalid triple term data length " + data.length + " for value with id " + id);
+		}
+
+		Resource subj = (Resource) getValue(ByteArrayUtil.getInt(data, 1));
+		IRI pred = (IRI) getValue(ByteArrayUtil.getInt(data, 5));
+		Value obj = getValue(ByteArrayUtil.getInt(data, 9));
+		return new NativeTripleTerm(revision, subj, pred, obj, id);
 	}
 
 	private void tryRecoverFromWal(int id, CorruptValue holder) {
@@ -1036,6 +1085,12 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 				return createLiteral(rec.lexical());
 			}
 		}
+		case TRIPLE:
+			try {
+				return tripleTermFromWalLexical(rec.lexical());
+			} catch (IOException e) {
+				return null;
+			}
 		case NAMESPACE:
 			// not a value; nothing to recover
 			return null;
@@ -1252,9 +1307,34 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			String lang = encodedLanguage(literal).orElse("");
 			String datatype = literal.getDatatype() != null ? literal.getDatatype().stringValue() : "";
 			return new ValueStoreWalDescription(ValueStoreWalValueKind.LITERAL, literal.getLabel(), datatype, lang);
+		} else if (value instanceof TripleTerm) {
+			try {
+				return new ValueStoreWalDescription(ValueStoreWalValueKind.TRIPLE,
+						tripleTermWalLexical((TripleTerm) value), "", "");
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
 		} else {
-			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+			throw new IllegalArgumentException("value parameter should be a URI, BNode, Literal or TripleTerm");
 		}
+	}
+
+	private String tripleTermWalLexical(TripleTerm tripleTerm) throws IOException {
+		int subjID = storeValue(tripleTerm.getSubject());
+		int predID = storeValue(tripleTerm.getPredicate());
+		int objID = storeValue(tripleTerm.getObject());
+		return subjID + " " + predID + " " + objID;
+	}
+
+	private NativeTripleTerm tripleTermFromWalLexical(String lexical) throws IOException {
+		String[] ids = lexical.split(" ");
+		if (ids.length != 3) {
+			return null;
+		}
+		Resource subj = (Resource) getValue(Integer.parseInt(ids[0]));
+		IRI pred = (IRI) getValue(Integer.parseInt(ids[1]));
+		Value obj = getValue(Integer.parseInt(ids[2]));
+		return new NativeTripleTerm(revision, subj, pred, obj);
 	}
 
 	private int computeWalHash(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
@@ -1381,6 +1461,11 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		return new NativeLiteral(revision, value, datatype);
 	}
 
+	@Override
+	public NativeTripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+		return new NativeTripleTerm(revision, subject, predicate, object);
+	}
+
 	/*----------------------------------------------------------------------*
 	 * Methods for converting model objects to NativeStore-specific objects *
 	 *----------------------------------------------------------------------*/
@@ -1390,9 +1475,20 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			return getNativeResource((Resource) value);
 		} else if (value instanceof Literal) {
 			return getNativeLiteral((Literal) value);
+		} else if (value instanceof TripleTerm) {
+			return getNativeTripleTerm((TripleTerm) value);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
+	}
+
+	public NativeTripleTerm getNativeTripleTerm(TripleTerm tripleTerm) {
+		if (isOwnValue(tripleTerm)) {
+			return (NativeTripleTerm) tripleTerm;
+		}
+
+		return new NativeTripleTerm(revision, tripleTerm.getSubject(), tripleTerm.getPredicate(),
+				tripleTerm.getObject());
 	}
 
 	public NativeResource getNativeResource(Resource resource) {
@@ -1606,6 +1702,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			case LITERAL:
 				data = encodeLiteral(record.lexical(), record.datatype(), record.language(), dataStore);
 				break;
+			case TRIPLE:
+				data = encodeTripleTerm(record.lexical());
+				break;
 			default:
 				continue;
 			}
@@ -1671,6 +1770,19 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			ByteArrayUtil.put(langBytes, data, 6);
 		}
 		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		return data;
+	}
+
+	private byte[] encodeTripleTerm(String lexical) throws IOException {
+		String[] ids = lexical.split(" ");
+		if (ids.length != 3) {
+			throw new IOException("Invalid triple term WAL lexical value: " + lexical);
+		}
+		byte[] data = new byte[13];
+		data[0] = TRIPLE_VALUE;
+		ByteArrayUtil.putInt(Integer.parseInt(ids[0]), data, 1);
+		ByteArrayUtil.putInt(Integer.parseInt(ids[1]), data, 5);
+		ByteArrayUtil.putInt(Integer.parseInt(ids[2]), data, 9);
 		return data;
 	}
 

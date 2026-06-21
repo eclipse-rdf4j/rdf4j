@@ -14,22 +14,20 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.File;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL12UpdateComplianceTest;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.testsuite.repository.TripleTermSupportTest;
 import org.junit.jupiter.api.io.TempDir;
 
-public class NativeSPARQL12UpdateComplianceTest extends SPARQL12UpdateComplianceTest {
+public class NativeTripleTermSupportTest extends TripleTermSupportTest {
 
 	@TempDir
-	public File folder;
-
-	public NativeSPARQL12UpdateComplianceTest() {
-		setTestsSource("testcases-sparql-1.2-w3c/manifest.ttl");
-	}
+	File tempDir;
 
 	@Override
-	protected Repository newRepository() throws Exception {
-		return new DatasetRepository(new SailRepository(new NativeStore(folder, "spoc")));
+	protected Repository createRepository() {
+		NotifyingSail sail = new NativeStore(tempDir, "spoc,posc");
+		sail.init();
+		return new SailRepository(sail);
 	}
 }
