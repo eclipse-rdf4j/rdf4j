@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -87,6 +88,23 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 			assertEquals(RDF.DIRLANGSTRING, actual.getDatatype());
 			assertTrue(!statements.hasNext());
 		}
+	}
+
+	@Test
+	public void testDirectedLanguageLiteralPassesValueStoreConsistencyCheck() {
+		Literal expected = vf.createLiteral("directed literal", "en", Literal.BaseDirection.RTL);
+
+		con.begin();
+		con.addStatement(picasso, paints, expected);
+		con.commit();
+		con.close();
+		sail.shutDown();
+
+		assertDoesNotThrow(() -> {
+			try (ValueStore valueStore = new ValueStore(dataDir, false)) {
+				valueStore.checkConsistency();
+			}
+		});
 	}
 
 	@Test

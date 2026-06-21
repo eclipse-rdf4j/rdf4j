@@ -15,14 +15,12 @@ import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL10QueryComplianceTest;
-import org.junit.jupiter.api.Disabled;
 
 /**
  * Checks conformance of SPARQL query evaluation against the W3C-approved SPARQL 1.0 query test cases
  *
  * @author Jeen Broekstra
  */
-@Disabled("Needs to be inspected with SPARQL 1.2 changes")
 public class W3CApprovedSPARQL10QueryTest extends SPARQL10QueryComplianceTest {
 
 	@Override

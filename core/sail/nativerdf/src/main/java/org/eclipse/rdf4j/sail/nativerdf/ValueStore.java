@@ -662,7 +662,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		} else if (value instanceof Literal) {
 			Literal lit = (Literal) value;
 			if (Literals.isLanguageLiteral(lit)) {
-				return createLiteral(value.stringValue(), lit.getLanguage().orElse(null));
+				return createLiteral(value.stringValue(), lit.getLanguage().orElse(null), lit.getBaseDirection());
 			} else {
 				return createLiteral(value.stringValue(), lit.getDatatype());
 			}

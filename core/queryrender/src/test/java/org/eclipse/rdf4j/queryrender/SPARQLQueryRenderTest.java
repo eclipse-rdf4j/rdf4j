@@ -230,6 +230,18 @@ public class SPARQLQueryRenderTest {
 	}
 
 	@Test
+	public void renderDescribeQueryKeepsDescribeForm() throws Exception {
+		StringBuffer sb = new StringBuffer();
+		sb.append("describe ?s").append(lineSeparator);
+		sb.append("where {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}");
+		String query = sb.toString();
+
+		executeRenderTest(query, query);
+	}
+
+	@Test
 	public void renderThreeVariableSelectDoesNotRequireConstructAliases() throws Exception {
 		StringBuffer sb = new StringBuffer();
 		sb.append("select ?s ?p ?o").append(lineSeparator);

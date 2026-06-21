@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -222,6 +223,18 @@ public class OrderComparatorTest {
 		b.addBinding("a", SimpleValueFactory.getInstance().createLiteral("ac"));
 		assertTrue(sud.compare(a, b) < 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
+	}
+
+	@Test
+	public void testFallbackDistinguishesNumericallyEqualLiterals() {
+		OrderComparator sud = new OrderComparator(strategy, order, new ValueComparator(), context);
+		QueryBindingSet integer = new QueryBindingSet();
+		QueryBindingSet decimal = new QueryBindingSet();
+		integer.addBinding("x", SimpleValueFactory.getInstance().createLiteral(1));
+		decimal.addBinding("x", SimpleValueFactory.getInstance().createLiteral("1.0", XSD.DECIMAL));
+
+		assertTrue(sud.compare(integer, decimal) != 0);
+		assertTrue(sud.compare(integer, decimal) != sud.compare(decimal, integer));
 	}
 
 	@BeforeEach
