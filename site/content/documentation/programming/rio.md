@@ -310,12 +310,12 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
-XML readers created by RDF4J use secure defaults from `XMLReaderFactory`: secure processing is enabled, DOCTYPE
-declarations are rejected, external general and parameter entities are disabled, and external DTD loading is disabled.
-Built-in XML parsers still support their XML parser config settings, including `CUSTOM_XML_READER`, so applications can
-override these defaults per parser when they explicitly need legacy XML behavior. The default reader values can also be
-changed globally with the `org.eclipse.rdf4j.common.xml.*` JVM system properties documented in the
-`XMLReaderFactory` Javadoc.
+Common XML readers created through `XMLReaderFactory` or `DocumentUtil` use secure defaults: secure processing is
+enabled, DOCTYPE declarations are rejected, external general and parameter entities are disabled, and external DTD
+loading is disabled. Built-in Rio XML parsers also apply their `XMLParserSettings` from `ParserConfig`, including
+`CUSTOM_XML_READER`, after reader creation. Use `ParserConfig` or system properties named after the `XMLParserSettings`
+feature keys to override Rio parser behavior. The `org.eclipse.rdf4j.common.xml.*` JVM system properties documented in
+the `XMLReaderFactory` Javadoc configure the common XML reader defaults.
 
 ### Programmatic configuration
 
@@ -360,9 +360,9 @@ The Javadoc for each parser/writer setting documents the system property name by
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
 
-XML reader security is configured separately. The defaults harden RDF4J against XXE attacks by enabling secure
-processing, rejecting DOCTYPE declarations, and disabling external DTDs and external entities. These can only be changed
-with the following system properties, set before XML readers are created:
+Common XML reader security is configured separately from Rio parser settings. These defaults harden RDF4J against XXE
+attacks by enabling secure processing, rejecting DOCTYPE declarations, and disabling external DTDs and external
+entities. They can be changed with the following system properties, set before XML readers are created:
 
 | System property | Default |
 | --- | --- |
@@ -371,6 +371,9 @@ with the following system properties, set before XML readers are created:
 | `org.eclipse.rdf4j.common.xml.load-external-dtd` | `false` |
 | `org.eclipse.rdf4j.common.xml.external-general-entities` | `false` |
 | `org.eclipse.rdf4j.common.xml.external-parameter-entities` | `false` |
+
+For built-in Rio XML parsers, use `XMLParserSettings` through `ParserConfig` or `-D` properties named after the relevant
+setting keys, for example `-Dhttp://apache.org/xml/features/disallow-doctype-decl=false`.
 
 ### Some notes on parsing RDF/XML and JAXP limits
 

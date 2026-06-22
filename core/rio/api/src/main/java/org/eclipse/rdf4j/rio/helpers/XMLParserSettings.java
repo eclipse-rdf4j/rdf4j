@@ -21,9 +21,10 @@ import org.xml.sax.XMLReader;
 /**
  * ParserSettings for the XML parser features.
  * <p>
- * XML readers created by RDF4J are initialized with secure defaults by {@link XMLReaderFactory}. Callers can override
- * these settings per parser through {@link RioConfig} or globally with the {@code org.eclipse.rdf4j.common.xml.*}
- * system properties documented there.
+ * XML readers created by RDF4J are initialized with secure defaults by {@link XMLReaderFactory}. Built-in Rio XML
+ * parsers then apply these Rio settings from {@link RioConfig}; callers can override them per parser or with system
+ * properties named after each {@link RioSetting#getKey() setting key}. The {@code org.eclipse.rdf4j.common.xml.*}
+ * system properties configure common XML reader defaults, not the final Rio parser setting values.
  *
  * @author Michael Grove
  * @author Peter Ansell
@@ -37,7 +38,8 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * The default reader value can be overridden with {@link XMLReaderFactory#SECURE_PROCESSING_PROPERTY}.
+	 * Common XML reader defaults can be configured with {@link XMLReaderFactory#SECURE_PROCESSING_PROPERTY}. Rio
+	 * parsers can override this setting through {@link RioConfig} or this setting's key.
 	 *
 	 * @see <a href= "http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
 	 *      XMLConstants.FEATURE_SECURE_PROCESSING</a>
@@ -50,7 +52,8 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * The default reader value can be overridden with {@link XMLReaderFactory#DISALLOW_DOCTYPE_DECL_PROPERTY}.
+	 * Common XML reader defaults can be configured with {@link XMLReaderFactory#DISALLOW_DOCTYPE_DECL_PROPERTY}. Rio
+	 * parsers can override this setting through {@link RioConfig} or this setting's key.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
@@ -64,7 +67,8 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * The default reader value can be overridden with {@link XMLReaderFactory#LOAD_EXTERNAL_DTD_PROPERTY}.
+	 * Common XML reader defaults can be configured with {@link XMLReaderFactory#LOAD_EXTERNAL_DTD_PROPERTY}. Rio
+	 * parsers can override this setting through {@link RioConfig} or this setting's key.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 */
@@ -76,7 +80,8 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * The default reader value can be overridden with {@link XMLReaderFactory#EXTERNAL_GENERAL_ENTITIES_PROPERTY}.
+	 * Common XML reader defaults can be configured with {@link XMLReaderFactory#EXTERNAL_GENERAL_ENTITIES_PROPERTY}.
+	 * Rio parsers can override this setting through {@link RioConfig} or this setting's key.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
@@ -90,7 +95,8 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * The default reader value can be overridden with {@link XMLReaderFactory#EXTERNAL_PARAMETER_ENTITIES_PROPERTY}.
+	 * Common XML reader defaults can be configured with {@link XMLReaderFactory#EXTERNAL_PARAMETER_ENTITIES_PROPERTY}.
+	 * Rio parsers can override this setting through {@link RioConfig} or this setting's key.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention

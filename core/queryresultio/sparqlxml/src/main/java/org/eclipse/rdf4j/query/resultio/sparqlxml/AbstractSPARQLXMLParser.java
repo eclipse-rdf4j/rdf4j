@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.xml.sax.ErrorHandler;
+import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXNotRecognizedException;
 import org.xml.sax.SAXNotSupportedException;
@@ -228,8 +229,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 	protected void reportWarning(String msg) {
 		if (getParseErrorListener() != null) {
-			getParseErrorListener().warning(msg, internalSAXParser.getLocator().getLineNumber(),
-					internalSAXParser.getLocator().getColumnNumber());
+			Locator locator = internalSAXParser == null ? null : internalSAXParser.getLocator();
+			long lineNumber = locator == null ? -1 : locator.getLineNumber();
+			long columnNumber = locator == null ? -1 : locator.getColumnNumber();
+			getParseErrorListener().warning(msg, lineNumber, columnNumber);
 		}
 	}
 
