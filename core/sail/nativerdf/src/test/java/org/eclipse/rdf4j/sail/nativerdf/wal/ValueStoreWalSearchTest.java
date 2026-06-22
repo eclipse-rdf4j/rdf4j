@@ -24,6 +24,7 @@ import java.util.Random;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -41,6 +42,37 @@ class ValueStoreWalSearchTest {
 
 	@TempDir
 	File dataDir;
+
+	@Test
+	void findsTripleTermById() throws Exception {
+		Path walDir = dataDir.toPath().resolve("wal-triple");
+		Files.createDirectories(walDir);
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		TripleTerm expected = vf.createTripleTerm(vf.createIRI("urn:triple:subject"),
+				vf.createIRI("urn:triple:predicate"), vf.createLiteral("triple-object"));
+
+		int id;
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config)) {
+			File valueDir = dataDir.toPath().resolve("values-triple").toFile();
+			Files.createDirectories(valueDir.toPath());
+			try (ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+					ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+					ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+				id = store.storeValue(expected);
+				OptionalLong pending = store.drainPendingWalHighWaterMark();
+				assertThat(pending).isPresent();
+				wal.awaitDurable(pending.getAsLong());
+			}
+		}
+
+		Value found = ValueStoreWalSearch.open(config).findValueById(id);
+		assertThat(found).isInstanceOf(TripleTerm.class);
+		assertThat(found).isEqualTo(expected);
+	}
 
 	@Test
 	void preservesDirectedLanguageLiteralWhenSearchingById() throws Exception {

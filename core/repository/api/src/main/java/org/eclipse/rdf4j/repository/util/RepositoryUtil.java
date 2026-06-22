@@ -13,16 +13,16 @@ package org.eclipse.rdf4j.repository.util;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
@@ -84,8 +84,6 @@ public class RepositoryUtil {
 	 * first and the second model (that is, all statements that are present in rep1 but not in rep2). Blank node IDs are
 	 * not relevant for model equality, they are mapped from one model to the other by using the attached properties.
 	 * Note that the method pulls the entire default context of both repositories into main memory. Use with caution.
-	 * <p>
-	 * <b>NOTE: this algorithm is currently broken; it doesn't actually map blank nodes between the two models.</b>
 	 *
 	 * @return The collection of statements that is the difference between rep1 and rep2.
 	 */
@@ -109,8 +107,6 @@ public class RepositoryUtil {
 	 * Compares two models, defined by two statement collections, and returns the difference between the first and the
 	 * second model (that is, all statements that are present in model1 but not in model2). Blank node IDs are not
 	 * relevant for model equality, they are mapped from one model to the other by using the attached properties. *
-	 * <p>
-	 * <b>NOTE: this algorithm is currently broken; it doesn't actually map blank nodes between the two models.</b>
 	 *
 	 * @return The collection of statements that is the difference between model1 and model2.
 	 */
@@ -122,118 +118,268 @@ public class RepositoryUtil {
 
 		Collection<Statement> result = new ArrayList<>();
 
-		// Compare statements that don't contain bNodes
+		// First handle statements that contain no blank nodes at all. These can be compared directly.
 		Iterator<Statement> iter1 = copy1.iterator();
 		while (iter1.hasNext()) {
 			Statement st = iter1.next();
 
-			if (st.getSubject() instanceof BNode || st.getObject() instanceof BNode) {
-				// One or more of the statement's components is a bNode,
-				// these statements are handled later
+			if (containsBlankNode(st)) {
+				// Statements with blank nodes need structural matching.
 				continue;
 			}
 
-			// Try to remove the statement from model2
-			boolean removed = copy2.remove(st);
-			if (!removed) {
-				// statement was not present in model2 and is part of the difference
+			if (!copy2.remove(st)) {
 				result.add(st);
 			}
+
 			iter1.remove();
 		}
 
-		List<List<Statement>> components1 = blankNodeComponents(copy1);
-		List<List<Statement>> components2 = blankNodeComponents(copy2);
-		boolean[] matchedComponents2 = new boolean[components2.size()];
+		if (copy1.isEmpty()) {
+			return result;
+		}
 
-		for (List<Statement> component1 : components1) {
-			int component2Index = findIsomorphicComponent(component1, components2, matchedComponents2);
-			if (component2Index >= 0) {
-				matchedComponents2[component2Index] = true;
-			} else {
-				result.addAll(component1);
+		// Ground statements cannot match remaining source statements because blank nodes map only to blank nodes.
+		copy2.removeIf(st -> !containsBlankNode(st));
+
+		if (copy2.isEmpty()) {
+			result.addAll(copy1);
+			return result;
+		}
+
+		if (Models.isSubset(copy1, copy2)) {
+			return result;
+		}
+
+		boolean[] matched = findMaximumMappedSubset(copy1, copy2);
+
+		for (int i = 0; i < copy1.size(); i++) {
+			if (!matched[i]) {
+				result.add(copy1.get(i));
 			}
 		}
 
 		return result;
 	}
 
-	private static List<List<Statement>> blankNodeComponents(Collection<Statement> statements) {
-		List<Statement> remaining = new ArrayList<>(statements);
-		List<List<Statement>> components = new ArrayList<>();
+	private static boolean[] findMaximumMappedSubset(List<Statement> source, List<Statement> target) {
+		MatchSearch search = new MatchSearch(source, target);
+		search.run();
+		return search.getBestMatched();
+	}
 
-		while (!remaining.isEmpty()) {
-			Statement seed = remaining.remove(0);
-			List<Statement> component = new ArrayList<>();
-			Set<BNode> componentBNodes = new HashSet<>();
-			component.add(seed);
-			collectBlankNodes(seed, componentBNodes);
+	private static final class MatchSearch {
 
-			boolean changed;
-			do {
-				changed = false;
-				Iterator<Statement> iter = remaining.iterator();
-				while (iter.hasNext()) {
-					Statement st = iter.next();
-					Set<BNode> statementBNodes = blankNodes(st);
-					if (hasSharedBlankNode(componentBNodes, statementBNodes)) {
-						component.add(st);
-						componentBNodes.addAll(statementBNodes);
-						iter.remove();
-						changed = true;
+		private final List<Statement> source;
+		private final List<Statement> target;
+		private final List<List<Integer>> candidates;
+		private final int[] order;
+
+		private boolean[] bestMatched;
+		private int bestCount = -1;
+
+		private MatchSearch(List<Statement> source, List<Statement> target) {
+			this.source = source;
+			this.target = target;
+			this.candidates = buildCandidates(source, target);
+			this.order = buildSearchOrder(candidates);
+			this.bestMatched = new boolean[source.size()];
+		}
+
+		private void run() {
+			search(0, new HashMap<>(), new HashMap<>(), new boolean[target.size()], new boolean[source.size()], 0);
+		}
+
+		private boolean[] getBestMatched() {
+			return bestMatched;
+		}
+
+		private void search(int orderIndex, Map<BNode, BNode> forwardMapping, Map<BNode, BNode> reverseMapping,
+				boolean[] usedTarget, boolean[] matchedSource, int matchedCount) {
+			if (bestCount == source.size()) {
+				return;
+			}
+
+			int remaining = order.length - orderIndex;
+			if (matchedCount + remaining <= bestCount) {
+				return;
+			}
+
+			if (orderIndex == order.length) {
+				if (matchedCount > bestCount) {
+					bestCount = matchedCount;
+					bestMatched = matchedSource.clone();
+				}
+				return;
+			}
+
+			int sourceIndex = order[orderIndex];
+			Statement sourceStatement = source.get(sourceIndex);
+
+			for (int targetIndex : candidates.get(sourceIndex)) {
+				if (usedTarget[targetIndex]) {
+					continue;
+				}
+
+				BNodeMapping nextMapping = tryMatch(sourceStatement, target.get(targetIndex), forwardMapping,
+						reverseMapping);
+
+				if (nextMapping != null) {
+					usedTarget[targetIndex] = true;
+					matchedSource[sourceIndex] = true;
+
+					search(orderIndex + 1, nextMapping.forwardMapping, nextMapping.reverseMapping, usedTarget,
+							matchedSource, matchedCount + 1);
+
+					matchedSource[sourceIndex] = false;
+					usedTarget[targetIndex] = false;
+				}
+			}
+
+			search(orderIndex + 1, forwardMapping, reverseMapping, usedTarget, matchedSource, matchedCount);
+		}
+
+		private static List<List<Integer>> buildCandidates(List<Statement> source, List<Statement> target) {
+			List<List<Integer>> candidates = new ArrayList<>(source.size());
+
+			for (Statement sourceStatement : source) {
+				List<Integer> statementCandidates = new ArrayList<>();
+
+				for (int i = 0; i < target.size(); i++) {
+					if (tryMatch(sourceStatement, target.get(i), new HashMap<>(), new HashMap<>()) != null) {
+						statementCandidates.add(i);
 					}
 				}
-			} while (changed);
 
-			components.add(component);
-		}
-
-		return components;
-	}
-
-	private static int findIsomorphicComponent(List<Statement> component, List<List<Statement>> candidates,
-			boolean[] matchedCandidates) {
-		for (int i = 0; i < candidates.size(); i++) {
-			if (!matchedCandidates[i]) {
-				List<Statement> candidate = candidates.get(i);
-				if (component.size() == candidate.size() && Models.isomorphic(component, candidate)) {
-					return i;
-				}
+				candidates.add(statementCandidates);
 			}
-		}
-		return -1;
-	}
 
-	private static boolean hasSharedBlankNode(Set<BNode> left, Set<BNode> right) {
-		for (BNode bNode : right) {
-			if (left.contains(bNode)) {
-				return true;
+			return candidates;
+		}
+
+		private static int[] buildSearchOrder(List<List<Integer>> candidates) {
+			List<Integer> order = new ArrayList<>(candidates.size());
+
+			for (int i = 0; i < candidates.size(); i++) {
+				order.add(i);
 			}
-		}
-		return false;
-	}
 
-	private static Set<BNode> blankNodes(Statement st) {
-		Set<BNode> bNodes = new HashSet<>();
-		collectBlankNodes(st, bNodes);
-		return bNodes;
-	}
+			order.sort(Comparator.comparingInt(index -> candidates.get(index).size()));
 
-	private static void collectBlankNodes(Statement st, Set<BNode> bNodes) {
-		collectBlankNodes(st.getSubject(), bNodes);
-		collectBlankNodes(st.getObject(), bNodes);
-		if (st.getContext() != null) {
-			collectBlankNodes(st.getContext(), bNodes);
+			int[] result = new int[order.size()];
+			for (int i = 0; i < order.size(); i++) {
+				result[i] = order.get(i);
+			}
+
+			return result;
 		}
 	}
 
-	private static void collectBlankNodes(Value value, Set<BNode> bNodes) {
+	private static final class BNodeMapping {
+
+		private final Map<BNode, BNode> forwardMapping;
+		private final Map<BNode, BNode> reverseMapping;
+
+		private BNodeMapping(Map<BNode, BNode> forwardMapping, Map<BNode, BNode> reverseMapping) {
+			this.forwardMapping = forwardMapping;
+			this.reverseMapping = reverseMapping;
+		}
+	}
+
+	private static BNodeMapping tryMatch(Statement left, Statement right, Map<BNode, BNode> forwardMapping,
+			Map<BNode, BNode> reverseMapping) {
+		if (!left.getPredicate().equals(right.getPredicate())) {
+			return null;
+		}
+
+		Map<BNode, BNode> nextForwardMapping = new HashMap<>(forwardMapping);
+		Map<BNode, BNode> nextReverseMapping = new HashMap<>(reverseMapping);
+
+		if (!valuesMatch(left.getSubject(), right.getSubject(), nextForwardMapping, nextReverseMapping)) {
+			return null;
+		}
+
+		if (!valuesMatch(left.getObject(), right.getObject(), nextForwardMapping, nextReverseMapping)) {
+			return null;
+		}
+
+		if (!valuesMatch(left.getContext(), right.getContext(), nextForwardMapping, nextReverseMapping)) {
+			return null;
+		}
+
+		return new BNodeMapping(nextForwardMapping, nextReverseMapping);
+	}
+
+	private static boolean valuesMatch(Value left, Value right, Map<BNode, BNode> forwardMapping,
+			Map<BNode, BNode> reverseMapping) {
+		if (left == null || right == null) {
+			return left == right;
+		}
+
+		if (left instanceof BNode) {
+			if (!(right instanceof BNode)) {
+				return false;
+			}
+
+			return bNodesMatch((BNode) left, (BNode) right, forwardMapping, reverseMapping);
+		}
+
+		if (left instanceof TripleTerm) {
+			if (!(right instanceof TripleTerm)) {
+				return false;
+			}
+
+			TripleTerm leftTriple = (TripleTerm) left;
+			TripleTerm rightTriple = (TripleTerm) right;
+
+			return valuesMatch(leftTriple.getSubject(), rightTriple.getSubject(), forwardMapping, reverseMapping)
+					&& leftTriple.getPredicate().equals(rightTriple.getPredicate())
+					&& valuesMatch(leftTriple.getObject(), rightTriple.getObject(), forwardMapping, reverseMapping);
+		}
+
+		return left.equals(right);
+	}
+
+	private static boolean bNodesMatch(BNode left, BNode right, Map<BNode, BNode> forwardMapping,
+			Map<BNode, BNode> reverseMapping) {
+		BNode mappedRight = forwardMapping.get(left);
+
+		if (mappedRight != null) {
+			return mappedRight.equals(right);
+		}
+
+		BNode mappedLeft = reverseMapping.get(right);
+
+		if (mappedLeft != null) {
+			return mappedLeft.equals(left);
+		}
+
+		forwardMapping.put(left, right);
+		reverseMapping.put(right, left);
+
+		return true;
+	}
+
+	private static boolean containsBlankNode(Statement st) {
+		return containsBlankNode(st.getSubject()) || containsBlankNode(st.getObject())
+				|| containsBlankNode(st.getContext());
+	}
+
+	private static boolean containsBlankNode(Value value) {
+		if (value == null) {
+			return false;
+		}
+
 		if (value instanceof BNode) {
-			bNodes.add((BNode) value);
-		} else if (value instanceof TripleTerm) {
-			TripleTerm triple = (TripleTerm) value;
-			collectBlankNodes(triple.getSubject(), bNodes);
-			collectBlankNodes(triple.getObject(), bNodes);
+			return true;
 		}
+
+		if (value instanceof TripleTerm) {
+			TripleTerm triple = (TripleTerm) value;
+
+			return containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject());
+		}
+
+		return false;
 	}
 }

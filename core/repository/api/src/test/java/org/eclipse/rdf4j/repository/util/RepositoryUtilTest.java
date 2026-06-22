@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,49 @@ class RepositoryUtilTest {
 
 		Collection<Statement> difference = new ArrayList<>(RepositoryUtil.difference(model1, model2));
 
-		assertThat(difference).containsExactlyInAnyOrderElementsOf(model1);
+		assertThat(difference).hasSize(1);
+		assertThat(model1).containsAll(difference);
+	}
+
+	@Test
+	void differenceMapsBlankNodesInsideTripleTerms() {
+		IRI subject = VF.createIRI("urn:s");
+		IRI object = VF.createIRI("urn:o");
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		TripleTerm leftTriple = VF.createTripleTerm(left, P, object);
+		TripleTerm rightTriple = VF.createTripleTerm(right, P, object);
+
+		List<Statement> model1 = List.of(VF.createStatement(subject, Q, leftTriple));
+		List<Statement> model2 = List.of(VF.createStatement(subject, Q, rightTriple));
+
+		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceMapsBlankNodeContexts() {
+		IRI subject = VF.createIRI("urn:s");
+		IRI object = VF.createIRI("urn:o");
+		BNode leftContext = VF.createBNode("left-context");
+		BNode rightContext = VF.createBNode("right-context");
+
+		List<Statement> model1 = List.of(VF.createStatement(subject, P, object, leftContext));
+		List<Statement> model2 = List.of(VF.createStatement(subject, P, object, rightContext));
+
+		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceTreatsBlankNodeSourceAsSubsetOfTargetWithExtraStatements() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		Literal extra = VF.createLiteral("extra");
+
+		List<Statement> model1 = List.of(VF.createStatement(left, P, ONE));
+		List<Statement> model2 = List.of(
+				VF.createStatement(right, P, ONE),
+				VF.createStatement(right, Q, extra));
+
+		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
 	}
 }

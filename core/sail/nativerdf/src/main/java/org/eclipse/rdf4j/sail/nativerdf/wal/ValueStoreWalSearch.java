@@ -29,7 +29,9 @@ import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
@@ -303,7 +305,7 @@ public final class ValueStoreWalSearch {
 		return parsed;
 	}
 
-	private Value toValue(Parsed p) {
+	private Value toValue(Parsed p) throws IOException {
 		var vf = SimpleValueFactory.getInstance();
 		switch (p.kind) {
 		case IRI:
@@ -322,9 +324,38 @@ public final class ValueStoreWalSearch {
 				return vf.createLiteral(p.lex, vf.createIRI(p.dt));
 			}
 			return vf.createLiteral(p.lex);
+		case TRIPLE:
+			return toTripleTerm(vf, p);
 		default:
 			return null;
 		}
+	}
+
+	private Value toTripleTerm(SimpleValueFactory vf, Parsed p) throws IOException {
+		String[] ids = p.lex.split(" ");
+		if (ids.length != 3) {
+			return null;
+		}
+		int subjectId;
+		int predicateId;
+		int objectId;
+		try {
+			subjectId = Integer.parseInt(ids[0]);
+			predicateId = Integer.parseInt(ids[1]);
+			objectId = Integer.parseInt(ids[2]);
+		} catch (NumberFormatException e) {
+			return null;
+		}
+		if (subjectId == p.id || predicateId == p.id || objectId == p.id) {
+			return null;
+		}
+		Value subject = findValueById(subjectId);
+		Value predicate = findValueById(predicateId);
+		Value object = findValueById(objectId);
+		if (!(subject instanceof Resource) || !(predicate instanceof IRI) || object == null) {
+			return null;
+		}
+		return vf.createTripleTerm((Resource) subject, (IRI) predicate, object);
 	}
 
 	private static Literal.BaseDirection baseDirectionFromEncodedLanguage(String language) {
