@@ -313,10 +313,12 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			List<BindingSet> rows = QueryResults.asList(result);
 			assertEquals(2, rows.size());
-			assertTrue(rows.stream().anyMatch(row -> hasLiteral(row, "x", "1", XSD.INTEGER)
-					&& hasLiteral(row, "sum", "3", XSD.INTEGER)));
-			assertTrue(rows.stream().anyMatch(row -> hasLiteral(row, "x", "1.0", XSD.DECIMAL)
-					&& hasLiteral(row, "sum", "3.0", XSD.DECIMAL)));
+			assertTrue(rows.stream()
+					.anyMatch(row -> hasLiteral(row, "x", "1", XSD.INTEGER)
+							&& hasLiteral(row, "sum", "3", XSD.INTEGER)));
+			assertTrue(rows.stream()
+					.anyMatch(row -> hasLiteral(row, "x", "1.0", XSD.DECIMAL)
+							&& hasLiteral(row, "sum", "3.0", XSD.DECIMAL)));
 		}
 	}
 
@@ -332,10 +334,12 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			List<BindingSet> rows = QueryResults.asList(result);
 			assertEquals(2, rows.size());
-			assertTrue(rows.stream().anyMatch(row -> hasLiteral(row, "x", "1", XSD.INTEGER)
-					&& hasLiteral(row, "sum", "3", XSD.INTEGER)));
-			assertTrue(rows.stream().anyMatch(row -> hasLiteral(row, "x", "1.0", XSD.DECIMAL)
-					&& hasLiteral(row, "sum", "3.0", XSD.DECIMAL)));
+			assertTrue(rows.stream()
+					.anyMatch(row -> hasLiteral(row, "x", "1", XSD.INTEGER)
+							&& hasLiteral(row, "sum", "3", XSD.INTEGER)));
+			assertTrue(rows.stream()
+					.anyMatch(row -> hasLiteral(row, "x", "1.0", XSD.DECIMAL)
+							&& hasLiteral(row, "sum", "3.0", XSD.DECIMAL)));
 		}
 	}
 
