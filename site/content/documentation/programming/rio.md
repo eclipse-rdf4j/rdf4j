@@ -310,11 +310,12 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
-XML parser security features are handled centrally by `XMLReaderFactory`. Built-in RDF4J XML parsers and XML DOM
-helpers always create SAX readers through this factory. The parser config settings
-`XMLParserSettings.SECURE_PROCESSING`, `DISALLOW_DOCTYPE_DECL`, `LOAD_EXTERNAL_DTD`,
-`EXTERNAL_GENERAL_ENTITIES`, `EXTERNAL_PARAMETER_ENTITIES`, and `CUSTOM_XML_READER` no longer change the XML reader
-used by RDF4J's built-in XML parsers. To change these security features, use JVM system properties.
+XML readers created by RDF4J use secure defaults from `XMLReaderFactory`: secure processing is enabled, DOCTYPE
+declarations are rejected, external general and parameter entities are disabled, and external DTD loading is disabled.
+Built-in XML parsers still support their XML parser config settings, including `CUSTOM_XML_READER`, so applications can
+override these defaults per parser when they explicitly need legacy XML behavior. The default reader values can also be
+changed globally with the `org.eclipse.rdf4j.common.xml.*` JVM system properties documented in the
+`XMLReaderFactory` Javadoc.
 
 ### Programmatic configuration
 

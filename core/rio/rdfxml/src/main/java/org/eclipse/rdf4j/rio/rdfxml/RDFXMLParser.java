@@ -267,6 +267,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		results.addAll(getOptionalXmlPropertySettings());
 		results.addAll(getOptionalXmlFeatureSettings());
 
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
 		results.add(XMLParserSettings.FAIL_ON_DUPLICATE_RDF_ID);
 		results.add(XMLParserSettings.FAIL_ON_INVALID_NCNAME);
 		results.add(XMLParserSettings.FAIL_ON_INVALID_QNAME);

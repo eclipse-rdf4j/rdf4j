@@ -14,6 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.QueryResultParser;
@@ -182,6 +187,22 @@ public class SPARQLXMLParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertTrue(!QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL).getSupportedSettings().isEmpty());
+		QueryResultParser parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL);
+		assertTrue(!parser.getSupportedSettings().isEmpty());
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.CUSTOM_XML_READER));
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.DISALLOW_DOCTYPE_DECL));
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.LOAD_EXTERNAL_DTD));
+	}
+
+	@Test
+	public void testBooleanParserConfigCanAllowDoctypeDecl() throws Exception {
+		BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(BooleanQueryResultFormat.SPARQL);
+		parser.set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		String document = "<?xml version=\"1.0\"?>\n"
+				+ "<!DOCTYPE sparql><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><boolean>true</boolean></sparql>";
+
+		boolean result = parser.parse(new ByteArrayInputStream(document.getBytes(StandardCharsets.UTF_8)));
+
+		assertTrue(result);
 	}
 }

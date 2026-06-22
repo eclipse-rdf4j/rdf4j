@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayInputStream;
@@ -220,7 +221,16 @@ public class RDFXMLParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertEquals(20, Rio.createParser(RDFFormat.RDFXML).getSupportedSettings().size());
+		assertTrue(Rio.createParser(RDFFormat.RDFXML)
+				.getSupportedSettings()
+				.contains(XMLParserSettings.CUSTOM_XML_READER));
+		assertTrue(
+				Rio.createParser(RDFFormat.RDFXML)
+						.getSupportedSettings()
+						.contains(XMLParserSettings.DISALLOW_DOCTYPE_DECL));
+		assertTrue(Rio.createParser(RDFFormat.RDFXML)
+				.getSupportedSettings()
+				.contains(XMLParserSettings.LOAD_EXTERNAL_DTD));
 	}
 
 	@Test

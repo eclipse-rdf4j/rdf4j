@@ -14,15 +14,16 @@ package org.eclipse.rdf4j.rio.helpers;
 import javax.xml.XMLConstants;
 
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
+import org.eclipse.rdf4j.rio.RioConfig;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.xml.sax.XMLReader;
 
 /**
  * ParserSettings for the XML parser features.
  * <p>
- * RDF4J's XML parsers create readers through {@link XMLReaderFactory}. XML security features are controlled centrally
- * by that factory and can only be changed with the {@code org.eclipse.rdf4j.common.xml.*} system properties documented
- * there. Parser configuration no longer changes those XMLReader security features.
+ * XML readers created by RDF4J are initialized with secure defaults by {@link XMLReaderFactory}. Callers can override
+ * these settings per parser through {@link RioConfig} or globally with the {@code org.eclipse.rdf4j.common.xml.*}
+ * system properties documented there.
  *
  * @author Michael Grove
  * @author Peter Ansell
@@ -36,8 +37,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * RDF4J XML parsers ignore this parser setting. Use {@link XMLReaderFactory#SECURE_PROCESSING_PROPERTY} to
-	 * configure readers created by RDF4J.
+	 * The default reader value can be overridden with {@link XMLReaderFactory#SECURE_PROCESSING_PROPERTY}.
 	 *
 	 * @see <a href= "http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
 	 *      XMLConstants.FEATURE_SECURE_PROCESSING</a>
@@ -50,8 +50,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * <p>
-	 * RDF4J XML parsers ignore this parser setting. Use {@link XMLReaderFactory#DISALLOW_DOCTYPE_DECL_PROPERTY} to
-	 * configure readers created by RDF4J.
+	 * The default reader value can be overridden with {@link XMLReaderFactory#DISALLOW_DOCTYPE_DECL_PROPERTY}.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
@@ -65,8 +64,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * RDF4J XML parsers ignore this parser setting. Use {@link XMLReaderFactory#LOAD_EXTERNAL_DTD_PROPERTY} to
-	 * configure readers created by RDF4J.
+	 * The default reader value can be overridden with {@link XMLReaderFactory#LOAD_EXTERNAL_DTD_PROPERTY}.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 */
@@ -78,8 +76,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * RDF4J XML parsers ignore this parser setting. Use {@link XMLReaderFactory#EXTERNAL_GENERAL_ENTITIES_PROPERTY} to
-	 * configure readers created by RDF4J.
+	 * The default reader value can be overridden with {@link XMLReaderFactory#EXTERNAL_GENERAL_ENTITIES_PROPERTY}.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
@@ -93,8 +90,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 * <p>
-	 * RDF4J XML parsers ignore this parser setting. Use {@link XMLReaderFactory#EXTERNAL_PARAMETER_ENTITIES_PROPERTY}
-	 * to configure readers created by RDF4J.
+	 * The default reader value can be overridden with {@link XMLReaderFactory#EXTERNAL_PARAMETER_ENTITIES_PROPERTY}.
 	 *
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE Prevention
@@ -106,9 +102,10 @@ public final class XMLParserSettings {
 	/**
 	 * Parser setting to customise the XMLReader that is used by an XML based Rio parser.
 	 * <p>
-	 * RDF4J XML parsers no longer honor this setting. Readers are always created through {@link XMLReaderFactory}.
+	 * IMPORTANT: The XMLReader must not be shared across different readers, so this setting must be reset for each
+	 * parse operation.
 	 * <p>
-	 * Defaults to null. This setting is retained for compatibility with custom parser implementations.
+	 * Defaults to null. This setting is only useful if {@link RioConfig#isSet(RioSetting)} returns true.
 	 */
 	public static final RioSetting<XMLReader> CUSTOM_XML_READER = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.xmlreader", "Custom XML Reader", null);

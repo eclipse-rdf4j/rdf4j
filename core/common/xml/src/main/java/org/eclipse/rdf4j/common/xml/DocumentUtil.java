@@ -17,20 +17,14 @@ import java.io.InputStream;
 import java.net.URL;
 
 import javax.xml.XMLConstants;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.dom.DOMResult;
-import javax.xml.transform.sax.SAXTransformerFactory;
-import javax.xml.transform.sax.TransformerHandler;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.validation.Schema;
-import javax.xml.validation.ValidatorHandler;
 
 import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.xml.sax.ContentHandler;
-import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
-import org.xml.sax.XMLReader;
 
 /**
  * Utilities to make working with DOM documents easier.
@@ -38,6 +32,14 @@ import org.xml.sax.XMLReader;
  * @author Herko ter Horst
  */
 public class DocumentUtil {
+
+	private static final String DISALLOW_DOCTYPE_DECL = "http://apache.org/xml/features/disallow-doctype-decl";
+
+	private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
+
+	private static final String EXTERNAL_GENERAL_ENTITIES = "http://xml.org/sax/features/external-general-entities";
+
+	private static final String EXTERNAL_PARAMETER_ENTITIES = "http://xml.org/sax/features/external-parameter-entities";
 
 	/**
 	 * Create a Document representing the XML file at the specified location.
@@ -58,16 +60,16 @@ public class DocumentUtil {
 	 * @throws IOException when there was a problem parsing the document.
 	 */
 	public static Document getDocument(InputStream inputStream) throws IOException {
-		return getDocument(inputStream, null, null);
+		return getDocument(inputStream, false, false, null);
 	}
 
 	/**
 	 * Create a Document representing the XML file at the specified location.
 	 *
 	 * @param location       the location of an XML document
-	 * @param validating     retained for compatibility; validation is controlled by the supplied {@link Schema}
-	 * @param namespaceAware retained for compatibility; XML readers created by {@link XMLReaderFactory} are namespace
-	 *                       aware
+	 * @param validating     whether the XML parser used in the construction of the document should validate the XML
+	 * @param namespaceAware whether the XML parser used in the construction of the document should be aware of
+	 *                       namespaces
 	 * @return a Document representing the XML file
 	 * @throws IOException when there was a problem retrieving or parsing the document.
 	 */
@@ -90,58 +92,61 @@ public class DocumentUtil {
 	private static Document getDocument(URL location, boolean validating, boolean namespaceAware, Schema schema)
 			throws IOException {
 		try (InputStream in = new BufferedInputStream(location.openConnection().getInputStream())) {
-			return getDocument(in, location.toExternalForm(), schema);
+			return getDocument(in, validating, namespaceAware, schema);
 		}
 	}
 
-	private static Document getDocument(InputStream inputStream, String systemId, Schema schema) throws IOException {
+	private static Document getDocument(InputStream inputStream, boolean validating, boolean namespaceAware,
+			Schema schema)
+			throws IOException {
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		factory.setValidating(validating);
+		factory.setNamespaceAware(namespaceAware);
+		factory.setSchema(schema);
+
 		try {
-			DOMResult domResult = new DOMResult();
-			ContentHandler contentHandler = createDomContentHandler(domResult);
-			if (schema != null) {
-				ValidatorHandler validatorHandler = schema.newValidatorHandler();
-				validatorHandler.setContentHandler(contentHandler);
-				contentHandler = validatorHandler;
-			}
-
-			XMLReader reader = XMLReaderFactory.createXMLReader();
-			reader.setContentHandler(contentHandler);
-
-			InputSource inputSource = new InputSource(inputStream);
-			inputSource.setSystemId(systemId);
-			reader.parse(inputSource);
-
-			Node node = domResult.getNode();
-			if (node instanceof Document) {
-				return (Document) node;
-			}
-
-			throw new IOException("XML parser did not produce a DOM Document");
+			configureSecureDocumentBuilderFactory(factory);
+			DocumentBuilder builder = factory.newDocumentBuilder();
+			return builder.parse(inputStream);
 		} catch (SAXParseException e) {
 			String message = "Parsing error" + ", line " + e.getLineNumber() + ", uri " + e.getSystemId() + ", "
 					+ e.getMessage();
 			throw toIOE(message, e);
-		} catch (SAXException | TransformerConfigurationException e) {
+		} catch (SAXException | ParserConfigurationException e) {
 			throw toIOE(e);
 		}
 	}
 
-	private static ContentHandler createDomContentHandler(DOMResult domResult)
-			throws TransformerConfigurationException {
-		SAXTransformerFactory transformerFactory = (SAXTransformerFactory) SAXTransformerFactory.newInstance();
-		transformerFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-		setTransformerAttribute(transformerFactory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
-		setTransformerAttribute(transformerFactory, XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
-		TransformerHandler transformerHandler = transformerFactory.newTransformerHandler();
-		transformerHandler.setResult(domResult);
-		return transformerHandler;
+	private static void configureSecureDocumentBuilderFactory(DocumentBuilderFactory factory)
+			throws ParserConfigurationException {
+		setFeature(factory, XMLConstants.FEATURE_SECURE_PROCESSING,
+				getBooleanProperty(XMLReaderFactory.SECURE_PROCESSING_PROPERTY, true));
+		setFeature(factory, DISALLOW_DOCTYPE_DECL,
+				getBooleanProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, true));
+		setFeature(factory, LOAD_EXTERNAL_DTD, getBooleanProperty(XMLReaderFactory.LOAD_EXTERNAL_DTD_PROPERTY, false));
+		setFeature(factory, EXTERNAL_GENERAL_ENTITIES,
+				getBooleanProperty(XMLReaderFactory.EXTERNAL_GENERAL_ENTITIES_PROPERTY, false));
+		setFeature(factory, EXTERNAL_PARAMETER_ENTITIES,
+				getBooleanProperty(XMLReaderFactory.EXTERNAL_PARAMETER_ENTITIES_PROPERTY, false));
+		setAttribute(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
+		setAttribute(factory, XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 	}
 
-	private static void setTransformerAttribute(SAXTransformerFactory transformerFactory, String name, String value) {
+	private static boolean getBooleanProperty(String property, boolean defaultValue) {
+		String value = System.getProperty(property);
+		return value == null ? defaultValue : Boolean.parseBoolean(value);
+	}
+
+	private static void setFeature(DocumentBuilderFactory factory, String feature, boolean value)
+			throws ParserConfigurationException {
+		factory.setFeature(feature, value);
+	}
+
+	private static void setAttribute(DocumentBuilderFactory factory, String name, String value) {
 		try {
-			transformerFactory.setAttribute(name, value);
+			factory.setAttribute(name, value);
 		} catch (IllegalArgumentException ignored) {
-			// Optional JAXP 1.5 hardening attribute; older transformer implementations may not support it.
+			// Optional JAXP 1.5 hardening attribute; older implementations may not support it.
 		}
 	}
 

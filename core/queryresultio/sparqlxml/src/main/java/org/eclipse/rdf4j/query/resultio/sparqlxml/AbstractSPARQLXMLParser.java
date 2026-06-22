@@ -86,15 +86,18 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				try {
 					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();
 
-					XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+					XMLReader xmlReader;
+
+					if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
+						xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
+					} else {
+						xmlReader = XMLReaderFactory.createXMLReader();
+					}
 					xmlReader.setErrorHandler(this);
 
 					// Set all compulsory feature settings, using the defaults if they are
 					// not explicitly set
 					for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
-						if (isFactoryControlledXmlFeature(aSetting)) {
-							continue;
-						}
 						try {
 							xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
 						} catch (SAXNotRecognizedException e) {
@@ -119,9 +122,6 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 					// Check for any optional feature settings that are explicitly set in
 					// the parser config
 					for (RioSetting<Boolean> aSetting : getOptionalXmlFeatureSettings()) {
-						if (isFactoryControlledXmlFeature(aSetting)) {
-							continue;
-						}
 						try {
 							if (getParserConfig().isSet(aSetting)) {
 								xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
@@ -251,7 +251,12 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
-		return Collections.<RioSetting<Boolean>>emptyList();
+		Set<RioSetting<Boolean>> results = new HashSet<>();
+		results.add(XMLParserSettings.SECURE_PROCESSING);
+		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);
+		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);
+		results.add(XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES);
+		return results;
 	}
 
 	/**
@@ -277,7 +282,9 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
-		return Collections.<RioSetting<Boolean>>emptyList();
+		Set<RioSetting<Boolean>> results = new HashSet<>();
+		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
+		return results;
 	}
 
 	@Override
@@ -290,17 +297,10 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 		results.addAll(getOptionalXmlPropertySettings());
 		results.addAll(getOptionalXmlFeatureSettings());
 
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
 		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
 
 		return results;
-	}
-
-	private boolean isFactoryControlledXmlFeature(RioSetting<Boolean> setting) {
-		return setting == XMLParserSettings.SECURE_PROCESSING
-				|| setting == XMLParserSettings.DISALLOW_DOCTYPE_DECL
-				|| setting == XMLParserSettings.EXTERNAL_GENERAL_ENTITIES
-				|| setting == XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES
-				|| setting == XMLParserSettings.LOAD_EXTERNAL_DTD;
 	}
 
 	@Override
