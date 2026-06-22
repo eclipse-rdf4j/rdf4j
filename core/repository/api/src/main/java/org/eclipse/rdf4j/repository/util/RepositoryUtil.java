@@ -147,7 +147,7 @@ public class RepositoryUtil {
 			return result;
 		}
 
-		if (Models.isSubset(copy1, copy2)) {
+		if (canUseModelsSubsetFastPath(copy1) && Models.isSubset(copy1, copy2)) {
 			return result;
 		}
 
@@ -160,6 +160,39 @@ public class RepositoryUtil {
 		}
 
 		return result;
+	}
+
+	private static boolean canUseModelsSubsetFastPath(List<Statement> statements) {
+		for (Statement st : statements) {
+			if (blankNodeReferenceCount(st) > 1) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private static int blankNodeReferenceCount(Statement st) {
+		return blankNodeReferenceCount(st.getSubject()) + blankNodeReferenceCount(st.getObject())
+				+ blankNodeReferenceCount(st.getContext());
+	}
+
+	private static int blankNodeReferenceCount(Value value) {
+		if (value == null) {
+			return 0;
+		}
+
+		if (value instanceof BNode) {
+			return 1;
+		}
+
+		if (value instanceof TripleTerm) {
+			TripleTerm triple = (TripleTerm) value;
+
+			return blankNodeReferenceCount(triple.getSubject()) + blankNodeReferenceCount(triple.getObject());
+		}
+
+		return 0;
 	}
 
 	private static boolean[] findMaximumMappedSubset(List<Statement> source, List<Statement> target) {

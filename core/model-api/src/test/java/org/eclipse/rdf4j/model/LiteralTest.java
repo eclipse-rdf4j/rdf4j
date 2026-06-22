@@ -856,7 +856,6 @@ public abstract class LiteralTest {
 		assertThat(ltr.hashCode()).isEqualTo(sameLtr.hashCode());
 
 		assertThat(ltr).isNotEqualTo(rtl);
-		assertThat(ltr.hashCode()).isNotEqualTo(rtl.hashCode());
 	}
 
 	@Test

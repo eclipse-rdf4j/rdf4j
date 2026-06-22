@@ -29,10 +29,19 @@ import org.junit.jupiter.api.Test;
 class RepositoryUtilTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final IRI S = VF.createIRI("urn:s");
+	private static final IRI O = VF.createIRI("urn:o");
 	private static final IRI P = VF.createIRI("urn:p");
 	private static final IRI Q = VF.createIRI("urn:q");
 	private static final Literal ONE = VF.createLiteral("1");
 	private static final Literal TWO = VF.createLiteral("2");
+
+	@Test
+	void differenceReturnsMissingGroundStatements() {
+		Statement statement = VF.createStatement(S, P, ONE);
+
+		assertThat(difference(List.of(statement), List.of())).containsExactly(statement);
+	}
 
 	@Test
 	void differenceReturnsEmptyForIsomorphicBlankNodeGraphs() {
@@ -46,7 +55,7 @@ class RepositoryUtilTest {
 				VF.createStatement(right, P, ONE),
 				VF.createStatement(right, Q, TWO));
 
-		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+		assertThat(difference(model1, model2)).isEmpty();
 	}
 
 	@Test
@@ -62,38 +71,148 @@ class RepositoryUtilTest {
 				VF.createStatement(split1, P, ONE),
 				VF.createStatement(split2, Q, TWO));
 
-		Collection<Statement> difference = new ArrayList<>(RepositoryUtil.difference(model1, model2));
+		Collection<Statement> difference = difference(model1, model2);
 
 		assertThat(difference).hasSize(1);
 		assertThat(model1).containsAll(difference);
 	}
 
 	@Test
-	void differenceMapsBlankNodesInsideTripleTerms() {
-		IRI subject = VF.createIRI("urn:s");
-		IRI object = VF.createIRI("urn:o");
+	void differenceReturnsOnlyAbsentStatementsFromPartialBlankNodeMatch() {
 		BNode left = VF.createBNode("left");
 		BNode right = VF.createBNode("right");
-		TripleTerm leftTriple = VF.createTripleTerm(left, P, object);
-		TripleTerm rightTriple = VF.createTripleTerm(right, P, object);
+		Statement matched = VF.createStatement(left, P, ONE);
+		Statement absent = VF.createStatement(left, Q, TWO);
 
-		List<Statement> model1 = List.of(VF.createStatement(subject, Q, leftTriple));
-		List<Statement> model2 = List.of(VF.createStatement(subject, Q, rightTriple));
+		List<Statement> model1 = List.of(matched, absent);
+		List<Statement> model2 = List.of(VF.createStatement(right, P, ONE));
 
-		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+		assertThat(difference(model1, model2)).containsExactly(absent);
+	}
+
+	@Test
+	void differenceDoesNotMapBlankNodesToGroundValues() {
+		BNode left = VF.createBNode("left");
+		Statement statement = VF.createStatement(left, P, ONE);
+
+		List<Statement> model2 = List.of(VF.createStatement(S, P, ONE));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
+	}
+
+	@Test
+	void differenceRequiresForwardBlankNodeMappingConsistency() {
+		BNode left = VF.createBNode("left");
+		BNode rightSubject = VF.createBNode("right-subject");
+		BNode rightObject = VF.createBNode("right-object");
+		Statement statement = VF.createStatement(left, P, left);
+
+		List<Statement> model2 = List.of(VF.createStatement(rightSubject, P, rightObject));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
+	}
+
+	@Test
+	void differenceRequiresReverseBlankNodeMappingConsistency() {
+		BNode leftSubject = VF.createBNode("left-subject");
+		BNode leftObject = VF.createBNode("left-object");
+		BNode right = VF.createBNode("right");
+		Statement statement = VF.createStatement(leftSubject, P, leftObject);
+
+		List<Statement> model2 = List.of(VF.createStatement(right, P, right));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
+	}
+
+	@Test
+	void differenceMapsBlankNodesInsideTripleTerms() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		TripleTerm leftTriple = VF.createTripleTerm(left, P, O);
+		TripleTerm rightTriple = VF.createTripleTerm(right, P, O);
+
+		List<Statement> model1 = List.of(VF.createStatement(S, Q, leftTriple));
+		List<Statement> model2 = List.of(VF.createStatement(S, Q, rightTriple));
+
+		assertThat(difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceMapsBlankNodesInsideNestedTripleTerms() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		TripleTerm leftInnerTriple = VF.createTripleTerm(left, P, O);
+		TripleTerm rightInnerTriple = VF.createTripleTerm(right, P, O);
+		TripleTerm leftOuterTriple = VF.createTripleTerm(S, Q, leftInnerTriple);
+		TripleTerm rightOuterTriple = VF.createTripleTerm(S, Q, rightInnerTriple);
+
+		List<Statement> model1 = List.of(VF.createStatement(S, P, leftOuterTriple));
+		List<Statement> model2 = List.of(VF.createStatement(S, P, rightOuterTriple));
+
+		assertThat(difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceRequiresTripleTermPredicatesToMatch() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		TripleTerm leftTriple = VF.createTripleTerm(left, P, O);
+		TripleTerm rightTriple = VF.createTripleTerm(right, Q, O);
+		Statement statement = VF.createStatement(S, P, leftTriple);
+
+		List<Statement> model2 = List.of(VF.createStatement(S, P, rightTriple));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
 	}
 
 	@Test
 	void differenceMapsBlankNodeContexts() {
-		IRI subject = VF.createIRI("urn:s");
-		IRI object = VF.createIRI("urn:o");
 		BNode leftContext = VF.createBNode("left-context");
 		BNode rightContext = VF.createBNode("right-context");
 
-		List<Statement> model1 = List.of(VF.createStatement(subject, P, object, leftContext));
-		List<Statement> model2 = List.of(VF.createStatement(subject, P, object, rightContext));
+		List<Statement> model1 = List.of(VF.createStatement(S, P, O, leftContext));
+		List<Statement> model2 = List.of(VF.createStatement(S, P, O, rightContext));
 
-		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+		assertThat(difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceRequiresNullAndNonNullContextsToMatch() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		BNode rightContext = VF.createBNode("right-context");
+		Statement statement = VF.createStatement(left, P, ONE);
+
+		List<Statement> model2 = List.of(VF.createStatement(right, P, ONE, rightContext));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
+	}
+
+	@Test
+	void differenceMapsSharedBlankNodeAcrossTripleTermAndContext() {
+		BNode left = VF.createBNode("left");
+		BNode right = VF.createBNode("right");
+		TripleTerm leftTriple = VF.createTripleTerm(left, P, O);
+		TripleTerm rightTriple = VF.createTripleTerm(right, P, O);
+
+		List<Statement> model1 = List.of(VF.createStatement(S, Q, leftTriple, left));
+		List<Statement> model2 = List.of(VF.createStatement(S, Q, rightTriple, right));
+
+		assertThat(difference(model1, model2)).isEmpty();
+	}
+
+	@Test
+	void differenceRejectsSplitBlankNodeAcrossTripleTermAndContext() {
+		BNode left = VF.createBNode("left");
+		BNode rightInTriple = VF.createBNode("right-in-triple");
+		BNode rightContext = VF.createBNode("right-context");
+		TripleTerm leftTriple = VF.createTripleTerm(left, P, O);
+		TripleTerm rightTriple = VF.createTripleTerm(rightInTriple, P, O);
+		Statement statement = VF.createStatement(S, Q, leftTriple, left);
+
+		List<Statement> model2 = List.of(VF.createStatement(S, Q, rightTriple, rightContext));
+
+		assertThat(difference(List.of(statement), model2)).containsExactly(statement);
 	}
 
 	@Test
@@ -107,6 +226,11 @@ class RepositoryUtilTest {
 				VF.createStatement(right, P, ONE),
 				VF.createStatement(right, Q, extra));
 
-		assertThat(RepositoryUtil.difference(model1, model2)).isEmpty();
+		assertThat(difference(model1, model2)).isEmpty();
+	}
+
+	private static List<Statement> difference(Collection<? extends Statement> model1,
+			Collection<? extends Statement> model2) {
+		return new ArrayList<>(RepositoryUtil.difference(model1, model2));
 	}
 }
