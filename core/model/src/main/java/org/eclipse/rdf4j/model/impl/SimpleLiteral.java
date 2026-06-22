@@ -272,11 +272,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	// overrides Object.hashCode(), implements Literal.hashCode()
 	@Override
 	public int hashCode() {
-		int result = label.hashCode();
-		if (getBaseDirection() != BaseDirection.NONE) {
-			result = 31 * result + getBaseDirection().hashCode();
-		}
-		return result;
+		return label.hashCode();
 	}
 
 	/**

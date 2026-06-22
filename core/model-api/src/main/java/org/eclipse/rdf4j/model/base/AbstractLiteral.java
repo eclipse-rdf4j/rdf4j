@@ -181,11 +181,7 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public int hashCode() {
-		int result = getLabel().hashCode();
-		if (getBaseDirection() != BaseDirection.NONE) {
-			result = 31 * result + getBaseDirection().hashCode();
-		}
-		return result;
+		return getLabel().hashCode();
 	}
 
 	@Override
