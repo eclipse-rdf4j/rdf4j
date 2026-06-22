@@ -237,7 +237,7 @@ class ValueStore extends AbstractValueFactory {
 	private Object[] previousNamespaceEntry;
 
 	private final long valueEvictionInterval;
-	private final boolean valueHashCacheEnabled;
+	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
@@ -872,6 +872,7 @@ class ValueStore extends AbstractValueFactory {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 			return true;
 		}
 		// Try to get from cache
@@ -1918,6 +1919,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		if (getStoredHash(id) == 0) {
 			storeHash(id, value.hashCode());
 		}
@@ -2357,7 +2361,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		if (Literals.isLanguageLiteral(l)) {
-			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get());
+			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get(), l.getBaseDirection());
 		} else if (l.getCoreDatatype() != CoreDatatype.NONE) {
 			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype());
 		} else {

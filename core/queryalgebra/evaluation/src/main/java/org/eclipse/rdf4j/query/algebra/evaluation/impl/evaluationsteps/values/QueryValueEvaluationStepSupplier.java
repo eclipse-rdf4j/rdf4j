@@ -283,20 +283,21 @@ public class QueryValueEvaluationStepSupplier {
 		return BooleanLiteral.FALSE;
 	}
 
-	public static QueryValueEvaluationStep bnode(QueryValueEvaluationStep nodeVes, ValueFactory vf) {
+	public static QueryValueEvaluationStep bnode(QueryValueEvaluationStep nodeVes, ValueFactory vf,
+			QueryEvaluationContext context) {
 		try {
 			if (nodeVes.isConstant()) {
 				Value nodeId = nodeVes.evaluate(EmptyBindingSet.getInstance());
 				if (nodeId instanceof Literal) {
 					String nodeLabel = nodeId.stringValue();
 					return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-							bs -> vf.createBNode(nodeLabel + bs.toString().hashCode()));
+							bs -> context.getOrCreateBNode(nodeLabel, bs, vf));
 				} else {
 					return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");
 				}
 			} else {
 				return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-						bs -> vf.createBNode(nodeVes.evaluate(bs).stringValue() + bs.toString().hashCode()));
+						bs -> context.getOrCreateBNode(nodeVes.evaluate(bs).stringValue(), bs, vf));
 			}
 		} catch (ValueExprEvaluationException e) {
 			return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");

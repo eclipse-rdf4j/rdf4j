@@ -327,7 +327,8 @@ public interface Literal extends Value {
 	/**
 	 * Computes the hash code of this literal.
 	 *
-	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
+	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}, with
+	 *         {@link #getBaseDirection()} additionally considered for directed language-tagged literals
 	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
 	 *           considered in the computation (see issue
 	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)

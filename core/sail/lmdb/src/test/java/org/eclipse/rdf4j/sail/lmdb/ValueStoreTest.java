@@ -368,6 +368,35 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testDirectedLanguageLiteralRoundTripsAfterRestart() throws Exception {
+		Literal literal = SimpleValueFactory.getInstance()
+				.createLiteral("directed literal ".repeat(20), "en", Literal.BaseDirection.LTR);
+		long id = storeValueAndReopen(literal, new LmdbStoreConfig());
+
+		Literal resolved = (Literal) valueStore.getValue(id);
+
+		assertEquals(literal, resolved);
+		assertEquals(Literal.BaseDirection.LTR, resolved.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, resolved.getDatatype());
+	}
+
+	@Test
+	public void testDirectedLanguageLiteralLazyResolvePreservesBaseDirection() throws Exception {
+		Literal literal = SimpleValueFactory.getInstance()
+				.createLiteral("directed cached literal ".repeat(20), "en", Literal.BaseDirection.RTL);
+		long id = storeValueAndReopen(literal, new LmdbStoreConfig());
+
+		Literal lazy = (Literal) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazy));
+
+		Literal cached = (Literal) valueStore.getValue(id);
+		assertEquals(Literal.BaseDirection.RTL, cached.getBaseDirection());
+
+		assertEquals(Literal.BaseDirection.RTL, lazy.getBaseDirection());
+		assertEquals(literal, lazy);
+	}
+
+	@Test
 	public void testLazyBNodeHashCodeDoesNotInitializeAfterRestart() throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(hashCacheEnabledConfig());

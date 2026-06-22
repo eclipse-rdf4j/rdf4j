@@ -1085,7 +1085,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		ValueExpr nodeIdExpr = node.getNodeIdExpr();
 		if (nodeIdExpr != null) {
 			QueryValueEvaluationStep nodeVes = precompile(nodeIdExpr, context);
-			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf);
+			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf, context);
 		} else {
 			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> vf.createBNode());
 		}
