@@ -205,4 +205,21 @@ public class SPARQLXMLParserCustomTest {
 
 		assertTrue(result);
 	}
+
+	@Test
+	public void testTupleParserConfigCanAllowDoctypeDecl() throws Exception {
+		QueryResultCollector handler = new QueryResultCollector();
+		QueryResultParser parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
+				.setQueryResultHandler(handler);
+		parser.set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		String document = "<?xml version=\"1.0\"?>\n"
+				+ "<!DOCTYPE sparql><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+				+ "<head><variable name=\"x\"/></head>"
+				+ "<results><result><binding name=\"x\"><literal>value</literal></binding></result></results>"
+				+ "</sparql>";
+
+		parser.parseQueryResult(new ByteArrayInputStream(document.getBytes(StandardCharsets.UTF_8)));
+
+		assertEquals("value", handler.getBindingSets().get(0).getValue("x").stringValue());
+	}
 }

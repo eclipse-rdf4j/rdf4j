@@ -86,66 +86,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				try {
 					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();
 
-					XMLReader xmlReader;
-
-					if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
-						xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-					} else {
-						xmlReader = XMLReaderFactory.createXMLReader();
-					}
-					xmlReader.setErrorHandler(this);
-
-					// Set all compulsory feature settings, using the defaults if they are
-					// not explicitly set
-					for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
-						try {
-							xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-						} catch (SAXNotRecognizedException e) {
-							reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-						} catch (SAXNotSupportedException e) {
-							reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
-						}
-					}
-
-					// Set all compulsory property settings, using the defaults if they are
-					// not explicitly set
-					for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
-						try {
-							xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-						} catch (SAXNotRecognizedException e) {
-							reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-						} catch (SAXNotSupportedException e) {
-							reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
-						}
-					}
-
-					// Check for any optional feature settings that are explicitly set in
-					// the parser config
-					for (RioSetting<Boolean> aSetting : getOptionalXmlFeatureSettings()) {
-						try {
-							if (getParserConfig().isSet(aSetting)) {
-								xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-							}
-						} catch (SAXNotRecognizedException e) {
-							reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-						} catch (SAXNotSupportedException e) {
-							reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
-						}
-					}
-
-					// Check for any optional property settings that are explicitly set in
-					// the parser config
-					for (RioSetting<?> aSetting : getOptionalXmlPropertySettings()) {
-						try {
-							if (getParserConfig().isSet(aSetting)) {
-								xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-							}
-						} catch (SAXNotRecognizedException e) {
-							reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-						} catch (SAXNotSupportedException e) {
-							reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
-						}
-					}
+					XMLReader xmlReader = getXMLReader();
 
 					internalSAXParser = new SimpleSAXParser(xmlReader);
 					internalSAXParser.setPreserveWhitespace(true);
@@ -181,8 +122,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 			if (attemptParseTuple) {
 				try {
-					XMLReader xmlReader = XMLReaderFactory.createXMLReader();
-					xmlReader.setErrorHandler(this);
+					XMLReader xmlReader = getXMLReader();
 					internalSAXParser = new SimpleSAXParser(xmlReader);
 					internalSAXParser.setPreserveWhitespace(true);
 
@@ -219,6 +159,71 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 		}
 
 		return result;
+	}
+
+	private XMLReader getXMLReader() throws SAXException {
+		XMLReader xmlReader;
+
+		if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
+			xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
+		} else {
+			xmlReader = XMLReaderFactory.createXMLReader();
+		}
+		xmlReader.setErrorHandler(this);
+
+		// Set all compulsory feature settings, using the defaults if they are
+		// not explicitly set
+		for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
+			try {
+				xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
+			} catch (SAXNotRecognizedException e) {
+				reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+			} catch (SAXNotSupportedException e) {
+				reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+			}
+		}
+
+		// Set all compulsory property settings, using the defaults if they are
+		// not explicitly set
+		for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
+			try {
+				xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
+			} catch (SAXNotRecognizedException e) {
+				reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+			} catch (SAXNotSupportedException e) {
+				reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
+			}
+		}
+
+		// Check for any optional feature settings that are explicitly set in
+		// the parser config
+		for (RioSetting<Boolean> aSetting : getOptionalXmlFeatureSettings()) {
+			try {
+				if (getParserConfig().isSet(aSetting)) {
+					xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
+				}
+			} catch (SAXNotRecognizedException e) {
+				reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+			} catch (SAXNotSupportedException e) {
+				reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+			}
+		}
+
+		// Check for any optional property settings that are explicitly set in
+		// the parser config
+		for (RioSetting<?> aSetting : getOptionalXmlPropertySettings()) {
+			try {
+				if (getParserConfig().isSet(aSetting)) {
+					xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
+				}
+			} catch (SAXNotRecognizedException e) {
+				reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+			} catch (SAXNotSupportedException e) {
+				reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
+			}
+		}
+
+		return xmlReader;
 	}
 
 	protected void reportWarning(String msg) {
