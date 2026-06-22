@@ -237,7 +237,7 @@ class ValueStore extends AbstractValueFactory {
 	private Object[] previousNamespaceEntry;
 
 	private final long valueEvictionInterval;
-	private final boolean valueHashCacheEnabled;
+	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
@@ -1919,6 +1919,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		if (getStoredHash(id) == 0) {
 			storeHash(id, value.hashCode());
 		}
