@@ -310,6 +310,12 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
+XML parser security features are handled centrally by `XMLReaderFactory`. Built-in RDF4J XML parsers and XML DOM
+helpers always create SAX readers through this factory. The parser config settings
+`XMLParserSettings.SECURE_PROCESSING`, `DISALLOW_DOCTYPE_DECL`, `LOAD_EXTERNAL_DTD`,
+`EXTERNAL_GENERAL_ENTITIES`, `EXTERNAL_PARAMETER_ENTITIES`, and `CUSTOM_XML_READER` no longer change the XML reader
+used by RDF4J's built-in XML parsers. To change these security features, use JVM system properties.
+
 ### Programmatic configuration
 
 The Rio parser/writer configuration can be retrieved and modified via `RDFParser.getParserConfig()` / `RDFWriter.getWriterConfig()`. This returns a {{< javadoc "RioConfig" "rio/RioConfig.html" >}} object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice.
@@ -352,6 +358,18 @@ To allow reconfiguring a Rio parser/writer in a runtime deployment (for example 
 The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, `BasicParserSettings.VERIFY_LANGUAGE_TAGS` (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
+
+XML reader security is configured separately. The defaults harden RDF4J against XXE attacks by enabling secure
+processing, rejecting DOCTYPE declarations, and disabling external DTDs and external entities. These can only be changed
+with the following system properties, set before XML readers are created:
+
+| System property | Default |
+| --- | --- |
+| `org.eclipse.rdf4j.common.xml.secure-processing` | `true` |
+| `org.eclipse.rdf4j.common.xml.disallow-doctype-decl` | `true` |
+| `org.eclipse.rdf4j.common.xml.load-external-dtd` | `false` |
+| `org.eclipse.rdf4j.common.xml.external-general-entities` | `false` |
+| `org.eclipse.rdf4j.common.xml.external-parameter-entities` | `false` |
 
 ### Some notes on parsing RDF/XML and JAXP limits
 
