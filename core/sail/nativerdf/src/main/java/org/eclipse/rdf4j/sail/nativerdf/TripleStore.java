@@ -382,6 +382,15 @@ class TripleStore implements Closeable {
 			} catch (IOException e) {
 				logger.error("Failed to restore from uncompleted commit", e);
 				throw e;
+			} catch (RuntimeException e) {
+				logger.error("Commit recovery failed with runtime exception, attempting rollback", e);
+				try {
+					rollback();
+					logger.warn("Rolled back failed commit recovery; data from that transaction is lost");
+				} catch (IOException rollbackEx) {
+					e.addSuppressed(rollbackEx);
+					throw new IOException("Crash recovery failed: commit and rollback both failed", e);
+				}
 			}
 			break;
 		case ROLLING_BACK:
