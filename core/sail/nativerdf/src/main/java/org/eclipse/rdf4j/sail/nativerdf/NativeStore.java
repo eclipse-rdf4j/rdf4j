@@ -155,6 +155,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	private volatile int namespaceIDCacheSize = ValueStore.NAMESPACE_ID_CACHE_SIZE;
 
+	private volatile Boolean memoryMappedTxnStatusFileEnabled;
+
 	private SailStore store;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
@@ -285,6 +287,14 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
+	}
+
+	public Boolean getMemoryMappedTxnStatusFileEnabled() {
+		return memoryMappedTxnStatusFileEnabled;
+	}
+
+	public void setMemoryMappedTxnStatusFileEnabled(Boolean memoryMappedTxnStatusFileEnabled) {
+		this.memoryMappedTxnStatusFileEnabled = memoryMappedTxnStatusFileEnabled;
 	}
 
 	@Experimental
@@ -503,7 +513,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 					walDirectoryName,
 					walSyncBootstrapOnOpen,
 					walAutoRecoverOnOpen,
-					walEnabled);
+					walEnabled,
+					memoryMappedTxnStatusFileEnabled);
 			this.store = new SnapshotSailStore(mainStore, MemoryOverflowIntoNativeStore::new) {
 
 				@Override

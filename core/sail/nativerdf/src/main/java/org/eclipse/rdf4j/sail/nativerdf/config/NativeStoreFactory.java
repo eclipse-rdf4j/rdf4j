@@ -72,6 +72,9 @@ public class NativeStoreFactory implements SailFactory {
 			if (nativeConfig.getNamespaceIDCacheSize() >= 0) {
 				nativeStore.setNamespaceIDCacheSize(nativeConfig.getNamespaceIDCacheSize());
 			}
+			if (nativeConfig.getMemoryMappedTxnStatusFileEnabled() != null) {
+				nativeStore.setMemoryMappedTxnStatusFileEnabled(nativeConfig.getMemoryMappedTxnStatusFileEnabled());
+			}
 			if (nativeConfig.getIterationCacheSyncThreshold() > 0) {
 				nativeStore.setIterationCacheSyncThreshold(nativeConfig.getIterationCacheSyncThreshold());
 			}
