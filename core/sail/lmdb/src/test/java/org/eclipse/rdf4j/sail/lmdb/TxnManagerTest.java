@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -30,12 +31,71 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@Test
+	public void interruptedCloseCanBeRetriedAndFreesNativeTxn(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager.Txn txn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			txn = txnManager.createReadTxn();
+			TxnManager.CursorRegistration cursor = txn.registerCursor();
+			cursor.initialized(() -> Thread.currentThread().interrupt());
+
+			SailException exception = assertThrows(SailException.class, txn::close);
+			assertTrue(exception.getCause() instanceof InterruptedException);
+			assertTrue(Thread.currentThread().isInterrupted());
+			Thread.interrupted();
+
+			txn.unregisterCursor(cursor);
+			txn.close();
+
+			assertEquals(0, txn.get(), "interrupted close must remain retryable until native txn is freed");
+		} finally {
+			if (txn != null && txn.get() != 0) {
+				mdb_txn_abort(txn.get());
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void deferredCloseIsDrainedBeforeNextReadTxn(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager.Txn interruptedTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			interruptedTxn = txnManager.createReadTxn();
+			TxnManager.CursorRegistration cursor = interruptedTxn.registerCursor();
+			cursor.initialized(() -> Thread.currentThread().interrupt());
+
+			SailException exception = assertThrows(SailException.class, interruptedTxn::close);
+			assertTrue(exception.getCause() instanceof InterruptedException);
+			assertTrue(Thread.currentThread().isInterrupted());
+			Thread.interrupted();
+
+			interruptedTxn.unregisterCursor(cursor);
+			try (TxnManager.Txn ignored = txnManager.createReadTxn()) {
+				// creating the next txn must drain retryable abandoned closes first
+			}
+
+			assertEquals(0, interruptedTxn.get(), "deferred close must free the abandoned native txn");
+		} finally {
+			if (interruptedTxn != null && interruptedTxn.get() != 0) {
+				mdb_txn_abort(interruptedTxn.get());
+			}
+			mdb_env_close(env);
+		}
+	}
 
 	@Test
 	public void readersFullRetryDoesNotAbortTrackedInactiveTxn(@TempDir Path dataDir) throws Exception {

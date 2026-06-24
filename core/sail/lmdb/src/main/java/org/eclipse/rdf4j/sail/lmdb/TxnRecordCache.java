@@ -61,7 +61,7 @@ final class TxnRecordCache {
 	private static final byte CONTEXT_DELTA_FLAG = 0b10;
 
 	private final Path dbDir;
-	private final long env;
+	private long env;
 	private final int dbiExplicit;
 	private final int dbiInferred;
 	private long writeTxn;
@@ -98,7 +98,14 @@ final class TxnRecordCache {
 	}
 
 	public void close() throws IOException {
-		mdb_env_close(env);
+		if (writeTxn != 0) {
+			mdb_txn_abort(writeTxn);
+			writeTxn = 0;
+		}
+		if (env != 0) {
+			mdb_env_close(env);
+			env = 0;
+		}
 		FileUtils.deleteDirectory(dbDir.toFile());
 	}
 
@@ -202,7 +209,7 @@ final class TxnRecordCache {
 		REMOVE
 	}
 
-	protected class RecordCacheIterator {
+	protected class RecordCacheIterator implements AutoCloseable {
 		private final MDBVal keyData = MDBVal.malloc();
 		private final MDBVal valueData = MDBVal.malloc();
 		private long txn;
@@ -235,12 +242,13 @@ final class TxnRecordCache {
 			return null;
 		}
 
+		@Override
 		public void close() {
 			if (txn != 0) {
-				keyData.close();
-				valueData.close();
 				mdb_cursor_close(cursor);
 				mdb_txn_abort(txn);
+				keyData.close();
+				valueData.close();
 				txn = 0;
 			}
 		}

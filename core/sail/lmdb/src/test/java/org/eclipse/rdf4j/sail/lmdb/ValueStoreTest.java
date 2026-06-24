@@ -79,6 +79,37 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void readOnlyLookupFromAnotherThreadDoesNotUseUncommittedWriteTxn() throws Exception {
+		IRI iri = Values.iri("urn:test:uncommitted");
+
+		valueStore.startTransaction(true);
+		try {
+			long uncommittedId = valueStore.storeValue(iri);
+			assertNotEquals(LmdbValue.UNKNOWN_ID, uncommittedId);
+			valueStore.clearCaches();
+
+			AtomicReference<Long> visibleId = new AtomicReference<>();
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			Thread reader = new Thread(() -> {
+				try {
+					visibleId.set(valueStore.getId(iri));
+				} catch (Throwable throwable) {
+					failure.set(throwable);
+				}
+			}, "lmdb-value-store-uncommitted-reader");
+
+			reader.start();
+			reader.join(TimeUnit.SECONDS.toMillis(10));
+
+			assertFalse(reader.isAlive());
+			assertNull(failure.get());
+			assertEquals(LmdbValue.UNKNOWN_ID, visibleId.get().longValue());
+		} finally {
+			valueStore.rollback();
+		}
+	}
+
+	@Test
 	public void testGcValues() throws Exception {
 		Value values[] = new Value[] {
 				RDF.TYPE, RDFS.CLASS,

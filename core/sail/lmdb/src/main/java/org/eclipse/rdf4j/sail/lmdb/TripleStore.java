@@ -618,23 +618,127 @@ class TripleStore implements Closeable {
 	@Override
 	public void close() throws IOException {
 		if (env != 0) {
-			endTransaction(false);
-
-			List<Throwable> caughtExceptions = new ArrayList<>();
+			IOException caughtException = null;
+			try {
+				endTransaction(false);
+			} catch (Throwable e) {
+				caughtException = addCloseException(caughtException, e);
+			}
+			try {
+				txnManager.close();
+			} catch (Throwable e) {
+				caughtException = addCloseException(caughtException, e);
+			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
 				} catch (Throwable e) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
-					caughtExceptions.add(e);
+					caughtException = addCloseException(caughtException, e);
 				}
 			}
 
 			mdb_env_close(env);
 			env = 0;
 
-			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.get(0));
+			if (caughtException != null) {
+				throw caughtException;
+			}
+		}
+	}
+
+	private IOException addCloseException(IOException caughtException, Throwable throwable) {
+		IOException exception = throwable instanceof IOException ? (IOException) throwable : new IOException(throwable);
+		if (caughtException == null) {
+			return exception;
+		}
+		caughtException.addSuppressed(exception);
+		return caughtException;
+	}
+
+	private long writeLockInterruptibly(StampedLongAdderLockManager lockManager) {
+		try {
+			return lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
+		}
+	}
+
+	private void throwIfInterruptedBeforeNativeCommit() throws InterruptedException {
+		if (Thread.interrupted()) {
+			throw new InterruptedException();
+		}
+	}
+
+	private void checkInterruptBeforeNativeCommit() {
+		try {
+			throwIfInterruptedBeforeNativeCommit();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
+		}
+	}
+
+	private void runUninterruptibly(IOOperation operation) throws IOException {
+		boolean interrupted = false;
+		try {
+			while (true) {
+				try {
+					operation.run();
+					if (Thread.interrupted()) {
+						interrupted = true;
+					}
+					return;
+				} catch (IOException e) {
+					if (!hasInterruptedCause(e)) {
+						throw e;
+					}
+					interrupted = true;
+					Thread.interrupted();
+				} catch (SailException e) {
+					if (!hasInterruptedCause(e)) {
+						throw e;
+					}
+					interrupted = true;
+					Thread.interrupted();
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private void abortOpenWriteTxn() {
+		if (writeTxn != 0) {
+			mdb_txn_abort(writeTxn);
+			writeTxn = 0;
+		}
+	}
+
+	private boolean hasInterruptedCause(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof InterruptedException) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
+	}
+
+	private interface IOOperation {
+		void run() throws IOException;
+	}
+
+	private void closeRecordCache() throws IOException {
+		if (recordCache != null) {
+			try {
+				recordCache.close();
+			} finally {
+				recordCache = null;
 			}
 		}
 	}
@@ -1559,8 +1663,8 @@ class TripleStore implements Closeable {
 	protected void updateFromCache() throws IOException {
 		recordCache.commit();
 		for (boolean explicit : new boolean[] { true, false }) {
-			RecordCacheIterator it = recordCache.getRecords(explicit);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
+			try (RecordCacheIterator it = recordCache.getRecords(explicit);
+					MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 				MDBVal keyVal = MDBVal.malloc(stack);
 				// use calloc to get an empty data value
@@ -1572,6 +1676,7 @@ class TripleStore implements Closeable {
 					if (requiresResize()) {
 						// resize map if required
 						E(mdb_txn_commit(writeTxn));
+						writeTxn = 0;
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						logger.debug("resized map to {}", mapSize);
@@ -1604,7 +1709,7 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
-		recordCache.close();
+		closeRecordCache();
 	}
 
 	public void startTransaction() throws IOException {
@@ -1625,61 +1730,58 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
-					try {
-						E(mdb_txn_commit(writeTxn));
-						if (recordCache != null) {
-							StampedLongAdderLockManager lockManager = txnManager.lockManager();
-							long readStamp;
-							try {
-								readStamp = lockManager.readLock();
-							} catch (InterruptedException e) {
-								throw new SailException(e);
-							}
-							try {
-								txnManager.deactivate();
-								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-								E(mdb_env_set_mapsize(env, mapSize));
-								logger.debug("resized map to {}", mapSize);
-								// restart write transaction
-								try (MemoryStack stack = stackPush()) {
-									PointerBuffer pp = stack.mallocPointer(1);
-									mdb_txn_begin(env, NULL, 0, pp);
-									writeTxn = pp.get(0);
-								}
-								updateFromCache();
-								// finally, commit write transaction
-								E(mdb_txn_commit(writeTxn));
-							} finally {
-								recordCache = null;
-								try {
-									txnManager.activate();
-								} finally {
-									lockManager.unlockRead(readStamp);
-								}
-							}
-						} else {
-							// invalidate open read transaction so that they are not re-used
-							// otherwise iterators won't see the updated data
-							txnManager.reset();
-						}
-					} catch (IOException e) {
-						// abort transaction if exception occurred while committing
-						mdb_txn_abort(writeTxn);
-						throw e;
-					}
+					commitWriteTransaction();
 				} else {
-					mdb_txn_abort(writeTxn);
+					abortOpenWriteTxn();
+				}
+			} catch (IOException | RuntimeException | Error e) {
+				// Abort only while the native write transaction is still open. Once LMDB
+				// accepts the commit, writeTxn is cleared and post-commit maintenance must complete.
+				abortOpenWriteTxn();
+				throw e;
+			} finally {
+				// ensure that record cache is always reset
+				closeRecordCache();
+			}
+		}
+	}
+
+	private void commitWriteTransaction() throws IOException {
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long writeStamp = writeLockInterruptibly(lockManager);
+		boolean readTxnsDeactivated = false;
+		try {
+			checkInterruptBeforeNativeCommit();
+			E(mdb_txn_commit(writeTxn));
+			writeTxn = 0;
+			if (recordCache != null) {
+				txnManager.deactivate();
+				readTxnsDeactivated = true;
+				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+				E(mdb_env_set_mapsize(env, mapSize));
+				logger.debug("resized map to {}", mapSize);
+				// restart write transaction
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					E(mdb_txn_begin(env, NULL, 0, pp));
+					writeTxn = pp.get(0);
+				}
+				updateFromCache();
+				// finally, commit write transaction
+				E(mdb_txn_commit(writeTxn));
+				writeTxn = 0;
+			} else {
+				// invalidate open read transactions so that they are not re-used
+				// otherwise iterators won't see the updated data
+				runUninterruptibly(txnManager::reset);
+			}
+		} finally {
+			try {
+				if (readTxnsDeactivated) {
+					runUninterruptibly(txnManager::activate);
 				}
 			} finally {
-				writeTxn = 0;
-				// ensure that record cache is always reset
-				if (recordCache != null) {
-					try {
-						recordCache.close();
-					} finally {
-						recordCache = null;
-					}
-				}
+				lockManager.unlockWrite(writeStamp);
 			}
 		}
 	}

@@ -107,8 +107,12 @@ class LmdbStoreModelLifecycleIT {
 						false)) {
 					assertThat(statements.hasNext()).isTrue();
 					statements.next();
-					readerReady.countDown();
-					assertThat(writerFinished.await(10, TimeUnit.SECONDS)).isTrue();
+				}
+				readerReady.countDown();
+				assertThat(writerFinished.await(10, TimeUnit.SECONDS)).isTrue();
+				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, RDFS.LABEL,
+						null,
+						false)) {
 					while (statements.hasNext()) {
 						statements.next();
 						Thread.yield();

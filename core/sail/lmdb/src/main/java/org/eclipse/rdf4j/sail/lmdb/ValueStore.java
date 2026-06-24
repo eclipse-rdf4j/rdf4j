@@ -174,7 +174,8 @@ class ValueStore extends AbstractValueFactory {
 	private int freeDbi;
 	// database with internal reference counts for IRIs and namespaces
 	private int refCountsDbi;
-	private long writeTxn;
+	private volatile long writeTxn;
+	private volatile Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
@@ -642,24 +643,30 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
-		// Try to get from cache
-		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
-			value.setFromInitializedValue(cached);
-			return true;
-		}
+		long stamp = revisionLock.readLock();
 		try {
-			byte[] data = getData(id);
-			if (data != null) {
-//				System.out.println(id);
-				data2value(id, data, value);
-				cacheValue(id, value);
+			// Try to get from cache
+			LmdbValue cached = cachedValue(id);
+			if (cached != null
+					&& this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+				value.setFromInitializedValue(cached);
 				return true;
 			}
-		} catch (IOException e) {
-			throw new SailException(e);
+			try {
+				byte[] data = getData(id);
+				if (data != null) {
+//					System.out.println(id);
+					data2value(id, data, value);
+					cacheValue(id, value);
+					return true;
+				}
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+			return false;
+		} finally {
+			revisionLock.unlockRead(stamp);
 		}
-		return false;
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
@@ -919,7 +926,7 @@ class ValueStore extends AbstractValueFactory {
 			try {
 				txnLock.readLock().lock();
 				try {
-					if (writeTxn != 0) {
+					if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 						return LmdbUtil.readTransaction(env, writeTxn, transaction);
 					}
 					return threadLocalReadTxn.get().execute(transaction, env);
@@ -1271,6 +1278,7 @@ class ValueStore extends AbstractValueFactory {
 
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
+			writeTxnOwner = Thread.currentThread();
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
@@ -1325,6 +1333,7 @@ class ValueStore extends AbstractValueFactory {
 				clearPendingHashUpdates();
 			}
 			writeTxn = 0;
+			writeTxnOwner = null;
 			invalidateRevisionOnCommit = false;
 		}
 	}

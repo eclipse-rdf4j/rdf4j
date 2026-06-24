@@ -223,10 +223,15 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 
 		int hash;
-		if (this.iriString != null) {
-			hash = this.iriString.hashCode();
+		String iriString = this.iriString;
+		if (iriString != null) {
+			hash = iriString.hashCode();
 		} else {
 			init();
+			iriString = this.iriString;
+			if (iriString == null) {
+				throw new SailException("Could not resolve IRI with id " + internalID);
+			}
 			hash = iriString.hashCode();
 		}
 
