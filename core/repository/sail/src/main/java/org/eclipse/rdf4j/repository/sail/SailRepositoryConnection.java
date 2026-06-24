@@ -168,6 +168,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
+			// Call setIsolationLevel to update the AbstractRepositoryConnection's isolation level field
+			setIsolationLevel(level);
+
 			// always call receiveTransactionSettings(...) before calling begin();
 			sailConnection.setTransactionSettings();
 
@@ -195,6 +198,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 			for (TransactionSetting setting : settings) {
 				if (setting instanceof IsolationLevel) {
+					// Call setIsolationLevel to update the AbstractRepositoryConnection's isolation level field
+					setIsolationLevel((IsolationLevel) setting);
 					sailConnection.begin((IsolationLevel) setting);
 					return;
 				}
