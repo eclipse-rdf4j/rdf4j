@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextException;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
 
@@ -55,7 +56,15 @@ public class NamespaceController extends AbstractController {
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
 			throws Exception {
 		String pathInfoStr = request.getPathInfo();
-		String prefix = pathInfoStr.substring(pathInfoStr.lastIndexOf('/') + 1);
+		final String prefix;
+		if (pathInfoStr != null) {
+			prefix = pathInfoStr.substring(pathInfoStr.lastIndexOf('/') + 1);
+		} else {
+			final Object pathVariables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+
+			// noinspection unchecked
+			prefix = ((Map<String, String>) pathVariables).get("nsPrefix");
+		}
 
 		String reqMethod = request.getMethod();
 
