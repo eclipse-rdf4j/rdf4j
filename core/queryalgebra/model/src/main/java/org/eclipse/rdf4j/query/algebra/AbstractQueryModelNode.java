@@ -57,6 +57,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long sourceRowsScannedActual = -1;
 	private long sourceRowsMatchedActual = -1;
 	private long sourceRowsFilteredActual = -1;
+	private long indexLookupCountActual = -1;
 	private boolean runtimeTelemetryEnabled;
 	private Map<String, Long> longMetricsActual = Collections.emptyMap();
 	private Map<String, Double> doubleMetricsActual = Collections.emptyMap();
@@ -142,6 +143,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 					: new HashMap<>(stringMetricsPlanned);
 			clone.queryModelMetadata = queryModelMetadata.isEmpty() ? Collections.emptyMap()
 					: new HashMap<>(queryModelMetadata);
+			clone.indexLookupCountActual = indexLookupCountActual;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -318,11 +320,20 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public Map<String, Long> getLongMetricsActual() {
+		if (indexLookupCountActual >= 0) {
+			if (longMetricsActual.isEmpty()) {
+				longMetricsActual = new HashMap<>(4);
+			}
+			longMetricsActual.put(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, indexLookupCountActual);
+		}
 		return longMetricsActual;
 	}
 
 	@Override
 	public long getLongMetricActual(String metricName) {
+		if (TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL.equals(metricName)) {
+			return indexLookupCountActual;
+		}
 		return longMetricsActual.getOrDefault(metricName, -1L);
 	}
 
@@ -331,10 +342,24 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return;
 		}
+		if (TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL.equals(metricName)) {
+			indexLookupCountActual = metricValue;
+			return;
+		}
 		if (longMetricsActual.isEmpty()) {
 			longMetricsActual = new HashMap<>();
 		}
 		longMetricsActual.put(metricName, metricValue);
+	}
+
+	@Override
+	public long incrementLongMetricActual(String metricName) {
+		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+			return -1L;
+		}
+		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
+		setLongMetricActual(metricName, next);
+		return next;
 	}
 
 	@Override

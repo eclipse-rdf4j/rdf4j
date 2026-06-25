@@ -358,6 +358,24 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 					getConverter(), bindings, context);
 		}
 
+		if (directLookupKey != null
+				&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)
+				&& filterContextOrEqualVariables(statementPattern, (Resource) subject, (IRI) predicate, object,
+						contexts) == null) {
+			try {
+				incrementIndexLookupCount();
+				long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object,
+						contexts);
+				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
+				return statementCount == 0 ? null : new RepeatedBindingSetIteration(statementCount, bindings);
+			} catch (Throwable t) {
+				if (t instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
+				throw new QueryEvaluationException(t);
+			}
+		}
+
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
 			incrementIndexLookupCount();
@@ -380,16 +398,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
-			DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
-					(IRI) predicate, object, contexts, iteration);
-			if (directLookupResult.cachedStatementCount >= 0
-					&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
-				if (directLookupResult.cachedStatementCount == 0) {
-					return null;
+			if (directLookupKey != null) {
+				DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
+						(IRI) predicate, object, contexts, iteration);
+				if (directLookupResult.cachedStatementCount >= 0
+						&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
+					if (directLookupResult.cachedStatementCount == 0) {
+						return null;
+					}
+					return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, bindings);
 				}
-				return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, bindings);
+				iteration = directLookupResult.iteration;
 			}
-			iteration = directLookupResult.iteration;
 
 			// Return an iterator that converts the statements to var bindings
 			return new JoinStatementWithBindingSetIterator(iteration, getConverter(), bindings, context);
@@ -882,9 +902,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (!statementPatternForMetrics.isRuntimeTelemetryEnabled() && !statementPattern.isRuntimeTelemetryEnabled()) {
 			return;
 		}
-		long next = Math.max(0L,
-				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)) + 1L;
-		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+		long next = statementPatternForMetrics
+				.incrementLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL);
+		if (next < 0) {
+			next = Math.max(0L, statementPattern.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL))
+					+ 1L;
+		}
 		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 	}
 

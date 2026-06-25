@@ -31,7 +31,6 @@ import java.util.StringTokenizer;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
-import org.lwjgl.system.MemoryUtil;
 
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
@@ -373,7 +372,7 @@ class TripleIndex {
 		int offset = 0;
 		for (int i = 0; i < indexMap.length; i++) {
 			long fieldAddress = keyAddress + offset;
-			int firstByte = MemoryUtil.memGetByte(fieldAddress) & 0xFF;
+			int firstByte = LmdbUtil.getByte(fieldAddress) & 0xFF;
 			long value = Varint.readUnsigned(fieldAddress, firstByte);
 			offset += Varint.firstToLength(firstByte);
 

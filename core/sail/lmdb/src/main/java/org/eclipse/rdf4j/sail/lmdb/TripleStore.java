@@ -579,7 +579,7 @@ class TripleStore implements Closeable {
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			index.toKey(keyBuf, subj, pred, obj, context);
 			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			LmdbUtil.setMDBValData(keyVal, keyBuf);
 			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
 			if (rc == MDB_SUCCESS) {
 				return true;
@@ -1080,7 +1080,7 @@ class TripleStore implements Closeable {
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			mainIndex.toKey(keyBuf, subj, pred, obj, context);
 			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 			if (recordCache == null) {
 				if (requiresResize()) {
@@ -1130,7 +1130,7 @@ class TripleStore implements Closeable {
 					keyBuf.flip();
 
 					// update buffer positions in MDBVal
-					keyVal.mv_data(keyBuf);
+					LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 					if (foundImplicit) {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
@@ -1194,7 +1194,7 @@ class TripleStore implements Closeable {
 				keyBuf.clear();
 				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
 				keyBuf.flip();
-				keyVal.mv_data(keyBuf);
+				LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 				if (rc == MDB_MAP_FULL && autoGrow) {
@@ -1258,7 +1258,7 @@ class TripleStore implements Closeable {
 					index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
 							context[statementIndex]);
 					keyBuf.flip();
-					keyVal.mv_data(keyBuf);
+					LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 					if (promotedFromImplicit[statementIndex]) {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
@@ -1626,7 +1626,7 @@ class TripleStore implements Closeable {
 						index.toKey(keyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
 						keyBuf.flip();
 						// update buffer positions in MDBVal
-						keyVal.mv_data(keyBuf);
+						LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 						if (r.add) {
 							E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));

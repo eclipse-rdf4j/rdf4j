@@ -16,8 +16,6 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-import static org.lwjgl.system.MemoryUtil.memGetAddress;
-import static org.lwjgl.system.MemoryUtil.memGetByte;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -48,8 +46,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
-import static org.lwjgl.util.lmdb.MDBVal.MV_DATA;
-import static org.lwjgl.util.lmdb.MDBVal.nmv_size;
 
 import java.io.File;
 import java.io.IOException;
@@ -791,7 +787,7 @@ class ValueStore extends AbstractValueFactory {
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
-			keyData.mv_data(id2data(idBuffer(stack), id).flip());
+			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
 				return copyValueBytes(valueData);
@@ -801,12 +797,10 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private static byte[] copyValueBytes(MDBVal valueData) {
-		int length = Math.toIntExact(nmv_size(valueData.address()));
+		int length = LmdbUtil.mdbValSize(valueData);
 		byte[] valueBytes = new byte[length];
-		long address = memGetAddress(valueData.address() + MV_DATA);
-		for (int i = 0; i < length; i++) {
-			valueBytes[i] = memGetByte(address + i);
-		}
+		long address = LmdbUtil.mdbValDataAddress(valueData);
+		LmdbUtil.copyMemoryToByteArray(address, valueBytes, length);
 		return valueBytes;
 	}
 

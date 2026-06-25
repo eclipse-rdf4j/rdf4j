@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.math.BigInteger;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -65,6 +66,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private int cachedHash;
 
 	private transient XMLGregorianCalendar cachedCalendarValue;
+
+	private transient BigInteger cachedIntegerValue;
 
 	/*--------------*
 	 * Constructors *
@@ -181,6 +184,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.coreDatatype = lmdbLiteral.coreDatatype;
 			this.cachedHash = lmdbLiteral.cachedHash;
 			this.cachedCalendarValue = lmdbLiteral.cachedCalendarValue;
+			this.cachedIntegerValue = lmdbLiteral.cachedIntegerValue;
 			this.initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
@@ -212,6 +216,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		coreDatatype = null;
 		cachedHash = 0;
 		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {
@@ -219,6 +224,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		datatype = coreDatatype.getIri();
 		cachedHash = 0;
 		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	@Override
@@ -237,10 +243,21 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return (XMLGregorianCalendar) calendarValue.clone();
 	}
 
+	@Override
+	public BigInteger integerValue() {
+		BigInteger integerValue = cachedIntegerValue;
+		if (integerValue == null) {
+			integerValue = super.integerValue();
+			cachedIntegerValue = integerValue;
+		}
+		return integerValue;
+	}
+
 	public void setLabel(String label) {
 		this.label = label;
 		cachedHash = 0;
 		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	@Override

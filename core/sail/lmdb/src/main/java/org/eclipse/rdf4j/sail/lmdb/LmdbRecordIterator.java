@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.lwjgl.system.MemoryUtil.memGetAddress;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
@@ -24,7 +23,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
-import static org.lwjgl.util.lmdb.MDBVal.MV_DATA;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -117,7 +115,7 @@ class LmdbRecordIterator implements RecordIterator {
 				this.maxKeyBuf = pool.getKeyBuffer();
 				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
 				maxKeyBuf.flip();
-				this.maxKey.mv_data(maxKeyBuf);
+				LmdbUtil.setMDBValData(this.maxKey, maxKeyBuf);
 			}
 		} else {
 			minKeyBuf = null;
@@ -185,7 +183,7 @@ class LmdbRecordIterator implements RecordIterator {
 					minKeyBuf.clear();
 					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
 					minKeyBuf.flip();
-					keyData.mv_data(minKeyBuf);
+					LmdbUtil.setMDBValData(keyData, minKeyBuf);
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
 					if (lastResult != MDB_SUCCESS) {
 						// use MDB_SET_RANGE if key was deleted
@@ -206,7 +204,7 @@ class LmdbRecordIterator implements RecordIterator {
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
-					keyData.mv_data(minKeyBuf);
+					LmdbUtil.setMDBValData(keyData, minKeyBuf);
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 				} else {
 					// set cursor to first item
@@ -220,7 +218,7 @@ class LmdbRecordIterator implements RecordIterator {
 					sourceRowsFilteredActual++;
 					lastResult = MDB_NOTFOUND;
 				} else {
-					long keyAddress = memGetAddress(keyData.address() + MV_DATA);
+					long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
 					int matchStatus = index.keyToQuadMatchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred,
 							matchObj, matchContext, quad);
 					if (matchStatus == TripleIndex.KEY_MATCH) {
@@ -253,7 +251,7 @@ class LmdbRecordIterator implements RecordIterator {
 			return null;
 		}
 
-		keyData.mv_data(minKeyBuf);
+		LmdbUtil.setMDBValData(keyData, minKeyBuf);
 		int result = mdb_get(txn, dbi, keyData, valueData);
 		if (result == MDB_SUCCESS) {
 			sourceRowsScannedActual++;
