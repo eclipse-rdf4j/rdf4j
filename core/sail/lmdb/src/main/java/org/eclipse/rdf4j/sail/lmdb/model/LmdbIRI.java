@@ -45,6 +45,8 @@ public class LmdbIRI implements LmdbResource, IRI {
 	 */
 	private int localNameIdx;
 
+	private int cachedHash;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -93,6 +95,8 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (initializedValue instanceof LmdbIRI initializedIRI) {
 			this.iriString = initializedIRI.iriString;
 			this.localNameIdx = initializedIRI.localNameIdx;
+			this.cachedHash = initializedIRI.cachedHash;
+			this.initialized = true;
 		} else {
 			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
@@ -112,6 +116,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 		this.iriString = iriString;
 		this.localNameIdx = -1;
+		this.cachedHash = 0;
 	}
 
 	@Override
@@ -214,14 +219,19 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public int hashCode() {
+		int hash = cachedHash;
+		if (hash != 0) {
+			return hash;
+		}
+
 		if (internalID != UNKNOWN_ID) {
-			int cachedHash = revision.getStoredHash(internalID);
-			if (cachedHash != 0) {
-				return cachedHash;
+			hash = revision.getStoredHash(internalID);
+			if (hash != 0) {
+				cachedHash = hash;
+				return hash;
 			}
 		}
 
-		int hash;
 		if (this.iriString != null) {
 			hash = this.iriString.hashCode();
 		} else {
@@ -229,6 +239,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 			hash = iriString.hashCode();
 		}
 
+		cachedHash = hash;
 		if (internalID != UNKNOWN_ID) {
 			revision.storeHash(internalID, hash);
 		}
@@ -248,5 +259,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 	public void setNamespaceAndIri(String namespace, String localName) {
 		localNameIdx = namespace.length();
 		this.iriString = namespace + localName;
+		cachedHash = 0;
 	}
 }

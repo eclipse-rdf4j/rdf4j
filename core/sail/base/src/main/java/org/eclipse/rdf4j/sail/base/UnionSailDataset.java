@@ -153,6 +153,12 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return dataset1.hasStatements(subj, pred, obj, contexts)
+				|| dataset2.hasStatements(subj, pred, obj, contexts);
+	}
+
+	@Override
 	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 

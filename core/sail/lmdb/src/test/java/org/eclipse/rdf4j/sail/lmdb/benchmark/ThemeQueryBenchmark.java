@@ -122,13 +122,13 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -145,8 +145,8 @@ public class ThemeQueryBenchmark {
 				.forks(0)
 				.measurementIterations(10)
 				.measurementBatchSize(1)
-				.measurementTime(TimeValue.milliseconds(1))
-				.warmupIterations(10)
+				.measurementTime(TimeValue.seconds(1))
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}

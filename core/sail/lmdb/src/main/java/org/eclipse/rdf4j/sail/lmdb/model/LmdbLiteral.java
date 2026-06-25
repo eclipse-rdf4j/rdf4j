@@ -15,6 +15,8 @@ import java.io.ObjectStreamException;
 import java.util.Objects;
 import java.util.Optional;
 
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -59,6 +61,10 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private long internalID;
 
 	private boolean initialized = false;
+
+	private int cachedHash;
+
+	private transient XMLGregorianCalendar cachedCalendarValue;
 
 	/*--------------*
 	 * Constructors *
@@ -173,6 +179,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.baseDirection = lmdbLiteral.baseDirection;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
+			this.cachedHash = lmdbLiteral.cachedHash;
+			this.cachedCalendarValue = lmdbLiteral.cachedCalendarValue;
+			this.initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -201,11 +210,15 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public void setDatatype(IRI datatype) {
 		this.datatype = datatype;
 		coreDatatype = null;
+		cachedHash = 0;
+		cachedCalendarValue = null;
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {
 		this.coreDatatype = coreDatatype;
 		datatype = coreDatatype.getIri();
+		cachedHash = 0;
+		cachedCalendarValue = null;
 	}
 
 	@Override
@@ -214,8 +227,20 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return label;
 	}
 
+	@Override
+	public XMLGregorianCalendar calendarValue() {
+		XMLGregorianCalendar calendarValue = cachedCalendarValue;
+		if (calendarValue == null) {
+			calendarValue = super.calendarValue();
+			cachedCalendarValue = calendarValue;
+		}
+		return (XMLGregorianCalendar) calendarValue.clone();
+	}
+
 	public void setLabel(String label) {
 		this.label = label;
+		cachedHash = 0;
+		cachedCalendarValue = null;
 	}
 
 	@Override
@@ -232,10 +257,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	public void setBaseDirection(BaseDirection baseDirection) {
 		this.baseDirection = baseDirection;
+		cachedHash = 0;
 	}
 
 	public void setLanguage(String language) {
 		this.language = language;
+		cachedHash = 0;
 	}
 
 	public void init() {
@@ -272,15 +299,22 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public int hashCode() {
+		int hash = cachedHash;
+		if (hash != 0) {
+			return hash;
+		}
+
 		if (internalID != UNKNOWN_ID) {
-			int cachedHash = revision.getStoredHash(internalID);
-			if (cachedHash != 0) {
-				return cachedHash;
+			hash = revision.getStoredHash(internalID);
+			if (hash != 0) {
+				cachedHash = hash;
+				return hash;
 			}
 		}
 
 		init();
-		int hash = super.hashCode();
+		hash = super.hashCode();
+		cachedHash = hash;
 		if (internalID != UNKNOWN_ID) {
 			revision.storeHash(internalID, hash);
 		}

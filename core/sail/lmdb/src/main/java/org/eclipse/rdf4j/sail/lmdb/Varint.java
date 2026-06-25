@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
+import org.lwjgl.system.MemoryUtil;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
@@ -395,6 +396,56 @@ public final class Varint {
 			int bytes = a0 - 250 + 3;
 			return readSignificantBits(bb, pos + 1, bytes);
 		}
+	}
+
+	/**
+	 * Decodes an unsigned varint directly from a native memory address. This avoids creating a temporary
+	 * DirectByteBuffer wrapper for LMDB-owned key memory in tight cursor scans.
+	 *
+	 * @param address native address of the first encoded byte
+	 * @return decoded value
+	 */
+	public static long readUnsigned(long address) throws IllegalArgumentException {
+		return readUnsigned(address, MemoryUtil.memGetByte(address) & 0xFF);
+	}
+
+	/**
+	 * Decodes an unsigned varint directly from native memory when the caller has already loaded the first byte.
+	 */
+	public static long readUnsigned(long address, int a0) throws IllegalArgumentException {
+		if (a0 <= 240) {
+			return a0;
+		}
+		if (a0 <= 248) {
+			final int a1 = MemoryUtil.memGetByte(address + 1) & 0xFF;
+			return 240L + ((long) (a0 - 241) << 8) + a1;
+		}
+		if (a0 == 249) {
+			final int a1 = MemoryUtil.memGetByte(address + 1) & 0xFF;
+			final int a2 = MemoryUtil.memGetByte(address + 2) & 0xFF;
+			return 2288L + ((long) a1 << 8) + a2;
+		}
+
+		final int bytes = a0 - 247; // 250 -> 3 payload bytes, 255 -> 8 payload bytes
+		long value = 0;
+		for (int i = 1; i <= bytes; i++) {
+			value = (value << 8) | (MemoryUtil.memGetByte(address + i) & 0xFFL);
+		}
+		return value;
+	}
+
+	/**
+	 * Determines length of an encoded varint value by inspecting the first byte as an unsigned int.
+	 */
+	public static int firstToLength(int a0) {
+		return FIRST_TO_LENGTH[a0 & 0xFF];
+	}
+
+	/**
+	 * Determines length of an encoded varint directly from native memory.
+	 */
+	public static int lengthAt(long address) {
+		return firstToLength(MemoryUtil.memGetByte(address) & 0xFF);
 	}
 
 	private static final int[] FIRST_TO_LENGTH = buildFirstToLength();

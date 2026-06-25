@@ -36,6 +36,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final ValueStore valueStore;
 	private Statement nextElement;
 
+	private long cachedId1 = Long.MIN_VALUE;
+	private long cachedId2 = Long.MIN_VALUE;
+	private long cachedId3 = Long.MIN_VALUE;
+	private long cachedId4 = Long.MIN_VALUE;
+	private Value cachedValue1;
+	private Value cachedValue2;
+	private Value cachedValue3;
+	private Value cachedValue4;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -60,24 +69,50 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
-			Resource subj = (Resource) valueStore.getLazyValue(subjID);
+			Resource subj = (Resource) getLazyValue(subjID);
 
 			long predID = quad[TripleIndex.PRED_IDX];
-			IRI pred = (IRI) valueStore.getLazyValue(predID);
+			IRI pred = (IRI) getLazyValue(predID);
 
 			long objID = quad[TripleIndex.OBJ_IDX];
-			Value obj = valueStore.getLazyValue(objID);
+			Value obj = getLazyValue(objID);
 
 			Resource context = null;
 			long contextID = quad[TripleIndex.CONTEXT_IDX];
 			if (contextID != 0) {
-				context = (Resource) valueStore.getLazyValue(contextID);
+				context = (Resource) getLazyValue(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
+	}
+
+	private Value getLazyValue(long id) throws IOException {
+		if (id == cachedId1) {
+			return cachedValue1;
+		}
+		if (id == cachedId2) {
+			return cachedValue2;
+		}
+		if (id == cachedId3) {
+			return cachedValue3;
+		}
+		if (id == cachedId4) {
+			return cachedValue4;
+		}
+
+		Value value = valueStore.getLazyValue(id);
+		cachedId4 = cachedId3;
+		cachedValue4 = cachedValue3;
+		cachedId3 = cachedId2;
+		cachedValue3 = cachedValue2;
+		cachedId2 = cachedId1;
+		cachedValue2 = cachedValue1;
+		cachedId1 = id;
+		cachedValue1 = value;
+		return value;
 	}
 
 	@Override

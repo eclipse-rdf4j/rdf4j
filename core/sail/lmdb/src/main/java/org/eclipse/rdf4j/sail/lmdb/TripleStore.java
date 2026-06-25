@@ -144,6 +144,11 @@ class TripleStore implements Closeable {
 	private int[] leadingFieldScratchIndices = new int[0];
 	private long[] leadingFieldValues = new long[0];
 	private long[] leadingFieldScratchValues = new long[0];
+	private int[] alignedWriteSortedIndices = new int[0];
+	private int[] alignedWriteMainOrderIndices = new int[0];
+	private boolean[] alignedWritePromotedFromImplicit = new boolean[0];
+	private final LongIntHashMap alignedContextIncrements = new LongIntHashMap();
+	private final LongIntHashMap alignedAppliedContextIncrements = new LongIntHashMap();
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
@@ -476,9 +481,117 @@ class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
-		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+		int bestScore = -1;
+		TripleIndex index = null;
+		for (TripleIndex candidate : indexes) {
+			int score = candidate.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				index = candidate;
+			}
+		}
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, bestScore > 0);
+	}
+
+	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			return countAllTriples(txn, explicit);
+		}
+
+		int bestScore = -1;
+		TripleIndex index = null;
+		for (TripleIndex candidate : indexes) {
+			int score = candidate.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				index = candidate;
+			}
+		}
+
+		if (index.getRangePrefixLength(subj, pred, obj, context) == 4) {
+			return exactTripleExists(txn, index, subj, pred, obj, context, explicit) ? 1 : 0;
+		}
+
+		long count = 0;
+		try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
+				bestScore > 0)) {
+			while (records.next() != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		int bestScore = -1;
+		TripleIndex index = null;
+		for (TripleIndex candidate : indexes) {
+			int score = candidate.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				index = candidate;
+			}
+		}
+
+		if (bestScore == 0 && subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			return countAllTriples(txn, explicit) > 0;
+		}
+		if (index.getRangePrefixLength(subj, pred, obj, context) == 4) {
+			return exactTripleExists(txn, index, subj, pred, obj, context, explicit);
+		}
+
+		try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
+				bestScore > 0)) {
+			return records.next() != null;
+		}
+	}
+
+	private long countAllTriples(Txn txnRef, boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			TripleIndex mainIndex = indexes.getFirst();
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
+			return stat.ms_entries();
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
+	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return true;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return false;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -1052,7 +1165,7 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return;
 		}
-		if (count == 1 || count < subj.length || recordCache != null || requiresResize()) {
+		if (count == 1 || recordCache != null || requiresResize()) {
 			storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 			return;
 		}
@@ -1067,9 +1180,11 @@ class TripleStore implements Closeable {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			int[] sortedIndices = new int[count];
-			boolean[] promotedFromImplicit = new boolean[count];
-			LongIntHashMap contextIncrements = new LongIntHashMap();
+			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
+			boolean[] promotedFromImplicit = ensureAlignedWritePromotedFromImplicit(count);
+			Arrays.fill(promotedFromImplicit, 0, count, false);
+			LongIntHashMap contextIncrements = alignedContextIncrements;
+			contextIncrements.clear();
 
 			for (int i = 0; i < count; i++) {
 				if (shouldFallBackFromAlignedWrite()) {
@@ -1103,8 +1218,10 @@ class TripleStore implements Closeable {
 				}
 			}
 
-			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
-			LongIntHashMap appliedContextIncrements = new LongIntHashMap();
+			int[] mainOrderIndices = ensureAlignedWriteMainOrderIndices(addedCount);
+			System.arraycopy(sortedIndices, 0, mainOrderIndices, 0, addedCount);
+			LongIntHashMap appliedContextIncrements = alignedAppliedContextIncrements;
+			appliedContextIncrements.clear();
 			try {
 				LongIterator contextIterator = contextIncrements.keysView().longIterator();
 				while (contextIterator.hasNext()) {
@@ -1262,6 +1379,27 @@ class TripleStore implements Closeable {
 			leadingFieldScratchValues = new long[length];
 		}
 		return leadingFieldScratchValues;
+	}
+
+	private int[] ensureAlignedWriteSortedIndices(int length) {
+		if (alignedWriteSortedIndices.length < length) {
+			alignedWriteSortedIndices = new int[length];
+		}
+		return alignedWriteSortedIndices;
+	}
+
+	private int[] ensureAlignedWriteMainOrderIndices(int length) {
+		if (alignedWriteMainOrderIndices.length < length) {
+			alignedWriteMainOrderIndices = new int[length];
+		}
+		return alignedWriteMainOrderIndices;
+	}
+
+	private boolean[] ensureAlignedWritePromotedFromImplicit(int length) {
+		if (alignedWritePromotedFromImplicit.length < length) {
+			alignedWritePromotedFromImplicit = new boolean[length];
+		}
+		return alignedWritePromotedFromImplicit;
 	}
 
 	private void resetAlignedWriteCursorState() {
