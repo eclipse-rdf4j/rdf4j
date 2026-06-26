@@ -377,7 +377,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					continue;
 				}
 
-				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
+				// Find the connected tupleExpr in tupleExprs whose join with any in ret has minimal cardinality.
+				// Fall back to a Cartesian choice only when no connected candidate is available.
+				TupleExpr bestConnectedCandidate = null;
+				double bestConnectedCost = Double.MAX_VALUE;
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				for (TupleExpr cand : tupleExprs) {
@@ -385,21 +388,33 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						continue;
 					}
 
-					// compute the minimum join‐cost between cand and anything in ret
+					double candidateConnectedCost = Double.MAX_VALUE;
+					double candidateCost = Double.MAX_VALUE;
 					for (TupleExpr prev : ret) {
-						if (!statementPatternWithMinimumOneConstant(prev)) {
-							continue;
-						}
 						double cost = getCard.apply(prev, cand);
-						if (cost < bestCost) {
-							bestCost = cost;
-							bestCandidate = cand;
+						if (statementPatternWithMinimumOneConstant(prev) && cost < candidateCost) {
+							candidateCost = cost;
 						}
+						if (connectedByRealBinding(prev, cand) && cost < candidateConnectedCost) {
+							candidateConnectedCost = cost;
+						}
+					}
+
+					if (candidateConnectedCost < bestConnectedCost) {
+						bestConnectedCost = candidateConnectedCost;
+						bestConnectedCandidate = cand;
+					}
+					if (candidateCost < bestCost) {
+						bestCost = candidateCost;
+						bestCandidate = cand;
 					}
 				}
 
 				// If we found a cheap StatementPattern, pick it; otherwise just take the head
-				if (bestCandidate != null) {
+				if (bestConnectedCandidate != null) {
+					tupleExprs.remove(bestConnectedCandidate);
+					ret.addLast(bestConnectedCandidate);
+				} else if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
 					ret.addLast(bestCandidate);
 				} else {
@@ -435,6 +450,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
 			}
 
+			TupleExpr bestConnectedA = null;
+			TupleExpr bestConnectedB = null;
+			double bestConnectedCost = Double.MAX_VALUE;
 			TupleExpr bestA = null;
 			TupleExpr bestB = null;
 			double bestCost = Double.MAX_VALUE;
@@ -446,12 +464,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					double cost = getCard.apply(a, b);
+					if (connectedByRealBinding(a, b) && cost < bestConnectedCost) {
+						bestConnectedCost = cost;
+						bestConnectedA = a;
+						bestConnectedB = b;
+					}
 					if (cost < bestCost) {
 						bestCost = cost;
 						bestA = a;
 						bestB = b;
 					}
 				}
+			}
+
+			if (bestConnectedA == null) {
+				for (int i = 0; i < candidates.size(); i++) {
+					TupleExpr a = candidates.get(i);
+					for (int j = i + 1; j < candidates.size(); j++) {
+						TupleExpr b = candidates.get(j);
+						if (!connectedByRealBinding(a, b)) {
+							continue;
+						}
+						double cost = getCard.apply(a, b);
+						if (cost < bestConnectedCost) {
+							bestConnectedCost = cost;
+							bestConnectedA = a;
+							bestConnectedB = b;
+						}
+					}
+				}
+			}
+
+			if (bestConnectedA != null) {
+				bestA = bestConnectedA;
+				bestB = bestConnectedB;
 			}
 
 			if (bestA == null) {
@@ -743,6 +789,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return tupleExpr;
 			}
 
+			TupleExpr connectedResult = null;
+			double lowestConnectedCost = Double.POSITIVE_INFINITY;
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
 
@@ -750,20 +798,45 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
 
-				if (cost < lowestCost || result == null) {
-					// More specific path expression found
-					lowestCost = cost;
-					result = tupleExpr;
+				if (isConnectedToBoundVars(tupleExpr) && (cost < lowestConnectedCost || connectedResult == null)) {
+					lowestConnectedCost = cost;
+					connectedResult = tupleExpr;
 					if (cost == 0) {
 						break;
 					}
 				}
+
+				if (cost < lowestCost || result == null) {
+					// More specific path expression found
+					lowestCost = cost;
+					result = tupleExpr;
+					if (cost == 0 && boundVars.isEmpty()) {
+						break;
+					}
+				}
+			}
+
+			if (connectedResult != null) {
+				result = connectedResult;
+				lowestCost = lowestConnectedCost;
 			}
 
 			assert result != null;
 			result.setCostEstimate(lowestCost);
 
 			return result;
+		}
+
+		private boolean isConnectedToBoundVars(TupleExpr tupleExpr) {
+			if (boundVars.isEmpty()) {
+				return false;
+			}
+			for (String bindingName : tupleExpr.getBindingNames()) {
+				if (isRealBindingName(bindingName) && boundVars.contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
@@ -977,6 +1050,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						&& ((StatementPattern) cand).getObjectVar().hasValue())
 				|| (((StatementPattern) cand).getContextVar() != null
 						&& ((StatementPattern) cand).getContextVar().hasValue()));
+	}
+
+	private static boolean connectedByRealBinding(TupleExpr first, TupleExpr second) {
+		Set<String> firstBindingNames = first.getBindingNames();
+		if (firstBindingNames.isEmpty()) {
+			return false;
+		}
+
+		for (String bindingName : second.getBindingNames()) {
+			if (isRealBindingName(bindingName) && firstBindingNames.contains(bindingName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isRealBindingName(String bindingName) {
+		return bindingName != null && !bindingName.startsWith("_const_");
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {

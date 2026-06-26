@@ -17,11 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -264,6 +268,72 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
 	}
 
+	@Test
+	public void selectNextTupleExprPrefersConnectedCandidateOverCheaperCartesianCandidate() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern connected = new StatementPattern(new Var("s"),
+				new Var("pc", vf.createIRI("ex:pConnected")), new Var("o"));
+		StatementPattern disconnected = new StatementPattern(new Var("x"),
+				new Var("pd", vf.createIRI("ex:pDisconnected")), new Var("y"));
+
+		List<TupleExpr> expressions = new ArrayList<>();
+		expressions.add(disconnected);
+		expressions.add(connected);
+
+		Map<TupleExpr, Double> cardinalityMap = Map.of(disconnected, 1.0, connected, 100.0);
+		Map<TupleExpr, List<Var>> varsMap = Map.of(disconnected, disconnected.getVarList(), connected,
+				connected.getVarList());
+		Map<Var, Integer> varFreqMap = new HashMap<>();
+		fillVarFreqMap(disconnected.getVarList(), varFreqMap);
+		fillVarFreqMap(connected.getVarList(), varFreqMap);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		setBoundVars(joinVisitor, Set.of("s"));
+		Method selectNextTupleExpr = joinVisitor.getClass()
+				.getDeclaredMethod("selectNextTupleExpr", List.class, Map.class, Map.class, Map.class);
+		selectNextTupleExpr.setAccessible(true);
+
+		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
+				varFreqMap);
+
+		assertThat(getPredicateValue(selected)).isEqualTo("ex:pConnected");
+	}
+
+	@Test
+	public void reorderJoinArgsStartsWithConnectedPairBeforeCheaperCartesianPair() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern anchor = new StatementPattern(new Var("s"), new Var("pa", vf.createIRI("ex:pAnchor")),
+				new Var("a"));
+		StatementPattern connected = new StatementPattern(new Var("s"),
+				new Var("pc", vf.createIRI("ex:pConnected")), new Var("b"));
+		StatementPattern disconnectedLeft = new StatementPattern(new Var("x"),
+				new Var("pl", vf.createIRI("ex:pDisconnectedLeft")), new Var("lx"));
+		StatementPattern disconnectedRight = new StatementPattern(new Var("y"),
+				new Var("pr", vf.createIRI("ex:pDisconnectedRight")), new Var("ry"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(disconnectedLeft);
+		ordered.add(anchor);
+		ordered.add(disconnectedRight);
+		ordered.add(connected);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+
+		List<String> predicateOrder = reordered.stream()
+				.map(QueryJoinOptimizerTest::getPredicateValue)
+				.collect(Collectors.toList());
+		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pAnchor", "ex:pConnected");
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
@@ -331,8 +401,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return constructor.newInstance(optimizer);
 	}
 
+	private static void setBoundVars(Object joinVisitor, Set<String> boundVars) throws Exception {
+		Field boundVarsField = joinVisitor.getClass().getDeclaredField("boundVars");
+		boundVarsField.setAccessible(true);
+		boundVarsField.set(joinVisitor, boundVars);
+	}
+
+	private static void fillVarFreqMap(List<Var> vars, Map<Var, Integer> varFreqMap) {
+		for (Var var : vars) {
+			varFreqMap.merge(var, 1, Integer::sum);
+		}
+	}
+
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
+	}
+
+	private static String predicate(TupleExpr expr) {
+		if (expr instanceof StatementPattern) {
+			Var predicateVar = ((StatementPattern) expr).getPredicateVar();
+			if (predicateVar != null && predicateVar.hasValue()) {
+				return predicateVar.getValue().stringValue();
+			}
+		}
+		return null;
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {
@@ -365,6 +457,15 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			if ("ex:pC".equals(predicate)) {
 				return 4;
 			}
+			if ("ex:pDisconnectedLeft".equals(predicate) || "ex:pDisconnectedRight".equals(predicate)) {
+				return 1;
+			}
+			if ("ex:pAnchor".equals(predicate)) {
+				return 10;
+			}
+			if ("ex:pConnected".equals(predicate)) {
+				return 20;
+			}
 			return 10;
 		}
 
@@ -385,18 +486,16 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			if ((left.equals("ex:pB") && right.equals("ex:pC")) || (left.equals("ex:pC") && right.equals("ex:pB"))) {
 				return 5;
 			}
-
-			return super.getCardinality(join);
-		}
-
-		private String predicate(TupleExpr expr) {
-			if (expr instanceof StatementPattern) {
-				Var predicateVar = ((StatementPattern) expr).getPredicateVar();
-				if (predicateVar != null && predicateVar.hasValue()) {
-					return predicateVar.getValue().stringValue();
-				}
+			if ((left.equals("ex:pDisconnectedLeft") && right.equals("ex:pDisconnectedRight"))
+					|| (left.equals("ex:pDisconnectedRight") && right.equals("ex:pDisconnectedLeft"))) {
+				return 1;
 			}
-			return null;
+			if ((left.equals("ex:pAnchor") && right.equals("ex:pConnected"))
+					|| (left.equals("ex:pConnected") && right.equals("ex:pAnchor"))) {
+				return 5;
+			}
+
+			return 1000;
 		}
 	}
 
