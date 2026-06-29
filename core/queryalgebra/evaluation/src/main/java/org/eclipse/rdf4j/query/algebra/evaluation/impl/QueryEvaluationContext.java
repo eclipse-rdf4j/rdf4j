@@ -167,7 +167,7 @@ public interface QueryEvaluationContext {
 			}
 
 			return bnodesByLabel.computeIfAbsent(nodeLabel,
-					ignored -> valueFactory.createBNode("bnode_" + bnodeSolutionId + "_" + bnodeId++));
+					ignored -> valueFactory.createBNode(nodeLabel + "_" + bnodeSolutionId + "_" + bnodeId++));
 		}
 	}
 
@@ -183,7 +183,8 @@ public interface QueryEvaluationContext {
 
 	default BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
 		return valueFactory.createBNode(
-				"bnode_" + System.identityHashCode(bindings) + "_" + Integer.toUnsignedString(nodeLabel.hashCode()));
+				nodeLabel + "_" + System.identityHashCode(bindings) + "_"
+						+ Integer.toUnsignedString(nodeLabel.hashCode()));
 	}
 
 	default MutableBindingSet createBindingSet() {
