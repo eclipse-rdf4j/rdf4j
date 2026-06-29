@@ -17,8 +17,11 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Arrays;
@@ -26,6 +29,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -85,6 +89,41 @@ public class ValueStoreTest {
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
+	}
+
+	@Test
+	public void testReopenExistingStoreWithoutPersistedTripleTermIndexes() throws Exception {
+		valueStore.close();
+		removePersistedTripleTermIndexes();
+
+		StoreProperties properties = assertDoesNotThrow(
+				() -> reopenValueStoreWithLoadedProperties(new LmdbStoreConfig()));
+		assertEquals("spoc", properties.getTripleIndexes());
+		assertEquals("spoc,cspo", properties.getTripleTermIndexes());
+	}
+
+	private void removePersistedTripleTermIndexes() throws IOException {
+		File propertiesFile = new File(dataDir, StoreProperties.FILE_NAME);
+		Properties properties = new Properties();
+		if (propertiesFile.isFile()) {
+			try (FileInputStream input = new FileInputStream(propertiesFile)) {
+				properties.load(input);
+			}
+		}
+		properties.setProperty(StoreProperties.VERSION_KEY, "1");
+		properties.setProperty(StoreProperties.INDEXES_KEY, "spoc");
+		properties.remove(StoreProperties.TRIPLE_TERM_INDEXES_KEY);
+		try (FileOutputStream output = new FileOutputStream(propertiesFile)) {
+			properties.store(output, "test metadata without triple term indexes");
+		}
+	}
+
+	private StoreProperties reopenValueStoreWithLoadedProperties(LmdbStoreConfig config) throws Exception {
+		StoreProperties properties = new StoreProperties(dataDir);
+		properties.load();
+		valueStore.close();
+		valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
+		return properties;
 	}
 
 	@Test
