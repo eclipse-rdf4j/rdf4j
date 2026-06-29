@@ -123,7 +123,7 @@ public class RDFXMLParserTest {
 
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
-		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
+		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf")) {
@@ -163,15 +163,18 @@ public class RDFXMLParserTest {
 	}
 
 	@Test
-	public void testParserConfigCannotAllowDoctypeDecl() throws Exception {
+	public void testIgnoreExternalParamEntity() throws Exception {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf")) {
-			assertThatExceptionOfType(RDFParseException.class)
-					.isThrownBy(() -> parser.parse(in, ""))
-					.withMessageContaining("DOCTYPE is disallowed");
+			parser.parse(in, "");
+		} catch (FileNotFoundException e) {
+			fail("parser tried to read external file from external parameter entity");
 		}
+		assertEquals(0, el.getWarnings().size());
+		assertEquals(0, el.getErrors().size());
+		assertEquals(0, el.getFatalErrors().size());
 	}
 
 	@Test
