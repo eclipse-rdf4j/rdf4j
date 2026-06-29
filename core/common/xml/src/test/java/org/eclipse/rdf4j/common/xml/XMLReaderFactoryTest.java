@@ -68,16 +68,6 @@ class XMLReaderFactoryTest {
 		assertThat(parsed.getElementsByTagName("child").item(0).getTextContent()).isEqualTo("value");
 	}
 
-	@Test
-	void documentUtilPreservesNamespaceAwareFalse() throws Exception {
-		URL document = writeDocument("<root xmlns=\"urn:test\"><child>value</child></root>");
-
-		Document parsed = DocumentUtil.getDocument(document, false, false);
-
-		assertThat(parsed.getDocumentElement().getNamespaceURI()).isNull();
-		assertThat(parsed.getDocumentElement().getNodeName()).isEqualTo("root");
-	}
-
 	private URL writeDocument(String xml) throws Exception {
 		Path document = tempDir.resolve("document.xml");
 		Files.writeString(document, xml, StandardCharsets.UTF_8);

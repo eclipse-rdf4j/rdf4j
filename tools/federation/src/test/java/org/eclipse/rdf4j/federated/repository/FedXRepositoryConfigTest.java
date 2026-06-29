@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.Assertions;
@@ -87,7 +87,7 @@ public class FedXRepositoryConfigTest {
 	}
 
 	protected Resource implNode(Model model) {
-		return subject(model.filter(null, RepositoryConfigSchema.REPOSITORYTYPE, null)).get();
+		return subject(model.filter(null, CONFIG.Rep.type, null)).get();
 	}
 
 	@Nested

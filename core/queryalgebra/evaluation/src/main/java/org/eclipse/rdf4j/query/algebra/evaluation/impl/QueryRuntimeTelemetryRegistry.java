@@ -104,16 +104,13 @@ public final class QueryRuntimeTelemetryRegistry {
 		if (tupleExpr instanceof StatementPattern) {
 			return statementPatternKey((StatementPattern) tupleExpr);
 		}
-		if (tupleExpr instanceof Filter) {
-			Filter filter = (Filter) tupleExpr;
+		if (tupleExpr instanceof Filter filter) {
 			return "FILTER|arg=" + tupleExprKey(filter.getArg()) + "|condition=" + valueExprKey(filter.getCondition());
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return "JOIN|left=" + tupleExprKey(join.getLeftArg()) + "|right=" + tupleExprKey(join.getRightArg());
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return "LEFT_JOIN|left=" + tupleExprKey(leftJoin.getLeftArg()) + "|right="
 					+ tupleExprKey(leftJoin.getRightArg())
 					+ "|condition=" + valueExprKey(leftJoin.getCondition());
@@ -355,10 +352,9 @@ public final class QueryRuntimeTelemetryRegistry {
 			if (this == o) {
 				return true;
 			}
-			if (!(o instanceof TelemetrySnapshot)) {
+			if (!(o instanceof TelemetrySnapshot that)) {
 				return false;
 			}
-			TelemetrySnapshot that = (TelemetrySnapshot) o;
 			return sourceRowsScannedActual == that.sourceRowsScannedActual
 					&& sourceRowsMatchedActual == that.sourceRowsMatchedActual
 					&& sourceRowsFilteredActual == that.sourceRowsFilteredActual

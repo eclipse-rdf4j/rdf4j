@@ -17,7 +17,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
@@ -123,10 +123,10 @@ public class Util {
 				return "\"" + lit.getLabel() + "\"^^" + prefix + ":" + uri.getLocalName();
 			}
 		}
-		if (value instanceof Triple) {
-			return "<<" + getPrefixedValue(((Triple) value).getSubject(), namespaces) + " "
-					+ getPrefixedValue(((Triple) value).getPredicate(), namespaces) + " "
-					+ getPrefixedValue(((Triple) value).getObject(), namespaces) + ">>";
+		if (value instanceof TripleTerm) {
+			return "<<(" + getPrefixedValue(((TripleTerm) value).getSubject(), namespaces) + " "
+					+ getPrefixedValue(((TripleTerm) value).getPredicate(), namespaces) + " "
+					+ getPrefixedValue(((TripleTerm) value).getObject(), namespaces) + ")>>";
 		}
 		return NTriplesUtil.toNTriplesString(value);
 	}

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
+@WithVarProvider(KindAwareVarProvider.class)
 class VarProviderCloneHookTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();

@@ -81,10 +81,36 @@ public final class UnwrapSingleBgpInUnionBranchesTransform extends BaseTransform
 				}
 				cur = flattened;
 			}
+			cur = flattenNonScopedChildBgps(cur);
 			// Reapply the accumulated scope to the flattened branch BGP
 			cur.setNewScope(branchScope);
 			u2.addBranch(cur);
 		}
 		return u2;
+	}
+
+	private static IrBGP flattenNonScopedChildBgps(IrBGP bgp) {
+		List<IrNode> flattened = new ArrayList<>();
+		boolean changed = false;
+		for (IrNode line : bgp.getLines()) {
+			if (line instanceof IrBGP && !((IrBGP) line).isNewScope()
+					&& !containsScopedContainer((IrBGP) line)) {
+				flattened.addAll(flattenNonScopedChildBgps((IrBGP) line).getLines());
+				changed = true;
+			} else {
+				flattened.add(line);
+			}
+		}
+		return changed ? BaseTransform.bgpWithLines(bgp, flattened) : bgp;
+	}
+
+	private static boolean containsScopedContainer(IrBGP bgp) {
+		for (IrNode line : bgp.getLines()) {
+			if (line instanceof IrGraph || line instanceof IrOptional || line instanceof IrMinus
+					|| line instanceof IrService || line instanceof IrSubSelect || line instanceof IrUnion) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

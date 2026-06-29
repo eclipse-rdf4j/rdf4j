@@ -366,6 +366,7 @@ public class JSONLDParserCustomTest {
 				.getResource("testcases/jsonld/remoteContext/data.jsonld")
 				.getFile()), StandardCharsets.UTF_8);
 
+		parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
 	}
@@ -377,6 +378,7 @@ public class JSONLDParserCustomTest {
 				.getFile()), StandardCharsets.UTF_8);
 
 		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of("https://schema.org"));
+		parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
 	}
@@ -390,6 +392,7 @@ public class JSONLDParserCustomTest {
 		try {
 			System.setProperty(JSONLDSettings.WHITELIST.getKey(),
 					"[\"https://schema.org\",\"https://example.org/context.jsonld\"]");
+			parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 			parser.parse(new StringReader(jsonld), "");
 			assertEquals(59, model.size());
 		} finally {

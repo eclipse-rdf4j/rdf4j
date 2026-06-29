@@ -24,8 +24,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Ensures the reader marks the scan incomplete when encountering an invalid or oversized frame length.
@@ -64,15 +65,15 @@ class ValueStoreWalReaderInvalidFrameTest {
 	private static byte[] headerFrame(String store) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "V");
-			g.writeNumberField("ver", 1);
-			g.writeStringField("store", store);
-			g.writeStringField("engine", "valuestore");
-			g.writeNumberField("created", 0);
-			g.writeNumberField("segment", 1);
-			g.writeNumberField("firstId", 1);
+			g.writeStringProperty("t", "V");
+			g.writeNumberProperty("ver", 1);
+			g.writeStringProperty("store", store);
+			g.writeStringProperty("engine", "valuestore");
+			g.writeNumberProperty("created", 0);
+			g.writeNumberProperty("segment", 1);
+			g.writeNumberProperty("firstId", 1);
 			g.writeEndObject();
 		}
 		baos.write('\n');

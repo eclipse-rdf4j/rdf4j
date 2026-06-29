@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -290,6 +291,7 @@ public final class QueryPlanCapture {
 
 		DebugMetricAccumulator accumulator = new DebugMetricAccumulator();
 		appendDebugSignatures(root, 1, accumulator);
+		appendOptimizerDebugMetrics(root, metrics);
 
 		String rootType = readText(root, "type");
 		String rootTypeNormalized = canonicalizeType(rootType);
@@ -405,6 +407,50 @@ public final class QueryPlanCapture {
 		}
 
 		return metrics;
+	}
+
+	private static void appendOptimizerDebugMetrics(JsonNode node, Map<String, String> metrics) {
+		if (node == null || node.isNull()) {
+			return;
+		}
+		if (node.isArray()) {
+			for (JsonNode child : node) {
+				appendOptimizerDebugMetrics(child, metrics);
+			}
+			return;
+		}
+		if (!node.isObject()) {
+			return;
+		}
+
+		node.fields().forEachRemaining(entry -> {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+				mergeDebugMetric(metrics, entry.getKey(), debugMetricValue(entry.getValue()));
+			}
+			appendOptimizerDebugMetrics(entry.getValue(), metrics);
+		});
+	}
+
+	private static String debugMetricValue(JsonNode value) {
+		if (value == null || value.isNull()) {
+			return "<null>";
+		}
+		if (value.isValueNode()) {
+			return value.asText();
+		}
+		return value.toString();
+	}
+
+	private static void mergeDebugMetric(Map<String, String> metrics, String key, String value) {
+		if (value == null || value.isBlank()) {
+			return;
+		}
+		String existing = metrics.get(key);
+		if (existing == null || existing.isBlank()) {
+			metrics.put(key, value);
+		} else if (!existing.contains(value)) {
+			metrics.put(key, existing + " | " + value);
+		}
 	}
 
 	private static void appendIteratorTelemetry(TupleExpr tupleExpr, Map<String, String> metrics) {

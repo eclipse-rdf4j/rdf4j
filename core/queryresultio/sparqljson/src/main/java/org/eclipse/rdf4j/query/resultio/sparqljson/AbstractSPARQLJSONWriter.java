@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import java.io.IOException;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.AbstractSPARQLJSONParser.ITS_DIR;
+
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
@@ -37,13 +38,16 @@ import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonFactoryBuilder;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.StreamWriteFeature;
-import com.fasterxml.jackson.core.util.DefaultIndenter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.PrettyPrinter;
+import tools.jackson.core.StreamWriteFeature;
+import tools.jackson.core.TokenStreamFactory;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.util.DefaultIndenter;
+import tools.jackson.core.util.DefaultPrettyPrinter;
+import tools.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and SPARQLResultsJSONWriter.
@@ -52,14 +56,14 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  */
 abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements CharSink {
 
-	private static final JsonFactory JSON_FACTORY = new JsonFactoryBuilder()
+	private static final JsonFactory JSON_FACTORY = JsonFactory.builder()
 			// Disable features that may work for most JSON where the field names are
 			// in limited supply,
 			// but does not work for RDF/JSON where a wide range of URIs are used for
 			// subjects and
 			// predicates
-			.disable(JsonFactory.Feature.INTERN_FIELD_NAMES)
-			.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES)
+			.disable(TokenStreamFactory.Feature.INTERN_PROPERTY_NAMES)
+			.disable(TokenStreamFactory.Feature.CANONICALIZE_PROPERTY_NAMES)
 			.disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
 			.build();
 
@@ -75,7 +79,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected boolean linksFound = false;
 
-	protected final JsonGenerator jg;
+	protected JsonGenerator jg;
 
 	private final Writer writer;
 
@@ -85,11 +89,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected AbstractSPARQLJSONWriter(Writer writer) {
 		this.writer = writer;
-		try {
-			jg = JSON_FACTORY.createGenerator(writer);
-		} catch (IOException e) {
-			throw new IllegalArgumentException(e);
-		}
 	}
 
 	@Override
@@ -105,13 +104,13 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 				if (tupleVariablesFound) {
 					// Write results
-					jg.writeObjectFieldStart("results");
+					jg.writeObjectPropertyStart("results");
 
-					jg.writeArrayFieldStart("bindings");
+					jg.writeArrayPropertyStart("bindings");
 				}
 
 				headerComplete = true;
-			} catch (IOException e) {
+			} catch (JacksonException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
@@ -131,12 +130,12 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			}
 
 			tupleVariablesFound = true;
-			jg.writeArrayFieldStart("vars");
+			jg.writeArrayPropertyStart("vars");
 			for (String nextColumn : columnHeaders) {
 				jg.writeString(nextColumn);
 			}
 			jg.writeEndArray();
-		} catch (IOException | QueryResultHandlerException e) {
+		} catch (JacksonException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -167,12 +166,12 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			Iterator<Binding> bindingIter = bindingSet.iterator();
 			while (bindingIter.hasNext()) {
 				Binding binding = bindingIter.next();
-				jg.writeFieldName(binding.getName());
+				jg.writeName(binding.getName());
 				writeValue(binding.getValue());
 			}
 
 			jg.writeEndObject();
-		} catch (IOException | QueryResultHandlerException e) {
+		} catch (JacksonException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -201,7 +200,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			// results braces
 			jg.writeEndObject();
 			endDocument();
-		} catch (IOException | QueryResultHandlerException e) {
+		} catch (JacksonException | QueryResultHandlerException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
@@ -216,17 +215,23 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			firstTupleWritten = false;
 			linksFound = false;
 
+			// Create the generator here so the pretty printer setting (which requires the writer config)
+			// is known at generator construction time, as Jackson 3 reads it from the ObjectWriteContext eagerly.
+			final PrettyPrinter pp;
 			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
 				// SES-2011: Always use \n for consistency
 				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
-				// By default Jackson does not pretty print, so enable this unless
-				// PRETTY_PRINT setting is disabled
-				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-						.withObjectIndenter(indenter);
-				jg.setPrettyPrinter(pp);
+				pp = new DefaultPrettyPrinter().withArrayIndenter(indenter).withObjectIndenter(indenter);
+			} else {
+				pp = null;
 			}
-
 			try {
+				jg = JSON_FACTORY.createGenerator(new ObjectWriteContext.Base() {
+					@Override
+					public PrettyPrinter getPrettyPrinter() {
+						return pp;
+					}
+				}, writer);
 				if (getWriterConfig().isSet(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 					// SES-1019 : Write the callbackfunction name as a wrapper for
 					// the results here
@@ -235,7 +240,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 					jg.writeRaw("(");
 				}
 				jg.writeStartObject();
-			} catch (IOException e) {
+			} catch (JacksonException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
@@ -255,10 +260,10 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		if (!headerOpen) {
 			try {
 				// Write header
-				jg.writeObjectFieldStart("head");
+				jg.writeObjectPropertyStart("head");
 
 				headerOpen = true;
-			} catch (IOException e) {
+			} catch (JacksonException e) {
 				throw new QueryResultHandlerException(e);
 			}
 		}
@@ -275,41 +280,44 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				startHeader();
 			}
 
-			jg.writeArrayFieldStart("link");
+			jg.writeArrayPropertyStart("link");
 			for (String nextLink : linkUrls) {
 				jg.writeString(nextLink);
 			}
 			jg.writeEndArray();
-		} catch (IOException e) {
+		} catch (JacksonException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
 
-	protected void writeValue(Value value) throws IOException, QueryResultHandlerException {
+	protected void writeValue(Value value) throws QueryResultHandlerException {
 		jg.writeStartObject();
 
 		if (value instanceof IRI) {
-			jg.writeStringField("type", "uri");
-			jg.writeStringField("value", ((IRI) value).toString());
+			jg.writeStringProperty("type", "uri");
+			jg.writeStringProperty("value", ((IRI) value).toString());
 		} else if (value instanceof BNode) {
-			jg.writeStringField("type", "bnode");
-			jg.writeStringField("value", ((BNode) value).getID());
+			jg.writeStringProperty("type", "bnode");
+			jg.writeStringProperty("value", ((BNode) value).getID());
 		} else if (value instanceof Literal) {
 			Literal lit = (Literal) value;
 
 			if (Literals.isLanguageLiteral(lit)) {
-				jg.writeObjectField("xml:lang", lit.getLanguage().orElse(null));
+				jg.writeStringProperty("xml:lang", lit.getLanguage().orElse(null));
+				if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
+					jg.writeStringProperty(ITS_DIR, lit.getBaseDirection().toString());
+				}
 			} else {
 				IRI datatype = lit.getDatatype();
 				boolean ignoreDatatype = datatype.equals(XSD.STRING) && xsdStringToPlainLiteral();
 				if (!ignoreDatatype) {
-					jg.writeObjectField("datatype", lit.getDatatype().stringValue());
+					jg.writeStringProperty("datatype", lit.getDatatype().stringValue());
 				}
 			}
 
-			jg.writeObjectField("type", "literal");
+			jg.writeStringProperty("type", "literal");
 
-			jg.writeObjectField("value", lit.getLabel());
+			jg.writeStringProperty("value", lit.getLabel());
 		} else {
 			throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
 		}
@@ -336,13 +344,13 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 		try {
 			if (value) {
-				jg.writeBooleanField("boolean", Boolean.TRUE);
+				jg.writeBooleanProperty("boolean", Boolean.TRUE);
 			} else {
-				jg.writeBooleanField("boolean", Boolean.FALSE);
+				jg.writeBooleanProperty("boolean", Boolean.FALSE);
 			}
 
 			endDocument();
-		} catch (IOException e) {
+		} catch (JacksonException e) {
 			throw new QueryResultHandlerException(e);
 		}
 	}
@@ -361,7 +369,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		// Ignored by SPARQLJSONWriterBase
 	}
 
-	protected void endDocument() throws IOException {
+	protected void endDocument() throws JacksonException {
 		jg.writeEndObject();
 		if (getWriterConfig().isSet(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 			jg.writeRaw(");");

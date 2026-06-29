@@ -14,18 +14,29 @@ package org.eclipse.rdf4j.rio.trix;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Locale;
 
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
@@ -84,8 +95,8 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testIgnoreExternalDTDWhenParserConfigAllowsDoctype() throws Exception {
-		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+	public void testIgnoreExternalDTDWhenSystemPropertyAllowsDoctype() throws Exception {
+		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
@@ -107,21 +118,21 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testLoadExternalDTDConfigured() throws Exception {
+	public void testParserConfigCannotLoadExternalDTD() throws Exception {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 		parser.getParserConfig().set(XMLParserSettings.LOAD_EXTERNAL_DTD, true);
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
 
-			assertThatExceptionOfType(FileNotFoundException.class)
+			assertThatExceptionOfType(RDFParseException.class)
 					.isThrownBy(() -> parser.parse(in, ""))
-					.withMessageMatching(".*non-existent\\.dtd.*");
+					.withMessageContaining("DOCTYPE is disallowed");
 		}
 	}
 
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
-		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix")) {
@@ -144,7 +155,7 @@ public class TriXParserTest {
 
 	@Test
 	public void testIgnoreExternalParameterEntity() throws Exception {
-		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix")) {
@@ -169,5 +180,25 @@ public class TriXParserTest {
 		assertEquals(0, el.getErrors().size());
 		assertEquals(1, el.getFatalErrors().size());
 		assertEquals("[Rio fatal] Content is not allowed in prolog. (1, 1)", el.getFatalErrors().get(0));
+	}
+
+	@Test
+	public void testDirectedLanguageLiteralRoundTripsBaseDirection() throws Exception {
+		IRI subject = vf.createIRI("urn:subject");
+		IRI predicate = vf.createIRI("urn:predicate");
+		Literal literal = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		Model model = new LinkedHashModel();
+		model.add(subject, predicate, literal);
+
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		Rio.write(model, output, RDFFormat.TRIX);
+		Model parsed = Rio.parse(new ByteArrayInputStream(output.toByteArray()), "", RDFFormat.TRIX);
+
+		Iterator<Value> objects = parsed.filter(subject, predicate, null).objects().iterator();
+		Literal parsedLiteral = assertInstanceOf(Literal.class, objects.next());
+		assertEquals(literal.getLabel(), parsedLiteral.getLabel());
+		assertEquals("he", parsedLiteral.getLanguage().orElseThrow());
+		assertEquals(Literal.BaseDirection.RTL, parsedLiteral.getBaseDirection());
+		assertEquals(literal, parsedLiteral);
 	}
 }

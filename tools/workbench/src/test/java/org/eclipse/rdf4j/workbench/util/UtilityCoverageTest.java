@@ -22,8 +22,6 @@ import static org.mockito.Mockito.when;
 import java.util.Collections;
 import java.util.Locale;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -35,6 +33,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockServletContext;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 class UtilityCoverageTest {
 

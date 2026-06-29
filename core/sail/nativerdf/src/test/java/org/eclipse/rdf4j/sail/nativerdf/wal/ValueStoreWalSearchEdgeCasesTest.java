@@ -26,8 +26,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 @Tag("slow")
 class ValueStoreWalSearchEdgeCasesTest {
@@ -84,15 +85,15 @@ class ValueStoreWalSearchEdgeCasesTest {
 	private static byte[] header(int seq, int firstId) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "V");
-			g.writeNumberField("ver", 1);
-			g.writeStringField("store", "s");
-			g.writeStringField("engine", "valuestore");
-			g.writeNumberField("created", 0);
-			g.writeNumberField("segment", seq);
-			g.writeNumberField("firstId", firstId);
+			g.writeStringProperty("t", "V");
+			g.writeNumberProperty("ver", 1);
+			g.writeStringProperty("store", "s");
+			g.writeStringProperty("engine", "valuestore");
+			g.writeNumberProperty("created", 0);
+			g.writeNumberProperty("segment", seq);
+			g.writeNumberProperty("firstId", firstId);
 			g.writeEndObject();
 		}
 		baos.write('\n');
@@ -102,16 +103,16 @@ class ValueStoreWalSearchEdgeCasesTest {
 	private static byte[] minted(int id, String vk, String lex) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "M");
-			g.writeNumberField("lsn", id); // monotonic for simplicity
-			g.writeNumberField("id", id);
-			g.writeStringField("vk", vk);
-			g.writeStringField("lex", lex);
-			g.writeStringField("dt", "");
-			g.writeStringField("lang", "");
-			g.writeNumberField("hash", 0);
+			g.writeStringProperty("t", "M");
+			g.writeNumberProperty("lsn", id); // monotonic for simplicity
+			g.writeNumberProperty("id", id);
+			g.writeStringProperty("vk", vk);
+			g.writeStringProperty("lex", lex);
+			g.writeStringProperty("dt", "");
+			g.writeStringProperty("lang", "");
+			g.writeNumberProperty("hash", 0);
 			g.writeEndObject();
 		}
 		baos.write('\n');

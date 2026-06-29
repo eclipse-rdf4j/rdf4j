@@ -205,7 +205,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	}
 
 	@Test
-	public final void testRDFStarCompatibility() throws IOException {
+	public final void testRDFTripleTermCompatibility() throws IOException {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		List<String> bindingNames = Arrays.asList("a", "b", "c");
@@ -219,11 +219,19 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 		bindings.add(bs1);
 		MapBindingSet bs2 = new MapBindingSet();
 		bs2.addBinding("a", vf.createLiteral("foo"));
-		bs2.addBinding("b", vf.createTriple(vf.createBNode("bnode2"), RDFS.LABEL,
+		bs2.addBinding("b", vf.createTripleTerm(vf.createBNode("bnode2"), RDFS.LABEL,
 				vf.createLiteral("\"literal with\tfunny\nchars")));
-		bs2.addBinding("c", vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f")));
+		bs2.addBinding("c", vf.createTripleTerm(
+				vf.createIRI("urn:e"),
+				vf.createIRI("urn:f"),
+				vf.createTripleTerm(
+						vf.createIRI("urn:c"),
+						vf.createIRI("urn:d"),
+						vf.createTripleTerm(
+								vf.createIRI("urn:a"),
+								RDF.TYPE,
+								vf.createIRI("urn:b"))
+				)));
 		bindings.add(bs2);
 
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {

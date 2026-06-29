@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -73,7 +73,7 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred,
+	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred,
 			Value obj) throws SailException {
 		return delegate.getTriples(subj, pred, obj);
 	}

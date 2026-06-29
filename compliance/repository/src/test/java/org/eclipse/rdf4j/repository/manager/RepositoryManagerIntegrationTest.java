@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.repository.manager;
 import java.net.URL;
 import java.util.Collection;
 
-import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -29,7 +29,7 @@ public class RepositoryManagerIntegrationTest {
 		subject = new RepositoryManager() {
 
 			@Override
-			public void setHttpClient(HttpClient httpClient) {
+			public void setHttpClient(RDF4JHttpClient httpClient) {
 				// TODO Auto-generated method stub
 
 			}
@@ -40,7 +40,7 @@ public class RepositoryManagerIntegrationTest {
 			}
 
 			@Override
-			public HttpClient getHttpClient() {
+			public RDF4JHttpClient getHttpClient() {
 				return null;
 			}
 

@@ -19,7 +19,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
- * Triple lookup reference. Allow retrieval of RDF-star triples
+ * TripleTerm lookup reference. Allow retrieval of RDF-star triples
  **/
 public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 
