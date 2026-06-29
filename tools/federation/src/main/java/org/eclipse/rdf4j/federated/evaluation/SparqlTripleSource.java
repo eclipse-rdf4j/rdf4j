@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
@@ -35,7 +34,6 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -171,15 +169,6 @@ public class SparqlTripleSource extends TripleSourceBase {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet> getStatements(
-			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
-
-		throw new RuntimeException("NOT YET IMPLEMENTED.");
-	}
-
-	@Override
 	public CloseableIteration<Statement> getStatements(
 			Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
 			Resource... contexts) throws RepositoryException,
@@ -191,15 +180,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 			try {
 				repoResult = conn.getStatements(subj, pred, obj,
 						queryInfo.getIncludeInferred(), contexts);
-				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-					@Override
-					protected QueryEvaluationException convert(RuntimeException ex) {
-						if (ex instanceof QueryEvaluationException) {
-							return (QueryEvaluationException) ex;
-						}
-						return new QueryEvaluationException(ex);
-					}
-				});
+				resultHolder.set(repoResult);
 			} catch (Throwable t) {
 				if (repoResult != null) {
 					repoResult.close();

@@ -140,7 +140,8 @@ public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 		String expectedOutput = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
 				"<rdf:RDF\n" +
 				"\txmlns:rdfs=\"http://www.w3.org/2000/01/rdf-schema#\"\n" +
-				"\txmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n" +
+				"\txmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\n" +
+				"\txmlns:its=\"http://www.w3.org/2005/11/its\">\n" +
 				"<rdf:Description rdf:about=\"http://example.org/subject\">\n" +
 				"\t<relation xmlns=\"http://example.org/\">\n" +
 				"\t\t<rdf:Description>\n" +

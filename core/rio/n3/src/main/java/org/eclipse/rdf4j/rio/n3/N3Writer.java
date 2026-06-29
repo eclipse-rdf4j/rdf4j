@@ -40,11 +40,6 @@ public class N3Writer implements RDFWriter, CharSink {
 
 	private final TurtleWriter ttlWriter;
 
-	/**
-	 * A collection of configuration options for this writer.
-	 */
-	private WriterConfig writerConfig = new WriterConfig();
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -103,13 +98,13 @@ public class N3Writer implements RDFWriter, CharSink {
 
 	@Override
 	public RDFWriter setWriterConfig(WriterConfig config) {
-		this.writerConfig = config;
+		ttlWriter.setWriterConfig(config);
 		return this;
 	}
 
 	@Override
 	public WriterConfig getWriterConfig() {
-		return writerConfig;
+		return ttlWriter.getWriterConfig();
 	}
 
 	@Override

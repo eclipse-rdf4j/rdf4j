@@ -187,4 +187,5 @@ class LmdbContextIdIterator implements Closeable {
 	public void close() {
 		closeInternal(true);
 	}
+
 }

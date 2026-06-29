@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
@@ -50,7 +50,7 @@ public abstract class ControlledWorkerBindJoinBase extends JoinExecutorBase<Bind
 	protected final Phaser phaser = new Phaser(1);
 
 	public ControlledWorkerBindJoinBase(ControlledWorkerScheduler<BindingSet> scheduler,
-			FederationEvalStrategy strategy,
+			FederationEvaluationStrategy strategy,
 			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {

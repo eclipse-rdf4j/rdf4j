@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.exceptions;
 
-import javax.servlet.ServletException;
+import jakarta.servlet.ServletException;
 
 public class BadRequestException extends ServletException {
 

@@ -30,9 +30,8 @@ public class ElasticsearchSailIndexedPropertiesTest extends AbstractElasticsearc
 
 			@Override
 			protected void configure(LuceneSail sail) {
-				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
-				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-						client.settings().get("cluster.name"));
+				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + httpPort);
+				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name", CLUSTER_NAME);
 				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");

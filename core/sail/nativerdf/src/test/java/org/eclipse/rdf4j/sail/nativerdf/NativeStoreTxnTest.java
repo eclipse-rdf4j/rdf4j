@@ -153,7 +153,7 @@ public class NativeStoreTxnTest {
 			tripleStore.close();
 		}
 
-		TxnStatusFile.TxnStatus currentStatus = new TxnStatusFile(repo.getDataDir()).getTxnStatus();
+		TxnStatusFile.TxnStatus currentStatus = new TxnStatusFile(repo.getDataDir(), false).getTxnStatus();
 
 		assertEquals(TxnStatusFile.TxnStatus.NONE, currentStatus);
 	}

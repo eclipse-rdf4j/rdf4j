@@ -35,10 +35,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -93,7 +93,9 @@ class FileIO {
 
 	public static final int DATATYPE_LITERAL_MARKER = 10;
 
-	public static final int RDFSTAR_TRIPLE_MARKER = 11;
+	public static final int RDF12_TRIPLE_TERM_MARKER = 11;
+
+	public static final int LANG_LITERAL_BASE_DIRECTION_MARKER = 12;
 
 	public static final int EOF_MARKER = 127;
 
@@ -283,17 +285,24 @@ class FileIO {
 			IRI datatype = lit.getDatatype();
 
 			if (Literals.isLanguageLiteral(lit)) {
-				dataOut.writeByte(LANG_LITERAL_MARKER);
-				writeString(label, dataOut);
-				writeString(lit.getLanguage().get(), dataOut);
+				if (lit.getBaseDirection() != Literal.BaseDirection.NONE && lit.getBaseDirection() != null) {
+					dataOut.writeByte(LANG_LITERAL_BASE_DIRECTION_MARKER);
+					writeString(label, dataOut);
+					writeString(lit.getLanguage().get(), dataOut);
+					dataOut.writeByte(lit.getBaseDirection().ordinal());
+				} else {
+					dataOut.writeByte(LANG_LITERAL_MARKER);
+					writeString(label, dataOut);
+					writeString(lit.getLanguage().get(), dataOut);
+				}
 			} else {
 				dataOut.writeByte(DATATYPE_LITERAL_MARKER);
 				writeString(label, dataOut);
 				writeValue(datatype, dataOut);
 			}
-		} else if (value.isTriple()) {
-			dataOut.writeByte(RDFSTAR_TRIPLE_MARKER);
-			writeValue(RDFStarUtil.toRDFEncodedValue(value), dataOut);
+		} else if (value.isTripleTerm()) {
+			dataOut.writeByte(RDF12_TRIPLE_TERM_MARKER);
+			writeValue(TripleTermUtil.toRDFEncodedValue(value), dataOut);
 		} else {
 			throw new IllegalArgumentException("unexpected value type: " + value.getClass());
 		}
@@ -311,6 +320,12 @@ class FileIO {
 		} else if (valueTypeMarker == PLAIN_LITERAL_MARKER) {
 			String label = readString(dataIn);
 			return vf.createLiteral(label);
+		} else if (valueTypeMarker == LANG_LITERAL_BASE_DIRECTION_MARKER) {
+			String label = readString(dataIn);
+			String language = readString(dataIn);
+			byte directionOrdinal = dataIn.readByte();
+			Literal.BaseDirection baseDirection = Literal.BaseDirection.values()[directionOrdinal];
+			return vf.createLiteral(label, language, baseDirection);
 		} else if (valueTypeMarker == LANG_LITERAL_MARKER) {
 			String label = readString(dataIn);
 			String language = readString(dataIn);
@@ -319,10 +334,10 @@ class FileIO {
 			String label = readString(dataIn);
 			IRI datatype = (IRI) readValue(dataIn);
 			return vf.createLiteral(label, datatype);
-		} else if (valueTypeMarker == RDFSTAR_TRIPLE_MARKER) {
+		} else if (valueTypeMarker == RDF12_TRIPLE_TERM_MARKER) {
 			IRI rdfStarEncodedTriple = (IRI) readValue(dataIn);
-			Triple triple = (Triple) RDFStarUtil.fromRDFEncodedValue(rdfStarEncodedTriple, vf);
-			return vf.getOrCreateMemTriple(triple);
+			TripleTerm tripleTerm = (TripleTerm) TripleTermUtil.fromRDFEncodedValue(rdfStarEncodedTriple, vf);
+			return vf.getOrCreateMemTripleTerm(tripleTerm);
 		} else {
 			throw new IOException("Invalid value type marker: " + valueTypeMarker);
 		}

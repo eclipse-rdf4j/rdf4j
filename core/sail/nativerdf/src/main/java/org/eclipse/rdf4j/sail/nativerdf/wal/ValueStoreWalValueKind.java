@@ -19,6 +19,7 @@ public enum ValueStoreWalValueKind {
 	IRI('I'),
 	BNODE('B'),
 	LITERAL('L'),
+	TRIPLE('T'),
 	NAMESPACE('N');
 
 	private final char code;

@@ -46,14 +46,7 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 
 	protected abstract LmdbSailStore createSailStore(File dataDir) throws IOException, SailException;
 
-	private static final class OverflowStoreCleaner implements Runnable {
-		private final LmdbSailStore store;
-		private final File dataDir;
-
-		private OverflowStoreCleaner(LmdbSailStore store, File dataDir) {
-			this.store = store;
-			this.dataDir = dataDir;
-		}
+	private record OverflowStoreCleaner(LmdbSailStore store, File dataDir) implements Runnable {
 
 		@Override
 		public void run() {

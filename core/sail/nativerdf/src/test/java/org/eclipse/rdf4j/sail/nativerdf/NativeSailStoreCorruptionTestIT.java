@@ -37,10 +37,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.slf4j.Logger;
@@ -112,6 +109,9 @@ public class NativeSailStoreCorruptionTestIT {
 	@AfterEach
 	public void tearDown() throws IOException {
 		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
+		if (repo != null && repo.isInitialized()) {
+			repo.shutDown();
+		}
 	}
 
 	public static void overwriteByteInFile(File valuesFile, long pos, int newVal) throws IOException {
@@ -160,7 +160,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesDatFileNamespace() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -176,7 +176,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesDatFileNamespaceDatatype() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -192,7 +192,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesDatFileEmptyDataArrayError() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -208,7 +208,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesDatFileInvalidTypeError() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -224,7 +224,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(300)
 	public void testCorruptValuesDatFileEntireValuesDatFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		for (int i = 4; i < 437; i++) {
@@ -244,7 +244,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptLastByteOfValuesDatFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -262,7 +262,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesIdFile() throws IOException {
 		repo.shutDown();
 		File valuesIdFile = new File(dataDir, "values.id");
@@ -282,7 +282,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesHashFile() throws IOException {
 		repo.shutDown();
 
@@ -311,7 +311,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesNamespacesFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -332,7 +332,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesContextsFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -353,7 +353,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesPoscAllocFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -377,7 +377,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesPoscDataFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -407,7 +407,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesSpocAllocFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
@@ -433,7 +433,7 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
-//	@Timeout(30)
+	@Timeout(30)
 	public void testCorruptValuesSpocDataFile() throws IOException {
 		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
