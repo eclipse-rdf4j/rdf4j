@@ -59,11 +59,11 @@
 		<logback.version>1.5.26</logback.version>
 		<log4j.version>2.25.4</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<httpclient5.version>5.4.3</httpclient5.version>
-		<httpcore5.version>5.3.4</httpcore5.version>
-		<jackson.version>2.21.0</jackson.version>
-		<jackson.annotations.version>2.21</jackson.annotations.version>
-		<jackson3.version>3.1.2</jackson3.version>
+		<httpclient5.version>5.6.1</httpclient5.version>
+		<httpcore5.version>5.4.3</httpcore5.version>
+		<jackson.version>2.22.0</jackson.version>
+		<jackson.annotations.version>2.22</jackson.annotations.version>
+		<jackson3.version>3.2.0</jackson3.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
