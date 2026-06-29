@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBGPQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -108,7 +108,7 @@ public class LmdbIdBGPEvaluationTest {
 		SailDataset baselineDataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 
 		try {
-			SailDatasetTripleSource baseTs = new SailDatasetTripleSource(repository.getValueFactory(), baselineDataset);
+			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(), baselineDataset);
 
 			// Overlay triple source that returns the extra 'likes' statement in addition to baseline content
 			Statement overlayStmt = vf.createStatement(alice, likes, pizza);
@@ -218,7 +218,7 @@ public class LmdbIdBGPEvaluationTest {
 			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
 			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
 
-			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
 
 			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
 					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
@@ -287,7 +287,7 @@ public class LmdbIdBGPEvaluationTest {
 
 		try {
 			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
-			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
 
 			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
 					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());

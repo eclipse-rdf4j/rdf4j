@@ -24,14 +24,14 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * LMDB-aware {@link TripleSource} that exposes ID-level access when supported by the backing dataset.
  */
-public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource implements LmdbIdTripleSource {
+public class LmdbSailDatasetTripleSource extends SailDatasetTripleTermSource implements LmdbIdTripleSource {
 
 	private final SailDataset dataset;
 
@@ -75,7 +75,7 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 		if (ctxQueryId > 0) {
 			try {
 				Value ctxValue = valueStore.getLazyValue(ctxQueryId);
-				if (!(ctxValue instanceof Resource) || ((Resource) ctxValue).isTriple()) {
+				if (!(ctxValue instanceof Resource) || ((Resource) ctxValue).isTripleTerm()) {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				contexts = new Resource[] { (Resource) ctxValue };
@@ -195,7 +195,7 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 			if (requireIri && !(value instanceof IRI)) {
 				throw new QueryEvaluationException("Expected IRI-bound value");
 			}
-			if (value instanceof Resource && value.isTriple()) {
+			if (value instanceof Resource && value.isTripleTerm()) {
 				throw new QueryEvaluationException("Triple-valued resources are not supported in LMDB joins");
 			}
 			return value;

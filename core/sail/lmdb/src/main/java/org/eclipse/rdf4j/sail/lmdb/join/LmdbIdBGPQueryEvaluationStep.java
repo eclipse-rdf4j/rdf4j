@@ -807,7 +807,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			if (requireIri && !(value instanceof IRI)) {
 				return ConstantIdResult.invalid();
 			}
-			if (value instanceof Resource && ((Resource) value).isTriple()) {
+			if (value instanceof Resource && ((Resource) value).isTripleTerm()) {
 				return ConstantIdResult.invalid();
 			}
 			try {

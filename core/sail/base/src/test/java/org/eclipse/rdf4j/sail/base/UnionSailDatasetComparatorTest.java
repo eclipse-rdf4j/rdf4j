@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -76,7 +76,7 @@ public class UnionSailDatasetComparatorTest {
 		}
 
 		@Override
-		public CloseableIteration<? extends Triple> getTriples(Resource s, IRI p, Value o) {
+		public CloseableIteration<? extends TripleTerm> getTriples(Resource s, IRI p, Value o) {
 			return new EmptyIteration<>();
 		}
 

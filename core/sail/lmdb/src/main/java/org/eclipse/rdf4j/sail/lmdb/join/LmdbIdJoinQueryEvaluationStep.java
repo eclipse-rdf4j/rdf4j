@@ -148,7 +148,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 			return false;
 		}
 		if (value instanceof Resource
-				&& ((Resource) value).isTriple()) {
+				&& ((Resource) value).isTripleTerm()) {
 			return false;
 		}
 		if (value instanceof LmdbValue) {
@@ -309,7 +309,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (requireIri && !(v instanceof org.eclipse.rdf4j.model.IRI)) {
 			return Long.MIN_VALUE;
 		}
-		if (v instanceof org.eclipse.rdf4j.model.Resource && ((org.eclipse.rdf4j.model.Resource) v).isTriple()) {
+		if (v instanceof org.eclipse.rdf4j.model.Resource && ((org.eclipse.rdf4j.model.Resource) v).isTripleTerm()) {
 			return Long.MIN_VALUE;
 		}
 		try {

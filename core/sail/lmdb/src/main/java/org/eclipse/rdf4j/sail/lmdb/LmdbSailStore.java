@@ -981,7 +981,7 @@ class LmdbSailStore implements SailStore {
 			// If exactly one context was provided and is revision-compatible LmdbValue, pass it
 			if (contexts.length == 1) {
 				Resource ctx = contexts[0];
-				if (ctx != null && !ctx.isTriple() && ctx instanceof LmdbValue
+				if (ctx != null && !ctx.isTripleTerm() && ctx instanceof LmdbValue
 						&& valueStore.getRevision()
 								.equals(((LmdbValue) ctx).getValueStoreRevision())) {
 					cachedC = ctx;
@@ -1954,7 +1954,7 @@ class LmdbSailStore implements SailStore {
 					Resource ctx = contexts[0];
 					if (ctx == null) {
 						contextID = 0L; // default graph
-					} else if (!ctx.isTriple()) {
+					} else if (!ctx.isTripleTerm()) {
 						contextID = valueStore.getId(ctx);
 						if (contextID == LmdbValue.UNKNOWN_ID) {
 							return CloseableIteration.EMPTY_STATEMENT_ITERATION;
@@ -2011,7 +2011,7 @@ class LmdbSailStore implements SailStore {
 
 				if (cBound) {
 					Resource ctx = contexts[0];
-					if (ctx != null && !ctx.isTriple()
+					if (ctx != null && !ctx.isTripleTerm()
 							&& ctx instanceof LmdbValue
 							&& valueStore.getRevision()
 									.equals(((LmdbValue) ctx)
@@ -2043,7 +2043,7 @@ class LmdbSailStore implements SailStore {
 				Resource ctx = contexts[0];
 				if (ctx == null) {
 					cBound = true;
-				} else if (!ctx.isTriple()) {
+				} else if (!ctx.isTripleTerm()) {
 					cBound = true;
 				} else {
 					// triple context not supported for ordered scans
@@ -2340,7 +2340,7 @@ class LmdbSailStore implements SailStore {
 					contextID = LmdbValue.UNKNOWN_ID;
 				} else if (contextValue instanceof Resource) {
 					Resource ctx = (Resource) contextValue;
-					if (ctx.isTriple()) {
+					if (ctx.isTripleTerm()) {
 						return emptyRecordIterator();
 					}
 					contextID = resolveId(ctx);
@@ -2368,7 +2368,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public String selectBestIndex(long subj, long pred, long obj, long context) {
-			TripleStore.TripleIndex index = tripleStore.getBestIndex(subj, pred, obj, context);
+			TripleIndex index = tripleStore.getBestIndex(subj, pred, obj, context);
 			return index == null ? null : new String(index.getFieldSeq());
 		}
 
@@ -2513,7 +2513,7 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				Resource ctx = (Resource) value;
-				if (ctx.isTriple()) {
+				if (ctx.isTripleTerm()) {
 					return false;
 				}
 				long id = resolveId(ctx);
@@ -2591,7 +2591,7 @@ class LmdbSailStore implements SailStore {
 			if (requireIri && !(bound.isIRI())) {
 				return INVALID_ID;
 			}
-			if (bound.isTriple()) {
+			if (bound.isTripleTerm()) {
 				return INVALID_ID;
 			}
 			long id = resolveId(bound);
@@ -2620,7 +2620,7 @@ class LmdbSailStore implements SailStore {
 				return INVALID_ID;
 			}
 			Resource ctx = (Resource) bound;
-			if (ctx.isTriple()) {
+			if (ctx.isTripleTerm()) {
 				return INVALID_ID;
 			}
 			long id = resolveId(ctx);

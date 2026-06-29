@@ -85,7 +85,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 		if (ctxVal != null && !(ctxVal instanceof Resource)) {
 			return LmdbIdJoinIterator.emptyRecordIterator();
 		}
-		if (ctxVal != null && ctxVal.isTriple()) {
+		if (ctxVal != null && ctxVal.isTripleTerm()) {
 			return LmdbIdJoinIterator.emptyRecordIterator();
 		}
 
@@ -219,7 +219,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				Resource ctxRes = (Resource) ctxValue;
-				if (ctxRes.isTriple()) {
+				if (ctxRes.isTripleTerm()) {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				contexts = new Resource[] { ctxRes };
@@ -379,7 +379,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			if (requireIri && !(value instanceof IRI)) {
 				throw new QueryEvaluationException("Expected IRI-bound value");
 			}
-			if (value instanceof Resource && value.isTriple()) {
+			if (value instanceof Resource && value.isTripleTerm()) {
 				throw new QueryEvaluationException("Triple-valued resources are not supported in LMDB joins");
 			}
 			return value;

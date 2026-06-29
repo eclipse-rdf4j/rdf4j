@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -89,7 +89,7 @@ public class LmdbIdJoinDisableOnChangesTest {
 		SailDataset baselineDataset = branch
 				.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT_READ);
 		try {
-			SailDatasetTripleSource baseTs = new SailDatasetTripleSource(repository.getValueFactory(), baselineDataset);
+			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(), baselineDataset);
 			Statement overlayStmt = vf.createStatement(alice, likes, pizza);
 			TripleSource overlayTs = new TripleSource() {
 				@Override

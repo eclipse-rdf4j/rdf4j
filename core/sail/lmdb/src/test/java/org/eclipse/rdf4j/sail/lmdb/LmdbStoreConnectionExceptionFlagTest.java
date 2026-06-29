@@ -15,10 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Path;
-import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -30,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -77,18 +75,10 @@ public class LmdbStoreConnectionExceptionFlagTest {
 		}
 	}
 
-	private static final class AlwaysThrowingEvaluationStrategyFactory extends LmdbEvaluationStrategyFactory {
-
-		private Supplier<CollectionFactory> collectionFactory = DefaultCollectionFactory::new;
+	private static final class AlwaysThrowingEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
 
 		AlwaysThrowingEvaluationStrategyFactory() {
 			super(null);
-		}
-
-		@Override
-		public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
-			super.setCollectionFactory(collectionFactory);
-			this.collectionFactory = collectionFactory;
 		}
 
 		@Override
@@ -98,7 +88,7 @@ public class LmdbStoreConnectionExceptionFlagTest {
 					getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
 					isTrackResultSize());
 			getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
-			strategy.setCollectionFactory(collectionFactory);
+			strategy.setCollectionFactory(collectionFactorySupplier);
 			return strategy;
 		}
 	}

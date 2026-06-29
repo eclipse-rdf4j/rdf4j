@@ -112,7 +112,7 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 		if (ctxQueryId > 0) {
 			try {
 				Value ctxValue = valueStore.getLazyValue(ctxQueryId);
-				if (!(ctxValue instanceof Resource) || ((Resource) ctxValue).isTriple()) {
+				if (!(ctxValue instanceof Resource) || ((Resource) ctxValue).isTripleTerm()) {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				contexts = new Resource[] { (Resource) ctxValue };
@@ -211,7 +211,7 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 			if (requireIri && !(value instanceof IRI)) {
 				throw new QueryEvaluationException("Expected IRI-bound value");
 			}
-			if (value instanceof Resource && value.isTriple()) {
+			if (value instanceof Resource && value.isTripleTerm()) {
 				throw new QueryEvaluationException("Triple-valued resources are not supported in LMDB joins");
 			}
 			return value;

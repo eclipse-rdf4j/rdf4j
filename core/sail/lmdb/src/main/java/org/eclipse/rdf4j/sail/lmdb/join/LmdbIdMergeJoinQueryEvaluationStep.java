@@ -391,7 +391,7 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 			if (requireIri && !(value instanceof IRI)) {
 				return Long.MIN_VALUE;
 			}
-			if (value instanceof Resource && ((Resource) value).isTriple()) {
+			if (value instanceof Resource && ((Resource) value).isTripleTerm()) {
 				return Long.MIN_VALUE;
 			}
 			try {

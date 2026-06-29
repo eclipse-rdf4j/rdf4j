@@ -95,7 +95,7 @@ class SubjectPredicateIndexTest {
 
 		TxnRecordCache cache = new TxnRecordCache(dataDir);
 		try {
-			cache.storeRecord(new long[] { 1, 2, 5, 0 }, true);
+			cache.storeRecord(new long[] { 1, 2, 5, 0 }, true, false);
 			Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
 			recordCacheField.setAccessible(true);
 			recordCacheField.set(tripleStore, cache);

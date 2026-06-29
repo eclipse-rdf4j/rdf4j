@@ -130,12 +130,6 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	@Override
 	public int hashCode() {
-		init();
-		return super.hashCode();
-	}
-
-	@Override
-	public int hashCode() {
 		if (internalID != UNKNOWN_ID) {
 			int cachedHash = revision.getStoredHash(internalID);
 			if (cachedHash != 0) {

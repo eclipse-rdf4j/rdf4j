@@ -850,8 +850,6 @@ public class TripleStore implements Closeable {
 		}
 
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
-		CardinalityEstimator estimator = new CardinalityEstimator(this, index, subj, pred, obj, context);
-
 		try {
 			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
 		} catch (IOException | RuntimeException e) {
@@ -907,6 +905,7 @@ public class TripleStore implements Closeable {
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
 			throws IOException {
 
+		CardinalityEstimator estimator = new CardinalityEstimator(this, index, subj, pred, obj, context);
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
 			return estimator.countAllEntries();
@@ -964,9 +963,9 @@ public class TripleStore implements Closeable {
 			maxKeyBuf.flip();
 			maxKey.mv_data(maxKeyBuf);
 
-			MDBVal keyData = MDBVal.mallocStack(stack);
+			MDBVal keyData = MDBVal.malloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-			MDBVal valueData = MDBVal.mallocStack(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
 
 			double cardinality = 0;
 			for (int i = 0; i < 2; i++) {
