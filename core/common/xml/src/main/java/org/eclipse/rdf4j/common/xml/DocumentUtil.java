@@ -64,6 +64,21 @@ public class DocumentUtil {
 	}
 
 	/**
+	 * Create a Document representing the XML data from the supplied stream.
+	 *
+	 * @param inputStream    an XML input stream. The caller remains responsible for closing it.
+	 * @param validating     whether the XML parser used in the construction of the document should validate the XML
+	 * @param namespaceAware whether the XML parser used in the construction of the document should be aware of
+	 *                       namespaces
+	 * @return a Document representing the XML data
+	 * @throws IOException when there was a problem parsing the document.
+	 */
+	public static Document getDocument(InputStream inputStream, boolean validating, boolean namespaceAware)
+			throws IOException {
+		return getDocument(inputStream, validating, namespaceAware, null);
+	}
+
+	/**
 	 * Create a Document representing the XML file at the specified location.
 	 *
 	 * @param location       the location of an XML document
