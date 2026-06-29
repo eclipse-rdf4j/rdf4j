@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 public class ASTPropertyList extends SimpleNode {
 
+	private boolean annotation = false;
+
 	public ASTPropertyList(int id) {
 		super(id);
 	}
@@ -35,9 +37,40 @@ public class ASTPropertyList extends SimpleNode {
 		return (ASTObjectList) children[1];
 	}
 
+	public boolean isAnnotation() {
+		return annotation;
+	}
+
+	public void setAnnotation(boolean annotation) {
+		this.annotation = annotation;
+	}
+
+	public Object getReifier() {
+		for (int i = 2; i < children.length; i++) {
+			if (this.children[i] instanceof ASTVar || children[i] instanceof ASTIRI
+					|| children[i] instanceof ASTBlankNode) {
+				return children[i];
+			}
+		}
+		return null;
+	}
+
+	public ASTPropertyList getAnnotation() {
+		for (int i = 2; i < children.length; i++) {
+			if (children[i] instanceof ASTPropertyList
+					&& ((ASTPropertyList) children[i]).isAnnotation()) {
+				return (ASTPropertyList) children[i];
+			}
+		}
+		return null;
+	}
+
 	public ASTPropertyList getNextPropertyList() {
-		if (children.length >= 3) {
-			return (ASTPropertyList) children[2];
+		for (int i = 2; i < children.length; i++) {
+			if (children[i] instanceof ASTPropertyList
+					&& !((ASTPropertyList) children[i]).isAnnotation()) {
+				return (ASTPropertyList) children[i];
+			}
 		}
 		return null;
 	}

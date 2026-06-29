@@ -13,10 +13,11 @@ package org.eclipse.rdf4j.repository.http;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ServerSocket;
 import java.util.Properties;
 
+import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -36,8 +37,8 @@ public class HTTPMemServer {
 	private static final Logger logger = LoggerFactory.getLogger(HTTPMemServer.class);
 
 	private static final String HOST = "localhost";
-
-	private static final int PORT = 18081;
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
 	private static final String TEST_REPO_ID = "Test";
 
@@ -45,11 +46,12 @@ public class HTTPMemServer {
 
 	private static final String RDF4J_CONTEXT = "/rdf4j";
 
-	private static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
+	private final int port;
+	private final String serverUrl;
 
-	public static final String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
+	public static String REPOSITORY_URL;
 
-	public static String INFERENCE_REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_INFERENCE_REPO_ID);
+	public static String INFERENCE_REPOSITORY_URL;
 
 	private final Server jetty;
 
@@ -57,19 +59,24 @@ public class HTTPMemServer {
 
 	public HTTPMemServer() throws IOException {
 		System.clearProperty("DEBUG");
+		port = allocatePortAbove32768();
+		serverUrl = "http://" + HOST + ":" + port + RDF4J_CONTEXT;
+		REPOSITORY_URL = Protocol.getRepositoryLocation(serverUrl, TEST_REPO_ID);
+		INFERENCE_REPOSITORY_URL = Protocol.getRepositoryLocation(serverUrl, TEST_INFERENCE_REPO_ID);
+
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
 		String webappDir = reader.getProperty("testserver.webapp.dir");
 		logger.debug("build path: {}", webappDir);
 
-		jetty = new Server(PORT);
+		jetty = new Server(port);
 
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(RDF4J_CONTEXT);
 		webapp.setWar(webappDir);
-		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
+		WebAppContext.addServerClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		jetty.setHandler(webapp);
 
-		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
+		manager = RemoteRepositoryManager.getInstance(serverUrl);
 	}
 
 	public void start() throws Exception {
@@ -120,5 +127,17 @@ public class HTTPMemServer {
 		public String getProperty(String propertyName) {
 			return this.properties.getProperty(propertyName);
 		}
+	}
+
+	private static int allocatePortAbove32768() throws IOException {
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
+		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
 	}
 }

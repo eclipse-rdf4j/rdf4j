@@ -90,8 +90,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
-		if (initializedValue instanceof LmdbIRI) {
-			LmdbIRI initializedIRI = (LmdbIRI) initializedValue;
+		if (initializedValue instanceof LmdbIRI initializedIRI) {
 			this.iriString = initializedIRI.iriString;
 			this.localNameIdx = initializedIRI.localNameIdx;
 		} else {

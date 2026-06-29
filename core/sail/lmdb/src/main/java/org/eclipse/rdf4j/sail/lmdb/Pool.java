@@ -42,7 +42,7 @@ class Pool {
 			bb.clear();
 			return bb;
 		}
-		return MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
+		return MemoryUtil.memAlloc(TripleIndex.MAX_KEY_LENGTH);
 	}
 
 	final Statistics getStatistics() {

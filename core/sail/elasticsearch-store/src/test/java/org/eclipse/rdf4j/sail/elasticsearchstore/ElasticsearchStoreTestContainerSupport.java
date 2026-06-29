@@ -12,19 +12,22 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.http.HttpHost;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.core.TimeValue;
+import org.apache.hc.core5.http.HttpHost;
 import org.opentest4j.TestAbortedException;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.HealthStatus;
+import co.elastic.clients.elasticsearch.cluster.HealthResponse;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
+import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 
 /**
  * Test-only helper that lazily starts a single Elasticsearch container and exposes its connection details.
@@ -33,6 +36,9 @@ import org.testcontainers.utility.DockerImageName;
 public final class ElasticsearchStoreTestContainerSupport {
 
 	private static final String CLUSTER_NAME = "test";
+	private static final long DOCKER_PING_TIMEOUT_MILLIS = 5_000;
+	private static volatile boolean dockerResponsive;
+	private static volatile TestAbortedException dockerUnavailable;
 
 	@Container
 	private static final GenericContainer<?> container = createContainer();
@@ -79,13 +85,12 @@ public final class ElasticsearchStoreTestContainerSupport {
 				throw new IllegalStateException(
 						"Elasticsearch test container stopped during health check. Logs:\n" + safeLogs(container));
 			}
-			try (RestHighLevelClient client = new RestHighLevelClient(
-					RestClient.builder(new HttpHost(host, httpPort, "http")))) {
-				ClusterHealthRequest request = new ClusterHealthRequest()
-						.waitForYellowStatus()
-						.timeout(TimeValue.timeValueSeconds(5));
-				ClusterHealthResponse response = client.cluster().health(request, RequestOptions.DEFAULT);
-				if (!response.isTimedOut()) {
+			try (Rest5Client restClient = Rest5Client.builder(new HttpHost("http", host, httpPort)).build()) {
+				ElasticsearchClient client = new ElasticsearchClient(
+						new Rest5ClientTransport(restClient, new JacksonJsonpMapper()));
+				HealthResponse response = client.cluster()
+						.health(h -> h.waitForStatus(HealthStatus.Yellow).timeout(t -> t.time("5s")));
+				if (!response.timedOut()) {
 					return;
 				}
 				lastFailure = new IllegalStateException("Cluster health timed out waiting for YELLOW status");
@@ -130,15 +135,16 @@ public final class ElasticsearchStoreTestContainerSupport {
 
 	private static GenericContainer<?> createContainer() {
 		String esVersion = System.getProperty("elasticsearch.docker.version",
-				System.getProperty("elasticsearch.version", "7.15.2"));
+				System.getProperty("elasticsearch.version", "9.2.4"));
 
 		DockerImageName imageName = DockerImageName
 				.parse("docker.elastic.co/elasticsearch/elasticsearch:" + esVersion)
 				.asCompatibleSubstituteFor("docker.elastic.co/elasticsearch/elasticsearch");
 
-		return new GenericContainer<>(imageName)
+		return new SkippingElasticsearchContainer(imageName)
 				.withEnv("discovery.type", "single-node")
 				.withEnv("cluster.name", CLUSTER_NAME)
+				.withEnv("xpack.security.enabled", "false")
 				.withEnv("ES_JAVA_OPTS",
 						"-Djdk.disableLastUsageTracking=true -XX:-UseContainerSupport -Xms512m -Xmx512m")
 				.withEnv("JDK_JAVA_OPTIONS",
@@ -146,6 +152,61 @@ public final class ElasticsearchStoreTestContainerSupport {
 				.withEnv("JAVA_TOOL_OPTIONS",
 						"-Djdk.disableLastUsageTracking=true -XX:-UseContainerSupport -Xms512m -Xmx512m")
 				.withExposedPorts(9200, 9300);
+	}
+
+	private static final class SkippingElasticsearchContainer extends GenericContainer<SkippingElasticsearchContainer> {
+
+		private SkippingElasticsearchContainer(DockerImageName dockerImageName) {
+			super(dockerImageName);
+		}
+
+		@Override
+		public void start() {
+			requireResponsiveDocker();
+			try {
+				super.start();
+			} catch (IllegalStateException e) {
+				throw new TestAbortedException("Docker is required to run Elasticsearch store tests. Container logs:\n"
+						+ safeLogs(this), e);
+			}
+		}
+	}
+
+	private static synchronized void requireResponsiveDocker() {
+		if (dockerResponsive) {
+			return;
+		}
+		if (dockerUnavailable != null) {
+			throw dockerUnavailable;
+		}
+
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread ping = new Thread(() -> {
+			try {
+				DockerClientFactory.instance().client().pingCmd().exec();
+			} catch (Throwable t) {
+				failure.set(t);
+			}
+		}, "elasticsearch-store-test-docker-ping");
+		ping.setDaemon(true);
+		ping.start();
+		try {
+			ping.join(DOCKER_PING_TIMEOUT_MILLIS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new TestAbortedException("Interrupted while checking Docker availability", e);
+		}
+		if (ping.isAlive()) {
+			dockerUnavailable = new TestAbortedException(
+					"Docker did not respond within " + DOCKER_PING_TIMEOUT_MILLIS + " ms");
+			throw dockerUnavailable;
+		}
+		Throwable t = failure.get();
+		if (t != null) {
+			dockerUnavailable = new TestAbortedException("Docker is required to run Elasticsearch store tests", t);
+			throw dockerUnavailable;
+		}
+		dockerResponsive = true;
 	}
 
 	private static String safeLogs(GenericContainer<?> c) {

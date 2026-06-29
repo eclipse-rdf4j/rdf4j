@@ -203,7 +203,8 @@ public class TripleStoreAutoGrowTest {
 
 			forceRecordCache(cachedStore);
 			cachedStore.startTransaction();
-			cachedStore.storeTriple(subject, predicate, object, context, true);
+			assertFalse(cachedStore.storeTriple(subject, predicate, object, context, true),
+					"Cached duplicate explicit add should not report a new statement");
 			cachedStore.commit();
 
 			cachedStore.startTransaction();
@@ -364,18 +365,7 @@ public class TripleStoreAutoGrowTest {
 		return new StatementBatch(subj, pred, obj, context);
 	}
 
-	private static final class StatementBatch {
-		private final long[] subj;
-		private final long[] pred;
-		private final long[] obj;
-		private final long[] context;
-
-		private StatementBatch(long[] subj, long[] pred, long[] obj, long[] context) {
-			this.subj = subj;
-			this.pred = pred;
-			this.obj = obj;
-			this.context = context;
-		}
+	private record StatementBatch(long[] subj, long[] pred, long[] obj, long[] context) {
 	}
 
 	private static final class FailingContextAlignedTripleStore extends TripleStore {

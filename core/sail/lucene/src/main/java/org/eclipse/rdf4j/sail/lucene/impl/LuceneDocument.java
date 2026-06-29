@@ -19,7 +19,6 @@ import java.util.Set;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.document.LatLonBoundingBox;
 import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.LatLonShape;
 import org.apache.lucene.geo.Line;
@@ -27,6 +26,7 @@ import org.apache.lucene.geo.Polygon;
 import org.apache.lucene.geo.Rectangle;
 import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.sandbox.document.LatLonBoundingBox;
 import org.apache.lucene.spatial.SpatialStrategy;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;

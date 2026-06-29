@@ -48,13 +48,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@ContextConfiguration(initializers = Rdf4jServerWorkbenchApplicationTest.IsolatedAppDataInitializer.class)
 @SpringBootTest(classes = Rdf4jServerWorkbenchApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LmdbTimedOutQueryReadHandleTest {
 

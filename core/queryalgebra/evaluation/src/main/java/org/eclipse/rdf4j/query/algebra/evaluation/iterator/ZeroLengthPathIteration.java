@@ -58,8 +58,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private Set<Value> reportedValues;
 
-	private final Var contextVar;
-
 	private final EvaluationStrategy evaluationStrategy;
 
 	private final QueryEvaluationStep precompile;
@@ -72,6 +70,12 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private final BiConsumer<Value, MutableBindingSet> setContext;
 
+	private final String subjectVarName;
+
+	private final String objectVarName;
+
+	private final String contextVarName;
+
 	private final CollectionFactory cf;
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
@@ -79,10 +83,12 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		this.context = context;
 		this.result = new QueryBindingSet(bindings);
-		this.contextVar = contextVar;
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
+		subjectVarName = subjectVar.getName();
+		objectVarName = objVar.getName();
+		contextVarName = contextVar == null ? null : contextVar.getName();
 		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
 		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
 		Var endVar = createAnonVar(ANON_OBJECT_VAR);
@@ -95,10 +101,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		}
 
 		precompile = evaluationStrategy.precompile(subjects, context);
-		setSubject = context.addBinding(subjectVar.getName());
-		setObject = context.addBinding(objVar.getName());
+		setSubject = context.addBinding(subjectVarName);
+		setObject = context.addBinding(objectVarName);
 		if (contextVar != null) {
-			setContext = context.addBinding(contextVar.getName());
+			setContext = context.addBinding(contextVarName);
 		} else {
 			setContext = null;
 		}
@@ -130,12 +136,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 				if (reportedValues.add(v)) {
 					MutableBindingSet next = context.createBindingSet(bindings);
-					setSubject.accept(v, next);
-					setObject.accept(v, next);
+					if (!addCompatibleBinding(next, subjectVarName, v, setSubject)
+							|| !addCompatibleBinding(next, objectVarName, v, setObject)) {
+						continue;
+					}
 					if (setContext != null) {
-						Value context = bs.getValue(contextVar.getName());
+						Value context = bs.getValue(contextVarName);
 						if (context != null) {
-							setContext.accept(context, next);
+							if (!addCompatibleBinding(next, contextVarName, context, setContext)) {
+								continue;
+							}
 						}
 					}
 					return next;
@@ -150,9 +160,13 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		} else {
 			if (result != null) {
 				if (obj == null && subj != null) {
-					setObject.accept(subj, result);
+					if (!addCompatibleBinding(result, objectVarName, subj, setObject)) {
+						result = null;
+					}
 				} else if (subj == null && obj != null) {
-					setSubject.accept(obj, result);
+					if (!addCompatibleBinding(result, subjectVarName, obj, setSubject)) {
+						result = null;
+					}
 				} else if (subj != null && subj.equals(obj)) {
 					// empty bindings
 					// (result but nothing to bind as subjectVar and objVar are both fixed)
@@ -170,6 +184,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
 		CloseableIteration<BindingSet> iter = precompile.evaluate(bindings);
 		return iter;
+	}
+
+	private boolean addCompatibleBinding(MutableBindingSet target, String name, Value value,
+			BiConsumer<Value, MutableBindingSet> bindingSetter) {
+		Value existing = target.getValue(name);
+		if (existing != null) {
+			return existing.equals(value);
+		}
+		bindingSetter.accept(value, target);
+		return true;
 	}
 
 	public Var createAnonVar(String varName) {

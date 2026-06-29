@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.federated.evaluation.join;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,12 +24,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public class ParallelJoinTask extends ParallelTaskBase<BindingSet> {
 
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final TupleExpr expr;
 	protected final BindingSet bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
 
-	public ParallelJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, TupleExpr expr,
+	public ParallelJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
+			TupleExpr expr,
 			BindingSet bindings) {
 		this.strategy = strategy;
 		this.expr = expr;

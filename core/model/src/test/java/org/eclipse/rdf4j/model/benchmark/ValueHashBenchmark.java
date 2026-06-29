@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -84,7 +84,7 @@ public class ValueHashBenchmark {
 	private final Literal calendar = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
 	private final Literal date = factory.createLiteral(new Date(1_000_000L));
 
-	private final Triple triple = factory.createTriple(iriUnary, iriUnary, iriUnary);
+	private final TripleTerm tripleTerm = factory.createTripleTerm(iriUnary, iriUnary, iriUnary);
 
 	private final Statement statement = factory.createStatement(iriUnary, iriUnary, iriUnary);
 	private final Statement statementContext = factory.createStatement(iriUnary, iriUnary, iriUnary, iriUnary);
@@ -220,7 +220,7 @@ public class ValueHashBenchmark {
 	@Benchmark
 	public void hashTriple() {
 		for (long c = samples; c > 0; --c) {
-			triple.hashCode();
+			tripleTerm.hashCode();
 		}
 	}
 

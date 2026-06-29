@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-testsuites</artifactId>
-		<version>5.3.3-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-rio-testsuite</artifactId>
 	<name>RDF4J: Rio compliance test suite</name>
@@ -31,15 +31,24 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>xml-security</groupId>
+			<groupId>org.apache.santuario</groupId>
 			<artifactId>xmlsec</artifactId>
-			<version>1.3.0</version>
 		</dependency>
 		<!-- This module uses legacy test/suite setup, and cannot be fully migrated to JUnit 5 now -->
 		<dependency>
 			<groupId>org.junit.vintage</groupId>
 			<artifactId>junit-vintage-engine</artifactId>
 			<scope>compile</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-rio-nquads</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-rio-languages</artifactId>
+			<version>${project.version}</version>
 		</dependency>
 	</dependencies>
 </project>

@@ -654,6 +654,14 @@ public class SP {
 
 	public static final IRI LANG;
 
+	public static final IRI LANG_DIR;
+
+	public static final IRI STR_LANG_DIR;
+
+	public static final IRI HAS_LANG;
+
+	public static final IRI HAS_LANGDIR;
+
 	public static final IRI DATATYPE;
 
 	public static final IRI BNODE;
@@ -813,5 +821,9 @@ public class SP {
 		URI = Vocabularies.createIRI(NAMESPACE, "uri");
 		BNODE = Vocabularies.createIRI(NAMESPACE, "bnode");
 		REGEX = Vocabularies.createIRI(NAMESPACE, "regex");
+		LANG_DIR = Vocabularies.createIRI(NAMESPACE, "langDir");
+		STR_LANG_DIR = Vocabularies.createIRI(NAMESPACE, "strLangDir");
+		HAS_LANG = Vocabularies.createIRI(NAMESPACE, "hasLang");
+		HAS_LANGDIR = Vocabularies.createIRI(NAMESPACE, "hasLangDir");
 	}
 }

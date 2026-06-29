@@ -67,14 +67,14 @@ public class TripleStoreIndexOrderOptimizationTest {
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> configuredIndexes = (List<TripleStore.TripleIndex>) indexesField.get(store);
+		List<TripleIndex> configuredIndexes = (List<TripleIndex>) indexesField.get(store);
 		return configuredIndexes.stream()
 				.map(index -> new String(index.getFieldSeq()))
 				.collect(Collectors.toList());
 	}
 
 	private List<String> expectedIndexOrder(List<String> configuredIndexSpecs) {
-		String mainFieldSeq = configuredIndexSpecs.get(0);
+		String mainFieldSeq = configuredIndexSpecs.getFirst();
 		List<String> secondarySpecs = new ArrayList<>(configuredIndexSpecs.subList(1, configuredIndexSpecs.size()));
 		OrderScore bestOrder = findBestSecondaryIndexOrder(mainFieldSeq, mainFieldSeq, secondarySpecs);
 		List<String> expectedOrder = new ArrayList<>(configuredIndexSpecs.size());
@@ -164,21 +164,12 @@ public class TripleStoreIndexOrderOptimizationTest {
 		return true;
 	}
 
-	private static final class OrderScore {
-		private final List<String> indexOrder;
-		private final int reusedTransitions;
-		private final int mainOrderResets;
-
-		private OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
-			this.indexOrder = indexOrder;
-			this.reusedTransitions = reusedTransitions;
-			this.mainOrderResets = mainOrderResets;
-		}
+	private record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
 	}
 
 	private int countReusableTransitions(List<String> configuredOrder) {
 		int reusedTransitions = 0;
-		String currentFieldSeq = configuredOrder.get(0);
+		String currentFieldSeq = configuredOrder.getFirst();
 		for (int i = 1; i < configuredOrder.size(); i++) {
 			String targetFieldSeq = configuredOrder.get(i);
 			if (canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)) {

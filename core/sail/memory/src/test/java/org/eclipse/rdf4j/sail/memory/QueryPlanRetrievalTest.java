@@ -19,6 +19,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.function.Predicate;
 
 import org.apache.commons.io.IOUtils;
@@ -43,6 +44,8 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +55,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class QueryPlanRetrievalTest {
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+	private Locale defaultLocale;
+
+	@BeforeEach
+	void setLocale() {
+		defaultLocale = Locale.getDefault();
+		Locale.setDefault(Locale.ENGLISH);
+	}
+
+	@AfterEach
+	void restoreLocale() {
+		Locale.setDefault(defaultLocale);
+	}
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
@@ -316,20 +332,20 @@ public class QueryPlanRetrievalTest {
 					"      ║     ║        o: Var (name=o)\n" +
 					"      ║     ╚══ Filter [right]\n" +
 					"      ║        ├── And\n" +
-					"      ║        │  ╠══ ListMemberOperator\n" +
+					"      ║        │  ╠══ Compare (<)\n" +
 					"      ║        │  ║     Var (name=o2)\n" +
-					"      ║        │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │  ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │  ║     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │  ║     ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
 					"      ║        │  ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"      ║        │  ╚══ Compare (<)\n" +
+					"      ║        │  ╚══ ListMemberOperator\n" +
 					"      ║        │        Var (name=o2)\n" +
+					"      ║        │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
 					"      ║        │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
 					"      ║        └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
@@ -491,13 +507,13 @@ public class QueryPlanRetrievalTest {
 					"               │        o: Var (name=reviewer)\n" +
 					"               └── Filter [right]\n" +
 					"                  ╠══ And\n" +
-					"                  ║  ├── Compare (>=)\n" +
+					"                  ║  ├── Compare (<=)\n" +
 					"                  ║  │     Var (name=lvl)\n" +
-					"                  ║  │     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"                  ║  │     ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"                  ║  └── Compare (<=)\n" +
+					"                  ║  └── Compare (>=)\n" +
 					"                  ║        Var (name=lvl)\n" +
-					"                  ║        ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"                  ║        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
 					"                  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
 					"                        s: Var (name=reviewer)\n" +
@@ -983,8 +999,12 @@ public class QueryPlanRetrievalTest {
 	}
 
 	private static String stripExplainTextAnnotations(String text) {
-		return text.replaceAll(", (bindingState|joinType|indexName|indexNames)=[^)]*", "")
-				.replaceAll(" \\((bindingState|joinType|indexName|indexNames)=[^)]*\\)", "");
+		return text.replaceAll(
+				", (bindingState|joinType|indexName|indexNames|plannedFilterPassRatioLower|plannedFilterConfidence)=[^)]*",
+				"")
+				.replaceAll(
+						" \\((bindingState|joinType|indexName|indexNames|plannedFilterPassRatioLower|plannedFilterConfidence)=[^)]*\\)",
+						"");
 	}
 
 	private static String stripExplainDotAnnotations(String dot) {

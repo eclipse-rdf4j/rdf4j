@@ -15,6 +15,7 @@ import java.io.InputStream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
@@ -66,6 +67,10 @@ public class NegativeParserTest extends TestCase {
 			// Try parsing the input; this should result in an error being
 			// reported.
 			// targetParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
+
+			targetParser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+			targetParser.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+			targetParser.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 
 			targetParser.setRDFHandler(new StatementCollector());
 

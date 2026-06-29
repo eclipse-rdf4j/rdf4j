@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
 class TxnStatusFile {
 
 	boolean disabled = false;
+	private boolean forceSync;
 
 	public void disable() {
 		this.disabled = true;
@@ -88,16 +89,19 @@ class TxnStatusFile {
 	/**
 	 * Creates a new transaction status file. New files are initialized with {@link TxnStatus#NONE}.
 	 *
-	 * @param dataDir The directory for the transaction status file.
+	 * @param dataDir   The directory for the transaction status file.
+	 * @param forceSync
 	 * @throws IOException If the file did not yet exist and could not be written to.
 	 */
-	public TxnStatusFile(File dataDir) throws IOException {
+	public TxnStatusFile(File dataDir, boolean forceSync) throws IOException {
+		this.forceSync = forceSync;
 		File statusFile = new File(dataDir, FILE_NAME);
 		nioFile = new NioFile(statusFile, "rwd");
 	}
 
 	public TxnStatusFile() {
 		nioFile = null;
+		forceSync = false;
 	}
 
 	public void close() throws IOException {
@@ -124,7 +128,7 @@ class TxnStatusFile {
 			nioFile.writeBytes(txnStatus.onDisk, 0);
 		}
 
-		if (force) {
+		if (forceSync || force) {
 			nioFile.force(false);
 		}
 	}

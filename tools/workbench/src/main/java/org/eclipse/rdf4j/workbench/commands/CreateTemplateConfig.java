@@ -48,6 +48,10 @@ final class CreateTemplateConfig {
 	private static final Pattern TEMPLATE_METADATA_PATTERN = Pattern
 			.compile("^\\s*#\\s*@workbench\\.template\\s+(.*)$");
 
+	static final String UNSET_VALUE = "__workbench_unset__";
+
+	private static final Pattern TEMPLATE_TOKEN_PATTERN = Pattern.compile("\\{%.*?%\\}");
+
 	private static final String REPOSITORY_ID_PROPERTY = "config:rep.id";
 
 	private static final String REPOSITORY_TITLE_PROPERTY = "rdfs:label";
@@ -85,9 +89,10 @@ final class CreateTemplateConfig {
 		private final int rows;
 		private final int cols;
 		private final String placeholder;
+		private final boolean unsettable;
 
 		Field(String name, String id, String property, String role, FieldControl control, List<String> values,
-				String defaultValue, int size, int rows, int cols, String placeholder) {
+				String defaultValue, int size, int rows, int cols, String placeholder, boolean unsettable) {
 			this.name = name;
 			this.id = id;
 			this.property = property == null ? "" : property;
@@ -99,6 +104,7 @@ final class CreateTemplateConfig {
 			this.rows = rows;
 			this.cols = cols;
 			this.placeholder = placeholder == null ? "" : placeholder;
+			this.unsettable = unsettable;
 		}
 
 		String getName() {
@@ -144,6 +150,10 @@ final class CreateTemplateConfig {
 		String getPlaceholder() {
 			return placeholder;
 		}
+
+		boolean isUnsettable() {
+			return unsettable;
+		}
 	}
 
 	private final String type;
@@ -184,7 +194,14 @@ final class CreateTemplateConfig {
 	}
 
 	String render(Map<String, String> values) {
-		return configTemplate.render(values);
+		List<String> unsetFields = unsetFields(values);
+		if (unsetFields.isEmpty()) {
+			return configTemplate.render(values);
+		}
+
+		Map<String, String> filteredValues = new LinkedHashMap<>(values);
+		unsetFields.forEach(filteredValues::remove);
+		return new ConfigTemplate(removeUnsetLines(configTemplate.getTemplate(), unsetFields)).render(filteredValues);
 	}
 
 	static CreateTemplateConfig load(String type) throws IOException {
@@ -221,7 +238,8 @@ final class CreateTemplateConfig {
 					uniqueId(defaultId(fieldSpec.property(), fieldSpec.displayName()), idCounts),
 					fieldSpec.property(), inferRole(fieldSpec.property()), control, values, defaultValue(values),
 					fieldSpec.uiHints().defaultSize(control), fieldSpec.uiHints().defaultRows(control),
-					fieldSpec.uiHints().defaultCols(control), fieldSpec.uiHints().placeholder()));
+					fieldSpec.uiHints().defaultCols(control), fieldSpec.uiHints().placeholder(),
+					fieldSpec.uiHints().unsettable()));
 		}
 
 		return new CreateTemplateConfig(type, metadata.label != null ? metadata.label : type,
@@ -254,6 +272,42 @@ final class CreateTemplateConfig {
 
 	private static String defaultValue(List<String> values) {
 		return values.isEmpty() ? "" : values.get(0);
+	}
+
+	private List<String> unsetFields(Map<String, String> values) {
+		List<String> unsetFields = new ArrayList<>();
+		for (Field field : fields) {
+			if (field.isUnsettable() && UNSET_VALUE.equals(values.get(field.getName()))) {
+				unsetFields.add(field.getName());
+			}
+		}
+		return unsetFields;
+	}
+
+	private static String removeUnsetLines(String templateText, List<String> unsetFields) {
+		StringBuilder retained = new StringBuilder(templateText.length());
+		for (String line : templateText.split("(?<=\\R)", -1)) {
+			if (!containsUnsetPlaceholder(line, unsetFields)) {
+				retained.append(line);
+			}
+		}
+		return retained.toString();
+	}
+
+	private static boolean containsUnsetPlaceholder(String line, List<String> unsetFields) {
+		Matcher matcher = TEMPLATE_TOKEN_PATTERN.matcher(line);
+		while (matcher.find()) {
+			if (unsetFields.contains(rawTokenName(matcher.group()))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String rawTokenName(String tokenText) {
+		String content = tokenText.substring(2, tokenText.length() - 2);
+		int separator = content.indexOf('|');
+		return (separator >= 0 ? content.substring(0, separator) : content).trim();
 	}
 
 	private static String defaultId(String property, String displayName) {
