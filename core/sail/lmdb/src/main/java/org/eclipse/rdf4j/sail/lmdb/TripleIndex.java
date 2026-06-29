@@ -30,8 +30,8 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyReaders;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyReaders;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
 class TripleIndex implements TripleStore.DupIndex {

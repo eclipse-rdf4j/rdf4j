@@ -108,7 +108,8 @@ public class LmdbIdBGPEvaluationTest {
 		SailDataset baselineDataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 
 		try {
-			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(), baselineDataset);
+			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					baselineDataset);
 
 			// Overlay triple source that returns the extra 'likes' statement in addition to baseline content
 			Statement overlayStmt = vf.createStatement(alice, likes, pizza);
@@ -218,7 +219,8 @@ public class LmdbIdBGPEvaluationTest {
 			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
 			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
 
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 
 			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
 					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
@@ -287,7 +289,8 @@ public class LmdbIdBGPEvaluationTest {
 
 		try {
 			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 
 			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
 					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());

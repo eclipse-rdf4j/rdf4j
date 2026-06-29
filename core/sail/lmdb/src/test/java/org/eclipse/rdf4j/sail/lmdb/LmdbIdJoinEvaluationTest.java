@@ -158,7 +158,8 @@ public class LmdbIdJoinEvaluationTest {
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
 		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 		try {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
 					store.getBackingStore().getEvaluationStatistics());
@@ -226,7 +227,8 @@ public class LmdbIdJoinEvaluationTest {
 		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 
 		try {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
 					store.getBackingStore().getEvaluationStatistics());
@@ -294,7 +296,8 @@ public class LmdbIdJoinEvaluationTest {
 		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 
 		try {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
 					store.getBackingStore().getEvaluationStatistics());
@@ -402,7 +405,8 @@ public class LmdbIdJoinEvaluationTest {
 		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 
 		try {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
 					store.getBackingStore().getEvaluationStatistics());
@@ -476,7 +480,8 @@ public class LmdbIdJoinEvaluationTest {
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
 		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
 		try {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
 					store.getBackingStore().getEvaluationStatistics());

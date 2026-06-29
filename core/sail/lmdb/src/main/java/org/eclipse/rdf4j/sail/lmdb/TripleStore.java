@@ -506,14 +506,14 @@ public class TripleStore implements Closeable {
 			throw new IOException(removedIndexExceptions.getFirst());
 		}
 
-	// Update the indexes variable, using the specified index order
-	indexes.clear();
-	for (String fieldSeq : newIndexSpecs) {
-		indexes.add(currentIndexes.remove(fieldSeq));
+		// Update the indexes variable, using the specified index order
+		indexes.clear();
+		for (String fieldSeq : newIndexSpecs) {
+			indexes.add(currentIndexes.remove(fieldSeq));
+		}
+		resetAlignedWriteCursorState();
+		rebuildBestIndexLookup();
 	}
-	resetAlignedWriteCursorState();
-	rebuildBestIndexLookup();
-}
 
 	@Override
 	public void close() throws IOException {
@@ -1952,11 +1952,11 @@ public class TripleStore implements Closeable {
 
 				}
 
-					if (subjectPredicateIndex != null) {
-						subjectPredicateIndex.delete(writeTxn, quad[TripleIndex.SUBJ_IDX],
-								quad[TripleIndex.PRED_IDX], quad[TripleIndex.OBJ_IDX],
-								quad[TripleIndex.CONTEXT_IDX], explicit, stack);
-					}
+				if (subjectPredicateIndex != null) {
+					subjectPredicateIndex.delete(writeTxn, quad[TripleIndex.SUBJ_IDX],
+							quad[TripleIndex.PRED_IDX], quad[TripleIndex.OBJ_IDX],
+							quad[TripleIndex.CONTEXT_IDX], explicit, stack);
+				}
 
 				decrementContext(stack, quad[TripleIndex.CONTEXT_IDX]);
 				handler.accept(quad);
@@ -2155,6 +2155,7 @@ public class TripleStore implements Closeable {
 	public void rollback() throws IOException {
 		endTransaction(false);
 	}
+
 	interface DupIndex {
 		char[] getFieldSeq();
 

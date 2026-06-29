@@ -74,7 +74,8 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj) throws SailException {
+	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException {
 		return DualUnionIteration.getWildcardInstance(dataset1.getTriples(subj, pred, obj),
 				dataset2.getTriples(subj, pred, obj));
 	}

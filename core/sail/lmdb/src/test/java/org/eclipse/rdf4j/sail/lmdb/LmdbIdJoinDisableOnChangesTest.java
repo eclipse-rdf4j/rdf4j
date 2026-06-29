@@ -89,7 +89,8 @@ public class LmdbIdJoinDisableOnChangesTest {
 		SailDataset baselineDataset = branch
 				.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT_READ);
 		try {
-			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(), baselineDataset);
+			SailDatasetTripleTermSource baseTs = new SailDatasetTripleTermSource(repository.getValueFactory(),
+					baselineDataset);
 			Statement overlayStmt = vf.createStatement(alice, likes, pizza);
 			TripleSource overlayTs = new TripleSource() {
 				@Override
