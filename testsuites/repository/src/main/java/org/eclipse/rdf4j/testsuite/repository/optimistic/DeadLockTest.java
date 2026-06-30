@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.repository.optimistic;
 import static org.junit.Assert.assertNull;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -91,7 +92,7 @@ public class DeadLockTest {
 				start.countDown();
 				a.begin(level);
 				a.add(PICASSO, RDF.TYPE, PAINTER);
-				commit.await();
+				commit.await(10, TimeUnit.SECONDS);
 				a.commit();
 			} catch (Exception e) {
 				e1.initCause(e);
@@ -106,7 +107,7 @@ public class DeadLockTest {
 				start.countDown();
 				b.begin(level);
 				b.add(REMBRANDT, RDF.TYPE, PAINTER);
-				commit.await();
+				commit.await(10, TimeUnit.SECONDS);
 				b.commit();
 			} catch (Exception e) {
 				e2.initCause(e);
@@ -115,10 +116,10 @@ public class DeadLockTest {
 				end.countDown();
 			}
 		}).start();
-		start.await();
+		start.await(10, TimeUnit.SECONDS);
 		commit.countDown();
 		Thread.sleep(500);
-		end.await();
+		end.await(10, TimeUnit.SECONDS);
 		assertNull(e1.getCause());
 		assertNull(e2.getCause());
 	}

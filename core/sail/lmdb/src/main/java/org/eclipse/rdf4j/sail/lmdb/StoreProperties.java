@@ -40,6 +40,11 @@ class StoreProperties {
 	 */
 	static final String TRIPLE_TERM_INDEXES_KEY = "triple-term-indexes";
 
+	/**
+	 * The key used to store whether dupsort indices are enabled.
+	 */
+	static final String DUPSORT_INDICES_KEY = "dupsort-indices";
+
 	protected final File propertiesFile;
 
 	protected String version;
@@ -47,6 +52,8 @@ class StoreProperties {
 	protected String tripleIndexes;
 
 	protected String tripleTermIndexes;
+
+	protected String dupsortIndices;
 
 	protected boolean loaded;
 
@@ -76,6 +83,7 @@ class StoreProperties {
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
+			dupsortIndices = properties.getProperty(DUPSORT_INDICES_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -99,6 +107,9 @@ class StoreProperties {
 			if (tripleTermIndexes != null) {
 				properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
 			}
+			if (dupsortIndices != null) {
+				properties.setProperty(DUPSORT_INDICES_KEY, dupsortIndices);
+			}
 			File parent = file.getParentFile();
 			if (parent != null) {
 				parent.mkdirs();
@@ -121,7 +132,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setVersion(String version) {
-		this.dirty = !Objects.equals(this.version, version);
+		this.dirty |= !Objects.equals(this.version, version);
 		this.version = version;
 		return this;
 	}
@@ -131,7 +142,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
-		this.dirty = !Objects.equals(this.tripleIndexes, tripleIndexes);
+		this.dirty |= !Objects.equals(this.tripleIndexes, tripleIndexes);
 		this.tripleIndexes = tripleIndexes;
 		return this;
 	}
@@ -141,8 +152,18 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
-		this.dirty = !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
+		this.dirty |= !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
 		this.tripleTermIndexes = tripleTermIndexes;
+		return this;
+	}
+
+	String getDupsortIndices() {
+		return dupsortIndices;
+	}
+
+	StoreProperties setDupsortIndices(String dupsortIndices) {
+		this.dirty |= !Objects.equals(this.dupsortIndices, dupsortIndices);
+		this.dupsortIndices = dupsortIndices;
 		return this;
 	}
 }

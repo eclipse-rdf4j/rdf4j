@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -266,8 +267,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			}
 		}
 
-		init();
-		return super.equals(o);
+		if (o instanceof Literal) {
+			init();
+			return super.equals(o);
+		}
+		return false;
 	}
 
 	@Override

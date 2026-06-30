@@ -285,8 +285,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						supportedOrders = new HashSet<>(supportedOrders);
 						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 
-						if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right) || joinSizeIsTooDifferent(
-								Math.max(cardinality, left.getResultSizeEstimate()), right.getResultSizeEstimate())) {
+						if (supportedOrders.isEmpty() || hasExternallyBoundJoinVariable(origBoundVars, left, right)
+								|| joinOnMultipleVars(left, right) || joinSizeIsTooDifferent(
+										Math.max(cardinality, left.getResultSizeEstimate()),
+										right.getResultSizeEstimate())) {
 
 							orderedJoinArgs.addFirst(right);
 							orderedJoinArgs.addFirst(left);
@@ -319,7 +321,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						Join join = new Join(left, right);
 
 						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
-							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
+							mergeJoinForCrossJoin(origBoundVars, orderedJoinArgs, supportedOrders, left, right, join);
 						}
 
 						right = join;
@@ -540,6 +542,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			return false;
 
+		}
+
+		private boolean hasExternallyBoundJoinVariable(Set<String> externallyBoundVars, TupleExpr first,
+				TupleExpr second) {
+			if (externallyBoundVars.isEmpty()) {
+				return false;
+			}
+			return hasExternallyBoundVariable(externallyBoundVars, first)
+					|| hasExternallyBoundVariable(externallyBoundVars, second);
+		}
+
+		private boolean hasExternallyBoundVariable(Set<String> externallyBoundVars, TupleExpr tupleExpr) {
+			for (Var var : getStatementPatternVars(tupleExpr)) {
+				if (!var.hasValue() && var.getName() != null && externallyBoundVars.contains(var.getName())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
@@ -933,10 +953,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private void mergeJoinForCrossJoin(Deque<TupleExpr> orderedJoinArgs, Set<Var> supportedOrders, TupleExpr left,
-				TupleExpr right, Join join) {
+		private void mergeJoinForCrossJoin(Set<String> externallyBoundVars, Deque<TupleExpr> orderedJoinArgs,
+				Set<Var> supportedOrders, TupleExpr left, TupleExpr right, Join join) {
 			if (!orderedJoinArgs.isEmpty()
 					&& !supportedOrders.isEmpty() && !joinOnMultipleVars(left, right)
+					&& !hasExternallyBoundJoinVariable(externallyBoundVars, left, right)
 					&& !joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())
 					&& left instanceof StatementPattern && right instanceof StatementPattern) {
 
