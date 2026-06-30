@@ -68,7 +68,7 @@
 		<jsonldjava.version>0.13.6</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
-		<lwjgl.version>3.4.1</lwjgl.version>
+		<lwjgl.version>3.3.6</lwjgl.version>
 		<lucene.version>10.5.0</lucene.version>
 		<elasticsearch.version>9.4.2</elasticsearch.version>
 		<spring.version>7.0.8</spring.version>
