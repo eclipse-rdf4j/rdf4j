@@ -414,6 +414,7 @@ public class HttpCompressionFilter implements Filter {
 		private PrintWriter writer;
 		private OutputStream compressedOutputStream;
 		private boolean compressedOutputFinished;
+		private boolean compressionAborted;
 		private int status = SC_OK;
 
 		CompressedHttpServletResponseWrapper(HttpServletResponse response, HttpCompressionEncoding contentEncoding,
@@ -482,20 +483,33 @@ public class HttpCompressionFilter implements Filter {
 
 		@Override
 		public void sendError(int sc) throws IOException {
+			abortCompression();
+			resetResponseIfPossible();
 			status = sc;
 			super.sendError(sc);
 		}
 
 		@Override
 		public void sendError(int sc, String msg) throws IOException {
+			abortCompression();
+			resetResponseIfPossible();
 			status = sc;
 			super.sendError(sc, msg);
 		}
 
 		@Override
 		public void sendRedirect(String location) throws IOException {
+			abortCompression();
+			resetResponseIfPossible();
 			status = SC_FOUND;
 			super.sendRedirect(location);
+		}
+
+		@Override
+		public void reset() {
+			abortCompression();
+			status = SC_OK;
+			super.reset();
 		}
 
 		void finish() throws IOException {
@@ -510,34 +524,37 @@ public class HttpCompressionFilter implements Filter {
 
 		private ServletOutputStream createOutputStream() throws IOException {
 			ServletOutputStream delegate = getResponse().getOutputStream();
-			if (!shouldCompress()) {
-				return delegate;
-			}
-
-			setHeader(CONTENT_ENCODING, contentEncoding.headerValue());
-			addVaryHeader();
-			compressedOutputStream = contentEncoding.compressedOutputStream(delegate);
 			return new ServletOutputStream() {
+				private OutputStream target;
+				private boolean compressedTarget;
+
 				@Override
 				public void write(int b) throws IOException {
-					compressedOutputStream.write(b);
+					target().write(b);
 				}
 
 				@Override
 				public void write(byte[] b, int off, int len) throws IOException {
-					compressedOutputStream.write(b, off, len);
+					target().write(b, off, len);
 				}
 
 				@Override
 				public void flush() throws IOException {
-					if (!compressedOutputFinished) {
-						compressedOutputStream.flush();
+					if (target != null && !(compressionAborted && compressedTarget) && !compressedOutputFinished) {
+						target.flush();
 					}
 				}
 
 				@Override
 				public void close() throws IOException {
-					finishCompressedOutput();
+					if (target == null) {
+						return;
+					}
+					if (compressedTarget) {
+						finishCompressedOutput();
+					} else {
+						target.close();
+					}
 				}
 
 				@Override
@@ -549,11 +566,31 @@ public class HttpCompressionFilter implements Filter {
 				public void setWriteListener(WriteListener writeListener) {
 					delegate.setWriteListener(writeListener);
 				}
+
+				private OutputStream target() throws IOException {
+					if (compressionAborted && compressedTarget) {
+						target = delegate;
+						compressedTarget = false;
+					}
+					if (target == null) {
+						if (shouldCompress()) {
+							setHeader(CONTENT_ENCODING, contentEncoding.headerValue());
+							addVaryHeader();
+							compressedOutputStream = contentEncoding.compressedOutputStream(delegate);
+							target = compressedOutputStream;
+							compressedTarget = true;
+						} else {
+							target = delegate;
+						}
+					}
+					return target;
+				}
 			};
 		}
 
 		private boolean shouldCompress() {
 			return contentEncoding != null
+					&& !compressionAborted
 					&& !containsHeader(CONTENT_ENCODING)
 					&& status != SC_NO_CONTENT
 					&& status != SC_NOT_MODIFIED
@@ -561,12 +598,24 @@ public class HttpCompressionFilter implements Filter {
 		}
 
 		private void finishCompressedOutput() throws IOException {
-			if (compressedOutputStream != null && !compressedOutputFinished) {
+			if (compressedOutputStream != null && !compressionAborted && !compressedOutputFinished) {
 				try {
 					contentEncoding.finish(compressedOutputStream);
 				} finally {
 					compressedOutputFinished = true;
 				}
+			}
+		}
+
+		private void abortCompression() {
+			compressionAborted = true;
+			compressedOutputFinished = true;
+			compressedOutputStream = null;
+		}
+
+		private void resetResponseIfPossible() {
+			if (!isCommitted()) {
+				super.reset();
 			}
 		}
 

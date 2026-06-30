@@ -72,6 +72,45 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
+	void doesNotCompressWhenContentTypeIsExcludedAfterOutputStreamIsRequested() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET",
+				"/rdf4j-server/repositories/mem/statements");
+		request.addHeader("Accept-Encoding", "gzip");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		byte[] binaryRdf = "binary rdf".getBytes(StandardCharsets.UTF_8);
+
+		new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+			httpResponse.getOutputStream();
+			httpResponse.setContentType("application/x-binary-rdf");
+			httpResponse.getOutputStream().write(binaryRdf);
+		});
+
+		assertThat(response.getHeader("Content-Encoding")).isNull();
+		assertThat(response.getContentAsByteArray()).isEqualTo(binaryRdf);
+	}
+
+	@Test
+	void sendErrorAfterCompressedOutputStartedDoesNotAppendCompressedBytes() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rdf4j-server/repositories/mem");
+		request.addHeader("Accept-Encoding", "gzip");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+			httpResponse.setContentType("text/plain");
+			httpResponse.getOutputStream().write("partial".getBytes(StandardCharsets.UTF_8));
+			httpResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "boom");
+		});
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+		assertThat(response.getHeader("Content-Encoding")).isNull();
+		assertThat(response.getContentAsByteArray()).isEmpty();
+	}
+
+	@Test
 	void rejectsUnsupportedRequestContentEncoding() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rdf4j-server/repositories/mem");
 		request.addHeader("Content-Encoding", "compress");
