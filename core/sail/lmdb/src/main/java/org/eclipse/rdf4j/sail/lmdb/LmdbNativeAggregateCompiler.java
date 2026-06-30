@@ -277,8 +277,18 @@ final class LmdbNativeAggregateCompiler {
 				if (foldedValuesFilter != null) {
 					return foldedValuesFilter;
 				}
-				SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
-				SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
+				Set<String> shared = sharedBindingNames(join.getLeftArg(), join.getRightArg());
+				Set<String> previousRequired = requiredAggregateNames;
+				SlotPlan left;
+				SlotPlan right;
+				try {
+					requiredAggregateNames = withRequired(previousRequired, shared);
+					left = compileTuple(join.getLeftArg(), duplicateInsensitive);
+					requiredAggregateNames = withRequired(previousRequired, shared);
+					right = compileTuple(join.getRightArg(), duplicateInsensitive);
+				} finally {
+					requiredAggregateNames = previousRequired;
+				}
 				return left == null || right == null ? null : SlotPlan.join(left, right);
 			}
 			if (expr instanceof LeftJoin) {
@@ -310,8 +320,18 @@ final class LmdbNativeAggregateCompiler {
 			}
 			if (expr instanceof Difference) {
 				Difference difference = (Difference) expr;
-				SlotPlan left = compileTuple(difference.getLeftArg(), duplicateInsensitive);
-				SlotPlan right = compileTuple(difference.getRightArg(), false);
+				Set<String> shared = sharedBindingNames(difference.getLeftArg(), difference.getRightArg());
+				Set<String> previousRequired = requiredAggregateNames;
+				SlotPlan left;
+				SlotPlan right;
+				try {
+					requiredAggregateNames = withRequired(previousRequired, shared);
+					left = compileTuple(difference.getLeftArg(), duplicateInsensitive);
+					requiredAggregateNames = withRequired(previousRequired, shared);
+					right = compileTuple(difference.getRightArg(), false);
+				} finally {
+					requiredAggregateNames = previousRequired;
+				}
 				return left == null || right == null ? null : SlotPlan.minus(left, right);
 			}
 			if (expr instanceof Filter) {
@@ -364,11 +384,7 @@ final class LmdbNativeAggregateCompiler {
 				return SlotPlan.extension(arg, copies);
 			}
 			if (expr instanceof BindingSetAssignment) {
-				BindingSetAssignment values = (BindingSetAssignment) expr;
-				if (duplicateInsensitive && Collections.disjoint(values.getBindingNames(), requiredAggregateNames)) {
-					return SlotPlan.singleton();
-				}
-				return compileValues(values);
+				return compileValues((BindingSetAssignment) expr);
 			}
 			return null;
 		}
@@ -385,17 +401,11 @@ final class LmdbNativeAggregateCompiler {
 			if (!patternContainsVariable(pattern, constantFilter.variable)) {
 				return null;
 			}
-
-			SlotPlan union = SlotPlan.empty();
-			for (long id : constantFilter.ids) {
-				PatternPlan constrained = compileStatementPatternWithConstant(pattern, constantFilter.variable, id,
-						true);
-				if (constrained == null) {
-					return null;
-				}
-				union = SlotPlan.union(union, constrained);
+			if (!allSafeExactIds(constantFilter.ids)) {
+				return null;
 			}
-			return union;
+
+			return compileMultiValueStatementPattern(pattern, constantFilter.variable, constantFilter.ids, true, false);
 		}
 
 		private boolean patternContainsVariable(StatementPattern pattern, String variable) {
@@ -422,7 +432,38 @@ final class LmdbNativeAggregateCompiler {
 			if (s == null || p == null || o == null || c == null) {
 				return null;
 			}
-			return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS);
+			return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+					staticEstimate(s, p, o, c, contexts));
+		}
+
+		private SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids,
+				boolean keepBinding, boolean allowPartial) {
+			if (!allSafeExactIds(ids)) {
+				return null;
+			}
+			ArrayList<PatternPlan> alternatives = new ArrayList<>(ids.length);
+			long[] validIds = new long[ids.length];
+			int validSize = 0;
+			for (long id : ids) {
+				PatternPlan constrained = compileStatementPatternWithConstant(pattern, variable, id, keepBinding);
+				if (constrained == null) {
+					if (!allowPartial) {
+						return null;
+					}
+					continue;
+				}
+				alternatives.add(constrained);
+				validIds[validSize++] = id;
+			}
+			if (alternatives.isEmpty()) {
+				return SlotPlan.empty();
+			}
+			if (alternatives.size() == 1) {
+				return alternatives.get(0);
+			}
+			PatternPlan fallback = compileStatementPattern(pattern);
+			return new MultiValuePatternPlan(source, slot(variable), Arrays.copyOf(validIds, validSize),
+					alternatives.toArray(PatternPlan[]::new), fallback);
 		}
 
 		private Term compileTermWithConstant(Var var, Field field, String variable, long constantId,
@@ -479,9 +520,10 @@ final class LmdbNativeAggregateCompiler {
 						return null;
 					}
 					long id = idOf(value);
-					if (id != UNKNOWN) {
-						ids.add(id);
+					if (id == UNKNOWN) {
+						return null;
 					}
+					ids.add(id);
 				}
 				return variable;
 			}
@@ -508,9 +550,10 @@ final class LmdbNativeAggregateCompiler {
 				return null;
 			}
 			long id = idOf(value);
-			if (id != UNKNOWN) {
-				ids.add(id);
+			if (id == UNKNOWN) {
+				return null;
 			}
+			ids.add(id);
 			return ((Var) varExpr).getName();
 		}
 
@@ -552,7 +595,8 @@ final class LmdbNativeAggregateCompiler {
 				requiredAggregateNames = previousRequired;
 			}
 			return data == null ? null
-					: SlotPlan.filter(data, new ValueSetFilter(source, slot(folded.filteredVariable), folded.ids));
+					: SlotPlan.filter(data,
+							new ValueSetFilter(source, slot(folded.filteredVariable), folded.ids, folded.values));
 		}
 
 		private SlotPlan compileTupleWithConstantFilter(TupleExpr expr, String variable, long[] ids,
@@ -560,19 +604,15 @@ final class LmdbNativeAggregateCompiler {
 			if (!expr.getBindingNames().contains(variable)) {
 				return null;
 			}
+			if (!allSafeExactIds(ids)) {
+				return null;
+			}
 			if (expr instanceof StatementPattern) {
 				StatementPattern pattern = (StatementPattern) expr;
 				if (!patternContainsVariable(pattern, variable)) {
 					return null;
 				}
-				SlotPlan union = SlotPlan.empty();
-				for (long id : ids) {
-					PatternPlan constrained = compileStatementPatternWithConstant(pattern, variable, id, true);
-					if (constrained != null) {
-						union = SlotPlan.union(union, constrained);
-					}
-				}
-				return union;
+				return compileMultiValueStatementPattern(pattern, variable, ids, true, true);
 			}
 			if (expr instanceof Join) {
 				Join join = (Join) expr;
@@ -653,30 +693,33 @@ final class LmdbNativeAggregateCompiler {
 			}
 			String valuesVariable = bindingNames.iterator().next();
 			ArrayList<Long> ids = new ArrayList<>();
-			String filteredVariable = collectFoldedValueSet(condition, values, valuesVariable, ids, null);
+			ArrayList<Value> queryValues = new ArrayList<>();
+			String filteredVariable = collectFoldedValueSet(condition, values, valuesVariable, ids, queryValues, null);
 			if (filteredVariable == null || ids.isEmpty()) {
 				return null;
 			}
-			return new FoldedValueSet(filteredVariable, valuesVariable, unique(ids));
+			return new FoldedValueSet(filteredVariable, valuesVariable, toLongArray(ids),
+					queryValues.toArray(Value[]::new));
 		}
 
 		private String collectFoldedValueSet(ValueExpr expr, BindingSetAssignment values, String valuesVariable,
-				ArrayList<Long> ids, String currentFilteredVariable) {
+				ArrayList<Long> ids, ArrayList<Value> queryValues, String currentFilteredVariable) {
 			if (expr instanceof Or) {
 				String left = collectFoldedValueSet(((Or) expr).getLeftArg(), values, valuesVariable, ids,
-						currentFilteredVariable);
+						queryValues, currentFilteredVariable);
 				return left == null ? null
-						: collectFoldedValueSet(((Or) expr).getRightArg(), values, valuesVariable, ids, left);
+						: collectFoldedValueSet(((Or) expr).getRightArg(), values, valuesVariable, ids, queryValues,
+								left);
 			}
 			if (!(expr instanceof Compare) || ((Compare) expr).getOperator() != Compare.CompareOp.EQ) {
 				return null;
 			}
 			Compare compare = (Compare) expr;
 			String filtered = collectFoldedEquality(compare.getLeftArg(), compare.getRightArg(), values,
-					valuesVariable, ids);
+					valuesVariable, ids, queryValues);
 			if (filtered == null) {
 				filtered = collectFoldedEquality(compare.getRightArg(), compare.getLeftArg(), values, valuesVariable,
-						ids);
+						ids, queryValues);
 			}
 			if (filtered == null || (currentFilteredVariable != null && !currentFilteredVariable.equals(filtered))) {
 				return null;
@@ -685,7 +728,7 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private String collectFoldedEquality(ValueExpr filteredExpr, ValueExpr candidateExpr,
-				BindingSetAssignment values, String valuesVariable, ArrayList<Long> ids) {
+				BindingSetAssignment values, String valuesVariable, ArrayList<Long> ids, ArrayList<Value> queryValues) {
 			if (!(filteredExpr instanceof Var) || ((Var) filteredExpr).hasValue()) {
 				return null;
 			}
@@ -698,9 +741,11 @@ final class LmdbNativeAggregateCompiler {
 						continue;
 					}
 					long id = idOf(value);
-					if (id != UNKNOWN) {
-						ids.add(id);
+					if (id == UNKNOWN) {
+						return null;
 					}
+					ids.add(id);
+					queryValues.add(value);
 				}
 				return filteredVariable;
 			}
@@ -709,9 +754,11 @@ final class LmdbNativeAggregateCompiler {
 				return null;
 			}
 			long id = idOf(constant);
-			if (id != UNKNOWN) {
-				ids.add(id);
+			if (id == UNKNOWN) {
+				return null;
 			}
+			ids.add(id);
+			queryValues.add(constant);
 			return filteredVariable;
 		}
 
@@ -735,6 +782,14 @@ final class LmdbNativeAggregateCompiler {
 				}
 			}
 			return size == unique.length ? unique : Arrays.copyOf(unique, size);
+		}
+
+		private long[] toLongArray(ArrayList<Long> ids) {
+			long[] result = new long[ids.size()];
+			for (int i = 0; i < result.length; i++) {
+				result[i] = ids.get(i);
+			}
+			return result;
 		}
 
 		private NativeBooleanFilter compileDirectExists(Exists exists) {
@@ -801,6 +856,21 @@ final class LmdbNativeAggregateCompiler {
 			return rightOnly;
 		}
 
+		private Set<String> sharedBindingNames(TupleExpr left, TupleExpr right) {
+			java.util.HashSet<String> shared = new java.util.HashSet<>(left.getBindingNames());
+			shared.retainAll(right.getBindingNames());
+			return shared;
+		}
+
+		private Set<String> withRequired(Set<String> base, Set<String> extra) {
+			if (extra.isEmpty()) {
+				return base;
+			}
+			java.util.HashSet<String> required = new java.util.HashSet<>(base);
+			required.addAll(extra);
+			return required;
+		}
+
 		private boolean nullRejects(ValueExpr condition, Set<String> nullableNames) {
 			if (condition instanceof And) {
 				return nullRejects(((And) condition).getLeftArg(), nullableNames)
@@ -845,7 +915,43 @@ final class LmdbNativeAggregateCompiler {
 			if (s == null || p == null || o == null || c == null) {
 				return null;
 			}
-			return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS);
+			return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+					algebraEstimate(sp));
+		}
+
+		private double algebraEstimate(StatementPattern sp) {
+			double estimate = sp.getResultSizeEstimate();
+			return Double.isFinite(estimate) && estimate > 0D ? estimate : Double.POSITIVE_INFINITY;
+		}
+
+		private double staticEstimate(Term s, Term p, Term o, Term c, ContextConstraint contexts) {
+			if (contexts == ContextConstraint.EMPTY) {
+				return 0D;
+			}
+			long subj = s.isConstant() ? s.constant : UNKNOWN;
+			long pred = p.isConstant() ? p.constant : UNKNOWN;
+			long obj = o.isConstant() ? o.constant : UNKNOWN;
+			long context = c.isConstant() ? c.constant : UNKNOWN;
+			try {
+				if (contexts.isFixed()) {
+					if (context != UNKNOWN) {
+						return contexts.contains(context) ? Math.max(0D, source.estimate(subj, pred, obj, context))
+								: 0D;
+					}
+					double estimate = 0D;
+					for (long contextId : contexts.ids) {
+						double sourceEstimate = source.estimate(subj, pred, obj, contextId);
+						if (!Double.isFinite(sourceEstimate)) {
+							return Double.POSITIVE_INFINITY;
+						}
+						estimate += Math.max(0D, sourceEstimate);
+					}
+					return estimate;
+				}
+				return Math.max(0D, source.estimate(subj, pred, obj, context));
+			} catch (RuntimeException e) {
+				return Double.POSITIVE_INFINITY;
+			}
 		}
 
 		private SlotPlan compileValues(BindingSetAssignment values) {
@@ -861,8 +967,8 @@ final class LmdbNativeAggregateCompiler {
 				int size = 0;
 				for (Binding binding : bindings) {
 					long id = idOf(binding.getValue());
-					if (id == UNKNOWN) {
-						return SlotPlan.empty();
+					if (id == UNKNOWN || !safeResourceId(id)) {
+						return null;
 					}
 					rowSlots[size] = slot(binding.getName());
 					rowValues[size] = id;
@@ -929,6 +1035,7 @@ final class LmdbNativeAggregateCompiler {
 			}
 			int slot = slot(var.getName());
 			long[] accepted = new long[args.size() - 1];
+			Value[] acceptedValues = new Value[args.size() - 1];
 			int acceptedSize = 0;
 			for (int i = 1; i < args.size(); i++) {
 				ValueExpr candidate = args.get(i);
@@ -941,15 +1048,20 @@ final class LmdbNativeAggregateCompiler {
 					return null;
 				}
 				long id = idOf(value);
-				if (id != UNKNOWN) {
-					accepted[acceptedSize++] = id;
+				if (id == UNKNOWN) {
+					return null;
 				}
+				accepted[acceptedSize] = id;
+				acceptedValues[acceptedSize] = value;
+				acceptedSize++;
 			}
 			if (acceptedSize == 0) {
 				return row -> false;
 			}
 			return new ValueSetFilter(source, slot,
-					acceptedSize == accepted.length ? accepted : Arrays.copyOf(accepted, acceptedSize));
+					acceptedSize == accepted.length ? accepted : Arrays.copyOf(accepted, acceptedSize),
+					acceptedSize == acceptedValues.length ? acceptedValues
+							: Arrays.copyOf(acceptedValues, acceptedSize));
 		}
 
 		private NativeBooleanFilter compileCompare(Compare compare) {
@@ -1112,6 +1224,18 @@ final class LmdbNativeAggregateCompiler {
 	private static boolean safeResourceId(long id) {
 		int type = ValueIds.getIdType(id);
 		return type == ValueIds.T_URI || type == ValueIds.T_BNODE || type == ValueIds.T_TRIPLE;
+	}
+
+	private static boolean allSafeExactIds(long[] ids) {
+		if (ids.length == 0) {
+			return false;
+		}
+		for (long id : ids) {
+			if (!safeResourceId(id)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static long normalizedEstimate(double estimate) {
@@ -1387,7 +1511,8 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		static boolean canReorder(SlotPlan plan) {
-			return plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof MultiJoinPlan;
+			return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan
+					|| plan instanceof MultiJoinPlan;
 		}
 
 		static void collectReorderable(SlotPlan plan, ArrayList<SlotPlan> children) {
@@ -1522,8 +1647,10 @@ final class LmdbNativeAggregateCompiler {
 		private final ContextConstraint contexts;
 		private final boolean namedContextScope;
 		private final long producedMask;
+		private final double staticEstimate;
 
-		private PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope) {
+		private PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+				double staticEstimate) {
 			this.s = s;
 			this.p = p;
 			this.o = o;
@@ -1544,6 +1671,7 @@ final class LmdbNativeAggregateCompiler {
 				mask |= 1L << c.slot;
 			}
 			this.producedMask = mask;
+			this.staticEstimate = staticEstimate;
 		}
 
 		@Override
@@ -1583,10 +1711,17 @@ final class LmdbNativeAggregateCompiler {
 		@Override
 		public double estimate(RowState row) {
 			// This method is called while opening nested join cursors. It must never perform LMDB I/O.
-			// Earlier versions called source.estimate(...), which walks LMDB btree pages through the
-			// page-estimator on every correlated join open. In the benchmark this dominated execution
-			// time. The dynamic join order only needs a cheap tie-breaker after boundScore(); use a
-			// structural pseudo-cardinality based on which terms are already bound.
+			// Static LMDB estimates are captured once at compile time. At runtime, use them only for
+			// completely uncorrelated patterns; once another pattern has bound one of our slots, a cheap
+			// structural estimate is a better proxy for a direct lookup.
+			long structural = structuralEstimate(row);
+			if (!hasRuntimeBoundSlot(row) && Double.isFinite(staticEstimate)) {
+				return Math.max(0D, staticEstimate);
+			}
+			return structural;
+		}
+
+		private long structuralEstimate(RowState row) {
 			long estimate = 1L;
 			estimate = multiplyEstimate(estimate, termPseudoCardinality(s, row.slots, Field.SUBJECT));
 			estimate = multiplyEstimate(estimate, termPseudoCardinality(p, row.slots, Field.PREDICATE));
@@ -1594,13 +1729,22 @@ final class LmdbNativeAggregateCompiler {
 			estimate = multiplyEstimate(estimate, termPseudoCardinality(c, row.slots, Field.CONTEXT));
 			if (contexts.isFixed()) {
 				if (contexts.ids.length == 0) {
-					return 0D;
+					return 0L;
 				}
 				if (c.lookup(row.slots) == UNKNOWN) {
 					estimate = multiplyEstimate(estimate, contexts.ids.length);
 				}
 			}
 			return estimate;
+		}
+
+		private boolean hasRuntimeBoundSlot(RowState row) {
+			return termRuntimeBound(s, row.slots) || termRuntimeBound(p, row.slots)
+					|| termRuntimeBound(o, row.slots) || termRuntimeBound(c, row.slots);
+		}
+
+		private boolean termRuntimeBound(Term term, long[] slots) {
+			return term.slot >= 0 && slots[term.slot] != UNKNOWN && slots[term.slot] != SYNTHETIC_BOUND;
 		}
 
 		@Override
@@ -1689,6 +1833,138 @@ final class LmdbNativeAggregateCompiler {
 				return term.constant == id && (!term.bindConstant || row.bind(term.slot, id));
 			}
 			return term.slot < 0 || row.bind(term.slot, id);
+		}
+	}
+
+	private static final class MultiValuePatternPlan implements SlotPlan {
+		private final int constrainedSlot;
+		private final long[] constants;
+		private final PatternPlan[] alternatives;
+		private final PatternPlan fallback;
+		private final ValueSetFilter fallbackFilter;
+		private final long producedMask;
+		private final double staticEstimate;
+
+		private MultiValuePatternPlan(NativeLmdbQuerySource source, int constrainedSlot, long[] constants,
+				PatternPlan[] alternatives, PatternPlan fallback) {
+			this.constrainedSlot = constrainedSlot;
+			this.constants = constants;
+			this.alternatives = alternatives;
+			this.fallback = fallback;
+			this.fallbackFilter = fallback == null ? null : new ValueSetFilter(source, constrainedSlot, constants);
+			long mask = 0L;
+			double estimate = 0D;
+			for (PatternPlan alternative : alternatives) {
+				mask |= alternative.producedMask();
+				if (Double.isFinite(estimate) && Double.isFinite(alternative.staticEstimate)) {
+					estimate += Math.max(0D, alternative.staticEstimate);
+				} else {
+					estimate = Double.POSITIVE_INFINITY;
+				}
+			}
+			this.producedMask = mask;
+			this.staticEstimate = estimate;
+		}
+
+		@Override
+		public RowCursor open(RowState row) throws IOException {
+			if (fallback != null && shouldUseFallback(row)) {
+				return new FilterCursor(fallback.open(row), fallbackFilter, row);
+			}
+			if (constrainedSlot >= 0) {
+				long bound = row.slots[constrainedSlot];
+				if (bound != UNKNOWN && bound != SYNTHETIC_BOUND) {
+					for (int i = 0; i < constants.length; i++) {
+						if (constants[i] == bound) {
+							return alternatives[i].open(row);
+						}
+					}
+					return EmptyCursor.INSTANCE;
+				}
+			}
+			return new MultiValuePatternCursor(alternatives, row);
+		}
+
+		private boolean shouldUseFallback(RowState row) {
+			if (constrainedSlot >= 0) {
+				long constrained = row.slots[constrainedSlot];
+				if (constrained != UNKNOWN && constrained != SYNTHETIC_BOUND) {
+					return true;
+				}
+			}
+			return fallback.hasRuntimeBoundSlot(row);
+		}
+
+		@Override
+		public long producedMask() {
+			return producedMask;
+		}
+
+		@Override
+		public double estimate(RowState row) {
+			if (fallback != null && shouldUseFallback(row)) {
+				return fallback.estimate(row);
+			}
+			if (constrainedSlot >= 0) {
+				long bound = row.slots[constrainedSlot];
+				if (bound != UNKNOWN && bound != SYNTHETIC_BOUND) {
+					for (int i = 0; i < constants.length; i++) {
+						if (constants[i] == bound) {
+							return alternatives[i].estimate(row);
+						}
+					}
+					return 0D;
+				}
+			}
+			return Double.isFinite(staticEstimate) ? Math.max(1D, staticEstimate) : alternatives.length * 64D;
+		}
+
+		@Override
+		public int boundScore(RowState row) {
+			int best = Integer.MIN_VALUE;
+			for (PatternPlan alternative : alternatives) {
+				best = Math.max(best, alternative.boundScore(row));
+			}
+			return best == Integer.MIN_VALUE ? 0 : best;
+		}
+	}
+
+	private static final class MultiValuePatternCursor implements RowCursor {
+		private final PatternPlan[] alternatives;
+		private final RowState row;
+		private int index;
+		private RowCursor current;
+
+		private MultiValuePatternCursor(PatternPlan[] alternatives, RowState row) {
+			this.alternatives = alternatives;
+			this.row = row;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			while (true) {
+				if (current != null && current.next()) {
+					return true;
+				}
+				closeCurrent();
+				if (index >= alternatives.length) {
+					return false;
+				}
+				current = alternatives[index++].open(row);
+			}
+		}
+
+		@Override
+		public void close() {
+			closeCurrent();
+			index = alternatives.length;
+		}
+
+		private void closeCurrent() {
+			if (current != null) {
+				current.close();
+				current = null;
+			}
 		}
 	}
 
@@ -2371,13 +2647,19 @@ final class LmdbNativeAggregateCompiler {
 		private final NativeLmdbQuerySource source;
 		private final int slot;
 		private final long[] accepted;
+		private final Value[] queryValues;
 		private final Value[] acceptedValues;
 		private final LongBooleanMemo memo = new LongBooleanMemo(256);
 
 		private ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted) {
+			this(source, slot, accepted, null);
+		}
+
+		private ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted, Value[] queryValues) {
 			this.source = source;
 			this.slot = slot;
 			this.accepted = accepted;
+			this.queryValues = queryValues;
 			this.acceptedValues = new Value[accepted.length];
 		}
 
@@ -2388,7 +2670,7 @@ final class LmdbNativeAggregateCompiler {
 				return false;
 			}
 			for (long candidate : accepted) {
-				if (candidate == id) {
+				if (candidate == id && safeResourceId(candidate)) {
 					return true;
 				}
 			}
@@ -2400,12 +2682,8 @@ final class LmdbNativeAggregateCompiler {
 			try {
 				Value value = source.lazyValue(id);
 				for (int i = 0; i < accepted.length; i++) {
-					Value acceptedValue = acceptedValues[i];
-					if (acceptedValue == null) {
-						acceptedValue = source.lazyValue(accepted[i]);
-						acceptedValues[i] = acceptedValue;
-					}
-					if (QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
+					Value acceptedValue = acceptedValue(i);
+					if (acceptedValue != null && QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
 						result = true;
 						break;
 					}
@@ -2415,6 +2693,18 @@ final class LmdbNativeAggregateCompiler {
 			}
 			memo.put(id, result);
 			return result;
+		}
+
+		private Value acceptedValue(int index) {
+			if (queryValues != null) {
+				return queryValues[index];
+			}
+			Value acceptedValue = acceptedValues[index];
+			if (acceptedValue == null) {
+				acceptedValue = source.lazyValue(accepted[index]);
+				acceptedValues[index] = acceptedValue;
+			}
+			return acceptedValue;
 		}
 	}
 
@@ -2893,11 +3183,13 @@ final class LmdbNativeAggregateCompiler {
 		private final String filteredVariable;
 		private final String valuesVariable;
 		private final long[] ids;
+		private final Value[] values;
 
-		private FoldedValueSet(String filteredVariable, String valuesVariable, long[] ids) {
+		private FoldedValueSet(String filteredVariable, String valuesVariable, long[] ids, Value[] values) {
 			this.filteredVariable = filteredVariable;
 			this.valuesVariable = valuesVariable;
 			this.ids = ids;
+			this.values = values;
 		}
 	}
 
