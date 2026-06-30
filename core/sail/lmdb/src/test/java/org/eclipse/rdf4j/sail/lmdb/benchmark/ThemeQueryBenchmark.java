@@ -69,10 +69,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -104,31 +104,31 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
-			"7",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
+//			"7",
 			"8",
-			"9",
-			"10",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
 			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 

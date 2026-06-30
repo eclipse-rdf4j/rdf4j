@@ -37,8 +37,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
@@ -589,7 +589,7 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean spoTripleExistsAnyContext(Txn txnRef, TripleIndex index, long subj, long pred, long obj,
-	                                          boolean explicit) throws IOException {
+			boolean explicit) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -682,7 +682,7 @@ class TripleStore implements Closeable {
 	}
 
 	private SpoExistenceCursor prepareSpoExistenceCursor(Txn txnRef, long txn, int dbi, TripleIndex index,
-	                                                     boolean explicit, MemoryStack stack) throws IOException {
+			boolean explicit, MemoryStack stack) throws IOException {
 		SpoExistenceCursor cursor = spoExistenceCursor.get();
 		long txnVersion = txnRef.version();
 		if (cursor.cursor != 0 && (cursor.dbi != dbi || cursor.index != index)) {
@@ -713,7 +713,7 @@ class TripleStore implements Closeable {
 	}
 
 	private static boolean canWalkSpoCursor(SpoExistenceCursor cursor, TripleIndex index, int dbi, boolean explicit,
-	                                        long subj, long pred, long obj) {
+			long subj, long pred, long obj) {
 		return cursor != null && cursor.index == index && cursor.dbi == dbi && cursor.explicit == explicit
 				&& cursor.subj == subj && cursor.pred == pred && cursor.lastRequestedObj <= obj
 				&& (cursor.positioned || cursor.exhausted);
@@ -834,7 +834,7 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean tripleExistsUsingIndex(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit,
-	                                       TripleIndex index, boolean rangeSearch) throws IOException {
+			TripleIndex index, boolean rangeSearch) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -910,7 +910,7 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
-	                                  boolean explicit) throws IOException {
+			boolean explicit) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -949,7 +949,7 @@ class TripleStore implements Closeable {
 	}
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
-	                                            boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
+			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
@@ -1047,10 +1047,10 @@ class TripleStore implements Closeable {
 									// optimization: ensure that literals are only tested if they appear in object
 									// position
 									switch (ValueIds.getIdType(id)) {
-										case ValueIds.T_DOUBLE:
-										case ValueIds.T_LITERAL:
-											// id is a literal, don't test it
-											continue;
+									case ValueIds.T_DOUBLE:
+									case ValueIds.T_LITERAL:
+										// id is a literal, don't test it
+										continue;
 									}
 								}
 
@@ -1390,16 +1390,16 @@ class TripleStore implements Closeable {
 
 	private Component toEstimatorComponent(char field) {
 		switch (field) {
-			case 's':
-				return Component.S;
-			case 'p':
-				return Component.P;
-			case 'o':
-				return Component.O;
-			case 'c':
-				return Component.C;
-			default:
-				throw new IllegalArgumentException("invalid index field: " + field);
+		case 's':
+			return Component.S;
+		case 'p':
+			return Component.P;
+		case 'o':
+			return Component.O;
+		case 'c':
+			return Component.C;
+		default:
+			throw new IllegalArgumentException("invalid index field: " + field);
 		}
 	}
 
@@ -1505,7 +1505,7 @@ class TripleStore implements Closeable {
 
 	@Experimental
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-	                                IntConsumer addedIndexConsumer)
+			IntConsumer addedIndexConsumer)
 			throws IOException {
 		if (count == 0) {
 			return;
@@ -1645,7 +1645,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
-	                                      int count, boolean explicit, IntConsumer addedIndexConsumer)
+			int count, boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		for (int i = startIndex; i < count; i++) {
 			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
@@ -1659,8 +1659,8 @@ class TripleStore implements Closeable {
 	}
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
-	                                      long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
-	                                      LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
+			long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
+			LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
 			throws IOException {
 		undoContextIncrements(contextIncrementsToUndo);
 		if (recordCache == null) {
@@ -1688,7 +1688,7 @@ class TripleStore implements Closeable {
 	}
 
 	void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subj,
-	                                        long[] pred, long[] obj, long[] context) {
+			long[] pred, long[] obj, long[] context) {
 		if (length < 2) {
 			return;
 		}
@@ -1755,7 +1755,7 @@ class TripleStore implements Closeable {
 	}
 
 	private long getAlignedWriteCursor(int indexPosition, TripleIndex index, boolean explicit,
-	                                   PointerBuffer cursorHandle)
+			PointerBuffer cursorHandle)
 			throws IOException {
 		long[] alignedWriteCursors = explicit ? explicitAlignedWriteCursors : inferredAlignedWriteCursors;
 		long cursor = alignedWriteCursors[indexPosition];
@@ -1902,7 +1902,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
-	                                   boolean explicit, Consumer<long[]> handler) throws IOException {
+			boolean explicit, Consumer<long[]> handler) throws IOException {
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}

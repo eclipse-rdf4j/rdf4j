@@ -57,7 +57,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -82,14 +81,21 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+	void automaticLmdbStoreUsesNativeEvaluationWithStandardPipelineUntilSketchesAreReady() throws Exception {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createEvaluationStrategy(factory);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 	}
 
 	@Test
-	void automaticLmdbStoreSwitchesToLmdbEvaluationStrategyFactoryAfterSketchesAreReady(@TempDir File dataDir)
+	void automaticLmdbStoreUsesNativeEvaluationWithLmdbPipelineAfterSketchesAreReady(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
@@ -102,14 +108,22 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(estimator.isReadyNonBlocking());
 			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
-			assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+			EvaluationStrategy strategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> optimizers = optimizers(strategy);
+
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+			assertTrue(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+			assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		} finally {
 			store.shutDown();
 		}
 	}
 
 	@Test
-	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
+	void lowHeapAutomaticStoreUsesNativeFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
 		ProcessResult result = runLowHeapProbe(dataDir);
 
 		assertEquals(0, result.exitCode, result.output);
@@ -117,13 +131,18 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void longLivedConnectionsChooseCurrentAutomaticFactoryPerQueryCreation(@TempDir File dataDir) throws Exception {
+	void longLivedConnectionsChooseCurrentAutomaticPipelinePerQueryCreation(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			EvaluationStrategy initialStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> initialOptimizers = optimizers(initialStrategy);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, initialStrategy);
+			assertTrue(initialOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertFalse(initialOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -131,7 +150,12 @@ class LmdbOptimizerPipelineTest {
 			estimator.rebuild();
 
 			assertTrue(estimator.isReadyNonBlocking());
-			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+			EvaluationStrategy readyStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> readyOptimizers = optimizers(readyStrategy);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, readyStrategy);
+			assertTrue(readyOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+			assertFalse(readyOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		} finally {
 			store.shutDown();
 		}
@@ -151,6 +175,8 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(estimator.isReadyNonBlocking());
 			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
+			assertTrue(optimizers(createEvaluationStrategy(store.getEvaluationStrategyFactory(), store.getBackingStore()
+					.getEvaluationStatistics())).isEmpty());
 		} finally {
 			store.shutDown();
 		}
@@ -163,7 +189,7 @@ class LmdbOptimizerPipelineTest {
 		LmdbStore store = new LmdbStore(config);
 
 		assertInstanceOf(StrictEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
-		assertFalse(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory);
+		assertFalse(store.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory);
 	}
 
 	@Test
@@ -258,6 +284,13 @@ class LmdbOptimizerPipelineTest {
 				.collect(Collectors.toList());
 	}
 
+	private static List<QueryOptimizer> optimizers(EvaluationStrategy strategy) throws Exception {
+		Field field = DefaultEvaluationStrategy.class.getDeclaredField("pipeline");
+		field.setAccessible(true);
+		QueryOptimizerPipeline pipeline = (QueryOptimizerPipeline) field.get(strategy);
+		return optimizers(pipeline.getOptimizers());
+	}
+
 	private static int indexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
 		for (int i = 0; i < optimizers.size(); i++) {
 			if (optimizerType.isInstance(optimizers.get(i))) {
@@ -337,7 +370,12 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
-		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
+		return createEvaluationStrategy(factory, new EvaluationStatistics());
+	}
+
+	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory,
+			EvaluationStatistics evaluationStatistics) {
+		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), evaluationStatistics);
 	}
 
 	public static final class LowHeapSketchGateProbe {
@@ -357,13 +395,25 @@ class LmdbOptimizerPipelineTest {
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 					throw new AssertionError("Low heap should not allocate the sketch estimator");
 				}
-				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
-					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				if (!(store.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the native evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 				if (statistics.supportsJoinEstimation()) {
 					throw new AssertionError("Low heap should not expose sketch join estimation");
+				}
+				EvaluationStrategy strategy = createEvaluationStrategy(store.getEvaluationStrategyFactory(),
+						statistics);
+				if (!(strategy instanceof LmdbNativeEvaluationStrategy)) {
+					throw new AssertionError("Low heap should create the native evaluation strategy");
+				}
+				List<QueryOptimizer> optimizers = optimizers(strategy);
+				if (optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance)) {
+					throw new AssertionError("Low heap should use the standard optimizer pipeline");
+				}
+				if (optimizers.stream().noneMatch(QueryJoinOptimizer.class::isInstance)) {
+					throw new AssertionError("Low heap should retain the standard join optimizer");
 				}
 				if (statistics.getCardinality(firstStatementPattern(predicate)) <= 0.0d) {
 					throw new AssertionError("Low heap should retain page-walking statement cardinality");
