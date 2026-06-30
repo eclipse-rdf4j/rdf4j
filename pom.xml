@@ -601,6 +601,26 @@
 				<version>1.15</version>
 			</dependency>
 			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>brotli4j</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-aarch64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-x86_64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.github.luben</groupId>
+				<artifactId>zstd-jni</artifactId>
+				<version>${zstd-jni.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-text</artifactId>
 				<version>1.10.0</version>

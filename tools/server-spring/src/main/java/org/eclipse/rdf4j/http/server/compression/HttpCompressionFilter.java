@@ -18,6 +18,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -25,8 +26,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+
+import org.eclipse.rdf4j.rio.helpers.RioCompression;
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -53,6 +59,7 @@ public class HttpCompressionFilter implements Filter {
 	private static final String CONTENT_LENGTH = "Content-Length";
 	private static final String ACCEPT_ENCODING = "Accept-Encoding";
 	private static final String EXCLUDE_CONTENT_TYPES = "excludeContentTypes";
+	private static final String FORM_CONTENT_TYPE = "application/x-www-form-urlencoded";
 	private static final Set<String> DEFAULT_EXCLUDED_CONTENT_TYPES = Set.of(
 			"application/x-binary-rdf",
 			"application/x-binary-rdf-results-table");
@@ -84,12 +91,17 @@ public class HttpCompressionFilter implements Filter {
 
 		HttpServletRequest httpRequest = (HttpServletRequest) request;
 		HttpServletResponse httpResponse = (HttpServletResponse) response;
+		String contentEncodingHeader = httpRequest.getHeader(CONTENT_ENCODING);
+		if (HttpCompressionEncoding.hasUnsupportedRequestContentEncoding(contentEncodingHeader)) {
+			httpResponse.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE,
+					"Unsupported Content-Encoding: " + contentEncodingHeader);
+			return;
+		}
+
 		HttpCompressionEncoding requestContentEncoding = HttpCompressionEncoding.requestContentEncoding(
-				httpRequest.getHeader(CONTENT_ENCODING));
+				contentEncodingHeader);
 		HttpCompressionEncoding responseContentEncoding = HttpCompressionEncoding.acceptedResponseEncoding(httpRequest);
-		ServletRequest requestToUse = requestContentEncoding != null
-				? new CompressedHttpServletRequestWrapper(httpRequest, requestContentEncoding)
-				: request;
+		ServletRequest requestToUse = requestToUse(httpRequest, requestContentEncoding);
 		CompressedHttpServletResponseWrapper responseToUse = new CompressedHttpServletResponseWrapper(httpResponse,
 				"HEAD".equalsIgnoreCase(httpRequest.getMethod()) ? null : responseContentEncoding,
 				excludedContentTypes);
@@ -99,6 +111,23 @@ public class HttpCompressionFilter implements Filter {
 		} finally {
 			responseToUse.finish();
 		}
+	}
+
+	private static ServletRequest requestToUse(HttpServletRequest request, HttpCompressionEncoding contentEncoding) {
+		if (contentEncoding != null) {
+			return new CompressedHttpServletRequestWrapper(request, contentEncoding);
+		}
+		if (mayHaveRequestBody(request)) {
+			return new AutoDetectingHttpServletRequestWrapper(request);
+		}
+		return request;
+	}
+
+	private static boolean mayHaveRequestBody(HttpServletRequest request) {
+		String method = request.getMethod();
+		return !"GET".equalsIgnoreCase(method)
+				&& !"HEAD".equalsIgnoreCase(method)
+				&& request.getContentLengthLong() != 0L;
 	}
 
 	private static boolean isHeader(String actual, String expected) {
@@ -118,6 +147,7 @@ public class HttpCompressionFilter implements Filter {
 		private final HttpCompressionEncoding contentEncoding;
 		private ServletInputStream inputStream;
 		private BufferedReader reader;
+		private Map<String, String[]> parameterMap;
 		private boolean inputStreamRequested;
 		private boolean readerRequested;
 
@@ -189,10 +219,149 @@ public class HttpCompressionFilter implements Filter {
 			return -1L;
 		}
 
+		@Override
+		public String getParameter(String name) {
+			if (!hasFormParameters()) {
+				return super.getParameter(name);
+			}
+			String[] values = getParameterMap().get(name);
+			return values == null || values.length == 0 ? null : values[0];
+		}
+
+		@Override
+		public Map<String, String[]> getParameterMap() {
+			if (!hasFormParameters()) {
+				return super.getParameterMap();
+			}
+			if (parameterMap == null) {
+				try {
+					parameterMap = readDecompressedFormParameters();
+				} catch (IOException e) {
+					throw new IllegalStateException("Could not read compressed form parameters", e);
+				}
+			}
+			return parameterMap;
+		}
+
+		@Override
+		public Enumeration<String> getParameterNames() {
+			if (!hasFormParameters()) {
+				return super.getParameterNames();
+			}
+			return Collections.enumeration(getParameterMap().keySet());
+		}
+
+		@Override
+		public String[] getParameterValues(String name) {
+			if (!hasFormParameters()) {
+				return super.getParameterValues(name);
+			}
+			return getParameterMap().get(name);
+		}
+
 		private ServletInputStream decompressedInputStream() throws IOException {
 			if (inputStream == null) {
 				inputStream = new DelegatingServletInputStream(
 						contentEncoding.decompressedInputStream(super.getInputStream()));
+			}
+			return inputStream;
+		}
+
+		private boolean hasFormParameters() {
+			return FORM_CONTENT_TYPE.equals(normalizedMimeType(getContentType()));
+		}
+
+		private Map<String, String[]> readDecompressedFormParameters() throws IOException {
+			if (readerRequested || inputStreamRequested) {
+				throw new IllegalStateException("Request body has already been read");
+			}
+
+			Charset charset = requestCharset();
+			Map<String, List<String>> parameters = new LinkedHashMap<>();
+			addUrlEncodedParameters(parameters, getQueryString(), charset);
+			try (InputStream formInputStream = contentEncoding.decompressedInputStream(super.getInputStream())) {
+				addUrlEncodedParameters(parameters, new String(formInputStream.readAllBytes(), charset), charset);
+			}
+
+			Map<String, String[]> result = new LinkedHashMap<>();
+			for (Map.Entry<String, List<String>> entry : parameters.entrySet()) {
+				result.put(entry.getKey(), entry.getValue().toArray(String[]::new));
+			}
+			return Collections.unmodifiableMap(result);
+		}
+
+		private Charset requestCharset() {
+			String characterEncoding = getCharacterEncoding();
+			return characterEncoding == null ? StandardCharsets.UTF_8 : Charset.forName(characterEncoding);
+		}
+
+		private static void addUrlEncodedParameters(Map<String, List<String>> parameters, String encodedParameters,
+				Charset charset) {
+			if (encodedParameters == null || encodedParameters.isEmpty()) {
+				return;
+			}
+			for (String encodedParameter : encodedParameters.split("&", -1)) {
+				if (encodedParameter.isEmpty()) {
+					continue;
+				}
+				int separator = encodedParameter.indexOf('=');
+				String encodedName = separator >= 0 ? encodedParameter.substring(0, separator) : encodedParameter;
+				String encodedValue = separator >= 0 ? encodedParameter.substring(separator + 1) : "";
+				parameters.computeIfAbsent(URLDecoder.decode(encodedName, charset), ignored -> new ArrayList<>())
+						.add(URLDecoder.decode(encodedValue, charset));
+			}
+		}
+	}
+
+	private static final class AutoDetectingHttpServletRequestWrapper extends HttpServletRequestWrapper {
+
+		private ServletInputStream inputStream;
+		private BufferedReader reader;
+		private boolean inputStreamRequested;
+		private boolean readerRequested;
+
+		AutoDetectingHttpServletRequestWrapper(HttpServletRequest request) {
+			super(request);
+		}
+
+		@Override
+		public ServletInputStream getInputStream() throws IOException {
+			if (readerRequested) {
+				throw new IllegalStateException("getReader() has already been called");
+			}
+			inputStreamRequested = true;
+			return decompressedInputStream();
+		}
+
+		@Override
+		public BufferedReader getReader() throws IOException {
+			if (inputStreamRequested) {
+				throw new IllegalStateException("getInputStream() has already been called");
+			}
+			readerRequested = true;
+			if (reader == null) {
+				Charset charset = getCharacterEncoding() == null
+						? StandardCharsets.UTF_8
+						: Charset.forName(getCharacterEncoding());
+				reader = new BufferedReader(new InputStreamReader(decompressedInputStream(), charset));
+			}
+			return reader;
+		}
+
+		@Override
+		public int getContentLength() {
+			return -1;
+		}
+
+		@Override
+		public long getContentLengthLong() {
+			return -1L;
+		}
+
+		private ServletInputStream decompressedInputStream() throws IOException {
+			if (inputStream == null) {
+				inputStream = new DelegatingServletInputStream(
+						RioCompression.decompressIfDetected(super.getInputStream()));
 			}
 			return inputStream;
 		}
