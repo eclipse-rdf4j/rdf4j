@@ -12,6 +12,14 @@
     </filter>
      -->
 	<filter>
+		<filter-name>HttpCompressionFilter</filter-name>
+		<filter-class>org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter</filter-class>
+		<init-param>
+			<param-name>excludeContentTypes</param-name>
+			<param-value>application/x-binary-rdf,application/x-binary-rdf-results-table</param-value>
+		</init-param>
+	</filter>
+	<filter>
 		<filter-name>PathFilter</filter-name>
 		<filter-class>org.eclipse.rdf4j.common.webapp.filters.PathFilter</filter-class>
 	</filter>
@@ -33,6 +41,10 @@
         <url-pattern>/*</url-pattern>
     </filter-mapping>
      -->
+	<filter-mapping>
+		<filter-name>HttpCompressionFilter</filter-name>
+		<url-pattern>/*</url-pattern>
+	</filter-mapping>
 
 	<filter-mapping>
 		<filter-name>UrlRewriteFilter</filter-name>
