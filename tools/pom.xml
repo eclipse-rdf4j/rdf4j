@@ -117,6 +117,26 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>brotli4j</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-aarch64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-x86_64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.github.luben</groupId>
+				<artifactId>zstd-jni</artifactId>
+				<version>${zstd-jni.version}</version>
+			</dependency>
 			<!-- Spring framework -->
 			<dependency>
 				<groupId>org.springframework</groupId>

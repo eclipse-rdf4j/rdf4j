@@ -17,6 +17,16 @@ const COMPRESSION_ENCODINGS = [
         name: 'deflate',
         compress: value => zlib.deflateSync(value),
         decompress: value => zlib.inflateSync(value)
+    },
+    {
+        name: 'br',
+        compress: value => zlib.brotliCompressSync(value),
+        decompress: value => zlib.brotliDecompressSync(value)
+    },
+    {
+        name: 'zstd',
+        compress: value => zlib.zstdCompressSync(value),
+        decompress: value => zlib.zstdDecompressSync(value)
     }
 ];
 

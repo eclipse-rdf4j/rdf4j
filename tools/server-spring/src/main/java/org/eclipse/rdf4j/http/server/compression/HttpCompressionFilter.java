@@ -15,6 +15,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
@@ -26,10 +27,6 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
-import java.util.zip.DeflaterOutputStream;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
-import java.util.zip.InflaterInputStream;
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -54,11 +51,8 @@ public class HttpCompressionFilter implements Filter {
 
 	private static final String CONTENT_ENCODING = "Content-Encoding";
 	private static final String CONTENT_LENGTH = "Content-Length";
-	private static final String GZIP = "gzip";
-	private static final String DEFLATE = "deflate";
 	private static final String ACCEPT_ENCODING = "Accept-Encoding";
 	private static final String EXCLUDE_CONTENT_TYPES = "excludeContentTypes";
-	private static final double UNSPECIFIED_QUALITY = -1.0d;
 	private static final Set<String> DEFAULT_EXCLUDED_CONTENT_TYPES = Set.of(
 			"application/x-binary-rdf",
 			"application/x-binary-rdf-results-table");
@@ -90,8 +84,9 @@ public class HttpCompressionFilter implements Filter {
 
 		HttpServletRequest httpRequest = (HttpServletRequest) request;
 		HttpServletResponse httpResponse = (HttpServletResponse) response;
-		String requestContentEncoding = requestContentEncoding(httpRequest);
-		String responseContentEncoding = acceptedResponseEncoding(httpRequest);
+		HttpCompressionEncoding requestContentEncoding = HttpCompressionEncoding.requestContentEncoding(
+				httpRequest.getHeader(CONTENT_ENCODING));
+		HttpCompressionEncoding responseContentEncoding = HttpCompressionEncoding.acceptedResponseEncoding(httpRequest);
 		ServletRequest requestToUse = requestContentEncoding != null
 				? new CompressedHttpServletRequestWrapper(httpRequest, requestContentEncoding)
 				: request;
@@ -106,66 +101,6 @@ public class HttpCompressionFilter implements Filter {
 		}
 	}
 
-	private static String requestContentEncoding(HttpServletRequest request) {
-		String contentEncoding = request.getHeader(CONTENT_ENCODING);
-		if (contentEncoding == null) {
-			return null;
-		}
-		for (String value : contentEncoding.split(",")) {
-			String encoding = value.trim();
-			if (GZIP.equalsIgnoreCase(encoding)) {
-				return GZIP;
-			}
-			if (DEFLATE.equalsIgnoreCase(encoding)) {
-				return DEFLATE;
-			}
-		}
-		return null;
-	}
-
-	private static String acceptedResponseEncoding(HttpServletRequest request) {
-		double gzipQuality = UNSPECIFIED_QUALITY;
-		double deflateQuality = UNSPECIFIED_QUALITY;
-		double wildcardQuality = UNSPECIFIED_QUALITY;
-		Enumeration<String> headers = request.getHeaders(ACCEPT_ENCODING);
-		while (headers.hasMoreElements()) {
-			for (String value : headers.nextElement().split(",")) {
-				String[] parts = value.trim().split(";");
-				String encoding = parts[0].trim();
-				if (GZIP.equalsIgnoreCase(encoding)) {
-					gzipQuality = qualityValue(parts);
-				} else if (DEFLATE.equalsIgnoreCase(encoding)) {
-					deflateQuality = qualityValue(parts);
-				} else if ("*".equals(encoding)) {
-					wildcardQuality = qualityValue(parts);
-				}
-			}
-		}
-		double effectiveGzipQuality = gzipQuality == UNSPECIFIED_QUALITY ? wildcardQuality : gzipQuality;
-		double effectiveDeflateQuality = deflateQuality == UNSPECIFIED_QUALITY ? wildcardQuality : deflateQuality;
-		if (effectiveGzipQuality <= 0.0d && effectiveDeflateQuality <= 0.0d) {
-			return null;
-		}
-		if (effectiveGzipQuality >= effectiveDeflateQuality) {
-			return GZIP;
-		}
-		return DEFLATE;
-	}
-
-	private static double qualityValue(String[] parts) {
-		for (int i = 1; i < parts.length; i++) {
-			String part = parts[i].trim();
-			if (part.regionMatches(true, 0, "q=", 0, 2)) {
-				try {
-					return Double.parseDouble(part.substring(2).trim());
-				} catch (NumberFormatException ignored) {
-					return 0.0d;
-				}
-			}
-		}
-		return 1.0d;
-	}
-
 	private static boolean isHeader(String actual, String expected) {
 		return expected.equalsIgnoreCase(actual);
 	}
@@ -178,37 +113,15 @@ public class HttpCompressionFilter implements Filter {
 		return (separator >= 0 ? contentType.substring(0, separator) : contentType).trim().toLowerCase(Locale.ROOT);
 	}
 
-	private static InputStream decompressedInputStream(String contentEncoding, InputStream inputStream)
-			throws IOException {
-		if (GZIP.equals(contentEncoding)) {
-			return new GZIPInputStream(inputStream);
-		}
-		if (DEFLATE.equals(contentEncoding)) {
-			return new InflaterInputStream(inputStream);
-		}
-		throw new IllegalArgumentException("Unsupported content encoding: " + contentEncoding);
-	}
-
-	private static DeflaterOutputStream compressedOutputStream(String contentEncoding, ServletOutputStream outputStream)
-			throws IOException {
-		if (GZIP.equals(contentEncoding)) {
-			return new GZIPOutputStream(outputStream, true);
-		}
-		if (DEFLATE.equals(contentEncoding)) {
-			return new DeflaterOutputStream(outputStream, true);
-		}
-		throw new IllegalArgumentException("Unsupported content encoding: " + contentEncoding);
-	}
-
 	private static final class CompressedHttpServletRequestWrapper extends HttpServletRequestWrapper {
 
-		private final String contentEncoding;
+		private final HttpCompressionEncoding contentEncoding;
 		private ServletInputStream inputStream;
 		private BufferedReader reader;
 		private boolean inputStreamRequested;
 		private boolean readerRequested;
 
-		CompressedHttpServletRequestWrapper(HttpServletRequest request, String contentEncoding) {
+		CompressedHttpServletRequestWrapper(HttpServletRequest request, HttpCompressionEncoding contentEncoding) {
 			super(request);
 			this.contentEncoding = contentEncoding;
 		}
@@ -279,7 +192,7 @@ public class HttpCompressionFilter implements Filter {
 		private ServletInputStream decompressedInputStream() throws IOException {
 			if (inputStream == null) {
 				inputStream = new DelegatingServletInputStream(
-						HttpCompressionFilter.decompressedInputStream(contentEncoding, super.getInputStream()));
+						contentEncoding.decompressedInputStream(super.getInputStream()));
 			}
 			return inputStream;
 		}
@@ -326,15 +239,15 @@ public class HttpCompressionFilter implements Filter {
 
 	private static final class CompressedHttpServletResponseWrapper extends HttpServletResponseWrapper {
 
-		private final String contentEncoding;
+		private final HttpCompressionEncoding contentEncoding;
 		private final Set<String> excludedContentTypes;
 		private ServletOutputStream outputStream;
 		private PrintWriter writer;
-		private DeflaterOutputStream compressedOutputStream;
+		private OutputStream compressedOutputStream;
 		private boolean compressedOutputFinished;
 		private int status = SC_OK;
 
-		CompressedHttpServletResponseWrapper(HttpServletResponse response, String contentEncoding,
+		CompressedHttpServletResponseWrapper(HttpServletResponse response, HttpCompressionEncoding contentEncoding,
 				Set<String> excludedContentTypes) {
 			super(response);
 			this.contentEncoding = contentEncoding;
@@ -421,7 +334,7 @@ public class HttpCompressionFilter implements Filter {
 				writer.flush();
 			}
 			finishCompressedOutput();
-			if (outputStream != null) {
+			if (outputStream != null && compressedOutputStream == null) {
 				outputStream.flush();
 			}
 		}
@@ -432,9 +345,9 @@ public class HttpCompressionFilter implements Filter {
 				return delegate;
 			}
 
-			setHeader(CONTENT_ENCODING, contentEncoding);
+			setHeader(CONTENT_ENCODING, contentEncoding.headerValue());
 			addVaryHeader();
-			compressedOutputStream = HttpCompressionFilter.compressedOutputStream(contentEncoding, delegate);
+			compressedOutputStream = contentEncoding.compressedOutputStream(delegate);
 			return new ServletOutputStream() {
 				@Override
 				public void write(int b) throws IOException {
@@ -448,7 +361,9 @@ public class HttpCompressionFilter implements Filter {
 
 				@Override
 				public void flush() throws IOException {
-					compressedOutputStream.flush();
+					if (!compressedOutputFinished) {
+						compressedOutputStream.flush();
+					}
 				}
 
 				@Override
@@ -478,9 +393,11 @@ public class HttpCompressionFilter implements Filter {
 
 		private void finishCompressedOutput() throws IOException {
 			if (compressedOutputStream != null && !compressedOutputFinished) {
-				compressedOutputStream.finish();
-				compressedOutputStream.flush();
-				compressedOutputFinished = true;
+				try {
+					contentEncoding.finish(compressedOutputStream);
+				} finally {
+					compressedOutputFinished = true;
+				}
 			}
 		}
 
