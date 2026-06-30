@@ -80,8 +80,7 @@ class WorkbenchServletTest {
 		assertThat(real.createRepositoryManager(tempDir.toURI().toString())).isInstanceOf(LocalRepositoryManager.class);
 		RepositoryManager remoteManager = real.createRepositoryManager("https://example.org/rdf4j-server");
 		assertThat(remoteManager).isInstanceOf(RemoteRepositoryManager.class);
-		assertThat(((RemoteRepositoryManager) remoteManager).getHttpClient())
-				.isInstanceOf(Class.forName("org.eclipse.rdf4j.workbench.proxy.WorkbenchCompressionHttpClient"));
+		assertThat(remoteManager.getClass()).isEqualTo(RemoteRepositoryManager.class);
 		remoteManager.shutDown();
 	}
 

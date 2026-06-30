@@ -266,7 +266,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		if (param.startsWith("file:")) {
 			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
 		} else {
-			manager = new WorkbenchRemoteRepositoryManager(param);
+			manager = new RemoteRepositoryManager(param);
 		}
 		manager.init();
 		return manager;
