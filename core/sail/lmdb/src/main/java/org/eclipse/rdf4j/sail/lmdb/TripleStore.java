@@ -16,6 +16,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.MemoryUtil.memGetByte;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -35,6 +37,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
@@ -69,6 +72,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
@@ -128,6 +132,13 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
+	private final ConcurrentLinkedQueue<SpoExistenceCursor> spoExistenceCursors = new ConcurrentLinkedQueue<>();
+	private final ThreadLocal<SpoExistenceCursor> spoExistenceCursor = ThreadLocal.withInitial(() -> {
+		SpoExistenceCursor cursor = new SpoExistenceCursor();
+		spoExistenceCursors.add(cursor);
+		return cursor;
+	});
+	private TripleIndex spoContextWildcardIndex;
 	private final ValueStore valueStore;
 
 	long env;
@@ -277,6 +288,7 @@ class TripleStore implements Closeable {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn));
 		}
+		resetSpoContextWildcardIndex();
 	}
 
 	private void initializePageAndMapSize(long tripleDbSize) throws IOException {
@@ -424,6 +436,7 @@ class TripleStore implements Closeable {
 	public void close() throws IOException {
 		if (env != 0) {
 			endTransaction(false);
+			closeSpoExistenceCursors();
 
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			if (pageEstimator != null) {
@@ -523,6 +536,19 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			return hasAnyTriples(txn, explicit);
+		}
+		if (subj > 0 && pred > 0 && obj > 0) {
+			if (context >= 0) {
+				return exactTripleExists(txn, indexes.getFirst(), subj, pred, obj, context, explicit);
+			}
+			TripleIndex spoIndex = spoContextWildcardIndex;
+			if (spoIndex != null) {
+				return spoTripleExistsAnyContext(txn, spoIndex, subj, pred, obj, explicit);
+			}
+		}
+
 		int bestScore = -1;
 		TripleIndex index = null;
 		for (TripleIndex candidate : indexes) {
@@ -533,20 +559,18 @@ class TripleStore implements Closeable {
 			}
 		}
 
-		if (bestScore == 0 && subj < 0 && pred < 0 && obj < 0 && context < 0) {
-			return countAllTriples(txn, explicit) > 0;
-		}
-		if (index.getRangePrefixLength(subj, pred, obj, context) == 4) {
-			return exactTripleExists(txn, index, subj, pred, obj, context, explicit);
-		}
-
-		try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
-				bestScore > 0)) {
-			return records.next() != null;
-		}
+		return tripleExistsUsingIndex(txn, subj, pred, obj, context, explicit, index, bestScore > 0);
 	}
 
 	private long countAllTriples(Txn txnRef, boolean explicit) throws IOException {
+		return statTripleCount(txnRef, explicit);
+	}
+
+	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {
+		return statTripleCount(txnRef, explicit) > 0;
+	}
+
+	private long statTripleCount(Txn txnRef, boolean explicit) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -564,8 +588,329 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	private boolean spoTripleExistsAnyContext(Txn txnRef, TripleIndex index, long subj, long pred, long obj,
+	                                          boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+
+		long localCursor = 0;
+		boolean closeLocalCursor = false;
+		try (MemoryStack stack = stackPush()) {
+			long txn = txnRef.get();
+			int dbi = index.getDB(explicit);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer prefixKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			writeSpoPrefix(prefixKeyBuf, subj, pred, obj);
+			prefixKeyBuf.flip();
+			long targetAddress = memAddress(prefixKeyBuf);
+			int targetLength = prefixKeyBuf.remaining();
+
+			SpoExistenceCursor cachedCursor = null;
+			long cursor;
+			if (writeTxn != 0 && txn == writeTxn) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				localCursor = pp.get(0);
+				closeLocalCursor = true;
+				cursor = localCursor;
+			} else {
+				cachedCursor = prepareSpoExistenceCursor(txnRef, txn, dbi, index, explicit, stack);
+				cursor = cachedCursor.cursor;
+			}
+
+			if (canWalkSpoCursor(cachedCursor, index, dbi, explicit, subj, pred, obj)) {
+				if (cachedCursor.exhausted) {
+					cachedCursor.lastRequestedObj = obj;
+					return false;
+				}
+
+				int cmp = compareCachedPrefixToTarget(cachedCursor, targetAddress, targetLength);
+				while (cmp < 0) {
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					if (rc == MDB_NOTFOUND) {
+						cachedCursor.markExhausted(index, dbi, explicit, subj, pred, obj);
+						return false;
+					}
+					if (rc != MDB_SUCCESS) {
+						E(rc);
+					}
+					cacheCurrentSpoPrefix(cachedCursor, keyData);
+					cmp = compareCachedPrefixToTarget(cachedCursor, targetAddress, targetLength);
+				}
+				cachedCursor.lastRequestedObj = obj;
+				return cmp == 0;
+			}
+
+			ByteBuffer searchKey = prefixKeyBuf.duplicate();
+			LmdbUtil.setMDBValData(keyData, searchKey);
+			int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			if (rc == MDB_SUCCESS) {
+				boolean matches = keyStartsWithPrefix(keyData, targetAddress, targetLength);
+				if (cachedCursor != null) {
+					cachedCursor.index = index;
+					cachedCursor.dbi = dbi;
+					cachedCursor.explicit = explicit;
+					cachedCursor.subj = subj;
+					cachedCursor.pred = pred;
+					cachedCursor.lastRequestedObj = obj;
+					cachedCursor.exhausted = false;
+					cachedCursor.positioned = true;
+					cacheCurrentSpoPrefix(cachedCursor, keyData);
+				}
+				return matches;
+			}
+			if (rc == MDB_NOTFOUND) {
+				if (cachedCursor != null) {
+					cachedCursor.markExhausted(index, dbi, explicit, subj, pred, obj);
+				}
+				return false;
+			}
+			E(rc);
+			return false;
+		} finally {
+			if (closeLocalCursor && localCursor != 0) {
+				mdb_cursor_close(localCursor);
+			}
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
+	private SpoExistenceCursor prepareSpoExistenceCursor(Txn txnRef, long txn, int dbi, TripleIndex index,
+	                                                     boolean explicit, MemoryStack stack) throws IOException {
+		SpoExistenceCursor cursor = spoExistenceCursor.get();
+		long txnVersion = txnRef.version();
+		if (cursor.cursor != 0 && (cursor.dbi != dbi || cursor.index != index)) {
+			cursor.close();
+		}
+		if (cursor.cursor == 0) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			cursor.cursor = pp.get(0);
+			cursor.txn = txn;
+			cursor.txnVersion = txnVersion;
+			cursor.dbi = dbi;
+			cursor.index = index;
+			cursor.explicit = explicit;
+			cursor.positioned = false;
+			cursor.exhausted = false;
+			return cursor;
+		}
+		if (cursor.txn != txn || cursor.txnVersion != txnVersion) {
+			E(mdb_cursor_renew(txn, cursor.cursor));
+			cursor.txn = txn;
+			cursor.txnVersion = txnVersion;
+			cursor.positioned = false;
+			cursor.exhausted = false;
+		}
+		cursor.explicit = explicit;
+		return cursor;
+	}
+
+	private static boolean canWalkSpoCursor(SpoExistenceCursor cursor, TripleIndex index, int dbi, boolean explicit,
+	                                        long subj, long pred, long obj) {
+		return cursor != null && cursor.index == index && cursor.dbi == dbi && cursor.explicit == explicit
+				&& cursor.subj == subj && cursor.pred == pred && cursor.lastRequestedObj <= obj
+				&& (cursor.positioned || cursor.exhausted);
+	}
+
+	private static void writeSpoPrefix(ByteBuffer bb, long subj, long pred, long obj) {
+		Varint.writeUnsigned(bb, subj);
+		Varint.writeUnsigned(bb, pred);
+		Varint.writeUnsigned(bb, obj);
+	}
+
+	private static void cacheCurrentSpoPrefix(SpoExistenceCursor cursor, MDBVal keyData) {
+		long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
+		int prefixLength = keyPrefixLength(keyAddress, 3);
+		for (int i = 0; i < prefixLength; i++) {
+			cursor.currentPrefix[i] = memGetByte(keyAddress + i);
+		}
+		cursor.currentPrefixLength = prefixLength;
+		cursor.positioned = true;
+		cursor.exhausted = false;
+	}
+
+	private static int compareCachedPrefixToTarget(SpoExistenceCursor cursor, long targetAddress, int targetLength) {
+		int minLength = Math.min(cursor.currentPrefixLength, targetLength);
+		for (int i = 0; i < minLength; i++) {
+			int diff = (cursor.currentPrefix[i] & 0xFF) - (memGetByte(targetAddress + i) & 0xFF);
+			if (diff != 0) {
+				return diff;
+			}
+		}
+		return cursor.currentPrefixLength - targetLength;
+	}
+
+	private static int keyPrefixLength(long keyAddress, int componentCount) {
+		int length = 0;
+		for (int i = 0; i < componentCount; i++) {
+			length += Varint.firstToLength(memGetByte(keyAddress + length));
+		}
+		return length;
+	}
+
+	private static boolean keyStartsWithPrefix(MDBVal keyData, long prefixAddress, int prefixLength) {
+		if (keyData.mv_size() < prefixLength) {
+			return false;
+		}
+		long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
+		for (int i = 0; i < prefixLength; i++) {
+			if (memGetByte(keyAddress + i) != memGetByte(prefixAddress + i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void resetSpoContextWildcardIndex() {
+		spoContextWildcardIndex = null;
+		for (TripleIndex index : indexes) {
+			char[] fieldSeq = index.getFieldSeq();
+			if (fieldSeq.length == 4 && fieldSeq[0] == 's' && fieldSeq[1] == 'p' && fieldSeq[2] == 'o'
+					&& fieldSeq[3] == 'c') {
+				spoContextWildcardIndex = index;
+				return;
+			}
+		}
+	}
+
+	private void closeSpoExistenceCursors() {
+		for (SpoExistenceCursor cursor : spoExistenceCursors) {
+			cursor.close();
+		}
+		spoExistenceCursor.remove();
+	}
+
+	private static final class SpoExistenceCursor implements Closeable {
+		long cursor;
+		long txn;
+		long txnVersion;
+		int dbi = -1;
+		TripleIndex index;
+		boolean explicit;
+		boolean positioned;
+		boolean exhausted;
+		long subj = -1;
+		long pred = -1;
+		long lastRequestedObj = -1;
+		final byte[] currentPrefix = new byte[TripleIndex.MAX_KEY_LENGTH];
+		int currentPrefixLength;
+
+		void markExhausted(TripleIndex index, int dbi, boolean explicit, long subj, long pred, long obj) {
+			this.index = index;
+			this.dbi = dbi;
+			this.explicit = explicit;
+			this.subj = subj;
+			this.pred = pred;
+			this.lastRequestedObj = obj;
+			this.positioned = false;
+			this.exhausted = true;
+			this.currentPrefixLength = 0;
+		}
+
+		@Override
+		public void close() {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+				cursor = 0;
+			}
+			txn = 0;
+			txnVersion = 0;
+			dbi = -1;
+			index = null;
+			positioned = false;
+			exhausted = false;
+			subj = -1;
+			pred = -1;
+			lastRequestedObj = -1;
+			currentPrefixLength = 0;
+		}
+	}
+
+	private boolean tripleExistsUsingIndex(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit,
+	                                       TripleIndex index, boolean rangeSearch) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		long cursor = 0;
+		try (MemoryStack stack = stackPush()) {
+			int dbi = index.getDB(explicit);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer minKeyBuf = null;
+			MDBVal maxKey = null;
+			int rangePrefixLength = 0;
+			if (rangeSearch) {
+				minKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
+				minKeyBuf.flip();
+				rangePrefixLength = index.getRangePrefixLength(subj, pred, obj, context);
+				if (rangePrefixLength == 0) {
+					ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+					index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+					maxKeyBuf.flip();
+					maxKey = MDBVal.malloc(stack);
+					LmdbUtil.setMDBValData(maxKey, maxKeyBuf);
+				}
+			}
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txnRef.get(), dbi, pp));
+			cursor = pp.get(0);
+
+			int rc;
+			if (minKeyBuf != null) {
+				LmdbUtil.setMDBValData(keyData, minKeyBuf);
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			} else {
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+			}
+
+			long matchSubj = subj > 0 ? subj : -1;
+			long matchPred = pred > 0 ? pred : -1;
+			long matchObj = obj > 0 ? obj : -1;
+			long matchContext = context >= 0 ? context : -1;
+			long[] quad = { subj, pred, obj, context };
+			while (rc == MDB_SUCCESS) {
+				if (maxKey != null && mdb_cmp(txnRef.get(), dbi, keyData, maxKey) > 0) {
+					return false;
+				}
+
+				long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
+				int matchStatus = index.keyToQuadMatchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred,
+						matchObj, matchContext, quad);
+				if (matchStatus == TripleIndex.KEY_MATCH) {
+					return true;
+				}
+				if (matchStatus == TripleIndex.KEY_OUT_OF_RANGE) {
+					return false;
+				}
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+			}
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			return false;
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
 	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
-			boolean explicit) throws IOException {
+	                                  boolean explicit) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -604,7 +949,7 @@ class TripleStore implements Closeable {
 	}
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
-			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
+	                                            boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
@@ -702,10 +1047,10 @@ class TripleStore implements Closeable {
 									// optimization: ensure that literals are only tested if they appear in object
 									// position
 									switch (ValueIds.getIdType(id)) {
-									case ValueIds.T_DOUBLE:
-									case ValueIds.T_LITERAL:
-										// id is a literal, don't test it
-										continue;
+										case ValueIds.T_DOUBLE:
+										case ValueIds.T_LITERAL:
+											// id is a literal, don't test it
+											continue;
 									}
 								}
 
@@ -1045,16 +1390,16 @@ class TripleStore implements Closeable {
 
 	private Component toEstimatorComponent(char field) {
 		switch (field) {
-		case 's':
-			return Component.S;
-		case 'p':
-			return Component.P;
-		case 'o':
-			return Component.O;
-		case 'c':
-			return Component.C;
-		default:
-			throw new IllegalArgumentException("invalid index field: " + field);
+			case 's':
+				return Component.S;
+			case 'p':
+				return Component.P;
+			case 'o':
+				return Component.O;
+			case 'c':
+				return Component.C;
+			default:
+				throw new IllegalArgumentException("invalid index field: " + field);
 		}
 	}
 
@@ -1160,7 +1505,7 @@ class TripleStore implements Closeable {
 
 	@Experimental
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-			IntConsumer addedIndexConsumer)
+	                                IntConsumer addedIndexConsumer)
 			throws IOException {
 		if (count == 0) {
 			return;
@@ -1300,7 +1645,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
-			int count, boolean explicit, IntConsumer addedIndexConsumer)
+	                                      int count, boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		for (int i = startIndex; i < count; i++) {
 			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
@@ -1314,8 +1659,8 @@ class TripleStore implements Closeable {
 	}
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
-			long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
-			LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
+	                                      long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
+	                                      LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
 			throws IOException {
 		undoContextIncrements(contextIncrementsToUndo);
 		if (recordCache == null) {
@@ -1343,7 +1688,7 @@ class TripleStore implements Closeable {
 	}
 
 	void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subj,
-			long[] pred, long[] obj, long[] context) {
+	                                        long[] pred, long[] obj, long[] context) {
 		if (length < 2) {
 			return;
 		}
@@ -1403,12 +1748,14 @@ class TripleStore implements Closeable {
 	}
 
 	private void resetAlignedWriteCursorState() {
+		closeSpoExistenceCursors();
 		explicitAlignedWriteCursors = new long[indexes.size()];
 		inferredAlignedWriteCursors = new long[indexes.size()];
+		resetSpoContextWildcardIndex();
 	}
 
 	private long getAlignedWriteCursor(int indexPosition, TripleIndex index, boolean explicit,
-			PointerBuffer cursorHandle)
+	                                   PointerBuffer cursorHandle)
 			throws IOException {
 		long[] alignedWriteCursors = explicit ? explicitAlignedWriteCursors : inferredAlignedWriteCursors;
 		long cursor = alignedWriteCursors[indexPosition];
@@ -1555,7 +1902,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
-			boolean explicit, Consumer<long[]> handler) throws IOException {
+	                                   boolean explicit, Consumer<long[]> handler) throws IOException {
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
