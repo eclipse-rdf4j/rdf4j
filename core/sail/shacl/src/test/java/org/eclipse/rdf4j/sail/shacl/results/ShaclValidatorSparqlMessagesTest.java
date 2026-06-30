@@ -1003,6 +1003,57 @@ public class ShaclValidatorSparqlMessagesTest {
 		}
 	}
 
+	@Test
+	public void messageTemplatesPreserveDirectedLanguageBaseDirection() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:message \"Directed {?value}\"@he--rtl ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      SELECT $this ?value WHERE {\n" +
+				"        $this ex:age ?value .\n" +
+				"        FILTER (?value < 0)\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person ;\n" +
+				"  ex:age -1 .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = validate(data, shapes);
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		Model model = report.asModel();
+		Resource resultId = report.getValidationResult().iterator().next().getId();
+		Set<Value> messages = model.filter(resultId, SHACL.RESULT_MESSAGE, null).objects();
+		assertEquals(1, messages.size());
+		Value message = messages.iterator().next();
+		assertTrue(message instanceof Literal);
+		Literal literal = (Literal) message;
+		assertEquals("Directed -1", literal.getLabel());
+		assertEquals("he", literal.getLanguage().orElseThrow());
+		assertEquals(Literal.BaseDirection.RTL, literal.getBaseDirection());
+	}
+
 	private static ValidationReport validate(SailRepository data, SailRepository shapes) {
 		return ShaclValidator.builder()
 				.setRdfsSubClassReasoning(false)

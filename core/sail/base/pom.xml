@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-sail</artifactId>
-		<version>5.3.2-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-base</artifactId>
 	<name>RDF4J: Sail base implementations</name>
@@ -28,6 +28,11 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-query</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-queryrender</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

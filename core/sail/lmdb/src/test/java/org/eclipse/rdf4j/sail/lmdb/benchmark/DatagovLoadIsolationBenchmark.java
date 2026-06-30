@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -41,6 +42,7 @@ import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -67,7 +69,13 @@ public class DatagovLoadIsolationBenchmark {
 	@Param({ "256" })
 	public int bulkOperationSize;
 
+	@Param({ "true" })
+	public boolean automaticEvaluationStrategy;
+
 	private Model data;
+	private File temporaryFolder;
+	private SailRepository sailRepository;
+	private SailRepositoryConnection connection;
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException, InterruptedException {
@@ -107,61 +115,65 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private boolean loadDatagovFileInBatchesInternal() throws IOException {
-		File temporaryFolder = Files.newTemporaryFolder();
-		SailRepository sailRepository = null;
-		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				Iterator<Statement> iterator = data.iterator();
-				while (iterator.hasNext()) {
-					connection.begin(isolationLevel);
-					for (int i = 0; i < 100000 && iterator.hasNext(); i++) {
-						connection.add(iterator.next());
-					}
-					connection.commit();
-				}
-
-				return connection.hasStatement(null, null, null, true);
+		temporaryFolder = Files.newTemporaryFolder();
+		sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
+		connection = sailRepository.getConnection();
+		Iterator<Statement> iterator = data.iterator();
+		while (iterator.hasNext()) {
+			connection.begin(isolationLevel);
+			for (int i = 0; i < 100000 && iterator.hasNext(); i++) {
+				connection.add(iterator.next());
 			}
-		} finally {
-			try {
-				if (sailRepository != null) {
-					sailRepository.shutDown();
-				}
-			} finally {
-				LmdbTestUtil.deleteDir(temporaryFolder);
-			}
+			connection.commit();
 		}
 
+		return connection.hasStatement(null, null, null, true);
 	}
 
 	boolean loadOnce(LmdbStoreConfig config) throws IOException {
-		File temporaryFolder = Files.newTemporaryFolder();
-		SailRepository sailRepository = null;
+		temporaryFolder = Files.newTemporaryFolder();
+		sailRepository = new SailRepository(new LmdbStore(temporaryFolder, config));
+		connection = sailRepository.getConnection();
+		connection.begin(isolationLevel);
+		connection.add(data);
+		connection.commit();
+		return connection.hasStatement(null, null, null, true);
+	}
+
+	@TearDown(Level.Invocation)
+	public void tearDownInvocation() throws IOException {
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, config));
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				connection.begin(isolationLevel);
-				connection.add(data);
-				connection.commit();
-				return connection.hasStatement(null, null, null, true);
+			if (connection != null) {
+				connection.close();
 			}
 		} finally {
+			connection = null;
 			try {
 				if (sailRepository != null) {
 					sailRepository.shutDown();
 				}
 			} finally {
-				LmdbTestUtil.deleteDir(temporaryFolder);
+				sailRepository = null;
+				if (temporaryFolder != null) {
+					LmdbTestUtil.deleteDir(temporaryFolder);
+					temporaryFolder = null;
+				}
 			}
 		}
 	}
 
 	private LmdbStoreConfig createBenchmarkConfig() {
-		return ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize);
+		return configure(ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize));
 	}
 
 	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
-		return ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize);
+		return configure(ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize));
+	}
+
+	private LmdbStoreConfig configure(LmdbStoreConfig config) {
+		if (!automaticEvaluationStrategy) {
+			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		}
+		return config;
 	}
 }

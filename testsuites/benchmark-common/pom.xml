@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-testsuites</artifactId>
-		<version>5.3.2-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-benchmark-common</artifactId>
 	<name>RDF4J: benchmarks</name>
@@ -84,6 +84,7 @@
 						</goals>
 						<configuration>
 							<finalName>rdf4j-benchmark-sketch</finalName>
+							<createDependencyReducedPom>false</createDependencyReducedPom>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
 									<mainClass>org.openjdk.jmh.Main</mainClass>

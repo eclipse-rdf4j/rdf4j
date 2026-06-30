@@ -39,7 +39,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbookFactory;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.base.CoreDatatype.XSD;
@@ -162,7 +162,7 @@ public class SPARQLResultsXLSXWriter implements TupleQueryResultWriter {
 				handleIri(nc, v);
 			} else if (v.isBNode()) {
 				handleIri(nc, v);
-			} else if (v instanceof Triple) {
+			} else if (v instanceof TripleTerm) {
 				handleTriple(nc, v);
 			}
 		}
@@ -321,7 +321,7 @@ public class SPARQLResultsXLSXWriter implements TupleQueryResultWriter {
 	}
 
 	private void handleTriple(XSSFCell nc, Value v) {
-		Triple t = (Triple) v;
+		TripleTerm t = (TripleTerm) v;
 		XSSFRichTextString r = new XSSFRichTextString();
 		r.setString(
 				t.getSubject().stringValue() + " " + formatIri(t.getPredicate()) + " " + t.getObject().stringValue());

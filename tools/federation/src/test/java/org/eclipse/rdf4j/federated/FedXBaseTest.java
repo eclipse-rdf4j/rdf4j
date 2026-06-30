@@ -96,7 +96,7 @@ public abstract class FedXBaseTest {
 			// Some query results will automatically close themselves when they are exhausted. To properly test that
 			// query results are closed correctly we need to evaluate the query without retrieving any elements.
 			if (doubleCheckClose) {
-				try (TupleQueryResult evaluate = ((TupleQuery) query).evaluate()) {
+				try (TupleQueryResult _ = ((TupleQuery) query).evaluate()) {
 					// do nothing
 				}
 			}
@@ -144,8 +144,13 @@ public abstract class FedXBaseTest {
 		expectedQueryPlan = expectedQueryPlan.replace("\r\n", "\n");
 		actualQueryPlan = actualQueryPlan.replace("\r\n", "\n");
 
-		actualQueryPlan = actualQueryPlan.replace("sparql_localhost:18080_repositories_", "");
+		actualQueryPlan = actualQueryPlan.replaceAll("sparql_localhost:[0-9]+_repositories_", "");
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
+
+		// comparison of anon bnode variables
+		expectedQueryPlan = expectedQueryPlan.replaceAll("name=_anon_[^,]*,", "name=_anon_");
+		actualQueryPlan = actualQueryPlan.replaceAll("name=_anon_[^,]*,", "name=_anon_");
+
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
 	}
 

@@ -155,15 +155,6 @@ class GroupMatcherTest {
 		return false;
 	}
 
-	private static int firstMatchedIndex(boolean[] shouldMatch) {
-		for (int i = 0; i < FIELD_COUNT; i++) {
-			if (shouldMatch[i]) {
-				return i;
-			}
-		}
-		return -1;
-	}
-
 	private static List<byte[]> buildAllLengthCombinations() {
 		List<byte[]> combos = new ArrayList<>((int) Math.pow(MAX_LENGTH, FIELD_COUNT));
 		buildCombos(combos, new byte[FIELD_COUNT], 0);
@@ -268,18 +259,8 @@ class GroupMatcherTest {
 		return buffer.array()[0];
 	}
 
-	private static final class ValueVariants {
-		final long base;
-		final long nonMatchingSameLength;
-		final Long sameFirstVariant;
-		final long differentFirstVariant;
-
-		ValueVariants(long base, long nonMatchingSameLength, Long sameFirstVariant, long differentFirstVariant) {
-			this.base = base;
-			this.nonMatchingSameLength = nonMatchingSameLength;
-			this.sameFirstVariant = sameFirstVariant;
-			this.differentFirstVariant = differentFirstVariant;
-		}
+	private record ValueVariants(long base, long nonMatchingSameLength, Long sameFirstVariant,
+			long differentFirstVariant) {
 	}
 
 	private enum MismatchType {

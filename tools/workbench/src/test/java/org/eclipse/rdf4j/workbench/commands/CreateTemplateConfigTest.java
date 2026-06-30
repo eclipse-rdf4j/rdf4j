@@ -60,6 +60,42 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
+	void parseSupportsUnsettableOptionFields() {
+		CreateTemplateConfig template = parse("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=5",
+				"[] config:enabled {%Enabled|true|false%} .",
+				"# @workbench.field unset=true"));
+
+		assertThat(invokeFieldBoolean(field(template, "Enabled"), "isUnsettable")).isTrue();
+	}
+
+	@Test
+	void parseRejectsUnsettableMultiPlaceholderLines() {
+		assertThatThrownBy(() -> parse("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=5",
+				"[] config:http.url <{%RDF4J Server location|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID|SYSTEM%}> .",
+				"# @workbench.field name=\"RDF4J Server location\" unset=true")))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("unset=true")
+						.hasMessageContaining("single placeholder");
+	}
+
+	@Test
+	void lmdbTemplateRepositoryDefaultOmitsSketchEstimatorEnabled() throws IOException {
+		CreateTemplateConfig template = CreateTemplateConfig.load("lmdb");
+		Map<String, String> values = defaultTemplateValues(template);
+		values.put("Repository ID", "lmdb-auto");
+		values.put("Repository title", "LMDB auto");
+		values.put("Sketch estimator enabled", "__workbench_unset__");
+
+		String rendered = template.render(values);
+
+		assertThat(rendered)
+				.doesNotContain("lmdb:sketchEstimatorEnabled")
+				.contains("lmdb:optimizerSamplingEnabled");
+	}
+
+	@Test
 	void parseRejectsLegacyInlineFieldHints() {
 		assertThatThrownBy(() -> parse("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=5",
@@ -143,7 +179,7 @@ class CreateTemplateConfigTest {
 		assertThat(template.isHidden()).isTrue();
 
 		CreateTemplateConfig.Field field = new CreateTemplateConfig.Field("Name", "field-id", null, null,
-				CreateTemplateConfig.FieldControl.TEXT, List.of("one"), null, 1, 2, 3, null);
+				CreateTemplateConfig.FieldControl.TEXT, List.of("one"), null, 1, 2, 3, null, false);
 		assertThat(field.getProperty()).isEmpty();
 		assertThat(field.getRole()).isEmpty();
 		assertThat(field.getDefaultValue()).isEmpty();
@@ -208,6 +244,32 @@ class CreateTemplateConfigTest {
 				"org/eclipse/rdf4j/repository/config")).contains("memory", "native", "sparql");
 	}
 
+	@Test
+	void baseSailTemplatesExposeSlowQueryLoggerFields() throws Exception {
+		for (String templateType : List.of(
+				"lmdb",
+				"memory",
+				"memory-customrule",
+				"memory-lucene",
+				"memory-rdfs",
+				"memory-rdfs-dt",
+				"memory-rdfs-legacy",
+				"memory-rdfs-lucene",
+				"memory-shacl",
+				"native",
+				"native-customrule",
+				"native-lucene",
+				"native-rdfs",
+				"native-rdfs-dt",
+				"native-rdfs-lucene",
+				"native-shacl")) {
+			CreateTemplateConfig template = CreateTemplateConfig.load(templateType);
+			assertThat(field(template, "Slow query log threshold (seconds)")).isNotNull();
+			assertThat(field(template, "Slow query first-result threshold (seconds)")).isNotNull();
+			assertThat(field(template, "Slow query log file")).isNotNull();
+		}
+	}
+
 	private static CreateTemplateConfig parse(String type, String templateText) {
 		return (CreateTemplateConfig) invoke("parse", new Class<?>[] { String.class, String.class }, type,
 				templateText);
@@ -231,8 +293,34 @@ class CreateTemplateConfigTest {
 		return (boolean) invoke(methodName, parameterTypes, args);
 	}
 
+	private static boolean invokeFieldBoolean(CreateTemplateConfig.Field field, String methodName) {
+		try {
+			Method method = CreateTemplateConfig.Field.class.getDeclaredMethod(methodName);
+			method.setAccessible(true);
+			return (boolean) method.invoke(field);
+		} catch (InvocationTargetException e) {
+			if (e.getCause() instanceof RuntimeException) {
+				throw (RuntimeException) e.getCause();
+			}
+			if (e.getCause() instanceof Error) {
+				throw (Error) e.getCause();
+			}
+			throw new AssertionError("Invocation failed for " + methodName, e.getCause());
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Could not invoke " + methodName, e);
+		}
+	}
+
 	private static int invokeInt(String methodName, Class<?>[] parameterTypes, Object... args) {
 		return (int) invoke(methodName, parameterTypes, args);
+	}
+
+	private static Map<String, String> defaultTemplateValues(CreateTemplateConfig template) {
+		Map<String, String> values = new LinkedHashMap<>();
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			values.put(field.getName(), field.getDefaultValue());
+		}
+		return values;
 	}
 
 	private static Object invoke(String methodName, Class<?>[] parameterTypes, Object... args) {

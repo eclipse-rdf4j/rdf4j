@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractBNode.GenericBNode;
@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.base.AbstractLiteral.TaggedLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAccessorLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAmountLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TypedLiteral;
-import org.eclipse.rdf4j.model.base.AbstractTriple.GenericTriple;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm.GenericTripleTerm;
 
 /**
  * Base class for {@link ValueFactory}, offering common functionality.
@@ -173,15 +173,21 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String label, String language) {
+		return createLiteral(label, language, Literal.BaseDirection.NONE);
+	}
+
+	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
 
 		Objects.requireNonNull(label, "null label");
 		Objects.requireNonNull(language, "null language");
+		Objects.requireNonNull(baseDirection, "null baseDirection");
 
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("empty language tag");
 		}
 
-		return new TaggedLiteral(label, language);
+		return new TaggedLiteral(label, language, baseDirection);
 	}
 
 	@Override
@@ -277,13 +283,13 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	@Override
-	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+	public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
 
 		Objects.requireNonNull(subject, "null subject");
 		Objects.requireNonNull(predicate, "null predicate");
 		Objects.requireNonNull(object, "null object");
 
-		return new GenericTriple(subject, predicate, object);
+		return new GenericTripleTerm(subject, predicate, object);
 	}
 
 	@Override

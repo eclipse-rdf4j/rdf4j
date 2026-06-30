@@ -14,7 +14,7 @@ import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -32,7 +32,7 @@ public class FilteringInsertBindingsIteration implements CloseableIteration<Bind
 	private static final Logger log = LoggerFactory.getLogger(FilteringInsertBindingsIteration.class);
 	private final BindingSet bindings;
 	private final FilterValueExpr filterExpr;
-	private final FederationEvalStrategy strategy;
+	private final FederationEvaluationStrategy strategy;
 	private final CloseableIteration<? extends BindingSet> wrappedIter;
 	private BindingSet nextElement;
 	/**
@@ -41,7 +41,7 @@ public class FilteringInsertBindingsIteration implements CloseableIteration<Bind
 	private boolean closed = false;
 
 	public FilteringInsertBindingsIteration(FilterValueExpr filterExpr, BindingSet bindings,
-			CloseableIteration<BindingSet> iter, FederationEvalStrategy strategy)
+			CloseableIteration<BindingSet> iter, FederationEvaluationStrategy strategy)
 			throws QueryEvaluationException {
 		assert iter != null;
 		this.wrappedIter = iter;

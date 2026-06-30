@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -54,7 +54,7 @@ public class TriplePredicateFunctionTest {
 		IRI subj = f.createIRI("urn:a");
 		IRI pred = f.createIRI("urn:b");
 		IRI obj = f.createIRI("urn:c");
-		Triple testValue = f.createTriple(subj, pred, obj);
+		TripleTerm testValue = f.createTripleTerm(subj, pred, obj);
 
 		Value value = function.evaluate(f, testValue);
 		assertNotNull(value);
@@ -67,7 +67,7 @@ public class TriplePredicateFunctionTest {
 		IRI subj = f.createIRI("urn:a");
 		IRI pred = f.createIRI("urn:b");
 		IRI obj = f.createIRI("urn:c");
-		Triple testValue = f.createTriple(subj, pred, obj);
+		TripleTerm testValue = f.createTripleTerm(subj, pred, obj);
 
 		assertThrows(ValueExprEvaluationException.class, () -> function.evaluate(f, testValue, subj));
 	}

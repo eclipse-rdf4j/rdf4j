@@ -12,10 +12,10 @@ package org.eclipse.rdf4j.repository.sail;
 
 import java.io.File;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -135,7 +135,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		HttpClientDependent stack = findSailOf(sail, HttpClientDependent.class);
 		if (stack != null) {
 			return stack.getHttpClient();
@@ -145,7 +145,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public void setHttpClient(HttpClient client) {
+	public void setHttpClient(RDF4JHttpClient client) {
 		HttpClientDependent stack = findSailOf(sail, HttpClientDependent.class);
 		if (stack != null) {
 			stack.setHttpClient(client);

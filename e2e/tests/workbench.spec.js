@@ -82,6 +82,34 @@ function getTrackedRequestIds(requests) {
     return [...new Set(requests.map(request => request.requestId).filter(Boolean))].sort();
 }
 
+const LOADING_EXPLANATION_TEXT = 'Loading explanation...';
+
+async function waitForStableExplanation(page, selector = '#query-explanation') {
+    await page.waitForFunction(({ selector, loadingText }) => {
+        const explanation = document.querySelector(selector);
+        const text = explanation && explanation.textContent.trim();
+        return text && text.length > 0 && text !== loadingText;
+    }, { selector, loadingText: LOADING_EXPLANATION_TEXT });
+
+    return (await page.locator(selector).textContent()).trim();
+}
+
+async function waitForChangedStableExplanation(page, selector, previousExplanation) {
+    await page.waitForFunction(({ selector, loadingText, previousExplanation }) => {
+        const explanation = document.querySelector(selector);
+        const text = explanation && explanation.textContent.trim();
+        return text && text.length > 0 && text !== loadingText && text !== previousExplanation;
+    }, { selector, loadingText: LOADING_EXPLANATION_TEXT, previousExplanation });
+
+    return (await page.locator(selector).textContent()).trim();
+}
+
+async function waitForStableExplanations(page, selectors) {
+    for (const selector of selectors) {
+        await waitForStableExplanation(page, selector);
+    }
+}
+
 test('Create repo', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
@@ -225,10 +253,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     });
 
     await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page);
     await expect(page.locator('#compare-toggle')).toBeVisible();
     await expect.poll(async () => page.evaluate(() => {
         const compareButton = document.getElementById('compare-toggle');
@@ -253,10 +278,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
         const compareCode = document.querySelectorAll('.CodeMirror-code')[1];
         return compareCode ? compareCode.textContent.replace(/\s+/g, ' ').trim() : '';
     })).toContain('SELECT * WHERE { ?s ?p ?o } LIMIT 10');
-    await page.waitForFunction(() => {
-        const compareExplanation = document.getElementById('query-explanation-compare');
-        return compareExplanation && compareExplanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page, '#query-explanation-compare');
 
     const collapsedLayout = await page.evaluate(() => {
         const queryForm = document.querySelector('.query-form');
@@ -286,11 +308,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     });
 
     await page.locator('#explain-compare-trigger').click();
-    await page.waitForFunction(() => {
-        const primary = document.getElementById('query-explanation');
-        const compare = document.getElementById('query-explanation-compare');
-        return primary && compare && primary.textContent.trim().length > 0 && compare.textContent.trim().length > 0;
-    });
+    await waitForStableExplanations(page, ['#query-explanation', '#query-explanation-compare']);
 
     await page.locator('#query-diff-trigger').click();
     await expect(page.locator('#query-diff-modal')).toHaveClass(/query-diff-modal--open/);
@@ -318,18 +336,12 @@ test('Explain wait state shows spinner and cancel for primary and compare action
     await page.locator('#explain-trigger').click();
     await expect(page.locator('#explain-trigger-spinner')).toBeVisible();
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page);
 
     await page.locator('#rerun-explanation').click();
     await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page);
 
     await page.locator('#compare-toggle').click();
     await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
@@ -339,20 +351,14 @@ test('Explain wait state shows spinner and cancel for primary and compare action
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation-compare');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page, '#query-explanation-compare');
 
     await page.locator('#rerun-explanation').click();
     await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation-compare');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page, '#query-explanation-compare');
 });
 
 test('Primary cancel posts matching request id and stale responses do not repaint', async ({page}) => {
@@ -368,14 +374,7 @@ test('Primary cancel posts matching request id and stale responses do not repain
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
     await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
-
-    const initialExplanation = await page.evaluate(() => {
-        return document.getElementById('query-explanation').textContent.trim();
-    });
+    const initialExplanation = await waitForStableExplanation(page);
 
     const traffic = await trackExplainTraffic(page);
     await page.locator('#explain-format').selectOption('json');
@@ -408,17 +407,12 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
     await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page);
 
     await page.locator('#compare-toggle').click();
     await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
     await typeIntoCodeMirror(page, 1, 'ASK { ?s ?p ?o }');
-    const initialCompareExplanation = await page.evaluate(() => {
-        return document.getElementById('query-explanation-compare').textContent.trim();
-    });
+    const initialCompareExplanation = await waitForStableExplanation(page, '#query-explanation-compare');
 
     const traffic = await trackExplainTraffic(page);
     await page.locator('#explain-trigger').click();
@@ -436,17 +430,9 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
     })).toBe(initialCompareExplanation);
 
     await page.locator('#explain-compare-trigger').click();
-    await page.waitForFunction(previousExplanation => {
-        const explanation = document.getElementById('query-explanation-compare');
-        const text = explanation && explanation.textContent.trim();
-        return text && text.length > 0
-            && text !== 'Loading explanation...'
-            && text !== previousExplanation;
-    }, initialCompareExplanation);
-
-    const refreshedCompareExplanation = await page.evaluate(() => {
-        return document.getElementById('query-explanation-compare').textContent.trim();
-    });
+    const refreshedCompareExplanation = await waitForChangedStableExplanation(
+        page, '#query-explanation-compare', initialCompareExplanation
+    );
 
     await page.locator('#rerun-explanation').click();
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
@@ -473,14 +459,7 @@ test('Changing explain level implicitly cancels pending explain with matching re
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
     await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
-
-    const initialExplanation = await page.evaluate(() => {
-        return document.getElementById('query-explanation').textContent.trim();
-    });
+    const initialExplanation = await waitForStableExplanation(page);
 
     const traffic = await trackExplainTraffic(page);
     await page.locator('#explain-format').selectOption('json');
@@ -519,10 +498,7 @@ test('Query compare mode keeps primary query on reload without persisting second
     await typeIntoCodeMirror(page, 0, primaryQuery);
 
     await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
+    await waitForStableExplanation(page);
 
     await page.locator('#compare-toggle').click();
     await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);

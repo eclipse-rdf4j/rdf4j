@@ -156,6 +156,9 @@
 	<xsl:template name="option-label">
 		<xsl:param name="value" />
 		<xsl:choose>
+			<xsl:when test="$value = '__workbench_unset__'">
+				<xsl:value-of select="$repository-default.label" />
+			</xsl:when>
 			<xsl:when test="$value = 'true'">
 				<xsl:value-of select="$true.label" />
 			</xsl:when>

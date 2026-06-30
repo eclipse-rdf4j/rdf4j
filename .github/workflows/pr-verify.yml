@@ -21,7 +21,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
@@ -41,7 +41,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        jdk: [ 11, 25 ]
+        jdk: [ 25 ]
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -86,7 +86,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Build
@@ -109,7 +109,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Build
@@ -132,7 +132,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Run install
@@ -142,8 +142,17 @@ jobs:
 
 
   e2e:
+    name: e2e (${{ matrix.runtime.label }})
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - label: Spring Boot
+            argument: spring-boot
+          - label: Docker Tomcat
+            argument: docker-tomcat
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -151,7 +160,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Install dependencies
@@ -160,9 +169,9 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-      - name: Run end-to-end tests of RDF4J Server and Workbench
+      - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }})
         working-directory: ./e2e
-        run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh
+        run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
 
   frontend-unit-tests:
     needs: formatting-and-quick-compile

@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-collection-factory</artifactId>
-		<version>5.3.2-SNAPSHOT</version>
+		<version>6.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-collection-factory-mapdb3</artifactId>
 	<name>RDF4J: Collection Factory - Map DB v3 backed</name>
@@ -37,9 +37,9 @@
 		</dependency>
 		<!--Update the lz4 dependency from the earlier net.jpountz.lz4, avoids duplicate classfiles downstream-->
 		<dependency>
-			<groupId>org.lz4</groupId>
+			<groupId>at.yawk.lz4</groupId>
 			<artifactId>lz4-java</artifactId>
-			<version>1.8.0</version>
+			<version>1.10.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>

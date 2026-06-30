@@ -18,10 +18,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
@@ -29,15 +32,24 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -57,37 +69,66 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
-	private static final File STORE_DIRECTORY = new File("target", "lmdb-theme-query-benchmark");
+	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
+	private static final File STORE_DIRECTORY;
+
+	static {
+		File target = new File("target", "lmdb-theme-query-benchmark");
+		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
+			STORE_DIRECTORY = target;
+		} else {
+			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store
+			// directory is still in the target directory of the project.
+			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
+		}
+	}
+
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
-	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
-	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
+	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
+	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String COUNT_BINDING_NAME = "count";
+	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
+	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
+	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
-			// "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-			"11", "12" })
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
+			"10",
+//			"11",
+//			"12"
+	})
 	public int z_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
-//			"HIGHLY_CONNECTED",
-//			"TRAIN",
-//			"ELECTRICAL_GRID",
-//			"PHARMA"
+			"SOCIAL_MEDIA",
+			"LIBRARY",
+			"ENGINEERING",
+			"HIGHLY_CONNECTED",
+			"TRAIN",
+			"ELECTRICAL_GRID",
+			"PHARMA"
 	})
 	public String themeName;
 
@@ -100,12 +141,12 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
+				.include(ThemeQueryBenchmark.class.getName() + ".executeQuery")
 				.forks(0)
-				.measurementTime(TimeValue.milliseconds(1000))
 				.measurementIterations(10)
 				.measurementBatchSize(1)
-				.warmupIterations(0)
+				.measurementTime(TimeValue.milliseconds(1))
+				.warmupIterations(10)
 				.build();
 		new Runner(opt).run();
 	}
@@ -113,38 +154,84 @@ public class ThemeQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
+		File storeDirectory = storeDirectory();
+		System.out.println(storeDirectory.getAbsolutePath());
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+		System.out.println("### Original Query ###");
+		System.out.println(query);
+		System.out.println();
+
 		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
-			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
+		if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
+			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
 		storeConfig = ConfigUtil.createConfig();
-		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
+		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
+		waitForSketchesIfEnabled();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
 		}
+
 	}
 
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
 			long count;
+			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
+					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(10);
+			tupleQuery.setMaxExecutionTime(70);
 			try (var evaluate = tupleQuery.evaluate()) {
-				count = evaluate
-						.stream()
-						.count();
+				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
 
 			if (count != expected) {
-				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+				throw new IllegalStateException(
+						"Unexpected result row count for " + queryDescription() + ": expected " + expected
+								+ " but got " + count);
 			}
 
 			return count;
 		}
+	}
+
+	private long countRowsAndVerifyCountBinding(TupleQueryResult evaluate, OptionalLong expectedCountBindingValue) {
+		long count = 0;
+		while (evaluate.hasNext()) {
+			var bindingSet = evaluate.next();
+			count++;
+			if (expectedCountBindingValue.isPresent()) {
+				if (count > 1) {
+					throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+							+ " but saw at least " + count + " rows");
+				}
+				var value = bindingSet.getValue(COUNT_BINDING_NAME);
+				if (!(value instanceof Literal literal)) {
+					throw new IllegalStateException("Expected literal ?" + COUNT_BINDING_NAME + " binding for "
+							+ queryDescription() + " but got " + value);
+				}
+				long actualCountBindingValue = literal.longValue();
+				long expectedValue = expectedCountBindingValue.getAsLong();
+				if (actualCountBindingValue != expectedValue) {
+					throw new IllegalStateException("Unexpected ?" + COUNT_BINDING_NAME + " binding for "
+							+ queryDescription() + ": expected " + expectedValue + " but got "
+							+ actualCountBindingValue);
+				}
+			}
+		}
+		if (expectedCountBindingValue.isPresent() && count == 0) {
+			throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+					+ " but query returned no rows");
+		}
+		return count;
+	}
+
+	private String queryDescription() {
+		return themeName + " query " + z_queryIndex + " ("
+				+ ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex).getName() + ")";
 	}
 
 	private void ensureDataLoadedAndValidated() throws IOException {
@@ -169,32 +256,60 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	private void waitForSketchesIfEnabled() throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
+			return;
+		}
+		repository.init();
+		long timeoutSeconds = Long.getLong(WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY,
+				DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS);
+		BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark setup", timeoutSeconds,
+				TimeUnit.SECONDS);
+	}
+
 	private void rebuildStoreFromScratch() throws IOException {
+		File storeDirectory = storeDirectory();
 		if (repository != null) {
 			repository.shutDown();
 		}
 
-		FileUtils.deleteDirectory(STORE_DIRECTORY);
-		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
-			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + STORE_DIRECTORY);
+		FileUtils.deleteDirectory(storeDirectory);
+		if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
+			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + storeDirectory);
 		}
 
 		storeConfig = ConfigUtil.createConfig();
-		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
+		storeConfig.setIterationCacheSyncThreshold(0);
+		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
+//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
+//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+
+		repository.shutDown();
+		repository = null;
+		store = null;
+
+		System.gc();
+
+		store = new LmdbStore(storeDirectory, storeConfig);
+		repository = new SailRepository(store);
 	}
 
 	private DbFileSizes readExpectedDbFileSizes() throws IOException {
 		var expectedDbFileSizeFile = expectedDbFileSizeFile();
 		if (!expectedDbFileSizeFile.isFile()) {
-			return defaultExpectedDbFileSizes();
+			return missingExpectedDbFileSizes();
 		}
 		var properties = new Properties();
 		try (var inputStream = new FileInputStream(expectedDbFileSizeFile)) {
 			properties.load(inputStream);
 		}
 		try {
+			String tripleIndexes = properties.getProperty(TRIPLE_INDEXES_PROPERTY);
+			if (!storeConfig.getTripleIndexes().equals(tripleIndexes)) {
+				return missingExpectedDbFileSizes();
+			}
 			return new DbFileSizes(
 					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
 					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));
@@ -204,7 +319,7 @@ public class ThemeQueryBenchmark {
 			if (!expectedDbFileSizeFile.delete()) {
 				System.out.println("Unable to delete invalid expected LMDB size file: " + expectedDbFileSizeFile);
 			}
-			return defaultExpectedDbFileSizes();
+			return missingExpectedDbFileSizes();
 		}
 	}
 
@@ -212,6 +327,7 @@ public class ThemeQueryBenchmark {
 		var properties = new Properties();
 		properties.setProperty(TRIPLES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.triplesDataSizeBytes));
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.valuesDataSizeBytes));
+		properties.setProperty(TRIPLE_INDEXES_PROPERTY, storeConfig.getTripleIndexes());
 		try (var outputStream = new FileOutputStream(expectedDbFileSizeFile())) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -229,8 +345,8 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private DbFileSizes defaultExpectedDbFileSizes() {
-		return new DbFileSizes(EXPECTED_TRIPLES_DATA_SIZE_BYTES, EXPECTED_VALUES_DATA_SIZE_BYTES);
+	private DbFileSizes missingExpectedDbFileSizes() {
+		return new DbFileSizes(-1L, -1L);
 	}
 
 	private DbFileSizes currentDbFileSizes() {
@@ -244,22 +360,34 @@ public class ThemeQueryBenchmark {
 	}
 
 	private File expectedDbFileSizeFile() {
-		return new File(STORE_DIRECTORY, EXPECTED_DB_FILE_SIZES_FILE);
+		return new File(storeDirectory(), EXPECTED_DB_FILE_SIZES_FILE);
 	}
 
 	private long dbFileSize(String relativePath) {
-		return new File(STORE_DIRECTORY, relativePath).length();
+		return new File(storeDirectory(), relativePath).length();
 	}
 
 	private void loadData() throws IOException {
+		StopWatch started = StopWatch.createStarted();
 		try (var connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
+//			System.out.println("Loading theme dataset: " + theme);
+//			ThemeDataSetGenerator.generate(theme, inserter);
 			for (var themeDataset : Theme.values()) {
+				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
 			}
 			connection.commit();
 		}
+		started.stop();
+
+		System.out.println("Loaded theme datasets in " + started);
+	}
+
+	private File storeDirectory() {
+//		return new File(STORE_DIRECTORY, theme.name().toLowerCase());
+		return new File(STORE_DIRECTORY, "complete");
 	}
 
 	private void captureQueryPlanSnapshot() throws IOException {
@@ -297,20 +425,189 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private String renderTupleExprWithIr(org.eclipse.rdf4j.query.algebra.TupleExpr tupleExpr) {
+	private String renderTupleExprWithIr(TupleExpr tupleExpr) {
 		var config = new TupleExprIRRenderer.Config();
 		config.verifyRoundTrip = false;
 		return new TupleExprIRRenderer(config).render(tupleExpr);
 	}
 
+	TupleExpr explainOptimizedTupleExpr() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			return (TupleExpr) explanation.tupleExpr();
+		}
+	}
+
+	EvaluationStatistics evaluationStatistics() {
+		try {
+			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");
+			getBackingStore.setAccessible(true);
+			Object backingStore = getBackingStore.invoke(store);
+			Method getEvaluationStatistics = backingStore.getClass().getDeclaredMethod("getEvaluationStatistics");
+			getEvaluationStatistics.setAccessible(true);
+			return (EvaluationStatistics) getEvaluationStatistics.invoke(backingStore);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException("Unable to access benchmark evaluation statistics", e);
+		}
+	}
+
 	@TearDown(Level.Trial)
 	public void tearDown() {
+//		if (previousJoinOrderStrategy != null) {
+//			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = previousJoinOrderStrategy;
+//			previousJoinOrderStrategy = null;
+//		}
+
+		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Optimized Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Telemetry Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+		}
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;
 		}
 		store = null;
 		storeConfig = null;
+//		restoreBenchmarkEstimatorProperties();
+	}
+
+	@Test
+	public void benchmarkQuery() throws IOException {
+		themeName = "LIBRARY";
+		z_queryIndex = 7;
+		setup();
+		try {
+			String query = "select * where {?copy <http://example.com/theme/library/locatedAt> ?branch . ?branch <http://example.com/theme/library/name> ?branchName .}";
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+				System.out.println(query);
+				try (TupleQueryResult evaluate = connection1.prepareTupleQuery(query).evaluate()) {
+					System.out.println(evaluate.stream().count());
+				}
+
+				long count = connection1
+						.getStatements(null, Values.iri("http://example.com/theme/library/locatedAt"), null)
+						.stream()
+						.map(Statement::getObject)
+						.distinct()
+						.count();
+				System.out.println(
+						"Distinct values for ?branch in ?copy <http://example.com/theme/library/locatedAt> ?branch: "
+								+ count);
+
+				long count2 = connection1.getStatements(null, Values.iri("http://example.com/theme/library/name"), null)
+						.stream()
+						.map(Statement::getSubject)
+						.distinct()
+						.count();
+				System.out.println(
+						"Distinct values for ?branch in ?branch <http://example.com/theme/library/name> ?branchName: "
+								+ count2);
+
+			}
+		} finally {
+			tearDown();
+		}
+
+	}
+
+	@Benchmark
+	public void explainQuery() {
+
+//		StatementPattern
+//		Var (name=copy)
+//		Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+//		Var(name=branch)
+//
+//		StatementPattern (resultSizeEstimate=45.3K)
+//		Var (name=branch)
+//		Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+//		Var(name=branchName)
+
+//		if(true) throw new IllegalStateException();
+
+//		System.out.println("=== Explanation for theme " + themeName + " and query index " + z_queryIndex + " ===");
+//		System.out.println("Query:\n" + query);
+//		System.out.println();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE,
+//					Values.iri("http://example.com/theme/library/Copy"))) {
+//				System.out.println("Count of statements with rdf:type http://example.com/theme/library/Copy: "
+//						+ statements.stream().count());
+//			}
+//		}
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			try (RepositoryResult<Statement> statements = connection.getStatements(null,
+//					Values.iri("http://example.com/theme/library/locatedAt"), null)) {
+//				System.out.println("Count of statements with http://example.com/theme/library/locatedAt: "
+//						+ statements.stream().count());
+//			}
+//		}
+
+		try {
+//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
+//			try (var connection = repository.getConnection()) {
+//				System.out.println("=== Explanation with join reordering disabled ===");
+//				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+//				System.out.println(explain);
+//				System.out.println();
+//				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+//				System.out.println("=== Rendered optimized TupleExpr with join reordering disabled ===");
+//				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+//				System.out.println();
+//				System.out.println();
+//			}
+//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation Optimized ===");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				System.out.println();
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println("=== Rendered Optimized TupleExpr ===");
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+
+			}
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation Telemetry ===");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				System.out.println();
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println("=== Rendered Telemetry TupleExpr ===");
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+				System.out.println();
+			}
+//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+//			try (var connection = repository.getConnection()) {
+//				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
+//				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+//				tupleQuery.setMaxExecutionTime(9999999);
+//				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
+//				System.out.println(explain);
+//				System.out.println();
+//			}
+		} finally {
+//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+		}
+
 	}
 
 	@Test
@@ -372,7 +669,8 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
-	@Disabled
+	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+//	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
 		var themeNames = paramValues("themeName");
@@ -382,9 +680,41 @@ public class ThemeQueryBenchmark {
 				z_queryIndex = Integer.parseInt(queryIndexValue);
 				setup();
 				try (var connection = repository.getConnection()) {
+					var statements = connection.getStatements(null, RDF.TYPE,
+							Values.iri("http://example.com/theme/medical/Encounter"));
+					var statements2 = connection.getStatements(null,
+							Values.iri("http://example.com/theme/medical/handledBy"), null);
+					var statements3 = connection.getStatements(null,
+							Values.iri("http://example.com/theme/medical/recordedOn"), null);
+
+					System.out.println(statements.stream().count());
+					System.out.println(statements2.stream().count());
+					System.out.println(statements3.stream().count());
+
+					statements.close();
+					statements2.close();
+					statements3.close();
+
+					Explanation explain = connection
+							.prepareTupleQuery(query)
+							.explain(Explanation.Level.Unoptimized);
+
+					System.out.println("Unoptimized explanation for theme " + themeName + " and query index "
+							+ z_queryIndex + ":");
+					System.out.println(new TupleExprIRRenderer().render(((TupleExpr) explain.tupleExpr())));
+
+					explain = connection
+							.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized);
+
+					System.out.println(
+							"Optimized explanation for theme " + themeName + " and query index " + z_queryIndex + ":");
+					System.out.println(new TupleExprIRRenderer().render(((TupleExpr) explain.tupleExpr())));
+					System.out.println();
+
 					var explanation = connection
 							.prepareTupleQuery(query)
-							.explain(Explanation.Level.Executed)
+							.explain(Explanation.Level.Optimized)
 							.toString();
 					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
 							+ ":\n" + explanation);
@@ -407,14 +737,7 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private static final class DbFileSizes {
-		private final long triplesDataSizeBytes;
-		private final long valuesDataSizeBytes;
-
-		private DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
-			this.triplesDataSizeBytes = triplesDataSizeBytes;
-			this.valuesDataSizeBytes = valuesDataSizeBytes;
-		}
+	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
 	}
 
 }

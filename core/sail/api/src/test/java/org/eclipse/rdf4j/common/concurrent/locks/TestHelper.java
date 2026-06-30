@@ -82,32 +82,30 @@ public class TestHelper {
 	public static Thread getStartedDaemonThread(Lock.Supplier supplier1, Lock.Supplier supplier2)
 			throws InterruptedException {
 		CountDownLatch countDownLatch = new CountDownLatch(1);
-
-		Thread thread = new Thread(() -> {
-			Lock lock1 = null;
-			Lock lock2 = null;
-			try {
-				countDownLatch.countDown();
-				lock1 = supplier1.getLock();
-				lock2 = supplier2.getLock();
-
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			} finally {
-				if (lock1 != null) {
-					lock1.release();
-				}
-				if (lock2 != null) {
-					lock2.release();
-				}
-			}
-		});
-
+		Thread thread = new Thread(() -> acquireTwoLocks(countDownLatch, supplier1, supplier2));
 		thread.setDaemon(true);
 		thread.start();
 		countDownLatch.await();
-
 		return thread;
+	}
+
+	static void acquireTwoLocks(CountDownLatch latch, Lock.Supplier supplier1, Lock.Supplier supplier2) {
+		Lock lock1 = null;
+		Lock lock2 = null;
+		try {
+			latch.countDown();
+			lock1 = supplier1.getLock();
+			lock2 = supplier2.getLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} finally {
+			if (lock1 != null) {
+				lock1.release();
+			}
+			if (lock2 != null) {
+				lock2.release();
+			}
+		}
 	}
 
 	public static Thread getStartedDaemonThread(InterruptibleRunnable runnable) throws InterruptedException {

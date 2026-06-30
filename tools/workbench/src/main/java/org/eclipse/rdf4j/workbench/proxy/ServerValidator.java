@@ -16,14 +16,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 
-import javax.servlet.ServletConfig;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.servlet.ServletConfig;
 
 /**
  * Validates a server
@@ -34,10 +36,24 @@ class ServerValidator {
 
 	private static final String ACCEPTED_SERVER = "accepted-server-prefixes";
 
+	/**
+	 * JVM-wide override for the {@code accepted-server-prefixes} servlet init-param.
+	 */
+	static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
+
+	private static final String DEFAULT_ACCEPTED_SERVER_PREFIXES = "/rdf4j-server";
+
 	private final String prefixes;
 
 	protected ServerValidator(final ServletConfig config) {
-		this.prefixes = config.getInitParameter(ACCEPTED_SERVER);
+		String configuredPrefixes = System.getProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+		if (configuredPrefixes == null || configuredPrefixes.isBlank()) {
+			configuredPrefixes = config.getInitParameter(ACCEPTED_SERVER);
+		}
+		if (configuredPrefixes == null || configuredPrefixes.isBlank()) {
+			configuredPrefixes = DEFAULT_ACCEPTED_SERVER_PREFIXES;
+		}
+		this.prefixes = configuredPrefixes;
 	}
 
 	private boolean isDirectory(final String server) {
@@ -62,7 +78,7 @@ class ServerValidator {
 	protected boolean isValidServer(final String server) {
 		boolean isValid = checkServerPrefixes(server);
 		if (isValid) {
-			if (server.startsWith("http")) {
+			if (server.startsWith("http://") || server.startsWith("https://")) {
 				isValid = canConnect(server);
 			} else if (server.startsWith("file:")) {
 				isValid = isDirectory(server);
@@ -72,28 +88,86 @@ class ServerValidator {
 	}
 
 	/**
-	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated
-	 * configuration parameter value for 'accepted-server-prefixes'.
+	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated system
+	 * property or configuration parameter value for 'accepted-server-prefixes'.
 	 *
 	 * @param server the server for which to check the prefix
 	 * @return whether the server prefix is in the list of acceptable prefixes
 	 */
 	private boolean checkServerPrefixes(final String server) {
 		boolean accept = false;
-		if (prefixes == null) {
-			accept = true;
-		} else {
-			for (String prefix : prefixes.split(" ")) {
-				if (server.startsWith(prefix)) {
-					accept = true;
-					break;
-				}
+		for (String prefix : prefixes.split("\\s+")) {
+			if (prefix.isBlank() || isBroadSchemePrefix(prefix)) {
+				continue;
+			}
+			if (matchesServerPrefix(server, prefix)) {
+				accept = true;
+				break;
 			}
 		}
 		if (!accept) {
 			LOGGER.warn("server URL {} does not have a prefix {}", server, prefixes);
 		}
 		return accept;
+	}
+
+	private boolean matchesServerPrefix(String server, String prefix) {
+		String normalizedServer = normalizePrefixMatchValue(server);
+		String normalizedPrefix = normalizePrefixMatchValue(prefix);
+		if (normalizedServer == null || normalizedPrefix == null) {
+			return false;
+		}
+		if (!normalizedServer.startsWith(normalizedPrefix)) {
+			return false;
+		}
+		if (normalizedPrefix.endsWith(":") || normalizedPrefix.endsWith("/") || normalizedPrefix.endsWith("?")
+				|| normalizedPrefix.endsWith("#")) {
+			return true;
+		}
+		if (normalizedServer.length() == normalizedPrefix.length()) {
+			return true;
+		}
+		char next = normalizedServer.charAt(normalizedPrefix.length());
+		return next == '/' || next == '?' || next == '#';
+	}
+
+	private String normalizePrefixMatchValue(String value) {
+		try {
+			URI uri = new URI(value);
+			if (hasUnsafePathSegment(uri.getRawPath())) {
+				return null;
+			}
+			return uri.normalize().toASCIIString();
+		} catch (URISyntaxException e) {
+			return value;
+		}
+	}
+
+	private boolean hasUnsafePathSegment(String rawPath) {
+		if (rawPath == null || rawPath.isEmpty()) {
+			return false;
+		}
+		for (String segment : rawPath.split("/", -1)) {
+			if (".".equals(segment) || "..".equals(segment)) {
+				return true;
+			}
+			try {
+				String decodedSegment = URLDecoder.decode(segment, StandardCharsets.UTF_8);
+				if (".".equals(decodedSegment) || "..".equals(decodedSegment) || decodedSegment.contains("/")
+						|| decodedSegment.contains("\\")) {
+					return true;
+				}
+			} catch (IllegalArgumentException e) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isBroadSchemePrefix(String prefix) {
+		return "file:".equalsIgnoreCase(prefix)
+				|| "http:".equalsIgnoreCase(prefix)
+				|| "https:".equalsIgnoreCase(prefix);
 	}
 
 	/**

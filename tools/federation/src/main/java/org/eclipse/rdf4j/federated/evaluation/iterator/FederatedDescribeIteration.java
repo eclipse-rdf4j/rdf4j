@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -45,7 +45,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	private final List<StatementSource> allSources;
 
 	public FederatedDescribeIteration(CloseableIteration<BindingSet> sourceIter,
-			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
+			FederationEvaluationStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);
 		this.queryInfo = queryInfo;

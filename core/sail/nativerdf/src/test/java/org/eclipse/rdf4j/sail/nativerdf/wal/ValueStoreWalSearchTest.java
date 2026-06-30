@@ -19,13 +19,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Random;
+import java.util.UUID;
 
-import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
@@ -41,26 +44,100 @@ class ValueStoreWalSearchTest {
 	File dataDir;
 
 	@Test
+	void findsTripleTermById() throws Exception {
+		Path walDir = dataDir.toPath().resolve("wal-triple");
+		Files.createDirectories(walDir);
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		TripleTerm expected = vf.createTripleTerm(vf.createIRI("urn:triple:subject"),
+				vf.createIRI("urn:triple:predicate"), vf.createLiteral("triple-object"));
+
+		int id;
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config)) {
+			File valueDir = dataDir.toPath().resolve("values-triple").toFile();
+			Files.createDirectories(valueDir.toPath());
+			try (ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+					ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+					ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+				id = store.storeValue(expected);
+				OptionalLong pending = store.drainPendingWalHighWaterMark();
+				assertThat(pending).isPresent();
+				wal.awaitDurable(pending.getAsLong());
+			}
+		}
+
+		Value found = ValueStoreWalSearch.open(config).findValueById(id);
+		assertThat(found).isInstanceOf(TripleTerm.class);
+		assertThat(found).isEqualTo(expected);
+	}
+
+	@Test
+	void preservesDirectedLanguageLiteralWhenSearchingById() throws Exception {
+		Path walDir = dataDir.toPath().resolve("wal-directed");
+		Files.createDirectories(walDir);
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
+		Literal expected = SimpleValueFactory.getInstance().createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+
+		int id;
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config)) {
+			File valueDir = dataDir.toPath().resolve("values-directed").toFile();
+			Files.createDirectories(valueDir.toPath());
+			try (ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+					ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+					ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+				id = store.storeValue(expected);
+				OptionalLong pending = store.drainPendingWalHighWaterMark();
+				assertThat(pending).isPresent();
+				wal.awaitDurable(pending.getAsLong());
+			}
+		}
+
+		Value found = ValueStoreWalSearch.open(config).findValueById(id);
+		assertThat(found).isInstanceOf(Literal.class);
+		Literal actual = (Literal) found;
+		assertThat(actual.getLabel()).isEqualTo(expected.getLabel());
+		assertThat(actual.getLanguage()).contains("he");
+		assertThat(actual.getBaseDirection()).isEqualTo(Literal.BaseDirection.RTL);
+		assertThat(actual).isEqualTo(expected);
+	}
+
+	@Test
 	void findsValueByIdViaSegmentProbe() throws Exception {
-		// Configure NativeStore with small WAL segment size to ensure multiple segments possible
+		// Configure NativeStore with small WAL segment size to ensure multiple segments.
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc,ospc,psoc");
-		cfg.setWalMaxSegmentBytes(64 * 1024); // 64 KiB
-		cfg.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.ALWAYS.name());
+		cfg.setWalMaxSegmentBytes(32 * 1024); // 32 KiB
+		cfg.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.INTERVAL.name());
 		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try (SailRepositoryConnection conn = repo.getConnection()) {
-			try (var in = BenchmarkResources.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				assertThat(in).isNotNull();
-				conn.add(in, "", RDFFormat.TURTLE);
+			var vf = SimpleValueFactory.getInstance();
+			var predicate = vf.createIRI("urn:predicate");
+			conn.begin();
+			for (int i = 0; i < 1500; i++) {
+				conn.add(vf.createIRI("urn:subject:" + i), predicate,
+						vf.createLiteral("value-" + i + "-" + "x".repeat(40)));
 			}
+			conn.commit();
 		}
 		repo.shutDown();
 
 		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
 		ValueStoreWalConfig cfgRead = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+		try (var walFiles = Files.list(walDir)) {
+			long segmentCount = walFiles.map(path -> path.getFileName().toString())
+					.filter(name -> name.matches("wal-\\d+\\.v1(\\.gz)?"))
+					.count();
+			assertThat(segmentCount).as("expected multiple WAL segments for probe search").isGreaterThan(1);
+		}
 
 		// Build dictionary of minted values from WAL and pick a random entry
 		Map<Integer, ValueStoreWalRecord> dict = Map.of();

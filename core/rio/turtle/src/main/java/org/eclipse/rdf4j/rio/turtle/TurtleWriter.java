@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
@@ -161,6 +161,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		settings.add(BasicWriterSettings.PRETTY_PRINT);
 		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
 		settings.add(TurtleWriterSettings.ABBREVIATE_NUMBERS);
+		settings.add(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES);
 		return settings;
 	}
 
@@ -302,6 +303,10 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
+
+		// ── RDF 1.2 version announcement (streaming path) ──────────────────────
+		noteRdf12Feature(subj, obj);
+		ensureVersionAnnouncement();
 
 		try {
 			if (inlineBNodes) {
@@ -452,19 +457,71 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	protected void writeBase(String baseURI) throws IOException {
-		writer.write("@base <");
-		StringUtil.simpleEscapeIRI(baseURI, writer, false);
-		writer.write("> .");
+		if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+			writer.write("BASE <");
+			StringUtil.simpleEscapeIRI(baseURI, writer, false);
+			// SPARQL directive style doesn't end with .
+			writer.write(">");
+		} else {
+			writer.write("@base <");
+			StringUtil.simpleEscapeIRI(baseURI, writer, false);
+			writer.write("> .");
+		}
 		writer.writeEOL();
 	}
 
 	protected void writeNamespace(String prefix, String name) throws IOException {
-		writer.write("@prefix ");
-		writer.write(prefix);
-		writer.write(": <");
-		StringUtil.simpleEscapeIRI(name, writer, false);
-		writer.write("> .");
+		if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+			writer.write("PREFIX ");
+			writer.write(prefix);
+			writer.write(": <");
+			StringUtil.simpleEscapeIRI(name, writer, false);
+			// SPARQL directive style doesn't end with .
+			writer.write(">");
+		} else {
+			writer.write("@prefix ");
+			writer.write(prefix);
+			writer.write(": <");
+			StringUtil.simpleEscapeIRI(name, writer, false);
+			writer.write("> .");
+		}
 		writer.writeEOL();
+	}
+
+	@Override
+	protected boolean requiresVersionAnnouncement() {
+		return true;
+	}
+
+	/**
+	 * Closes any open predicate-object list or blank-node structure before the version directive is written. Called by
+	 * {@link #ensureVersionAnnouncement()}.
+	 */
+	@Override
+	protected void prepareForVersionAnnouncement() throws RDFHandlerException {
+		try {
+			if (!statementClosed || !stack.isEmpty()) {
+				closePreviousStatement();
+			}
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
+		}
+	}
+
+	@Override
+	protected void writeVersionAnnouncement() throws RDFHandlerException {
+		try {
+			if (getWriterConfig().get(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES)) {
+				writer.write("VERSION \"1.2\"");
+				// SPARQL directive style doesn't end with .
+			} else {
+				writer.write("@version \"1.2\"");
+				writer.write(" .");
+			}
+			writer.writeEOL();
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
+		}
 	}
 
 	protected void writePredicate(IRI predicate) throws IOException {
@@ -501,6 +558,8 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			stack.addLast((BNode) val);
 		} else if (val instanceof Resource) {
 			writeResource((Resource) val, canShorten);
+		} else if (val instanceof TripleTerm) {
+			writeTriple((TripleTerm) val, canShorten);
 		} else {
 			writeLiteral((Literal) val);
 		}
@@ -532,7 +591,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		} else if (res instanceof BNode) {
 			writeBNode((BNode) res, canShorten);
 		} else {
-			writeTriple((Triple) res, canShorten);
+			writeTriple((TripleTerm) res, canShorten);
 		}
 	}
 
@@ -624,23 +683,21 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		}
 	}
 
-	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		throw new IOException(getRDFFormat().getName() + " does not support RDF-star triples");
-	}
-
-	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
-		writer.write("<<");
-		writeResource(triple.getSubject());
+	protected void writeTriple(TripleTerm tripleTerm, boolean canShorten) throws IOException {
+		writer.write("<<( ");
+		writeResource(tripleTerm.getSubject(), canShorten);
 		writer.write(" ");
-		writeURI(triple.getPredicate());
+		writeURI(tripleTerm.getPredicate());
 		writer.write(" ");
-		Value object = triple.getObject();
+		Value object = tripleTerm.getObject();
 		if (object instanceof Literal) {
 			writeLiteral((Literal) object);
+		} else if (object instanceof TripleTerm) {
+			writeTriple((TripleTerm) object, canShorten);
 		} else {
 			writeResource((Resource) object, canShorten);
 		}
-		writer.write(">>");
+		writer.write(" )>>");
 	}
 
 	protected void writeLiteral(Literal lit) throws IOException {
@@ -682,6 +739,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
+			writer.write(lit.getBaseDirection().toString());
 		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
@@ -834,6 +892,25 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		if (!isBuffering()) {
 			return;
 		}
+
+		// ── RDF 1.2 version announcement (buffering path) ──────────────────────
+		// Scan all buffered subjects and objects because the flag may not have
+		// been set yet (statements were buffered, not streamed one-by-one).
+		for (Value obj : bufferedStatements.objects()) {
+			if (isRdf12Feature(obj)) {
+				noteRdf12Feature(obj);
+				break;
+			}
+		}
+		if (!isRdf12FeatureDetected()) {
+			for (Value subj : bufferedStatements.subjects()) {
+				if (isRdf12Feature(subj)) {
+					noteRdf12Feature(subj);
+					break;
+				}
+			}
+		}
+		ensureVersionAnnouncement();
 
 		if (this.getRDFFormat().supportsContexts()) { // to allow use in Turtle extensions such a TriG
 			// primary grouping per context.

@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.http.server.repository.handler.QueryRequestHandler;
 import org.eclipse.rdf4j.http.server.repository.handler.RepositoryRequestHandler;
 import org.slf4j.Logger;
@@ -21,6 +18,9 @@ import org.springframework.context.ApplicationContextException;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 public abstract class AbstractRepositoryController extends AbstractController {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());

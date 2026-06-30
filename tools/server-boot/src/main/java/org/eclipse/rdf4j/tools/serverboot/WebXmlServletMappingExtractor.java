@@ -17,8 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-
+import org.eclipse.rdf4j.common.xml.DocumentUtil;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.w3c.dom.Document;
@@ -42,9 +41,7 @@ final class WebXmlServletMappingExtractor {
 			throw new IllegalStateException("Missing resource " + resourceLocation);
 		}
 		try (InputStream inputStream = resource.getInputStream()) {
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-			factory.setNamespaceAware(false);
-			Document document = factory.newDocumentBuilder().parse(inputStream);
+			Document document = DocumentUtil.getDocument(inputStream);
 			NodeList mappings = document.getElementsByTagName("servlet-mapping");
 			List<String> patterns = new ArrayList<>();
 			for (int i = 0; i < mappings.getLength(); i++) {

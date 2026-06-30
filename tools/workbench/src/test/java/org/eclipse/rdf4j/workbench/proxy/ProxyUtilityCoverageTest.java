@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -26,12 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.workbench.support.TestFilterConfig;
 import org.junit.jupiter.api.Test;
@@ -45,7 +39,15 @@ import org.springframework.mock.web.MockServletContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
 class ProxyUtilityCoverageTest {
+
+	private static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
 
 	@Test
 	void cacheFilterAppliesConfiguredExpiryAndCanReset() throws Exception {
@@ -157,9 +159,10 @@ class ProxyUtilityCoverageTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		filter.doFilter(request, response, (req, resp) -> {
-			assertThat(((javax.servlet.http.HttpServletRequest) req).getDateHeader("If-Modified-Since")).isEqualTo(-1L);
-			((javax.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("session", "changed"));
-			((javax.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
+			assertThat(((jakarta.servlet.http.HttpServletRequest) req).getDateHeader("If-Modified-Since"))
+					.isEqualTo(-1L);
+			((jakarta.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("session", "changed"));
+			((jakarta.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
 		});
 
 		assertThat(response.getCookies()).extracting(Cookie::getName).contains("session", "Last-Modified");
@@ -175,8 +178,8 @@ class ProxyUtilityCoverageTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		filter.doFilter(request, response, (req, resp) -> {
-			((javax.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("same", "value"));
-			((javax.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
+			((jakarta.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("same", "value"));
+			((jakarta.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
 		});
 
 		assertThat(response.getCookies()).extracting(Cookie::getName).contains("same");
@@ -243,16 +246,18 @@ class ProxyUtilityCoverageTest {
 		server.start();
 		try {
 			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-			ServerValidator unrestricted = new ServerValidator(
+			Path directory = Files.createDirectory(tempDir.resolve("data"));
+			ServerValidator defaultValidator = new ServerValidator(
 					new org.eclipse.rdf4j.workbench.support.TestServletConfig(
 							"validator", new MockServletContext(), Map.of()));
 			ServerValidator restricted = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
-					"validator", new MockServletContext(), Map.of("accepted-server-prefixes", baseUrl + " file:")));
+					"validator", new MockServletContext(),
+					Map.of("accepted-server-prefixes", baseUrl + " " + directory.toUri())));
 
-			assertThat(unrestricted.isValidServer(baseUrl)).isTrue();
+			assertThat(defaultValidator.isValidServer(baseUrl)).isFalse();
+			assertThat(defaultValidator.isValidServer("/rdf4j-server")).isTrue();
 			assertThat(restricted.isValidServer(baseUrl)).isTrue();
 
-			Path directory = Files.createDirectory(tempDir.resolve("data"));
 			assertThat(restricted.isValidServer(directory.toUri().toString())).isTrue();
 			ServerValidator ftpValidator = new ServerValidator(
 					new org.eclipse.rdf4j.workbench.support.TestServletConfig(
@@ -260,8 +265,96 @@ class ProxyUtilityCoverageTest {
 			assertThat(ftpValidator.isValidServer("ftp://example.org/rdf4j")).isTrue();
 			assertThat(restricted.isValidServer("http://invalid.example")).isFalse();
 			assertThat(restricted.isValidServer("urn:test")).isFalse();
-			assertThatThrownBy(() -> restricted.isValidServer("file:%%%"))
-					.isInstanceOf(IllegalArgumentException.class);
+			assertThat(restricted.isValidServer("file:%%%")).isFalse();
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorDefaultPrefixRejectsSiblingPaths() {
+		ServerValidator defaultValidator = new ServerValidator(
+				new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+						"validator", new MockServletContext(), Map.of()));
+
+		assertThat(defaultValidator.isValidServer("/rdf4j-server")).isTrue();
+		assertThat(defaultValidator.isValidServer("/rdf4j-server2")).isFalse();
+	}
+
+	@Test
+	void serverValidatorDefaultPrefixesRejectRemoteEndpointBeforeConnecting() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			requests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of()));
+
+			assertThat(validator.isValidServer(baseUrl)).isFalse();
+			assertThat(requests).hasValue(0);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorUsesSystemPropertyPrefixesForRemoteServers() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			requests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, baseUrl);
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of()));
+
+			assertThat(validator.isValidServer(baseUrl)).isTrue();
+			assertThat(requests).hasValue(1);
+		} finally {
+			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorSystemPropertyOverridesServletConfigPrefixes() {
+		try {
+			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, "/admin-rdf4j-server");
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of("accepted-server-prefixes", "/rdf4j-server")));
+
+			assertThat(validator.isValidServer("/admin-rdf4j-server")).isTrue();
+			assertThat(validator.isValidServer("/rdf4j-server")).isFalse();
+		} finally {
+			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+		}
+	}
+
+	@Test
+	void serverValidatorRejectsBroadHttpSchemePrefixBeforeConnecting() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			requests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of("accepted-server-prefixes", "http:")));
+
+			assertThat(validator.isValidServer(baseUrl)).isFalse();
+			assertThat(requests).hasValue(0);
 		} finally {
 			server.stop(0);
 		}
@@ -269,10 +362,11 @@ class ProxyUtilityCoverageTest {
 
 	@Test
 	void serverValidatorHandlesMalformedDirectoriesAndUnreadableProtocol() throws Exception {
-		ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
-				"validator", new MockServletContext(), Map.of()));
+		ServerValidator directoryValidator = new ServerValidator(
+				new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+						"validator", new MockServletContext(), Map.of()));
 
-		assertThat(invokePrivateBoolean(validator, "isDirectory", "file://[broken")).isFalse();
+		assertThat(invokePrivateBoolean(directoryValidator, "isDirectory", "file://[broken")).isFalse();
 
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/protocol", exchange -> {
@@ -284,7 +378,10 @@ class ProxyUtilityCoverageTest {
 		});
 		server.start();
 		try {
-			assertThat(validator.isValidServer("http://127.0.0.1:" + server.getAddress().getPort())).isFalse();
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
+					"validator", new MockServletContext(), Map.of("accepted-server-prefixes", baseUrl)));
+			assertThat(validator.isValidServer(baseUrl)).isFalse();
 		} finally {
 			server.stop(0);
 		}
@@ -322,7 +419,7 @@ class ProxyUtilityCoverageTest {
 		private boolean wasInvoked;
 
 		@Override
-		public void doFilter(javax.servlet.ServletRequest request, javax.servlet.ServletResponse response)
+		public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response)
 				throws IOException, ServletException {
 			wasInvoked = true;
 		}
