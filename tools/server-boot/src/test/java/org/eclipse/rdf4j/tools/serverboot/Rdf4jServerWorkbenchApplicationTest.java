@@ -14,14 +14,25 @@ package org.eclipse.rdf4j.tools.serverboot;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.InflaterInputStream;
 
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
@@ -380,6 +391,54 @@ class Rdf4jServerWorkbenchApplicationTest {
 					"  ex:name \"Example\" .");
 			connection.add(new StringReader(validInstance), "", RDFFormat.TURTLE);
 		});
+	}
+
+	@Test
+	void repositoryProtocolResponsesSupportGzipAndDeflate() throws Exception {
+		String repoId = registerRepository("compression", new MemoryStoreConfig());
+		IRI subject = valueFactory.createIRI("urn:test:s");
+		IRI predicate = valueFactory.createIRI("urn:test:p");
+		String objectValue = "compress-me-" + "x".repeat(4096);
+		withRepositoryConnection(repoId,
+				connection -> connection.add(subject, predicate, valueFactory.createLiteral(objectValue)));
+
+		String repositoryUrl = serverUrl() + "/repositories/" + repoId;
+		String tupleUrl = repositoryUrl + "?query="
+				+ URLEncoder.encode("SELECT ?o WHERE { <urn:test:s> <urn:test:p> ?o }", StandardCharsets.UTF_8);
+		String constructUrl = repositoryUrl + "?query="
+				+ URLEncoder.encode("CONSTRUCT { <urn:test:s> <urn:test:p> ?o } WHERE { <urn:test:s> <urn:test:p> ?o }",
+						StandardCharsets.UTF_8);
+		String statementsUrl = repositoryUrl + "/statements";
+
+		for (String encoding : List.of("gzip", "gzip, deflate")) {
+			assertCompressedResponse(tupleUrl, "application/sparql-results+xml", encoding, "<sparql");
+			assertCompressedResponse(constructUrl, "text/turtle", encoding, objectValue);
+			assertCompressedResponse(statementsUrl, "text/turtle", encoding, objectValue);
+		}
+	}
+
+	private void assertCompressedResponse(String url, String accept, String acceptEncoding, String expectedBodyFragment)
+			throws IOException, InterruptedException {
+		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+				.header("Accept", accept)
+				.header("Accept-Encoding", acceptEncoding)
+				.GET()
+				.build();
+		HttpResponse<byte[]> response = HttpClient.newHttpClient()
+				.send(request, HttpResponse.BodyHandlers.ofByteArray());
+		assertThat(response.statusCode()).isEqualTo(HttpStatus.OK.value());
+		String contentEncoding = response.headers().firstValue("Content-Encoding").orElse(null);
+		assertThat(contentEncoding).isIn("gzip", "deflate");
+		byte[] body = decodeBody(contentEncoding, response.body());
+		assertThat(new String(body, StandardCharsets.UTF_8)).contains(expectedBodyFragment);
+	}
+
+	private byte[] decodeBody(String contentEncoding, byte[] body) throws IOException {
+		try (InputStream in = "gzip".equalsIgnoreCase(contentEncoding)
+				? new GZIPInputStream(new ByteArrayInputStream(body))
+				: new InflaterInputStream(new ByteArrayInputStream(body))) {
+			return in.readAllBytes();
+		}
 	}
 
 	private void cleanupRepositories() {

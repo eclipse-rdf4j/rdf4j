@@ -42,6 +42,7 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.context.support.XmlWebApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.tuckey.web.filters.urlrewrite.UrlRewriteFilter;
@@ -115,12 +116,20 @@ public class Rdf4jServerWorkbenchApplication {
 		TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
 		factory.setDocumentRoot(extractor.getServerDocBase().toFile());
 		factory.addContextCustomizers(workbenchResourcesCustomizer(extractor));
+		String[] compressibleMimeTypes = new String[] { "text/html", "text/xml", "text/plain", "application/json",
+				"application/xml", "text/css", "application/javascript", "text/javascript",
+				"application/sparql-results+xml", "application/sparql-results+json", "application/rdf+xml",
+				"text/turtle", "application/n-triples" };
 		Compression compression = new Compression();
 		compression.setEnabled(true);
-		compression.setMimeTypes(
-				new String[] { "text/html", "text/xml", "text/plain", "application/json", "application/xml",
-						"text/css", "application/javascript", "text/javascript" });
+		compression.setMimeTypes(compressibleMimeTypes);
+		compression.setMinResponseSize(DataSize.ofBytes(1));
 		factory.setCompression(compression);
+		factory.addConnectorCustomizers(connector -> {
+			connector.setProperty("compression", "on");
+			connector.setProperty("compressionMinSize", "1");
+			connector.setProperty("compressibleMimeType", String.join(",", compressibleMimeTypes));
+		});
 		return factory;
 	}
 
