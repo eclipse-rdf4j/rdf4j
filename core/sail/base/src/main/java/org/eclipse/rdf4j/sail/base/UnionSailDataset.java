@@ -42,6 +42,14 @@ class UnionSailDataset implements SailDataset {
 		this.dataset2 = dataset2;
 	}
 
+	SailDataset getLeftDataset() {
+		return dataset1;
+	}
+
+	SailDataset getRightDataset() {
+		return dataset2;
+	}
+
 	/**
 	 * Creates a new {@link SailDataset} that includes both the provided {@link SailDataset}s.
 	 */

@@ -44,6 +44,11 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	}
 
 	@Override
+	boolean isStatementAccessTransparent() {
+		return false;
+	}
+
+	@Override
 	public void close() throws SailException {
 		try {
 			super.close();

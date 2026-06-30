@@ -87,7 +87,7 @@ class LmdbSailStore implements SailStore {
 	private boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
-	private volatile boolean mayHaveInferred;
+	volatile boolean mayHaveInferred;
 
 	boolean enableMultiThreading = true;
 
@@ -1672,7 +1672,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset {
+	private final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
 
 		private final boolean explicit;
 		private final Txn txn;
@@ -1692,6 +1692,73 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			// close the associated txn
 			txn.close();
+		}
+
+		@Override
+		public long idOf(Value value) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				if (value == null) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+				return valueStore.getId(value);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Value lazyValue(long id) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+					return null;
+				}
+				return valueStore.getLazyValue(id);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Object idSpace() {
+			return valueStore;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) throws IOException {
+			if (!hasStatementsInSource()) {
+				return 0;
+			}
+			return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) throws IOException {
+			return hasStatementsInSource() && tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			if (!hasStatementsInSource()) {
+				return 0D;
+			}
+			try {
+				return tripleStore.cardinality(subj, pred, obj, context);
+			} catch (IOException | RuntimeException e) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return explicit || mayHaveInferred;
 		}
 
 		@Override

@@ -29,7 +29,7 @@ final class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactor
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset,
+		StrictEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
 				isTrackResultSize());
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()

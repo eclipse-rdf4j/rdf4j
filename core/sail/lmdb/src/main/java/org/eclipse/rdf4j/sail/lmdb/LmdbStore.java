@@ -93,7 +93,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private EvaluationStrategyFactory explicitEvalStratFactory;
 
-	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
+	private LmdbEvaluationStrategyFactory defaultEvalStratFactory;
 
 	private LmdbEvaluationStrategyFactory lmdbEvalStratFactory;
 
@@ -499,10 +499,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore == null ? null : backingStore.getSketchBasedJoinEstimator();
 	}
 
-	private DefaultEvaluationStrategyFactory getAutomaticDefaultEvaluationStrategyFactory() {
+	private LmdbEvaluationStrategyFactory getAutomaticDefaultEvaluationStrategyFactory() {
 		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
 		if (defaultEvalStratFactory == null) {
-			defaultEvalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+			defaultEvalStratFactory = new LmdbEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
 		if (optimizerPipeline != null) {
 			defaultEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
