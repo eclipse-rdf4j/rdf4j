@@ -24,6 +24,7 @@ import java.util.Map;
 import org.apache.catalina.Context;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
+import org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter;
 import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
@@ -208,6 +209,19 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server/");
 		registration.setName("serverRootDummyPage");
 		registration.setOrder(-12);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<HttpCompressionFilter> httpCompressionFilter() {
+		FilterRegistrationBean<HttpCompressionFilter> registration = new FilterRegistrationBean<>(
+				new HttpCompressionFilter());
+		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*");
+		registration.setName("HttpCompressionFilter");
+		registration.addInitParameter("excludeContentTypes",
+				"application/x-binary-rdf,application/x-binary-rdf-results-table");
+		registration.setOrder(-10);
 		registration.setAsyncSupported(true);
 		return registration;
 	}

@@ -73,6 +73,8 @@
 		<elasticsearch.version>9.4.2</elasticsearch.version>
 		<spring.version>7.0.8</spring.version>
 		<guava.version>33.6.0-jre</guava.version>
+		<brotli4j.version>1.23.0</brotli4j.version>
+		<zstd-jni.version>1.5.7-11</zstd-jni.version>
 		<jmhVersion>1.37</jmhVersion>
 		<junit.version>6.1.1</junit.version>
 		<junit-pioneer.version>2.3.0</junit-pioneer.version>
@@ -621,6 +623,26 @@
 				<groupId>commons-codec</groupId>
 				<artifactId>commons-codec</artifactId>
 				<version>1.22.0</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>brotli4j</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-aarch64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.aayushatharva.brotli4j</groupId>
+				<artifactId>native-linux-x86_64</artifactId>
+				<version>${brotli4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.github.luben</groupId>
+				<artifactId>zstd-jni</artifactId>
+				<version>${zstd-jni.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.commons</groupId>

@@ -32,3 +32,18 @@ The default runtime is `spring-boot`, so `./run.sh` keeps the original local beh
 If Playwright browsers are already installed locally, set `E2E_SKIP_PLAYWRIGHT_INSTALL=true` to skip the browser installer.
 
 To run the tests interactively use `npx playwright test --ui`
+
+## HTTP compression
+
+The focused HTTP compression spec can be run against any RDF4J Server endpoint:
+
+```bash
+RDF4J_SERVER_BASE_URL=http://127.0.0.1:8080/rdf4j-server \
+RDF4J_E2E_TARGET_NAME=spring-boot npm run test:compression
+```
+
+To verify both the Spring Boot runner and the regular WAR deployment in Docker:
+
+```bash
+./run-http-compression.sh
+```
