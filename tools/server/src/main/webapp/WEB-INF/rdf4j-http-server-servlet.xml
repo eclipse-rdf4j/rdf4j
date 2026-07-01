@@ -108,8 +108,8 @@
 		</property>
 		<property name="mappings">
 			<props>
-				<prop key="/overview.view">filenameViewController</prop>
-				<prop key="/home/overview.view">filenameViewController</prop>
+				<prop key="/overview.view">rdf4jServerHomeController</prop>
+				<prop key="/home/overview.view">rdf4jServerHomeController</prop>
 			</props>
 		</property>
 		<property name="interceptors">
@@ -122,6 +122,7 @@
 	<!-- EXCEPTION RESOLVERS -->
 	<bean id="rdf4jHandlerExceptionResolver" class="org.eclipse.rdf4j.http.server.ProtocolExceptionResolver" />
 	<!-- CONTROLLERS -->
+	<bean id="rdf4jServerHomeController" class="org.eclipse.rdf4j.http.server.ServerHomeController" />
 	<bean id="rdf4jProtocolController" class="org.eclipse.rdf4j.http.server.protocol.ProtocolController" />
 	<bean id="rdf4jRepositoryListController" class="org.eclipse.rdf4j.http.server.repository.RepositoryListController">
 		<property name="repositoryManager" ref="rdf4jRepositoryManager" />

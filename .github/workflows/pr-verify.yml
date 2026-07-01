@@ -168,7 +168,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 22
       - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }})
         working-directory: ./e2e
         run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
