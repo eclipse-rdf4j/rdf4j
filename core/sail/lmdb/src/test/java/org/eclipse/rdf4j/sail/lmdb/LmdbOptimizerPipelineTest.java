@@ -43,8 +43,10 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -269,6 +271,53 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbSketchPipelineKeepsUnusedSingletonValuesAtJoinPrefix() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		List<TupleExpr> joinArgs = joinArgsWithBindingSetAssignment(tupleExpr);
+		assertFalse(joinArgs.isEmpty(), "Expected optimized query to retain VALUES in a join segment:\n" + tupleExpr);
+		assertInstanceOf(BindingSetAssignment.class, joinArgs.getFirst(),
+				"Unused singleton VALUES should stay as high as possible:\n" + tupleExpr);
+	}
+
+	@Test
+	void readyLmdbSketchPipelineKeepsUnusedSingletonValuesAtJoinPrefix(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		store.init();
+		try {
+			addMedicalQueryShape(store);
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking());
+
+			TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
+			EvaluationStrategy strategy = createEvaluationStrategy(store.getEvaluationStrategyFactory(), store
+					.getBackingStore()
+					.getEvaluationStatistics());
+			for (QueryOptimizer optimizer : optimizers(strategy)) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+
+			List<TupleExpr> joinArgs = joinArgsWithBindingSetAssignment(tupleExpr);
+			assertFalse(joinArgs.isEmpty(),
+					"Expected optimized query to retain VALUES in a join segment:\n" + tupleExpr);
+			assertInstanceOf(BindingSetAssignment.class, joinArgs.getFirst(),
+					"Unused singleton VALUES should stay as high as possible with ready sketches:\n" + tupleExpr);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void standardPipelineStillUsesLegacyFilterAndJoinOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -330,6 +379,37 @@ class LmdbOptimizerPipelineTest {
 		return found[0];
 	}
 
+	private static List<TupleExpr> joinArgsWithBindingSetAssignment(TupleExpr tupleExpr) {
+		List<TupleExpr>[] found = new List[] { List.of() };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Join node) {
+				List<TupleExpr> args = joinArgs(node);
+				if (args.size() > found[0].size() && args.stream().anyMatch(BindingSetAssignment.class::isInstance)) {
+					found[0] = args;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+			return;
+		}
+		args.add(tupleExpr);
+	}
+
 	private static ProcessResult runLowHeapProbe(File dataDir) throws IOException, InterruptedException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		List<String> command = new ArrayList<>();
@@ -358,6 +438,27 @@ class LmdbOptimizerPipelineTest {
 			connection.begin();
 			connection.addStatement(vf.createIRI(prefix + ":s"), vf.createIRI(prefix + ":p"),
 					vf.createIRI(prefix + ":o"));
+			connection.commit();
+		}
+	}
+
+	private static void addMedicalQueryShape(LmdbStore store) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI patientClass = vf.createIRI("http://example.com/theme/medical/Patient");
+		IRI hasEncounter = vf.createIRI("http://example.com/theme/medical/hasEncounter");
+		IRI hasObservation = vf.createIRI("http://example.com/theme/medical/hasObservation");
+		IRI value = vf.createIRI("http://example.com/theme/medical/value");
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 8; i++) {
+				Resource patient = vf.createIRI("urn:patient:" + i);
+				Resource encounter = vf.createIRI("urn:encounter:" + i);
+				Resource observation = vf.createIRI("urn:observation:" + i);
+				connection.addStatement(patient, org.eclipse.rdf4j.model.vocabulary.RDF.TYPE, patientClass);
+				connection.addStatement(patient, hasEncounter, encounter);
+				connection.addStatement(encounter, hasObservation, observation);
+				connection.addStatement(observation, value, vf.createLiteral(50 + (10 * (i % 3))));
+			}
 			connection.commit();
 		}
 	}
@@ -514,6 +615,19 @@ class LmdbOptimizerPipelineTest {
 			  FILTER EXISTS {
 			    ?component <http://example.com/theme/engineering/dependsOn> ?dep .
 			  }
+			}
+			""";
+
+	private static final String MEDICAL_Q5_UNUSED_LIMIT = """
+			PREFIX med: <http://example.com/theme/medical/>
+			PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+			SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
+			  VALUES ?limit { 55 }
+			  ?patient a med:Patient ; med:hasEncounter ?enc .
+			  ?enc med:hasObservation ?obs .
+			  ?obs med:value ?value .
+			  FILTER(?value IN (50, 60, 70))
+			  FILTER NOT EXISTS { ?enc med:hasCondition ?cond . }
 			}
 			""";
 

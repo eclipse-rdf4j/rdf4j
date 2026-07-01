@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -256,6 +257,18 @@ public class LmdbSailStoreTest {
 			assertTrue(iteration instanceof EmptyIteration);
 			assertFalse(iteration.hasNext());
 		}
+	}
+
+	@Test
+	public void closedNativeQuerySourceReportsInterruptionInsteadOfUsingClosedTxn() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+		NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
+
+		dataset.close();
+
+		assertThrows(QueryInterruptedException.class, () -> nativeSource.has(-1L, -1L, -1L, -1L));
 	}
 
 	@Test

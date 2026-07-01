@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -2532,14 +2533,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			clearSelectedPlanAnnotations();
 			int segmentFilterCount = segmentFilters.size();
 			if (segment.size() < 2 || !(statistics instanceof JoinOrderPlanner planner)) {
-				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+				return new OrderedSegment(new ArrayDeque<>(hoistSingleBindingSetAssignments(segment, segment)),
+						Map.of(), false);
 			}
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
 			if (preferFiniteAnchorFastPath) {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
-					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+					List<TupleExpr> orderedArgs = hoistSingleBindingSetAssignments(canonicalFiniteAnchorOrder.get(),
+							segment);
 					applyFiniteAnchorPlannerMetrics(orderedArgs);
 					FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 							orderedArgs, boundBeforeSegment);
@@ -2555,7 +2558,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 							boundBeforeSegment, plannerFilters);
 					if (canonicalFiniteAnchorOrder.isPresent()) {
-						List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+						List<TupleExpr> orderedArgs = hoistSingleBindingSetAssignments(canonicalFiniteAnchorOrder.get(),
+								segment);
 						applyFiniteAnchorPlannerMetrics(orderedArgs);
 						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 								orderedArgs, boundBeforeSegment);
@@ -2572,10 +2576,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
 			applyPlannerStepEstimates(selectedPlan);
+			List<TupleExpr> selectedPlanOrderedArgs = selectedPlan.getOrderedArgs();
+			List<TupleExpr> selectedOrderedArgs = hoistSingleBindingSetAssignments(selectedPlanOrderedArgs, segment);
+			boolean singletonHoisted = !sameTupleOrder(selectedOrderedArgs, selectedPlanOrderedArgs);
 			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-					selectedPlan.getOrderedArgs(), boundBeforeSegment);
+					selectedOrderedArgs, boundBeforeSegment);
 			List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
-			Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed()
+			Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed() || singletonHoisted
 					? Map.of()
 					: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
@@ -2592,6 +2599,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						tupleExpr);
 				if (assignmentNames.isEmpty()
 						|| assignmentNames.get().isEmpty()
+						|| isSingleBindingSetAssignment(tupleExpr)
 						|| !isSingleLiteralBindingAssignment(tupleExpr)) {
 					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
 					i++;
@@ -2631,6 +2639,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return sawValue;
+		}
+
+		private boolean isSingleBindingSetAssignment(TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof BindingSetAssignment assignment) || assignment.getBindingSets() == null) {
+				return false;
+			}
+			Iterator<BindingSet> bindingSets = assignment.getBindingSets()
+					.iterator();
+			if (!bindingSets.hasNext()) {
+				return false;
+			}
+			bindingSets.next();
+			return !bindingSets.hasNext();
 		}
 
 		private int assignmentDependentBoundLookupBlockEnd(List<TupleExpr> orderedArgs, int assignmentIndex,
@@ -2706,7 +2727,46 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment) {
-			return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+			return new OrderedSegment(new ArrayDeque<>(hoistSingleBindingSetAssignments(segment, segment)), Map.of(),
+					false);
+		}
+
+		private List<TupleExpr> hoistSingleBindingSetAssignments(List<TupleExpr> orderedArgs,
+				List<TupleExpr> originalSegment) {
+			List<TupleExpr> singleAssignments = new ArrayList<>();
+			List<TupleExpr> remaining = new ArrayList<>(orderedArgs.size());
+			for (TupleExpr tupleExpr : orderedArgs) {
+				if (isSingleBindingSetAssignment(tupleExpr)) {
+					singleAssignments.add(tupleExpr);
+				} else {
+					remaining.add(tupleExpr);
+				}
+			}
+			if (singleAssignments.isEmpty()) {
+				return orderedArgs;
+			}
+			Map<TupleExpr, Integer> originalOrder = new IdentityHashMap<>();
+			for (int i = 0; i < originalSegment.size(); i++) {
+				originalOrder.put(originalSegment.get(i), i);
+			}
+			singleAssignments.sort((left, right) -> Integer.compare(originalOrder.getOrDefault(left, Integer.MAX_VALUE),
+					originalOrder.getOrDefault(right, Integer.MAX_VALUE)));
+			List<TupleExpr> hoisted = new ArrayList<>(orderedArgs.size());
+			hoisted.addAll(singleAssignments);
+			hoisted.addAll(remaining);
+			return List.copyOf(hoisted);
+		}
+
+		private boolean sameTupleOrder(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (int i = 0; i < left.size(); i++) {
+				if (left.get(i) != right.get(i)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> selectiveLocalFilterPrefixPlan(List<TupleExpr> segment,

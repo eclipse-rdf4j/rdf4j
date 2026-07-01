@@ -245,12 +245,15 @@ class TxnManager {
 			throw new SailException(e);
 		}
 		T ret;
+		Txn txn = null;
 		try (MemoryStack stack = stackPush()) {
-			try (Txn txn = createReadTxn()) {
-				ret = transaction.exec(stack, txn.get());
-			}
+			txn = createReadTxn();
+			ret = transaction.exec(stack, txn.get());
 		} finally {
 			lockManager.unlockRead(readStamp);
+			if (txn != null) {
+				txn.close();
+			}
 		}
 		return ret;
 	}
@@ -365,19 +368,21 @@ class TxnManager {
 		}
 
 		@Override
-		public synchronized void close() {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			synchronized (TxnManager.this.active) {
-				TxnManager.this.active.remove(this);
-			}
-			try {
-				free(txnActive);
-			} finally {
+		public void close() {
+			synchronized (this) {
+				if (closed) {
+					return;
+				}
+				closed = true;
 				synchronized (TxnManager.this.active) {
-					TxnManager.this.active.notifyAll();
+					TxnManager.this.active.remove(this);
+				}
+				try {
+					free(txnActive);
+				} finally {
+					synchronized (TxnManager.this.active) {
+						TxnManager.this.active.notifyAll();
+					}
 				}
 			}
 		}

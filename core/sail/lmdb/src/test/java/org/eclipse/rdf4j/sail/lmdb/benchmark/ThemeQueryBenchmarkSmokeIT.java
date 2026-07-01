@@ -203,6 +203,25 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void explainQueryPlacesUnusedMedicalQ5SingletonValuesFirst() throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 5;
+
+		benchmark.setup();
+		try {
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			Join join = findFirst(optimized, Join.class);
+			assertTrue(join != null && join.getLeftArg()instanceof BindingSetAssignment assignment
+					&& assignment.getBindingNames().contains("limit") && hasExactlyOneBindingSet(assignment),
+					"Expected optimized medical q5 plan to start with the unused singleton VALUES ?limit; plan="
+							+ optimized);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
 	void explainQueryPlacesPharmaQ5PValueFilterBeforeTrialExpansion() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.PHARMA.name();
@@ -290,6 +309,17 @@ class ThemeQueryBenchmarkSmokeIT {
 			current = joinStep.getRightArg();
 		}
 		return true;
+	}
+
+	private static boolean hasExactlyOneBindingSet(BindingSetAssignment assignment) {
+		int count = 0;
+		for (var ignored : assignment.getBindingSets()) {
+			count++;
+			if (count > 1) {
+				return false;
+			}
+		}
+		return count == 1;
 	}
 
 	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
