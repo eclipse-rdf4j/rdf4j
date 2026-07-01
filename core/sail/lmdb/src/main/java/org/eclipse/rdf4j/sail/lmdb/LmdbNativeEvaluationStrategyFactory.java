@@ -19,23 +19,34 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
-final class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
+final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
 
-	LmdbEvaluationStrategyFactory(FederatedServiceResolver resolver) {
+	LmdbNativeEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		super(resolver);
 	}
 
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset,
-				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
+		EvaluationStatistics effectiveStatistics = evaluationStatistics == null ? new EvaluationStatistics()
+				: evaluationStatistics;
+		StrictEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, dataset,
+				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effectiveStatistics,
 				isTrackResultSize());
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
-				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				.orElseGet(() -> automaticPipeline(strategy, tripleSource, effectiveStatistics));
 		strategy.setOptimizerPipeline(pipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
 		return strategy;
+	}
+
+	private QueryOptimizerPipeline automaticPipeline(StrictEvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics) {
+		if (evaluationStatistics.supportsJoinEstimation()) {
+			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
+		}
+		return new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 	}
 }

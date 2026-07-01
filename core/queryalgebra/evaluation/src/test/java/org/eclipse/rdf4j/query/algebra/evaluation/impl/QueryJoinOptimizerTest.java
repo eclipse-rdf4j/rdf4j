@@ -22,6 +22,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -163,6 +165,38 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void unusedSingletonValuesStartJoinOrder() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES ?limit { 55 }",
+				"  ?patient a ex:Patient .",
+				"  ?patient ex:hasEncounter ?enc .",
+				"  ?enc ex:hasObservation ?obs .",
+				"  ?obs ex:value ?value .",
+				"}");
+
+		QueryRoot root = optimizeWithQueryJoinOptimizer(query);
+
+		assertThat(joinArgs(new JoinFinder().find(root)).getFirst()).isInstanceOf(BindingSetAssignment.class);
+	}
+
+	@Test
+	public void singletonValuesWithoutBindingsStartJoinOrder() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES () { () }",
+				"  ?patient a ex:Patient .",
+				"  ?patient ex:hasEncounter ?enc .",
+				"}");
+
+		QueryRoot root = optimizeWithQueryJoinOptimizer(query);
+
+		assertThat(joinArgs(new JoinFinder().find(root)).getFirst()).isInstanceOf(BindingSetAssignment.class);
+	}
+
+	@Test
 	public void testOptionalWithSubSelect() throws RDF4JException {
 		String query = String.join("\n", "",
 				"prefix ex: <ex:> ",
@@ -219,11 +253,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new JoinEstimatingStatistics(), new EmptyTripleSource());
 		Object joinVisitor = buildJoinVisitor(optimizer);
-		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		Method reorderJoinArgs = joinVisitor.getClass()
+				.getDeclaredMethod("reorderJoinArgs", Deque.class, Set.class);
 		reorderJoinArgs.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered, Set.of());
 
 		List<String> predicateOrder = reordered.stream()
 				.map(QueryJoinOptimizerTest::getPredicateValue)
@@ -251,11 +286,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
 		Object joinVisitor = buildJoinVisitor(optimizer);
-		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		Method reorderJoinArgs = joinVisitor.getClass()
+				.getDeclaredMethod("reorderJoinArgs", Deque.class, Set.class);
 		reorderJoinArgs.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered, Set.of());
 
 		List<String> predicateOrder = reordered.stream()
 				.map(QueryJoinOptimizerTest::getPredicateValue)
@@ -355,6 +391,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		public Join getJoin() {
 			return join;
 		}
+
+		public Join find(QueryModelNode node) {
+			node.visit(this);
+			return join;
+		}
 	}
 
 	class StatementFinder extends AbstractQueryModelVisitor<RuntimeException> {
@@ -395,6 +436,29 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
+	}
+
+	private QueryRoot optimizeWithQueryJoinOptimizer(String query) {
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		optimizer.optimize(root, null, null);
+		return root;
+	}
+
+	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+		} else {
+			args.add(tupleExpr);
+		}
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {

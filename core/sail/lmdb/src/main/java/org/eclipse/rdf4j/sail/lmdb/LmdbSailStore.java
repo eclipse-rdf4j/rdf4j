@@ -36,6 +36,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
@@ -87,7 +89,7 @@ class LmdbSailStore implements SailStore {
 	private boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
-	private volatile boolean mayHaveInferred;
+	volatile boolean mayHaveInferred;
 
 	boolean enableMultiThreading = true;
 
@@ -120,31 +122,46 @@ class LmdbSailStore implements SailStore {
 	static final class CircularBuffer<T> {
 
 		private final T[] elements;
-		private volatile int head = 0;
-		private volatile int tail = 0;
+		private final int mask;
+		private volatile long head = 0;
+		private volatile long tail = 0;
 
 		CircularBuffer(int size) {
+			if (Integer.bitCount(size) != 1) {
+				throw new IllegalArgumentException("CircularBuffer size must be a power of two: " + size);
+			}
 			this.elements = (T[]) new Object[size];
+			this.mask = size - 1;
 		}
 
 		boolean add(T element) {
-			// faster version of:
-			// tail == Math.floorMod(head - 1, elements.length)
-			if (head > 0 ? tail == head - 1 : tail == elements.length - 1) {
+			long currentTail = tail;
+			if (currentTail - head == elements.length) {
 				return false;
 			}
-			elements[tail] = element;
-			tail = (tail + 1) % elements.length;
+			elements[(int) currentTail & mask] = element;
+			tail = currentTail + 1;
 			return true;
 		}
 
 		T remove() {
-			T result = null;
-			if (tail != head) {
-				result = elements[head];
-				head = (head + 1) % elements.length;
+			long currentHead = head;
+			if (tail == currentHead) {
+				return null;
 			}
+			int offset = (int) currentHead & mask;
+			T result = elements[offset];
+			elements[offset] = null;
+			head = currentHead + 1;
 			return result;
+		}
+	}
+
+	private static void idleSpin(int attempts) {
+		if ((attempts & 0x3FF) == 0x3FF) {
+			Thread.yield();
+		} else {
+			Thread.onSpinWait();
 		}
 	}
 
@@ -249,13 +266,10 @@ class LmdbSailStore implements SailStore {
 					unusedIds.remove(contexts[i]);
 				}
 			}
-			if (size < capacity) {
-				for (int i = 0; i < size; i++) {
-					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
-							explicit);
-					if (added && explicit && estimatorCallback != null) {
-						estimatorCallback.accept(statements[i]);
-					}
+			if (size == 1) {
+				boolean added = tripleStore.storeTriple(subjects[0], predicates[0], objects[0], contexts[0], explicit);
+				if (added && explicit && estimatorCallback != null) {
+					estimatorCallback.accept(statements[0]);
 				}
 				return;
 			}
@@ -463,11 +477,12 @@ class LmdbSailStore implements SailStore {
 				valueStore.rollback();
 			} finally {
 				if (multiThreadingActive) {
+					int spins = 0;
 					while (!opQueue.add(ROLLBACK_TRANSACTION)) {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							idleSpin(spins++);
 						}
 					}
 				} else {
@@ -745,35 +760,36 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
-			contextIDList.add(LmdbValue.UNKNOWN_ID);
-		} else {
-			for (Resource context : contexts) {
-				if (context == null) {
-					contextIDList.add(0L);
-				} else if (!context.isTripleTerm()) {
-					long contextID = valueStore.getId(context);
-
-					if (contextID != LmdbValue.UNKNOWN_ID) {
-						contextIDList.add(contextID);
-					}
-				}
-			}
+			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+			return new LmdbStatementIterator(records, valueStore);
 		}
 
-		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
+		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
+		for (Resource context : contexts) {
+			long contextID;
+			if (context == null) {
+				contextID = 0L;
+			} else if (!context.isTripleTerm()) {
+				contextID = valueStore.getId(context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					continue;
+				}
+			} else {
+				continue;
+			}
 
-		for (long contextID : contextIDList) {
 			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
+		if (perContextIterList.isEmpty()) {
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		}
 		if (perContextIterList.size() == 1) {
 			return perContextIterList.getFirst();
-		} else {
-			return new UnionIteration<>(perContextIterList);
 		}
+		return new UnionIteration<>(perContextIterList);
 	}
 
 	long countStatementIterator(
@@ -807,32 +823,80 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
-			contextIDList.add(LmdbValue.UNKNOWN_ID);
-		} else {
-			for (Resource context : contexts) {
-				if (context == null) {
-					contextIDList.add(0L);
-				} else if (!context.isTripleTerm()) {
-					long contextID = valueStore.getId(context);
-
-					if (contextID != LmdbValue.UNKNOWN_ID) {
-						contextIDList.add(contextID);
-					}
-				}
-			}
+			return tripleStore.countTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
 		}
 
 		long count = 0;
-		for (long contextID : contextIDList) {
-			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
-				while (records.next() != null) {
-					count++;
+		for (Resource context : contexts) {
+			long contextID;
+			if (context == null) {
+				contextID = 0L;
+			} else if (!context.isTripleTerm()) {
+				contextID = valueStore.getId(context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					continue;
 				}
+			} else {
+				continue;
 			}
+			count += tripleStore.countTriples(txn, subjID, predID, objID, contextID, explicit);
 		}
 		return count;
+	}
+
+	boolean hasStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			// there are no inferred statements and the iterator should only return inferred statements
+			return false;
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		if (contexts.length == 0) {
+			return tripleStore.hasTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+		}
+
+		for (Resource context : contexts) {
+			long contextID;
+			if (context == null) {
+				contextID = 0L;
+			} else if (!context.isTripleTerm()) {
+				contextID = valueStore.getId(context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					continue;
+				}
+			} else {
+				continue;
+			}
+			if (tripleStore.hasTriples(txn, subjID, predID, objID, contextID, explicit)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -999,11 +1063,12 @@ class LmdbSailStore implements SailStore {
 			boolean activeTxn = storeTxnStarted.get();
 			try {
 				if (multiThreadingActive) {
+					int spins = 0;
 					while (!opQueue.add(COMMIT_TRANSACTION)) {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							idleSpin(spins++);
 						}
 					}
 				}
@@ -1012,11 +1077,12 @@ class LmdbSailStore implements SailStore {
 					namespaceStore.sync();
 				} finally {
 					if (multiThreadingActive) {
+						int spins = 0;
 						while (!asyncTransactionFinished) {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							} else {
-								Thread.yield();
+								idleSpin(spins++);
 							}
 						}
 					}
@@ -1273,11 +1339,12 @@ class LmdbSailStore implements SailStore {
 					q.estimatorCallback = this::queueEstimatorAdd;
 
 					if (multiThreadingActive) {
+						int spins = 0;
 						while (!opQueue.add(q)) {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							}
-							Thread.onSpinWait();
+							idleSpin(spins++);
 						}
 					} else {
 						q.execute();
@@ -1328,9 +1395,11 @@ class LmdbSailStore implements SailStore {
 									try {
 										while (running.get()) {
 											tripleStore.startTransaction();
+											int idleSpins = 0;
 											while (true) {
 												Operation op = opQueue.remove();
 												if (op != null) {
+													idleSpins = 0;
 													if (op == COMMIT_TRANSACTION) {
 														tripleStore.commit();
 														filterUsedIdsInTripleStore();
@@ -1354,7 +1423,7 @@ class LmdbSailStore implements SailStore {
 													} else if (Thread.interrupted()) {
 														throw new InterruptedException();
 													} else {
-														Thread.yield();
+														idleSpin(idleSpins++);
 													}
 												}
 											}
@@ -1362,6 +1431,7 @@ class LmdbSailStore implements SailStore {
 											// keep thread running for at least 2ms to lock-free wait for the next
 											// transaction
 											long start = 0;
+											int waitSpins = 0;
 											while (running.get() && !nextTransactionAsync) {
 												if (start == 0) {
 													// System.currentTimeMillis() is expensive, so only call it when we
@@ -1377,7 +1447,7 @@ class LmdbSailStore implements SailStore {
 														}
 													}
 												} else {
-													Thread.yield();
+													idleSpin(waitSpins++);
 												}
 											}
 										}
@@ -1436,11 +1506,12 @@ class LmdbSailStore implements SailStore {
 
 		private void submitOperation(Operation operation) throws IOException {
 			if (multiThreadingActive) {
+				int spins = 0;
 				while (!opQueue.add(operation)) {
 					if (tripleStoreException != null) {
 						throw wrapTripleStoreException();
 					}
-					Thread.onSpinWait();
+					idleSpin(spins++);
 				}
 			} else {
 				try {
@@ -1547,19 +1618,21 @@ class LmdbSailStore implements SailStore {
 						}
 					};
 
+					int spins = 0;
 					while (!opQueue.add(removeOp)) {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							idleSpin(spins++);
 						}
 					}
 
+					spins = 0;
 					while (!removeOp.finished) {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							idleSpin(spins++);
 						}
 					}
 					return removeCount[0];
@@ -1601,10 +1674,12 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset {
+	private final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
 
 		private final boolean explicit;
 		private final Txn txn;
+		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
+		private volatile boolean closed;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
@@ -1619,8 +1694,174 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			if (closed) {
+				return;
+			}
+			closed = true;
+			long writeStamp = acquireNativeSourceWriteLock();
+			try {
+				txn.close();
+			} finally {
+				nativeSourceLock.unlockWrite(writeStamp);
+			}
+		}
+
+		@Override
+		public long idOf(Value value) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				assertNativeSourceOpen();
+				if (value == null) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+				return valueStore.getId(value);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Value lazyValue(long id) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				assertNativeSourceOpen();
+				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+					return null;
+				}
+				return valueStore.getLazyValue(id);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Object idSpace() {
+			return valueStore;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return EmptyRecordIterator.INSTANCE;
+				}
+				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return 0;
+				}
+				return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				return hasStatementsInSource() && tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			assertNativeSourceOpen();
+			if (!hasStatementsInSource()) {
+				return 0D;
+			}
+			try {
+				return tripleStore.cardinality(subj, pred, obj, context);
+			} catch (IOException | RuntimeException e) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return explicit || mayHaveInferred;
+		}
+
+		private long acquireNativeSourceReadLock() throws IOException {
+			try {
+				return nativeSourceLock.readLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException(e);
+			}
+		}
+
+		private long acquireNativeSourceWriteLock() {
+			try {
+				return nativeSourceLock.writeLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+		}
+
+		private void assertNativeSourceOpen() {
+			if (closed) {
+				throw new QueryInterruptedException("Query evaluation was interrupted");
+			}
+		}
+
+		private final class NativeSourceReadLockedRecordIterator implements RecordIterator {
+			private final RecordIterator delegate;
+			private final long readStamp;
+			private boolean closed;
+
+			private NativeSourceReadLockedRecordIterator(RecordIterator delegate, long readStamp) {
+				this.delegate = delegate;
+				this.readStamp = readStamp;
+			}
+
+			@Override
+			public long[] next() {
+				if (closed) {
+					return null;
+				}
+				try {
+					assertNativeSourceOpen();
+					long[] record = delegate.next();
+					if (record == null) {
+						close();
+					}
+					return record;
+				} catch (RuntimeException | Error e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
+			public void close() {
+				if (!closed) {
+					try {
+						delegate.close();
+					} finally {
+						closed = true;
+						nativeSourceLock.unlockRead(readStamp);
+					}
+				}
+			}
 		}
 
 		@Override
@@ -1671,6 +1912,22 @@ class LmdbSailStore implements SailStore {
 					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to count statements", e);
+				}
+			}
+		}
+
+		@Override
+		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			try {
+				return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				try {
+					logger.warn("Failed to check statements, retrying", e);
+					// try once more before giving up
+					Thread.yield();
+					return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to check statements", e);
 				}
 			}
 		}

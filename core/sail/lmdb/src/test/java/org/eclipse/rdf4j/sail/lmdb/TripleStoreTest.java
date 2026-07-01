@@ -167,6 +167,103 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void hasTriplesAllWildcardReflectsExplicitAndInferredStores() throws Exception {
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertFalse("Empty explicit store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
+					true));
+			assertFalse("Empty inferred store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
+					false));
+
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 4, true);
+			tripleStore.storeTriple(5, 6, 7, 8, false);
+			tripleStore.commit();
+
+			assertTrue("Explicit store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, true));
+			assertTrue("Inferred store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, false));
+		}
+	}
+
+	@Test
+	public void hasTriplesExactQuadMatchesStoredStatementOnly() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 44, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Stored exact quad should exist", tripleStore.hasTriples(txn, 11, 22, 33, 44, true));
+			assertFalse("Different subject should not exist", tripleStore.hasTriples(txn, 12, 22, 33, 44, true));
+			assertFalse("Explicit lookup should not see inferred DB", tripleStore.hasTriples(txn, 11, 22, 33, 44,
+					false));
+		}
+	}
+
+	@Test
+	public void hasTriplesExactNullContextMatchesStoredStatement() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 0, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Null context is an exact context value", tripleStore.hasTriples(txn, 11, 22, 33, 0, true));
+			assertFalse("Non-null context should not match null context", tripleStore.hasTriples(txn, 11, 22, 33, 44,
+					true));
+		}
+	}
+
+	@Test
+	public void hasTriplesPartialPatternsMatchFirstStoredStatement() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 44, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Predicate-only pattern should match", tripleStore.hasTriples(txn, -1, 22, -1, -1, true));
+			assertTrue("Object-only pattern should match", tripleStore.hasTriples(txn, -1, -1, 33, -1, true));
+			assertTrue("Context-only pattern should match", tripleStore.hasTriples(txn, -1, -1, -1, 44, true));
+			assertFalse("Missing predicate should not match", tripleStore.hasTriples(txn, -1, 23, -1, -1, true));
+		}
+	}
+
+	@Test
+	public void hasTriplesPartialPatternsMatchWithSingleSpoIndex() throws Exception {
+		File singleIndexDir = new File(dataDir, "single-spo-index-store");
+		singleIndexDir.mkdirs();
+		try (TripleStore singleIndexStore = new TripleStore(singleIndexDir, new LmdbStoreConfig("spoc"), null)) {
+			singleIndexStore.startTransaction();
+			singleIndexStore.storeTriple(11, 22, 33, 44, true);
+			singleIndexStore.commit();
+
+			try (Txn txn = singleIndexStore.getTxnManager().createReadTxn()) {
+				assertTrue("Predicate-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						22, -1, -1, true));
+				assertTrue("Object-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						-1, 33, -1, true));
+				assertTrue("Context-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						-1, -1, 44, true));
+			}
+		}
+	}
+
+	@Test
+	public void hasTriplesTreatsZeroSubjectPredicateAndObjectAsUnboundButContextAsExact() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 44, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Subject 0 should keep existing unbound-like semantics", tripleStore.hasTriples(txn, 0, 22,
+					33, 44, true));
+			assertTrue("Predicate 0 should keep existing unbound-like semantics", tripleStore.hasTriples(txn, 11, 0,
+					33, 44, true));
+			assertTrue("Object 0 should keep existing unbound-like semantics", tripleStore.hasTriples(txn, 11, 22, 0,
+					44, true));
+			assertFalse("Context 0 should remain an exact null-context lookup", tripleStore.hasTriples(txn, 11, 22,
+					33, 0, true));
+		}
+	}
+
+	@Test
 	public void testLeadingFieldSortPreservesPriorOrderWithinGroups() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
 				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);

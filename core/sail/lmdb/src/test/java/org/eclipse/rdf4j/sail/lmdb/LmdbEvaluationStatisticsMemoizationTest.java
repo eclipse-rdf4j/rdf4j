@@ -1216,17 +1216,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(10 * 1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(60 * 1000);
 		}
-		assertInstanceOf(LmdbEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
-				"Expected ready sketches to select the LMDB optimizer pipeline");
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
+				"Expected automatic stores to keep the native evaluation strategy factory");
 	}
 
 	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {

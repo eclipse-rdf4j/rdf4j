@@ -40,7 +40,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 512;
+	public static final int VALUE_CACHE_SIZE = 256 * 1024;
 
 	/**
 	 * The default value id cache size.

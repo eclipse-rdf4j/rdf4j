@@ -87,6 +87,41 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void acceptedPlannerOrderKeepsSingletonValuesBeforeIndependentExactLookup() {
+		BindingSetAssignment targetValue = values("target", "target-1");
+		StatementPattern targetLookup = new StatementPattern(new Var("target"),
+				new Var("_const_targetPredicate", VF.createIRI("urn:targetPredicate")),
+				new Var("_const_targetResult", VF.createLiteral("target-result")));
+		StatementPattern independentLookup = new StatementPattern(
+				new Var("_const_independentSubject", VF.createIRI("urn:independentSubject")),
+				new Var("_const_independentPredicate", VF.createIRI("urn:independentPredicate")),
+				new Var("_const_independentObject", VF.createLiteral("independent-result")));
+		QueryRoot root = new QueryRoot(new Join(targetValue, new Join(targetLookup, independentLookup)));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(targetValue, targetLookup,
+				independentLookup));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(targetValue, targetLookup, independentLookup), joinArgs(root.getArg()));
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
+	void singletonValuesAreHoistedEvenWhenAcceptedPlannerOrderLeavesThemLast() {
+		BindingSetAssignment limitValue = values("limit", "55");
+		StatementPattern patientType = statementPattern("patient", "type", "patientType");
+		StatementPattern patientEncounter = statementPattern("patient", "hasEncounter", "encounter");
+		QueryRoot root = new QueryRoot(new Join(patientType, new Join(patientEncounter, limitValue)));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(patientType, patientEncounter,
+				limitValue));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(limitValue, patientType, patientEncounter), joinArgs(root.getArg()));
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
 	void keepsLateralBeforeFollowingJoinArgument() {
 		StatementPattern left = statementPattern("s", "pLeft", "o");
 		StatementPattern right = statementPattern("s", "pLateral", "l");

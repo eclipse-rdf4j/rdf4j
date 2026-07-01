@@ -29,6 +29,10 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +40,27 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@Test
+	public void closeDoesNotUseTransactionReadLockAsReaderBarrier() throws Exception {
+		TxnManager txnManager = new TxnManager(0, TxnManager.Mode.NONE);
+		TxnManager.Txn txn = txnManager.new Txn(42L);
+		long readStamp = txn.lockManager().readLock();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> closeTask = executor.submit(txn::close);
+
+		try {
+			closeTask.get(1, TimeUnit.SECONDS);
+		} finally {
+			txn.lockManager().unlockRead(readStamp);
+			if (!closeTask.isDone()) {
+				closeTask.get(5, TimeUnit.SECONDS);
+			}
+			executor.shutdownNow();
+		}
+
+		assertEquals(0L, txn.get(), "Txn.close() should not use the transaction read lock as its reader barrier");
+	}
 
 	@Test
 	public void readersFullRetryDoesNotAbortTrackedInactiveTxn(@TempDir Path dataDir) throws Exception {
@@ -167,4 +192,5 @@ public class TxnManagerTest {
 			return pp.get(0);
 		}
 	}
+
 }

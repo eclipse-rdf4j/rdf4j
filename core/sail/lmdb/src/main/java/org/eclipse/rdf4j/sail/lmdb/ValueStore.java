@@ -157,12 +157,28 @@ class ValueStore extends AbstractValueFactory {
 	 * Lock for clearing caches when values are removed.
 	 */
 	private final StampedLock revisionLock = new StampedLock();
+	private static final int VALUE_CACHE_WAYS = 4;
+	private static final int VALUE_CACHE_WAY_MASK = VALUE_CACHE_WAYS - 1;
+	private static final int VALUE_CACHE_WAY_SHIFT = 2;
+
 	/**
-	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
+	 * A small set-associative cache containing values stored by their ID.
+	 * <p>
+	 * The old direct-mapped cache lost hot values whenever IDs had the same low bits, which is common for the encoded
+	 * RDF4J LMDB IDs. The query benchmark spends a large amount of time resolving repeated value IDs, so keeping a few
+	 * candidates per hash bucket is much more important than strict recency ordering.
 	 */
 	private final LmdbValue[] valueCache;
 	private final long[] valueCacheId;
-	private final int valueCacheMask;
+	private final int valueCacheSetMask;
+
+	/**
+	 * Per-revision in-memory cache for RDF hash codes by value ID. This lets repeated DISTINCT/GROUP BY hashing reuse a
+	 * hash that was already computed once without resolving the value or consulting the optional on-disk hash file.
+	 */
+	private final long[] valueHashCacheId;
+	private final int[] valueHashCacheHash;
+	private final int valueHashCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -256,15 +272,23 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
-		open();
 
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
+		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
+				/ VALUE_CACHE_WAYS));
+		valueCache = new LmdbValue[cacheSets * VALUE_CACHE_WAYS];
+		valueCacheId = new long[valueCache.length];
+		valueCacheSetMask = cacheSets - 1;
+
+		int hashCacheSize = nextPowerOfTwo(Math.max(1024, config.getValueCacheSize()));
+		valueHashCacheId = new long[hashCacheSize];
+		valueHashCacheHash = new int[hashCacheSize];
+		valueHashCacheMask = hashCacheSize - 1;
+
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+
+		open();
 		setNewRevision();
 
 		// read maximum id from store
@@ -665,18 +689,30 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	int getStoredHash(long id) {
+		int cachedHash = getCachedStoredHash(id);
+		if (cachedHash != 0) {
+			return cachedHash;
+		}
+
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
 			pendingHash = pendingHashUpdates.get(id);
 		}
 		if (pendingHash != null) {
+			if (pendingHash != 0) {
+				cacheStoredHash(id, pendingHash);
+			}
 			return pendingHash;
 		}
 		if (hashFile == null) {
 			return 0;
 		}
 		try {
-			return hashFile.get(id);
+			int storedHash = hashFile.get(id);
+			if (storedHash != 0) {
+				cacheStoredHash(id, storedHash);
+			}
+			return storedHash;
 		} catch (IOException e) {
 			resetHashFileQuietly("read", e);
 			return 0;
@@ -685,6 +721,10 @@ class ValueStore extends AbstractValueFactory {
 
 	void storeHash(long id, int hash) {
 		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+		cacheStoredHash(id, hash);
+		if (hashFile == null) {
 			return;
 		}
 		if (writeTxn != 0) {
@@ -705,6 +745,10 @@ class ValueStore extends AbstractValueFactory {
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
+		clearCachedStoredHash(id);
+		if (hashFile == null) {
+			return;
+		}
 		if (writeTxn != 0) {
 			synchronized (pendingHashUpdates) {
 				pendingHashUpdates.put(id, 0);
@@ -714,18 +758,50 @@ class ValueStore extends AbstractValueFactory {
 		writeHashNow(id, 0);
 	}
 
+	private int getCachedStoredHash(long id) {
+		int idx = spreadValueId(id) & valueHashCacheMask;
+		return valueHashCacheId[idx] == id ? valueHashCacheHash[idx] : 0;
+	}
+
+	private void cacheStoredHash(long id, int hash) {
+		int idx = spreadValueId(id) & valueHashCacheMask;
+		if (hash == 0) {
+			if (valueHashCacheId[idx] == id) {
+				valueHashCacheId[idx] = 0;
+				valueHashCacheHash[idx] = 0;
+			}
+			return;
+		}
+		valueHashCacheId[idx] = id;
+		valueHashCacheHash[idx] = hash;
+	}
+
+	private void clearCachedStoredHash(long id) {
+		int idx = spreadValueId(id) & valueHashCacheMask;
+		if (valueHashCacheId[idx] == id) {
+			valueHashCacheId[idx] = 0;
+			valueHashCacheHash[idx] = 0;
+		}
+	}
+
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
-			keyData.mv_data(id2data(idBuffer(stack), id).flip());
+			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
-				return valueBytes;
+				return copyValueBytes(valueData);
 			}
 			return null;
 		});
+	}
+
+	private static byte[] copyValueBytes(MDBVal valueData) {
+		int length = LmdbUtil.mdbValSize(valueData);
+		byte[] valueBytes = new byte[length];
+		long address = LmdbUtil.mdbValDataAddress(valueData);
+		LmdbUtil.copyMemoryToByteArray(address, valueBytes, length);
+		return valueBytes;
 	}
 
 	/**
@@ -737,18 +813,19 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		int idx = (int) (id & valueCacheMask);
+		int base = valueCacheBase(id);
 
 		// Faster to read the long from an array than calling LmdbValue#getInternalID() on the value object. There may
 		// be race conditions, especially if the cache is small and has a high churn rate, but we can live with that
 		// since we anyway check the ID on the value object later on.
-		if (valueCacheId[idx] != id) {
-			return null;
-		}
-
-		LmdbValue value = valueCache[idx];
-		if (value != null && value.getInternalID() == id) {
-			return value;
+		for (int i = 0; i < VALUE_CACHE_WAYS; i++) {
+			int idx = base + i;
+			if (valueCacheId[idx] == id) {
+				LmdbValue value = valueCache[idx];
+				if (value != null && value.getInternalID() == id) {
+					return value;
+				}
+			}
 		}
 		return null;
 	}
@@ -762,9 +839,44 @@ class ValueStore extends AbstractValueFactory {
 	 * @param value ID of a value object
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		int idx = (int) (id & valueCacheMask);
-		valueCacheId[idx] = id;
-		valueCache[idx] = value;
+		cacheValueIn(valueCache, valueCacheId, valueCacheSetMask, id, value);
+	}
+
+	private void cacheValueIn(LmdbValue[] cache, long[] cacheId, int setMask, long id, LmdbValue value) {
+		if (value == null) {
+			return;
+		}
+
+		int base = (spreadValueId(id) & setMask) << VALUE_CACHE_WAY_SHIFT;
+		int emptySlot = -1;
+
+		for (int i = 0; i < VALUE_CACHE_WAYS; i++) {
+			int idx = base + i;
+			if (cacheId[idx] == id) {
+				cache[idx] = value;
+				return;
+			}
+			if (emptySlot < 0 && cache[idx] == null) {
+				emptySlot = idx;
+			}
+		}
+
+		int idx = emptySlot >= 0 ? emptySlot : base + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
+		cacheId[idx] = id;
+		cache[idx] = value;
+	}
+
+	private int valueCacheBase(long id) {
+		return (spreadValueId(id) & valueCacheSetMask) << VALUE_CACHE_WAY_SHIFT;
+	}
+
+	private static int spreadValueId(long id) {
+		long h = id ^ (id >>> 32);
+		h ^= h >>> 20;
+		h ^= h >>> 12;
+		h ^= h >>> 7;
+		h ^= h >>> 4;
+		return (int) h;
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -785,7 +897,9 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbValue getLazyValue(long id) throws IOException {
 		long stamp = revisionLock.readLock();
 		try {
-			// Check value cache
+			// Do not use a store-global lazy-value cache here. The query benchmark showed that a global hash
+			// probe on every statement term costs more CPU than it saves on high-cardinality scans. Iterators
+			// that see local repetition keep their own tiny last-value cache instead.
 			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
@@ -1886,6 +2000,8 @@ class ValueStore extends AbstractValueFactory {
 	protected void clearCaches() {
 		Arrays.fill(valueCache, null);
 		Arrays.fill(valueCacheId, 0);
+		Arrays.fill(valueHashCacheId, 0);
+		Arrays.fill(valueHashCacheHash, 0);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();

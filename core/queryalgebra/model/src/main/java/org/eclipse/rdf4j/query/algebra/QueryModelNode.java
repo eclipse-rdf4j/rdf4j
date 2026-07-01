@@ -268,6 +268,13 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	}
 
 	@Experimental
+	default long incrementLongMetricActual(String metricName) {
+		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
+		setLongMetricActual(metricName, next);
+		return next;
+	}
+
+	@Experimental
 	default Map<String, Double> getDoubleMetricsActual() {
 		return Collections.emptyMap();
 	}

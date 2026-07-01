@@ -43,8 +43,10 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -57,7 +59,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -82,14 +83,21 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+	void automaticLmdbStoreUsesNativeEvaluationWithStandardPipelineUntilSketchesAreReady() throws Exception {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createEvaluationStrategy(factory);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 	}
 
 	@Test
-	void automaticLmdbStoreSwitchesToLmdbEvaluationStrategyFactoryAfterSketchesAreReady(@TempDir File dataDir)
+	void automaticLmdbStoreUsesNativeEvaluationWithLmdbPipelineAfterSketchesAreReady(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
@@ -102,14 +110,22 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(estimator.isReadyNonBlocking());
 			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
-			assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+			EvaluationStrategy strategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> optimizers = optimizers(strategy);
+
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+			assertTrue(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+			assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		} finally {
 			store.shutDown();
 		}
 	}
 
 	@Test
-	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
+	void lowHeapAutomaticStoreUsesNativeFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
 		ProcessResult result = runLowHeapProbe(dataDir);
 
 		assertEquals(0, result.exitCode, result.output);
@@ -117,13 +133,18 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void longLivedConnectionsChooseCurrentAutomaticFactoryPerQueryCreation(@TempDir File dataDir) throws Exception {
+	void longLivedConnectionsChooseCurrentAutomaticPipelinePerQueryCreation(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			EvaluationStrategy initialStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> initialOptimizers = optimizers(initialStrategy);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, initialStrategy);
+			assertTrue(initialOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertFalse(initialOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -131,7 +152,12 @@ class LmdbOptimizerPipelineTest {
 			estimator.rebuild();
 
 			assertTrue(estimator.isReadyNonBlocking());
-			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+			EvaluationStrategy readyStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> readyOptimizers = optimizers(readyStrategy);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, readyStrategy);
+			assertTrue(readyOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+			assertFalse(readyOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		} finally {
 			store.shutDown();
 		}
@@ -151,6 +177,8 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(estimator.isReadyNonBlocking());
 			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
+			assertTrue(optimizers(createEvaluationStrategy(store.getEvaluationStrategyFactory(), store.getBackingStore()
+					.getEvaluationStatistics())).isEmpty());
 		} finally {
 			store.shutDown();
 		}
@@ -163,7 +191,7 @@ class LmdbOptimizerPipelineTest {
 		LmdbStore store = new LmdbStore(config);
 
 		assertInstanceOf(StrictEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
-		assertFalse(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory);
+		assertFalse(store.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory);
 	}
 
 	@Test
@@ -243,6 +271,53 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbSketchPipelineKeepsUnusedSingletonValuesAtJoinPrefix() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		List<TupleExpr> joinArgs = joinArgsWithBindingSetAssignment(tupleExpr);
+		assertFalse(joinArgs.isEmpty(), "Expected optimized query to retain VALUES in a join segment:\n" + tupleExpr);
+		assertInstanceOf(BindingSetAssignment.class, joinArgs.getFirst(),
+				"Unused singleton VALUES should stay as high as possible:\n" + tupleExpr);
+	}
+
+	@Test
+	void readyLmdbSketchPipelineKeepsUnusedSingletonValuesAtJoinPrefix(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		store.init();
+		try {
+			addMedicalQueryShape(store);
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking());
+
+			TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
+			EvaluationStrategy strategy = createEvaluationStrategy(store.getEvaluationStrategyFactory(), store
+					.getBackingStore()
+					.getEvaluationStatistics());
+			for (QueryOptimizer optimizer : optimizers(strategy)) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+
+			List<TupleExpr> joinArgs = joinArgsWithBindingSetAssignment(tupleExpr);
+			assertFalse(joinArgs.isEmpty(),
+					"Expected optimized query to retain VALUES in a join segment:\n" + tupleExpr);
+			assertInstanceOf(BindingSetAssignment.class, joinArgs.getFirst(),
+					"Unused singleton VALUES should stay as high as possible with ready sketches:\n" + tupleExpr);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void standardPipelineStillUsesLegacyFilterAndJoinOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -256,6 +331,13 @@ class LmdbOptimizerPipelineTest {
 	private static List<QueryOptimizer> optimizers(Iterable<QueryOptimizer> optimizers) {
 		return StreamSupport.stream(optimizers.spliterator(), false)
 				.collect(Collectors.toList());
+	}
+
+	private static List<QueryOptimizer> optimizers(EvaluationStrategy strategy) throws Exception {
+		Field field = DefaultEvaluationStrategy.class.getDeclaredField("pipeline");
+		field.setAccessible(true);
+		QueryOptimizerPipeline pipeline = (QueryOptimizerPipeline) field.get(strategy);
+		return optimizers(pipeline.getOptimizers());
 	}
 
 	private static int indexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
@@ -297,6 +379,37 @@ class LmdbOptimizerPipelineTest {
 		return found[0];
 	}
 
+	private static List<TupleExpr> joinArgsWithBindingSetAssignment(TupleExpr tupleExpr) {
+		List<TupleExpr>[] found = new List[] { List.of() };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Join node) {
+				List<TupleExpr> args = joinArgs(node);
+				if (args.size() > found[0].size() && args.stream().anyMatch(BindingSetAssignment.class::isInstance)) {
+					found[0] = args;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+			return;
+		}
+		args.add(tupleExpr);
+	}
+
 	private static ProcessResult runLowHeapProbe(File dataDir) throws IOException, InterruptedException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		List<String> command = new ArrayList<>();
@@ -329,6 +442,27 @@ class LmdbOptimizerPipelineTest {
 		}
 	}
 
+	private static void addMedicalQueryShape(LmdbStore store) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI patientClass = vf.createIRI("http://example.com/theme/medical/Patient");
+		IRI hasEncounter = vf.createIRI("http://example.com/theme/medical/hasEncounter");
+		IRI hasObservation = vf.createIRI("http://example.com/theme/medical/hasObservation");
+		IRI value = vf.createIRI("http://example.com/theme/medical/value");
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 8; i++) {
+				Resource patient = vf.createIRI("urn:patient:" + i);
+				Resource encounter = vf.createIRI("urn:encounter:" + i);
+				Resource observation = vf.createIRI("urn:observation:" + i);
+				connection.addStatement(patient, org.eclipse.rdf4j.model.vocabulary.RDF.TYPE, patientClass);
+				connection.addStatement(patient, hasEncounter, encounter);
+				connection.addStatement(encounter, hasObservation, observation);
+				connection.addStatement(observation, value, vf.createLiteral(50 + (10 * (i % 3))));
+			}
+			connection.commit();
+		}
+	}
+
 	private static EvaluationStrategyFactory capturedEvaluationStrategyFactory(NotifyingSailConnection connection)
 			throws Exception {
 		Field field = SailSourceConnection.class.getDeclaredField("evalStratFactory");
@@ -337,7 +471,12 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
-		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
+		return createEvaluationStrategy(factory, new EvaluationStatistics());
+	}
+
+	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory,
+			EvaluationStatistics evaluationStatistics) {
+		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), evaluationStatistics);
 	}
 
 	public static final class LowHeapSketchGateProbe {
@@ -357,13 +496,25 @@ class LmdbOptimizerPipelineTest {
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 					throw new AssertionError("Low heap should not allocate the sketch estimator");
 				}
-				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
-					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				if (!(store.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the native evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 				if (statistics.supportsJoinEstimation()) {
 					throw new AssertionError("Low heap should not expose sketch join estimation");
+				}
+				EvaluationStrategy strategy = createEvaluationStrategy(store.getEvaluationStrategyFactory(),
+						statistics);
+				if (!(strategy instanceof LmdbNativeEvaluationStrategy)) {
+					throw new AssertionError("Low heap should create the native evaluation strategy");
+				}
+				List<QueryOptimizer> optimizers = optimizers(strategy);
+				if (optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance)) {
+					throw new AssertionError("Low heap should use the standard optimizer pipeline");
+				}
+				if (optimizers.stream().noneMatch(QueryJoinOptimizer.class::isInstance)) {
+					throw new AssertionError("Low heap should retain the standard join optimizer");
 				}
 				if (statistics.getCardinality(firstStatementPattern(predicate)) <= 0.0d) {
 					throw new AssertionError("Low heap should retain page-walking statement cardinality");
@@ -464,6 +615,19 @@ class LmdbOptimizerPipelineTest {
 			  FILTER EXISTS {
 			    ?component <http://example.com/theme/engineering/dependsOn> ?dep .
 			  }
+			}
+			""";
+
+	private static final String MEDICAL_Q5_UNUSED_LIMIT = """
+			PREFIX med: <http://example.com/theme/medical/>
+			PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+			SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
+			  VALUES ?limit { 55 }
+			  ?patient a med:Patient ; med:hasEncounter ?enc .
+			  ?enc med:hasObservation ?obs .
+			  ?obs med:value ?value .
+			  FILTER(?value IN (50, 60, 70))
+			  FILTER NOT EXISTS { ?enc med:hasCondition ?cond . }
 			}
 			""";
 

@@ -42,6 +42,14 @@ class UnionSailDataset implements SailDataset {
 		this.dataset2 = dataset2;
 	}
 
+	SailDataset getLeftDataset() {
+		return dataset1;
+	}
+
+	SailDataset getRightDataset() {
+		return dataset2;
+	}
+
 	/**
 	 * Creates a new {@link SailDataset} that includes both the provided {@link SailDataset}s.
 	 */
@@ -150,6 +158,12 @@ class UnionSailDataset implements SailDataset {
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		return dataset1.getStatementCount(subj, pred, obj, contexts)
 				+ dataset2.getStatementCount(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return dataset1.hasStatements(subj, pred, obj, contexts)
+				|| dataset2.hasStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
