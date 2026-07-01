@@ -415,6 +415,8 @@ public class HttpCompressionFilter implements Filter {
 		private OutputStream compressedOutputStream;
 		private boolean compressedOutputFinished;
 		private boolean compressionAborted;
+		private boolean outputDiscarded;
+		private int outputGeneration;
 		private int status = SC_OK;
 
 		CompressedHttpServletResponseWrapper(HttpServletResponse response, HttpCompressionEncoding contentEncoding,
@@ -476,6 +478,20 @@ public class HttpCompressionFilter implements Filter {
 		}
 
 		@Override
+		public void setIntHeader(String name, int value) {
+			if (contentEncoding == null || !isHeader(name, CONTENT_LENGTH)) {
+				super.setIntHeader(name, value);
+			}
+		}
+
+		@Override
+		public void addIntHeader(String name, int value) {
+			if (contentEncoding == null || !isHeader(name, CONTENT_LENGTH)) {
+				super.addIntHeader(name, value);
+			}
+		}
+
+		@Override
 		public void setStatus(int sc) {
 			status = sc;
 			super.setStatus(sc);
@@ -483,7 +499,7 @@ public class HttpCompressionFilter implements Filter {
 
 		@Override
 		public void sendError(int sc) throws IOException {
-			abortCompression();
+			discardCurrentOutput();
 			resetResponseIfPossible();
 			status = sc;
 			super.sendError(sc);
@@ -491,7 +507,7 @@ public class HttpCompressionFilter implements Filter {
 
 		@Override
 		public void sendError(int sc, String msg) throws IOException {
-			abortCompression();
+			discardCurrentOutput();
 			resetResponseIfPossible();
 			status = sc;
 			super.sendError(sc, msg);
@@ -499,7 +515,7 @@ public class HttpCompressionFilter implements Filter {
 
 		@Override
 		public void sendRedirect(String location) throws IOException {
-			abortCompression();
+			discardCurrentOutput();
 			resetResponseIfPossible();
 			status = SC_FOUND;
 			super.sendRedirect(location);
@@ -507,13 +523,13 @@ public class HttpCompressionFilter implements Filter {
 
 		@Override
 		public void reset() {
-			abortCompression();
+			resetCurrentOutput();
 			status = SC_OK;
 			super.reset();
 		}
 
 		void finish() throws IOException {
-			if (writer != null) {
+			if (writer != null && !outputDiscarded) {
 				writer.flush();
 			}
 			finishCompressedOutput();
@@ -524,29 +540,42 @@ public class HttpCompressionFilter implements Filter {
 
 		private ServletOutputStream createOutputStream() throws IOException {
 			ServletOutputStream delegate = getResponse().getOutputStream();
+			int generation = outputGeneration;
 			return new ServletOutputStream() {
 				private OutputStream target;
 				private boolean compressedTarget;
 
 				@Override
 				public void write(int b) throws IOException {
+					if (isDiscarded()) {
+						return;
+					}
 					target().write(b);
 				}
 
 				@Override
 				public void write(byte[] b, int off, int len) throws IOException {
+					if (isDiscarded()) {
+						return;
+					}
 					target().write(b, off, len);
 				}
 
 				@Override
 				public void flush() throws IOException {
-					if (target != null && !(compressionAborted && compressedTarget) && !compressedOutputFinished) {
+					if (!isDiscarded()
+							&& target != null
+							&& !(compressionAborted && compressedTarget)
+							&& !compressedOutputFinished) {
 						target.flush();
 					}
 				}
 
 				@Override
 				public void close() throws IOException {
+					if (isDiscarded()) {
+						return;
+					}
 					if (target == null) {
 						return;
 					}
@@ -585,6 +614,10 @@ public class HttpCompressionFilter implements Filter {
 					}
 					return target;
 				}
+
+				private boolean isDiscarded() {
+					return outputDiscarded || generation != outputGeneration;
+				}
 			};
 		}
 
@@ -607,9 +640,23 @@ public class HttpCompressionFilter implements Filter {
 			}
 		}
 
-		private void abortCompression() {
+		private void discardCurrentOutput() {
+			outputGeneration++;
+			outputStream = null;
+			writer = null;
+			outputDiscarded = true;
 			compressionAborted = true;
 			compressedOutputFinished = true;
+			compressedOutputStream = null;
+		}
+
+		private void resetCurrentOutput() {
+			outputGeneration++;
+			outputStream = null;
+			writer = null;
+			outputDiscarded = false;
+			compressionAborted = false;
+			compressedOutputFinished = false;
 			compressedOutputStream = null;
 		}
 

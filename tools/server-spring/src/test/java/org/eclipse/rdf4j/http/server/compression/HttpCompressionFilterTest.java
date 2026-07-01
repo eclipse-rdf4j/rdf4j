@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.http.server.compression;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import org.junit.jupiter.api.Test;
@@ -111,6 +113,64 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
+	void browserHtmlAfterBufferedRedirectKeepsTitleReadable() throws Exception {
+		String browserAcceptEncoding = "gzip, deflate, br, zstd";
+		MockHttpServletRequest redirectRequest = new MockHttpServletRequest("GET", "/rdf4j-server/");
+		redirectRequest.addHeader("Accept-Encoding", browserAcceptEncoding);
+		MockHttpServletResponse redirectResponse = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(redirectRequest, redirectResponse, (servletRequest, servletResponse) -> {
+			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+			httpResponse.setContentType("text/html;charset=UTF-8");
+			httpResponse.getWriter().write("\n");
+			httpResponse.sendRedirect("/rdf4j-server/home/overview.view");
+		});
+
+		assertThat(redirectResponse.getStatus()).isEqualTo(HttpServletResponse.SC_FOUND);
+		assertThat(redirectResponse.getHeader("Content-Encoding")).isNull();
+		assertThat(redirectResponse.getContentAsByteArray()).isEmpty();
+
+		MockHttpServletRequest htmlRequest = new MockHttpServletRequest("GET", "/rdf4j-server/home/overview.view");
+		htmlRequest.addHeader("Accept-Encoding", browserAcceptEncoding);
+		MockHttpServletResponse htmlResponse = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(htmlRequest, htmlResponse, (servletRequest, servletResponse) -> {
+			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+			httpResponse.setContentType("text/html;charset=UTF-8");
+			httpResponse.getWriter()
+					.write("<!DOCTYPE html><html><head><title>RDF4J Server - Home</title></head><body></body></html>");
+		});
+
+		assertThat(htmlResponse.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(htmlResponse.getHeader("Content-Encoding")).isEqualTo("gzip");
+		assertThat(gunzip(htmlResponse.getContentAsByteArray()))
+				.contains("<title>RDF4J Server - Home</title>");
+	}
+
+	@Test
+	void browserHtmlIgnoresContentLengthIntHeaderWhenCompressing() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rdf4j-server/home/overview.view");
+		request.addHeader("Accept-Encoding", "gzip, deflate, br, zstd");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
+
+			httpResponse.setIntHeader("Content-Length", 0);
+			httpResponse.setContentType("text/html;charset=UTF-8");
+			httpResponse.getWriter()
+					.write("<!DOCTYPE html><html><head><title>RDF4J Server - Home</title></head><body></body></html>");
+		});
+
+		assertThat(response.getHeader("Content-Length")).isNull();
+		assertThat(response.getHeader("Content-Encoding")).isEqualTo("gzip");
+		assertThat(gunzip(response.getContentAsByteArray()))
+				.contains("<title>RDF4J Server - Home</title>");
+	}
+
+	@Test
 	void rejectsUnsupportedRequestContentEncoding() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rdf4j-server/repositories/mem");
 		request.addHeader("Content-Encoding", "compress");
@@ -149,5 +209,11 @@ class HttpCompressionFilterTest {
 			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
 		}
 		return buffer.toByteArray();
+	}
+
+	private static String gunzip(byte[] body) throws IOException {
+		try (GZIPInputStream inputStream = new GZIPInputStream(new ByteArrayInputStream(body))) {
+			return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+		}
 	}
 }
