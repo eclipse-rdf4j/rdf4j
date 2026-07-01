@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -126,6 +127,7 @@ public interface CascadesCostModel {
 		private final EvaluationStatistics statistics;
 		private final JoinFactorCostModel factorCostModel;
 		private final RdfStatisticsProvider rdfStatisticsProvider;
+		private final LeoSurfaceProvider leoSurfaceProvider;
 		private final BindingUniverse bindingUniverse = BindingUniverse.create();
 		private final IdentityHashMap<TupleExpr, LogicalProperties> logicalPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, String> logicalFingerprintCache = new IdentityHashMap<>();
@@ -144,6 +146,23 @@ public interface CascadesCostModel {
 			this.factorCostModel = factorCostModel;
 			this.rdfStatisticsProvider = rdfStatisticsProvider == null ? RdfStatisticsProvider.EMPTY
 					: rdfStatisticsProvider;
+			this.leoSurfaceProvider = leoSurfaceProvider(this.statistics, this.rdfStatisticsProvider);
+		}
+
+		@Override
+		public LeoSurfaceProvider leoSurfaceProvider() {
+			return leoSurfaceProvider;
+		}
+
+		private static LeoSurfaceProvider leoSurfaceProvider(EvaluationStatistics statistics,
+				RdfStatisticsProvider rdfStatisticsProvider) {
+			if (rdfStatisticsProvider instanceof LeoSurfaceProvider provider) {
+				return provider;
+			}
+			if (statistics instanceof LeoSurfaceProvider provider) {
+				return provider;
+			}
+			return LeoSurfaceProvider.empty();
 		}
 
 		@Override
@@ -1970,6 +1989,9 @@ public interface CascadesCostModel {
 		private StatisticsEstimate applyFeedback(TupleExpr tupleExpr, StatisticsEstimate base) {
 			Optional<FeedbackCorrection> feedback = rdfStatisticsProvider.feedbackCorrection(tupleExpr, base);
 			if (feedback.isEmpty() || !feedback.get().trusted(FEEDBACK_CONFIDENCE_THRESHOLD)) {
+				feedback = leoFeedbackCorrection(tupleExpr, base);
+			}
+			if (feedback.isEmpty() || !feedback.get().trusted(FEEDBACK_CONFIDENCE_THRESHOLD)) {
 				return base;
 			}
 			EstimateVector vector = base.vector().applyFeedback(feedback.get(), FEEDBACK_CONFIDENCE_THRESHOLD);
@@ -1978,6 +2000,26 @@ public interface CascadesCostModel {
 							vector.source(), vector.metrics(), false);
 			return StatisticsEstimate.fromVector(vector, vector.source())
 					.withBag(bag);
+		}
+
+		private Optional<FeedbackCorrection> leoFeedbackCorrection(TupleExpr tupleExpr, StatisticsEstimate base) {
+			if (tupleExpr == null || base == null || leoSurfaceProvider == LeoSurfaceProvider.empty()) {
+				return Optional.empty();
+			}
+			try {
+				BindingShape shape = BindingShape.from(tupleExpr, bindingUniverse);
+				return leoSurfaceProvider.memoFeedback(tupleExpr, bindingUniverse, shape)
+						.bestEvidence()
+						.filter(evidence -> Double.isFinite(evidence.rows()) && evidence.rows() >= 0.0d)
+						.map(this::feedbackCorrection);
+			} catch (RuntimeException e) {
+				return Optional.empty();
+			}
+		}
+
+		private FeedbackCorrection feedbackCorrection(LeoEvidence evidence) {
+			return new FeedbackCorrection(evidence.rows(), evidence.workRows(), evidence.confidence(),
+					evidence.rowQErrorMax(), evidence.workQErrorMax(), evidence.source());
 		}
 
 		private double estimateJoinRows(StatisticsEstimate left, StatisticsEstimate right, Set<String> sharedVars) {

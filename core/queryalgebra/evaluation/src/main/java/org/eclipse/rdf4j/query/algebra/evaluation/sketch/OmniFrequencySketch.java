@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.omni.UpdateOmniSketch;
 final class OmniFrequencySketch implements FrequencySketch {
 
 	private static final int SERIAL_MAGIC = 0x4f46534b; // OFSK
-	private static final int SERIAL_VERSION = 1;
+	private static final int SERIAL_VERSION = 2;
 
 	private final UpdateOmniSketch sketch;
 	private final WeightedSupportSample supportSample;
@@ -137,7 +137,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 						new WeightedSupportSample(OmniSketch.heapify(bytes).getNominalEntries()));
 			}
 			int version = in.readInt();
-			if (version != SERIAL_VERSION) {
+			if (version < 1 || version > SERIAL_VERSION) {
 				throw new IOException("Unsupported OmniFrequencySketch payload version: " + version);
 			}
 			int sketchLength = in.readInt();
@@ -146,7 +146,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 			}
 			byte[] sketchPayload = new byte[sketchLength];
 			in.readFully(sketchPayload);
-			WeightedSupportSample supportSample = WeightedSupportSample.readFrom(in);
+			WeightedSupportSample supportSample = WeightedSupportSample.readFrom(in, version);
 			if (in.available() != 0) {
 				throw new IOException("OmniFrequencySketch payload has trailing bytes: " + in.available());
 			}
@@ -199,6 +199,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 		private long[] hashes;
 		private long[] counts;
 		private int sampleCount;
+		private boolean truncated;
 
 		private WeightedSupportSample(int maxSampleCount) {
 			this.maxSampleCount = maxSampleCount;
@@ -206,11 +207,13 @@ final class OmniFrequencySketch implements FrequencySketch {
 			this.counts = new long[hashes.length];
 		}
 
-		private WeightedSupportSample(int maxSampleCount, long[] hashes, long[] counts, int sampleCount) {
+		private WeightedSupportSample(int maxSampleCount, long[] hashes, long[] counts, int sampleCount,
+				boolean truncated) {
 			this.maxSampleCount = maxSampleCount;
 			this.hashes = hashes;
 			this.counts = counts;
 			this.sampleCount = sampleCount;
+			this.truncated = truncated;
 		}
 
 		private void addHashWithCount(long hash, long count) {
@@ -226,6 +229,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 				sampleCount++;
 				return;
 			}
+			truncated = true;
 			if (pos >= maxSampleCount) {
 				return;
 			}
@@ -233,7 +237,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 		}
 
 		private boolean isComplete() {
-			return sampleCount < maxSampleCount;
+			return !truncated;
 		}
 
 		private int sampleCount() {
@@ -290,21 +294,23 @@ final class OmniFrequencySketch implements FrequencySketch {
 		}
 
 		private int serializedBytes() {
-			return Integer.BYTES * 2 + sampleCount * Long.BYTES * 2;
+			return Integer.BYTES * 2 + Byte.BYTES + sampleCount * Long.BYTES * 2;
 		}
 
 		private void writeTo(DataOutputStream out) throws IOException {
 			out.writeInt(maxSampleCount);
 			out.writeInt(sampleCount);
+			out.writeBoolean(truncated);
 			for (int i = 0; i < sampleCount; i++) {
 				out.writeLong(hashes[i]);
 				out.writeLong(counts[i]);
 			}
 		}
 
-		private static WeightedSupportSample readFrom(DataInputStream in) throws IOException {
+		private static WeightedSupportSample readFrom(DataInputStream in, int version) throws IOException {
 			int capacity = in.readInt();
 			int sampleCount = in.readInt();
+			boolean truncated = version >= 2 ? in.readBoolean() : sampleCount >= capacity;
 			if (capacity <= 0 || sampleCount < 0 || sampleCount > capacity) {
 				throw new IOException("Invalid Omni support sample size: capacity=" + capacity + ", count="
 						+ sampleCount);
@@ -315,7 +321,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 				hashes[i] = in.readLong();
 				counts[i] = in.readLong();
 			}
-			return new WeightedSupportSample(capacity, hashes, counts, sampleCount);
+			return new WeightedSupportSample(capacity, hashes, counts, sampleCount, truncated);
 		}
 
 		private void ensureCapacity(int required) {

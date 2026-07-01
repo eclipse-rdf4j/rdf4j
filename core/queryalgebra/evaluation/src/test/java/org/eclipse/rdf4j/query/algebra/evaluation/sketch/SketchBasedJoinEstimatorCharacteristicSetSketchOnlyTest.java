@@ -60,6 +60,7 @@ class SketchBasedJoinEstimatorCharacteristicSetSketchOnlyTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(256)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)

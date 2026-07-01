@@ -128,14 +128,22 @@ import org.slf4j.LoggerFactory;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 /**
- * FastAGMS frequency-sketch selectivity and join-size estimator for RDF4J.
+ * Sketch-backed selectivity and join-size estimator for RDF4J.
+ *
+ * <p>
+ * The default runtime strategy is the OMNI join estimator. FastAGMS and count-min variants are retained as
+ * compatibility/baseline strategies. Legacy {@code tuple} and {@code joinsketch} configuration values are accepted as
+ * aliases but are mapped to the retained count-min-dual runtime path.
+ * </p>
  *
  * <p>
  * Features:
  * <ul>
- * <li>FastAGMS frequency summaries over S, P, O, C singles, component degree sketches, and all six pairs.</li>
+ * <li>OMNI witness sketches for statement, subject-star, tuple-surface, and edge-surface estimates.</li>
+ * <li>Legacy FastAGMS/count-min summaries over S, P, O, C singles, component degree sketches, and pairs.</li>
  * <li>Synchronized reads sharing buffer locks; double‑buffered rebuilds.</li>
- * <li>Incremental {@code addStatement} / {@code deleteStatement} with signed multiplicity summaries.</li>
+ * <li>Incremental {@code addStatement}; delete handling is exact for legacy summaries and rebuild-required for
+ * OMNI.</li>
  * <li>Configurable via {@link Config} and system properties (see below).</li>
  * </ul>
  * </p>
@@ -244,7 +252,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public enum SketchStrategy {
 		FAST_AGMS("fastagms"),
+		/**
+		 * @deprecated legacy configuration alias; runtime selection maps this to {@link #COUNT_MIN_DUAL}.
+		 */
+		@Deprecated
 		TUPLE("tuple"),
+		/**
+		 * @deprecated legacy configuration alias; runtime selection maps this to {@link #COUNT_MIN_DUAL}.
+		 */
+		@Deprecated
 		JOIN_SKETCH("joinsketch"),
 		OMNI("omni"),
 		COUNT_MIN("countmin"),
@@ -2269,7 +2285,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return false;
 		}
 		if (state.sketchStrategy == SketchStrategy.OMNI) {
-			return state.omniJoinEstimator != null && state.omniJoinEstimator.hasIndexedData();
+			return state.omniJoinEstimator != null
+					&& state.omniJoinEstimator.hasIndexedData()
+					&& !state.omniJoinEstimatorHasDeletes;
 		}
 		byte slot = slotByte(slotOf(state));
 		return findReadinessSketchSentinels(state, slot) != null;
@@ -3092,6 +3110,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		clearEstimateCacheIfPopulated();
 		recordStoreMutationMillis();
 		approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, additions, deletions));
+		if (sketchStrategy == SketchStrategy.OMNI && deletions > 0L) {
+			markOmniEstimatorHasDeletes(bufA);
+			markOmniEstimatorHasDeletes(bufB);
+			clearPositiveReadinessCache();
+			invalidatePersistedSketchSnapshotAfterOmniDelete();
+		}
 		markRebuildRequired();
 		notifyReadyWaiters();
 	}
@@ -3100,6 +3124,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Objects.requireNonNull(st);
 		clearEstimateCacheIfPopulated();
 		recordStoreMutationMillis();
+		if (sketchStrategy == SketchStrategy.OMNI) {
+			markOmniDeleteRequiresRebuild(1L);
+			return;
+		}
 		if (!isReadyForIncrementalUpdates()) {
 			recordStoreSizeDelta(0L, 1L);
 			return;
@@ -3117,6 +3145,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		clearEstimateCacheIfPopulated();
 		recordStoreMutationMillis();
+		if (sketchStrategy == SketchStrategy.OMNI) {
+			markOmniDeleteRequiresRebuild(statements.size());
+			return;
+		}
 		if (!isReadyForIncrementalUpdates()) {
 			recordStoreSizeDelta(0L, statements.size());
 			return;
@@ -3134,6 +3166,46 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private void recordStoreMutationMillis() {
 		lastStoreMutationMillis.set(System.currentTimeMillis());
+	}
+
+	private void markOmniDeleteRequiresRebuild(long deletions) {
+		if (deletions <= 0L) {
+			return;
+		}
+		seenTriples = approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, 0L, deletions));
+		markOmniEstimatorHasDeletes(bufA);
+		markOmniEstimatorHasDeletes(bufB);
+		markRebuildRequired();
+		clearPositiveReadinessCache();
+		invalidatePersistedSketchSnapshotAfterOmniDelete();
+		notifyReadyWaiters();
+	}
+
+	private static void markOmniEstimatorHasDeletes(State state) {
+		if (state != null && state.sketchStrategy == SketchStrategy.OMNI) {
+			synchronized (state) {
+				state.omniJoinEstimatorHasDeletes = true;
+			}
+		}
+	}
+
+	private void invalidatePersistedSketchSnapshotAfterOmniDelete() {
+		dirty.set(false);
+		indexDirty.set(false);
+		clearPersistedSketchDirectory();
+		if (!persistenceEnabled || persistenceFile == null) {
+			return;
+		}
+		try {
+			SketchEstimatorPersistenceStore store = persistenceStore;
+			if (store != null) {
+				store.reset();
+			} else {
+				Files.deleteIfExists(persistenceFile.toAbsolutePath().normalize().resolve("metadata.bin"));
+			}
+		} catch (IOException e) {
+			logger.warn("Failed to invalidate stale OMNI join estimator snapshot at {}", persistenceFile, e);
+		}
 	}
 
 	private static long storeSizeAfterRebuild(long rebuiltRows, long sizeBeforeRebuild, long currentSize) {
@@ -3813,6 +3885,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			if (event.isDelete) {
 				state.omniJoinEstimatorHasDeletes = true;
+				markRebuildRequired();
+				clearPositiveReadinessCache();
+				invalidatePersistedSketchSnapshotAfterOmniDelete();
+				notifyReadyWaiters();
 				continue;
 			}
 			long statementIdentifier = event.thetaSig;
@@ -3837,6 +3913,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 						1.0d);
 			}
 			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.P.ordinal()], predicateHash, subjectIdentifier,
+					1.0d);
+			subjectStar.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.O.ordinal()], objectHash, subjectIdentifier,
 					1.0d);
 			subjectStar.updateStatic(OMNI_SUBJECT_STAR_PO_ATTRIBUTE,
 					OmniJoinEstimator.orderedTupleHash(predicateHash, objectHash), subjectIdentifier, 1.0d);
@@ -4461,9 +4539,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		EnumMap<Component, String> fixed = fixedComponents(s, p, o, c);
 		if (st.sketchStrategy == SketchStrategy.OMNI) {
 			PatternStats omniStats = omniPatternStats(st, j, fixed);
-			if (omniStats != null) {
-				return omniStats;
-			}
+			return omniStats != null ? omniStats : unavailablePatternStats();
 		}
 		BindingSketchResult bindingSketch = bindingsSketch(st, j, fixed);
 		FastAgmsBindingSummary sk = bindingSketch.sketch;
@@ -4508,6 +4584,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		}
 		return new PatternStats(sk, enforceCardinalityLowerBound(sk, card));
+	}
+
+	private static PatternStats unavailablePatternStats() {
+		return new PatternStats(null, Double.NaN, Double.NaN);
 	}
 
 	private PatternStats omniPatternStats(State st, Component joinVar, EnumMap<Component, String> fixed) {
@@ -4896,9 +4976,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		if (st.sketchStrategy == SketchStrategy.OMNI) {
 			double omniRows = estimateOmniPairJoinRows(st, j, a, ax, ay, b, bx, by);
-			if (Double.isFinite(omniRows)) {
-				return roundJoinEstimate(omniRows);
-			}
+			return Double.isFinite(omniRows) ? roundJoinEstimate(omniRows) : Double.NaN;
 		}
 
 		FastAgmsBindingSummary sa = pairWrapper(st, a, false).getComplementSketch(j, keyA);
@@ -4936,9 +5014,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		if (st.sketchStrategy == SketchStrategy.OMNI) {
 			double omniRows = estimateOmniSingleJoinRows(st, j, a, av, b, bv);
-			if (Double.isFinite(omniRows)) {
-				return roundJoinEstimate(omniRows);
-			}
+			return Double.isFinite(omniRows) ? roundJoinEstimate(omniRows) : Double.NaN;
 		}
 
 		int idxA = hash(a, av), idxB = hash(b, bv);
@@ -12469,14 +12545,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
 		}
 
-		if (preferExactScan) {
-			TuplePlanEstimate scanned = scanExactBoundStatementPatternPlan(pattern, detail, subject, predicate,
-					object, contexts);
-			if (scanned != null) {
-				return scanned;
-			}
-		}
-
 		Long estimatedRows = estimateBoundPatternRows(pattern);
 		if (estimatedRows != null) {
 			double rows = normalizeRows(estimatedRows);
@@ -12485,6 +12553,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					: Map.of();
 			return new TuplePlanEstimate(rows, rows, 1.0d, conservativeBoundPatternVarStats(pattern, rows), null,
 					null, Double.NaN, witnesses);
+		}
+
+		if (preferExactScan) {
+			TuplePlanEstimate scanned = scanExactBoundStatementPatternPlan(pattern, detail, subject, predicate,
+					object, contexts);
+			if (scanned != null) {
+				return scanned;
+			}
 		}
 
 		return scanExactBoundStatementPatternPlan(pattern, detail, subject, predicate, object, contexts);
@@ -15730,7 +15806,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	// ──────────────────────────────────────────────────────────────
 
 	private static double clamp(double v, double lo, double hi) {
-		return Math.clamp(hi, lo, v);
+		return Math.clamp(v, lo, hi);
 	}
 
 	/**
@@ -15793,7 +15869,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (!persistenceEnabled || persistenceFile == null || store == null) {
 			return false;
 		}
-		if ((rebuildEpoch.get() & 1L) != 0L) {
+		if ((rebuildEpoch.get() & 1L) != 0L || rebuildRequired.get()) {
 			return false;
 		}
 		if (!dirty.get() && !indexDirty.get()) {

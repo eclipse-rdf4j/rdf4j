@@ -56,6 +56,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceProvider;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -804,6 +807,20 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void defaultCostModelAppliesTrustedLeoSurfaceFeedback() {
+		LeoTrackingProvider provider = new LeoTrackingProvider();
+		CascadesCostModel model = model(provider);
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "leo-feedback");
+
+		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
+
+		assertEquals(123.0d, cost.rows(), 0.0d,
+				"Trusted LEO memo evidence must feed back into normal Cascades costing");
+		assertTrue(provider.memoFeedbackCalls > 0);
+	}
+
+	@Test
 	void genericPhysicalJoinLocalCostPreservesZeroRowInputWinners() {
 		TrackingProvider provider = new TrackingProvider(true, 1.0d);
 		CascadesCostModel model = model(provider);
@@ -970,6 +987,26 @@ class CascadesCostModelTest {
 							TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
 					Map.of("plannedRepeatedInvocations", 30.0d, "plannedLookupDomainAverageOutputRows", 300.0d),
 					true, true, 1, 0, 1.0d, true));
+		}
+	}
+
+	private static final class LeoTrackingProvider implements RdfStatisticsProvider, LeoSurfaceProvider {
+		private int memoFeedbackCalls;
+
+		@Override
+		public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
+			return Optional.of(StatisticsEstimate.heuristic(10.0d, "test-base-stats"));
+		}
+
+		@Override
+		public LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingUniverse universe,
+				BindingShape bindingShape) {
+			if (!(tupleExpr instanceof Join)) {
+				return LeoMemoFeedback.empty();
+			}
+			memoFeedbackCalls++;
+			return LeoMemoFeedback.of(List.of(LeoEvidence.scalarCorrection(123.0d, 150.0d, 0.80d, 8L,
+					"test-leo-feedback")), List.of());
 		}
 	}
 

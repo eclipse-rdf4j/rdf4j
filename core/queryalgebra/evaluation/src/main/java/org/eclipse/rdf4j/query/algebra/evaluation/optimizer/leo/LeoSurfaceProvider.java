@@ -19,7 +19,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShap
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 
 /**
- * LEO evidence lookup SPI. Implementations must not rewrite query semantics.
+ * Stateless lookup SPI for LEO evidence.
+ * <p>
+ * Implementations must not rewrite query semantics. They only expose candidate cardinality/work evidence and optional
+ * rule hints to a planner that already knows how to preserve query semantics. Stateful stores that also collect runtime
+ * observations should implement {@link LeoLearnedEvidenceService}.
  */
 @Experimental
 public interface LeoSurfaceProvider {

@@ -368,7 +368,13 @@ final class OmniJoinEstimator {
 
 	private OmniWitnessSet probeJoin(OmniWitnessSet input, AttributeIndex index,
 			OutputIdentifier outputIdentifier, int maxRetainedWitnesses) {
-		if (input == null || index == null || outputIdentifier == null || input.retainedWitnessCount() == 0) {
+		if (input == null || outputIdentifier == null) {
+			return OmniWitnessSet.empty();
+		}
+		if (input.retainedWitnessCount() == 0) {
+			return propagateZeroRetainedInput(input);
+		}
+		if (index == null) {
 			return OmniWitnessSet.empty();
 		}
 		double outputProbability = input.samplingProbability();
@@ -410,6 +416,20 @@ final class OmniJoinEstimator {
 					OmniWitnessSet.FallbackReason.SAMPLE_LOSS, minDetectable);
 		}
 		return merged;
+	}
+
+	private static OmniWitnessSet propagateZeroRetainedInput(OmniWitnessSet input) {
+		if (input == null || input.isEmpty()) {
+			return OmniWitnessSet.empty();
+		}
+		OmniWitnessSet.FallbackReason reason = input.fallbackReason() == OmniWitnessSet.FallbackReason.NONE
+				? OmniWitnessSet.FallbackReason.SAMPLE_LOSS
+				: input.fallbackReason();
+		double rows = Math.max(input.estimatedRows(), input.minimumDetectableRows());
+		double minimumDetectableRows = Math.max(rows, 1.0d);
+		return OmniWitnessSet.fromTrustedSortedUnsigned(new long[0], new double[0], 0,
+				input.samplingProbability(), Math.min(input.confidence(), 0.25d), reason, minimumDetectableRows,
+				minimumDetectableRows);
 	}
 
 	private static int requireRetainedLimit(int maxRetainedWitnesses) {

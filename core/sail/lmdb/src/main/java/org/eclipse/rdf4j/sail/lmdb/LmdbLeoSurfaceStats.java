@@ -38,12 +38,21 @@ final class LmdbLeoSurfaceStats {
 		this.config = config == null ? LmdbLeoFeedbackConfig.defaultConfig() : config;
 	}
 
-	void recordFanout(long predicateId, BoundPosition position, long valueId, long fanout, long epoch) {
+	boolean recordFanout(long predicateId, BoundPosition position, long valueId, long fanout, long epoch) {
 		if (predicateId < 0L || valueId < 0L || fanout < 0L || position == null) {
-			return;
+			return false;
 		}
 		fanoutSurfaces.computeIfAbsent(new FanoutKey(predicateId, position), ignored -> new FanoutSurface(config))
 				.record(valueId, fanout, epoch);
+		return true;
+	}
+
+	boolean isEmpty() {
+		return fanoutSurfaces.isEmpty();
+	}
+
+	void clear() {
+		fanoutSurfaces.clear();
 	}
 
 	Optional<FanoutEstimate> estimateFanout(long predicateId, BoundPosition position, long valueId) {
@@ -83,7 +92,8 @@ final class LmdbLeoSurfaceStats {
 		}
 	}
 
-	static LmdbLeoSurfaceStats readFrom(DataInputStream in, LmdbLeoFeedbackConfig config) throws IOException {
+	static LmdbLeoSurfaceStats readFrom(DataInputStream in, LmdbLeoFeedbackConfig config, int version)
+			throws IOException {
 		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(config);
 		int size = in.readInt();
 		if (size < 0 || size > 1_000_000) {
@@ -91,7 +101,7 @@ final class LmdbLeoSurfaceStats {
 		}
 		for (int i = 0; i < size; i++) {
 			FanoutKey key = FanoutKey.readFrom(in);
-			stats.fanoutSurfaces.put(key, FanoutSurface.readFrom(in, stats.config));
+			stats.fanoutSurfaces.put(key, FanoutSurface.readFrom(in, stats.config, version));
 		}
 		return stats;
 	}
@@ -228,7 +238,8 @@ final class LmdbLeoSurfaceStats {
 			}
 		}
 
-		static FanoutSurface readFrom(DataInputStream in, LmdbLeoFeedbackConfig config) throws IOException {
+		static FanoutSurface readFrom(DataInputStream in, LmdbLeoFeedbackConfig config, int version)
+				throws IOException {
 			FanoutSurface surface = new FanoutSurface(config);
 			int heavyHitterCount = in.readInt();
 			if (heavyHitterCount < 0 || heavyHitterCount > config.maxFanoutHeavyHitters()) {
@@ -236,7 +247,7 @@ final class LmdbLeoSurfaceStats {
 			}
 			for (int i = 0; i < heavyHitterCount; i++) {
 				long valueId = in.readLong();
-				surface.heavyHitters.put(valueId, FanoutAccumulator.readFrom(in));
+				surface.heavyHitters.put(valueId, FanoutAccumulator.readFrom(in, version));
 			}
 			int sampleCount = in.readInt();
 			if (sampleCount < 0 || sampleCount > MAX_STORED_FANOUT_SAMPLES) {
@@ -277,14 +288,46 @@ final class LmdbLeoSurfaceStats {
 		void writeTo(DataOutputStream out) throws IOException {
 			out.writeLong(sampleCount);
 			out.writeDouble(sum);
+			out.writeLong(confidenceModel.sampleCount());
+			out.writeDouble(confidenceModel.rowCorrectionRatio());
+			out.writeDouble(confidenceModel.workCorrectionRatio());
+			out.writeDouble(confidenceModel.rowQErrorMean());
+			out.writeDouble(confidenceModel.rowQErrorMax());
+			out.writeDouble(confidenceModel.workQErrorMean());
+			out.writeDouble(confidenceModel.workQErrorMax());
+			out.writeDouble(confidenceModel.rowRatioMean());
+			out.writeDouble(confidenceModel.rowRatioM2());
+			out.writeLong(confidenceModel.lastEpoch());
+			out.writeDouble(confidenceModel.confidence());
 		}
 
-		static FanoutAccumulator readFrom(DataInputStream in) throws IOException {
+		static FanoutAccumulator readFrom(DataInputStream in, int version) throws IOException {
 			FanoutAccumulator accumulator = new FanoutAccumulator();
 			accumulator.sampleCount = in.readLong();
 			accumulator.sum = in.readDouble();
 			if (accumulator.sampleCount < 0L || accumulator.sum < 0.0d || !Double.isFinite(accumulator.sum)) {
 				throw new IOException("Invalid LEO fanout accumulator");
+			}
+			if (version >= 2) {
+				long confidenceSampleCount = in.readLong();
+				double rowCorrectionRatio = in.readDouble();
+				double workCorrectionRatio = in.readDouble();
+				double rowQErrorMean = in.readDouble();
+				double rowQErrorMax = in.readDouble();
+				double workQErrorMean = in.readDouble();
+				double workQErrorMax = in.readDouble();
+				double rowRatioMean = in.readDouble();
+				double rowRatioM2 = in.readDouble();
+				long lastEpoch = in.readLong();
+				double confidence = in.readDouble();
+				accumulator.confidenceModel = LeoConfidenceModel.fromPersisted(confidenceSampleCount,
+						rowCorrectionRatio,
+						workCorrectionRatio, rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, rowRatioMean,
+						rowRatioM2, lastEpoch, confidence);
+			} else if (accumulator.sampleCount > 0L) {
+				accumulator.confidenceModel = LeoConfidenceModel.fromPersisted(accumulator.sampleCount, 1.0d, 1.0d,
+						1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 0.0d, accumulator.sampleCount,
+						fallbackConfidence(accumulator.sampleCount));
 			}
 			return accumulator;
 		}

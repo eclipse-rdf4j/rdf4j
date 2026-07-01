@@ -39,6 +39,7 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(128)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)

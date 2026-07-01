@@ -27,6 +27,16 @@ class LeoConfidenceModelTest {
 	}
 
 	@Test
+	void zeroEstimateWithPositiveActualIsLargeMiss() {
+		LeoConfidenceModel model = LeoConfidenceModel.empty()
+				.observe(0.0d, 100.0d, 0.0d, 100.0d, 1L);
+
+		assertTrue(model.rowQErrorMax() >= 100_000.0d);
+		assertTrue(model.workQErrorMax() >= 100_000.0d);
+		assertTrue(model.confidence() <= 0.001d);
+	}
+
+	@Test
 	void stableSamplesClimbGradually() {
 		LeoConfidenceModel three = stableSamples(3);
 		LeoConfidenceModel eight = stableSamples(8);
@@ -47,6 +57,15 @@ class LeoConfidenceModelTest {
 
 		assertTrue(noisy.confidence() < stable.confidence());
 		assertTrue(noisy.rowQErrorMax() >= 100.0d);
+	}
+
+	@Test
+	void confidenceDecaysWithObservationAge() {
+		LeoConfidenceModel model = stableSamples(8);
+
+		assertTrue(model.decayedConfidence(8L, 4L) == model.confidence());
+		assertTrue(model.decayedConfidence(16L, 4L) < model.confidence(),
+				"Old learned evidence should lose influence as the feedback epoch advances");
 	}
 
 	@Test

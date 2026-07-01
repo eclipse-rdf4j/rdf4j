@@ -20,10 +20,13 @@ import java.util.List;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -98,8 +101,56 @@ class LeoOperatorKeyTest {
 				LeoOperatorKey.from(new Difference(right.clone(), left.clone())));
 	}
 
+	@Test
+	void statementPatternScopeChangesTheStructuralKey() {
+		StatementPattern defaultScope = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				new Var("s"), new Var("predicate", VF.createIRI("urn:knows")), new Var("o"));
+		StatementPattern namedScope = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				new Var("s"), new Var("predicate", VF.createIRI("urn:knows")), new Var("o"));
+
+		assertNotEquals(LeoOperatorKey.from(defaultScope), LeoOperatorKey.from(namedScope));
+	}
+
+	@Test
+	void differentFilterComparisonsDoNotCollide() {
+		Filter equalsFilter = new Filter(pattern("s", "urn:knows", "o"),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(10)), Compare.CompareOp.EQ));
+		Filter lessThanFilter = new Filter(pattern("s", "urn:knows", "o"),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(10)), Compare.CompareOp.LT));
+
+		assertNotEquals(LeoOperatorKey.from(equalsFilter), LeoOperatorKey.from(lessThanFilter));
+	}
+
+	@Test
+	void predicateContextModeAbstractsNonPredicateConstantsButKeepsPredicates() {
+		Join firstSubject = new Join(
+				constantSubjectPattern("urn:alice", "urn:knows", "b"),
+				pattern("b", "urn:knows", "c"));
+		Join secondSubject = new Join(
+				constantSubjectPattern("urn:bob", "urn:knows", "b"),
+				pattern("b", "urn:knows", "c"));
+		Join differentPredicate = new Join(
+				constantSubjectPattern("urn:bob", "urn:likes", "b"),
+				pattern("b", "urn:knows", "c"));
+
+		assertNotEquals(LeoOperatorKey.from(firstSubject), LeoOperatorKey.from(secondSubject));
+		assertEquals(LeoOperatorKey.from(firstSubject, "",
+				LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT),
+				LeoOperatorKey.from(secondSubject, "",
+						LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT));
+		assertNotEquals(LeoOperatorKey.from(secondSubject, "",
+				LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT),
+				LeoOperatorKey.from(differentPredicate, "",
+						LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT));
+	}
+
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var("predicate", VF.createIRI(predicate)), new Var(object));
+	}
+
+	private static StatementPattern constantSubjectPattern(String subject, String predicate, String object) {
+		return new StatementPattern(new Var("subject", VF.createIRI(subject)),
+				new Var("predicate", VF.createIRI(predicate)), new Var(object));
 	}
 
 	private static BindingSetAssignment values(List<? extends BindingSet> rows) {

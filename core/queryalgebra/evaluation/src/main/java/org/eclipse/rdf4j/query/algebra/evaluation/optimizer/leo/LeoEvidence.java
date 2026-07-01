@@ -28,9 +28,9 @@ public record LeoEvidence(double rows, double workRows, double confidence, long 
 		EXACT_FINITE_RELATION(0),
 		QUERY_LOCAL_VIRTUAL_SKETCH(1),
 		PERSISTED_FANOUT_HISTOGRAM(2),
-		BASE_STATISTICS(3),
-		SCALAR_OPERATOR_FEEDBACK(4),
-		SAMPLING(5);
+		SCALAR_OPERATOR_FEEDBACK(3),
+		SAMPLING(4),
+		BASE_STATISTICS(5);
 
 		private final int rank;
 

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
@@ -79,15 +80,34 @@ class LmdbLeoSurfaceStatsTest {
 	}
 
 	@Test
-	void providerReturnsPersistedFanoutEvidenceForSurfaceKey() {
-		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
+	void operatorFeedbackServiceReturnsPersistedFanoutEvidenceForSurfaceKey(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		stats.recordFanout(4L, LmdbLeoSurfaceStats.BoundPosition.OBJECT, 80L, 33L, 1L);
-		LmdbLeoSurfaceProvider provider = new LmdbLeoSurfaceProvider(stats);
 
-		LeoEvidence evidence = provider.evidence(LeoSurfaceKey.fanout(4L, "object", 80L)).orElseThrow();
+		LeoEvidence evidence = stats.evidence(LeoSurfaceKey.fanout(4L, "object", 80L)).orElseThrow();
 
 		assertEquals(LeoEvidence.Kind.PERSISTED_FANOUT_HISTOGRAM, evidence.kind());
 		assertEquals(33.0d, evidence.rows());
 		assertEquals("lmdb-leo-fanout-heavy-hitter", evidence.source());
+	}
+
+	@Test
+	void operatorFeedbackServicePersistsFanoutSurfaceWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		stats.recordFanout(5L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 90L, 44L, 1L);
+		stats.persistIfDirty();
+
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LeoEvidence evidence = reloaded.evidence(LeoSurfaceKey.fanout(5L, "subject", 90L)).orElseThrow();
+
+		assertEquals(44.0d, evidence.rows());
+	}
+
+	private static Path estimatorPath(Path tempDir) throws Exception {
+		Path estimatorPath = tempDir.resolve("join-estimator.rjes");
+		Files.createDirectories(estimatorPath);
+		Files.writeString(estimatorPath.resolve("metadata.bin"), "metadata");
+		return estimatorPath;
 	}
 }

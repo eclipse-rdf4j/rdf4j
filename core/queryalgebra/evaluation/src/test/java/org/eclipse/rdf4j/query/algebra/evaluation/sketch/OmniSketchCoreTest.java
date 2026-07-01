@@ -92,6 +92,21 @@ class OmniSketchCoreTest {
 	}
 
 	@Test
+	void probeJoinPreservesZeroRetainedSampleLoss() {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 3, 64, 1L);
+		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(new long[0], new double[0], 0,
+				0.125d, 0.25d, OmniWitnessSet.FallbackReason.SAMPLE_LOSS, 8.0d);
+
+		OmniWitnessSet output = estimator.probeJoinStaticRetainedAtMost(input,
+				estimator.relation(OmniRelation.STATEMENT), OmniAttributeRef.component(0),
+				OmniJoinEstimator.OutputIdentifier.RECORD, 16);
+
+		assertEquals(OmniWitnessSet.FallbackReason.SAMPLE_LOSS, output.fallbackReason());
+		assertEquals(8.0d, output.estimatedRows(), 0.0d);
+		assertFalse(output.isEmpty());
+	}
+
+	@Test
 	void unionMergesPartitionsFollowingZipApi() {
 		var builder = OmniSketch.builder().setWidth(64).setNumRows(3).setNominalEntries(64);
 		UpdateOmniSketch left = builder.build();

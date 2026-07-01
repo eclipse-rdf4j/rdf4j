@@ -27,13 +27,24 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -53,6 +64,18 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		BindingMask leftMask, BindingMask rightMask, BindingMask sharedMask, String executionMode) {
 
 	private static final int MAX_CANONICAL_JOIN_PERMUTATIONS = 720;
+	private static final int MAX_EXACT_VALUES_ROWS = 32;
+	private static final int MAX_EXACT_VALUES_CELLS = 512;
+
+	public enum ConstantMode {
+		/** Every constant value is part of the key. */
+		EXACT,
+
+		/**
+		 * Predicate and context constants stay exact; subject/object/filter/VALUES constants are abstracted by type.
+		 */
+		PREDICATE_AND_CONTEXT_EXACT
+	}
 
 	public LeoOperatorKey {
 		operatorType = operatorType == null ? "" : operatorType;
@@ -69,6 +92,10 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 	}
 
 	public static LeoOperatorKey from(TupleExpr tupleExpr, String executionMode) {
+		return from(tupleExpr, executionMode, ConstantMode.EXACT);
+	}
+
+	public static LeoOperatorKey from(TupleExpr tupleExpr, String executionMode, ConstantMode constantMode) {
 		if (tupleExpr == null) {
 			return new LeoOperatorKey("", "", BindingMask.EMPTY, BindingMask.EMPTY, BindingMask.EMPTY,
 					BindingMask.EMPTY, executionMode);
@@ -92,12 +119,31 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				sharedMask = BindingMask.EMPTY;
 			}
 		}
-		return new LeoOperatorKey(tupleExpr.getClass().getSimpleName(), new Canonicalizer().fingerprint(tupleExpr),
-				shape.possible(), leftMask, rightMask, sharedMask, executionMode);
+		ConstantMode safeMode = constantMode == null ? ConstantMode.EXACT : constantMode;
+		return new LeoOperatorKey(tupleExpr.getClass().getSimpleName(),
+				new Canonicalizer(safeMode).fingerprint(tupleExpr), shape.possible(), leftMask, rightMask,
+				sharedMask, executionMode);
+	}
+
+	private enum VarRole {
+		SUBJECT,
+		PREDICATE,
+		OBJECT,
+		CONTEXT,
+		OTHER
 	}
 
 	private static final class Canonicalizer {
 		private final Map<String, Integer> variableOrdinals = new HashMap<>();
+		private final ConstantMode constantMode;
+
+		private Canonicalizer() {
+			this(ConstantMode.EXACT);
+		}
+
+		private Canonicalizer(ConstantMode constantMode) {
+			this.constantMode = constantMode == null ? ConstantMode.EXACT : constantMode;
+		}
 
 		String fingerprint(TupleExpr tupleExpr) {
 			if (tupleExpr == null) {
@@ -106,26 +152,27 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			String scope = TupleExprs.isVariableScopeChange(tupleExpr) ? "|scope=new" : "";
 			if (tupleExpr instanceof StatementPattern statementPattern) {
 				return "SP" + scope
-						+ "|s=" + varKey(statementPattern.getSubjectVar())
-						+ "|p=" + varKey(statementPattern.getPredicateVar())
-						+ "|o=" + varKey(statementPattern.getObjectVar())
-						+ "|c=" + varKey(statementPattern.getContextVar());
+						+ "|patternScope=" + statementPattern.getScope()
+						+ "|s=" + varKey(statementPattern.getSubjectVar(), VarRole.SUBJECT)
+						+ "|p=" + varKey(statementPattern.getPredicateVar(), VarRole.PREDICATE)
+						+ "|o=" + varKey(statementPattern.getObjectVar(), VarRole.OBJECT)
+						+ "|c=" + varKey(statementPattern.getContextVar(), VarRole.CONTEXT);
 			}
 			if (tupleExpr instanceof ArbitraryLengthPath path) {
 				return "ALP" + scope
 						+ "|pathScope=" + path.getScope()
 						+ "|min=" + path.getMinLength()
-						+ "|s=" + varKey(path.getSubjectVar())
+						+ "|s=" + varKey(path.getSubjectVar(), VarRole.SUBJECT)
 						+ "|path=" + fingerprint(path.getPathExpression())
-						+ "|o=" + varKey(path.getObjectVar())
-						+ "|c=" + varKey(path.getContextVar());
+						+ "|o=" + varKey(path.getObjectVar(), VarRole.OBJECT)
+						+ "|c=" + varKey(path.getContextVar(), VarRole.CONTEXT);
 			}
 			if (tupleExpr instanceof ZeroLengthPath path) {
 				return "ZLP" + scope
 						+ "|pathScope=" + path.getScope()
-						+ "|s=" + varKey(path.getSubjectVar())
-						+ "|o=" + varKey(path.getObjectVar())
-						+ "|c=" + varKey(path.getContextVar());
+						+ "|s=" + varKey(path.getSubjectVar(), VarRole.SUBJECT)
+						+ "|o=" + varKey(path.getObjectVar(), VarRole.OBJECT)
+						+ "|c=" + varKey(path.getContextVar(), VarRole.CONTEXT);
 			}
 			if (tupleExpr instanceof BindingSetAssignment assignment) {
 				return bindingSetAssignmentKey(assignment, scope);
@@ -163,7 +210,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			if (factorial(factors.size()) > MAX_CANONICAL_JOIN_PERMUTATIONS) {
 				List<String> factorKeys = new ArrayList<>(factors.size());
 				for (TupleExpr factor : factors) {
-					factorKeys.add(new Canonicalizer().fingerprint(factor));
+					factorKeys.add(new Canonicalizer(constantMode).fingerprint(factor));
 				}
 				Collections.sort(factorKeys);
 				return String.join(";", factorKeys);
@@ -181,7 +228,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		private void addJoinPermutations(List<TupleExpr> factors, List<Integer> order, int offset,
 				List<String> candidates) {
 			if (offset == order.size()) {
-				Canonicalizer candidateCanonicalizer = new Canonicalizer();
+				Canonicalizer candidateCanonicalizer = new Canonicalizer(constantMode);
 				List<String> keys = new ArrayList<>(order.size());
 				for (Integer index : order) {
 					keys.add(candidateCanonicalizer.fingerprint(factors.get(index)));
@@ -206,9 +253,9 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		}
 
 		private String canonicalUnion(Union union) {
-			Canonicalizer leftFirst = new Canonicalizer();
+			Canonicalizer leftFirst = new Canonicalizer(constantMode);
 			String first = leftFirst.fingerprint(union.getLeftArg()) + ";" + leftFirst.fingerprint(union.getRightArg());
-			Canonicalizer rightFirst = new Canonicalizer();
+			Canonicalizer rightFirst = new Canonicalizer(constantMode);
 			String second = rightFirst.fingerprint(union.getRightArg()) + ";"
 					+ rightFirst.fingerprint(union.getLeftArg());
 			return first.compareTo(second) <= 0 ? first : second;
@@ -222,21 +269,35 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				columns.add(varKey(bindingName));
 			}
 			List<String> rows = new ArrayList<>();
+			int rowCount = 0;
+			int cellCount = 0;
+			boolean bounded = false;
 			Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 			if (bindingSets != null) {
 				for (BindingSet bindingSet : bindingSets) {
+					rowCount++;
+					cellCount += bindingNames.size();
 					List<String> values = new ArrayList<>(bindingNames.size());
 					for (String bindingName : bindingNames) {
 						Value value = bindingSet.getValue(bindingName);
-						values.add(value == null ? "UNDEF" : valueKey(value));
+						values.add(value == null ? "UNDEF" : constantKey(value, VarRole.OTHER));
 					}
-					rows.add(String.join(",", values));
+					if (rowCount <= MAX_EXACT_VALUES_ROWS && cellCount <= MAX_EXACT_VALUES_CELLS) {
+						rows.add(String.join(",", values));
+					} else {
+						bounded = true;
+						rows.add("#" + Integer.toHexString(String.join(",", values).hashCode()));
+					}
 				}
 			}
 			Collections.sort(rows);
+			String rowsKey = bounded || rowCount > MAX_EXACT_VALUES_ROWS || cellCount > MAX_EXACT_VALUES_CELLS
+					? "hash=" + Integer.toHexString(rows.hashCode()) + "|rowCount=" + rowCount + "|cellCount="
+							+ cellCount
+					: String.join(";", rows);
 			return "BSA" + scope + "|arity=" + bindingNames.size()
 					+ "|columns=" + String.join(",", columns)
-					+ "|rows=" + String.join(";", rows);
+					+ "|rows=" + rowsKey;
 		}
 
 		private String valueExprKey(ValueExpr valueExpr) {
@@ -244,23 +305,86 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				return "<null>";
 			}
 			if (valueExpr instanceof Var var) {
-				return varKey(var);
+				return varKey(var, VarRole.OTHER);
 			}
 			if (valueExpr instanceof ValueConstant constant) {
-				return constant.getValue() == null ? "const:<null>" : "const:" + valueKey(constant.getValue());
+				return constant.getValue() == null ? "const:<null>"
+						: "const:" + constantKey(constant.getValue(), VarRole.OTHER);
 			}
-			return valueExpr.getClass().getSimpleName();
+			if (valueExpr instanceof Compare compare) {
+				return "Compare(" + compare.getOperator() + "," + valueExprKey(compare.getLeftArg()) + ","
+						+ valueExprKey(compare.getRightArg()) + ")";
+			}
+			if (valueExpr instanceof MathExpr mathExpr) {
+				return "Math(" + mathExpr.getOperator() + "," + valueExprKey(mathExpr.getLeftArg()) + ","
+						+ valueExprKey(mathExpr.getRightArg()) + ")";
+			}
+			if (valueExpr instanceof Regex regex) {
+				return "Regex(arg=" + valueExprKey(regex.getArg())
+						+ ",pattern=" + valueExprKey(regex.getPatternArg())
+						+ ",flags=" + valueExprKey(regex.getFlagsArg()) + ")";
+			}
+			if (valueExpr instanceof FunctionCall functionCall) {
+				List<String> args = new ArrayList<>();
+				for (ValueExpr arg : functionCall.getArgs()) {
+					args.add(valueExprKey(arg));
+				}
+				return "Function(" + normalize(functionCall.getURI()) + "|" + String.join(",", args) + ")";
+			}
+			if (valueExpr instanceof Bound bound) {
+				return "Bound(" + varKey(bound.getArg(), VarRole.OTHER) + ")";
+			}
+			if (valueExpr instanceof If conditional) {
+				return "If(" + valueExprKey(conditional.getCondition())
+						+ "," + valueExprKey(conditional.getResult())
+						+ "," + valueExprKey(conditional.getAlternative()) + ")";
+			}
+			if (valueExpr instanceof CompareSubQueryValueOperator compareSubQuery) {
+				return valueExpr.getClass().getSimpleName() + "(arg=" + valueExprKey(compareSubQuery.getArg())
+						+ ",sub=" + fingerprint(compareSubQuery.getSubQuery()) + ")";
+			}
+			if (valueExpr instanceof SubQueryValueOperator subQuery) {
+				return valueExpr.getClass().getSimpleName() + "(sub=" + fingerprint(subQuery.getSubQuery()) + ")";
+			}
+			if (valueExpr instanceof BinaryValueOperator binary) {
+				return valueExpr.getClass().getSimpleName() + "(" + valueExprKey(binary.getLeftArg()) + ","
+						+ valueExprKey(binary.getRightArg()) + ")";
+			}
+			if (valueExpr instanceof UnaryValueOperator unary) {
+				return valueExpr.getClass().getSimpleName() + "(" + valueExprKey(unary.getArg()) + ")";
+			}
+			if (valueExpr instanceof NAryValueOperator nary) {
+				List<String> args = new ArrayList<>();
+				for (ValueExpr arg : nary.getArguments()) {
+					args.add(valueExprKey(arg));
+				}
+				return valueExpr.getClass().getSimpleName() + "(" + String.join(",", args) + ")";
+			}
+			return valueExpr.getClass().getSimpleName() + "(" + normalize(valueExpr.getSignature()) + ")";
 		}
 
 		private String varKey(Var var) {
+			return varKey(var, VarRole.OTHER);
+		}
+
+		private String varKey(Var var, VarRole role) {
 			if (var == null) {
 				return "<null>";
 			}
 			if (var.hasValue()) {
 				Value value = var.getValue();
-				return "const:" + (value == null ? "<null>" : valueKey(value));
+				return "const:" + (value == null ? "<null>" : constantKey(value, role));
 			}
 			return varKey(var.getName());
+		}
+
+		private String constantKey(Value value, VarRole role) {
+			if (constantMode == ConstantMode.PREDICATE_AND_CONTEXT_EXACT
+					&& role != VarRole.PREDICATE
+					&& role != VarRole.CONTEXT) {
+				return abstractValueKey(value);
+			}
+			return valueKey(value);
 		}
 
 		private String varKey(String name) {
@@ -268,6 +392,27 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				return "var:<anon>";
 			}
 			return "v" + variableOrdinals.computeIfAbsent(name, ignored -> variableOrdinals.size());
+		}
+
+		private static String normalize(String value) {
+			if (value == null) {
+				return "";
+			}
+			StringBuilder builder = new StringBuilder(value.length());
+			boolean pendingSpace = false;
+			for (int i = 0; i < value.length(); i++) {
+				char ch = value.charAt(i);
+				if (Character.isWhitespace(ch)) {
+					pendingSpace = builder.length() > 0;
+				} else {
+					if (pendingSpace) {
+						builder.append(' ');
+						pendingSpace = false;
+					}
+					builder.append(ch);
+				}
+			}
+			return builder.toString();
 		}
 
 		private static long factorial(int size) {
@@ -309,5 +454,21 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			return "bnode:" + bNode.getID();
 		}
 		return value.getClass().getName() + ":" + value.stringValue();
+	}
+
+	private static String abstractValueKey(Value value) {
+		if (value instanceof IRI) {
+			return "iri:<value>";
+		}
+		if (value instanceof Literal literal) {
+			String language = literal.getLanguage().orElse("");
+			IRI datatype = literal.getDatatype();
+			return "literal:<value>|lang=" + language + "|dt="
+					+ (datatype == null ? "" : datatype.stringValue());
+		}
+		if (value instanceof BNode) {
+			return "bnode:<value>";
+		}
+		return value == null ? "<null>" : value.getClass().getName() + ":<value>";
 	}
 }

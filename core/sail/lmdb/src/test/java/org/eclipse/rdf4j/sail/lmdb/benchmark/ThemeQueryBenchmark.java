@@ -155,8 +155,8 @@ public class ThemeQueryBenchmark {
 				.forks(0)
 				.measurementIterations(5)
 				.measurementBatchSize(1)
-				.measurementTime(TimeValue.milliseconds(1000))
-				.warmupIterations(2)
+				.measurementTime(TimeValue.milliseconds(10000))
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}

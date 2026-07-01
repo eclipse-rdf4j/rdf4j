@@ -45,6 +45,16 @@ class LeoEvidenceTest {
 	}
 
 	@Test
+	void scalarCorrectionBeatsBaseStatisticsButNotProtectedEvidence() {
+		LeoEvidence scalar = LeoEvidence.scalarCorrection(10_000.0d, 12_000.0d, 0.80d, 6L,
+				"operator-feedback");
+		LeoEvidence base = LeoEvidence.baseStats(100.0d, 150.0d, 0.95d, 1L, "base-stats");
+
+		assertSame(scalar, LeoEvidence.bestOf(List.of(base, scalar)).orElseThrow(),
+				"LEO feedback must be able to repair stale base statistics once it is trusted");
+	}
+
+	@Test
 	void memoFeedbackKeepsBestEvidenceAndRuleHints() {
 		LeoEvidence scalar = LeoEvidence.scalarCorrection(10.0d, 12.0d, 0.70d, 2L, "scalar");
 		LeoEvidence finite = LeoEvidence.exactFiniteRelation(7.0d, 8.0d, "finite");

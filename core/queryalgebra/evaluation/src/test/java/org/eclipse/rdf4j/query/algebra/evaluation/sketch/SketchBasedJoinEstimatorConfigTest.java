@@ -201,6 +201,39 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
+	void omniDeleteMarksEstimatorUnreadyAndDoesNotFallBackToLegacyJoinSketches() throws Exception {
+		StubSketchStatementSource localStore = new StubSketchStatementSource();
+		Statement first = st(s1, p1, o1);
+		localStore.add(first);
+		localStore.add(st(VF.createIRI("urn:s2"), p1, o1));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+
+		rebuild(estimator);
+
+		assertTrue(estimator.isReady());
+		assertTrue(estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Component.P, p1.stringValue(),
+				SketchBasedJoinEstimator.Component.O, o1.stringValue()) > 0.0d);
+
+		estimator.deleteStatement(first);
+
+		assertFalse(estimator.isReady(), "OMNI deletes require a full estimator rebuild");
+		assertTrue(booleanField(objectField(estimator, "current"), "omniJoinEstimatorHasDeletes"));
+		double staleJoinRows = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Component.P, p1.stringValue(),
+				SketchBasedJoinEstimator.Component.O, o1.stringValue());
+		assertTrue(Double.isNaN(staleJoinRows),
+				"A stale OMNI estimator must report unavailable instead of falling through to empty legacy sketches");
+		assertTrue(Double.isNaN(estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,
+				p1.stringValue(), o1.stringValue(), null)),
+				"Stale OMNI pattern estimates must not fall through to empty legacy sketches");
+	}
+
+	@Test
 	void countMinDualExposesJoinEvidenceWithoutChangingDefaultEstimatePath() throws Exception {
 		StubSketchStatementSource localStore = new StubSketchStatementSource();
 		Value object = VF.createIRI("urn:o:shared");

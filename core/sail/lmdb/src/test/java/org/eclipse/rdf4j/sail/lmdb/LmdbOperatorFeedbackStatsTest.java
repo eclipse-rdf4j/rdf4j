@@ -30,12 +30,17 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -176,6 +181,41 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void completedRootDoesNotDoubleCountAlreadyRecordedChild(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join nested = join("s", "x", "o");
+		complete(nested, 1_000, 10, 20);
+		nested.setJoinLeftBindingsConsumedActual(100);
+		nested.setJoinRightBindingsConsumedActual(1_000);
+		stats.recordOperatorOutcome(nested);
+
+		LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+		complete(root, 1_000, 10, 20);
+		stats.recordCompletedQuery(root);
+
+		String debug = stats.debugEvidence(join("s", "x", "o"));
+		assertTrue(debug.contains("samples=1"), "The directly recorded child observation should be kept");
+		assertTrue(!debug.contains("samples=2"),
+				"Completed-root rescue must not double-count a child operator that already reported itself");
+	}
+
+	@Test
+	void completedRootRecordsMultiplierAndShadowOperators(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		StatementPattern pattern = sp("s", P1, "o");
+		Filter root = new Filter(pattern, new ValueConstant(VF.createLiteral(true)));
+		complete(pattern, 42, 10, 10);
+		complete(root, 42, 10, 10);
+
+		stats.recordCompletedQuery(root);
+
+		assertTrue(stats.debugEvidence(root).contains("multiplier"),
+				"Completed-root feedback should persist child/multiplier observations separately from direct evidence");
+		assertTrue(stats.debugEvidence(pattern).contains("shadow"),
+				"Completed-root feedback should keep statement-pattern observations in the shadow channel");
+	}
+
+	@Test
 	void persistsAndResetsWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
@@ -221,6 +261,106 @@ class LmdbOperatorFeedbackStatsTest {
 		assertNotNull(reloadedEstimate);
 		assertEquals(100.0d, metric(reloadedEstimate, "rowQErrorMean"), 0.001d);
 		assertEquals(10.0d, metric(reloadedEstimate, "workQErrorMean"), 0.001d);
+	}
+
+	@Test
+	void persistedFeedbackRestoresConfidenceModel(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		Union first = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeBinary(first, 100, 100, 100, 60, 40);
+		stats.recordOperatorOutcome(first);
+		Union noisy = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeBinary(noisy, 10_000, 100, 100, 6_000, 4_000);
+		stats.recordOperatorOutcome(noisy);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate before = stats.estimate(
+				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
+		assertNotNull(before);
+		stats.persistIfDirty();
+
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats.OperatorEstimate after = reloaded.estimate(
+				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
+		assertNotNull(after);
+		assertEquals(before.confidence(), after.confidence(), 0.000001d,
+				"Persisted feedback must keep the conservative confidence/variance state");
+		assertEquals(before.correctionConfidence(), after.correctionConfidence(), 0.000001d,
+				"Persisted feedback must keep the application confidence used by Cascades");
+	}
+
+	@Test
+	void operatorFeedbackExposesLeoMemoEvidence(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
+		stats.recordOperatorOutcome(observed);
+
+		var feedback = stats.memoFeedback(new Union(sp("page", P1, "review"), sp("person", P2, "award")), null,
+				null);
+		assertTrue(!feedback.isEmpty(), "Cascades memo groups should receive learned operator evidence");
+		assertTrue(feedback.bestEvidence().isPresent(), "The LEO surface should expose a best cardinality candidate");
+		assertTrue(feedback.bestEvidence().get().rows() > 100.0d,
+				"The memo evidence should carry the learned row correction");
+	}
+
+	@Test
+	void operatorLearningPolicyIsExplicitForSupportedAndExcludedOperators() {
+		assertEquals(LeoOperatorLearningPolicy.LEARN_DIRECTLY,
+				LmdbOperatorFeedbackStats.operatorLearningPolicy(join("s", "x", "o")));
+		assertEquals(LeoOperatorLearningPolicy.LEARN_AS_CHILD_MULTIPLIER,
+				LmdbOperatorFeedbackStats.operatorLearningPolicy(
+						new Filter(sp("s", P1, "o"), new ValueConstant(VF.createLiteral(true)))));
+		assertEquals(LeoOperatorLearningPolicy.SHADOW_ONLY,
+				LmdbOperatorFeedbackStats.operatorLearningPolicy(sp("s", P1, "o")));
+		assertEquals(LeoOperatorLearningPolicy.DO_NOT_LEARN,
+				LmdbOperatorFeedbackStats.operatorLearningPolicy(new Slice(sp("s", P1, "o"))));
+	}
+
+	@Test
+	void generalizedPredicateContextKeyReusesMultipleConstantSpecificSamples(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join first = new Join(spConstSubject("urn:person:a", P1, "x"), sp("x", P2, "o"));
+		complete(first, 1_000, 10, 20);
+		first.setJoinLeftBindingsConsumedActual(100);
+		first.setJoinRightBindingsConsumedActual(1_000);
+		stats.recordOperatorOutcome(first);
+
+		Join second = new Join(spConstSubject("urn:person:b", P1, "x"), sp("x", P2, "o"));
+		complete(second, 1_200, 10, 20);
+		second.setJoinLeftBindingsConsumedActual(120);
+		second.setJoinRightBindingsConsumedActual(1_200);
+		stats.recordOperatorOutcome(second);
+
+		Join third = new Join(spConstSubject("urn:person:d", P1, "x"), sp("x", P2, "o"));
+		complete(third, 900, 10, 20);
+		third.setJoinLeftBindingsConsumedActual(90);
+		third.setJoinRightBindingsConsumedActual(900);
+		stats.recordOperatorOutcome(third);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate reused = stats.estimate(
+				new Join(spConstSubject("urn:person:c", P1, "x"), sp("x", P2, "o")),
+				100, 1_000, 10, 20);
+		assertNotNull(reused,
+				"Three diverse constant-specific observations should train the bounded generalized fallback key");
+		assertTrue(reused.feedbackKey().contains("predicate-context"));
+
+		assertNull(stats.estimate(new Join(spConstSubject("urn:person:c", P3, "x"), sp("x", P2, "o")),
+				100, 1_000, 10, 20),
+				"Predicate constants stay exact so feedback does not cross unrelated predicates");
+	}
+
+	@Test
+	void operatorFeedbackServiceExposesAndPersistsFanoutEvidence(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		stats.recordFanout(33L, LmdbLeoSurfaceStats.BoundPosition.OBJECT, 44L, 123L, 1L);
+
+		assertEquals(123.0d, stats.evidence(LeoSurfaceKey.fanout(33L, "object", 44L)).orElseThrow().rows());
+		stats.persistIfDirty();
+
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		assertEquals(123.0d, reloaded.evidence(LeoSurfaceKey.fanout(33L, "object", 44L)).orElseThrow().rows());
 	}
 
 	@Test
@@ -297,10 +437,10 @@ class LmdbOperatorFeedbackStatsTest {
 			Join join = join("s", "x", "o");
 			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join));
 
-			StatementPattern unsupported = sp("s", P1, "o");
-			unsupported.setCostFeedbackTrackingEnabled(true);
-			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(unsupported),
-					"Unsupported nodes should not get the low-overhead LEO wrapper");
+			StatementPattern shadowOnly = sp("s", P1, "o");
+			shadowOnly.setCostFeedbackTrackingEnabled(true);
+			assertTrue(evaluationStatistics.shouldTrackCostFeedback(shadowOnly),
+					"Statement patterns should be tracked in shadow mode for live fanout learning");
 
 			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
 					"Supported operators should be wrapped only after planner stamping enables feedback tracking");
@@ -312,7 +452,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void lmdbStatisticsDoesNotTrackCostFeedbackByDefault(@TempDir Path tempDir) throws Exception {
+	void lmdbStatisticsTracksCostFeedbackByDefault(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 		System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 		try {
@@ -322,10 +462,30 @@ class LmdbOperatorFeedbackStatsTest {
 			Join join = join("s", "x", "o");
 			join.setCostFeedbackTrackingEnabled(true);
 
+			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join),
+					"Runtime operator feedback should be available by default for stamped LMDB operators");
+			assertTrue(evaluationStatistics.shouldTrackCostFeedback(join),
+					"Stamped supported operators should get the low-overhead LEO wrapper by default");
+		} finally {
+			restoreOperatorFeedbackTrackingProperty(previous);
+		}
+	}
+
+	@Test
+	void lmdbStatisticsCanDisableCostFeedbackWithProperty(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "false");
+		try {
+			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
+					feedbackStats, null);
+			Join join = join("s", "x", "o");
+			join.setCostFeedbackTrackingEnabled(true);
+
 			assertTrue(!evaluationStatistics.supportsOperatorFeedbackTracking(join),
-					"Runtime operator feedback should not be stamped by default");
+					"The operator feedback property must remain an explicit opt-out");
 			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
-					"Runtime operator feedback should be opt-in so normal read queries do not pay feedback wrappers");
+					"Opting out should suppress runtime feedback wrappers");
 		} finally {
 			restoreOperatorFeedbackTrackingProperty(previous);
 		}
@@ -361,7 +521,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void costFeedbackBelowThresholdDoesNotRecord(@TempDir Path tempDir) throws Exception {
+	void costFeedbackBelowThresholdRecordsCalibrationSample(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 125, 100, 100, 125);
@@ -369,8 +529,9 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400,
-				100, 100), "Close estimates should not churn the learned-operator sidecar");
+		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+				400, 100, 100),
+				"Close estimates should still calibrate the LEO surface instead of learning only from misses");
 	}
 
 	@Test
@@ -493,6 +654,11 @@ class LmdbOperatorFeedbackStatsTest {
 
 	private static ArbitraryLengthPath alp(String subjectName, String objectName) {
 		return new ArbitraryLengthPath(Var.of(subjectName), sp(subjectName, P1, objectName), Var.of(objectName), 1);
+	}
+
+	private static StatementPattern spConstSubject(String subjectIri, IRI predicate, String objectName) {
+		return new StatementPattern(new Var("subject", VF.createIRI(subjectIri)),
+				Var.of("_p", predicate, true, true), Var.of(objectName));
 	}
 
 	private static StatementPattern sp(String subjectName, IRI predicate, String objectName) {

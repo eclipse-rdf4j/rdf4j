@@ -92,6 +92,7 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 
 	private static SketchBasedJoinEstimator.Config smallConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)
 				.withNominalEntries(64)
 				.withSubjectBucketCount(8)
 				.withPredicateBucketCount(8)

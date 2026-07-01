@@ -75,11 +75,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCorrection;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimate;
@@ -105,7 +111,7 @@ import org.slf4j.LoggerFactory;
 class LmdbEvaluationStatistics
 		extends EvaluationStatistics
 		implements JoinOrderPlanner, JoinFactorCostModel, QueryOptimizationScopeProvider,
-		LmdbPredicateObjectDomainSource, RdfStatisticsProvider {
+		LmdbPredicateObjectDomainSource, RdfStatisticsProvider, LeoSurfaceProvider {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
@@ -165,6 +171,7 @@ class LmdbEvaluationStatistics
 	private static final String PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MAX = "plannedOperatorFeedbackWorkQErrorMax";
 	private static final String PLANNED_OPERATOR_FEEDBACK_UNCERTAINTY_ROWS = "plannedOperatorFeedbackUncertaintyRows";
 	private static final String PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS = "plannedOperatorFeedbackRobustWorkRows";
+	private static final String PLANNED_OPERATOR_FEEDBACK_CORRECTION_CONFIDENCE = "plannedOperatorFeedbackCorrectionConfidence";
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 	private static final String PLANNED_OPERATOR_REPEATED_INVOCATIONS = "plannedOperatorRepeatedInvocations";
 	private static final String PLANNED_MATERIALIZED_FILTER_WORK_ROWS = "plannedMaterializedFilterWorkRows";
@@ -179,6 +186,7 @@ class LmdbEvaluationStatistics
 	private static final String PATH_MODE_BETWEEN = "between";
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 	static final String OPERATOR_FEEDBACK_TRACKING_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackTracking";
+	private static final double LEO_FANOUT_CONFIDENCE_THRESHOLD = 0.55d;
 	private static final AtomicLong ESTIMATE_TRACE_SEQUENCE = new AtomicLong();
 	private static final String FINITE_DERIVED_SURFACE_CACHE_HITS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
 			+ "finiteDerivedSurfaceCacheHits";
@@ -246,7 +254,11 @@ class LmdbEvaluationStatistics
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
 		this.filterSelectivityStats = filterSelectivityStats;
 		this.operatorFeedbackStats = operatorFeedbackStats;
-		this.operatorFeedbackTrackingEnabled = Boolean.getBoolean(OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		this.operatorFeedbackTrackingEnabled = operatorFeedbackTrackingEnabledByProperty();
+	}
+
+	private static boolean operatorFeedbackTrackingEnabledByProperty() {
+		return Boolean.parseBoolean(System.getProperty(OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true"));
 	}
 
 	ValueStore getValueStore() {
@@ -1630,6 +1642,7 @@ class LmdbEvaluationStatistics
 				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS, workRows);
 				metrics.put("plannedOperatorFeedbackEvidence", (double) feedback.evidenceCount());
 				metrics.put("plannedOperatorFeedbackConfidence", feedback.confidence());
+				metrics.put(PLANNED_OPERATOR_FEEDBACK_CORRECTION_CONFIDENCE, feedback.correctionConfidence());
 				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MEAN, feedback.rowQErrorMean());
 				metrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MAX, feedback.rowQErrorMax());
 				metrics.put(PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MEAN, feedback.workQErrorMean());
@@ -1747,8 +1760,9 @@ class LmdbEvaluationStatistics
 		if (estimate == null) {
 			return Optional.empty();
 		}
-		return Optional.of(new FeedbackCorrection(estimate.rows(), estimate.workRows(), estimate.confidence(),
-				estimate.rowQErrorMax(), estimate.workQErrorMax(), estimate.source()));
+		return Optional.of(new FeedbackCorrection(estimate.rows(), estimate.workRows(),
+				estimate.correctionConfidence(), estimate.rowQErrorMax(), estimate.workQErrorMax(),
+				estimate.source()));
 	}
 
 	private QErrorInterval qErrorIntervalFromMetrics(double rows, Map<String, Double> metrics, String source) {
@@ -2634,6 +2648,7 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put(PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS, robustWorkRows);
 		doubleMetrics.put("plannedOperatorFeedbackEvidence", (double) feedback.evidenceCount());
 		doubleMetrics.put("plannedOperatorFeedbackConfidence", feedback.confidence());
+		doubleMetrics.put(PLANNED_OPERATOR_FEEDBACK_CORRECTION_CONFIDENCE, feedback.correctionConfidence());
 		doubleMetrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MEAN, feedback.rowQErrorMean());
 		doubleMetrics.put(PLANNED_OPERATOR_FEEDBACK_ROW_Q_ERROR_MAX, feedback.rowQErrorMax());
 		doubleMetrics.put(PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MEAN, feedback.workQErrorMean());
@@ -4760,6 +4775,7 @@ class LmdbEvaluationStatistics
 		appendEstimateTraceMetric(builder, metrics, PLANNED_OPERATOR_FEEDBACK_WORK_Q_ERROR_MAX);
 		appendEstimateTraceMetric(builder, metrics, PLANNED_OPERATOR_FEEDBACK_UNCERTAINTY_ROWS);
 		appendEstimateTraceMetric(builder, metrics, PLANNED_OPERATOR_FEEDBACK_ROBUST_WORK_ROWS);
+		appendEstimateTraceMetric(builder, metrics, PLANNED_OPERATOR_FEEDBACK_CORRECTION_CONFIDENCE);
 		appendEstimateTraceMetric(builder, metrics, "plannedBoundJoinProductRows");
 		appendEstimateTraceMetric(builder, metrics, "plannedBoundJoinProductPrefixRows");
 		appendEstimateTraceMetric(builder, metrics, "plannedBoundJoinProductPrefixSurfaceRows");
@@ -11098,22 +11114,30 @@ class LmdbEvaluationStatistics
 				&& operatorFeedbackStats != null
 				&& node instanceof TupleExpr tupleExpr
 				&& tupleExpr.isCostFeedbackTrackingEnabled()
-				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr);
+				&& operatorFeedbackStats.shouldTrackRuntimeFeedback(tupleExpr);
 	}
 
 	@Override
 	public boolean shouldReportCostFeedback(QueryModelNode node) {
-		return operatorFeedbackTrackingEnabled
-				&& operatorFeedbackStats != null
-				&& node instanceof TupleExpr tupleExpr
-				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(tupleExpr)
-				&& super.shouldReportCostFeedback(node);
+		if (!operatorFeedbackTrackingEnabled
+				|| operatorFeedbackStats == null
+				|| !(node instanceof TupleExpr tupleExpr)
+				|| !tupleExpr.isCostFeedbackTrackingEnabled()
+				|| !tupleExpr.isCostFeedbackCompletedActual()
+				|| !operatorFeedbackStats.shouldTrackRuntimeFeedback(tupleExpr)) {
+			return false;
+		}
+		double plannedRepeatedInvocations = tupleExpr.getDoubleMetricPlanned(PLANNED_OPERATOR_REPEATED_INVOCATIONS);
+		return !isFiniteNonNegative(plannedRepeatedInvocations)
+				|| plannedRepeatedInvocations <= 1.0d
+				|| tupleExpr.getCostFeedbackCloseCountActual() >= Math.max(1L,
+						Math.round(plannedRepeatedInvocations));
 	}
 
 	boolean supportsOperatorFeedbackTracking(TupleExpr node) {
 		return operatorFeedbackTrackingEnabled
 				&& operatorFeedbackStats != null
-				&& LmdbOperatorFeedbackStats.supportsOperatorFeedback(node);
+				&& operatorFeedbackStats.shouldTrackRuntimeFeedback(node);
 	}
 
 	@Override
@@ -11122,11 +11146,10 @@ class LmdbEvaluationStatistics
 				|| !(node instanceof TupleExpr tupleExpr)) {
 			return;
 		}
-		if (tupleExpr.getParentNode() == null) {
-			operatorFeedbackStats.recordCompletedQuery(tupleExpr);
-		} else {
-			operatorFeedbackStats.recordOperatorOutcome(tupleExpr);
+		if (tupleExpr instanceof StatementPattern pattern) {
+			recordStatementPatternFanout(pattern);
 		}
+		operatorFeedbackStats.observe(tupleExpr, tupleExpr.getParentNode() == null);
 	}
 
 	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
@@ -11140,6 +11163,98 @@ class LmdbEvaluationStatistics
 			return null;
 		}
 		return operatorFeedbackStats.estimate(node, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
+	}
+
+	@Override
+	public LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingUniverse universe, BindingShape bindingShape) {
+		return operatorFeedbackStats == null
+				? LeoMemoFeedback.empty()
+				: operatorFeedbackStats.memoFeedback(tupleExpr, universe, bindingShape);
+	}
+
+	@Override
+	public Optional<LeoEvidence> evidence(LeoSurfaceKey key) {
+		return operatorFeedbackStats == null ? Optional.empty() : operatorFeedbackStats.evidence(key);
+	}
+
+	private void recordStatementPatternFanout(StatementPattern pattern) {
+		if (operatorFeedbackStats == null || valueStore == null || pattern == null
+				|| !pattern.isCostFeedbackCompletedActual()) {
+			return;
+		}
+		double actualRows = pattern.getCostFeedbackActualRows();
+		if (!isFiniteNonNegative(actualRows)) {
+			actualRows = pattern.getResultSizeActual();
+		}
+		if (!isFiniteNonNegative(actualRows)) {
+			return;
+		}
+		long predicateId = leoValueId(pattern.getPredicateVar());
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+		long fanout = Math.max(0L, Math.round(actualRows));
+		long epoch = leoObservationEpoch();
+		if (hasConstantValue(pattern.getSubjectVar()) && !hasConstantValue(pattern.getObjectVar())) {
+			long subjectId = leoValueId(pattern.getSubjectVar());
+			if (subjectId != LmdbValue.UNKNOWN_ID) {
+				operatorFeedbackStats.recordFanout(predicateId, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, subjectId,
+						fanout, epoch);
+			}
+		} else if (hasConstantValue(pattern.getObjectVar()) && !hasConstantValue(pattern.getSubjectVar())) {
+			long objectId = leoValueId(pattern.getObjectVar());
+			if (objectId != LmdbValue.UNKNOWN_ID) {
+				operatorFeedbackStats.recordFanout(predicateId, LmdbLeoSurfaceStats.BoundPosition.OBJECT, objectId,
+						fanout, epoch);
+			}
+		}
+	}
+
+	private long leoObservationEpoch() {
+		try {
+			return valueStore == null || valueStore.getRevision() == null ? 0L
+					: valueStore.getRevision().getRevisionId();
+		} catch (RuntimeException e) {
+			return 0L;
+		}
+	}
+
+	private Optional<LeoEvidence> learnedStatementPatternFanout(StatementPattern pattern) {
+		if (operatorFeedbackStats == null || valueStore == null || pattern == null) {
+			return Optional.empty();
+		}
+		long predicateId = leoValueId(pattern.getPredicateVar());
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Optional.empty();
+		}
+		if (hasConstantValue(pattern.getSubjectVar()) && !hasConstantValue(pattern.getObjectVar())) {
+			long subjectId = leoValueId(pattern.getSubjectVar());
+			return subjectId == LmdbValue.UNKNOWN_ID
+					? Optional.empty()
+					: operatorFeedbackStats.evidence(LeoSurfaceKey.fanout(predicateId, "subject", subjectId));
+		}
+		if (hasConstantValue(pattern.getObjectVar()) && !hasConstantValue(pattern.getSubjectVar())) {
+			long objectId = leoValueId(pattern.getObjectVar());
+			return objectId == LmdbValue.UNKNOWN_ID
+					? Optional.empty()
+					: operatorFeedbackStats.evidence(LeoSurfaceKey.fanout(predicateId, "object", objectId));
+		}
+		return Optional.empty();
+	}
+
+	private long leoValueId(Var var) {
+		if (!hasConstantValue(var)) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		try {
+			return valueStore.getId(var.getValue());
+		} catch (IOException e) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+	}
+
+	private static boolean hasConstantValue(Var var) {
+		return var != null && var.hasValue() && var.getValue() != null;
 	}
 
 	private StatementPattern basePatternForFilter(Filter filter) {
@@ -11281,6 +11396,12 @@ class LmdbEvaluationStatistics
 
 		@Override
 		protected double getCardinality(StatementPattern sp) {
+			Optional<LeoEvidence> fanoutEvidence = learnedStatementPatternFanout(sp);
+			if (fanoutEvidence.isPresent()
+					&& fanoutEvidence.get().confidence() >= LEO_FANOUT_CONFIDENCE_THRESHOLD
+					&& isFiniteNonNegative(fanoutEvidence.get().rows())) {
+				return fanoutEvidence.get().rows();
+			}
 			double cardinality = statementPatternCardinalitySource.estimateForPlanning(sp);
 			if (cardinality >= 0.0d) {
 				return cardinality;

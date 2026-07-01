@@ -21,39 +21,50 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRuleHint;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
-final class LmdbOperatorFeedbackStats {
+final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 
@@ -62,7 +73,8 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_PROPERTY_PATH = "learned_property_path";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 8;
+	private static final String LEO_SURFACE_SUFFIX = ".leo";
+	private static final int PERSIST_VERSION = 10;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -70,9 +82,14 @@ final class LmdbOperatorFeedbackStats {
 	static final double LEARNED_REPORT_Q_ERROR_THRESHOLD = 2.0d;
 
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
+	private static final long MIN_GENERALIZED_KEY_SAMPLES = 3L;
+	private static final int MIN_GENERALIZED_DISTINCT_SIGNATURES = 2;
+	private static final long CONFIDENCE_DECAY_HALF_LIFE_EPOCHS = 4096L;
+	private static final String LEO_RECORDED_OPERATOR_ACTUAL = "optimizer.leoOperatorFeedbackRecordedActual";
+	private static final String LEO_RECORDED_PLAN_ACTUAL = "optimizer.leoPlanFeedbackRecordedActual";
+	private static final String LEO_RULE_STEERING_PROPERTY = "rdf4j.optimizer.lmdb.leoRuleSteering";
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 	private static final String PLANNED_OPERATOR_REPEATED_INVOCATIONS = "plannedOperatorRepeatedInvocations";
-	private static final String PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD = "plannedPlanChangingFeedbackQErrorThreshold";
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
 	private static final String PATH_MODE_FULL_SCAN = "fullScan";
@@ -88,26 +105,64 @@ final class LmdbOperatorFeedbackStats {
 
 	private final Path estimatorPath;
 	private final Path sidecarPath;
+	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
+	private final LmdbLeoFeedbackStore leoFeedbackStore;
+	private final LmdbLeoSurfaceStats leoSurfaceStats;
 	private final Map<OperatorKey, LearnedOperatorCounts> learnedByOperator = new LinkedHashMap<>();
+	private final Map<OperatorKey, LearnedMultiplierCounts> learnedMultipliers = new LinkedHashMap<>();
+	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 
+	private long feedbackEpoch;
 	private boolean dirty;
+	private boolean surfaceDirty;
 
 	LmdbOperatorFeedbackStats(Path estimatorPath) {
 		this.estimatorPath = Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this.leoFeedbackConfig = LmdbLeoFeedbackConfig.defaultConfig();
+		Path leoSurfacePath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
+		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig);
+		this.leoSurfaceStats = loadLeoSurfaceStats();
 		loadIfPresent();
 	}
 
 	synchronized void reset() {
-		if (learnedByOperator.isEmpty()) {
+		boolean hadOperatorEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
+				|| !shadowByOperator.isEmpty();
+		boolean hadSurfaceEvidence = !leoSurfaceStats.isEmpty();
+		if (!hadOperatorEvidence && !hadSurfaceEvidence) {
 			return;
 		}
 		learnedByOperator.clear();
-		dirty = true;
+		learnedMultipliers.clear();
+		shadowByOperator.clear();
+		leoSurfaceStats.clear();
+		feedbackEpoch++;
+		dirty |= hadOperatorEvidence;
+		surfaceDirty |= hadSurfaceEvidence;
 	}
 
 	void recordStoreMutation() {
 		reset();
+	}
+
+	@Override
+	public void invalidate() {
+		reset();
+	}
+
+	@Override
+	public void resetLearnedEvidence() {
+		reset();
+	}
+
+	@Override
+	public void observe(TupleExpr tupleExpr, boolean completedRoot) {
+		if (completedRoot) {
+			recordCompletedQuery(tupleExpr);
+		} else {
+			recordOperatorOutcome(tupleExpr);
+		}
 	}
 
 	void recordCompletedQuery(TupleExpr root) {
@@ -118,55 +173,161 @@ final class LmdbOperatorFeedbackStats {
 		root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
-				if (isSupportedOperator(node)) {
-					operators.add(node);
-				}
+				addObservable(node);
 				super.meetBinaryTupleOperator(node);
 			}
 
 			@Override
+			protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
+				addObservable(node);
+				super.meetUnaryTupleOperator(node);
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath node) {
+				addObservable(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(ZeroLengthPath node) {
+				addObservable(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(StatementPattern node) {
+				addObservable(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(BindingSetAssignment node) {
+				addObservable(node);
+				super.meet(node);
+			}
+
+			@Override
 			public void meetOther(QueryModelNode node) {
-				if (node instanceof TupleExpr tupleExpr && isSupportedOperator(tupleExpr)) {
-					operators.add(tupleExpr);
+				if (node instanceof TupleExpr tupleExpr
+						&& !(node instanceof UnaryTupleOperator)
+						&& !(node instanceof BinaryTupleOperator)) {
+					addObservable(tupleExpr);
 				}
 				super.meetOther(node);
 			}
+
+			private void addObservable(TupleExpr tupleExpr) {
+				if (isRuntimeObservableOperator(tupleExpr)) {
+					operators.add(tupleExpr);
+				}
+			}
 		});
 		for (TupleExpr operator : operators) {
-			recordOperatorOutcome(operator, true);
+			recordObservation(operator, true);
 		}
+		recordPlanShadow(root);
 	}
 
 	synchronized void recordOperatorOutcome(TupleExpr node) {
-		recordOperatorOutcome(node, false);
+		recordObservation(node, false);
 	}
 
-	private synchronized void recordOperatorOutcome(TupleExpr node, boolean completedRoot) {
-		if (!supportsOperatorFeedback(node) || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
+	private synchronized void recordObservation(TupleExpr node, boolean completedRoot) {
+		LeoOperatorLearningPolicy policy = operatorLearningPolicy(node);
+		if (!policy.runtimeObservable() || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
 			trace("record-skip-incomplete", node, null, completionDetails(node, completedRoot));
 			return;
 		}
-		if (node.isCostFeedbackTrackingEnabled() && node.isCostFeedbackCompletedActual()
-				&& !shouldReportCostFeedback(node)) {
-			trace("record-skip-threshold", node, null, "");
+		if (isFeedbackRecorded(node)) {
+			trace("record-skip-duplicate", node, null, completionDetails(node, completedRoot));
 			return;
 		}
-		OperatorKey key = keyFor(node, null);
-		if (key == null) {
+		boolean recorded = switch (policy) {
+		case LEARN_DIRECTLY -> recordDirectOperatorOutcome(node);
+		case LEARN_AS_CHILD_MULTIPLIER -> recordMultiplierOutcome(node);
+		case SHADOW_ONLY -> recordShadowOutcome(node);
+		case DO_NOT_LEARN -> false;
+		};
+		if (recorded) {
+			markFeedbackRecorded(node);
+		}
+	}
+
+	private boolean recordDirectOperatorOutcome(TupleExpr node) {
+		List<OperatorKey> keys = keysForRecord(node, null);
+		if (keys.isEmpty()) {
 			trace("record-skip-key", node, null, "");
-			return;
+			return false;
 		}
 		OperatorObservation observation = observationFor(node);
 		if (observation == null) {
-			trace("record-skip-observation", node, key, "");
-			return;
+			trace("record-skip-observation", node, keys.get(0), "");
+			return false;
 		}
-		learnedByOperator.computeIfAbsent(key, ignored -> new LearnedOperatorCounts()).add(observation);
-		trace("record", node, key, "actualRows=" + observation.actualRows() + ", plannedRows="
-				+ observation.plannedRows() + ", actualWorkRows=" + observation.actualWorkRows()
-				+ ", plannedWorkRows=" + observation.plannedWorkRows());
+		long epoch = nextFeedbackEpoch();
+		for (OperatorKey key : keys) {
+			learnedByOperator.computeIfAbsent(key, ignored -> new LearnedOperatorCounts())
+					.add(observation, key.abstractedSignature(), epoch);
+			trace("record", node, key, "actualRows=" + observation.actualRows() + ", plannedRows="
+					+ observation.plannedRows() + ", actualWorkRows=" + observation.actualWorkRows()
+					+ ", plannedWorkRows=" + observation.plannedWorkRows());
+		}
 		evictOldestIfNeeded();
 		dirty = true;
+		return true;
+	}
+
+	private boolean recordMultiplierOutcome(TupleExpr node) {
+		OperatorKey key = multiplierKeyFor(node);
+		OperatorObservation observation = observationFor(node);
+		if (key == null || observation == null) {
+			trace("record-multiplier-skip", node, key, "");
+			return false;
+		}
+		learnedMultipliers.computeIfAbsent(key, ignored -> new LearnedMultiplierCounts())
+				.add(observation, nextFeedbackEpoch());
+		evictOldestIfNeeded(learnedMultipliers);
+		dirty = true;
+		trace("record-multiplier", node, key, "actualRows=" + observation.actualRows()
+				+ ", plannedRows=" + observation.plannedRows());
+		return true;
+	}
+
+	private void recordPlanShadow(TupleExpr root) {
+		if (root == null || isPlanFeedbackRecorded(root)) {
+			return;
+		}
+		OperatorObservation observation = observationFor(root);
+		if (observation == null) {
+			return;
+		}
+		OperatorKey key = planShadowKeyFor(root);
+		if (key == null) {
+			return;
+		}
+		shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
+				.add(observation, nextFeedbackEpoch());
+		evictOldestIfNeeded(shadowByOperator);
+		markPlanFeedbackRecorded(root);
+		dirty = true;
+		trace("record-plan-shadow", root, key, "actualRows=" + observation.actualRows()
+				+ ", actualWorkRows=" + observation.actualWorkRows());
+	}
+
+	private boolean recordShadowOutcome(TupleExpr node) {
+		OperatorKey key = shadowKeyFor(node);
+		OperatorObservation observation = observationFor(node);
+		if (key == null || observation == null) {
+			trace("record-shadow-skip", node, key, "");
+			return false;
+		}
+		shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
+				.add(observation, nextFeedbackEpoch());
+		evictOldestIfNeeded(shadowByOperator);
+		dirty = true;
+		trace("record-shadow", node, key, "actualRows=" + observation.actualRows());
+		return true;
 	}
 
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
@@ -180,29 +341,128 @@ final class LmdbOperatorFeedbackStats {
 			trace("estimate-skip-empty", node, null, "");
 			return null;
 		}
-		OperatorKey key = keyFor(node, executionMode);
-		if (key == null) {
+		List<OperatorKey> keys = keysForEstimate(node, executionMode);
+		if (keys.isEmpty()) {
 			trace("estimate-skip-key", node, null, "executionMode=" + executionMode);
 			return null;
 		}
-		LearnedOperatorCounts counts = learnedByOperator.get(key);
-		if (counts == null || counts.sampleCount <= 0L) {
-			trace("estimate-miss", node, key, "executionMode=" + executionMode + ", size=" + learnedByOperator.size());
-			return null;
+		for (OperatorKey key : keys) {
+			LearnedOperatorCounts counts = learnedByOperator.get(key);
+			if (counts == null || counts.sampleCount <= 0L) {
+				trace("estimate-miss", node, key, "executionMode=" + executionMode + ", size="
+						+ learnedByOperator.size());
+				continue;
+			}
+			if (key.generalized() && (counts.sampleCount < MIN_GENERALIZED_KEY_SAMPLES
+					|| counts.distinctGeneralizedSignatures() < MIN_GENERALIZED_DISTINCT_SIGNATURES)) {
+				trace("estimate-skip-generalized-undertrained", node, key, "executionMode=" + executionMode
+						+ ", samples=" + counts.sampleCount
+						+ ", distinct=" + counts.distinctGeneralizedSignatures());
+				continue;
+			}
+			OperatorEstimate estimate = counts.estimate(node, leftRows, rightRows, baseRows, baseWorkRows,
+					key.toString(), feedbackEpoch);
+			if (estimate == null || !isFiniteNonNegative(estimate.rows())
+					|| !isFiniteNonNegative(estimate.workRows())) {
+				trace("estimate-invalid", node, key, "executionMode=" + executionMode);
+				continue;
+			}
+			trace("estimate-hit", node, key, "executionMode=" + executionMode + ", rows=" + estimate.rows()
+					+ ", workRows=" + estimate.workRows() + ", source=" + estimate.source());
+			return estimate;
 		}
-		OperatorEstimate estimate = counts.estimate(node, leftRows, rightRows, baseRows, baseWorkRows,
-				key.toString());
-		if (estimate == null || !isFiniteNonNegative(estimate.rows()) || !isFiniteNonNegative(estimate.workRows())) {
-			trace("estimate-invalid", node, key, "executionMode=" + executionMode);
-			return null;
-		}
-		trace("estimate-hit", node, key, "executionMode=" + executionMode + ", rows=" + estimate.rows()
-				+ ", workRows=" + estimate.workRows() + ", source=" + estimate.source());
-		return estimate;
+		return null;
 	}
 
 	synchronized int size() {
 		return learnedByOperator.size();
+	}
+
+	@Override
+	public synchronized LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingUniverse universe,
+			BindingShape bindingShape) {
+		if (tupleExpr == null || learnedByOperator.isEmpty() || !supportsOperatorFeedback(tupleExpr)) {
+			return LeoMemoFeedback.empty();
+		}
+		double baseRows = memoBaseRows(tupleExpr);
+		double baseWorkRows = memoBaseWorkRows(tupleExpr, baseRows);
+		String executionMode = tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath
+				? pathEndpointMode(tupleExpr, null)
+				: null;
+		OperatorEstimate estimate = estimate(tupleExpr, Double.NaN, Double.NaN, baseRows, baseWorkRows,
+				executionMode);
+		if (estimate == null) {
+			return LeoMemoFeedback.empty();
+		}
+		LeoEvidence evidence = new LeoEvidence(estimate.rows(), estimate.workRows(), estimate.correctionConfidence(),
+				estimate.evidenceCount(), estimate.rowQErrorMean(), estimate.rowQErrorMax(),
+				estimate.workQErrorMean(), estimate.workQErrorMax(), estimate.uncertaintyRows(),
+				estimate.source(), LeoEvidence.Kind.SCALAR_OPERATOR_FEEDBACK, false);
+		return LeoMemoFeedback.of(List.of(evidence), ruleHints(tupleExpr, baseRows, baseWorkRows, estimate));
+	}
+
+	@Override
+	public synchronized Optional<LeoEvidence> evidence(LeoSurfaceKey key) {
+		return fanoutEvidence(key);
+	}
+
+	synchronized void recordFanout(long predicateId, LmdbLeoSurfaceStats.BoundPosition position, long valueId,
+			long fanout, long epoch) {
+		if (leoSurfaceStats.recordFanout(predicateId, position, valueId, fanout, epoch)) {
+			surfaceDirty = true;
+		}
+	}
+
+	synchronized Optional<LeoEvidence> estimateFanout(long predicateId, LmdbLeoSurfaceStats.BoundPosition position,
+			long valueId) {
+		return leoSurfaceStats.estimateFanout(predicateId, position, valueId)
+				.or(() -> leoSurfaceStats.bucketEstimate(predicateId, position, valueId))
+				.map(LmdbOperatorFeedbackStats::fanoutEvidence);
+	}
+
+	private static double memoBaseRows(TupleExpr tupleExpr) {
+		return finiteOr(tupleExpr.getCostFeedbackExpectedRows(), tupleExpr.getResultSizeEstimate());
+	}
+
+	private static double memoBaseWorkRows(TupleExpr tupleExpr, double baseRows) {
+		double workRows = finiteOr(tupleExpr.getCostFeedbackExpectedWorkRows(),
+				finiteOr(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
+						tupleExpr.getCostEstimate()));
+		return isFiniteNonNegative(workRows) ? workRows : baseRows;
+	}
+
+	private Optional<LeoEvidence> fanoutEvidence(LeoSurfaceKey key) {
+		if (key == null || !"fanout".equals(key.operatorKind())) {
+			return Optional.empty();
+		}
+		Optional<Long> predicateId = parseLong(key.predicateId());
+		Optional<Long> valueId = parseLong(key.valueId());
+		Optional<LmdbLeoSurfaceStats.BoundPosition> position = boundPosition(key.boundPosition());
+		if (predicateId.isEmpty() || valueId.isEmpty() || position.isEmpty()) {
+			return Optional.empty();
+		}
+		return estimateFanout(predicateId.get(), position.get(), valueId.get());
+	}
+
+	private static LeoEvidence fanoutEvidence(LmdbLeoSurfaceStats.FanoutEstimate estimate) {
+		return LeoEvidence.persistedFanoutHistogram(estimate.rows(), estimate.rows(), estimate.confidence(),
+				estimate.evidenceCount(), estimate.source());
+	}
+
+	private static Optional<Long> parseLong(String value) {
+		try {
+			return Optional.of(Long.parseLong(value));
+		} catch (RuntimeException e) {
+			return Optional.empty();
+		}
+	}
+
+	private static Optional<LmdbLeoSurfaceStats.BoundPosition> boundPosition(String value) {
+		return switch (value) {
+		case "subject" -> Optional.of(LmdbLeoSurfaceStats.BoundPosition.SUBJECT);
+		case "object" -> Optional.of(LmdbLeoSurfaceStats.BoundPosition.OBJECT);
+		default -> Optional.empty();
+		};
 	}
 
 	private static void trace(String event, TupleExpr node, OperatorKey key, String details) {
@@ -242,40 +502,82 @@ final class LmdbOperatorFeedbackStats {
 				+ ", feedbackCloseCount=" + node.getCostFeedbackCloseCountActual();
 	}
 
-	synchronized void persistIfDirty() {
-		if (!dirty) {
+	@Override
+	public synchronized void persistIfDirty() {
+		if (!dirty && !surfaceDirty) {
 			return;
 		}
 		SnapshotRevision estimatorRevision = currentEstimatorRevision();
 		if (estimatorRevision == null) {
 			return;
 		}
+		if (dirty && persistOperatorFeedback(estimatorRevision)) {
+			dirty = false;
+		}
+		if (surfaceDirty && persistLeoSurfaces(estimatorRevision)) {
+			surfaceDirty = false;
+		}
+	}
 
+	private boolean persistOperatorFeedback(SnapshotRevision estimatorRevision) {
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
 			estimatorRevision.writeTo(out);
+			out.writeLong(feedbackEpoch);
 			out.writeInt(learnedByOperator.size());
 			for (var entry : learnedByOperator.entrySet()) {
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
+			out.writeInt(learnedMultipliers.size());
+			for (var entry : learnedMultipliers.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
+			out.writeInt(shadowByOperator.size());
+			for (var entry : shadowByOperator.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
-			return;
+			return false;
 		}
 
 		try {
 			Files.move(tempPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			return true;
 		} catch (IOException atomicMoveFailure) {
 			try {
 				Files.move(tempPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING);
+				return true;
 			} catch (IOException moveFailure) {
 				deleteIfExists(tempPath);
-				return;
+				return false;
 			}
 		}
-		dirty = false;
+	}
+
+	private boolean persistLeoSurfaces(SnapshotRevision estimatorRevision) {
+		try {
+			leoFeedbackStore.persist(estimatorRevision.token(), leoSurfaceStats);
+			return true;
+		} catch (IOException e) {
+			return false;
+		}
+	}
+
+	private LmdbLeoSurfaceStats loadLeoSurfaceStats() {
+		SnapshotRevision currentRevision = currentEstimatorRevision();
+		if (currentRevision == null) {
+			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
+		}
+		try {
+			return leoFeedbackStore.load(currentRevision.token());
+		} catch (IOException | RuntimeException e) {
+			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
+		}
 	}
 
 	private void loadIfPresent() {
@@ -288,13 +590,20 @@ final class LmdbOperatorFeedbackStats {
 		}
 
 		Map<OperatorKey, LearnedOperatorCounts> loaded = new LinkedHashMap<>();
+		Map<OperatorKey, LearnedMultiplierCounts> loadedMultipliers = new LinkedHashMap<>();
+		Map<OperatorKey, ShadowOperatorCounts> loadedShadow = new LinkedHashMap<>();
+		long loadedEpoch = 0L;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
-			if (in.readInt() != PERSIST_VERSION) {
+			int version = in.readInt();
+			if (version != PERSIST_VERSION && version != 9 && version != 8) {
 				return;
 			}
 			SnapshotRevision persistedRevision = SnapshotRevision.readFrom(in);
 			if (!persistedRevision.matches(currentRevision)) {
 				return;
+			}
+			if (version >= 10) {
+				loadedEpoch = Math.max(0L, in.readLong());
 			}
 			int entries = in.readInt();
 			if (entries < 0 || entries > MAX_ENTRIES * 4) {
@@ -302,10 +611,14 @@ final class LmdbOperatorFeedbackStats {
 			}
 			for (int i = 0; i < entries; i++) {
 				OperatorKey key = OperatorKey.readFrom(in);
-				LearnedOperatorCounts counts = LearnedOperatorCounts.readFrom(in);
+				LearnedOperatorCounts counts = LearnedOperatorCounts.readFrom(in, version);
 				if (counts.sampleCount > 0L) {
 					loaded.put(key, counts);
 				}
+			}
+			if (version >= 10) {
+				readMultiplierEntries(in, loadedMultipliers);
+				readShadowEntries(in, loadedShadow);
 			}
 		} catch (IOException | RuntimeException e) {
 			return;
@@ -314,7 +627,14 @@ final class LmdbOperatorFeedbackStats {
 		synchronized (this) {
 			learnedByOperator.clear();
 			learnedByOperator.putAll(loaded);
+			learnedMultipliers.clear();
+			learnedMultipliers.putAll(loadedMultipliers);
+			shadowByOperator.clear();
+			shadowByOperator.putAll(loadedShadow);
+			feedbackEpoch = Math.max(feedbackEpoch, loadedEpoch);
 			evictOldestIfNeeded();
+			evictOldestIfNeeded(learnedMultipliers);
+			evictOldestIfNeeded(shadowByOperator);
 			dirty = false;
 		}
 	}
@@ -443,16 +763,58 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	static boolean supportsOperatorFeedback(TupleExpr node) {
-		return isSupportedOperator(node);
+		return operatorLearningPolicy(node).recordsDirectEvidence();
 	}
 
-	private static boolean isSupportedOperator(TupleExpr node) {
-		return node instanceof Join
+	@Override
+	public boolean shouldTrackRuntimeFeedback(TupleExpr tupleExpr) {
+		return operatorLearningPolicy(tupleExpr).runtimeObservable();
+	}
+
+	@Override
+	public boolean shouldRecordDirectEvidence(TupleExpr tupleExpr) {
+		return supportsOperatorFeedback(tupleExpr);
+	}
+
+	@Override
+	public LeoOperatorLearningPolicy learningPolicy(TupleExpr node) {
+		return operatorLearningPolicy(node);
+	}
+
+	static LeoOperatorLearningPolicy operatorLearningPolicy(TupleExpr node) {
+		if (node instanceof Join
 				|| node instanceof LeftJoin
 				|| node instanceof Union
 				|| node instanceof Difference
 				|| node instanceof ArbitraryLengthPath
-				|| node instanceof ZeroLengthPath;
+				|| node instanceof ZeroLengthPath) {
+			return LeoOperatorLearningPolicy.LEARN_DIRECTLY;
+		}
+		if (node instanceof Filter
+				|| node instanceof Projection
+				|| node instanceof Extension
+				|| node instanceof Distinct
+				|| node instanceof Reduced
+				|| node instanceof Order) {
+			return LeoOperatorLearningPolicy.LEARN_AS_CHILD_MULTIPLIER;
+		}
+		if (node instanceof StatementPattern
+				|| node instanceof BindingSetAssignment
+				|| node instanceof Group) {
+			return LeoOperatorLearningPolicy.SHADOW_ONLY;
+		}
+		if (node instanceof Slice || node instanceof Service) {
+			return LeoOperatorLearningPolicy.DO_NOT_LEARN;
+		}
+		return LeoOperatorLearningPolicy.DO_NOT_LEARN;
+	}
+
+	private static boolean isSupportedOperator(TupleExpr node) {
+		return supportsOperatorFeedback(node);
+	}
+
+	private static boolean isRuntimeObservableOperator(TupleExpr node) {
+		return operatorLearningPolicy(node).runtimeObservable();
 	}
 
 	private static boolean isCompleted(TupleExpr node) {
@@ -501,35 +863,6 @@ final class LmdbOperatorFeedbackStats {
 				|| closeCount >= Math.max(1L, Math.round(plannedRepeatedInvocations));
 	}
 
-	private static boolean shouldReportCostFeedback(TupleExpr node) {
-		double threshold = node.getCostFeedbackReportQErrorThreshold();
-		if (!Double.isFinite(threshold) || threshold < 1.0d) {
-			threshold = DEFAULT_REPORT_Q_ERROR_THRESHOLD;
-		}
-		double planChangingThreshold = node.getDoubleMetricPlanned(
-				PLANNED_PLAN_CHANGING_FEEDBACK_Q_ERROR_THRESHOLD);
-		if (Double.isFinite(planChangingThreshold) && planChangingThreshold >= 1.0d) {
-			threshold = Math.min(threshold, planChangingThreshold);
-		}
-		double actualRows = actualRows(node);
-		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());
-		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(), pathActualWorkRows(node, actualRows));
-		double expectedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(),
-				finiteOr(node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS), node.getCostEstimate()));
-		return qError(actualRows, expectedRows) >= threshold || qError(actualWorkRows, expectedWorkRows) >= threshold;
-	}
-
-	private static double pathActualWorkRows(TupleExpr node, double actualRows) {
-		if (node instanceof ArbitraryLengthPath) {
-			return pathWorkRows(node, actualRows);
-		}
-		if (node instanceof ZeroLengthPath) {
-			double candidates = longMetric(node, ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL);
-			return isFiniteNonNegative(candidates) ? Math.max(actualRows, candidates) : Double.NaN;
-		}
-		return Double.NaN;
-	}
-
 	private static double pathWorkRows(TupleExpr node, double actualRows) {
 		return maxFinite(actualRows,
 				longMetric(node, PATH_CANDIDATE_ROWS_ACTUAL),
@@ -552,8 +885,12 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private void evictOldestIfNeeded() {
-		while (learnedByOperator.size() > MAX_ENTRIES) {
-			var iterator = learnedByOperator.keySet().iterator();
+		evictOldestIfNeeded(learnedByOperator);
+	}
+
+	private void evictOldestIfNeeded(Map<OperatorKey, ?> map) {
+		while (map.size() > MAX_ENTRIES) {
+			var iterator = map.keySet().iterator();
 			if (!iterator.hasNext()) {
 				return;
 			}
@@ -562,11 +899,55 @@ final class LmdbOperatorFeedbackStats {
 		}
 	}
 
-	private OperatorKey keyFor(TupleExpr node) {
-		return keyFor(node, null);
+	private List<OperatorKey> keysForRecord(TupleExpr node, String executionMode) {
+		OperatorKey exact = keyFor(node, executionMode, LeoOperatorKey.ConstantMode.EXACT, false, null);
+		OperatorKey generalized = keyFor(node, executionMode,
+				LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT, true,
+				exact == null ? null : exact.fingerprint());
+		if (exact == null) {
+			return List.of();
+		}
+		if (generalized == null || generalized.equals(exact)) {
+			return List.of(exact);
+		}
+		return List.of(exact, generalized);
 	}
 
-	private OperatorKey keyFor(TupleExpr node, String executionMode) {
+	private List<OperatorKey> keysForEstimate(TupleExpr node, String executionMode) {
+		OperatorKey exact = keyFor(node, executionMode, LeoOperatorKey.ConstantMode.EXACT, false, null);
+		OperatorKey legacy = legacyKeyFor(node, executionMode);
+		OperatorKey generalized = keyFor(node, executionMode,
+				LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT, true,
+				exact == null ? null : exact.fingerprint());
+		List<OperatorKey> keys = new ArrayList<>(3);
+		addIfDistinct(keys, exact);
+		addIfDistinct(keys, legacy);
+		addIfDistinct(keys, generalized);
+		return keys.isEmpty() ? List.of() : List.copyOf(keys);
+	}
+
+	private static void addIfDistinct(List<OperatorKey> keys, OperatorKey key) {
+		if (key != null && !keys.contains(key)) {
+			keys.add(key);
+		}
+	}
+
+	private OperatorKey keyFor(TupleExpr node, String executionMode, LeoOperatorKey.ConstantMode constantMode,
+			boolean generalized, String abstractedSignature) {
+		if (node == null || !isSupportedOperator(node)) {
+			return null;
+		}
+		String effectiveExecutionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+				? pathEndpointMode(node, executionMode)
+				: executionMode;
+		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode, constantMode);
+		String specificity = generalized ? "predicate-context" : "exact";
+		return new OperatorKey("leo:" + specificity + ':' + leoKey.operatorType(),
+				leoKey.structuralFingerprint(), "", "", "mode=" + leoKey.executionMode(),
+				displayBindings(node), abstractedSignature == null ? "" : abstractedSignature);
+	}
+
+	private OperatorKey legacyKeyFor(TupleExpr node, String executionMode) {
 		if (node == null || !isSupportedOperator(node)) {
 			return null;
 		}
@@ -575,7 +956,7 @@ final class LmdbOperatorFeedbackStats {
 				: executionMode;
 		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode);
 		return new OperatorKey("leo:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
-				"mode=" + leoKey.executionMode(), displayBindings(node));
+				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 	}
 
 	private String displayBindings(TupleExpr node) {
@@ -659,98 +1040,6 @@ final class LmdbOperatorFeedbackStats {
 		return normalized;
 	}
 
-	private String tupleExprKey(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return "<null>";
-		}
-		String scope = TupleExprs.isVariableScopeChange(tupleExpr) ? "|scope=new" : "";
-		if (tupleExpr instanceof StatementPattern statementPattern) {
-			return "SP" + scope
-					+ "|s=" + varKey(statementPattern.getSubjectVar())
-					+ "|p=" + varKey(statementPattern.getPredicateVar())
-					+ "|o=" + varKey(statementPattern.getObjectVar())
-					+ "|c=" + varKey(statementPattern.getContextVar());
-		}
-		if (tupleExpr instanceof ArbitraryLengthPath path) {
-			return "ALP" + scope
-					+ "|pathScope=" + path.getScope()
-					+ "|min=" + path.getMinLength()
-					+ "|s=" + varKey(path.getSubjectVar())
-					+ "|path=" + tupleExprKey(path.getPathExpression())
-					+ "|o=" + varKey(path.getObjectVar())
-					+ "|c=" + varKey(path.getContextVar());
-		}
-		if (tupleExpr instanceof ZeroLengthPath path) {
-			return "ZLP" + scope
-					+ "|pathScope=" + path.getScope()
-					+ "|s=" + varKey(path.getSubjectVar())
-					+ "|o=" + varKey(path.getObjectVar())
-					+ "|c=" + varKey(path.getContextVar());
-		}
-		if (tupleExpr instanceof BindingSetAssignment assignment) {
-			return "BSA" + scope + "|names=" + sortedBindings(plannerBindingNames(assignment.getBindingNames()))
-					+ "|rows=" + bindingSetCount(assignment);
-		}
-		if (tupleExpr instanceof Filter filter) {
-			return "FILTER" + scope + "|arg=" + tupleExprKey(filter.getArg())
-					+ "|condition=" + valueExprKey(filter.getCondition());
-		}
-		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-			return "JOIN|factors=" + joinedJoinSurfaceFactors(join);
-		}
-		if (tupleExpr instanceof LeftJoin leftJoin) {
-			return "LEFT_JOIN" + scope + "|left=" + tupleExprKey(leftJoin.getLeftArg())
-					+ "|right=" + tupleExprKey(leftJoin.getRightArg())
-					+ "|condition=" + valueExprKey(leftJoin.getCondition());
-		}
-		if (tupleExpr instanceof Union union) {
-			List<String> branchKeys = new ArrayList<>(2);
-			branchKeys.add(tupleExprKey(union.getLeftArg()));
-			branchKeys.add(tupleExprKey(union.getRightArg()));
-			Collections.sort(branchKeys);
-			return "UNION" + scope + "|branches=" + String.join(";", branchKeys);
-		}
-		if (tupleExpr instanceof BinaryTupleOperator binary) {
-			return tupleExpr.getClass().getSimpleName().toUpperCase() + scope
-					+ "|left=" + tupleExprKey(binary.getLeftArg())
-					+ "|right=" + tupleExprKey(binary.getRightArg());
-		}
-		if (tupleExpr instanceof UnaryTupleOperator unary) {
-			return tupleExpr.getClass().getSimpleName().toUpperCase() + scope + "|arg="
-					+ tupleExprKey(unary.getArg());
-		}
-		return tupleExpr.getClass().getSimpleName() + scope + "|signature="
-				+ normalize(tupleExpr.getSignature());
-	}
-
-	private String joinedJoinSurfaceFactors(Join join) {
-		List<String> factorKeys = new ArrayList<>();
-		addJoinSurfaceFactors(join, factorKeys);
-		Collections.sort(factorKeys);
-		return String.join(";", factorKeys);
-	}
-
-	private void addJoinSurfaceFactors(TupleExpr tupleExpr, List<String> factorKeys) {
-		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-			addJoinSurfaceFactors(join.getLeftArg(), factorKeys);
-			addJoinSurfaceFactors(join.getRightArg(), factorKeys);
-			return;
-		}
-		factorKeys.add(tupleExprKey(tupleExpr));
-	}
-
-	private int bindingSetCount(BindingSetAssignment assignment) {
-		int count = 0;
-		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
-		if (bindingSets == null) {
-			return count;
-		}
-		for (BindingSet ignored : bindingSets) {
-			count++;
-		}
-		return count;
-	}
-
 	private static Set<String> plannerBindingNames(Set<String> bindingNames) {
 		if (bindingNames == null || bindingNames.isEmpty()) {
 			return Set.of();
@@ -773,47 +1062,168 @@ final class LmdbOperatorFeedbackStats {
 		return String.join(",", sorted);
 	}
 
-	private static String valueExprKey(ValueExpr valueExpr) {
-		return valueExpr == null ? "<null>" : normalize(valueExpr.toString());
-	}
-
-	private static String varKey(Var var) {
-		if (var == null) {
-			return "<null>";
+	private static void readMultiplierEntries(DataInputStream in, Map<OperatorKey, LearnedMultiplierCounts> target)
+			throws IOException {
+		int entries = in.readInt();
+		if (entries < 0 || entries > MAX_ENTRIES * 4) {
+			throw new IOException("Invalid multiplier-feedback count: " + entries);
 		}
-		if (var.hasValue()) {
-			Value value = var.getValue();
-			return "const:" + (value == null ? "<null>" : value.stringValue());
-		}
-		String name = var.getName();
-		return "var:" + (name == null ? "<anon>" : name);
-	}
-
-	private static String normalize(String value) {
-		if (value == null) {
-			return "<null>";
-		}
-		StringBuilder normalized = new StringBuilder(value.length());
-		boolean emitted = false;
-		boolean pendingSpace = false;
-		for (int i = 0; i < value.length(); i++) {
-			char ch = value.charAt(i);
-			if (isRegexWhitespace(ch)) {
-				pendingSpace = emitted;
-			} else {
-				if (pendingSpace) {
-					normalized.append(' ');
-					pendingSpace = false;
-				}
-				normalized.append(ch);
-				emitted = true;
+		for (int i = 0; i < entries; i++) {
+			OperatorKey key = OperatorKey.readFrom(in);
+			LearnedMultiplierCounts counts = LearnedMultiplierCounts.readFrom(in);
+			if (counts.sampleCount > 0L) {
+				target.put(key, counts);
 			}
 		}
-		return normalized.toString();
 	}
 
-	private static boolean isRegexWhitespace(char ch) {
-		return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\u000B' || ch == '\f' || ch == '\r';
+	private static void readShadowEntries(DataInputStream in, Map<OperatorKey, ShadowOperatorCounts> target)
+			throws IOException {
+		int entries = in.readInt();
+		if (entries < 0 || entries > MAX_ENTRIES * 4) {
+			throw new IOException("Invalid shadow-feedback count: " + entries);
+		}
+		for (int i = 0; i < entries; i++) {
+			OperatorKey key = OperatorKey.readFrom(in);
+			ShadowOperatorCounts counts = ShadowOperatorCounts.readFrom(in);
+			if (counts.sampleCount > 0L) {
+				target.put(key, counts);
+			}
+		}
+	}
+
+	private long nextFeedbackEpoch() {
+		return ++feedbackEpoch;
+	}
+
+	private static boolean isFeedbackRecorded(TupleExpr node) {
+		return node != null && node.getLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL) > 0L;
+	}
+
+	private static boolean isPlanFeedbackRecorded(TupleExpr node) {
+		return node != null && node.getLongMetricActual(LEO_RECORDED_PLAN_ACTUAL) > 0L;
+	}
+
+	private static void markPlanFeedbackRecorded(TupleExpr node) {
+		if (node != null) {
+			node.setLongMetricActual(LEO_RECORDED_PLAN_ACTUAL, 1L);
+		}
+	}
+
+	private static void markFeedbackRecorded(TupleExpr node) {
+		if (node != null) {
+			node.setLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL, 1L);
+		}
+	}
+
+	private OperatorKey multiplierKeyFor(TupleExpr node) {
+		OperatorKey key = keyForRuntimeObservable(node, "leo:multiplier:");
+		return key == null ? null : key;
+	}
+
+	private OperatorKey planShadowKeyFor(TupleExpr node) {
+		if (node == null) {
+			return null;
+		}
+		LeoOperatorKey leoKey = LeoOperatorKey.from(node, "", LeoOperatorKey.ConstantMode.EXACT);
+		return new OperatorKey("leo:plan:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
+				"mode=" + leoKey.executionMode(), displayBindings(node), "");
+	}
+
+	private OperatorKey shadowKeyFor(TupleExpr node) {
+		OperatorKey key = keyForRuntimeObservable(node, "leo:shadow:");
+		return key == null ? null : key;
+	}
+
+	private OperatorKey keyForRuntimeObservable(TupleExpr node, String prefix) {
+		if (node == null || !isRuntimeObservableOperator(node)) {
+			return null;
+		}
+		String effectiveExecutionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+				? pathEndpointMode(node, null)
+				: null;
+		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		return new OperatorKey(prefix + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
+				"mode=" + leoKey.executionMode(), displayBindings(node), "");
+	}
+
+	private List<LeoRuleHint> ruleHints(TupleExpr tupleExpr, double baseRows, double baseWorkRows,
+			OperatorEstimate estimate) {
+		if (tupleExpr == null || estimate == null || estimate.correctionConfidence() < 0.55d) {
+			return List.of();
+		}
+		boolean apply = Boolean.getBoolean(LEO_RULE_STEERING_PROPERTY);
+		int medium = apply ? 8 : 0;
+		int strong = apply ? 14 : 0;
+		List<LeoRuleHint> hints = new ArrayList<>();
+		double workRatio = isFiniteNonNegative(baseWorkRows) && baseWorkRows > 0.0d
+				? estimate.workRows() / baseWorkRows
+				: Double.NaN;
+		if (tupleExpr instanceof Join) {
+			if (Double.isFinite(workRatio) && workRatio >= 4.0d) {
+				hints.add(LeoRuleHint.of("lmdb-connected-join-plan", strong,
+						"shadow: learned probe work is high; favor global connected planning",
+						estimate.correctionConfidence()));
+				hints.add(LeoRuleHint.of("lmdb-inner-join-bound-lookup", -medium,
+						"shadow: learned probe work is high; de-prioritize bound lookup",
+						estimate.correctionConfidence()));
+			} else if (Double.isFinite(workRatio) && workRatio <= 0.35d) {
+				hints.add(LeoRuleHint.of("lmdb-inner-join-bound-lookup", medium,
+						"shadow: learned fanout is tiny; prefer bound lookup", estimate.correctionConfidence()));
+			}
+		} else if (tupleExpr instanceof LeftJoin && Double.isFinite(workRatio) && workRatio >= 4.0d) {
+			hints.add(LeoRuleHint.of("lmdb-optional-rhs-anchored-lookup", -medium,
+					"shadow: learned optional RHS fanout is expensive", estimate.correctionConfidence()));
+		} else if ((tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath)
+				&& Double.isFinite(workRatio) && workRatio <= 0.50d) {
+			hints.add(LeoRuleHint.of("lmdb-property-path", medium,
+					"shadow: learned endpoint mode reduced property-path work", estimate.correctionConfidence()));
+		}
+		return hints.isEmpty() ? List.of() : List.copyOf(hints);
+	}
+
+	@Override
+	public synchronized String debugEvidence(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "";
+		}
+		StringBuilder builder = new StringBuilder();
+		for (OperatorKey key : keysForEstimate(tupleExpr, null)) {
+			LearnedOperatorCounts counts = learnedByOperator.get(key);
+			if (counts != null) {
+				builder.append("direct ")
+						.append(key)
+						.append(" samples=")
+						.append(counts.sampleCount)
+						.append(" distinct=")
+						.append(counts.distinctGeneralizedSignatures())
+						.append('\n');
+			}
+		}
+		OperatorKey multiplierKey = multiplierKeyFor(tupleExpr);
+		LearnedMultiplierCounts multiplierCounts = multiplierKey == null ? null : learnedMultipliers.get(multiplierKey);
+		if (multiplierCounts != null) {
+			builder.append("multiplier ")
+					.append(multiplierKey)
+					.append(" samples=")
+					.append(multiplierCounts.sampleCount)
+					.append('\n');
+		}
+		OperatorKey shadowKey = shadowKeyFor(tupleExpr);
+		ShadowOperatorCounts shadowCounts = shadowKey == null ? null : shadowByOperator.get(shadowKey);
+		if (shadowCounts != null) {
+			builder.append("shadow ")
+					.append(shadowKey)
+					.append(" samples=")
+					.append(shadowCounts.sampleCount)
+					.append('\n');
+		}
+		OperatorKey planKey = planShadowKeyFor(tupleExpr);
+		ShadowOperatorCounts planCounts = planKey == null ? null : shadowByOperator.get(planKey);
+		if (planCounts != null) {
+			builder.append("plan ").append(planKey).append(" samples=").append(planCounts.sampleCount).append('\n');
+		}
+		return builder.toString();
 	}
 
 	private SnapshotRevision currentEstimatorRevision() {
@@ -928,8 +1338,8 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	record OperatorEstimate(double rows, double workRows, String source, long evidenceCount, double confidence,
-			String feedbackKey, double rowQErrorMean, double rowQErrorMax, double workQErrorMean,
-			double workQErrorMax, double uncertaintyRows) {
+			double correctionConfidence, String feedbackKey, double rowQErrorMean, double rowQErrorMax,
+			double workQErrorMean, double workQErrorMax, double uncertaintyRows) {
 	}
 
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
@@ -938,7 +1348,7 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	private record OperatorKey(String operatorType, String fingerprint, String leftBindings, String rightBindings,
-			String sharedBindings, String displayBindings) {
+			String sharedBindings, String displayBindings, String abstractedSignature) {
 
 		void writeTo(DataOutputStream out) throws IOException {
 			writeString(out, operatorType);
@@ -951,7 +1361,11 @@ final class LmdbOperatorFeedbackStats {
 
 		static OperatorKey readFrom(DataInputStream in) throws IOException {
 			return new OperatorKey(readString(in), readString(in), readString(in), readString(in), readString(in),
-					readString(in));
+					readString(in), "");
+		}
+
+		boolean generalized() {
+			return operatorType != null && operatorType.startsWith("leo:predicate-context:");
 		}
 
 		@Override
@@ -1003,9 +1417,15 @@ final class LmdbOperatorFeedbackStats {
 		private double workQErrorSum;
 		private double workQErrorMax;
 		private LeoConfidenceModel confidenceModel = LeoConfidenceModel.empty();
+		private final Set<String> generalizedSignatures = new HashSet<>();
+		private long lastObservedEpoch;
 
-		void add(OperatorObservation observation) {
+		void add(OperatorObservation observation, String abstractedSignature, long epoch) {
 			sampleCount++;
+			if (abstractedSignature != null && !abstractedSignature.isBlank()) {
+				generalizedSignatures.add(abstractedSignature);
+			}
+			lastObservedEpoch = Math.max(lastObservedEpoch, epoch);
 			plannedRowsSum += nonNegative(observation.plannedRows());
 			plannedWorkRowsSum += nonNegative(observation.plannedWorkRows());
 			actualRowsSum += nonNegative(observation.actualRows());
@@ -1020,7 +1440,7 @@ final class LmdbOperatorFeedbackStats {
 			recordRowQError(observation);
 			recordWorkQError(observation);
 			confidenceModel = confidenceModel.observe(observation.plannedRows(), observation.actualRows(),
-					observation.plannedWorkRows(), observation.actualWorkRows(), sampleCount);
+					observation.plannedWorkRows(), observation.actualWorkRows(), epoch);
 		}
 
 		private void recordRowQError(OperatorObservation observation) {
@@ -1042,7 +1462,7 @@ final class LmdbOperatorFeedbackStats {
 		}
 
 		OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
-				double baseWorkRows, String feedbackKey) {
+				double baseWorkRows, String feedbackKey, long currentEpoch) {
 			double learnedRows;
 			double learnedWorkRows;
 			if (node instanceof LeftJoin) {
@@ -1064,7 +1484,8 @@ final class LmdbOperatorFeedbackStats {
 				return null;
 			}
 
-			double confidence = confidenceModel.sampleCount() > 0L ? confidenceModel.confidence()
+			double confidence = confidenceModel.sampleCount() > 0L
+					? confidenceModel.decayedConfidence(currentEpoch, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS)
 					: confidence(sampleCount);
 			double correctionConfidence = correctionBlendConfidence(confidence, sampleCount, rowQErrorMax,
 					workQErrorMax);
@@ -1085,8 +1506,8 @@ final class LmdbOperatorFeedbackStats {
 							? LEARNED_PROPERTY_PATH
 							: LEARNED_OPERATOR;
 			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence,
-					feedbackKey, rowQErrorMean, finiteQErrorMax(rowQErrorMax), workQErrorMean,
-					finiteQErrorMax(workQErrorMax), uncertaintyRows);
+					correctionConfidence, feedbackKey, rowQErrorMean, finiteQErrorMax(rowQErrorMax),
+					workQErrorMean, finiteQErrorMax(workQErrorMax), uncertaintyRows);
 		}
 
 		private double correctionBlendConfidence(double confidence, long sampleCount, double rowQErrorMax,
@@ -1187,6 +1608,10 @@ final class LmdbOperatorFeedbackStats {
 			return estimateByOperatorRatio(baseWorkRows);
 		}
 
+		int distinctGeneralizedSignatures() {
+			return generalizedSignatures.size();
+		}
+
 		void writeTo(DataOutputStream out) throws IOException {
 			out.writeLong(sampleCount);
 			out.writeDouble(plannedRowsSum);
@@ -1206,9 +1631,25 @@ final class LmdbOperatorFeedbackStats {
 			out.writeLong(workQErrorSampleCount);
 			out.writeDouble(workQErrorSum);
 			out.writeDouble(workQErrorMax);
+			out.writeLong(confidenceModel.sampleCount());
+			out.writeDouble(confidenceModel.rowCorrectionRatio());
+			out.writeDouble(confidenceModel.workCorrectionRatio());
+			out.writeDouble(confidenceModel.rowQErrorMean());
+			out.writeDouble(confidenceModel.rowQErrorMax());
+			out.writeDouble(confidenceModel.workQErrorMean());
+			out.writeDouble(confidenceModel.workQErrorMax());
+			out.writeDouble(confidenceModel.rowRatioMean());
+			out.writeDouble(confidenceModel.rowRatioM2());
+			out.writeLong(confidenceModel.lastEpoch());
+			out.writeDouble(confidenceModel.confidence());
+			out.writeLong(lastObservedEpoch);
+			out.writeInt(generalizedSignatures.size());
+			for (String signature : generalizedSignatures) {
+				writeString(out, signature);
+			}
 		}
 
-		static LearnedOperatorCounts readFrom(DataInputStream in) throws IOException {
+		static LearnedOperatorCounts readFrom(DataInputStream in, int version) throws IOException {
 			LearnedOperatorCounts counts = new LearnedOperatorCounts();
 			counts.sampleCount = in.readLong();
 			counts.plannedRowsSum = in.readDouble();
@@ -1228,6 +1669,147 @@ final class LmdbOperatorFeedbackStats {
 			counts.workQErrorSampleCount = in.readLong();
 			counts.workQErrorSum = in.readDouble();
 			counts.workQErrorMax = in.readDouble();
+			if (version >= 9) {
+				long confidenceSampleCount = in.readLong();
+				double rowCorrectionRatio = in.readDouble();
+				double workCorrectionRatio = in.readDouble();
+				double rowQErrorMean = in.readDouble();
+				double rowQErrorMax = in.readDouble();
+				double workQErrorMean = in.readDouble();
+				double workQErrorMax = in.readDouble();
+				double rowRatioMean = in.readDouble();
+				double rowRatioM2 = in.readDouble();
+				long lastEpoch = in.readLong();
+				double confidence = in.readDouble();
+				counts.confidenceModel = LeoConfidenceModel.fromPersisted(confidenceSampleCount,
+						rowCorrectionRatio, workCorrectionRatio, rowQErrorMean, rowQErrorMax, workQErrorMean,
+						workQErrorMax, rowRatioMean, rowRatioM2, lastEpoch, confidence);
+			} else {
+				counts.confidenceModel = counts.reconstructedConfidenceModel();
+			}
+			if (version >= 10) {
+				counts.lastObservedEpoch = Math.max(0L, in.readLong());
+				int generalizedSignatureCount = in.readInt();
+				if (generalizedSignatureCount < 0 || generalizedSignatureCount > 1024) {
+					throw new IOException("Invalid generalized-signature count: " + generalizedSignatureCount);
+				}
+				for (int i = 0; i < generalizedSignatureCount; i++) {
+					String signature = readString(in);
+					if (!signature.isBlank()) {
+						counts.generalizedSignatures.add(signature);
+					}
+				}
+			} else {
+				counts.lastObservedEpoch = counts.confidenceModel.lastEpoch();
+			}
+			return counts;
+		}
+
+		private LeoConfidenceModel reconstructedConfidenceModel() {
+			if (sampleCount <= 0L) {
+				return LeoConfidenceModel.empty();
+			}
+			double rowRatio = plannedRowsSum > 0.0d ? actualRowsSum / plannedRowsSum : 1.0d;
+			double workRatio = plannedWorkRowsSum > 0.0d ? actualWorkRowsSum / plannedWorkRowsSum : rowRatio;
+			return LeoConfidenceModel.fromPersisted(sampleCount, rowRatio, workRatio,
+					qErrorMean(rowQErrorSum, rowQErrorSampleCount), finiteQErrorMax(rowQErrorMax),
+					qErrorMean(workQErrorSum, workQErrorSampleCount), finiteQErrorMax(workQErrorMax), rowRatio,
+					0.0d, sampleCount, Double.NaN);
+		}
+
+		private static double nonNegative(double value) {
+			return isFiniteNonNegative(value) ? value : 0.0d;
+		}
+	}
+
+	private static final class LearnedMultiplierCounts {
+		private long sampleCount;
+		private double plannedRowsSum;
+		private double actualRowsSum;
+		private double actualWorkRowsSum;
+		private LeoConfidenceModel confidenceModel = LeoConfidenceModel.empty();
+
+		void add(OperatorObservation observation, long epoch) {
+			sampleCount++;
+			plannedRowsSum += nonNegative(observation.plannedRows());
+			actualRowsSum += nonNegative(observation.actualRows());
+			actualWorkRowsSum += nonNegative(observation.actualWorkRows());
+			confidenceModel = confidenceModel.observe(observation.plannedRows(), observation.actualRows(),
+					observation.plannedWorkRows(), observation.actualWorkRows(), epoch);
+		}
+
+		void writeTo(DataOutputStream out) throws IOException {
+			out.writeLong(sampleCount);
+			out.writeDouble(plannedRowsSum);
+			out.writeDouble(actualRowsSum);
+			out.writeDouble(actualWorkRowsSum);
+			out.writeLong(confidenceModel.sampleCount());
+			out.writeDouble(confidenceModel.rowCorrectionRatio());
+			out.writeDouble(confidenceModel.workCorrectionRatio());
+			out.writeDouble(confidenceModel.rowQErrorMean());
+			out.writeDouble(confidenceModel.rowQErrorMax());
+			out.writeDouble(confidenceModel.workQErrorMean());
+			out.writeDouble(confidenceModel.workQErrorMax());
+			out.writeDouble(confidenceModel.rowRatioMean());
+			out.writeDouble(confidenceModel.rowRatioM2());
+			out.writeLong(confidenceModel.lastEpoch());
+			out.writeDouble(confidenceModel.confidence());
+		}
+
+		static LearnedMultiplierCounts readFrom(DataInputStream in) throws IOException {
+			LearnedMultiplierCounts counts = new LearnedMultiplierCounts();
+			counts.sampleCount = in.readLong();
+			counts.plannedRowsSum = in.readDouble();
+			counts.actualRowsSum = in.readDouble();
+			counts.actualWorkRowsSum = in.readDouble();
+			long confidenceSampleCount = in.readLong();
+			double rowCorrectionRatio = in.readDouble();
+			double workCorrectionRatio = in.readDouble();
+			double rowQErrorMean = in.readDouble();
+			double rowQErrorMax = in.readDouble();
+			double workQErrorMean = in.readDouble();
+			double workQErrorMax = in.readDouble();
+			double rowRatioMean = in.readDouble();
+			double rowRatioM2 = in.readDouble();
+			long lastEpoch = in.readLong();
+			double confidence = in.readDouble();
+			counts.confidenceModel = LeoConfidenceModel.fromPersisted(confidenceSampleCount, rowCorrectionRatio,
+					workCorrectionRatio, rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, rowRatioMean,
+					rowRatioM2, lastEpoch, confidence);
+			return counts;
+		}
+
+		private static double nonNegative(double value) {
+			return isFiniteNonNegative(value) ? value : 0.0d;
+		}
+	}
+
+	private static final class ShadowOperatorCounts {
+		private long sampleCount;
+		private double actualRowsSum;
+		private double actualWorkRowsSum;
+		private long lastObservedEpoch;
+
+		void add(OperatorObservation observation, long epoch) {
+			sampleCount++;
+			actualRowsSum += nonNegative(observation.actualRows());
+			actualWorkRowsSum += nonNegative(observation.actualWorkRows());
+			lastObservedEpoch = Math.max(lastObservedEpoch, epoch);
+		}
+
+		void writeTo(DataOutputStream out) throws IOException {
+			out.writeLong(sampleCount);
+			out.writeDouble(actualRowsSum);
+			out.writeDouble(actualWorkRowsSum);
+			out.writeLong(lastObservedEpoch);
+		}
+
+		static ShadowOperatorCounts readFrom(DataInputStream in) throws IOException {
+			ShadowOperatorCounts counts = new ShadowOperatorCounts();
+			counts.sampleCount = in.readLong();
+			counts.actualRowsSum = in.readDouble();
+			counts.actualWorkRowsSum = in.readDouble();
+			counts.lastObservedEpoch = in.readLong();
 			return counts;
 		}
 
@@ -1245,6 +1827,10 @@ final class LmdbOperatorFeedbackStats {
 		void writeTo(DataOutputStream out) throws IOException {
 			out.writeLong(size);
 			out.writeLong(lastModifiedMillis);
+		}
+
+		String token() {
+			return size + ":" + lastModifiedMillis;
 		}
 
 		static SnapshotRevision readFrom(DataInputStream in) throws IOException {

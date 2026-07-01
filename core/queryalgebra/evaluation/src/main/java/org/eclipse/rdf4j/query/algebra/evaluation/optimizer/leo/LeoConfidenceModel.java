@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public final class LeoConfidenceModel {
 
 	private static final double EWMA_ALPHA = 0.60d;
+	private static final double MIN_CORRECTION_RATIO = 0.000001d;
+	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
 	private static final LeoConfidenceModel EMPTY = new LeoConfidenceModel(0L, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d,
 			1.0d, 0.0d, 0.0d, 0L, 0.0d);
 
@@ -54,6 +56,28 @@ public final class LeoConfidenceModel {
 
 	public static LeoConfidenceModel empty() {
 		return EMPTY;
+	}
+
+	public static LeoConfidenceModel fromPersisted(long sampleCount, double rowCorrectionRatio,
+			double workCorrectionRatio, double rowQErrorMean, double rowQErrorMax, double workQErrorMean,
+			double workQErrorMax, double rowRatioMean, double rowRatioM2, long lastEpoch, double confidence) {
+		if (sampleCount <= 0L) {
+			return empty();
+		}
+		double safeRowCorrectionRatio = finitePositiveOr(rowCorrectionRatio, 1.0d);
+		double safeWorkCorrectionRatio = finitePositiveOr(workCorrectionRatio, 1.0d);
+		double safeRowQErrorMean = finiteQErrorOr(rowQErrorMean, 1.0d);
+		double safeRowQErrorMax = Math.max(safeRowQErrorMean, finiteQErrorOr(rowQErrorMax, safeRowQErrorMean));
+		double safeWorkQErrorMean = finiteQErrorOr(workQErrorMean, 1.0d);
+		double safeWorkQErrorMax = Math.max(safeWorkQErrorMean, finiteQErrorOr(workQErrorMax, safeWorkQErrorMean));
+		double safeRowRatioMean = finitePositiveOr(rowRatioMean, safeRowCorrectionRatio);
+		double safeRowRatioM2 = Double.isFinite(rowRatioM2) && rowRatioM2 >= 0.0d ? rowRatioM2 : 0.0d;
+		double safeConfidence = Double.isFinite(confidence)
+				? clamp(confidence, 0.0d, 0.95d)
+				: confidence(sampleCount, safeRowRatioMean, safeRowRatioM2, safeRowQErrorMax);
+		return new LeoConfidenceModel(sampleCount, safeRowCorrectionRatio, safeWorkCorrectionRatio,
+				safeRowQErrorMean, safeRowQErrorMax, safeWorkQErrorMean, safeWorkQErrorMax, safeRowRatioMean,
+				safeRowRatioM2, Math.max(0L, lastEpoch), safeConfidence);
 	}
 
 	public LeoConfidenceModel observe(double estimatedRows, double actualRows, double estimatedWorkRows,
@@ -120,12 +144,32 @@ public final class LeoConfidenceModel {
 		return workQErrorMax;
 	}
 
+	public double rowRatioMean() {
+		return rowRatioMean;
+	}
+
+	public double rowRatioM2() {
+		return rowRatioM2;
+	}
+
 	public long lastEpoch() {
 		return lastEpoch;
 	}
 
 	public double confidence() {
 		return confidence;
+	}
+
+	public double decayedConfidence(long currentEpoch, long halfLifeEpochs) {
+		if (sampleCount <= 0L || confidence <= 0.0d) {
+			return 0.0d;
+		}
+		if (halfLifeEpochs <= 0L || currentEpoch <= lastEpoch) {
+			return confidence;
+		}
+		double age = currentEpoch - lastEpoch;
+		double decay = Math.pow(0.5d, age / (double) halfLifeEpochs);
+		return clamp(confidence * decay, 0.0d, confidence);
 	}
 
 	private static double confidence(long sampleCount, double mean, double m2, double qErrorMax) {
@@ -144,19 +188,37 @@ public final class LeoConfidenceModel {
 	}
 
 	private static double correctionRatio(double estimate, double actual) {
-		if (!Double.isFinite(estimate) || !Double.isFinite(actual) || estimate <= 0.0d || actual < 0.0d) {
+		if (!Double.isFinite(estimate) || !Double.isFinite(actual) || estimate < 0.0d || actual < 0.0d) {
 			return 1.0d;
 		}
-		return actual / Math.max(1.0d, estimate);
+		if (estimate == 0.0d && actual == 0.0d) {
+			return 1.0d;
+		}
+		return clamp(actual / Math.max(1.0d, estimate), MIN_CORRECTION_RATIO, MAX_CORRECTION_RATIO);
 	}
 
 	private static double qError(double estimate, double actual) {
-		if (!Double.isFinite(estimate) || !Double.isFinite(actual) || estimate <= 0.0d || actual <= 0.0d) {
+		if (!Double.isFinite(estimate) || !Double.isFinite(actual) || estimate < 0.0d || actual < 0.0d) {
 			return 1.0d;
+		}
+		if (estimate == 0.0d && actual == 0.0d) {
+			return 1.0d;
+		}
+		if (estimate == 0.0d || actual == 0.0d) {
+			return MAX_CORRECTION_RATIO;
 		}
 		double normalizedEstimate = Math.max(1.0d, estimate);
 		double normalizedActual = Math.max(1.0d, actual);
-		return Math.max(normalizedEstimate / normalizedActual, normalizedActual / normalizedEstimate);
+		double ratio = Math.max(normalizedEstimate / normalizedActual, normalizedActual / normalizedEstimate);
+		return clamp(ratio, 1.0d, MAX_CORRECTION_RATIO);
+	}
+
+	private static double finitePositiveOr(double value, double fallback) {
+		return Double.isFinite(value) && value > 0.0d ? value : fallback;
+	}
+
+	private static double finiteQErrorOr(double value, double fallback) {
+		return Double.isFinite(value) && value >= 1.0d ? value : fallback;
 	}
 
 	private static double clamp(double value, double min, double max) {
