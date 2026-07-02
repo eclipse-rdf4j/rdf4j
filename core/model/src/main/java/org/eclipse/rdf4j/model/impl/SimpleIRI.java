@@ -124,19 +124,19 @@ public class SimpleIRI extends AbstractIRI {
 	}
 
 	@Override
-	public int hashCode() {
-		return iriString.hashCode();
-	}
-
-	@Override
 	public boolean equals(Object o) {
-		if (o == this) {
+		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof IRI)) {
-			return false;
+		if (o instanceof SimpleIRI) {
+			// Fast-path for same concrete type: compare internal string directly
+			return this.iriString.equals(((SimpleIRI) o).iriString);
 		}
-
-		return iriString.equals(o.toString());
+		if (o instanceof IRI) {
+			// Cross-type equality by lexical form
+			return stringValue().equals(((IRI) o).stringValue());
+		}
+		return false;
 	}
+
 }

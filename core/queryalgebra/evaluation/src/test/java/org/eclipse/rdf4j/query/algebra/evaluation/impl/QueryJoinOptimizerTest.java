@@ -22,9 +22,14 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -34,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -312,6 +318,33 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(getPredicateValue(lateralRight.getLeftArg())).isEqualTo("ex:pBound");
 	}
 
+	@Test
+	public void correlatedOptionalJoinDoesNotUseMergeJoinForOuterBoundOperand() {
+		String query = String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT * WHERE {",
+				"  ?patient a med:Patient .",
+				"  OPTIONAL {",
+				"    ?patient med:hasEncounter ?enc .",
+				"    ?enc med:recordedOn ?date .",
+				"  }",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EqualCardinalityStatistics(),
+				new FullyOrderedTripleSource());
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		optimizer.optimize(root, null, null);
+
+		LeftJoinFinder leftJoinFinder = new LeftJoinFinder();
+		root.visit(leftJoinFinder);
+		Join optionalJoin = (Join) leftJoinFinder.getLeftJoin().getRightArg();
+
+		assertThat(optionalJoin.isMergeJoin())
+				.as("outer-bound ?patient makes the left optional operand a repeated direct lookup")
+				.isFalse();
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
@@ -385,6 +418,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
+	class LeftJoinFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private LeftJoin leftJoin;
+
+		@Override
+		public void meet(LeftJoin leftJoin) {
+			this.leftJoin = leftJoin;
+		}
+
+		public LeftJoin getLeftJoin() {
+			return leftJoin;
+		}
+	}
+
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
 		Class<?> joinVisitorClass = Class
 				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer$JoinVisitor");
@@ -395,6 +442,25 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
+	}
+
+	private static final class FullyOrderedTripleSource extends EmptyTripleSource {
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O);
+		}
+	}
+
+	private static final class EqualCardinalityStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				return 25_000.0d;
+			}
+			return super.getCardinality(expr);
+		}
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {

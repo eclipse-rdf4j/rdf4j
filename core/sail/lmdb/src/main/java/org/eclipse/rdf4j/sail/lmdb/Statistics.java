@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.util.Arrays;
+
 /**
  * Helper class for computing cardinalities within triple store.
  */
@@ -33,4 +35,19 @@ class Statistics {
 	final double[] avgRowsPerValue = new double[4];
 	final long[] avgRowsPerValueCounts = new long[4];
 	final long[] counts = new long[4];
+
+	void reset() {
+		for (long[] startValue : startValues) {
+			Arrays.fill(startValue, 0);
+		}
+		for (long[] lastValue : lastValues) {
+			Arrays.fill(lastValue, 0);
+		}
+		Arrays.fill(values, 0);
+		Arrays.fill(minValues, 0);
+		Arrays.fill(maxValues, 0);
+		Arrays.fill(avgRowsPerValue, 1.0);
+		Arrays.fill(avgRowsPerValueCounts, 0);
+		Arrays.fill(counts, 0);
+	}
 }

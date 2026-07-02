@@ -24,12 +24,14 @@ public final class IndexKeyWriters {
 
 	@FunctionalInterface
 	public interface KeyWriter {
-		void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean shouldCache);
+		void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean shouldCache, boolean hasPrev,
+				long prevSubj, long prevPred, long prevObj, long prevContext);
 	}
 
 	@FunctionalInterface
 	interface BasicWriter {
-		void write(ByteBuffer bb, long subj, long pred, long obj, long context);
+		void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+				long prevPred, long prevObj, long prevContext);
 	}
 
 	@FunctionalInterface
@@ -119,6 +121,15 @@ public final class IndexKeyWriters {
 		return new CachingKeyWriter(basic);
 	}
 
+	private static boolean writeOrSkip(ByteBuffer bb, long value, long prevValue, boolean rewrite) {
+		if (rewrite || value != prevValue) {
+			Varint.writeUnsigned(bb, value);
+			return true;
+		}
+		Varint.advanceUnsigned(bb, value);
+		return false;
+	}
+
 	// Simple array-based cache keyed by a masked index computed from a hashCode.
 	private static final class CachingKeyWriter implements KeyWriter {
 
@@ -149,9 +160,10 @@ public final class IndexKeyWriters {
 		}
 
 		@Override
-		public void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean shouldCache) {
+		public void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean shouldCache,
+				boolean hasPrev, long prevSubj, long prevPred, long prevObj, long prevContext) {
 			if (!shouldCache) {
-				basic.write(bb, subj, pred, obj, context);
+				basic.write(bb, subj, pred, obj, context, hasPrev, prevSubj, prevPred, prevObj, prevContext);
 				return;
 			}
 
@@ -169,7 +181,7 @@ public final class IndexKeyWriters {
 			int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
 			byte[] bytes = new byte[len];
 			ByteBuffer out = ByteBuffer.wrap(bytes);
-			basic.write(out, subj, pred, obj, context);
+			basic.write(out, subj, pred, obj, context, false, 0, 0, 0, 0);
 			out.flip();
 			bb.put(out);
 			cache[slot] = new Entry(hashCode, subj, pred, obj, context, bytes);
@@ -231,172 +243,220 @@ public final class IndexKeyWriters {
 		}
 	}
 
-	static void spoc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
+	static void spoc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void spco(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
+	static void spco(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void sopc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
+	static void sopc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void socp(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
+	static void socp(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void scpo(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
+	static void scpo(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void scop(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
+	static void scop(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void psoc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
+	static void psoc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void psco(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
+	static void psco(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void posc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
+	static void posc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void pocs(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
+	static void pocs(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
-	static void pcso(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
+	static void pcso(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void pcos(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
+	static void pcos(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
-	static void ospc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
+	static void ospc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void oscp(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
+	static void oscp(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void opsc(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, context);
+	static void opsc(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, context, prevContext, rewrite);
 	}
 
-	static void opcs(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
+	static void opcs(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
-	static void ocsp(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
+	static void ocsp(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void ocps(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
+	static void ocps(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
-	static void cspo(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
+	static void cspo(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void csop(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
+	static void csop(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void cpso(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, obj);
+	static void cpso(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, obj, prevObj, rewrite);
 	}
 
-	static void cpos(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
+	static void cpos(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
-	static void cosp(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, subj);
-		Varint.writeUnsigned(bb, pred);
+	static void cosp(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, subj, prevSubj, rewrite);
+		writeOrSkip(bb, pred, prevPred, rewrite);
 	}
 
-	static void cops(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		Varint.writeUnsigned(bb, context);
-		Varint.writeUnsigned(bb, obj);
-		Varint.writeUnsigned(bb, pred);
-		Varint.writeUnsigned(bb, subj);
+	static void cops(ByteBuffer bb, long subj, long pred, long obj, long context, boolean hasPrev, long prevSubj,
+			long prevPred, long prevObj, long prevContext) {
+		boolean rewrite = !hasPrev;
+		rewrite = writeOrSkip(bb, context, prevContext, rewrite);
+		rewrite = writeOrSkip(bb, obj, prevObj, rewrite);
+		rewrite = writeOrSkip(bb, pred, prevPred, rewrite);
+		writeOrSkip(bb, subj, prevSubj, rewrite);
 	}
 
 	static boolean[] spocShouldMatch(long subj, long pred, long obj, long context) {

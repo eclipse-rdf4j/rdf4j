@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPFIXED;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 
@@ -29,9 +31,10 @@ import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyReaders;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
-class TripleIndex {
+class TripleIndex implements TripleStore.DupIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
 	// triples are represented by 4 varints for subject, predicate, object and context
@@ -47,22 +50,34 @@ class TripleIndex {
 
 	private final char[] fieldSeq;
 	private final IndexKeyWriters.KeyWriter keyWriter;
+	private final IndexKeyReaders.KeyToQuadReader keyReader;
 	private final IndexKeyWriters.MatcherFactory matcherFactory;
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
+	private final boolean dupsortEnabled;
+	private final int dbiDupExplicit;
+	private final int dbiDupInferred;
 	private final int[] indexMap;
+	private final PatternScoreFunction patternScoreFunction;
 	private final long env;
 	private String name;
 
 	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn) throws IOException {
+		this(name, fieldSeq, createInferredIndex, env, writeTxn, false);
+	}
+
+	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn,
+			boolean dupsortEnabled) throws IOException {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
 		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
+		this.keyReader = IndexKeyReaders.forFieldSeq(fieldSeq);
 		this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
+		this.patternScoreFunction = PatternScoreFunctions.forFieldSeq(fieldSeq);
 		this.env = env;
 		// open database and use native sort order without comparator
 		dbiExplicit = openDatabaseWithTxn(writeTxn, getName(true), MDB_CREATE);
@@ -70,6 +85,15 @@ class TripleIndex {
 			dbiInferred = openDatabaseWithTxn(writeTxn, getName(false), MDB_CREATE);
 		} else {
 			dbiInferred = -1;
+		}
+		this.dupsortEnabled = dupsortEnabled;
+		if (dupsortEnabled) {
+			int flags = MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED;
+			dbiDupExplicit = openDatabaseWithTxn(writeTxn, getDupName(true), flags);
+			dbiDupInferred = createInferredIndex ? openDatabaseWithTxn(writeTxn, getDupName(false), flags) : -1;
+		} else {
+			dbiDupExplicit = -1;
+			dbiDupInferred = -1;
 		}
 	}
 
@@ -81,8 +105,20 @@ class TripleIndex {
 		return name + (explicit ? name : name + "-inf");
 	}
 
+	private String getDupName(boolean explicit) {
+		return getName(explicit) + "-dup";
+	}
+
 	int getDB(boolean explicit) {
 		return explicit ? dbiExplicit : dbiInferred;
+	}
+
+	boolean isDupsortEnabled() {
+		return dupsortEnabled;
+	}
+
+	public int getDupDB(boolean explicit) {
+		return explicit ? dbiDupExplicit : dbiDupInferred;
 	}
 
 	private StatementFieldValueAccessor[] createFieldValueAccessors(char[] fieldSeq) {
@@ -157,61 +193,66 @@ class TripleIndex {
 	 * the index will perform a sequential scan.
 	 */
 	public int getPatternScore(long subj, long pred, long obj, long context) {
-		int score = 0;
+		return patternScoreFunction.score(subj, pred, obj, context);
+	}
 
-		for (char field : fieldSeq) {
-			switch (field) {
-			case 's':
-				if (subj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'p':
-				if (pred >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'o':
-				if (obj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'c':
-				if (context >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			default:
-				throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-						+ new String(fieldSeq));
+	TripleStore.KeyBuilder keyBuilder(long subj, long pred, long obj, long context) {
+		return new TripleStore.KeyBuilder() {
+
+			@Override
+			public void writeMin(ByteBuffer buffer) {
+				getMinKey(buffer, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+						TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
 			}
-		}
 
-		return score;
+			@Override
+			public void writeMax(ByteBuffer buffer) {
+				getMaxKey(buffer, subj, pred, obj, context, -1, -1, -1, -1);
+			}
+		};
 	}
 
 	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		getMinKey(bb, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+				TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
+	}
+
+	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+			long prevObj, long prevContext) {
 		subj = subj <= 0 ? 0 : subj;
 		pred = pred <= 0 ? 0 : pred;
 		obj = obj <= 0 ? 0 : obj;
 		context = context <= 0 ? 0 : context;
-		toKey(bb, subj, pred, obj, context);
+		long prevSubjNorm = prevSubj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevSubj <= 0 ? 0 : prevSubj);
+		long prevPredNorm = prevPred == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevPred <= 0 ? 0 : prevPred);
+		long prevObjNorm = prevObj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevObj <= 0 ? 0 : prevObj);
+		long prevContextNorm = prevContext == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevContext <= 0 ? 0 : prevContext);
+		toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 	}
 
 	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		getMaxKey(bb, subj, pred, obj, context, -1, -1, -1, -1);
+	}
+
+	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+			long prevObj, long prevContext) {
 		subj = subj <= 0 ? Long.MAX_VALUE : subj;
 		pred = pred <= 0 ? Long.MAX_VALUE : pred;
 		obj = obj <= 0 ? Long.MAX_VALUE : obj;
 		context = context < 0 ? Long.MAX_VALUE : context;
-		toKey(bb, subj, pred, obj, context);
+		long prevSubjNorm = prevSubj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevSubj <= 0 ? Long.MAX_VALUE : prevSubj);
+		long prevPredNorm = prevPred == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevPred <= 0 ? Long.MAX_VALUE : prevPred);
+		long prevObjNorm = prevObj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevObj <= 0 ? Long.MAX_VALUE : prevObj);
+		long prevContextNorm = prevContext == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevContext <= 0 ? Long.MAX_VALUE : prevContext);
+		toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 	}
 
 	GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
@@ -244,7 +285,49 @@ class TripleIndex {
 		return length;
 	}
 
+	public void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		for (int i = 0; i < 2; i++) {
+			switch (fieldSeq[i]) {
+			case 's':
+				Varint.writeUnsigned(bb, subj);
+				break;
+			case 'p':
+				Varint.writeUnsigned(bb, pred);
+				break;
+			case 'o':
+				Varint.writeUnsigned(bb, obj);
+				break;
+			case 'c':
+				Varint.writeUnsigned(bb, context);
+				break;
+			default:
+				throw new IllegalArgumentException("Unknown index field: " + fieldSeq[i]);
+			}
+		}
+	}
+
+	void toDupValue(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		bb.putLong(getFieldValue(fieldSeq[2], subj, pred, obj, context));
+		bb.putLong(getFieldValue(fieldSeq[3], subj, pred, obj, context));
+	}
+
+	private long getFieldValue(char field, long subj, long pred, long obj, long context) {
+		return switch (field) {
+		case 's' -> subj;
+		case 'p' -> pred;
+		case 'o' -> obj;
+		case 'c' -> context;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
+	}
+
 	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		toKey(bb, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+				TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
+	}
+
+	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred, long prevObj,
+			long prevContext) {
 		boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
 		if (shouldCache) {
 			long sum = subj + pred + obj + context;
@@ -259,35 +342,16 @@ class TripleIndex {
 		}
 
 		// Pass through to the keyWriter with caching hint
-		keyWriter.write(bb, subj, pred, obj, context, shouldCache);
+		boolean hasPrev = prevSubj != TripleStore.NO_PREVIOUS_ID;
+		keyWriter.write(bb, subj, pred, obj, context, shouldCache, hasPrev, prevSubj, prevPred, prevObj, prevContext);
 	}
 
 	void keyToQuad(ByteBuffer key, long[] quad) {
 		Varint.readQuadUnsigned(key, indexMap, quad);
 	}
 
-	void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
-		// directly use index map to read values in to correct positions
-		if (originalQuad[indexMap[0]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[0]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[1]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[1]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[2]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[2]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[3]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[3]] = Varint.readUnsigned(key);
-		}
+	void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
+		keyReader.read(key, subj, pred, obj, context, quad);
 	}
 
 	@Override
@@ -300,6 +364,12 @@ class TripleIndex {
 		if (dbiInferred != -1) {
 			mdb_dbi_close(env, dbiInferred);
 		}
+		if (dbiDupExplicit != -1) {
+			mdb_dbi_close(env, dbiDupExplicit);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_dbi_close(env, dbiDupInferred);
+		}
 	}
 
 	void clear(long txn) {
@@ -307,12 +377,24 @@ class TripleIndex {
 		if (dbiInferred != -1) {
 			mdb_drop(txn, dbiInferred, false);
 		}
+		if (dbiDupExplicit != -1) {
+			mdb_drop(txn, dbiDupExplicit, false);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_drop(txn, dbiDupInferred, false);
+		}
 	}
 
 	void destroy(long txn) {
 		mdb_drop(txn, dbiExplicit, true);
 		if (dbiInferred != -1) {
 			mdb_drop(txn, dbiInferred, true);
+		}
+		if (dbiDupExplicit != -1) {
+			mdb_drop(txn, dbiDupExplicit, true);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_drop(txn, dbiDupInferred, true);
 		}
 	}
 

@@ -107,7 +107,7 @@ public class IsolationLevelTest {
 		readPending(IsolationLevels.READ_UNCOMMITTED);
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void testReadCommitted() throws Exception {
 		readCommitted(IsolationLevels.READ_COMMITTED);
 		rollbackTriple(IsolationLevels.READ_COMMITTED);
@@ -194,7 +194,7 @@ public class IsolationLevelTest {
 		Thread writer = new Thread(() -> {
 			try (RepositoryConnection write = store.getConnection()) {
 				start.countDown();
-				start.await();
+				start.await(10, TimeUnit.SECONDS);
 				write.begin(level);
 				write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 				begin.countDown();
@@ -207,8 +207,8 @@ public class IsolationLevelTest {
 		Thread reader = new Thread(() -> {
 			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
-				start.await();
-				begin.await();
+				start.await(10, TimeUnit.SECONDS);
+				begin.await(10, TimeUnit.SECONDS);
 				read.begin(level);
 				// must not read uncommitted changes
 				long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
@@ -245,13 +245,13 @@ public class IsolationLevelTest {
 		Thread writer = new Thread(() -> {
 			try (RepositoryConnection write = store.getConnection()) {
 				start.countDown();
-				start.await();
+				start.await(10, TimeUnit.SECONDS);
 				write.begin(level);
 				write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 				write.commit();
 
 				begin.countDown();
-				observed.await();
+				observed.await(10, TimeUnit.SECONDS);
 
 				write.begin(level);
 				write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
@@ -264,8 +264,8 @@ public class IsolationLevelTest {
 		Thread reader = new Thread(() -> {
 			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
-				start.await();
-				begin.await();
+				start.await(10, TimeUnit.SECONDS);
+				begin.await(10, TimeUnit.SECONDS);
 				read.begin(level);
 				long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
 				assertEquals(1, first);
@@ -343,7 +343,7 @@ public class IsolationLevelTest {
 			try {
 				try (RepositoryConnection write = store.getConnection()) {
 					start.countDown();
-					start.await();
+					start.await(10, TimeUnit.SECONDS);
 					write.begin(level);
 					insertTestStatement(write, 1);
 					write.commit();
@@ -363,8 +363,8 @@ public class IsolationLevelTest {
 		Thread reader = new Thread(() -> {
 			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
-				start.await();
-				begin.await();
+				start.await(10, TimeUnit.SECONDS);
+				begin.await(10, TimeUnit.SECONDS);
 				read.begin(level);
 				long first = count(read, null, null, null, false);
 				observed.countDown();
@@ -431,7 +431,7 @@ public class IsolationLevelTest {
 		return new Thread(() -> {
 			try (RepositoryConnection con = store.getConnection()) {
 				start.countDown();
-				start.await();
+				start.await(10, TimeUnit.SECONDS);
 				con.begin(level);
 				Literal o1 = readLiteral(con, subj, pred);
 				observed.countDown();

@@ -67,6 +67,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -101,7 +102,8 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
-class ValueStore extends AbstractValueFactory {
+@InternalUseOnly
+public class ValueStore extends AbstractValueFactory {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
@@ -450,45 +452,53 @@ class ValueStore extends AbstractValueFactory {
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
 		String indexesStr = properties.getTripleTermIndexes();
 		if (indexesStr == null || indexesStr.trim().isEmpty()) {
-			throw new SailException(StoreProperties.INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
+			return getDefaultTripleTermIndexSpecs();
 		}
 
 		Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexesStr);
 		if (indexSpecs.isEmpty()) {
-			throw new SailException(
-					"Invalid " + StoreProperties.INDEXES_KEY + " found in " + StoreProperties.FILE_NAME + " file");
+			throw new SailException("Invalid " + StoreProperties.TRIPLE_TERM_INDEXES_KEY + " found in "
+					+ StoreProperties.FILE_NAME + " file");
 		}
 		return indexSpecs;
 	}
 
+	private Set<String> getDefaultTripleTermIndexSpecs() throws SailException {
+		return TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES);
+	}
+
+	private Set<String> getRequestedTripleTermIndexSpecs(String tripleTermIndexSpecStr) throws SailException {
+		Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
+		reqTermIndexSpecs.addAll(getDefaultTripleTermIndexSpecs());
+		return reqTermIndexSpecs;
+	}
+
+	private String toIndexSpecString(Set<String> indexSpecs) {
+		return String.join(",", TripleIndex.orderIndexSpecs(indexSpecs));
+	}
+
 	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
 		try {
-			String indexSpecStr = config.getTripleIndexes();
 			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
+			Set<String> effectiveTermIndexSpecs;
 			if (!properties.isLoaded()) {
 				// newly created lmdb store
-				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				initTripleTermIndexes(termIndexSpecs);
+				effectiveTermIndexSpecs = getRequestedTripleTermIndexSpecs(tripleTermIndexSpecStr);
+				initTripleTermIndexes(effectiveTermIndexSpecs);
 			} else {
 				// Initialize existing indexes
 				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
 				initTripleTermIndexes(termIndexSpecs);
 
 				// Compare the existing triple term indexes with the requested indexes
-				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				if (reqTermIndexSpecs.isEmpty()) {
-					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleTermIndexes();
-				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
+				effectiveTermIndexSpecs = getRequestedTripleTermIndexSpecs(tripleTermIndexSpecStr);
+				if (!effectiveTermIndexSpecs.equals(termIndexSpecs)) {
 					// Set of indexes needs to be changed
-					reindex(termIndexSpecs, reqTermIndexSpecs);
+					reindex(termIndexSpecs, effectiveTermIndexSpecs);
 				}
 			}
 
-			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			properties.setTripleTermIndexes(toIndexSpecString(effectiveTermIndexSpecs));
 		} catch (IOException | SailException e) {
 			throw e;
 		}

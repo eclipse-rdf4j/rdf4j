@@ -134,6 +134,16 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI INLINE_LITERALS;
 
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#dupsortIndices</tt>
+	 */
+	public final static IRI DUPSORT_INDICES;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#dupsortRead</tt>
+	 */
+	public final static IRI DUPSORT_READ;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -167,5 +177,7 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
+		DUPSORT_INDICES = factory.createIRI(NAMESPACE, "dupsortIndices");
+		DUPSORT_READ = factory.createIRI(NAMESPACE, "dupsortRead");
 	}
 }
