@@ -19,12 +19,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.ProtocolException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.zip.GZIPOutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -152,6 +158,23 @@ public class RDFLoaderTest {
 	}
 
 	@Test
+	public void testGzipWrappedZipInputStream() throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(new ByteArrayInputStream(gzip(zip("Socrates.ttl",
+				"<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> ."))), null, RDFFormat.TURTLE,
+				rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"),
+						RDF.TYPE,
+						FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
 	public void testAbortOverMaxRedirects(MockServerClient client) throws Exception {
 		/* nullable */
 		String oldMaxRedirects = System.getProperty("http.maxRedirects");
@@ -207,6 +230,24 @@ public class RDFLoaderTest {
 		} finally {
 			restoreSocketFactory(toRestoreSocketFactory);
 		}
+	}
+
+	private static byte[] gzip(byte[] bytes) throws Exception {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (GZIPOutputStream outputStream = new GZIPOutputStream(buffer)) {
+			outputStream.write(bytes);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] zip(String entryName, String body) throws Exception {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (ZipOutputStream outputStream = new ZipOutputStream(buffer)) {
+			outputStream.putNextEntry(new ZipEntry(entryName));
+			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
+			outputStream.closeEntry();
+		}
+		return buffer.toByteArray();
 	}
 
 	private static HostnameVerifier disableHostnameVerifier() {

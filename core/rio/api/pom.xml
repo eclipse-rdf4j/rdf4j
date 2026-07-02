@@ -25,6 +25,64 @@
 			<artifactId>commons-codec</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>brotli4j</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-armv7</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-ppc64le</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-riscv64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-s390x</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.luben</groupId>
+			<artifactId>zstd-jni</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>no.hasmac</groupId>
 			<artifactId>hasmac-json-ld</artifactId>
 			<exclusions>
