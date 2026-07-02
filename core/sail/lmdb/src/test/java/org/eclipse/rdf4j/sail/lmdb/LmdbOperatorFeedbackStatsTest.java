@@ -40,6 +40,9 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -164,55 +167,104 @@ class LmdbOperatorFeedbackStatsTest {
 
 	@Test
 	void completedRootRecordsNestedJoinWithoutTerminalFalse(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Join nested = join("s", "x", "o");
-		completeWithoutTerminalFalse(nested, 480_000, 8_000, 204_000);
-		nested.setJoinLeftBindingsConsumedActual(480_000);
-		nested.setJoinRightBindingsConsumedActual(480_000);
-		LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
-		complete(root, 480_000, 8_000, 204_000);
+		try {
+			Join nested = join("s", "x", "o");
+			completeWithoutTerminalFalse(nested, 480_000, 8_000, 204_000);
+			nested.setJoinLeftBindingsConsumedActual(480_000);
+			nested.setJoinRightBindingsConsumedActual(480_000);
+			LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+			complete(root, 480_000, 8_000, 204_000);
 
-		stats.recordCompletedQuery(root);
+			stats.recordCompletedQuery(root);
 
-		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("s", "x", "o"), 480_000, 480_000,
-				8_000, 204_000);
-		assertNotNull(estimate, "A completed parent query should record fully consumed nested joins");
-		assertTrue(estimate.rows() > 100_000.0d, "Nested join feedback should correct the SPARSE q7 prefix scale");
+			LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("s", "x", "o"), 480_000,
+					480_000, 8_000, 204_000);
+			assertNotNull(estimate, "A completed parent query should record fully consumed nested joins");
+			assertTrue(estimate.rows() > 100_000.0d, "Nested join feedback should correct the SPARSE q7 prefix scale");
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previous);
+		}
 	}
 
 	@Test
 	void completedRootDoesNotDoubleCountAlreadyRecordedChild(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Join nested = join("s", "x", "o");
-		complete(nested, 1_000, 10, 20);
-		nested.setJoinLeftBindingsConsumedActual(100);
-		nested.setJoinRightBindingsConsumedActual(1_000);
-		stats.recordOperatorOutcome(nested);
+		try {
+			Join nested = join("s", "x", "o");
+			complete(nested, 1_000, 10, 20);
+			nested.setJoinLeftBindingsConsumedActual(100);
+			nested.setJoinRightBindingsConsumedActual(1_000);
+			stats.recordOperatorOutcome(nested);
 
-		LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
-		complete(root, 1_000, 10, 20);
-		stats.recordCompletedQuery(root);
+			LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+			complete(root, 1_000, 10, 20);
+			stats.recordCompletedQuery(root);
 
-		String debug = stats.debugEvidence(join("s", "x", "o"));
-		assertTrue(debug.contains("samples=1"), "The directly recorded child observation should be kept");
-		assertTrue(!debug.contains("samples=2"),
-				"Completed-root rescue must not double-count a child operator that already reported itself");
+			String debug = stats.debugEvidence(join("s", "x", "o"));
+			assertTrue(debug.contains("samples=1"), "The directly recorded child observation should be kept");
+			assertTrue(!debug.contains("samples=2"),
+					"Completed-root rescue must not double-count a child operator that already reported itself");
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previous);
+		}
 	}
 
 	@Test
 	void completedRootRecordsMultiplierAndShadowOperators(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		StatementPattern pattern = sp("s", P1, "o");
-		Filter root = new Filter(pattern, new ValueConstant(VF.createLiteral(true)));
-		complete(pattern, 42, 10, 10);
-		complete(root, 42, 10, 10);
+		try {
+			StatementPattern pattern = sp("s", P1, "o");
+			Filter root = new Filter(pattern, new ValueConstant(VF.createLiteral(true)));
+			complete(pattern, 42, 10, 10);
+			complete(root, 42, 10, 10);
 
-		stats.recordCompletedQuery(root);
+			stats.recordCompletedQuery(root);
 
-		assertTrue(stats.debugEvidence(root).contains("multiplier"),
-				"Completed-root feedback should persist child/multiplier observations separately from direct evidence");
-		assertTrue(stats.debugEvidence(pattern).contains("shadow"),
-				"Completed-root feedback should keep statement-pattern observations in the shadow channel");
+			assertTrue(stats.debugEvidence(root).contains("multiplier"),
+					"Completed-root feedback should persist child/multiplier observations separately from direct evidence");
+			assertTrue(stats.debugEvidence(pattern).contains("shadow"),
+					"Completed-root feedback should keep statement-pattern observations in the shadow channel");
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void planCandidateFeedbackProducesShadowRankingAdvice(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join plan = join("s", "x", "o");
+
+		stats.observePlanCandidate(plan, "rule-a", 10.0d, 1_000.0d, 0, false);
+		stats.observePlanCandidate(plan, "rule-b", 10.0d, 100.0d, 1, true);
+
+		assertTrue(stats.planRankingAdvice(plan).isPresent(),
+				"Top-k candidate telemetry should expose shadow plan-ranking advice");
+		assertTrue(stats.debugEvidence(plan).contains("planCandidates"),
+				"Debug evidence should show collected plan-candidate observations");
+	}
+
+	@Test
+	void learnedEvidenceCanBeExportedAndSummarized(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join observed = join("s", "x", "o");
+		complete(observed, 100, 10, 20);
+		observed.setJoinLeftBindingsConsumedActual(50);
+		observed.setJoinRightBindingsConsumedActual(100);
+		stats.recordOperatorOutcome(observed);
+
+		Path exportDir = tempDir.resolve("leo-export");
+		stats.exportLearnedEvidence(exportDir);
+
+		assertTrue(Files.isRegularFile(exportDir.resolve("summary.txt")),
+				"The learned-state export should include a human-readable summary");
+		assertTrue(stats.learnedEvidenceSummary().contains("directOperators="));
 	}
 
 	@Test
@@ -429,7 +481,10 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void lmdbStatisticsTracksCostFeedbackOnlyForStampedSupportedOperators(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		String previousDetailed = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
 		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
 		try {
 			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
@@ -448,13 +503,17 @@ class LmdbOperatorFeedbackStatsTest {
 			assertTrue(evaluationStatistics.shouldTrackCostFeedback(join));
 		} finally {
 			restoreOperatorFeedbackTrackingProperty(previous);
+			restoreOperatorFeedbackDetailedRuntimeProperty(previousDetailed);
 		}
 	}
 
 	@Test
-	void lmdbStatisticsTracksCostFeedbackByDefault(@TempDir Path tempDir) throws Exception {
+	void lmdbStatisticsDoesNotTrackDetailedRuntimeFeedbackByDefault(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		String previousDetailed = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
 		System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
 		try {
 			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
@@ -462,12 +521,13 @@ class LmdbOperatorFeedbackStatsTest {
 			Join join = join("s", "x", "o");
 			join.setCostFeedbackTrackingEnabled(true);
 
-			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join),
-					"Runtime operator feedback should be available by default for stamped LMDB operators");
-			assertTrue(evaluationStatistics.shouldTrackCostFeedback(join),
-					"Stamped supported operators should get the low-overhead LEO wrapper by default");
+			assertTrue(!evaluationStatistics.supportsOperatorFeedbackTracking(join),
+					"Detailed runtime feedback should be off unless explicitly enabled for JFR-friendly execution");
+			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
+					"Stamped supported operators should skip runtime wrappers by default");
 		} finally {
 			restoreOperatorFeedbackTrackingProperty(previous);
+			restoreOperatorFeedbackDetailedRuntimeProperty(previousDetailed);
 		}
 	}
 
@@ -633,6 +693,60 @@ class LmdbOperatorFeedbackStatsTest {
 		assertTrue(estimate.rows() < 100_000.0d, "One extreme run must not dominate without a clamp");
 	}
 
+	@Test
+	void rolloutProfileObserveOnlyTracksButDoesNotExposePlanningEvidence(@TempDir Path tempDir) throws Exception {
+		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+		try {
+			System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "observe-only");
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+			Join join = join("s", "x", "o");
+			assertTrue(stats.shouldTrackRuntimeFeedback(join));
+			assertTrue(stats.shouldRecordDirectEvidence(join));
+			assertEquals(false, stats.shouldExposePlanningEvidence(join));
+		} finally {
+			restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
+		}
+	}
+
+	@Test
+	void planCandidateActualOutcomeCanRankPhysicalRule(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
+		try {
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+			LeoPlanCandidate slow = new LeoPlanCandidate("slow", "slow-rule", join("s", "x", "o"), 1000, 1000,
+					1000);
+			LeoPlanCandidate fast = new LeoPlanCandidate("fast", "fast-rule", join("s", "x", "o"), 1000, 1000,
+					1000);
+			stats.observePlanCandidate(slow, false, "shadow");
+			stats.observePlanCandidate(fast, true, "shadow");
+			Join observed = join("s", "x", "o");
+			observed.setStringMetricPlanned("plannedLeoCandidateRuleId", "fast-rule");
+			completeCostFeedback(observed, 10, 1000, 1000, 10);
+			stats.recordCompletedQuery(observed);
+
+			LeoPlanRanking ranking = stats.rankPlanCandidates(List.of(slow, fast));
+
+			assertEquals("fast", ranking.bestCandidateId());
+			assertTrue(ranking.bestConfidence() > 0.0d);
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void sliceCappedPlansDoNotPoisonOperatorFeedback(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join join = join("s", "x", "o");
+		Slice slice = new Slice(join, 0, 1);
+		complete(join, 1, 1000, 1000);
+		complete(slice, 1, 1, 1);
+
+		stats.recordCompletedQuery(slice);
+
+		assertNull(stats.estimate(join("s", "x", "o"), 100, 100, 1000, 1000));
+	}
+
 	private static Path estimatorPath(Path tempDir) throws Exception {
 		Path estimatorPath = tempDir.resolve("join-estimator.rjes");
 		Files.createDirectories(estimatorPath);
@@ -754,10 +868,18 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	private static void restoreOperatorFeedbackTrackingProperty(String previous) {
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
+	}
+
+	private static void restoreOperatorFeedbackDetailedRuntimeProperty(String previous) {
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, previous);
+	}
+
+	private static void restoreProperty(String propertyName, String previous) {
 		if (previous == null) {
-			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+			System.clearProperty(propertyName);
 		} else {
-			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
+			System.setProperty(propertyName, previous);
 		}
 	}
 

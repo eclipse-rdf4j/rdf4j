@@ -65,6 +65,34 @@ class LmdbLeoSurfaceStatsTest {
 	}
 
 	@Test
+	void unseenValueCanUsePredicateMeanFallback() {
+		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
+
+		stats.recordPredicateFanout(8L, 20L, 1L);
+		stats.recordPredicateFanout(8L, 30L, 2L);
+
+		LmdbLeoSurfaceStats.FanoutEstimate estimate = stats
+				.predicateEstimate(8L, LmdbLeoSurfaceStats.BoundPosition.OBJECT, 123L,
+						LmdbLeoSurfaceStats.ANY_CONTEXT_ID)
+				.orElseThrow();
+		assertEquals(25.0d, estimate.rows());
+	}
+
+	@Test
+	void contextSpecificFanoutFallsBackToGlobalSurface() {
+		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
+
+		stats.recordFanout(7L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 10L, 99L, 12L, 1L);
+
+		assertEquals(12.0d, stats.estimateFanout(7L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 10L, 99L)
+				.orElseThrow()
+				.rows());
+		assertEquals(12.0d, stats.estimateFanout(7L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 10L, 100L)
+				.orElseThrow()
+				.rows());
+	}
+
+	@Test
 	void storePersistsAndResetsOnRevisionMismatch(@TempDir Path tempDir) throws Exception {
 		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(tempDir.resolve("leo-surfaces.bin"),
 				LmdbLeoFeedbackConfig.defaultConfig());

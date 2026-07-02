@@ -69,21 +69,42 @@ class LmdbOperatorFeedbackPlanningTest {
 			* OFFERS_PER_DEPARTMENT
 			* REVIEWS_PER_PAGE;
 	private String previousOperatorFeedbackTrackingProperty;
+	private String previousOperatorFeedbackDetailedRuntimeProperty;
+	private String previousOperatorFeedbackApplyProperty;
+	private String previousCompletedTreeRescueProperty;
 
 	@BeforeEach
 	void enableOperatorFeedbackTracking() {
 		previousOperatorFeedbackTrackingProperty = System.getProperty(
 				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		previousOperatorFeedbackDetailedRuntimeProperty = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
+		previousOperatorFeedbackApplyProperty = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_APPLY_PROPERTY);
+		previousCompletedTreeRescueProperty = System.getProperty(
+				LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
 		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
+		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_APPLY_PROPERTY, "true");
+		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
 	}
 
 	@AfterEach
 	void restoreOperatorFeedbackTracking() {
-		if (previousOperatorFeedbackTrackingProperty == null) {
-			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY,
+				previousOperatorFeedbackTrackingProperty);
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY,
+				previousOperatorFeedbackDetailedRuntimeProperty);
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_APPLY_PROPERTY,
+				previousOperatorFeedbackApplyProperty);
+		restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previousCompletedTreeRescueProperty);
+	}
+
+	private static void restoreProperty(String propertyName, String previous) {
+		if (previous == null) {
+			System.clearProperty(propertyName);
 		} else {
-			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY,
-					previousOperatorFeedbackTrackingProperty);
+			System.setProperty(propertyName, previous);
 		}
 	}
 
@@ -107,7 +128,7 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
 						"Second plan should apply completed-query operator feedback through the cost model "
 								+ "to the bound OPTIONAL fanout");
 			}
@@ -168,7 +189,7 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
 						"Operator feedback must still be selected for the trained OPTIONAL fanout");
 				assertTrue(trainedPlan.contains("plannedOperatorFeedbackRowQErrorMean="),
 						"Trained plans must expose learned row q-error:\n" + trainedPlan);

@@ -57,6 +57,20 @@ public record LeoEvidence(double rows, double workRows, double confidence, long 
 		kind = kind == null ? Kind.SCALAR_OPERATOR_FEEDBACK : kind;
 	}
 
+	public String explainSummary() {
+		return "kind=" + kind
+				+ ", source=" + source
+				+ ", rows=" + rows
+				+ ", workRows=" + workRows
+				+ ", confidence=" + confidence
+				+ ", evidenceCount=" + evidenceCount
+				+ ", rowQErrorMean=" + rowQErrorMean
+				+ ", rowQErrorMax=" + rowQErrorMax
+				+ ", workQErrorMean=" + workQErrorMean
+				+ ", workQErrorMax=" + workQErrorMax
+				+ ", protected=" + protectedEstimate;
+	}
+
 	public static LeoEvidence exactFiniteRelation(double rows, double workRows, String source) {
 		return new LeoEvidence(rows, workRows, 1.0d, 1L, 1.0d, 1.0d, 1.0d, 1.0d, 0.0d, source,
 				Kind.EXACT_FINITE_RELATION, true);

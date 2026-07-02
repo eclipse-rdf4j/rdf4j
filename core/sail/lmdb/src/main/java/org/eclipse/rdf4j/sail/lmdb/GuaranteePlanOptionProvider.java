@@ -281,10 +281,23 @@ final class GuaranteePlanOptionProvider {
 			return null;
 		}
 
-		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(bindingName, values);
+		BindingSetAssignment anchor = rangeFilterAnchor(bindingName, values);
 		RdfTermDomain anchorDomain = RdfTermDomain.finiteValues(values);
 		return new AnchorOption(annotateAnchor(anchor, pattern, bindingName, guarantee.get(), anchorDomain),
 				bindingName, true, Set.of(), true, pattern);
+	}
+
+	private static BindingSetAssignment rangeFilterAnchor(String bindingName, LinkedHashSet<Value> values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		List<BindingSet> bindingSets = new ArrayList<>(values.size());
+		for (Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
 	}
 
 	private static Optional<IntegerBounds> integerFilterBounds(ValueExpr condition, String bindingName) {

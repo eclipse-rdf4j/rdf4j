@@ -2008,13 +2008,55 @@ public interface CascadesCostModel {
 			}
 			try {
 				BindingShape shape = BindingShape.from(tupleExpr, bindingUniverse);
-				return leoSurfaceProvider.memoFeedback(tupleExpr, bindingUniverse, shape)
-						.bestEvidence()
-						.filter(evidence -> Double.isFinite(evidence.rows()) && evidence.rows() >= 0.0d)
-						.map(this::feedbackCorrection);
+				var feedback = leoSurfaceProvider.memoFeedback(tupleExpr, bindingUniverse, shape);
+				Optional<LeoEvidence> bestEvidence = LeoEstimateReconciler.choose(tupleExpr, base, feedback);
+				bestEvidence.ifPresent(evidence -> stampLeoFeedback(tupleExpr, base, evidence, feedback));
+				return bestEvidence.map(this::feedbackCorrection);
 			} catch (RuntimeException e) {
 				return Optional.empty();
 			}
+		}
+
+		private void stampLeoFeedback(TupleExpr tupleExpr, StatisticsEstimate base, LeoEvidence evidence,
+				org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback feedback) {
+			if (tupleExpr == null || evidence == null) {
+				return;
+			}
+			tupleExpr.setStringMetricPlanned("plannedLeoEvidenceSource", evidence.source());
+			tupleExpr.setStringMetricPlanned("plannedLeoEvidenceKind", evidence.kind().name());
+			tupleExpr.setStringMetricPlanned("plannedLeoEvidenceSummary", evidence.explainSummary());
+			if (feedback != null && !feedback.isEmpty()) {
+				tupleExpr.setStringMetricPlanned("plannedLeoFeedbackSummary", feedback.explainSummary());
+			}
+			tupleExpr.setDoubleMetricPlanned("plannedLeoBaseRows", base.rows());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoBaseWorkRows", base.workRows());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceRows", evidence.rows());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceWorkRows", evidence.workRows());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceConfidence", evidence.confidence());
+			tupleExpr.setLongMetricPlanned("plannedLeoEvidenceCount", evidence.evidenceCount());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceRowQErrorMean", evidence.rowQErrorMean());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceRowQErrorMax", evidence.rowQErrorMax());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceWorkQErrorMean", evidence.workQErrorMean());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceWorkQErrorMax", evidence.workQErrorMax());
+			tupleExpr.setDoubleMetricPlanned("plannedLeoEvidenceUncertaintyRows", evidence.uncertaintyRows());
+			double rowDelta = evidence.rows() - base.rows();
+			double workDelta = evidence.workRows() - base.workRows();
+			tupleExpr.setDoubleMetricPlanned("plannedLeoRowsDelta", rowDelta);
+			tupleExpr.setDoubleMetricPlanned("plannedLeoWorkRowsDelta", workDelta);
+			if (base.rows() > 0.0d) {
+				tupleExpr.setDoubleMetricPlanned("plannedLeoRowsRatio", evidence.rows() / base.rows());
+			}
+			if (base.workRows() > 0.0d) {
+				tupleExpr.setDoubleMetricPlanned("plannedLeoWorkRowsRatio", evidence.workRows() / base.workRows());
+			}
+			tupleExpr.setStringMetricPlanned("plannedLeoEstimateDiff", "baseRows=" + base.rows()
+					+ ", baseWorkRows=" + base.workRows()
+					+ ", learnedRows=" + evidence.rows()
+					+ ", learnedWorkRows=" + evidence.workRows()
+					+ ", rowDelta=" + rowDelta
+					+ ", workDelta=" + workDelta
+					+ ", decision=" + tupleExpr.getStringMetricPlanned("plannedLeoReconciliationDecision")
+					+ ", reason=" + tupleExpr.getStringMetricPlanned("plannedLeoReconciliationReason"));
 		}
 
 		private FeedbackCorrection feedbackCorrection(LeoEvidence evidence) {

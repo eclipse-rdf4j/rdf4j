@@ -45,8 +45,16 @@ public record LeoSurfaceKey(String operatorKind, BindingMask outputMask, Binding
 	}
 
 	public static LeoSurfaceKey fanout(long predicateId, String boundPosition, long valueId) {
+		return fanout(predicateId, boundPosition, valueId, "");
+	}
+
+	public static LeoSurfaceKey fanout(long predicateId, String boundPosition, long valueId, long contextId) {
+		return fanout(predicateId, boundPosition, valueId, Long.toString(contextId));
+	}
+
+	public static LeoSurfaceKey fanout(long predicateId, String boundPosition, long valueId, String contextId) {
 		return new LeoSurfaceKey("fanout", BindingMask.EMPTY, BindingMask.EMPTY, BindingMask.EMPTY,
-				BindingMask.EMPTY, "", Long.toString(predicateId), "", 0, 0, boundPosition,
+				BindingMask.EMPTY, normalize(contextId), Long.toString(predicateId), "", 0, 0, boundPosition,
 				Long.toString(valueId));
 	}
 

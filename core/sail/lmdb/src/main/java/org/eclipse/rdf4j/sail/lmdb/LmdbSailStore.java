@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -935,6 +936,39 @@ class LmdbSailStore implements SailStore {
 				operatorFeedbackStats, statementPatternCardinalitySource);
 	}
 
+	public void resetLearnedOptimizerFeedback() {
+		if (operatorFeedbackStats != null) {
+			operatorFeedbackStats.resetLearnedEvidence();
+			scheduleEstimatorPersist();
+		}
+	}
+
+	public String summarizeLearnedOptimizerFeedback() {
+		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceSummary();
+	}
+
+	public String describeLearnedOptimizerFeedback() {
+		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceDetails();
+	}
+
+	public void exportLearnedOptimizerFeedback(Path targetDirectory) throws IOException {
+		if (operatorFeedbackStats != null) {
+			operatorFeedbackStats.exportLearnedEvidence(targetDirectory);
+		}
+	}
+
+	public void importLearnedOptimizerFeedback(Path sourceDirectory) throws IOException {
+		if (operatorFeedbackStats != null) {
+			operatorFeedbackStats.importLearnedEvidence(sourceDirectory);
+			scheduleEstimatorPersist();
+		}
+	}
+
+	LmdbLeoShadowBenchmarkReport learnedOptimizerShadowBenchmarkReport() {
+		return operatorFeedbackStats == null ? new LmdbLeoShadowBenchmarkReport(0, 0, 0, 0, 0, 0, 0, 0, false, "")
+				: operatorFeedbackStats.shadowBenchmarkReport();
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);
@@ -1344,6 +1378,7 @@ class LmdbSailStore implements SailStore {
 		private Resource[] pendingApproveContexts;
 		private int pendingApproveCount;
 		private volatile boolean estimatorTouchedInTransaction;
+		private HashSet<Long> touchedLeoPredicateIds;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
@@ -1459,6 +1494,26 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void recordLeoTouchedPredicate(long predicateId) {
+			if (operatorFeedbackStats == null || predicateId < 0L) {
+				return;
+			}
+			if (touchedLeoPredicateIds == null) {
+				touchedLeoPredicateIds = new HashSet<>();
+			}
+			touchedLeoPredicateIds.add(predicateId);
+		}
+
+		private Set<Long> learnedOptimizerTouchedPredicates() {
+			return touchedLeoPredicateIds == null || touchedLeoPredicateIds.isEmpty()
+					? Set.of()
+					: Set.copyOf(touchedLeoPredicateIds);
+		}
+
+		private void clearLeoTouchedPredicates() {
+			touchedLeoPredicateIds = null;
+		}
+
 		private final class BatchValueCollector {
 			private Object2IntOpenHashMap<Value> indexes;
 			private Value[] values;
@@ -1552,6 +1607,7 @@ class LmdbSailStore implements SailStore {
 		private void discardEstimatorUpdatesIfTouched() {
 			clearPendingApproves();
 			clearPendingEstimatorAdds();
+			clearLeoTouchedPredicates();
 			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
 					&& sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -1566,6 +1622,7 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
 			}
 			clearPendingEstimatorAdds();
+			clearLeoTouchedPredicates();
 			estimatorTouchedInTransaction = false;
 			estimatorTouchedSinceStoreTxnStart.set(false);
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
@@ -1584,6 +1641,7 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			clearPendingApproves();
 			clearPendingEstimatorAdds();
+			clearLeoTouchedPredicates();
 			if (batchValueCollector != null) {
 				batchValueCollector.clear();
 				batchValueCollector = null;
@@ -1664,7 +1722,8 @@ class LmdbSailStore implements SailStore {
 							filterSelectivityStats.recordStoreMutation();
 						}
 						if (operatorFeedbackStats != null) {
-							operatorFeedbackStats.recordStoreMutation();
+							operatorFeedbackStats.recordStoreMutation(learnedOptimizerTouchedPredicates());
+							clearLeoTouchedPredicates();
 						}
 						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null
 								|| operatorFeedbackStats != null) {
@@ -2391,6 +2450,7 @@ class LmdbSailStore implements SailStore {
 				AddQuadOperation q = new AddQuadOperation();
 				q.s = valueStore.storeValue(subj);
 				q.p = valueStore.storeValue(pred);
+				recordLeoTouchedPredicate(q.p);
 				q.o = valueStore.storeValue(obj);
 				q.c = context == null ? 0 : valueStore.storeValue(context);
 				q.context = context;
@@ -2438,6 +2498,7 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 						removeCount[0]++;
+						recordLeoTouchedPredicate(quad[1]);
 						try {
 							tripleStore.recordPredicateObjectRemoval(quad[1], valueStore.getValue(quad[2]));
 						} catch (IOException e) {

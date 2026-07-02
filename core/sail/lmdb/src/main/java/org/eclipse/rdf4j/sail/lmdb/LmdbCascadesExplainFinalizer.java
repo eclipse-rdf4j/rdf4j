@@ -89,6 +89,8 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private void annotateCostFeedbackNode(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
+		annotateLearnedEvidence(lmdbStatistics, tupleExpr);
+		annotateLearnedEvidenceExplain(lmdbStatistics, tupleExpr);
 		if (!lmdbStatistics.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
 				|| protectedCostFeedbackSource(tupleExpr)) {
 			tupleExpr.setCostFeedbackTrackingEnabled(false);
@@ -113,6 +115,36 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD;
 		tupleExpr.setCostFeedbackReportQErrorThreshold(reportQErrorThreshold(tupleExpr, baseThreshold));
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
+	}
+
+	private static void annotateLearnedEvidence(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
+		if (lmdbStatistics == null || tupleExpr == null) {
+			return;
+		}
+		String debug = lmdbStatistics.debugEvidence(tupleExpr);
+		if (debug != null && !debug.isBlank()) {
+			tupleExpr.setStringMetricPlanned("optimizer.leoEvidence", debug.strip());
+		}
+		lmdbStatistics.planRankingAdvice(tupleExpr).ifPresent(advice -> {
+			tupleExpr.setStringMetricPlanned("optimizer.leoPlanRankingCandidate", advice.candidateId());
+			tupleExpr.setStringMetricPlanned("optimizer.leoPlanRankingReason", advice.reason());
+			tupleExpr.setDoubleMetricPlanned("optimizer.leoPlanRankingConfidence", advice.confidence());
+			tupleExpr.setLongMetricPlanned("optimizer.leoPlanRankingEvidenceCount", advice.evidenceCount());
+		});
+	}
+
+	private static void annotateLearnedEvidenceExplain(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
+		if (lmdbStatistics == null || tupleExpr == null) {
+			return;
+		}
+		String diff = lmdbStatistics.learnedOptimizerExplainDiff(tupleExpr);
+		if (diff != null && !diff.isBlank()) {
+			tupleExpr.setStringMetricPlanned("optimizer.leoExplainDiff", diff);
+		}
+		String debug = lmdbStatistics.learnedOptimizerDebugEvidence(tupleExpr);
+		if (debug != null && !debug.isBlank()) {
+			tupleExpr.setStringMetricPlanned("optimizer.leoEvidence", debug.replace('\n', ';'));
+		}
 	}
 
 	private static boolean coveredByParentWinner(TupleExpr tupleExpr) {

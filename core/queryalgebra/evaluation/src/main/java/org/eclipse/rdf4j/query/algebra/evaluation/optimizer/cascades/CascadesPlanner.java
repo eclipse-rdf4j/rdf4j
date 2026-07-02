@@ -34,6 +34,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -58,6 +61,13 @@ public final class CascadesPlanner {
 	static final String PLANNED_OUTPUT_OFFSET_ROWS = "plannedOutputOffsetRows";
 	static final String PLANNED_EARLY_STOP_ROWS = "plannedEarlyStopRows";
 	static final String PLANNED_EXISTENCE_GOAL = "plannedExistenceGoal";
+	private static final String PLANNED_LEO_CANDIDATE_ID = "plannedLeoCandidateId";
+	private static final String PLANNED_LEO_CANDIDATE_RULE_ID = "plannedLeoCandidateRuleId";
+	private static final String PLANNED_LEO_CANDIDATE_ACCEPTED = "plannedLeoCandidateAccepted";
+	private static final String PLANNED_LEO_CANDIDATE_COST_SCORE = "plannedLeoCandidateCostScore";
+	private static final String PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT = "plannedLeoCandidateLogicalFingerprint";
+	private static final String PLANNED_LEO_CANDIDATE_PHYSICAL_FINGERPRINT = "plannedLeoCandidatePhysicalFingerprint";
+	private static final String PLANNED_LEO_CANDIDATE_OPERATOR_TYPE = "plannedLeoCandidateOperatorType";
 
 	private final CascadesCostModel costModel;
 	private final RuleRegistry ruleRegistry;
@@ -538,6 +548,8 @@ public final class CascadesPlanner {
 			}
 		}
 		cost = costModel.applyOutputGoal(expression, goal, delivered, cost);
+		LeoPlanRanking leoPlanRanking = stampLeoPlanRankingShadow(expression, ruleId, cost, incumbent.orElse(null));
+		cost = applyLeoPlanReranking(expression, cost, leoPlanRanking);
 		Map<String, Double> decisionMetrics = decisionMetrics(goal, incumbent.orElse(null), cost, decisionSensitive,
 				exactRefined);
 		stampDoubleMetrics(expression.tupleExpr(), decisionMetrics);
@@ -545,8 +557,10 @@ public final class CascadesPlanner {
 				.withDoubleMetrics(decisionMetrics);
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
+		observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
 		if (enforceCostBound && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
 				&& cost.exceeds(goal.costBound())) {
+			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "cost-bound");
 			state.recordRejected(expression.groupId(), ruleId, "cost-bound", cost);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "cost-bound", cost, expression.tupleExpr());
 			return Optional.empty();
@@ -567,13 +581,17 @@ public final class CascadesPlanner {
 				state.approximateReason, provenance);
 		if (!memo.canAddWinner(winnerKey, candidate, boundedFrontierLimit,
 				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED)) {
+			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "dominated-or-trimmed");
 			state.recordRejected(expression.groupId(), ruleId, "dominated-or-trimmed", cost);
+			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "dominated-or-trimmed", cost,
 					expression.tupleExpr());
 			return Optional.empty();
 		}
 		TupleExpr plan = costModel.buildPlan(expression, inputWinners);
 		stampDoubleMetrics(plan, decisionMetrics);
+		LeoPlanCandidate physicalCandidate = planCandidate("candidate", ruleId, expression.tupleExpr(), cost);
+		stampLeoCandidateMetrics(plan, physicalCandidate, false);
 		Winner winner = new Winner(expression, plan, delivered, cost, proofs, state.approximate,
 				state.approximateReason, provenance);
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
@@ -583,12 +601,31 @@ public final class CascadesPlanner {
 		boolean accepted = memo.addWinner(winnerKey, winner, boundedFrontierLimit,
 				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED);
 		if (!accepted) {
+			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "dominated-or-trimmed");
 			state.recordRejected(expression.groupId(), ruleId, "dominated-or-trimmed", cost);
+			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "dominated-or-trimmed", cost, plan);
 		} else {
+			stampLeoCandidateMetrics(plan, physicalCandidate, true);
+			recordLeoPlanCandidateObservation(expression, ruleId, cost, true, "accepted");
+			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), true);
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
+	}
+
+	private void observeLeoPlanCandidate(MemoExpr expression, String ruleId, CostVector cost, int candidateRank,
+			boolean accepted) {
+		if (expression == null || expression.tupleExpr() == null || cost == null
+				|| !(costModel.leoSurfaceProvider()instanceof LeoLearnedEvidenceService service)) {
+			return;
+		}
+		try {
+			service.observePlanCandidate(expression.tupleExpr(), ruleId, cost.rows(), cost.workRows(),
+					Math.max(0, candidateRank), accepted);
+		} catch (RuntimeException ignored) {
+			// Learned plan-candidate telemetry must never affect semantic optimization.
+		}
 	}
 
 	private Optional<CostVector> budgetedInputLowerBound(List<Winner> inputWinners, CostVector ruleCost,
@@ -637,6 +674,93 @@ public final class CascadesPlanner {
 		double risk = Math.max(candidateRisk, incumbentRisk);
 		return gapRatio <= Math.max(DECISION_REFINEMENT_CLOSE_RATIO, risk)
 				&& candidateScore <= incumbentScore * Math.max(DECISION_REFINEMENT_CLOSE_RATIO, risk);
+	}
+
+	private LeoPlanRanking stampLeoPlanRankingShadow(MemoExpr expression, String ruleId, CostVector cost,
+			Winner incumbent) {
+		if (expression == null || expression.tupleExpr() == null
+				|| !(costModel.leoSurfaceProvider()instanceof LeoLearnedEvidenceService service)) {
+			return LeoPlanRanking.empty();
+		}
+		List<LeoPlanCandidate> candidates = new ArrayList<>(2);
+		if (incumbent != null) {
+			candidates.add(planCandidate("incumbent",
+					incumbent.provenance() == null ? "" : incumbent.provenance().ruleId(),
+					incumbent.expression() == null ? null : incumbent.expression().tupleExpr(), incumbent.cost()));
+		}
+		candidates.add(planCandidate("candidate", ruleId, expression.tupleExpr(), cost));
+		LeoPlanRanking ranking = service.rankPlanCandidates(candidates);
+		String summary = ranking.explainSummary();
+		if (summary != null && !summary.isBlank()) {
+			expression.tupleExpr().setStringMetricPlanned("plannedLeoPlanRanking", summary);
+			expression.tupleExpr()
+					.setDoubleMetricPlanned("plannedLeoPlanRankingWouldChange",
+							ranking.wouldChangeChoice() ? 1.0d : 0.0d);
+			expression.tupleExpr().setStringMetricPlanned("plannedLeoPlanRankingReason", ranking.reason());
+		}
+		return ranking;
+	}
+
+	private CostVector applyLeoPlanReranking(MemoExpr expression, CostVector cost, LeoPlanRanking ranking) {
+		if (expression == null || cost == null || ranking == null || ranking.candidates().isEmpty()
+				|| !(costModel.leoSurfaceProvider()instanceof LeoLearnedEvidenceService service)) {
+			return cost;
+		}
+		LeoPlanRanking.ScoredCandidate winner = ranking.candidates().getFirst();
+		if (!"candidate".equals(winner.candidate().candidateId())) {
+			return cost;
+		}
+		if (!service.shouldApplyPlanRanking(ranking, "candidate") || !Double.isFinite(winner.learnedScore())) {
+			return cost;
+		}
+		CostVector adjusted = cost.withWorkRows(Math.min(cost.workRows(), winner.learnedScore()));
+		expression.tupleExpr().setDoubleMetricPlanned("plannedLeoPlanRankingApplied", 1.0d);
+		expression.tupleExpr().setDoubleMetricPlanned("plannedLeoPlanRankingAppliedScore", winner.learnedScore());
+		expression.tupleExpr().setDoubleMetricPlanned("plannedLeoPlanRankingAppliedConfidence", winner.confidence());
+		expression.tupleExpr().setStringMetricPlanned("plannedLeoPlanRankingAppliedSource", winner.source());
+		return adjusted;
+	}
+
+	private void recordLeoPlanCandidateObservation(MemoExpr expression, String ruleId, CostVector cost,
+			boolean accepted, String reason) {
+		if (expression == null || expression.tupleExpr() == null
+				|| !(costModel.leoSurfaceProvider()instanceof LeoLearnedEvidenceService service)) {
+			return;
+		}
+		LeoPlanCandidate candidate = planCandidate("candidate", ruleId, expression.tupleExpr(), cost);
+		service.observePlanCandidate(candidate, accepted, reason);
+		stampLeoCandidateMetrics(expression.tupleExpr(), candidate, accepted);
+	}
+
+	private void stampLeoCandidateMetrics(TupleExpr tupleExpr, LeoPlanCandidate candidate, boolean accepted) {
+		if (tupleExpr == null || candidate == null) {
+			return;
+		}
+		tupleExpr.setStringMetricPlanned(PLANNED_LEO_CANDIDATE_ID, candidate.candidateId());
+		tupleExpr.setStringMetricPlanned(PLANNED_LEO_CANDIDATE_RULE_ID, candidate.ruleId());
+		tupleExpr.setStringMetricPlanned(PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT, candidate.logicalFingerprint());
+		tupleExpr.setStringMetricPlanned(PLANNED_LEO_CANDIDATE_PHYSICAL_FINGERPRINT, candidate.physicalFingerprint());
+		tupleExpr.setStringMetricPlanned(PLANNED_LEO_CANDIDATE_OPERATOR_TYPE,
+				candidate.tupleExpr() == null ? "" : candidate.tupleExpr().getClass().getSimpleName());
+		tupleExpr.setDoubleMetricPlanned(PLANNED_LEO_CANDIDATE_ACCEPTED, accepted ? 1.0d : 0.0d);
+		if (Double.isFinite(candidate.costScore())) {
+			tupleExpr.setDoubleMetricPlanned(PLANNED_LEO_CANDIDATE_COST_SCORE, candidate.costScore());
+		}
+	}
+
+	private LeoPlanCandidate planCandidate(String candidateId, String ruleId, TupleExpr tupleExpr, CostVector cost) {
+		CostVector safeCost = cost == null ? CostVector.INFINITE : cost;
+		String logicalFingerprint = logicalFingerprint(tupleExpr);
+		String physicalFingerprint = (ruleId == null ? "" : ruleId) + "|" + logicalFingerprint;
+		return new LeoPlanCandidate(candidateId, ruleId, tupleExpr, safeCost.rows(), safeCost.workRows(),
+				safeCost.objectiveScore(), logicalFingerprint, physicalFingerprint, "");
+	}
+
+	private static String logicalFingerprint(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "";
+		}
+		return tupleExpr.getClass().getName() + "|bindings=" + new java.util.TreeSet<>(tupleExpr.getBindingNames());
 	}
 
 	private void markPlanChangingFeedbackThreshold(Winner winner) {

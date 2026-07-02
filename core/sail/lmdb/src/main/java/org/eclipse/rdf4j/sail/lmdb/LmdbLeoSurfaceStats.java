@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceModel;
 
@@ -29,7 +30,9 @@ final class LmdbLeoSurfaceStats {
 
 	private static final String FANOUT_VALUE_SOURCE = "lmdb-leo-fanout-heavy-hitter";
 	private static final String FANOUT_BUCKET_SOURCE = "lmdb-leo-fanout-quantile-bucket";
+	private static final String FANOUT_PREDICATE_SOURCE = "lmdb-leo-fanout-predicate-mean";
 	private static final int MAX_STORED_FANOUT_SAMPLES = 4096;
+	static final long ANY_CONTEXT_ID = -1L;
 
 	private final LmdbLeoFeedbackConfig config;
 	private final Map<FanoutKey, FanoutSurface> fanoutSurfaces = new HashMap<>();
@@ -39,11 +42,58 @@ final class LmdbLeoSurfaceStats {
 	}
 
 	boolean recordFanout(long predicateId, BoundPosition position, long valueId, long fanout, long epoch) {
+		return recordFanout(predicateId, position, valueId, ANY_CONTEXT_ID, fanout, epoch);
+	}
+
+	boolean recordFanout(long predicateId, BoundPosition position, long valueId, long contextId, long fanout,
+			long epoch) {
 		if (predicateId < 0L || valueId < 0L || fanout < 0L || position == null) {
 			return false;
 		}
-		fanoutSurfaces.computeIfAbsent(new FanoutKey(predicateId, position), ignored -> new FanoutSurface(config))
+		fanoutSurfaces.computeIfAbsent(new FanoutKey(predicateId, position, contextId),
+				ignored -> new FanoutSurface(config))
 				.record(valueId, fanout, epoch);
+		if (contextId != ANY_CONTEXT_ID) {
+			fanoutSurfaces.computeIfAbsent(new FanoutKey(predicateId, position, ANY_CONTEXT_ID),
+					ignored -> new FanoutSurface(config))
+					.record(valueId, fanout, epoch);
+		}
+		return true;
+	}
+
+	boolean recordPredicateFanout(long predicateId, long fanout, long epoch) {
+		if (predicateId < 0L || fanout < 0L) {
+			return false;
+		}
+		for (BoundPosition position : BoundPosition.values()) {
+			fanoutSurfaces.computeIfAbsent(new FanoutKey(predicateId, position, ANY_CONTEXT_ID),
+					ignored -> new FanoutSurface(config))
+					.recordPredicate(fanout, epoch);
+		}
+		return true;
+	}
+
+	boolean decayPredicates(Set<Long> predicateIds, long epoch) {
+		if (predicateIds == null || predicateIds.isEmpty()) {
+			return false;
+		}
+		boolean changed = false;
+		for (Map.Entry<FanoutKey, FanoutSurface> entry : fanoutSurfaces.entrySet()) {
+			if (predicateIds.contains(entry.getKey().predicateId())) {
+				entry.getValue().decayForMutation(epoch);
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	boolean decayAll(long epoch) {
+		if (fanoutSurfaces.isEmpty()) {
+			return false;
+		}
+		for (FanoutSurface surface : fanoutSurfaces.values()) {
+			surface.decayForMutation(epoch);
+		}
 		return true;
 	}
 
@@ -55,24 +105,59 @@ final class LmdbLeoSurfaceStats {
 		fanoutSurfaces.clear();
 	}
 
-	Optional<FanoutEstimate> estimateFanout(long predicateId, BoundPosition position, long valueId) {
-		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position));
-		if (surface == null) {
-			return Optional.empty();
+	void copyFrom(LmdbLeoSurfaceStats other) {
+		fanoutSurfaces.clear();
+		if (other != null) {
+			fanoutSurfaces.putAll(other.fanoutSurfaces);
 		}
-		return surface.estimate(predicateId, position, valueId);
+	}
+
+	Optional<FanoutEstimate> estimateFanout(long predicateId, BoundPosition position, long valueId) {
+		return estimateFanout(predicateId, position, valueId, ANY_CONTEXT_ID);
+	}
+
+	Optional<FanoutEstimate> estimateFanout(long predicateId, BoundPosition position, long valueId, long contextId) {
+		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position, contextId));
+		Optional<FanoutEstimate> estimate = surface == null ? Optional.empty()
+				: surface.estimate(predicateId, position, valueId, contextId);
+		if (estimate.isPresent() || contextId == ANY_CONTEXT_ID) {
+			return estimate;
+		}
+		FanoutSurface fallback = fanoutSurfaces.get(new FanoutKey(predicateId, position, ANY_CONTEXT_ID));
+		return fallback == null ? Optional.empty()
+				: fallback.estimate(predicateId, position, valueId, ANY_CONTEXT_ID);
 	}
 
 	Optional<FanoutEstimate> bucketEstimate(long predicateId, BoundPosition position, long valueId) {
-		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position));
-		if (surface == null) {
-			return Optional.empty();
+		return bucketEstimate(predicateId, position, valueId, ANY_CONTEXT_ID);
+	}
+
+	Optional<FanoutEstimate> bucketEstimate(long predicateId, BoundPosition position, long valueId, long contextId) {
+		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position, contextId));
+		Optional<FanoutEstimate> estimate = surface == null ? Optional.empty()
+				: surface.bucketEstimate(predicateId, position, valueId, contextId);
+		if (estimate.isPresent() || contextId == ANY_CONTEXT_ID) {
+			return estimate;
 		}
-		return surface.bucketEstimate(predicateId, position, valueId);
+		FanoutSurface fallback = fanoutSurfaces.get(new FanoutKey(predicateId, position, ANY_CONTEXT_ID));
+		return fallback == null ? Optional.empty()
+				: fallback.bucketEstimate(predicateId, position, valueId, ANY_CONTEXT_ID);
+	}
+
+	Optional<FanoutEstimate> predicateEstimate(long predicateId, BoundPosition position, long valueId, long contextId) {
+		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position, contextId));
+		Optional<FanoutEstimate> estimate = surface == null ? Optional.empty()
+				: surface.predicateEstimate(predicateId, position, valueId, contextId);
+		if (estimate.isPresent() || contextId == ANY_CONTEXT_ID) {
+			return estimate;
+		}
+		FanoutSurface fallback = fanoutSurfaces.get(new FanoutKey(predicateId, position, ANY_CONTEXT_ID));
+		return fallback == null ? Optional.empty()
+				: fallback.predicateEstimate(predicateId, position, valueId, ANY_CONTEXT_ID);
 	}
 
 	List<QuantileBucket> quantileBuckets(long predicateId, BoundPosition position) {
-		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position));
+		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position, ANY_CONTEXT_ID));
 		if (surface == null) {
 			return List.of();
 		}
@@ -80,7 +165,7 @@ final class LmdbLeoSurfaceStats {
 	}
 
 	int heavyHitterCount(long predicateId, BoundPosition position) {
-		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position));
+		FanoutSurface surface = fanoutSurfaces.get(new FanoutKey(predicateId, position, ANY_CONTEXT_ID));
 		return surface == null ? 0 : surface.heavyHitterCount();
 	}
 
@@ -100,7 +185,7 @@ final class LmdbLeoSurfaceStats {
 			throw new IOException("Invalid LEO surface count: " + size);
 		}
 		for (int i = 0; i < size; i++) {
-			FanoutKey key = FanoutKey.readFrom(in);
+			FanoutKey key = FanoutKey.readFrom(in, version);
 			stats.fanoutSurfaces.put(key, FanoutSurface.readFrom(in, stats.config, version));
 		}
 		return stats;
@@ -111,28 +196,35 @@ final class LmdbLeoSurfaceStats {
 		OBJECT
 	}
 
-	record FanoutEstimate(long predicateId, BoundPosition position, long valueId, double rows, double confidence,
+	record FanoutEstimate(long predicateId, BoundPosition position, long valueId, long contextId, double rows,
+			double confidence,
 			long evidenceCount, String source) {
 	}
 
 	record QuantileBucket(int index, long count, long minFanout, long maxFanout, double meanFanout) {
 	}
 
-	private record FanoutKey(long predicateId, BoundPosition position) {
+	private record FanoutKey(long predicateId, BoundPosition position, long contextId) {
 
 		void writeTo(DataOutputStream out) throws IOException {
 			out.writeLong(predicateId);
 			out.writeInt(position.ordinal());
+			out.writeLong(contextId);
 		}
 
 		static FanoutKey readFrom(DataInputStream in) throws IOException {
+			return readFrom(in, 4);
+		}
+
+		static FanoutKey readFrom(DataInputStream in, int version) throws IOException {
 			long predicateId = in.readLong();
 			int ordinal = in.readInt();
 			BoundPosition[] values = BoundPosition.values();
 			if (ordinal < 0 || ordinal >= values.length) {
 				throw new IOException("Invalid bound-position ordinal: " + ordinal);
 			}
-			return new FanoutKey(predicateId, values[ordinal]);
+			long contextId = version >= 3 ? in.readLong() : ANY_CONTEXT_ID;
+			return new FanoutKey(predicateId, values[ordinal], contextId);
 		}
 	}
 
@@ -141,6 +233,7 @@ final class LmdbLeoSurfaceStats {
 		private final LmdbLeoFeedbackConfig config;
 		private final Map<Long, FanoutAccumulator> heavyHitters = new LinkedHashMap<>();
 		private final List<Long> fanoutSamples = new ArrayList<>();
+		private FanoutAccumulator predicateAccumulator = new FanoutAccumulator();
 
 		private FanoutSurface(LmdbLeoFeedbackConfig config) {
 			this.config = Objects.requireNonNull(config);
@@ -157,6 +250,17 @@ final class LmdbLeoSurfaceStats {
 				heavyHitters.put(valueId, accumulator);
 			}
 			accumulator.record(fanout, epoch);
+		}
+
+		void recordPredicate(long fanout, long epoch) {
+			predicateAccumulator.record(fanout, epoch);
+		}
+
+		void decayForMutation(long epoch) {
+			for (FanoutAccumulator accumulator : heavyHitters.values()) {
+				accumulator.decayForMutation(epoch);
+			}
+			predicateAccumulator.decayForMutation(epoch);
 		}
 
 		private void recordSample(long fanout) {
@@ -176,24 +280,37 @@ final class LmdbLeoSurfaceStats {
 					.ifPresent(heavyHitters::remove);
 		}
 
-		Optional<FanoutEstimate> estimate(long predicateId, BoundPosition position, long valueId) {
+		Optional<FanoutEstimate> estimate(long predicateId, BoundPosition position, long valueId, long contextId) {
 			FanoutAccumulator accumulator = heavyHitters.get(valueId);
 			if (accumulator == null) {
 				return Optional.empty();
 			}
-			return Optional.of(new FanoutEstimate(predicateId, position, valueId, accumulator.mean(),
+			return Optional.of(new FanoutEstimate(predicateId, position, valueId, contextId, accumulator.mean(),
 					accumulator.confidence(), accumulator.sampleCount(), FANOUT_VALUE_SOURCE));
 		}
 
-		Optional<FanoutEstimate> bucketEstimate(long predicateId, BoundPosition position, long valueId) {
+		Optional<FanoutEstimate> bucketEstimate(long predicateId, BoundPosition position, long valueId,
+				long contextId) {
 			List<QuantileBucket> buckets = quantileBuckets();
 			if (buckets.isEmpty()) {
 				return Optional.empty();
 			}
 			QuantileBucket bucket = buckets.get(Math.floorMod(Long.hashCode(valueId), buckets.size()));
 			double confidence = Math.min(0.50d, 0.20d + Math.log10(bucket.count() + 1.0d) * 0.10d);
-			return Optional.of(new FanoutEstimate(predicateId, position, valueId, bucket.meanFanout(), confidence,
-					bucket.count(), FANOUT_BUCKET_SOURCE));
+			return Optional
+					.of(new FanoutEstimate(predicateId, position, valueId, contextId, bucket.meanFanout(), confidence,
+							bucket.count(), FANOUT_BUCKET_SOURCE));
+		}
+
+		Optional<FanoutEstimate> predicateEstimate(long predicateId, BoundPosition position, long valueId,
+				long contextId) {
+			if (predicateAccumulator.sampleCount() <= 0L) {
+				return Optional.empty();
+			}
+			double confidence = Math.min(0.40d, predicateAccumulator.confidence() * 0.60d);
+			return Optional.of(new FanoutEstimate(predicateId, position, valueId, contextId,
+					predicateAccumulator.mean(), confidence, predicateAccumulator.sampleCount(),
+					FANOUT_PREDICATE_SOURCE));
 		}
 
 		List<QuantileBucket> quantileBuckets() {
@@ -236,6 +353,7 @@ final class LmdbLeoSurfaceStats {
 			for (long sample : fanoutSamples) {
 				out.writeLong(sample);
 			}
+			predicateAccumulator.writeTo(out);
 		}
 
 		static FanoutSurface readFrom(DataInputStream in, LmdbLeoFeedbackConfig config, int version)
@@ -255,6 +373,13 @@ final class LmdbLeoSurfaceStats {
 			}
 			for (int i = 0; i < sampleCount; i++) {
 				surface.fanoutSamples.add(in.readLong());
+			}
+			if (version >= 4) {
+				surface.predicateAccumulator = FanoutAccumulator.readFrom(in, version);
+			} else {
+				for (Long sample : surface.fanoutSamples) {
+					surface.predicateAccumulator.record(sample, surface.predicateAccumulator.sampleCount() + 1L);
+				}
 			}
 			return surface;
 		}
@@ -283,6 +408,23 @@ final class LmdbLeoSurfaceStats {
 
 		double confidence() {
 			return confidenceModel.sampleCount() > 0L ? confidenceModel.confidence() : fallbackConfidence(sampleCount);
+		}
+
+		void decayForMutation(long epoch) {
+			if (sampleCount <= 0L) {
+				return;
+			}
+			long decayedCount = Math.max(1L, sampleCount / 2L);
+			double mean = mean();
+			sampleCount = decayedCount;
+			sum = mean * decayedCount;
+			double decayedConfidence = Math.max(0.0d, confidence() * 0.5d);
+			confidenceModel = LeoConfidenceModel.fromPersisted(decayedCount, 1.0d, 1.0d,
+					Math.max(1.0d, 1.0d / Math.max(0.01d, decayedConfidence)),
+					Math.max(1.0d, 1.0d / Math.max(0.01d, decayedConfidence)),
+					Math.max(1.0d, 1.0d / Math.max(0.01d, decayedConfidence)),
+					Math.max(1.0d, 1.0d / Math.max(0.01d, decayedConfidence)),
+					1.0d, 0.0d, epoch, decayedConfidence);
 		}
 
 		void writeTo(DataOutputStream out) throws IOException {

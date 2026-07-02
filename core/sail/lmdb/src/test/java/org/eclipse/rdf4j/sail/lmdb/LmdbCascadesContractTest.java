@@ -54,8 +54,11 @@ class LmdbCascadesContractTest {
 	@Test
 	void coveredWinnerChildrenDoNotEnableCostFeedback(@TempDir Path tempDir) {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+		String previousDetailed = System.getProperty(
+				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
 		try {
 			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
+			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
 			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(
 					tempDir.resolve("join-estimator.rjes"));
 			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
@@ -78,6 +81,7 @@ class LmdbCascadesContractTest {
 							+ "collect independent operator feedback");
 		} finally {
 			restoreFeedbackTracking(previous);
+			restoreFeedbackDetailedRuntime(previousDetailed);
 		}
 	}
 
@@ -254,10 +258,18 @@ class LmdbCascadesContractTest {
 	}
 
 	private static void restoreFeedbackTracking(String previous) {
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
+	}
+
+	private static void restoreFeedbackDetailedRuntime(String previous) {
+		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, previous);
+	}
+
+	private static void restoreProperty(String propertyName, String previous) {
 		if (previous == null) {
-			System.clearProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
+			System.clearProperty(propertyName);
 		} else {
-			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
+			System.setProperty(propertyName, previous);
 		}
 	}
 }
