@@ -97,6 +97,7 @@ final class LmdbNativeQueryCompiler {
 		private final LmdbNativeEvaluationStrategy strategy;
 		private final NativeLmdbQuerySource source;
 		private final Map<String, Integer> slots = new HashMap<>();
+		private QueryEvaluationContext slotAwareContext;
 		private final List<String> slotNames = new ArrayList<>();
 		private final List<NativePattern> patterns = new ArrayList<>();
 		private final List<ValueExpr> filters = new ArrayList<>();
@@ -236,12 +237,29 @@ final class LmdbNativeQueryCompiler {
 					return Term.constant(NULL_CONTEXT_ID);
 				}
 				long id = valueId(value);
-				return id == UNKNOWN ? null : Term.constant(id);
+				if (id == UNKNOWN) {
+					return null;
+				}
+				if (var.isAnonymous()) {
+					return Term.constant(id);
+				}
+				// a named var carrying an optimizer-assigned value (e.g. an inlined prepared-query binding)
+				// must both constrain the scan and still emit the binding under its name, exactly like the
+				// generic engine; compiling it as a bare constant would make the name invisible to filters
+				// and drop it from result rows
+				return Term.constantSlot(slot(var.getName()), id);
 			}
 			if (var.isConstant()) {
 				return Term.unbound();
 			}
 			return Term.slot(slot(var.getName()));
+		}
+
+		private QueryEvaluationContext slotAwareContext() {
+			if (slotAwareContext == null) {
+				slotAwareContext = new SlotAwareQueryEvaluationContext(context, slots);
+			}
+			return slotAwareContext;
 		}
 
 		private NativeFilter compileFilter(ValueExpr expr) {
@@ -257,7 +275,17 @@ final class LmdbNativeQueryCompiler {
 					required |= 1L << slot;
 				}
 			}
-			QueryValueEvaluationStep step = strategy.precompile(expr, context);
+			QueryValueEvaluationStep step;
+			try {
+				// the slot-aware context resolves each variable's slot index once at precompile time, so the
+				// per-row accessor is a direct slot read instead of a name lookup
+				step = strategy.precompile(expr, slotAwareContext());
+			} catch (QueryEvaluationException e) {
+				// a condition that fails to precompile (e.g. a constant sub-expression that always raises a
+				// type error) can never accept a row; the generic engine folds it to constant-false the same
+				// way in FilterIterator.supply instead of surfacing the error at evaluate() time
+				return new CompositeFilter(0L, row -> false);
+			}
 			Predicate<BindingSet> predicate = step.asPredicate();
 			return new GenericNativeFilter(required, predicate);
 		}
@@ -482,6 +510,10 @@ final class LmdbNativeQueryCompiler {
 			return new Term(-1, constant);
 		}
 
+		private static Term constantSlot(int slot, long constant) {
+			return new Term(slot, constant);
+		}
+
 		private boolean hasSlot() {
 			return slot >= 0;
 		}
@@ -659,8 +691,8 @@ final class LmdbNativeQueryCompiler {
 		}
 
 		private boolean bindTerm(Term term, long id, RowState row) {
-			if (term.isConstant()) {
-				return term.constant == id;
+			if (term.isConstant() && term.constant != id) {
+				return false;
 			}
 			return term.slot < 0 || row.bind(term.slot, id);
 		}
@@ -961,11 +993,20 @@ final class LmdbNativeQueryCompiler {
 		private static final NativePlan EMPTY = new NativePlan(null, new NativePattern[0], new String[0],
 				new NativeFilter[0]);
 
+		private static final int DERIVED_CACHE_CAPACITY = 8;
+
 		private final NativeLmdbQuerySource source;
 		private final NativePattern[] patterns;
 		private final String[] slotNames;
 		private final Set<String> nativeBindingNames;
 		private final NativeFilter[] filters;
+		/**
+		 * The chosen pattern order and per-depth filter assignment depend only on which slots are seeded by the
+		 * incoming binding set. Correlated evaluation re-runs evaluate() once per outer row with the same seed shape,
+		 * so the derived plan is memoized per seed mask (copy-on-write; benign under concurrent evaluate since equal
+		 * masks derive equal plans).
+		 */
+		private volatile DerivedPlanCache derivedCache = DerivedPlanCache.EMPTY;
 
 		private NativePlan(NativeLmdbQuerySource source, NativePattern[] patterns, String[] slotNames,
 				NativeFilter[] filters) {
@@ -985,19 +1026,74 @@ final class LmdbNativeQueryCompiler {
 			if (patterns.length == 0) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return new NativePlanIteration(source, patterns, slotNames, nativeBindingNames, filters, bindings);
+			return new NativePlanIteration(this, bindings);
+		}
+
+		private DerivedPlan cachedDerived(long seedMask) {
+			return derivedCache.get(seedMask);
+		}
+
+		private void cacheDerived(long seedMask, DerivedPlan derived) {
+			DerivedPlanCache cache = derivedCache;
+			if (cache.size() < DERIVED_CACHE_CAPACITY && cache.get(seedMask) == null) {
+				derivedCache = cache.with(seedMask, derived);
+			}
+		}
+	}
+
+	private static final class DerivedPlan {
+		private final NativePattern[] order;
+		private final NativeFilter[][] filtersByDepth;
+
+		private DerivedPlan(NativePattern[] order, NativeFilter[][] filtersByDepth) {
+			this.order = order;
+			this.filtersByDepth = filtersByDepth;
+		}
+	}
+
+	private static final class DerivedPlanCache {
+		private static final DerivedPlanCache EMPTY = new DerivedPlanCache(new long[0], new DerivedPlan[0]);
+
+		private final long[] masks;
+		private final DerivedPlan[] plans;
+
+		private DerivedPlanCache(long[] masks, DerivedPlan[] plans) {
+			this.masks = masks;
+			this.plans = plans;
+		}
+
+		private DerivedPlan get(long mask) {
+			for (int i = 0; i < masks.length; i++) {
+				if (masks[i] == mask) {
+					return plans[i];
+				}
+			}
+			return null;
+		}
+
+		private int size() {
+			return masks.length;
+		}
+
+		private DerivedPlanCache with(long mask, DerivedPlan plan) {
+			long[] newMasks = Arrays.copyOf(masks, masks.length + 1);
+			DerivedPlan[] newPlans = Arrays.copyOf(plans, plans.length + 1);
+			newMasks[masks.length] = mask;
+			newPlans[plans.length] = plan;
+			return new DerivedPlanCache(newMasks, newPlans);
 		}
 	}
 
 	private static final class NativePlanIteration implements CloseableIteration<BindingSet> {
+		private final NativePlan plan;
 		private final NativeLmdbQuerySource source;
 		private final NativePattern[] allPatterns;
 		private final String[] slotNames;
 		private final Set<String> nativeBindingNames;
 		private final NativeFilter[] allFilters;
 		private final BindingSet base;
-		private final NativePattern[] order;
-		private final NativeFilter[][] filtersByDepth;
+		private NativePattern[] order;
+		private NativeFilter[][] filtersByDepth;
 		private final RowState row;
 		private final Frame[] frames;
 		private boolean closed;
@@ -1006,18 +1102,16 @@ final class LmdbNativeQueryCompiler {
 		private int depth;
 		private BindingSet next;
 
-		private NativePlanIteration(NativeLmdbQuerySource source, NativePattern[] patterns, String[] slotNames,
-				Set<String> nativeBindingNames, NativeFilter[] filters, BindingSet base) {
-			this.source = source;
-			this.allPatterns = patterns;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = nativeBindingNames;
-			this.allFilters = filters;
+		private NativePlanIteration(NativePlan plan, BindingSet base) {
+			this.plan = plan;
+			this.source = plan.source;
+			this.allPatterns = plan.patterns;
+			this.slotNames = plan.slotNames;
+			this.nativeBindingNames = plan.nativeBindingNames;
+			this.allFilters = plan.filters;
 			this.base = base;
 			this.row = new RowState(source, slotNames, nativeBindingNames, base);
-			this.order = new NativePattern[patterns.length];
-			this.filtersByDepth = new NativeFilter[patterns.length + 1][];
-			this.frames = new Frame[patterns.length];
+			this.frames = new Frame[allPatterns.length];
 			for (int i = 0; i < frames.length; i++) {
 				frames[i] = new Frame();
 			}
@@ -1138,15 +1232,27 @@ final class LmdbNativeQueryCompiler {
 					}
 				}
 			}
-			chooseOrder();
-			assignFilters();
+			long seedMask = row.boundMask();
+			DerivedPlan derived = plan.cachedDerived(seedMask);
+			if (derived == null) {
+				derived = derive(seedMask);
+				plan.cacheDerived(seedMask, derived);
+			}
+			this.order = derived.order;
+			this.filtersByDepth = derived.filtersByDepth;
 		}
 
-		private void chooseOrder() {
+		private DerivedPlan derive(long seedMask) {
+			NativePattern[] order = chooseOrder(seedMask);
+			return new DerivedPlan(order, assignFilters(order, seedMask));
+		}
+
+		private NativePattern[] chooseOrder(long seedMask) {
+			NativePattern[] order = new NativePattern[allPatterns.length];
 			boolean[] used = new boolean[allPatterns.length];
 			boolean[] bound = new boolean[slotNames.length];
 			for (int i = 0; i < slotNames.length; i++) {
-				bound[i] = row.slots[i] != UNKNOWN;
+				bound[i] = (seedMask & (1L << i)) != 0L;
 			}
 
 			for (int depth = 0; depth < order.length; depth++) {
@@ -1171,6 +1277,7 @@ final class LmdbNativeQueryCompiler {
 				order[depth] = chosen;
 				markProduced(bound, chosen);
 			}
+			return order;
 		}
 
 		private static long normalizedEstimate(double estimate) {
@@ -1192,13 +1299,13 @@ final class LmdbNativeQueryCompiler {
 			}
 		}
 
-		private void assignFilters() {
+		private NativeFilter[][] assignFilters(NativePattern[] order, long seedMask) {
+			NativeFilter[][] filtersByDepth = new NativeFilter[order.length + 1][];
 			ArrayList<NativeFilter>[] byDepth = new ArrayList[order.length + 1];
-			long boundMask = row.boundMask();
 			for (NativeFilter filter : allFilters) {
 				long required = filter.requiredMask();
 				int targetDepth = order.length;
-				long simulated = boundMask;
+				long simulated = seedMask;
 				if ((required & ~simulated) == 0) {
 					targetDepth = 0;
 				} else {
@@ -1218,6 +1325,7 @@ final class LmdbNativeQueryCompiler {
 			for (int i = 0; i < byDepth.length; i++) {
 				filtersByDepth[i] = byDepth[i] == null ? new NativeFilter[0] : byDepth[i].toArray(NativeFilter[]::new);
 			}
+			return filtersByDepth;
 		}
 
 		private boolean acceptFilters(int filterDepth) {
@@ -1335,7 +1443,7 @@ final class LmdbNativeQueryCompiler {
 		}
 	}
 
-	private static class RowBindingSetView extends AbstractBindingSet implements Serializable {
+	private static class RowBindingSetView extends AbstractBindingSet implements Serializable, SlotBindingSetView {
 		private static final long serialVersionUID = 1L;
 
 		private final NativeLmdbQuerySource source;
@@ -1350,6 +1458,14 @@ final class LmdbNativeQueryCompiler {
 		 * variable.
 		 */
 		private final transient HashMap<String, Integer> slotIndex;
+		/**
+		 * Per-slot materialized-Value memo for the long-lived mutable view: repeated reads of an unchanged slot id
+		 * (every generic filter access, every depth, every row) skip the ValueStore round-trip. The memo is
+		 * self-validating — each read compares the cached id against the current slot id, so rebinding or trail
+		 * rollback needs no invalidation hook.
+		 */
+		private final transient long[] memoIds;
+		private final transient Value[] memoValues;
 		private transient Set<String> bindingNamesCache;
 
 		private RowBindingSetView(NativeLmdbQuerySource source, String[] slotNames, Set<String> nativeBindingNames,
@@ -1362,11 +1478,16 @@ final class LmdbNativeQueryCompiler {
 			this.stable = stable;
 			if (stable) {
 				this.slotIndex = null;
+				this.memoIds = null;
+				this.memoValues = null;
 			} else {
 				this.slotIndex = new HashMap<>(slotNames.length * 2);
 				for (int i = 0; i < slotNames.length; i++) {
 					this.slotIndex.put(slotNames[i], i);
 				}
+				this.memoIds = new long[slotNames.length];
+				Arrays.fill(this.memoIds, UNKNOWN);
+				this.memoValues = new Value[slotNames.length];
 			}
 		}
 
@@ -1436,6 +1557,28 @@ final class LmdbNativeQueryCompiler {
 		}
 
 		@Override
+		public boolean hasBindingBySlot(int slot) {
+			if (isBoundValueId(slots[slot])) {
+				return true;
+			}
+			return base != null && base.hasBinding(slotNames[slot]);
+		}
+
+		@Override
+		public Value valueBySlot(int slot) {
+			if (isBoundValueId(slots[slot])) {
+				return value(slot);
+			}
+			return base == null ? null : base.getValue(slotNames[slot]);
+		}
+
+		@Override
+		public Binding bindingBySlot(int slot) {
+			Value value = valueBySlot(slot);
+			return value == null ? null : new SimpleBinding(slotNames[slot], value);
+		}
+
+		@Override
 		public int size() {
 			int size = base == null ? 0 : base.size();
 			for (int i = 0; i < slotNames.length; i++) {
@@ -1481,6 +1624,15 @@ final class LmdbNativeQueryCompiler {
 			long id = slots[slot];
 			if (id == NULL_CONTEXT_ID || id == UNKNOWN) {
 				return null;
+			}
+			if (memoIds != null) {
+				if (memoIds[slot] == id) {
+					return memoValues[slot];
+				}
+				Value value = source.lazyValue(id);
+				memoIds[slot] = id;
+				memoValues[slot] = value;
+				return value;
 			}
 			return source.lazyValue(id);
 		}

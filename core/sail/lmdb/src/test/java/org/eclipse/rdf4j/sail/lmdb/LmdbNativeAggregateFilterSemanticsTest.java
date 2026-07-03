@@ -118,4 +118,28 @@ public class LmdbNativeAggregateFilterSemanticsTest {
 				+ "}");
 		assertThat(count).isEqualTo(1);
 	}
+
+	@Test
+	public void constantErrorConditionYieldsEmptyAggregate() {
+		// 'not a number' + 1 always raises a type error, so the condition can never accept a row;
+		// the generic engine folds a condition that fails to precompile into constant-false
+		// (FilterIterator.supply) instead of surfacing the error at evaluate() time
+		long count = countResult("SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s <" + EX + "p> ?o .\n"
+				+ "  FILTER('not a number' + 1 = ?o)\n"
+				+ "}");
+		assertThat(count).isEqualTo(0);
+	}
+
+	@Test
+	public void negatedConstantErrorConditionYieldsEmptyAggregate() {
+		// the error raised by comparing incompatible constant literals survives the negation, so
+		// the filter is still constant-false, not constant-true
+		long count = countResult("SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s <" + EX + "p> ?o .\n"
+				+ "  FILTER(!(\"2002\"^^<http://www.w3.org/2001/XMLSchema#string>"
+				+ " = \"2007\"^^<http://www.w3.org/2001/XMLSchema#gYear>))\n"
+				+ "}");
+		assertThat(count).isEqualTo(0);
+	}
 }

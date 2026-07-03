@@ -66,6 +66,106 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void pooledCursorsAreReusedAcrossSequentialScans() throws Exception {
+		tripleStore.startTransaction();
+		for (int i = 1; i <= 20; i++) {
+			tripleStore.storeTriple(i, 2, 3, 1, true);
+		}
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			// repeated probes on the same index must keep returning correct results while the pooled
+			// cursor handle is reused (second scan onwards repositions a parked cursor)
+			for (int round = 0; round < 5; round++) {
+				assertEquals("subject-bound probe", 1, count(tripleStore.getTriples(txn, 7, -1, -1, -1, true)));
+				assertEquals("predicate-bound scan", 20, count(tripleStore.getTriples(txn, -1, 2, -1, -1, true)));
+				assertEquals("full scan", 20, count(tripleStore.getTriples(txn, -1, -1, -1, -1, true)));
+			}
+		}
+	}
+
+	@Test
+	public void pooledCursorsSurviveTxnVersionBump() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 2, 3, 1, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertEquals(1, count(tripleStore.getTriples(txn, -1, 2, -1, -1, true)));
+
+			// a write commit resets and renews the read txn, bumping its version; the parked cursor
+			// must be renewed onto the new snapshot instead of reading freed pages
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(4, 2, 6, 1, true);
+			tripleStore.commit();
+			txn.reset();
+
+			assertEquals(2, count(tripleStore.getTriples(txn, -1, 2, -1, -1, true)));
+			assertEquals(2, count(tripleStore.getTriples(txn, -1, 2, -1, -1, true)));
+		}
+
+		// a fresh Txn wrapper may receive a recycled handle; the owner-identity check must force a renew
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertEquals(2, count(tripleStore.getTriples(txn, -1, 2, -1, -1, true)));
+		}
+	}
+
+	@Test
+	public void nestedIteratorsOnSameIndexDoNotShareCursors() throws Exception {
+		tripleStore.startTransaction();
+		for (int i = 1; i <= 10; i++) {
+			tripleStore.storeTriple(i, 2, i + 100, 1, true);
+		}
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			// interleaved iterators over the same dbi: the inner probes must not disturb the outer scan
+			int outerRows = 0;
+			RecordIterator outer = tripleStore.getTriples(txn, -1, 2, -1, -1, true);
+			long[] outerRecord;
+			while ((outerRecord = outer.next()) != null) {
+				outerRows++;
+				assertEquals("inner probe while outer scan is open", 1,
+						count(tripleStore.getTriples(txn, outerRecord[0], 2, -1, -1, true)));
+			}
+			outer.close();
+			assertEquals(10, outerRows);
+		}
+	}
+
+	@Test
+	public void retainedIteratorResetsAcrossShapes() throws Exception {
+		tripleStore.startTransaction();
+		for (int i = 1; i <= 10; i++) {
+			tripleStore.storeTriple(i, 2, i + 100, 1, true);
+			tripleStore.storeTriple(i, 3, 999, 1, true);
+		}
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			// range probe (subject bound), then re-aimed at other keys, shapes and indexes
+			LmdbRecordIterator it = tripleStore.getTriplesRetained(txn, 5, -1, -1, -1, true);
+			try {
+				assertEquals("subject-bound range probe", 2, count(it));
+				tripleStore.resetTriples(it, 7, -1, -1, -1, true);
+				assertEquals("re-aimed subject probe", 2, count(it));
+				tripleStore.resetTriples(it, 7, 2, 107, 1, true);
+				assertEquals("fully-bound exact probe", 1, count(it));
+				tripleStore.resetTriples(it, 7, 2, 108, 1, true);
+				assertEquals("fully-bound miss", 0, count(it));
+				tripleStore.resetTriples(it, -1, 3, -1, -1, true);
+				assertEquals("predicate-bound probe on the other index", 10, count(it));
+				tripleStore.resetTriples(it, -1, -1, -1, -1, true);
+				assertEquals("full scan after retained probes", 20, count(it));
+				tripleStore.resetTriples(it, 5, -1, -1, -1, true);
+				assertEquals("range probe again after full scan", 2, count(it));
+			} finally {
+				it.dispose();
+			}
+		}
+	}
+
+	@Test
 	public void testInferredStmts() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, false);
