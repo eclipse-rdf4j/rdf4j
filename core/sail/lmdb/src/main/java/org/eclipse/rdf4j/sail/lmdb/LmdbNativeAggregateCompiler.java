@@ -14,13 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -37,7 +35,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -90,8 +87,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.sail.SailException;
 import org.roaringbitmap.longlong.Roaring64Bitmap;
 
@@ -144,6 +139,7 @@ final class LmdbNativeAggregateCompiler {
 		private final LmdbNativeEvaluationStrategy strategy;
 		private final NativeLmdbQuerySource source;
 		private final Map<String, Integer> slots = new HashMap<>();
+		private final NativeSlotLayout layout;
 		private QueryEvaluationContext slotAwareContext;
 		private final ArrayList<String> slotNames = new ArrayList<>();
 		private Set<String> requiredAggregateNames = Set.of();
@@ -157,6 +153,7 @@ final class LmdbNativeAggregateCompiler {
 			this.context = context;
 			this.strategy = strategy;
 			this.source = source;
+			this.layout = new NativeSlotLayout(slots, LmdbQueryEvaluationContext.layoutOf(context));
 		}
 
 		private QueryEvaluationStep compile(Filter filter) {
@@ -192,14 +189,14 @@ final class LmdbNativeAggregateCompiler {
 			NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
 					: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
 			if (impossible) {
-				return new NativeGroupStep(stepSource, SlotPlan.empty(), slotNames.toArray(String[]::new), groupSlots,
-						aggregates, strictCompare);
+				layout.freeze(slotNames);
+				return new NativeGroupStep(stepSource, SlotPlan.empty(), layout, groupSlots, aggregates, strictCompare);
 			}
 			if (slotNames.size() > MAX_NATIVE_SLOTS) {
 				return null;
 			}
-			return new NativeGroupStep(stepSource, arg, slotNames.toArray(String[]::new), groupSlots, aggregates,
-					strictCompare);
+			layout.freeze(slotNames);
+			return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare);
 		}
 
 		/**
@@ -286,8 +283,9 @@ final class LmdbNativeAggregateCompiler {
 			NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
 					: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
 			SlotPlan plan = impossible ? SlotPlan.empty() : arg;
-			return new NativeRowsStep(stepSource, plan, slotNames.toArray(String[]::new), sourceSlots, targetNames,
-					distinct, orderSlots, orderAscending, offset, limit, strictCompare);
+			layout.freeze(slotNames);
+			return new NativeRowsStep(stepSource, plan, layout, sourceSlots, targetNames, distinct, orderSlots,
+					orderAscending, offset, limit, strictCompare);
 		}
 
 		/**
@@ -1210,7 +1208,7 @@ final class LmdbNativeAggregateCompiler {
 
 		private QueryEvaluationContext slotAwareContext() {
 			if (slotAwareContext == null) {
-				slotAwareContext = new SlotAwareQueryEvaluationContext(context, slots);
+				slotAwareContext = new SlotAwareQueryEvaluationContext(context, layout);
 			}
 			return slotAwareContext;
 		}
@@ -1627,8 +1625,7 @@ final class LmdbNativeAggregateCompiler {
 	private static final class NativeRowsStep implements QueryEvaluationStep {
 		private final NativeLmdbQuerySource source;
 		private final SlotPlan arg;
-		private final String[] slotNames;
-		private final Set<String> nativeBindingNames;
+		private final NativeSlotLayout layout;
 		private final int[] sourceSlots;
 		private final String[] targetNames;
 		private final boolean distinct;
@@ -1638,13 +1635,12 @@ final class LmdbNativeAggregateCompiler {
 		private final long limit;
 		private final boolean strictCompare;
 
-		private NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, String[] slotNames, int[] sourceSlots,
+		private NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
 				String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
 				long limit, boolean strictCompare) {
 			this.source = source;
 			this.arg = arg;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = new LinkedHashSet<>(Arrays.asList(slotNames));
+			this.layout = layout;
 			this.sourceSlots = sourceSlots;
 			this.targetNames = targetNames;
 			this.distinct = distinct;
@@ -1682,8 +1678,8 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private List<BindingSet> evaluateAll(BindingSet base) {
-			RowState row = new RowState(source, slotNames, nativeBindingNames, base);
-			if (!initializeRow(row, base, source, slotNames)) {
+			RowState row = new RowState(source, layout, base);
+			if (!initializeRow(row, base, source, layout)) {
 				return List.of();
 			}
 			AggContext values = new AggContext(source, strictCompare);
@@ -1814,34 +1810,9 @@ final class LmdbNativeAggregateCompiler {
 
 	/** Seeds a fresh RowState's slots from external base bindings; false when a base value cannot exist here. */
 	private static boolean initializeRow(RowState row, BindingSet base, NativeLmdbQuerySource source,
-			String[] slotNames) {
-		Arrays.fill(row.slots, UNKNOWN);
-		BindingSet bindings = base == null ? EmptyBindingSet.getInstance() : base;
-		if (bindings.isEmpty()) {
-			row.recomputeBoundMask();
-			return true;
-		}
-		for (int i = 0; i < slotNames.length; i++) {
-			String name = slotNames[i];
-			if (bindings instanceof FastRowBindingSetView) {
-				FastRowBindingSetView nativeBase = (FastRowBindingSetView) bindings;
-				if (nativeBase.sameIdSpace(source) && nativeBase.hasNativeId(name)) {
-					row.slots[i] = nativeBase.nativeId(name);
-					continue;
-				}
-			}
-			if (bindings.hasBinding(name)) {
-				Value value = bindings.getValue(name);
-				if (value == null) {
-					row.slots[i] = NULL_CONTEXT_ID;
-				} else {
-					long id = source.idOf(value);
-					if (id == UNKNOWN) {
-						return false;
-					}
-					row.slots[i] = id;
-				}
-			}
+			NativeSlotLayout layout) {
+		if (!NativeRowSeeder.seed(row.slots, layout, base, source)) {
+			return false;
 		}
 		row.recomputeBoundMask();
 		return true;
@@ -1850,18 +1821,16 @@ final class LmdbNativeAggregateCompiler {
 	private static final class NativeGroupStep implements QueryEvaluationStep {
 		private final NativeLmdbQuerySource source;
 		private final SlotPlan arg;
-		private final String[] slotNames;
-		private final Set<String> nativeBindingNames;
+		private final NativeSlotLayout layout;
 		private final int[] groupSlots;
 		private final AggregateSpec[] aggregates;
 		private final boolean strictCompare;
 
-		private NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, String[] slotNames, int[] groupSlots,
+		private NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
 				AggregateSpec[] aggregates, boolean strictCompare) {
 			this.source = source;
 			this.arg = arg;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = new LinkedHashSet<>(Arrays.asList(slotNames));
+			this.layout = layout;
 			this.groupSlots = groupSlots;
 			this.aggregates = aggregates;
 			this.strictCompare = strictCompare;
@@ -1869,16 +1838,15 @@ final class LmdbNativeAggregateCompiler {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-			return new NativeGroupIteration(source, arg, slotNames, nativeBindingNames, groupSlots, aggregates,
-					strictCompare, bindings);
+			return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings);
 		}
 	}
 
 	private static final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		private final NativeLmdbQuerySource source;
 		private final SlotPlan arg;
+		private final NativeSlotLayout layout;
 		private final String[] slotNames;
-		private final Set<String> nativeBindingNames;
 		private final int[] groupSlots;
 		private final AggregateSpec[] aggregates;
 		private final AggContext aggContext;
@@ -1887,13 +1855,12 @@ final class LmdbNativeAggregateCompiler {
 		private BindingSet next;
 		private boolean closed;
 
-		private NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, String[] slotNames,
-				Set<String> nativeBindingNames, int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare,
-				BindingSet base) {
+		private NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+				int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base) {
 			this.source = source;
 			this.arg = arg;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = nativeBindingNames;
+			this.layout = layout;
+			this.slotNames = layout.slotNames();
 			this.groupSlots = groupSlots;
 			this.aggregates = aggregates;
 			this.aggContext = new AggContext(source, strictCompare);
@@ -1941,7 +1908,7 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private List<BindingSet> evaluateAll() {
-			RowState row = new RowState(source, slotNames, nativeBindingNames, base);
+			RowState row = new RowState(source, layout, base);
 			if (!initialize(row)) {
 				return noInputResult();
 			}
@@ -2115,33 +2082,8 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private boolean initialize(RowState row) {
-			Arrays.fill(row.slots, UNKNOWN);
-			BindingSet base = this.base == null ? EmptyBindingSet.getInstance() : this.base;
-			if (base.isEmpty()) {
-				row.recomputeBoundMask();
-				return true;
-			}
-			for (int i = 0; i < slotNames.length; i++) {
-				String name = slotNames[i];
-				if (base instanceof FastRowBindingSetView) {
-					FastRowBindingSetView nativeBase = (FastRowBindingSetView) base;
-					if (nativeBase.sameIdSpace(source) && nativeBase.hasNativeId(name)) {
-						row.slots[i] = nativeBase.nativeId(name);
-						continue;
-					}
-				}
-				if (base.hasBinding(name)) {
-					Value value = base.getValue(name);
-					if (value == null) {
-						row.slots[i] = NULL_CONTEXT_ID;
-					} else {
-						long id = source.idOf(value);
-						if (id == UNKNOWN) {
-							return false;
-						}
-						row.slots[i] = id;
-					}
-				}
+			if (!NativeRowSeeder.seed(row.slots, layout, base, source)) {
+				return false;
 			}
 			row.recomputeBoundMask();
 			return true;
@@ -4086,25 +4028,22 @@ final class LmdbNativeAggregateCompiler {
 
 	private static final class RowState {
 		private final NativeLmdbQuerySource source;
-		private final String[] slotNames;
-		private final Set<String> nativeBindingNames;
+		private final NativeSlotLayout layout;
 		private final BindingSet base;
 		private final long[] slots;
-		private final FastRowBindingSetView view;
+		private final RowBindingSetView view;
 		private final int[] trailSlots;
 		private final long[] trailOldValues;
 		private int trailSize;
 		private long boundMask;
 
-		private RowState(NativeLmdbQuerySource source, String[] slotNames, Set<String> nativeBindingNames,
-				BindingSet base) {
+		private RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
 			this.source = source;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = nativeBindingNames;
+			this.layout = layout;
 			this.base = base;
-			this.slots = new long[slotNames.length];
-			this.view = new FastRowBindingSetView(source, slotNames, nativeBindingNames, base, slots, false);
-			this.trailSlots = new int[Math.max(8, slotNames.length * 4)];
+			this.slots = new long[layout.slotNames().length];
+			this.view = new RowBindingSetView(source, layout, base, slots, false);
+			this.trailSlots = new int[Math.max(8, slots.length * 4)];
 			this.trailOldValues = new long[this.trailSlots.length];
 		}
 
@@ -4153,220 +4092,6 @@ final class LmdbNativeAggregateCompiler {
 				}
 			}
 			boundMask = mask;
-		}
-	}
-
-	static class FastRowBindingSetView extends AbstractBindingSet implements SlotBindingSetView {
-		private static final long serialVersionUID = 1L;
-
-		private final NativeLmdbQuerySource source;
-		private final String[] slotNames;
-		private final Set<String> nativeBindingNames;
-		private final BindingSet base;
-		private final long[] slots;
-		private final boolean stable;
-		/**
-		 * Only built for the single long-lived mutable view of a RowState, where generic filters resolve variables by
-		 * name once per row; per-result snapshot views keep the linear scan since they typically see one lookup per
-		 * variable.
-		 */
-		private final transient HashMap<String, Integer> slotIndex;
-		/**
-		 * Per-slot materialized-Value memo for the long-lived mutable view: repeated reads of an unchanged slot id
-		 * (every generic filter access, every depth, every row) skip the ValueStore round-trip. The memo is
-		 * self-validating — each read compares the cached id against the current slot id, so rebinding or trail
-		 * rollback needs no invalidation hook.
-		 */
-		private final transient long[] memoIds;
-		private final transient Value[] memoValues;
-		private transient Set<String> bindingNamesCache;
-		private transient int sizeCache = -1;
-
-		FastRowBindingSetView(NativeLmdbQuerySource source, String[] slotNames, Set<String> nativeBindingNames,
-				BindingSet base, long[] slots, boolean stable) {
-			this.source = source;
-			this.slotNames = slotNames;
-			this.nativeBindingNames = nativeBindingNames;
-			this.base = base;
-			this.slots = slots;
-			this.stable = stable;
-			if (stable) {
-				this.slotIndex = null;
-				this.memoIds = null;
-				this.memoValues = null;
-			} else {
-				this.slotIndex = new HashMap<>(slotNames.length * 2);
-				for (int i = 0; i < slotNames.length; i++) {
-					this.slotIndex.put(slotNames[i], i);
-				}
-				this.memoIds = new long[slotNames.length];
-				Arrays.fill(this.memoIds, UNKNOWN);
-				this.memoValues = new Value[slotNames.length];
-			}
-		}
-
-		@Override
-		public Iterator<Binding> iterator() {
-			ArrayDeque<Binding> bindings = new ArrayDeque<>(size());
-			if (base != null) {
-				for (Binding binding : base) {
-					bindings.add(binding);
-				}
-			}
-			for (int i = 0; i < slotNames.length; i++) {
-				String name = slotNames[i];
-				if (isBoundValueId(slots[i]) && (base == null || !base.hasBinding(name))) {
-					Value value = value(i);
-					if (value != null) {
-						bindings.add(new SimpleBinding(name, value));
-					}
-				}
-			}
-			return bindings.iterator();
-		}
-
-		@Override
-		public Set<String> getBindingNames() {
-			if (stable && bindingNamesCache != null) {
-				return bindingNamesCache;
-			}
-			LinkedHashSet<String> names = new LinkedHashSet<>();
-			if (base != null) {
-				names.addAll(base.getBindingNames());
-			}
-			for (int i = 0; i < slotNames.length; i++) {
-				if (isBoundValueId(slots[i])) {
-					names.add(slotNames[i]);
-				}
-			}
-			Set<String> result = java.util.Collections.unmodifiableSet(names);
-			if (stable) {
-				bindingNamesCache = result;
-			}
-			return result;
-		}
-
-		@Override
-		public Binding getBinding(String bindingName) {
-			Value value = getValue(bindingName);
-			return value == null ? null : new SimpleBinding(bindingName, value);
-		}
-
-		@Override
-		public boolean hasBinding(String bindingName) {
-			int slot = slot(bindingName);
-			if (slot >= 0 && isBoundValueId(slots[slot])) {
-				return true;
-			}
-			return base != null && base.hasBinding(bindingName);
-		}
-
-		@Override
-		public Value getValue(String bindingName) {
-			int slot = slot(bindingName);
-			if (slot >= 0 && isBoundValueId(slots[slot])) {
-				return value(slot);
-			}
-			return base == null ? null : base.getValue(bindingName);
-		}
-
-		@Override
-		public boolean hasBindingBySlot(int slot) {
-			if (isBoundValueId(slots[slot])) {
-				return true;
-			}
-			return base != null && base.hasBinding(slotNames[slot]);
-		}
-
-		@Override
-		public Value valueBySlot(int slot) {
-			if (isBoundValueId(slots[slot])) {
-				return value(slot);
-			}
-			return base == null ? null : base.getValue(slotNames[slot]);
-		}
-
-		@Override
-		public Binding bindingBySlot(int slot) {
-			Value value = valueBySlot(slot);
-			return value == null ? null : new SimpleBinding(slotNames[slot], value);
-		}
-
-		@Override
-		public int size() {
-			if (stable && sizeCache >= 0) {
-				return sizeCache;
-			}
-			int size = base == null ? 0 : base.size();
-			for (int i = 0; i < slotNames.length; i++) {
-				if (isBoundValueId(slots[i]) && (base == null || !base.hasBinding(slotNames[i]))) {
-					size++;
-				}
-			}
-			if (stable) {
-				sizeCache = size;
-			}
-			return size;
-		}
-
-		boolean hasNativeId(String name) {
-			int slot = slot(name);
-			return slot >= 0 && slots[slot] != UNKNOWN;
-		}
-
-		long nativeId(String name) {
-			int slot = slot(name);
-			return slot >= 0 ? slots[slot] : UNKNOWN;
-		}
-
-		boolean sameIdSpace(NativeLmdbQuerySource other) {
-			return source == other || source.idSpace() == other.idSpace();
-		}
-
-		void invalidateTransientCaches() {
-			if (!stable) {
-				sizeCache = -1;
-				bindingNamesCache = null;
-			}
-		}
-
-		private int slot(String name) {
-			if (slotIndex != null) {
-				Integer slot = slotIndex.get(name);
-				return slot == null ? -1 : slot;
-			}
-			for (int i = 0; i < slotNames.length; i++) {
-				if (slotNames[i] == name) {
-					return i;
-				}
-			}
-			for (int i = 0; i < slotNames.length; i++) {
-				if (slotNames[i].equals(name)) {
-					return i;
-				}
-			}
-			return -1;
-		}
-
-		private static boolean isBoundValueId(long id) {
-			return id != UNKNOWN;
-		}
-
-		private Value value(int slot) {
-			long id = slots[slot];
-			if (id == NULL_CONTEXT_ID || id == UNKNOWN) {
-				return null;
-			}
-			if (memoIds != null) {
-				if (memoIds[slot] == id) {
-					return memoValues[slot];
-				}
-				Value value = source.lazyValue(id);
-				memoIds[slot] = id;
-				memoValues[slot] = value;
-				return value;
-			}
-			return source.lazyValue(id);
 		}
 	}
 

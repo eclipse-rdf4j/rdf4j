@@ -15,10 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
@@ -41,6 +43,21 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 				trackResultSize);
 		this.nativeSource = extractNativeSource(tripleSource);
 		this.nativeEnabled = Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
+	}
+
+	@Override
+	public QueryEvaluationStep precompile(TupleExpr expr) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+				tripleSource.getComparator());
+		if (expr instanceof QueryRoot) {
+			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+					.findAllVariablesUsedInQuery((QueryRoot) expr);
+			QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
+			QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables,
+					tripleSource.getComparator());
+			context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
+		}
+		return precompile(expr, context);
 	}
 
 	@Override

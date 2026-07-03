@@ -27,26 +27,35 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
- * Context wrapper used when precompiling generic fallback filters over native slot rows: variable names that map to a
- * slot are resolved to their slot index once here, so the per-row accessor is a direct array read instead of a name
- * lookup. Binding sets that are not slot rows fall back to the delegate's name-based accessors.
+ * Query-wide LMDB-aware context. Generic operators above native fragments can read matching native row views by
+ * query-wide index instead of falling back to name lookup.
  */
-final class SlotAwareQueryEvaluationContext implements QueryEvaluationContext {
+final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 
 	private final QueryEvaluationContext delegate;
-	private final NativeSlotLayout planLayout;
+	private final QueryWideVarLayout layout;
 
-	SlotAwareQueryEvaluationContext(QueryEvaluationContext delegate, NativeSlotLayout planLayout) {
+	LmdbQueryEvaluationContext(QueryEvaluationContext delegate, QueryWideVarLayout layout) {
 		this.delegate = delegate;
-		this.planLayout = planLayout;
+		this.layout = layout;
+	}
+
+	static QueryWideVarLayout layoutOf(QueryEvaluationContext context) {
+		if (context instanceof LmdbQueryEvaluationContext) {
+			return ((LmdbQueryEvaluationContext) context).layout;
+		}
+		if (context instanceof SlotAwareQueryEvaluationContext) {
+			return layoutOf(((SlotAwareQueryEvaluationContext) context).delegate());
+		}
+		return null;
 	}
 
 	QueryEvaluationContext delegate() {
 		return delegate;
 	}
 
-	NativeSlotLayout planLayout() {
-		return planLayout;
+	QueryWideVarLayout layout() {
+		return layout;
 	}
 
 	@Override
@@ -91,40 +100,40 @@ final class SlotAwareQueryEvaluationContext implements QueryEvaluationContext {
 
 	@Override
 	public Predicate<BindingSet> hasBinding(String variableName) {
-		Integer slot = planLayout.slot(variableName);
-		if (slot == null) {
+		int queryIndex = layout.indexOf(variableName);
+		if (queryIndex < 0) {
 			return delegate.hasBinding(variableName);
 		}
-		int index = slot;
 		Predicate<BindingSet> fallback = delegate.hasBinding(variableName);
-		return bs -> bs instanceof SlotBindingSetView && ((SlotBindingSetView) bs).planLayout() == planLayout
-				? ((SlotBindingSetView) bs).hasBindingBySlot(index)
-				: fallback.test(bs);
+		return bs -> bs instanceof SlotBindingSetView
+				&& ((SlotBindingSetView) bs).queryLayout() == layout
+						? ((SlotBindingSetView) bs).hasBindingByQueryIndex(queryIndex)
+						: fallback.test(bs);
 	}
 
 	@Override
 	public Function<BindingSet, Binding> getBinding(String variableName) {
-		Integer slot = planLayout.slot(variableName);
-		if (slot == null) {
+		int queryIndex = layout.indexOf(variableName);
+		if (queryIndex < 0) {
 			return delegate.getBinding(variableName);
 		}
-		int index = slot;
 		Function<BindingSet, Binding> fallback = delegate.getBinding(variableName);
-		return bs -> bs instanceof SlotBindingSetView && ((SlotBindingSetView) bs).planLayout() == planLayout
-				? ((SlotBindingSetView) bs).bindingBySlot(index)
-				: fallback.apply(bs);
+		return bs -> bs instanceof SlotBindingSetView
+				&& ((SlotBindingSetView) bs).queryLayout() == layout
+						? ((SlotBindingSetView) bs).bindingByQueryIndex(queryIndex)
+						: fallback.apply(bs);
 	}
 
 	@Override
 	public Function<BindingSet, Value> getValue(String variableName) {
-		Integer slot = planLayout.slot(variableName);
-		if (slot == null) {
+		int queryIndex = layout.indexOf(variableName);
+		if (queryIndex < 0) {
 			return delegate.getValue(variableName);
 		}
-		int index = slot;
 		Function<BindingSet, Value> fallback = delegate.getValue(variableName);
-		return bs -> bs instanceof SlotBindingSetView && ((SlotBindingSetView) bs).planLayout() == planLayout
-				? ((SlotBindingSetView) bs).valueBySlot(index)
-				: fallback.apply(bs);
+		return bs -> bs instanceof SlotBindingSetView
+				&& ((SlotBindingSetView) bs).queryLayout() == layout
+						? ((SlotBindingSetView) bs).valueByQueryIndex(queryIndex)
+						: fallback.apply(bs);
 	}
 }

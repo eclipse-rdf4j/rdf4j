@@ -26,4 +26,18 @@ interface SlotBindingSetView {
 	Value valueBySlot(int slot);
 
 	Binding bindingBySlot(int slot);
+
+	NativeSlotLayout planLayout();
+
+	QueryWideVarLayout queryLayout();
+
+	boolean hasBindingByQueryIndex(int queryIndex);
+
+	Value valueByQueryIndex(int queryIndex);
+
+	Binding bindingByQueryIndex(int queryIndex);
+
+	long nativeIdByQueryIndex(int queryIndex);
+
+	boolean sameIdSpace(NativeLmdbQuerySource source);
 }
