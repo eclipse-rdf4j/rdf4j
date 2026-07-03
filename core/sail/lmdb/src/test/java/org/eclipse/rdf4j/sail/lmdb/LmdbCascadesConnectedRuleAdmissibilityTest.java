@@ -125,7 +125,10 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void projectionWrappingScopedSubqueryDoesNotSuppressGenericImplementation() {
+	void projectionWrappingScopedSubqueryIsAnOpaqueConnectedFactor() {
+		// Since the opaque-factor milestones (see .agent/execplans/GH-0000-opaque-factor-join-enumeration.md),
+		// sub-SELECT factors are reorderable island members: each is a self-contained relation over its projected
+		// names, so the connected planner owns the island and the generic implementation stays suppressed.
 		Projection leftScope = projection(new Join(
 				new StatementPattern(new Var("left"), new Var("p1", P1), new Var("shared")),
 				new StatementPattern(new Var("shared"), new Var("p2", P2), new Var("leftValue"))),
@@ -141,11 +144,11 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		List<String> rules = applicableRuleIds(island);
 
-		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island),
-				"Scoped subquery projections are not reorderable connected factors");
-		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
-		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island),
+				"Sub-SELECT factors joined on their projected names are reorderable connected factors");
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
 	@Test

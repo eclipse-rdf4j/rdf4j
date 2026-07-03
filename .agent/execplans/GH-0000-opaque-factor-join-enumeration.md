@@ -23,11 +23,11 @@ contains a "join island" (a maximal tree of inner joins) of four members, but be
   - [x] (2026-07-03 19:51Z) Production change green: `tests=2, failures=0, errors=0`; flag-off gate test and unsafe-shared-output guard test added, `tests=4, failures=0`.
   - [x] (2026-07-03 21:00Z) Regression triage: `LmdbCascadesOptimizerTest` 53 tests / 1 known-red only. Full module run has 16 failing classes — ALL verified pre-existing: identical failures with `-Drdf4j.optimizer.lmdb.cascades.opaqueFactors=false` at HEAD AND at pre-Phase-0 commit d343482b74 after a fresh root `-Pquick` install (54 tests / 18 failures in the 11 newly-triaged classes, per-class counts identical). Milestone 1 introduces zero new failures.
   - [x] Formatted, header check green, committed (6be48d4023).
-- [ ] Milestone 2: LeftJoin (OPTIONAL) factors with the well-designed guard.
-- [ ] Milestone 3: Union factors.
-- [ ] Milestone 4: scope-change subselect (Projection) factors.
-- [ ] Milestone 5: Service factors (pinned late), Group factors, TripleRef factors.
-- [ ] Final: W3C SPARQL suites green, ThemeQueryPlanRunBenchmark A/B, retrospective.
+- [x] (2026-07-03 21:10Z) Milestone 2: LeftJoin (OPTIONAL) factors — committed 3ee60835ad. Red: `tests=7, failures=2` (island not owned); green after `supportedFactor` LeftJoin clause + generalized `opaqueFactorNamesDisjoint` guard (optional-only vars = bindingNames − assuredBindingNames, plus nested BIND assignment names via `nestedAssignmentNames`). OPTIONAL-suite regression green (only known-reds).
+- [x] (2026-07-03 21:20Z) Milestone 3: Union factors — committed 87350e56dd (with M4). Red: `tests=10, failures=2`; green via Union clause + same maybe-var guard. Regression found and fixed: DP ownership of `Join(Union, Extension(SP))` islands dropped the `directLookup` annotation the old bound-lookup rule put on the inner statement pattern — fixed by stamping access metrics through row-preserving wrapper chains onto the underlying pattern (`rowPreservingAccessTarget`/`stampAccessMetrics` in `LmdbCascadesConnectedJoinPlanner`), restoring `LmdbCascadesContextPropagationTest` to baseline.
+- [x] (2026-07-03 21:20Z) Milestone 4: scope-change subselect (Projection) factors — committed 87350e56dd. Red: `tests=13, failures=2`; green via scope-Projection clause; unsafe names = projected-but-not-assured vars plus projected BIND outputs (hidden assignments cannot leak).
+- [x] (2026-07-03 21:25Z) Milestone 5: Service (pinned late), Group, TripleRef factors — committed 2c56c357b3. Red: `tests=18, failures=4`; green. Service requires-bound = all its variables + variable endpoint ref (planner intersects with island-bindable vars → pinned after every var-sharing local factor, proven by `serviceFactorIsPinnedAfterVarSharingFactorsEvenWhenCheap`). Group: assured keys are safe join surfaces, aggregate outputs unsafe. TripleRef admitted plainly.
+- [ ] Final: full-module comparison vs known-red baseline (running), W3C SPARQL suites, ThemeQueryPlanRunBenchmark A/B, retrospective.
 
 ## Surprises & Discoveries
 
@@ -49,6 +49,15 @@ contains a "join island" (a maximal tree of inner joins) of four members, but be
   Date/Author: 2026-07-03 / Claude
 - Decision: new behavior is ON by default, with `rdf4j.optimizer.lmdb.cascades.opaqueFactors=false` restoring the old gate for one release.
   Rationale: approved roadmap requires the coverage win to actually ship, while giving an escape hatch.
+  Date/Author: 2026-07-03 / Claude
+- Decision: admit LeftJoin/Union/Service/Group factors regardless of their variable-scope-change flag (unlike Filter/Projection native factors).
+  Rationale: the factor is reordered as an unaltered black box; join commutativity is semantic and independent of scoping flags, which only matter when merging content across the boundary. Scope-change Projection is admitted separately as a sub-SELECT relation.
+  Date/Author: 2026-07-03 / Claude
+- Decision: one shared safety guard for all opaque factor kinds — `unsafeSharedNames(factor) ∩ runtimeVars(other factor) = ∅` — where unsafe names are BIND assignment names (`ExtensionIterator` overwrites via `context.setBinding`, it does not join-filter) and maybe-bound names (`bindingNames − assuredBindingNames`: optional-only vars, single-branch union vars, non-assured projections, aggregate outputs).
+  Rationale: one rule covers the overwrite hazard and the unbound-compatibility hazard uniformly; verified per class by dedicated frozen-island tests.
+  Date/Author: 2026-07-03 / Claude
+- Decision: MINUS (`Difference`) deliberately NOT admitted as an opaque factor in this plan.
+  Rationale: `LmdbMaterializedMinusAntiSemiRule`/`LmdbCorrelatedMinusAntiExistsRule` and the minus-prefix pushdown already own those shapes; admitting Difference would compete with them for no demonstrated win. Revisit with evidence.
   Date/Author: 2026-07-03 / Claude
 
 ## Outcomes & Retrospective
