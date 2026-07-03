@@ -51,14 +51,17 @@ import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -11526,6 +11529,54 @@ class LmdbEvaluationStatistics
 	}
 
 	protected class LmdbCardinalityCalculator extends CardinalityCalculator {
+
+		private static final double SERVICE_MIN_CARDINALITY = 1_000.0d;
+
+		@Override
+		public void meet(Service node) {
+			super.meet(node);
+			if (node.getServiceRef() != null && node.getServiceRef().hasValue()) {
+				// The inherited heuristic can claim a remote call is more selective than a local index lookup,
+				// which pulls SERVICE to the front of the plan. Remote cardinality is unknown and the call pays
+				// network latency; floor it well above any selective local access path.
+				this.cardinality = Math.max(this.cardinality, SERVICE_MIN_CARDINALITY);
+				node.setResultSizeEstimate(this.cardinality);
+			}
+		}
+
+		@Override
+		public void meet(Group node) {
+			node.getArg().visit(this);
+			double inputRows = this.cardinality;
+			if (!Double.isFinite(inputRows) || inputRows < 0.0d) {
+				return;
+			}
+			if (node.getGroupBindingNames().isEmpty()) {
+				// Aggregation without GROUP BY always yields exactly one row.
+				this.cardinality = 1.0d;
+			} else {
+				// Without per-key distinct counts, assume grouping collapses to roughly the square root of the
+				// input per key, never exceeding the input.
+				double keyCount = node.getGroupBindingNames().size();
+				this.cardinality = Math.max(1.0d, Math.min(inputRows, Math.sqrt(inputRows) * keyCount));
+			}
+			node.setResultSizeEstimate(this.cardinality);
+		}
+
+		@Override
+		protected double getCardinality(TripleRef tripleRef) {
+			if (statementPatternCardinalitySource != null) {
+				// No dedicated triple-term index exists; the matching statement count is the best store-backed
+				// proxy for how many quoted triples can match.
+				StatementPattern proxy = new StatementPattern(tripleRef.getSubjectVar().clone(),
+						tripleRef.getPredicateVar().clone(), tripleRef.getObjectVar().clone());
+				double proxyCardinality = statementPatternCardinalitySource.estimateForPlanning(proxy);
+				if (proxyCardinality >= 0.0d) {
+					return proxyCardinality;
+				}
+			}
+			return super.getCardinality(tripleRef);
+		}
 
 		@Override
 		public void meet(Join node) {

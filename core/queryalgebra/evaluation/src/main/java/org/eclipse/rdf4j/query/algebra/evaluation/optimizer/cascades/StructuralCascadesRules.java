@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -374,11 +375,18 @@ public final class StructuralCascadesRules {
 	}
 
 	private static boolean hasSubqueryModifier(TupleExpr tupleExpr) {
-		return tupleExpr instanceof Distinct
-				|| tupleExpr instanceof Reduced
-				|| tupleExpr instanceof Group
-				|| tupleExpr instanceof Order
-				|| tupleExpr instanceof Slice;
+		TupleExpr current = tupleExpr;
+		while (current instanceof Extension extension) {
+			// Aggregate subqueries compile to Extension over Group (SELECT (max(?y) AS ?max) ...); the extension
+			// is part of the modifier chain, and inlining such a subquery would turn a global aggregate into a
+			// correlated per-binding aggregate (W3C sq08).
+			current = extension.getArg();
+		}
+		return current instanceof Distinct
+				|| current instanceof Reduced
+				|| current instanceof Group
+				|| current instanceof Order
+				|| current instanceof Slice;
 	}
 
 	private static boolean canDropUnusedSubqueryVars(Projection outer, Projection inner) {

@@ -111,6 +111,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 /** Registers LMDB physical alternatives for the generic Cascades engine. */
 final class LmdbCascadesRuleProvider {
 	static final String LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.legacyOpaqueJoinProviders";
+	static final String STANDARD_RULE_PARITY_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardLogicalRuleParity";
 	private static final String OPTIMIZER_CONNECTED_ENUMERATION = "optimizer.connectedEnumeration";
 	private static final String CONNECTED_ENUMERATION_CSG_CMP = "phase1_csg_cmp";
 	private static final String OPTIMIZER_JOIN_ALGORITHM_HINT = "optimizer.joinAlgorithmHint";
@@ -152,6 +153,28 @@ final class LmdbCascadesRuleProvider {
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
 				.add(new LmdbConnectedJoinOrderingRule(statistics));
+		if (!"false".equals(System.getProperty(STANDARD_RULE_PARITY_PROPERTY))) {
+			// Parity with RuleRegistry.standardLogicalRules(): SERVICE co-planning, subquery inlining, UNION
+			// factoring, GROUP BY / negation / graph rewrites apply to LMDB plans too. Guarded by
+			// LmdbRuleRegistryCoverageTest against future drift; the property is an escape hatch only.
+			builder.add(new StructuralCascadesRules.InlineModifierFreeSubqueryRule())
+					.add(new StructuralCascadesRules.DropUnusedSubqueryVarsRule())
+					.add(new StructuralCascadesRules.RemoveUnobservableOrderRule())
+					.add(new StandardCascadesRules.KeyOnlyNotExistsToMinusRule())
+					.add(new StandardCascadesRules.PushConstantIntoNegationRule())
+					.add(new StandardCascadesRules.PositiveClosureDecompositionRule())
+					.add(new StandardCascadesRules.GroupByAsDistinctRule())
+					.add(new StandardCascadesRules.FixedGraphSubstitutionRule())
+					.add(new StandardCascadesRules.RestrictVariableGraphUniverseRule())
+					.add(new StandardCascadesRules.PushValuesIntoServiceRule())
+					.add(new StandardCascadesRules.PushFilterIntoServiceRule())
+					.add(new StandardCascadesRules.ProjectRemoteServiceVarsRule())
+					.add(new StandardCascadesRules.ExpandVariableServiceRule())
+					.add(new StandardCascadesRules.UnionCommonPrefixFactoringRule())
+					.add(new StandardCascadesRules.UnionCommonSuffixFactoringRule())
+					.add(new StandardCascadesRules.UnionSubsumedBranchEliminationRule())
+					.add(new StandardCascadesRules.BranchLocalDistinctRule());
+		}
 		if (legacyOpaqueJoinProviders) {
 			builder.add(new LmdbConnectedJoinPlanImplementationRule(statistics))
 					.add(new LmdbSketchJoinOrderImplementationRule(statistics));
