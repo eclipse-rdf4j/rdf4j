@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -43,6 +44,7 @@ class LmdbOpaqueFactorJoinPlanningTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI FOLLOWS = VF.createIRI("http://example.com/social/follows");
 	private static final IRI NAME = VF.createIRI("http://example.com/social/name");
+	private static final IRI NICKNAME = VF.createIRI("http://example.com/social/nickname");
 
 	private static TupleExpr extensionIsland() {
 		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
@@ -102,6 +104,48 @@ class LmdbOpaqueFactorJoinPlanningTest {
 		assertEquals(NAME, ((StatementPattern) first).getPredicateVar().getValue(),
 				() -> "Expected the selective name lookup before the follows scan wrapped in BIND: "
 						+ plan.get().tupleExpr());
+	}
+
+	private static Join optionalIsland() {
+		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
+				new Var("x"));
+		StatementPattern nickname = new StatementPattern(new Var("person"), new Var("nickPred", NICKNAME),
+				new Var("nick"));
+		LeftJoin optional = new LeftJoin(follows, nickname);
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		return new Join(optional, selectiveName);
+	}
+
+	@Test
+	void optionalFactorIslandIsOwnedByConnectedPlanner() {
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(optionalIsland()),
+				"An island whose only non-pattern factor is a well-designed OPTIONAL should be reorderable");
+	}
+
+	@Test
+	void selectivePatternIsOrderedBeforeOptionalFactor() {
+		SelectiveNameStatistics statistics = new SelectiveNameStatistics();
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner
+				.plan(optionalIsland(), Set.of(), statistics, statistics);
+
+		assertTrue(plan.isPresent(), "Expected the connected planner to own the OPTIONAL-bearing island");
+		TupleExpr first = leftmostFactor(plan.get().tupleExpr());
+		assertTrue(first instanceof StatementPattern,
+				() -> "Expected the selective statement pattern to be seeded first: " + plan.get().tupleExpr());
+		assertEquals(NAME, ((StatementPattern) first).getPredicateVar().getValue(),
+				() -> "Expected the selective name lookup before the follows scan carrying the OPTIONAL: "
+						+ plan.get().tupleExpr());
+	}
+
+	@Test
+	void optionalOnlyVarSharedWithAnotherFactorKeepsIslandFrozen() {
+		StatementPattern consumesNick = new StatementPattern(new Var("nick"), new Var("otherPred", FOLLOWS),
+				new Var("z"));
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(optionalIsland(), consumesNick)),
+				"A non-well-designed OPTIONAL (its optional-only variable is used by another factor) must not be "
+						+ "reordered");
 	}
 
 	private static TupleExpr leftmostFactor(TupleExpr tupleExpr) {

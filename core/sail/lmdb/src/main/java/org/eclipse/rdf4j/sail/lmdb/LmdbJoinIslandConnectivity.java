@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -331,7 +332,7 @@ final class LmdbJoinIslandConnectivity {
 				runtimeFactorCount++;
 			}
 		}
-		supported = supported && opaqueExtensionOutputsDisjoint(factors, runtimeVars);
+		supported = supported && opaqueFactorNamesDisjoint(factors, runtimeVars);
 		return new Island(factors.size(), runtimeFactorCount, zeroVarFactorCount,
 				connectedComponentCount(runtimeVars), supported);
 	}
@@ -399,6 +400,9 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr instanceof Extension extension) {
 			return opaqueFactorsEnabled() && plannableExtensionFactor(extension);
 		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return opaqueFactorsEnabled() && leftJoin.getLeftArg() != null && leftJoin.getRightArg() != null;
+		}
 		return false;
 	}
 
@@ -442,30 +446,57 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	/**
-	 * Reordering is unsafe when an Extension assignment name is also a runtime variable of another factor: written
-	 * order joins on the shared name, while an Extension evaluated after that factor would overwrite it.
+	 * Reordering is unsafe when an opaque factor's "unsafe shared names" leak into another factor. For an Extension
+	 * these are its assignment names: written order joins on the shared name, while an Extension evaluated after that
+	 * factor would overwrite it. For a LeftJoin these are its optional-only variables (bound names minus assured
+	 * names): another factor referencing them makes the OPTIONAL non-well-designed, and reordering would change which
+	 * bindings the optional side sees.
 	 */
-	private static boolean opaqueExtensionOutputsDisjoint(List<TupleExpr> factors, List<Set<String>> runtimeVars) {
+	private static boolean opaqueFactorNamesDisjoint(List<TupleExpr> factors, List<Set<String>> runtimeVars) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (!(factors.get(i)instanceof Extension extension)) {
-				continue;
-			}
-			Set<String> outputs = new HashSet<>();
-			for (ExtensionElem element : extension.getElements()) {
-				if (element.getName() != null) {
-					outputs.add(element.getName());
-				}
-			}
-			if (outputs.isEmpty()) {
+			Set<String> unsafeNames = unsafeSharedNames(factors.get(i));
+			if (unsafeNames.isEmpty()) {
 				continue;
 			}
 			for (int j = 0; j < factors.size(); j++) {
-				if (j != i && !disjoint(outputs, runtimeVars.get(j))) {
+				if (j != i && !disjoint(unsafeNames, runtimeVars.get(j))) {
 					return false;
 				}
 			}
 		}
 		return true;
+	}
+
+	private static Set<String> unsafeSharedNames(TupleExpr factor) {
+		if (factor instanceof Extension extension) {
+			return nestedAssignmentNames(extension);
+		}
+		if (factor instanceof LeftJoin leftJoin) {
+			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getBindingNames());
+			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getAssuredBindingNames()));
+			maybeVars.addAll(nestedAssignmentNames(leftJoin));
+			return maybeVars;
+		}
+		return Set.of();
+	}
+
+	/**
+	 * All BIND assignment names anywhere inside an opaque factor. Extension evaluation overwrites a pre-bound name
+	 * instead of join-filtering on it, so none of these names may be a join variable with another factor.
+	 * Over-approximates by descending into subqueries; that only makes the guard more conservative.
+	 */
+	private static Set<String> nestedAssignmentNames(TupleExpr factor) {
+		Set<String> names = new HashSet<>();
+		factor.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem node) {
+				if (node.getName() != null) {
+					names.add(node.getName());
+				}
+				super.meet(node);
+			}
+		});
+		return names;
 	}
 
 	private static int connectedComponentCount(List<Set<String>> runtimeVars) {
