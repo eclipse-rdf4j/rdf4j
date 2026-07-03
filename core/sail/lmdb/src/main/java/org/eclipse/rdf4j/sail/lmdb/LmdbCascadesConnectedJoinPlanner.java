@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -1621,6 +1622,47 @@ final class LmdbCascadesConnectedJoinPlanner {
 			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, step.outputRows());
 			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, step.workRows());
 			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, step.workRows());
+			TupleExpr accessTarget = rowPreservingAccessTarget(tupleExpr);
+			if (accessTarget != null && accessTarget != tupleExpr) {
+				stampAccessMetrics(accessTarget, step);
+			}
+		}
+
+		/**
+		 * The factor cost model estimates a row-preserving wrapper chain (BIND/FILTER over a single statement pattern)
+		 * via the underlying pattern's access path. Execution and explain read access metrics off the pattern, so
+		 * mirror them there — the wrapper keeps the step-level cardinality metrics.
+		 */
+		private static TupleExpr rowPreservingAccessTarget(TupleExpr tupleExpr) {
+			TupleExpr current = tupleExpr;
+			while (true) {
+				if (current instanceof Extension extension && !TupleExprs.isVariableScopeChange(extension)) {
+					current = extension.getArg();
+				} else if (current instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+					current = filter.getArg();
+				} else {
+					break;
+				}
+			}
+			return current instanceof StatementPattern ? current : null;
+		}
+
+		private static void stampAccessMetrics(TupleExpr target, Step step) {
+			for (String key : new String[] { TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+					TelemetryMetricNames.PLANNED_INDEX_NAME, TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS }) {
+				String value = step.stringMetrics().get(key);
+				if (value != null) {
+					target.setStringMetricPlanned(key, value);
+				}
+			}
+			for (String key : new String[] { TelemetryMetricNames.PLANNED_ACCESS_ROWS,
+					TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
+					TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH }) {
+				Double value = step.doubleMetrics().get(key);
+				if (value != null) {
+					target.setDoubleMetricPlanned(key, value);
+				}
+			}
 		}
 
 		private void stampPrefix(Join join, Step step, int prefixFactorCount) {

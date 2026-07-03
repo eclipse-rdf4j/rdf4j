@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -392,7 +393,11 @@ final class LmdbJoinIslandConnectivity {
 			return true;
 		}
 		if (tupleExpr instanceof Projection projection) {
-			return !TupleExprs.isVariableScopeChange(projection);
+			if (!TupleExprs.isVariableScopeChange(projection)) {
+				return true;
+			}
+			// A scope-changing projection is a sub-SELECT: a self-contained relation over its projected names.
+			return opaqueFactorsEnabled() && projection.getArg() != null;
 		}
 		if (tupleExpr instanceof Filter filter) {
 			return !TupleExprs.isVariableScopeChange(filter);
@@ -402,6 +407,9 @@ final class LmdbJoinIslandConnectivity {
 		}
 		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return opaqueFactorsEnabled() && leftJoin.getLeftArg() != null && leftJoin.getRightArg() != null;
+		}
+		if (tupleExpr instanceof Union union) {
+			return opaqueFactorsEnabled() && union.getLeftArg() != null && union.getRightArg() != null;
 		}
 		return false;
 	}
@@ -471,10 +479,23 @@ final class LmdbJoinIslandConnectivity {
 		if (factor instanceof Extension extension) {
 			return nestedAssignmentNames(extension);
 		}
-		if (factor instanceof LeftJoin leftJoin) {
-			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getBindingNames());
-			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getAssuredBindingNames()));
-			maybeVars.addAll(nestedAssignmentNames(leftJoin));
+		if (factor instanceof Projection projection && TupleExprs.isVariableScopeChange(projection)) {
+			// Projected-but-not-assured names behave like optional-only vars; projected BIND outputs are an
+			// overwrite hazard when another factor joins on them. Assignments the projection hides cannot leak.
+			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(projection.getBindingNames());
+			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(projection.getAssuredBindingNames()));
+			Set<String> projectedAssignments = nestedAssignmentNames(projection);
+			projectedAssignments.retainAll(LmdbJoinPlanSupport.plannerBindingNames(projection.getBindingNames()));
+			maybeVars.addAll(projectedAssignments);
+			return maybeVars;
+		}
+		if (factor instanceof LeftJoin || factor instanceof Union) {
+			// Maybe-bound vars: optional-only vars of a LeftJoin, or vars bound in only one Union branch. Another
+			// factor joining on them relies on unbound-compatibility in written order; reordering would push real
+			// bindings into the factor and change what the optional side / branch sees.
+			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(factor.getBindingNames());
+			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(factor.getAssuredBindingNames()));
+			maybeVars.addAll(nestedAssignmentNames(factor));
 			return maybeVars;
 		}
 		return Set.of();

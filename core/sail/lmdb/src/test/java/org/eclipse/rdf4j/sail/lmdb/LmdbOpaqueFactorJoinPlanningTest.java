@@ -25,9 +25,13 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -146,6 +150,101 @@ class LmdbOpaqueFactorJoinPlanningTest {
 		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(optionalIsland(), consumesNick)),
 				"A non-well-designed OPTIONAL (its optional-only variable is used by another factor) must not be "
 						+ "reordered");
+	}
+
+	private static Join unionIsland() {
+		StatementPattern worksAt = new StatementPattern(new Var("person"), new Var("worksPred", FOLLOWS),
+				new Var("x"));
+		StatementPattern memberOf = new StatementPattern(new Var("person"), new Var("memberPred", NICKNAME),
+				new Var("x"));
+		Union union = new Union(worksAt, memberOf);
+		union.setVariableScopeChange(true);
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		return new Join(union, selectiveName);
+	}
+
+	@Test
+	void unionFactorIslandIsOwnedByConnectedPlanner() {
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(unionIsland()),
+				"An island whose only non-pattern factor is a UNION binding the same variables in both branches "
+						+ "should be reorderable");
+	}
+
+	@Test
+	void selectivePatternIsOrderedBeforeUnionFactor() {
+		SelectiveNameStatistics statistics = new SelectiveNameStatistics();
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner
+				.plan(unionIsland(), Set.of(), statistics, statistics);
+
+		assertTrue(plan.isPresent(), "Expected the connected planner to own the UNION-bearing island");
+		TupleExpr first = leftmostFactor(plan.get().tupleExpr());
+		assertTrue(first instanceof StatementPattern,
+				() -> "Expected the selective statement pattern to be seeded first: " + plan.get().tupleExpr());
+		assertEquals(NAME, ((StatementPattern) first).getPredicateVar().getValue(),
+				() -> "Expected the selective name lookup before the union scan: " + plan.get().tupleExpr());
+	}
+
+	@Test
+	void branchOnlyUnionVarSharedWithAnotherFactorKeepsIslandFrozen() {
+		StatementPattern withExtra = new StatementPattern(new Var("person"), new Var("worksPred", FOLLOWS),
+				new Var("y"));
+		StatementPattern withoutExtra = new StatementPattern(new Var("person"), new Var("memberPred", NICKNAME),
+				new Var("x"));
+		Union union = new Union(new Join(withExtra, new StatementPattern(new Var("y"), new Var("p2", NICKNAME),
+				new Var("x"))), withoutExtra);
+		union.setVariableScopeChange(true);
+		StatementPattern consumesBranchOnlyVar = new StatementPattern(new Var("y"), new Var("namePred", NAME),
+				new Var("z"));
+		assertFalse(
+				LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(union, consumesBranchOnlyVar)),
+				"A UNION whose branch-only variable is used by another factor must not be reordered");
+	}
+
+	private static Join subselectIsland() {
+		StatementPattern inner = new StatementPattern(new Var("person"), new Var("worksPred", FOLLOWS),
+				new Var("x"));
+		Projection subselect = new Projection(inner, new ProjectionElemList(new ProjectionElem("x")));
+		subselect.setVariableScopeChange(true);
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		return new Join(subselect, selectiveName);
+	}
+
+	@Test
+	void subselectFactorIslandIsOwnedByConnectedPlanner() {
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(subselectIsland()),
+				"An island whose only non-pattern factor is a sub-SELECT should be reorderable");
+	}
+
+	@Test
+	void selectivePatternIsOrderedBeforeSubselectFactor() {
+		SelectiveNameStatistics statistics = new SelectiveNameStatistics();
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner
+				.plan(subselectIsland(), Set.of(), statistics, statistics);
+
+		assertTrue(plan.isPresent(), "Expected the connected planner to own the sub-SELECT-bearing island");
+		TupleExpr first = leftmostFactor(plan.get().tupleExpr());
+		assertTrue(first instanceof StatementPattern,
+				() -> "Expected the selective statement pattern to be seeded first: " + plan.get().tupleExpr());
+		assertEquals(NAME, ((StatementPattern) first).getPredicateVar().getValue(),
+				() -> "Expected the selective name lookup before the sub-SELECT: " + plan.get().tupleExpr());
+	}
+
+	@Test
+	void subselectProjectingBindOutputSharedWithAnotherFactorKeepsIslandFrozen() {
+		StatementPattern inner = new StatementPattern(new Var("person"), new Var("worksPred", FOLLOWS),
+				new Var("x"));
+		Extension bind = new Extension(inner, new ExtensionElem(new Str(new Var("x")), "xs"));
+		Projection subselect = new Projection(bind,
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("xs")));
+		subselect.setVariableScopeChange(true);
+		StatementPattern consumesBindOutput = new StatementPattern(new Var("y"), new Var("namePred", NAME),
+				new Var("xs"));
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(subselect, consumesBindOutput)),
+				"A sub-SELECT that projects a BIND output joined by another factor must not be reordered");
 	}
 
 	private static TupleExpr leftmostFactor(TupleExpr tupleExpr) {
