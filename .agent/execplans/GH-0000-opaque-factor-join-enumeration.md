@@ -18,10 +18,11 @@ contains a "join island" (a maximal tree of inner joins) of four members, but be
 ## Progress
 
 - [x] (2026-07-03) Research: gating chain, cost fallback, seed admission and separator consumers mapped (see Context).
-- [ ] Milestone 1: Extension (BIND) factors (completed: failing test `LmdbOpaqueFactorJoinPlanningTest` captured red then green after classification + DP/greedy requires-bound admission; remaining: module regression run, flag-off test, end-to-end explain test, format+commit).
+- [x] Milestone 1: Extension (BIND) factors — committed as 6be48d4023 (remaining for a later milestone: end-to-end explain test on a real store).
   - [x] (2026-07-03 19:47Z) Failing test evidence: `tests=2, failures=2` — "Expected the connected planner to own the BIND-bearing island ==> expected: <true> but was: <false>".
-  - [x] (2026-07-03 19:51Z) Production change green: `tests=2, failures=0, errors=0` (core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbOpaqueFactorJoinPlanningTest.xml).
-  - [ ] Neighbor + module regression suites; then format, header check, commit.
+  - [x] (2026-07-03 19:51Z) Production change green: `tests=2, failures=0, errors=0`; flag-off gate test and unsafe-shared-output guard test added, `tests=4, failures=0`.
+  - [x] (2026-07-03 21:00Z) Regression triage: `LmdbCascadesOptimizerTest` 53 tests / 1 known-red only. Full module run has 16 failing classes — ALL verified pre-existing: identical failures with `-Drdf4j.optimizer.lmdb.cascades.opaqueFactors=false` at HEAD AND at pre-Phase-0 commit d343482b74 after a fresh root `-Pquick` install (54 tests / 18 failures in the 11 newly-triaged classes, per-class counts identical). Milestone 1 introduces zero new failures.
+  - [x] Formatted, header check green, committed (6be48d4023).
 - [ ] Milestone 2: LeftJoin (OPTIONAL) factors with the well-designed guard.
 - [ ] Milestone 3: Union factors.
 - [ ] Milestone 4: scope-change subselect (Projection) factors.
@@ -34,6 +35,9 @@ contains a "join island" (a maximal tree of inner joins) of four members, but be
   Evidence: estimateStep body at LmdbCascadesConnectedJoinPlanner.java:495–528.
 - Observation: `LmdbJoinPlanSupport.isJoinOrderSeparator` (core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport.java:546) is consumed by the legacy `LmdbSketchJoinOptimizer` at 10 call sites. Relaxing it in place would silently change the legacy (non-cascades) planner. The relaxation must live in a new cascades-scoped predicate instead.
 - Observation: a helper for exactly the "safe BIND" shape already exists: `LmdbJoinIslandConnectivity.rowPreservingNonShadowingExtension` (LmdbJoinIslandConnectivity.java:220) — reuse it for Extension factor admission.
+- Observation: `TupleExprs.containsExtension` (core/queryalgebra/model/.../helpers/TupleExprs.java:88) returns false immediately when it reaches a `Join`, subquery `Projection`, or `Service` node — so the `containsExtension` clause of `isJoinOrderSeparator` never fired for the `Join` inputs `reorderableJoin` passes it. The island freeze for BIND-bearing islands came solely from `supportedFactor`; the Milestone 1 separator split (`isJoinOrderSeparatorIgnoringExtensions`) is behavior-neutral documentation of intent, not the functional fix.
+  Evidence: containsExtension body — `else if (n instanceof Join …) { return false; }`; the failing test turned green from the `supportedFactor`/planner changes alone.
+- Observation: the module suite at HEAD has 16 failing classes, but flag-off (`opaqueFactors=false`) reruns show none of them are caused by Milestone 1; `LmdbIndexAwareJoinOrderPlanningTest`'s 6 failures reproduce identically at pre-Phase-0 commit d343482b74. The branch's earlier "wip"/"more leo" commits shipped with a substantially red module suite. Causality for the remaining 11 classes vs the Phase 0 caching commit is being established with a properly isolated rerun at d343482b74 (root `-Pquick` install of pre-Phase-0 artifacts into `.m2_repo` before testing — an earlier attempt without the reinstall would have mixed HEAD queryalgebra jars with old LMDB sources and was discarded).
 
 ## Decision Log
 
@@ -49,7 +53,7 @@ contains a "join island" (a maximal tree of inner joins) of four members, but be
 
 ## Outcomes & Retrospective
 
-(to be written at milestone completions)
+Milestone 1 (2026-07-03): BIND-bearing join islands are now owned and reordered by the connected hypergraph planner — the first factor class unfrozen. The change was far smaller than designed because costing already worked for arbitrary factors and the separator's extension clause turned out to be inert for joins; the real gate was one boolean in `supportedFactor`. The expensive part was regression triage: the branch's module suite was already red in 16 classes from earlier commits, which required three causality runs (flag-off at HEAD, and pre-Phase-0 with correctly reinstalled artifacts) before Milestone 1 could be declared clean. Lesson: refresh the known-red baseline at the start of every milestone on this branch — the July-2 list was already stale. Follow-up chips were filed to bisect and fix the pre-existing failures. Next: Milestone 2 (LeftJoin/OPTIONAL factors with the well-designed guard).
 
 ## Context and Orientation
 
@@ -67,7 +71,7 @@ Join ordering is not done by generic rules but by a dedicated dynamic-programmin
 
 "Runtime variables" of a factor are its unbound variable names as seen by the planner (`LmdbJoinPlanSupport.runtimeBindingNames`). "Well-designed" OPTIONAL means the variables that appear only in the optional right-hand side are not referenced anywhere else in the query; reordering a non-well-designed OPTIONAL relative to factors that share those right-side-only variables changes results, so such islands must not be reordered across that factor.
 
-Pre-existing known-red tests on this branch (record before starting; they must not be blamed on this work): `LmdbCascadesOptimizerTest#budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner`, `LmdbThemeQ9EstimateRegressionTest` (2 failures), `LmdbNestedBoundLookupEstimateTest` (2 failures + 1 error), `LmdbCascadesContextPropagationTest#scopeChangingUnionHidesOnlyBranchLocalBindOutputs`.
+Pre-existing known-red tests on this branch (record before starting; they must not be blamed on this work): `LmdbCascadesOptimizerTest#budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner`, `LmdbThemeQ9EstimateRegressionTest` (2 failures), `LmdbNestedBoundLookupEstimateTest` (2 failures + 1 error), `LmdbCascadesContextPropagationTest#scopeChangingUnionHidesOnlyBranchLocalBindOutputs`, and — verified 2026-07-03 by rerunning at commit d343482b74 (identical 6 failures) and with `-Drdf4j.optimizer.lmdb.cascades.opaqueFactors=false` at HEAD — `LmdbIndexAwareJoinOrderPlanningTest` (6 failures: libraryQ7BenchmarkShapeUsesFiniteBranchNameFanout plus five medicalQ7 anti-filter/semi-filter placement tests; summary at d343482b74: `tests=33, failures=6, errors=0, skipped=11`).
 
 ## Plan of Work
 
