@@ -139,6 +139,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		int fullMask = maskFor(runtimeFactorIndices);
 		Set<String> initial = plannerNames(initialBoundVars);
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
+		List<Set<String>> opaqueRequiredVars = opaqueRequiredVars(factors, factorVars, initial);
 		if (trace.enabled()) {
 			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
 					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
@@ -156,6 +157,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 				if (trace.enabled()) {
 					trace.add("seed reject f" + factorIndex + " reason=path-has-later-endpoint-binder endpoints="
 							+ pathEndpointNames(factors.get(factorIndex)) + " factor="
+							+ factorSummary(factors.get(factorIndex)));
+				}
+				continue;
+			}
+			if (!initial.containsAll(opaqueRequiredVars.get(factorIndex))) {
+				if (trace.enabled()) {
+					trace.add("seed reject f" + factorIndex + " reason=opaque-requires-bound required="
+							+ opaqueRequiredVars.get(factorIndex) + " factor="
 							+ factorSummary(factors.get(factorIndex)));
 				}
 				continue;
@@ -208,6 +217,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
 									+ extensionRejection + " factor="
 									+ factorSummary(factors.get(factorIndex)));
+						}
+						continue;
+					}
+					if (!state.boundVars().containsAll(opaqueRequiredVars.get(factorIndex))) {
+						if (trace.enabled()) {
+							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
+									+ " reason=opaque-requires-bound required=" + opaqueRequiredVars.get(factorIndex)
+									+ " factor=" + factorSummary(factors.get(factorIndex)));
 						}
 						continue;
 					}
@@ -295,6 +312,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return Optional.empty();
 		}
 		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
+		List<Set<String>> opaqueRequiredVars = opaqueRequiredVars(factors, factorVars,
+				plannerNames(initialBoundVars));
 		if (trace.enabled()) {
 			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
 					+ " zeroVar=" + zeroVarFactorIndices);
@@ -333,6 +352,14 @@ final class LmdbCascadesConnectedJoinPlanner {
 					if (trace.enabled()) {
 						trace.add("greedy extend reject order=" + order + " f" + factorIndex + " reason="
 								+ extensionRejection
+								+ " factor=" + factorSummary(factor));
+					}
+					continue;
+				}
+				if (!boundVars.containsAll(opaqueRequiredVars.get(factorIndex))) {
+					if (trace.enabled()) {
+						trace.add("greedy reject order=" + order + " f" + factorIndex
+								+ " reason=opaque-requires-bound required=" + opaqueRequiredVars.get(factorIndex)
 								+ " factor=" + factorSummary(factor));
 					}
 					continue;
@@ -817,6 +844,37 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return true;
 		}
 		return pathHasBoundEndpoint(factor, initialBoundVars) || !pathHasEndpointBinder;
+	}
+
+	/**
+	 * Per-factor variables that must already be bound before an opaque factor may be placed. Only variables that some
+	 * other factor (or an initial binding) can actually bind constrain placement — a correlated variable no factor
+	 * binds stays unbound in every order and imposes no precedence.
+	 */
+	private static List<Set<String>> opaqueRequiredVars(List<TupleExpr> factors, List<Set<String>> factorVars,
+			Set<String> initialBoundVars) {
+		List<Set<String>> result = new ArrayList<>(factors.size());
+		for (int i = 0; i < factors.size(); i++) {
+			Set<String> raw = LmdbJoinIslandConnectivity.opaqueFactorRequiredVars(factors.get(i));
+			if (raw.isEmpty()) {
+				result.add(Set.of());
+				continue;
+			}
+			Set<String> bindable = new HashSet<>(initialBoundVars);
+			for (int j = 0; j < factors.size(); j++) {
+				if (j != i) {
+					bindable.addAll(factorVars.get(j));
+				}
+			}
+			Set<String> required = new LinkedHashSet<>();
+			for (String name : plannerNames(raw)) {
+				if (bindable.contains(name)) {
+					required.add(name);
+				}
+			}
+			result.add(required.isEmpty() ? Set.of() : Set.copyOf(required));
+		}
+		return result;
 	}
 
 	private static int compareAccessPathQuality(List<Step> left, List<Step> right) {

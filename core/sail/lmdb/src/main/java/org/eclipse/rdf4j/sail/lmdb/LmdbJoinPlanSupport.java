@@ -544,7 +544,15 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
-		return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsExtension(tupleExpr)
+		return TupleExprs.containsExtension(tupleExpr) || isJoinOrderSeparatorIgnoringExtensions(tupleExpr);
+	}
+
+	/**
+	 * Separator semantics for the cascades connected-join path, where a BIND below a join is planned as an opaque
+	 * factor instead of freezing the island. The legacy sketch optimizer keeps {@link #isJoinOrderSeparator}.
+	 */
+	static boolean isJoinOrderSeparatorIgnoringExtensions(TupleExpr tupleExpr) {
+		return TupleExprs.isVariableScopeChange(tupleExpr)
 				|| TupleExprs.containsSubquery(tupleExpr)
 				|| "hash".equals(tupleExpr.getStringMetricPlanned("optimizer.joinAlgorithmHint"))
 				|| "phase1_csg_cmp".equals(tupleExpr.getStringMetricPlanned("optimizer.connectedEnumeration"));

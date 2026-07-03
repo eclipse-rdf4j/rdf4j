@@ -48,6 +48,7 @@ final class LmdbJoinIslandConnectivity {
 	static final String OPTIMIZER_DISALLOWED_IMPLEMENTATION_REASON = "optimizer.disallowedImplementationReason";
 	static final String CONNECTED_JOIN_OWNER_REASON = "connected-join-island-owned-by-lmdb-cascades-hypergraph";
 	static final String PROPERTY_PATH_OWNER_REASON = "property-path-owned-by-lmdb-property-path-provider";
+	static final String OPAQUE_FACTORS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.opaqueFactors";
 
 	private LmdbJoinIslandConnectivity() {
 	}
@@ -330,6 +331,7 @@ final class LmdbJoinIslandConnectivity {
 				runtimeFactorCount++;
 			}
 		}
+		supported = supported && opaqueExtensionOutputsDisjoint(factors, runtimeVars);
 		return new Island(factors.size(), runtimeFactorCount, zeroVarFactorCount,
 				connectedComponentCount(runtimeVars), supported);
 	}
@@ -363,9 +365,18 @@ final class LmdbJoinIslandConnectivity {
 				.equals(LmdbJoinPlanSupport.plannerBindingNames(projection.getArg().getBindingNames()));
 	}
 
+	static boolean opaqueFactorsEnabled() {
+		return Boolean.parseBoolean(System.getProperty(OPAQUE_FACTORS_PROPERTY, "true"));
+	}
+
 	private static boolean reorderableJoin(TupleExpr tupleExpr) {
-		return tupleExpr instanceof Join && !TupleExprs.isVariableScopeChange(tupleExpr)
-				&& !LmdbJoinPlanSupport.isJoinOrderSeparator(tupleExpr);
+		if (!(tupleExpr instanceof Join) || TupleExprs.isVariableScopeChange(tupleExpr)) {
+			return false;
+		}
+		if (opaqueFactorsEnabled()) {
+			return !LmdbJoinPlanSupport.isJoinOrderSeparatorIgnoringExtensions(tupleExpr);
+		}
+		return !LmdbJoinPlanSupport.isJoinOrderSeparator(tupleExpr);
 	}
 
 	private static Set<String> runtimeVars(TupleExpr tupleExpr) {
@@ -385,7 +396,76 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr instanceof Filter filter) {
 			return !TupleExprs.isVariableScopeChange(filter);
 		}
+		if (tupleExpr instanceof Extension extension) {
+			return opaqueFactorsEnabled() && plannableExtensionFactor(extension);
+		}
 		return false;
+	}
+
+	/**
+	 * An Extension (BIND) factor is plannable as an opaque island member when its assignments never shadow a binding
+	 * produced by its own argument. Correlated expressions (using variables bound by other factors) are allowed; the
+	 * connected planner delays such factors until {@link #opaqueFactorRequiredVars} is covered.
+	 */
+	private static boolean plannableExtensionFactor(Extension extension) {
+		if (extension.getArg() == null || TupleExprs.isVariableScopeChange(extension)) {
+			return false;
+		}
+		Set<String> argBindings = LmdbJoinPlanSupport.plannerBindingNames(extension.getArg().getBindingNames());
+		for (ExtensionElem element : extension.getElements()) {
+			if (element.getName() == null || argBindings.contains(element.getName())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Variables an opaque factor needs bound before it may be placed: for an Extension these are the expression
+	 * variables its own argument does not assuredly bind. Native factors have no requirement.
+	 */
+	static Set<String> opaqueFactorRequiredVars(TupleExpr factor) {
+		if (!(factor instanceof Extension extension) || extension.getArg() == null) {
+			return Set.of();
+		}
+		Set<String> argAssured = LmdbJoinPlanSupport
+				.plannerBindingNames(extension.getArg().getAssuredBindingNames());
+		Set<String> required = new LinkedHashSet<>();
+		for (ExtensionElem element : extension.getElements()) {
+			for (String name : LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(element.getExpr()))) {
+				if (!argAssured.contains(name)) {
+					required.add(name);
+				}
+			}
+		}
+		return required.isEmpty() ? Set.of() : Set.copyOf(required);
+	}
+
+	/**
+	 * Reordering is unsafe when an Extension assignment name is also a runtime variable of another factor: written
+	 * order joins on the shared name, while an Extension evaluated after that factor would overwrite it.
+	 */
+	private static boolean opaqueExtensionOutputsDisjoint(List<TupleExpr> factors, List<Set<String>> runtimeVars) {
+		for (int i = 0; i < factors.size(); i++) {
+			if (!(factors.get(i)instanceof Extension extension)) {
+				continue;
+			}
+			Set<String> outputs = new HashSet<>();
+			for (ExtensionElem element : extension.getElements()) {
+				if (element.getName() != null) {
+					outputs.add(element.getName());
+				}
+			}
+			if (outputs.isEmpty()) {
+				continue;
+			}
+			for (int j = 0; j < factors.size(); j++) {
+				if (j != i && !disjoint(outputs, runtimeVars.get(j))) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private static int connectedComponentCount(List<Set<String>> runtimeVars) {
