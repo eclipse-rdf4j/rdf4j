@@ -105,6 +105,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		results.addAll(getOptionalXmlPropertySettings());
 		results.addAll(getOptionalXmlFeatureSettings());
 
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
 		results.add(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
 		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
 		results.add(TriXParserSettings.FAIL_ON_INVALID_STATEMENT);

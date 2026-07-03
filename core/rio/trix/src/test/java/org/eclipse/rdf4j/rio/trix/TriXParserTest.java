@@ -95,8 +95,8 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testIgnoreExternalDTDWhenSystemPropertyAllowsDoctype() throws Exception {
-		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
+	public void testIgnoreExternalDTDWhenParserConfigAllowsDoctype() throws Exception {
+		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
@@ -118,21 +118,21 @@ public class TriXParserTest {
 	}
 
 	@Test
-	public void testParserConfigCannotLoadExternalDTD() throws Exception {
+	public void testLoadExternalDTDConfigured() throws Exception {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 		parser.getParserConfig().set(XMLParserSettings.LOAD_EXTERNAL_DTD, true);
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
 
-			assertThatExceptionOfType(RDFParseException.class)
+			assertThatExceptionOfType(FileNotFoundException.class)
 					.isThrownBy(() -> parser.parse(in, ""))
-					.withMessageContaining("DOCTYPE is disallowed");
+					.withMessageMatching(".*non-existent\\.dtd.*");
 		}
 	}
 
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
-		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
+		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix")) {
@@ -155,7 +155,7 @@ public class TriXParserTest {
 
 	@Test
 	public void testIgnoreExternalParameterEntity() throws Exception {
-		System.setProperty(XMLReaderFactory.DISALLOW_DOCTYPE_DECL_PROPERTY, "false");
+		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix")) {

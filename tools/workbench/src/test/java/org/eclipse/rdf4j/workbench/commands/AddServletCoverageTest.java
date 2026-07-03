@@ -22,11 +22,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -377,6 +380,37 @@ class AddServletCoverageTest {
 	}
 
 	@Test
+	void doPostDecompressesUploadedStreamFromFilenameBeforeParsing() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		String turtle = "<urn:s> <urn:p> <urn:o> .";
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(false);
+		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(gzip(turtle)));
+		when(request.getContentFileName()).thenReturn("myData.ttl.gzip");
+		doAnswer(invocation -> {
+			InputStream inputStream = invocation.getArgument(0);
+			assertThat(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8)).isEqualTo(turtle);
+			return null;
+		}).when(connection)
+				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+						any(Resource[].class));
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
 	void doPostAddsStreamContentWithContextWhenTransactionBecomesInactive() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
@@ -519,6 +553,14 @@ class AddServletCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 		return response;
+	}
+
+	private static byte[] gzip(String body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (GZIPOutputStream outputStream = new GZIPOutputStream(buffer)) {
+			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
+		}
+		return buffer.toByteArray();
 	}
 
 	private static final class TestAddServlet extends AddServlet {

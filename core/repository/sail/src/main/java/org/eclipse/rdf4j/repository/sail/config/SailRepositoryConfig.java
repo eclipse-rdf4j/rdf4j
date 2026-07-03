@@ -13,12 +13,14 @@ package org.eclipse.rdf4j.repository.sail.config;
 import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
+import java.util.Arrays;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -103,7 +105,11 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 							SailFactory factory = SailRegistry.getInstance()
 									.get(typeLit.getLabel())
 									.orElseThrow(() -> new RepositoryConfigException(
-											"Unsupported Sail type: " + typeLit.getLabel()));
+											"Unsupported Sail type: " + typeLit.getLabel() + " for Sail repository: "
+													+ Arrays.toString(Models.subjectIRIs(model)
+															.stream()
+															.map(Object::toString)
+															.toArray())));
 
 							sailImplConfig = factory.getConfig();
 							sailImplConfig.parse(model, sailImplNode.get());
