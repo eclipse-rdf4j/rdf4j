@@ -82,6 +82,10 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 		return super.precompile(expr, context);
 	}
 
+	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
+		return super.precompile(expr, context);
+	}
+
 	private static NativeLmdbQuerySource extractNativeSource(TripleSource tripleSource) {
 		if (tripleSource instanceof SailDatasetTripleTermSource) {
 			List<NativeLmdbQuerySource> sources = ((SailDatasetTripleTermSource) tripleSource)

@@ -67,6 +67,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -88,7 +89,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
-import org.roaringbitmap.longlong.Roaring64Bitmap;
 
 /**
  * Native slot/ID aggregation for LMDB-local query fragments.
@@ -110,9 +110,20 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	private static final long SYNTHETIC_VALUE_BASE = Long.MIN_VALUE + 1024L;
 	private static final int MAX_NATIVE_SLOTS = 60;
+	private static final String LEFTJOIN_WELL_DESIGNED_CHECK = "rdf4j.lmdb.leftjoin.wellDesignedCheck";
+	private static final String LEFTJOIN_REPLAY_ENABLED = "rdf4j.lmdb.leftjoin.replay.enabled";
+	private static final String LEFTJOIN_HASH_ENABLED = "rdf4j.lmdb.leftjoin.hash.enabled";
+	private static final String LEFTJOIN_HASH_MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
+	private static final String LEFTJOIN_HASH_MAX_ROWS = "rdf4j.lmdb.leftjoin.hash.maxRows";
+	private static final String LEFTJOIN_MEMO_ENABLED = "rdf4j.lmdb.leftjoin.memo.enabled";
+	private static final String MEMBERSHIP_MAX_SIZE = "rdf4j.lmdb.membership.maxSize";
+	private static final String[] NO_OPTIONAL_ONLY_NAMES = new String[0];
 
 	/** Test observability: incremented once per aggregate query this compiler accepts. */
 	static final AtomicLong COMPILED = new AtomicLong();
+	static final AtomicLong LEFTJOIN_REPLAY_MATERIALIZATIONS = new AtomicLong();
+	static final AtomicLong LEFTJOIN_HASH_BUILDS = new AtomicLong();
+	static final AtomicLong LEFTJOIN_MEMO_MATERIALIZATIONS = new AtomicLong();
 
 	private LmdbNativeAggregateCompiler() {
 	}
@@ -143,7 +154,6 @@ final class LmdbNativeAggregateCompiler {
 		private QueryEvaluationContext slotAwareContext;
 		private final ArrayList<String> slotNames = new ArrayList<>();
 		private Set<String> requiredAggregateNames = Set.of();
-		private boolean impossible;
 		private final HashMap<Long, Value> syntheticValuesById = new HashMap<>();
 		private final HashMap<Value, Long> syntheticIdsByValue = new HashMap<>();
 		private final java.util.HashSet<String> syntheticVarNames = new java.util.HashSet<>();
@@ -157,7 +167,7 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private QueryEvaluationStep compile(Filter filter) {
-			QueryEvaluationStep groupStep = compileGroup((Group) filter.getArg(), filter.getCondition());
+			QueryEvaluationStep groupStep = compileGroup((Group) filter.getArg(), filter.getCondition(), filter);
 			if (groupStep == null) {
 				return null;
 			}
@@ -166,10 +176,10 @@ final class LmdbNativeAggregateCompiler {
 		}
 
 		private QueryEvaluationStep compile(Group group) {
-			return compileGroup(group, null);
+			return compileGroup(group, null, group);
 		}
 
-		private QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition) {
+		private QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
 			this.requiredAggregateNames = aggregateRequiredNames(group);
 			AggregateSpec[] aggregates = compileAggregates(group.getGroupElements());
 			if (aggregates == null) {
@@ -179,6 +189,10 @@ final class LmdbNativeAggregateCompiler {
 			// so raw-id filter shortcuts know which variables they must not touch
 			collectSyntheticValues(group.getArg());
 
+			Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(group.getArg());
+			if (optionalOnlyNames == null) {
+				return null;
+			}
 			int[] groupSlots = compileGroupSlots(group.getGroupBindingNames());
 			boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition);
 			SlotPlan arg = compileTuple(group.getArg(), duplicateInsensitive);
@@ -188,15 +202,12 @@ final class LmdbNativeAggregateCompiler {
 			boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 			NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
 					: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
-			if (impossible) {
-				layout.freeze(slotNames);
-				return new NativeGroupStep(stepSource, SlotPlan.empty(), layout, groupSlots, aggregates, strictCompare);
-			}
 			if (slotNames.size() > MAX_NATIVE_SLOTS) {
 				return null;
 			}
 			layout.freeze(slotNames);
-			return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare);
+			return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare, strategy,
+					originalExpr, context, optionalOnlyNames);
 		}
 
 		/**
@@ -258,6 +269,10 @@ final class LmdbNativeAggregateCompiler {
 			}
 			this.requiredAggregateNames = required;
 
+			Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(node);
+			if (optionalOnlyNames == null) {
+				return null;
+			}
 			collectSyntheticValues(node);
 			// under DISTINCT, dropping an OPTIONAL branch that binds nothing projected or ordered never changes
 			// the row set, so the slot compiler may prune such branches (same rule as duplicate-insensitive
@@ -282,10 +297,86 @@ final class LmdbNativeAggregateCompiler {
 			boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 			NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
 					: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
-			SlotPlan plan = impossible ? SlotPlan.empty() : arg;
 			layout.freeze(slotNames);
-			return new NativeRowsStep(stepSource, plan, layout, sourceSlots, targetNames, distinct, orderSlots,
-					orderAscending, offset, limit, strictCompare);
+			return new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct, orderSlots,
+					orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames);
+		}
+
+		private Set<String> wellDesignedOptionalOnlyNames(TupleExpr root) {
+			if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_WELL_DESIGNED_CHECK, "true"))) {
+				return Set.of();
+			}
+			ArrayList<LeftJoin> leftJoins = new ArrayList<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(LeftJoin node) {
+					leftJoins.add(node);
+					super.meet(node);
+				}
+			});
+			if (leftJoins.isEmpty()) {
+				return Set.of();
+			}
+			java.util.HashSet<String> allOptionalOnly = new java.util.HashSet<>();
+			for (LeftJoin leftJoin : leftJoins) {
+				Set<String> optionalOnly = leftJoinOptionalOnlyNames(leftJoin);
+				if (optionalOnly.isEmpty()) {
+					continue;
+				}
+				Set<String> outside = bindingNamesOutside(root, leftJoin);
+				for (String name : optionalOnly) {
+					if (outside.contains(name)) {
+						return null;
+					}
+				}
+				allOptionalOnly.addAll(optionalOnly);
+			}
+			return allOptionalOnly;
+		}
+
+		private Set<String> leftJoinOptionalOnlyNames(LeftJoin leftJoin) {
+			VarNameCollector collector = new VarNameCollector();
+			leftJoin.getRightArg().visit(collector);
+			if (leftJoin.hasCondition()) {
+				leftJoin.getCondition().visit(collector);
+			}
+			java.util.HashSet<String> optionalOnly = new java.util.HashSet<>(collector.getVarNames());
+			optionalOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
+			return optionalOnly;
+		}
+
+		private Set<String> bindingNamesOutside(TupleExpr root, QueryModelNode excluded) {
+			java.util.HashSet<String> names = new java.util.HashSet<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(LeftJoin node) {
+					if (node == excluded) {
+						return;
+					}
+					super.meet(node);
+				}
+
+				@Override
+				public void meet(StatementPattern node) {
+					for (Var var : node.getVarList()) {
+						if (!var.hasValue()) {
+							names.add(var.getName());
+						}
+					}
+				}
+
+				@Override
+				public void meet(BindingSetAssignment node) {
+					names.addAll(node.getBindingNames());
+				}
+
+				@Override
+				public void meet(ExtensionElem node) {
+					names.add(node.getName());
+					super.meet(node);
+				}
+			});
+			return names;
 		}
 
 		/**
@@ -481,7 +572,6 @@ final class LmdbNativeAggregateCompiler {
 			if (expr instanceof StatementPattern) {
 				PatternPlan plan = compileStatementPattern((StatementPattern) expr);
 				if (plan == null) {
-					impossible = true;
 					return SlotPlan.empty();
 				}
 				return plan;
@@ -1634,10 +1724,16 @@ final class LmdbNativeAggregateCompiler {
 		private final long offset;
 		private final long limit;
 		private final boolean strictCompare;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final TupleExpr originalExpr;
+		private final QueryEvaluationContext context;
+		private final String[] optionalOnlyNames;
+		private QueryEvaluationStep genericStep;
 
 		private NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
 				String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
-				long limit, boolean strictCompare) {
+				long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
+				QueryEvaluationContext context, Set<String> optionalOnlyNames) {
 			this.source = source;
 			this.arg = arg;
 			this.layout = layout;
@@ -1649,10 +1745,18 @@ final class LmdbNativeAggregateCompiler {
 			this.offset = offset;
 			this.limit = limit;
 			this.strictCompare = strictCompare;
+			this.strategy = strategy;
+			this.originalExpr = originalExpr;
+			this.context = context;
+			this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
+					: optionalOnlyNames.toArray(String[]::new);
 		}
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			if (hasOptionalOnlyBinding(bindings)) {
+				return genericStep().evaluate(bindings);
+			}
 			List<BindingSet> rows = evaluateAll(bindings);
 			Iterator<BindingSet> iterator = rows.iterator();
 			return new CloseableIteration<>() {
@@ -1675,6 +1779,22 @@ final class LmdbNativeAggregateCompiler {
 				public void close() {
 				}
 			};
+		}
+
+		private boolean hasOptionalOnlyBinding(BindingSet bindings) {
+			for (String name : optionalOnlyNames) {
+				if (bindings.hasBinding(name)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private synchronized QueryEvaluationStep genericStep() {
+			if (genericStep == null) {
+				genericStep = strategy.genericPrecompile(originalExpr, context);
+			}
+			return genericStep;
 		}
 
 		private List<BindingSet> evaluateAll(BindingSet base) {
@@ -1825,20 +1945,50 @@ final class LmdbNativeAggregateCompiler {
 		private final int[] groupSlots;
 		private final AggregateSpec[] aggregates;
 		private final boolean strictCompare;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final TupleExpr originalExpr;
+		private final QueryEvaluationContext context;
+		private final String[] optionalOnlyNames;
+		private QueryEvaluationStep genericStep;
 
 		private NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
-				AggregateSpec[] aggregates, boolean strictCompare) {
+				AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+				TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames) {
 			this.source = source;
 			this.arg = arg;
 			this.layout = layout;
 			this.groupSlots = groupSlots;
 			this.aggregates = aggregates;
 			this.strictCompare = strictCompare;
+			this.strategy = strategy;
+			this.originalExpr = originalExpr;
+			this.context = context;
+			this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
+					: optionalOnlyNames.toArray(String[]::new);
 		}
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			if (hasOptionalOnlyBinding(bindings)) {
+				return genericStep().evaluate(bindings);
+			}
 			return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings);
+		}
+
+		private boolean hasOptionalOnlyBinding(BindingSet bindings) {
+			for (String name : optionalOnlyNames) {
+				if (bindings.hasBinding(name)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private synchronized QueryEvaluationStep genericStep() {
+			if (genericStep == null) {
+				genericStep = strategy.genericPrecompile(originalExpr, context);
+			}
+			return genericStep;
 		}
 	}
 
@@ -3072,6 +3222,15 @@ final class LmdbNativeAggregateCompiler {
 			long right = memoReadMask(join.right);
 			return left < 0L || right < 0L ? -1L : left | right;
 		}
+		if (plan instanceof LeftJoinPlan) {
+			if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))) {
+				return -1L;
+			}
+			LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
+			long left = memoReadMask(leftJoin.left);
+			long right = memoReadMask(leftJoin.right);
+			return left < 0L || right < 0L ? -1L : left | right;
+		}
 		if (plan instanceof UnionPlan) {
 			UnionPlan union = (UnionPlan) plan;
 			long left = memoReadMask(union.left);
@@ -3268,7 +3427,7 @@ final class LmdbNativeAggregateCompiler {
 
 		@Override
 		public RowCursor open(RowState row) throws IOException {
-			return new LeftJoinCursor(left.open(row), right, row);
+			return new LeftJoinCursor(left.open(row), right, row, left.producedMask());
 		}
 
 		@Override
@@ -3282,24 +3441,63 @@ final class LmdbNativeAggregateCompiler {
 		private final SlotPlan right;
 		private final RowState row;
 		private RowCursor rightCursor;
+		private final int[] replaySlots;
+		private final PatternPayloadProbe payloadProbe;
+		private final RightMemoProbe rightMemo;
+		private NativeLmdbQuerySource.NativeProbe rightProbe;
+		private ArrayList<long[]> materialized;
+		private boolean rightMaterialized;
+		private int replayIndex = -1;
+		private int replayMark = -1;
+		private boolean replayMatchedCurrentLeft;
 		private boolean matchedCurrentLeft;
 		private boolean nullExtendedPending;
+		private boolean rightCursorFromPayload;
 
-		private LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row) {
+		private LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask) {
 			this.leftCursor = leftCursor;
 			this.right = right;
 			this.row = row;
+			long readMask = memoReadMask(right);
+			this.replaySlots = Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))
+					&& readMask >= 0L && (readMask & leftProducedMask) == 0L
+							? slotsOf(right.producedMask())
+							: null;
+			this.payloadProbe = PatternPayloadProbe.tryCreate(right);
+			this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask);
 		}
 
 		@Override
 		public boolean next() throws IOException {
+			if (rightMaterialized) {
+				return replayNext();
+			}
 			while (true) {
 				if (rightCursor != null) {
 					if (rightCursor.next()) {
 						matchedCurrentLeft = true;
+						if (!rightCursorFromPayload && payloadProbe != null) {
+							payloadProbe.recordDirectMatch();
+						}
+						if (materialized != null) {
+							record();
+						}
 						return true;
 					}
 					closeRight();
+					if (materialized != null) {
+						rightMaterialized = true;
+						LEFTJOIN_REPLAY_MATERIALIZATIONS.incrementAndGet();
+						if (!matchedCurrentLeft) {
+							nullExtendedPending = true;
+						}
+						if (nullExtendedPending) {
+							nullExtendedPending = false;
+							return true;
+						}
+						replayIndex = -1;
+						return replayNext();
+					}
 					if (!matchedCurrentLeft) {
 						nullExtendedPending = true;
 					}
@@ -3312,13 +3510,107 @@ final class LmdbNativeAggregateCompiler {
 					return false;
 				}
 				matchedCurrentLeft = false;
-				rightCursor = right.open(row);
+				rightCursor = openRight();
+				if (replaySlots != null && materialized == null && !rightMaterialized) {
+					materialized = new ArrayList<>();
+				}
+			}
+		}
+
+		private RowCursor openRight() throws IOException {
+			if (payloadProbe != null) {
+				RowCursor hashed = payloadProbe.open(row);
+				if (hashed != null) {
+					rightCursorFromPayload = true;
+					return hashed;
+				}
+			}
+			rightCursorFromPayload = false;
+			if (rightMemo != null) {
+				RowCursor memoized = rightMemo.open(row);
+				if (memoized != null) {
+					return memoized;
+				}
+			}
+			if (right instanceof PatternPlan) {
+				if (rightProbe == null) {
+					rightProbe = row.source.newProbe();
+				}
+				return ((PatternPlan) right).open(row, rightProbe);
+			}
+			return right.open(row);
+		}
+
+		private boolean replayNext() throws IOException {
+			while (true) {
+				if (replayIndex >= 0) {
+					releaseReplay();
+					while (replayIndex < materialized.size()) {
+						long[] values = materialized.get(replayIndex++);
+						int mark = row.mark();
+						if (bindReplay(values)) {
+							replayMatchedCurrentLeft = true;
+							replayMark = mark;
+							return true;
+						}
+						row.rollback(mark);
+					}
+					replayIndex = -1;
+					if (!replayMatchedCurrentLeft) {
+						return true;
+					}
+				}
+				if (!leftCursor.next()) {
+					return false;
+				}
+				replayMatchedCurrentLeft = false;
+				replayIndex = 0;
+			}
+		}
+
+		private boolean bindReplay(long[] values) {
+			for (int i = 0; i < replaySlots.length; i++) {
+				long value = values[i];
+				if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private void record() {
+			if (materialized.size() >= JoinCursor.MAX_MATERIALIZED_ROWS) {
+				materialized = null;
+				return;
+			}
+			long[] values = new long[replaySlots.length];
+			for (int i = 0; i < replaySlots.length; i++) {
+				values[i] = row.slots[replaySlots[i]];
+			}
+			materialized.add(values);
+		}
+
+		private void releaseReplay() {
+			if (replayMark >= 0) {
+				row.rollback(replayMark);
+				replayMark = -1;
 			}
 		}
 
 		@Override
 		public void close() {
+			releaseReplay();
 			closeRight();
+			if (rightProbe != null) {
+				rightProbe.close();
+				rightProbe = null;
+			}
+			if (payloadProbe != null) {
+				payloadProbe.close();
+			}
+			if (rightMemo != null) {
+				rightMemo.close();
+			}
 			leftCursor.close();
 		}
 
@@ -3326,6 +3618,523 @@ final class LmdbNativeAggregateCompiler {
 			if (rightCursor != null) {
 				rightCursor.close();
 				rightCursor = null;
+			}
+			rightCursorFromPayload = false;
+		}
+	}
+
+	private static final class PatternPayloadProbe {
+		private static final int FILL_ROWS = 64;
+		private static final int SEEK_COST_KEYS = 8;
+
+		private final PatternPlan pattern;
+		private final NativeBooleanFilter filter;
+		private final Term[] terms;
+		private final int[] varyingIdx;
+		private final boolean rejectNullContext;
+		private final long[] batch = new long[FILL_ROWS * 4];
+
+		private NativeLmdbQuerySource.NativeProbe probe;
+		private int probes;
+		private long cumulativeMatched;
+		private boolean disabled;
+		private int builtIdx = -1;
+		private int[] payloadSlots;
+		private int[] payloadQuadIdx;
+		private PayloadMap payloads;
+		private LongHashSet keySet;
+
+		private PatternPayloadProbe(PatternPlan pattern, NativeBooleanFilter filter, int[] varyingIdx) {
+			this.pattern = pattern;
+			this.filter = filter;
+			this.terms = new Term[] { pattern.s, pattern.p, pattern.o, pattern.c };
+			this.varyingIdx = varyingIdx;
+			this.rejectNullContext = pattern.rejectsNullContextAtBind();
+		}
+
+		static PatternPayloadProbe tryCreate(SlotPlan right) {
+			if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_HASH_ENABLED, "true"))) {
+				return null;
+			}
+			PatternPlan pattern;
+			NativeBooleanFilter filter = null;
+			if (right instanceof PatternPlan) {
+				pattern = (PatternPlan) right;
+			} else if (right instanceof FilterPlan && ((FilterPlan) right).arg instanceof PatternPlan
+					&& ((FilterPlan) right).filterMask >= 0L) {
+				FilterPlan filterPlan = (FilterPlan) right;
+				pattern = (PatternPlan) filterPlan.arg;
+				filter = filterPlan.filter;
+			} else {
+				return null;
+			}
+			if (pattern.namedContextScope || pattern.contexts != ContextConstraint.UNRESTRICTED
+					|| pattern.hasRepeatedSlot() || pattern.c.hasSlot()) {
+				return null;
+			}
+			Term[] terms = new Term[] { pattern.s, pattern.p, pattern.o };
+			int[] varying = new int[3];
+			int n = 0;
+			for (int i = 0; i < terms.length; i++) {
+				if (!terms[i].isConstant() && terms[i].hasSlot()) {
+					varying[n++] = i;
+				}
+			}
+			if (n <= 1) {
+				return null;
+			}
+			return new PatternPayloadProbe(pattern, filter, Arrays.copyOf(varying, n));
+		}
+
+		private RowCursor open(RowState row) throws IOException {
+			if (disabled) {
+				return null;
+			}
+			int boundIdx = boundIdx(row);
+			if (boundIdx < 0) {
+				return null;
+			}
+			if (payloads == null && keySet == null) {
+				probes++;
+				long estimatedRows = normalizedEstimate(pattern.staticEstimate);
+				int minProbes = Integer.getInteger(LEFTJOIN_HASH_MIN_PROBES, 1024);
+				if (probes < minProbes || probes * (long) SEEK_COST_KEYS + cumulativeMatched < estimatedRows) {
+					return null;
+				}
+				build(row, boundIdx);
+				if (disabled) {
+					return null;
+				}
+			}
+			if (builtIdx != boundIdx) {
+				return null;
+			}
+			long key = terms[boundIdx].lookup(row.slots);
+			if (payloads != null) {
+				return new PayloadCursor(row, payloads, payloads.head(key), payloadSlots, filter);
+			}
+			return keySet.contains(key) ? null : PayloadCursor.miss(row);
+		}
+
+		private int boundIdx(RowState row) {
+			int boundIdx = -1;
+			for (int idx : varyingIdx) {
+				if (terms[idx].lookup(row.slots) != UNKNOWN) {
+					if (boundIdx >= 0) {
+						return -1;
+					}
+					boundIdx = idx;
+				}
+			}
+			return boundIdx;
+		}
+
+		private void recordDirectMatch() {
+			if (payloads == null && keySet == null && !disabled) {
+				cumulativeMatched++;
+			}
+		}
+
+		private void build(RowState row, int keyIdx) throws IOException {
+			int payloadCount = varyingIdx.length - 1;
+			int[] slots = new int[payloadCount];
+			int[] quadIdx = new int[payloadCount];
+			int n = 0;
+			for (int idx : varyingIdx) {
+				if (idx != keyIdx) {
+					slots[n] = terms[idx].slot;
+					quadIdx[n] = idx;
+					n++;
+				}
+			}
+			PayloadMap map = new PayloadMap(Math.max(16, normalizedEstimate(pattern.staticEstimate)), payloadCount);
+			LongHashSet keys = new LongHashSet(1024);
+			long maxRows = Long.getLong(LEFTJOIN_HASH_MAX_ROWS, 1_000_000L);
+			long maxKeys = Long.getLong(MEMBERSHIP_MAX_SIZE, 4_000_000L);
+			boolean payloadOverflow = false;
+			try (PatternCursor cursor = pattern.openRawUnbinding(row, 1L << terms[keyIdx].slot, probe(row))) {
+				int rows;
+				while ((rows = cursor.fill(batch, FILL_ROWS)) > 0) {
+					for (int i = 0; i < rows; i++) {
+						int offset = i * 4;
+						if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+							continue;
+						}
+						long key = batch[offset + keyIdx];
+						keys.add(key);
+						if (keys.size() > maxKeys) {
+							disabled = true;
+							return;
+						}
+						if (!payloadOverflow) {
+							if (map.size() >= maxRows) {
+								payloadOverflow = true;
+								map = null;
+							} else {
+								map.add(key, batch, offset, quadIdx);
+							}
+						}
+					}
+				}
+			}
+			LEFTJOIN_HASH_BUILDS.incrementAndGet();
+			builtIdx = keyIdx;
+			payloadSlots = slots;
+			payloadQuadIdx = quadIdx;
+			if (payloadOverflow) {
+				keySet = keys;
+			} else {
+				payloads = map;
+			}
+		}
+
+		private NativeLmdbQuerySource.NativeProbe probe(RowState row) {
+			if (probe == null) {
+				probe = row.source.newProbe();
+			}
+			return probe;
+		}
+
+		private void close() {
+			if (probe != null) {
+				probe.close();
+				probe = null;
+			}
+		}
+	}
+
+	private static final class PayloadCursor implements RowCursor {
+		private final RowState row;
+		private final PayloadMap payloads;
+		private final int[] payloadSlots;
+		private final NativeBooleanFilter filter;
+		private int nextEntry;
+		private int activeMark = -1;
+		private boolean matched;
+		private boolean nullEmitted;
+
+		private PayloadCursor(RowState row, PayloadMap payloads, int head, int[] payloadSlots,
+				NativeBooleanFilter filter) {
+			this.row = row;
+			this.payloads = payloads;
+			this.nextEntry = head;
+			this.payloadSlots = payloadSlots;
+			this.filter = filter;
+		}
+
+		private static PayloadCursor miss(RowState row) {
+			return new PayloadCursor(row, null, 0, new int[0], null);
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			release();
+			while (payloads != null && nextEntry != 0) {
+				int entry = nextEntry;
+				nextEntry = payloads.next(entry);
+				int mark = row.mark();
+				if (bind(entry) && (filter == null || filter.accept(row))) {
+					activeMark = mark;
+					matched = true;
+					return true;
+				}
+				row.rollback(mark);
+			}
+			if (!matched && !nullEmitted) {
+				nullEmitted = true;
+				return true;
+			}
+			return false;
+		}
+
+		private boolean bind(int entry) {
+			for (int i = 0; i < payloadSlots.length; i++) {
+				if (!row.bind(payloadSlots[i], payloads.payload(entry, i))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public void close() {
+			release();
+			nextEntry = 0;
+			nullEmitted = true;
+		}
+
+		private void release() {
+			if (activeMark >= 0) {
+				row.rollback(activeMark);
+				activeMark = -1;
+			}
+		}
+	}
+
+	private static final class PayloadMap {
+		private final int payloadWidth;
+		private long[] keys;
+		private int[] heads;
+		private boolean[] used;
+		private int size;
+		private long[] arena;
+		private int rows;
+
+		private PayloadMap(long expectedRows, int payloadWidth) {
+			this.payloadWidth = payloadWidth;
+			int capacity = 1;
+			long expected = Math.min(Math.max(4L, expectedRows), 1 << 20);
+			while (capacity < expected * 2) {
+				capacity <<= 1;
+			}
+			keys = new long[capacity];
+			heads = new int[capacity];
+			used = new boolean[capacity];
+			arena = new long[Math.max(16, (payloadWidth + 1) * 16)];
+		}
+
+		private int size() {
+			return rows;
+		}
+
+		private int head(long key) {
+			int mask = keys.length - 1;
+			int idx = LongHashSet.mix(key) & mask;
+			while (used[idx]) {
+				if (keys[idx] == key) {
+					return heads[idx];
+				}
+				idx = (idx + 1) & mask;
+			}
+			return 0;
+		}
+
+		private void add(long key, long[] quad, int offset, int[] payloadQuadIdx) {
+			if ((size + 1) * 4 > keys.length * 3) {
+				growTable();
+			}
+			int slot = slot(key);
+			int entry = append(quad, offset, payloadQuadIdx, heads[slot]);
+			heads[slot] = entry;
+		}
+
+		private int slot(long key) {
+			int mask = keys.length - 1;
+			int idx = LongHashSet.mix(key) & mask;
+			while (used[idx]) {
+				if (keys[idx] == key) {
+					return idx;
+				}
+				idx = (idx + 1) & mask;
+			}
+			used[idx] = true;
+			keys[idx] = key;
+			size++;
+			return idx;
+		}
+
+		private int append(long[] quad, int offset, int[] payloadQuadIdx, int next) {
+			int width = payloadWidth + 1;
+			int row = ++rows;
+			int base = (row - 1) * width;
+			int required = base + width;
+			if (required > arena.length) {
+				arena = Arrays.copyOf(arena, Math.max(required, arena.length * 2));
+			}
+			for (int i = 0; i < payloadQuadIdx.length; i++) {
+				arena[base + i] = quad[offset + payloadQuadIdx[i]];
+			}
+			arena[base + payloadWidth] = next;
+			return row;
+		}
+
+		private int next(int entry) {
+			return (int) arena[(entry - 1) * (payloadWidth + 1) + payloadWidth];
+		}
+
+		private long payload(int entry, int index) {
+			return arena[(entry - 1) * (payloadWidth + 1) + index];
+		}
+
+		private void growTable() {
+			long[] oldKeys = keys;
+			int[] oldHeads = heads;
+			boolean[] oldUsed = used;
+			keys = new long[oldKeys.length * 2];
+			heads = new int[oldHeads.length * 2];
+			used = new boolean[oldUsed.length * 2];
+			size = 0;
+			for (int i = 0; i < oldUsed.length; i++) {
+				if (oldUsed[i]) {
+					int slot = slot(oldKeys[i]);
+					heads[slot] = oldHeads[i];
+				}
+			}
+		}
+	}
+
+	private static final class RightMemoProbe {
+		private static final int MAX_MEMO_ROWS = 1 << 14;
+		private static final long[][] TOO_LARGE = new long[0][];
+
+		private final SlotPlan right;
+		private final int[] keySlots;
+		private final int[] replaySlots;
+		private final HashMap<GroupKey, long[][]> rowsByKey = new HashMap<>();
+		private final GroupKey probeKey;
+
+		private RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots) {
+			this.right = right;
+			this.keySlots = keySlots;
+			this.replaySlots = replaySlots;
+			this.probeKey = new GroupKey(new long[keySlots.length]);
+		}
+
+		private static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask) {
+			if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"))) {
+				return null;
+			}
+			if (readMask < 0L || (readMask & leftProducedMask) == 0L) {
+				return null;
+			}
+			if (right instanceof PatternPlan
+					|| right instanceof FilterPlan && ((FilterPlan) right).arg instanceof PatternPlan) {
+				return null;
+			}
+			int[] replaySlots = slotsOf(right.producedMask());
+			if (replaySlots.length == 0) {
+				return null;
+			}
+			return new RightMemoProbe(right, slotsOf(readMask), replaySlots);
+		}
+
+		private RowCursor open(RowState row) throws IOException {
+			probeKey.refill(row.slots, keySlots);
+			long[][] cached = rowsByKey.get(probeKey);
+			if (cached == TOO_LARGE) {
+				return null;
+			}
+			if (cached != null) {
+				return cached.length == 0 ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
+			}
+			GroupKey storedKey = probeKey.storedCopy();
+			return new MemoRecordingCursor(right.open(row), row, replaySlots, rowsByKey, storedKey);
+		}
+
+		private void close() {
+			rowsByKey.clear();
+		}
+	}
+
+	private static final class MemoRecordingCursor implements RowCursor {
+		private final RowCursor delegate;
+		private final RowState row;
+		private final int[] replaySlots;
+		private final HashMap<GroupKey, long[][]> rowsByKey;
+		private final GroupKey key;
+		private ArrayList<long[]> rows = new ArrayList<>();
+		private boolean finished;
+
+		private MemoRecordingCursor(RowCursor delegate, RowState row, int[] replaySlots,
+				HashMap<GroupKey, long[][]> rowsByKey, GroupKey key) {
+			this.delegate = delegate;
+			this.row = row;
+			this.replaySlots = replaySlots;
+			this.rowsByKey = rowsByKey;
+			this.key = key;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (delegate.next()) {
+				record();
+				return true;
+			}
+			finish();
+			return false;
+		}
+
+		private void record() {
+			if (rows == null) {
+				return;
+			}
+			if (rows.size() >= RightMemoProbe.MAX_MEMO_ROWS) {
+				rows = null;
+				rowsByKey.put(key, RightMemoProbe.TOO_LARGE);
+				return;
+			}
+			long[] values = new long[replaySlots.length];
+			for (int i = 0; i < replaySlots.length; i++) {
+				values[i] = row.slots[replaySlots[i]];
+			}
+			rows.add(values);
+		}
+
+		private void finish() {
+			if (finished) {
+				return;
+			}
+			finished = true;
+			if (rows != null) {
+				rowsByKey.put(key, rows.toArray(new long[rows.size()][]));
+				LEFTJOIN_MEMO_MATERIALIZATIONS.incrementAndGet();
+			}
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
+		}
+	}
+
+	private static final class MemoReplayCursor implements RowCursor {
+		private final RowState row;
+		private final int[] replaySlots;
+		private final long[][] rows;
+		private int index;
+		private int activeMark = -1;
+
+		private MemoReplayCursor(RowState row, int[] replaySlots, long[][] rows) {
+			this.row = row;
+			this.replaySlots = replaySlots;
+			this.rows = rows;
+		}
+
+		@Override
+		public boolean next() {
+			release();
+			while (index < rows.length) {
+				long[] values = rows[index++];
+				int mark = row.mark();
+				if (bind(values)) {
+					activeMark = mark;
+					return true;
+				}
+				row.rollback(mark);
+			}
+			return false;
+		}
+
+		private boolean bind(long[] values) {
+			for (int i = 0; i < replaySlots.length; i++) {
+				long value = values[i];
+				if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public void close() {
+			release();
+			index = rows.length;
+		}
+
+		private void release() {
+			if (activeMark >= 0) {
+				row.rollback(activeMark);
+				activeMark = -1;
 			}
 		}
 	}
@@ -5282,9 +6091,8 @@ final class LmdbNativeAggregateCompiler {
 	 * Materializes the match set of a single statement pattern once and answers correlated existence probes with a set
 	 * lookup instead of a per-row index probe. Engages only when the pattern is correlated on exactly one bound slot
 	 * (the key), every other variable position is an unbound local, and the dataset is unrestricted; built lazily after
-	 * a miss threshold so short probe runs keep the cheaper direct path. Prototype for the RoaringBitmap evaluation:
-	 * -Drdf4j.lmdb.membership.impl=off|hash|roaring (default hash), -Drdf4j.lmdb.membership.missThreshold,
-	 * -Drdf4j.lmdb.membership.maxSize.
+	 * a miss threshold so short probe runs keep the cheaper direct path: -Drdf4j.lmdb.membership.impl=off|hash (default
+	 * hash), -Drdf4j.lmdb.membership.missThreshold, -Drdf4j.lmdb.membership.maxSize.
 	 */
 	private static final class PatternMembershipProbe {
 		private static final int NOT_APPLICABLE = -1;
@@ -5387,20 +6195,6 @@ final class LmdbNativeAggregateCompiler {
 
 		private static LongMembership newMembership() {
 			String impl = System.getProperty("rdf4j.lmdb.membership.impl", "hash");
-			if ("roaring".equals(impl)) {
-				Roaring64Bitmap bits = new Roaring64Bitmap();
-				return new LongMembership() {
-					@Override
-					public void add(long id) {
-						bits.addLong(id);
-					}
-
-					@Override
-					public boolean contains(long id) {
-						return bits.contains(id);
-					}
-				};
-			}
 			if ("hash".equals(impl)) {
 				LongHashSet set = new LongHashSet(1024);
 				return new LongMembership() {
