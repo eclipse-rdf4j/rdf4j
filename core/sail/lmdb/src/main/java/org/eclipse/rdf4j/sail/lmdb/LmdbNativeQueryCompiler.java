@@ -1207,6 +1207,7 @@ final class LmdbNativeQueryCompiler {
 				impossible = true;
 				return;
 			}
+			row.slotsReplaced();
 			long seedMask = row.boundMask();
 			DerivedPlan derived = plan.cachedDerived(seedMask);
 			if (derived == null) {
@@ -1384,6 +1385,7 @@ final class LmdbNativeQueryCompiler {
 			trailOldValues[trailSize] = current;
 			trailSize++;
 			slots[slot] = id;
+			bindingView.slotBound();
 			return true;
 		}
 
@@ -1395,7 +1397,12 @@ final class LmdbNativeQueryCompiler {
 			while (trailSize > mark) {
 				trailSize--;
 				slots[trailSlots[trailSize]] = trailOldValues[trailSize];
+				bindingView.slotCleared();
 			}
+		}
+
+		private void slotsReplaced() {
+			bindingView.slotsReplaced();
 		}
 
 		private long boundMask() {

@@ -37,11 +37,13 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	private final NativeLmdbQuerySource source;
 	private final NativeSlotLayout layout;
 	private final BindingSet base;
+	private final boolean baseEmpty;
 	private final long[] slots;
 	private final boolean stable;
 	private final transient long[] memoIds;
 	private final transient Value[] memoValues;
 	private transient Set<String> bindingNamesCache;
+	private int boundSlotCount;
 	private boolean empty;
 	private transient int sizeCache = -1;
 
@@ -50,6 +52,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		this.source = source;
 		this.layout = layout;
 		this.base = base;
+		this.baseEmpty = base == null || base.isEmpty();
 		this.slots = slots;
 		this.stable = stable;
 		if (stable) {
@@ -60,7 +63,8 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 			Arrays.fill(this.memoIds, UNKNOWN);
 			this.memoValues = new Value[slots.length];
 		}
-		this.empty = computeIsEmpty();
+		this.boundSlotCount = countBoundSlots();
+		this.empty = baseEmpty && boundSlotCount == 0;
 	}
 
 	@Override
@@ -252,24 +256,43 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		return slot >= 0 ? slots[slot] : UNKNOWN;
 	}
 
-	void invalidateTransientCaches() {
+	void slotBound() {
 		if (!stable) {
-			sizeCache = -1;
-			bindingNamesCache = null;
-			empty = computeIsEmpty();
+			boundSlotCount++;
+			empty = false;
+			evictTransientCaches();
 		}
 	}
 
-	private boolean computeIsEmpty() {
-		if (base != null && !base.isEmpty()) {
-			return false;
+	void slotCleared() {
+		if (!stable) {
+			boundSlotCount--;
+			empty = baseEmpty && boundSlotCount == 0;
+			evictTransientCaches();
 		}
+	}
+
+	void slotsReplaced() {
+		if (!stable) {
+			boundSlotCount = countBoundSlots();
+			empty = baseEmpty && boundSlotCount == 0;
+			evictTransientCaches();
+		}
+	}
+
+	private int countBoundSlots() {
+		int count = 0;
 		for (long slot : slots) {
 			if (isBoundValueId(slot)) {
-				return false;
+				count++;
 			}
 		}
-		return true;
+		return count;
+	}
+
+	private void evictTransientCaches() {
+		sizeCache = -1;
+		bindingNamesCache = null;
 	}
 
 	private boolean baseHasBindingByQueryIndex(int queryIndex) {

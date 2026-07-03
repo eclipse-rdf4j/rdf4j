@@ -4057,7 +4057,7 @@ final class LmdbNativeAggregateCompiler {
 			trailSize++;
 			slots[slot] = id;
 			boundMask |= 1L << slot;
-			view.invalidateTransientCaches();
+			view.slotBound();
 			return true;
 		}
 
@@ -4072,8 +4072,8 @@ final class LmdbNativeAggregateCompiler {
 				slots[slot] = trailOldValues[trailSize];
 				// only UNKNOWN -> bound transitions are trailed, so the restored value is always UNKNOWN
 				boundMask &= ~(1L << slot);
+				view.slotCleared();
 			}
-			view.invalidateTransientCaches();
 		}
 
 		private long boundMask() {
@@ -4092,6 +4092,7 @@ final class LmdbNativeAggregateCompiler {
 				}
 			}
 			boundMask = mask;
+			view.slotsReplaced();
 		}
 	}
 
