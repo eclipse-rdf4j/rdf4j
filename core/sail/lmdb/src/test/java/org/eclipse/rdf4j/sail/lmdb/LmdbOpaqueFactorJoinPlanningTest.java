@@ -15,21 +15,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -247,12 +253,89 @@ class LmdbOpaqueFactorJoinPlanningTest {
 				"A sub-SELECT that projects a BIND output joined by another factor must not be reordered");
 	}
 
+	private static Service serviceFactor() {
+		StatementPattern remote = new StatementPattern(new Var("x"), new Var("remotePred", NICKNAME),
+				new Var("remoteName"));
+		return new Service(new Var("endpoint", VF.createIRI("http://example.com/sparql")), remote,
+				"?x <http://example.com/social/nickname> ?remoteName", Map.of(), null, false);
+	}
+
+	@Test
+	void serviceFactorIslandIsOwnedByConnectedPlanner() {
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(serviceFactor(), selectiveName)),
+				"An island whose only non-pattern factor is a SERVICE should be reorderable");
+	}
+
+	@Test
+	void serviceFactorIsPinnedAfterVarSharingFactorsEvenWhenCheap() {
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		Join island = new Join(serviceFactor(), selectiveName);
+		CheapServiceStatistics statistics = new CheapServiceStatistics();
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(island, Set.of(),
+				statistics, statistics);
+
+		assertTrue(plan.isPresent(), "Expected the connected planner to own the SERVICE-bearing island");
+		TupleExpr first = leftmostFactor(plan.get().tupleExpr());
+		assertTrue(first instanceof StatementPattern,
+				() -> "SERVICE must be pinned after the local factors that bind its variables, even when its own "
+						+ "estimate is cheaper: " + plan.get().tupleExpr());
+	}
+
+	@Test
+	void groupFactorIslandIsOwnedByConnectedPlanner() {
+		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
+				new Var("x"));
+		Group group = new Group(follows, List.of("x"), List.of(new GroupElem("c", new Count(new Var("person")))));
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(group, selectiveName)),
+				"An island joining a GROUP BY subtree on its group key should be reorderable");
+	}
+
+	@Test
+	void groupAggregateOutputSharedWithAnotherFactorKeepsIslandFrozen() {
+		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
+				new Var("x"));
+		Group group = new Group(follows, List.of("x"), List.of(new GroupElem("c", new Count(new Var("person")))));
+		StatementPattern consumesAggregate = new StatementPattern(new Var("y"), new Var("namePred", NAME),
+				new Var("c"));
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(group, consumesAggregate)),
+				"A GROUP BY whose aggregate output is joined by another factor must not be reordered");
+	}
+
+	@Test
+	void tripleRefFactorIslandIsOwnedByConnectedPlanner() {
+		TripleRef tripleRef = new TripleRef(new Var("s"), new Var("p"), new Var("o"), new Var("t"));
+		StatementPattern annotation = new StatementPattern(new Var("t"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(tripleRef, annotation)),
+				"An island containing an RDF-star triple reference should be reorderable");
+	}
+
 	private static TupleExpr leftmostFactor(TupleExpr tupleExpr) {
 		TupleExpr current = tupleExpr;
 		while (current instanceof Join join) {
 			current = join.getLeftArg();
 		}
 		return current;
+	}
+
+	private static final class CheapServiceStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return 100.0d;
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			double rows = factor instanceof Service ? 1.0d : 2.0d;
+			return Optional.of(new FactorCostEstimate(rows, rows));
+		}
 	}
 
 	private static final class SelectiveNameStatistics extends EvaluationStatistics implements JoinFactorCostModel {

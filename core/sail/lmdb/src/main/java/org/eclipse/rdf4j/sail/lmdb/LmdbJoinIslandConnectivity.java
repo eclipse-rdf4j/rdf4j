@@ -27,13 +27,16 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -411,6 +414,15 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr instanceof Union union) {
 			return opaqueFactorsEnabled() && union.getLeftArg() != null && union.getRightArg() != null;
 		}
+		if (tupleExpr instanceof Service service) {
+			return opaqueFactorsEnabled() && service.getServiceExpr() != null;
+		}
+		if (tupleExpr instanceof Group group) {
+			return opaqueFactorsEnabled() && group.getArg() != null;
+		}
+		if (tupleExpr instanceof TripleRef) {
+			return opaqueFactorsEnabled();
+		}
 		return false;
 	}
 
@@ -437,20 +449,32 @@ final class LmdbJoinIslandConnectivity {
 	 * variables its own argument does not assuredly bind. Native factors have no requirement.
 	 */
 	static Set<String> opaqueFactorRequiredVars(TupleExpr factor) {
-		if (!(factor instanceof Extension extension) || extension.getArg() == null) {
-			return Set.of();
-		}
-		Set<String> argAssured = LmdbJoinPlanSupport
-				.plannerBindingNames(extension.getArg().getAssuredBindingNames());
-		Set<String> required = new LinkedHashSet<>();
-		for (ExtensionElem element : extension.getElements()) {
-			for (String name : LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(element.getExpr()))) {
-				if (!argAssured.contains(name)) {
-					required.add(name);
+		if (factor instanceof Extension extension && extension.getArg() != null) {
+			Set<String> argAssured = LmdbJoinPlanSupport
+					.plannerBindingNames(extension.getArg().getAssuredBindingNames());
+			Set<String> required = new LinkedHashSet<>();
+			for (ExtensionElem element : extension.getElements()) {
+				for (String name : LmdbJoinPlanSupport
+						.plannerBindingNames(VarNameCollector.process(element.getExpr()))) {
+					if (!argAssured.contains(name)) {
+						required.add(name);
+					}
 				}
 			}
+			return required.isEmpty() ? Set.of() : Set.copyOf(required);
 		}
-		return required.isEmpty() ? Set.of() : Set.copyOf(required);
+		if (factor instanceof Service service) {
+			// Pin SERVICE after every local factor that can bind one of its variables (the planner intersects this
+			// set with what the rest of the island can actually bind): remote calls run with maximal bindings, and a
+			// variable endpoint must be resolved before the call.
+			Set<String> required = new LinkedHashSet<>(LmdbJoinPlanSupport.runtimeBindingNames(service));
+			Var serviceRef = service.getServiceRef();
+			if (serviceRef != null && !serviceRef.hasValue() && serviceRef.getName() != null) {
+				required.add(serviceRef.getName());
+			}
+			return required.isEmpty() ? Set.of() : Set.copyOf(required);
+		}
+		return Set.of();
 	}
 
 	/**
@@ -489,7 +513,17 @@ final class LmdbJoinIslandConnectivity {
 			maybeVars.addAll(projectedAssignments);
 			return maybeVars;
 		}
-		if (factor instanceof LeftJoin || factor instanceof Union) {
+		if (factor instanceof Group group) {
+			// Assured group keys are safe join surfaces (pre-binding a key merely filters that key's group);
+			// aggregate outputs and non-assured keys are not. Assignments the Group hides cannot leak.
+			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(group.getBindingNames());
+			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(group.getAssuredBindingNames()));
+			Set<String> visibleAssignments = nestedAssignmentNames(group);
+			visibleAssignments.retainAll(LmdbJoinPlanSupport.plannerBindingNames(group.getBindingNames()));
+			maybeVars.addAll(visibleAssignments);
+			return maybeVars;
+		}
+		if (factor instanceof LeftJoin || factor instanceof Union || factor instanceof Service) {
 			// Maybe-bound vars: optional-only vars of a LeftJoin, or vars bound in only one Union branch. Another
 			// factor joining on them relies on unbound-compatibility in written order; reordering would push real
 			// bindings into the factor and change what the optional side / branch sees.
