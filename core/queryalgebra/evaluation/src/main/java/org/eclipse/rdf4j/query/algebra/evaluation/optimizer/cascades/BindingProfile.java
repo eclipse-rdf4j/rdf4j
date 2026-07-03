@@ -193,7 +193,7 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				|| Objects.equals(endpointMode, requiredEndpointMode);
 	}
 
-	private static String endpointMode(TupleExpr tupleExpr) {
+	static String endpointMode(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return ANY_ENDPOINT_MODE;
 		}
@@ -261,9 +261,18 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		}
 	}
 
+	// Metric keys come from a small vocabulary of constants but are scanned for every estimate; memoize
+	// the classification instead of lowercasing and substring-searching each time.
+	private static final int OVERLAP_KEY_CACHE_MAX_ENTRIES = 4_096;
+	private static final Map<String, Boolean> OVERLAP_KEY_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
 	private static boolean isOverlapEvidenceKey(String key) {
+		Boolean cached = OVERLAP_KEY_CACHE.get(key);
+		if (cached != null) {
+			return cached;
+		}
 		String lower = key.toLowerCase(Locale.ROOT);
-		return lower.contains("overlap")
+		boolean overlap = lower.contains("overlap")
 				|| lower.contains("intersect")
 				|| lower.contains("innerproduct")
 				|| lower.contains("inner_product")
@@ -271,6 +280,11 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				|| lower.contains("join_frequency")
 				|| lower.contains("coverage")
 				|| lower.contains("shared");
+		if (OVERLAP_KEY_CACHE.size() >= OVERLAP_KEY_CACHE_MAX_ENTRIES) {
+			OVERLAP_KEY_CACHE.clear();
+		}
+		OVERLAP_KEY_CACHE.put(key, overlap);
+		return overlap;
 	}
 
 	private static Map<String, VariableEstimate> immutableVariables(Map<String, VariableEstimate> variables) {

@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -60,12 +61,16 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	private static final long FINITE_JOIN_MAX_SCANNED_ROWS = 4_096L;
 	private static final long FINITE_JOIN_SCANNED_ROWS_PER_OUTPUT_ROW = 16L;
 	private static final int EXACT_SURFACE_CACHE_MAX_ENTRIES = 65_536;
+	private static final int CONNECTED_JOIN_CACHE_MAX_ENTRIES = 65_536;
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
 	private final LmdbStatementPatternCardinalitySource cardinalitySource;
 	private final ReadGuard readGuard;
 	private final Map<ExactSurfaceCacheKey, Estimate> exactSurfaceEstimateCache = new ConcurrentHashMap<>();
+	// The connected-join sampler is deterministic (seeded reservoir), so results can be reused across
+	// queries for the same data revision. Optional.empty() caches the unsupported outcome.
+	private final Map<ConnectedJoinCacheKey, Optional<ConnectedJoinEstimate>> connectedJoinEstimateCache = new ConcurrentHashMap<>();
 
 	LmdbSamplingJoinCardinalityEstimator(ValueStore valueStore, TripleStore tripleStore,
 			LmdbStatementPatternCardinalitySource cardinalitySource, ReadGuard readGuard) {
@@ -157,21 +162,58 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 				.size() < 2) {
 			return ExactConnectedJoinEstimate.unsupported();
 		}
+		ConnectedJoinCacheKey cacheKey = connectedJoinCacheKey(request);
+		if (cacheKey != null) {
+			Optional<ConnectedJoinEstimate> cached = connectedJoinEstimateCache.get(cacheKey);
+			if (cached != null) {
+				return toExactConnectedJoinEstimate(request, cached.orElse(null));
+			}
+		}
 		Guard guard = readGuard.acquire();
 		if (guard == null) {
 			return ExactConnectedJoinEstimate.unsupported();
 		}
 		try (guard; Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			ConnectedJoinEstimate estimate = estimateConnectedJoin(txn, request);
-			if (estimate == null) {
-				return ExactConnectedJoinEstimate.unsupported();
-			}
-			recordConnectedTelemetry(request.patterns(), estimate);
-			return new ExactConnectedJoinEstimate(estimate.rows(), estimate.minRows(), estimate.maxRows(),
-					estimate.anchorCount(), estimate.sampleCount());
+			cacheConnectedJoinEstimate(cacheKey, estimate);
+			return toExactConnectedJoinEstimate(request, estimate);
 		} catch (IOException | RuntimeException e) {
 			return ExactConnectedJoinEstimate.unsupported();
 		}
+	}
+
+	private ExactConnectedJoinEstimate toExactConnectedJoinEstimate(ExactJoinRequest request,
+			ConnectedJoinEstimate estimate) {
+		if (estimate == null) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		recordConnectedTelemetry(request.patterns(), estimate);
+		return new ExactConnectedJoinEstimate(estimate.rows(), estimate.minRows(), estimate.maxRows(),
+				estimate.anchorCount(), estimate.sampleCount());
+	}
+
+	private ConnectedJoinCacheKey connectedJoinCacheKey(ExactJoinRequest request) {
+		List<StatementPatternKey> patternKeys = new ArrayList<>(request.patterns()
+				.size());
+		for (StatementPattern pattern : request.patterns()) {
+			StatementPatternKey patternKey = StatementPatternKey.of(pattern);
+			if (patternKey == null) {
+				return null;
+			}
+			patternKeys.add(patternKey);
+		}
+		return new ConnectedJoinCacheKey(tripleStore.getDataRevision(), patternKeys, request.rowBudget(),
+				request.sampleSize());
+	}
+
+	private void cacheConnectedJoinEstimate(ConnectedJoinCacheKey cacheKey, ConnectedJoinEstimate estimate) {
+		if (cacheKey == null) {
+			return;
+		}
+		if (connectedJoinEstimateCache.size() >= CONNECTED_JOIN_CACHE_MAX_ENTRIES) {
+			connectedJoinEstimateCache.clear();
+		}
+		connectedJoinEstimateCache.put(cacheKey, Optional.ofNullable(estimate));
 	}
 
 	@Override
@@ -1390,6 +1432,10 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			StatementPatternKey scanPattern, Component scanSharedComponent, StatementPatternKey probePattern,
 			Component probeSharedComponent, long rowBudget, int exactDistinctLimit, int sampleSize,
 			long disconnectedRowCapBits, boolean pairwiseFallback) {
+	}
+
+	private record ConnectedJoinCacheKey(long dataRevision, List<StatementPatternKey> patterns, long rowBudget,
+			int sampleSize) {
 	}
 
 	private record StatementPatternKey(StatementPattern.Scope scope, VarKey subject, VarKey predicate, VarKey object,

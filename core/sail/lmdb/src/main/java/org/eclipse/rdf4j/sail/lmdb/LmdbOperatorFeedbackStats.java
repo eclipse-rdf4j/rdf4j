@@ -21,6 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -151,6 +152,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
 	private final IdentityHashMap<TupleExpr, OperatorKey> nullModeKeyCache = new IdentityHashMap<>();
+	// Canonical LeoOperatorKey per planning-side node; memo expressions are structurally stable during a
+	// Cascades search, so identity-keyed caching is safe there. Runtime feedback paths bypass this cache
+	// because executed trees may be restructured after the search.
+	private final IdentityHashMap<TupleExpr, Map<String, LeoOperatorKey>> planningLeoKeyCache = new IdentityHashMap<>();
 
 	private long feedbackEpoch;
 	private long ruleSteeringCooldownUntilEpoch;
@@ -180,6 +185,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		shadowByOperator.clear();
 		planCandidates.clear();
 		nullModeKeyCache.clear();
+		planningLeoKeyCache.clear();
 		leoSurfaceStats.clear();
 		ruleSteeringBadMisses = 0;
 		ruleSteeringCooldownUntilEpoch = 0L;
@@ -384,7 +390,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (observation == null) {
 			return;
 		}
-		OperatorKey key = planShadowKeyFor(root);
+		OperatorKey key = planShadowKeyFor(root, false);
 		if (key == null) {
 			return;
 		}
@@ -468,7 +474,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			OperatorKey key = planCandidateKeyFor(candidate);
 			PlanCandidateCounts planCounts = key == null ? null : planCandidates.get(key);
 			if (planCounts == null) {
-				key = planCandidateKeyFor(tupleExpr, null);
+				key = planCandidateKeyFor(tupleExpr, null, true);
 				planCounts = key == null ? null : planCandidates.get(key);
 			}
 			if (planCounts != null) {
@@ -917,6 +923,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			planCandidates.clear();
 			planCandidates.putAll(loadedPlanCandidates);
 			nullModeKeyCache.clear();
+			planningLeoKeyCache.clear();
 			feedbackEpoch = Math.max(feedbackEpoch, loadedEpoch);
 			ruleSteeringCooldownUntilEpoch = Math.max(ruleSteeringCooldownUntilEpoch,
 					loadedSteeringCooldownUntilEpoch);
@@ -1613,12 +1620,39 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private OperatorKey planShadowKeyFor(TupleExpr node) {
+		return planShadowKeyFor(node, true);
+	}
+
+	private OperatorKey planShadowKeyFor(TupleExpr node, boolean planningStable) {
 		if (node == null) {
 			return null;
 		}
-		LeoOperatorKey leoKey = LeoOperatorKey.from(node, "", LeoOperatorKey.ConstantMode.EXACT);
+		LeoOperatorKey leoKey = planningLeoKey(node, "", planningStable);
 		return new OperatorKey("leo:plan:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
+	}
+
+	private LeoOperatorKey planningLeoKey(TupleExpr node, String executionMode, boolean planningStable) {
+		if (!planningStable) {
+			return LeoOperatorKey.from(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
+		}
+		Map<String, LeoOperatorKey> byMode = planningLeoKeyCache.get(node);
+		if (byMode != null) {
+			LeoOperatorKey cached = byMode.get(executionMode);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		LeoOperatorKey key = LeoOperatorKey.from(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
+		if (byMode == null) {
+			if (planningLeoKeyCache.size() > KEY_CACHE_MAX_SIZE) {
+				planningLeoKeyCache.clear();
+			}
+			byMode = new HashMap<>(4);
+			planningLeoKeyCache.put(node, byMode);
+		}
+		byMode.put(executionMode, key);
+		return key;
 	}
 
 	private void recordPlanCandidateOutcome(TupleExpr root, OperatorObservation observation, long epoch) {
@@ -1630,7 +1664,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		String plannedLogicalFingerprint = root == null ? ""
 				: root.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT);
-		OperatorKey genericKey = planCandidateKeyFor(root, null, plannedLogicalFingerprint, "");
+		OperatorKey genericKey = planCandidateKeyFor(root, null, plannedLogicalFingerprint, "", false);
 		if (genericKey != null && !genericKey.equals(ruleKey)) {
 			planCandidates.computeIfAbsent(genericKey, ignored -> new PlanCandidateCounts())
 					.addActualOutcome(observation, epoch);
@@ -1646,20 +1680,30 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private OperatorKey planCandidateKeyFor(TupleExpr node, String ruleId) {
+		return planCandidateKeyFor(node, ruleId, false);
+	}
+
+	private OperatorKey planCandidateKeyFor(TupleExpr node, String ruleId, boolean planningStable) {
 		String plannedLogicalFingerprint = node == null ? ""
 				: node.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT);
 		String plannedPhysicalFingerprint = node == null ? ""
 				: node.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_PHYSICAL_FINGERPRINT);
-		return planCandidateKeyFor(node, ruleId, plannedLogicalFingerprint, plannedPhysicalFingerprint);
+		return planCandidateKeyFor(node, ruleId, plannedLogicalFingerprint, plannedPhysicalFingerprint,
+				planningStable);
 	}
 
 	private OperatorKey planCandidateKeyFor(TupleExpr node, String ruleId, String logicalFingerprint,
 			String physicalFingerprint) {
+		return planCandidateKeyFor(node, ruleId, logicalFingerprint, physicalFingerprint, true);
+	}
+
+	private OperatorKey planCandidateKeyFor(TupleExpr node, String ruleId, String logicalFingerprint,
+			String physicalFingerprint, boolean planningStable) {
 		if (node == null) {
 			return null;
 		}
 		String mode = physicalExecutionMode(node, null);
-		LeoOperatorKey leoKey = LeoOperatorKey.from(node, mode, LeoOperatorKey.ConstantMode.EXACT);
+		LeoOperatorKey leoKey = planningLeoKey(node, mode, planningStable);
 		String rule = normalize(ruleId);
 		String plannedOperatorType = node.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_OPERATOR_TYPE);
 		String operatorType = plannedOperatorType == null || plannedOperatorType.isBlank()
@@ -1820,7 +1864,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					.append(shadowCounts.sampleCount)
 					.append('\n');
 		}
-		OperatorKey planKey = planShadowKeyFor(tupleExpr);
+		OperatorKey planKey = planShadowKeyFor(tupleExpr, false);
 		ShadowOperatorCounts planCounts = planKey == null ? null : shadowByOperator.get(planKey);
 		if (planCounts != null) {
 			builder.append("plan ").append(planKey).append(" samples=").append(planCounts.sampleCount).append('\n');

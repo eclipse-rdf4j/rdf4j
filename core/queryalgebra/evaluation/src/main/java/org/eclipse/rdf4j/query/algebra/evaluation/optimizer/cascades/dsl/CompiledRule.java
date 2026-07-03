@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,6 +38,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExp
 /** Adapter from a declarative {@link RuleSpec} to the existing CascadesRule API. */
 @Experimental
 public final class CompiledRule implements CascadesRule {
+
+	// The planner probes every compiled rule against the same memo expression, and each probe used to
+	// re-convert the whole subtree to IR. Matching is read-only apart from append-only symbol interning,
+	// so one shared conversion per (expression, goal properties) serves all rules on the current thread.
+	// apply() still converts fresh because its PlanIrBuilder extends the IR's BindingUniverse.
+	private static final int SHARED_IR_CACHE_MAX_ENTRIES = 1024;
+	private static final ThreadLocal<IdentityHashMap<TupleExpr, SharedIr>> SHARED_IR_CACHE = ThreadLocal
+			.withInitial(IdentityHashMap::new);
+
+	private record SharedIr(PhysicalProperties requiredProperties, PlanIr ir) {
+	}
+
 	private final RuleSpec spec;
 
 	CompiledRule(RuleSpec spec) {
@@ -74,7 +87,7 @@ public final class CompiledRule implements CascadesRule {
 
 	@Override
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		MatchTrace trace = trace(expression, goal);
+		MatchTrace trace = trace(expression, goal, false);
 		if (!trace.matched() || trace.capture().isEmpty()) {
 			return List.of();
 		}
@@ -92,6 +105,10 @@ public final class CompiledRule implements CascadesRule {
 	}
 
 	public MatchTrace trace(MemoExpr expression, OptimizationGoal goal) {
+		return trace(expression, goal, true);
+	}
+
+	private MatchTrace trace(MemoExpr expression, OptimizationGoal goal, boolean sharedIr) {
 		if (expression == null || expression.tupleExpr() == null) {
 			return MatchTrace.notMatched("missing expression");
 		}
@@ -99,7 +116,9 @@ public final class CompiledRule implements CascadesRule {
 				&& !expression.logical()) {
 			return MatchTrace.notMatched("rule requires a logical memo expression");
 		}
-		PlanIr ir = TupleExprToIr.convert(expression.tupleExpr(), goal == null ? null : goal.requiredProperties());
+		PhysicalProperties requiredProperties = goal == null ? null : goal.requiredProperties();
+		PlanIr ir = sharedIr ? sharedIr(expression.tupleExpr(), requiredProperties)
+				: TupleExprToIr.convert(expression.tupleExpr(), requiredProperties);
 		Optional<RuleCapture> capture = spec.pattern().match(ir, ir.root(), goal, expression);
 		if (capture.isEmpty()) {
 			return MatchTrace.notMatched("pattern did not match");
@@ -113,6 +132,20 @@ public final class CompiledRule implements CascadesRule {
 			guardFacts.add(result.reason());
 		}
 		return MatchTrace.matched(capture.get(), guardFacts);
+	}
+
+	private static PlanIr sharedIr(TupleExpr tupleExpr, PhysicalProperties requiredProperties) {
+		IdentityHashMap<TupleExpr, SharedIr> cache = SHARED_IR_CACHE.get();
+		SharedIr cached = cache.get(tupleExpr);
+		if (cached != null && cached.requiredProperties() == requiredProperties) {
+			return cached.ir();
+		}
+		PlanIr ir = TupleExprToIr.convert(tupleExpr, requiredProperties);
+		if (cache.size() >= SHARED_IR_CACHE_MAX_ENTRIES) {
+			cache.clear();
+		}
+		cache.put(tupleExpr, new SharedIr(requiredProperties, ir));
+		return ir;
 	}
 
 	private String metadata(RuleCapture capture, MatchTrace trace) {

@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -139,6 +140,11 @@ public interface CascadesCostModel {
 		private final IdentityHashMap<MemoExpr, Map<PhysicalInputKey, PhysicalProperties>> deliveredPropertiesCache = new IdentityHashMap<>();
 		private final IdentityHashMap<TupleExpr, Map<DecisionRefinementKey, Optional<StatisticsEstimate>>> decisionRefinementCache = new IdentityHashMap<>();
 		private final Map<ProviderEstimateKey, Optional<StatisticsEstimate>> providerEstimateCache = new LinkedHashMap<>();
+		// Profiles derived from the same estimate instance are identical apart from the node's endpoint
+		// mode, which lives in mutable planned metrics — so hits are revalidated against it. Sharing the
+		// instance also lets downstream PhysicalProperties/BindingProfile equality short-circuit on
+		// identity instead of deep map comparison.
+		private final IdentityHashMap<StatisticsEstimate, IdentityHashMap<TupleExpr, BindingProfile>> outputProfileCache = new IdentityHashMap<>();
 
 		public DefaultCascadesCostModel(EvaluationStatistics statistics, JoinFactorCostModel factorCostModel,
 				RdfStatisticsProvider rdfStatisticsProvider) {
@@ -650,7 +656,18 @@ public interface CascadesCostModel {
 			try {
 				StatisticsEstimate estimate = estimateForOutputProfile(expression, tupleExpr, boundVars(goal),
 						inputWinners);
-				return BindingProfile.fromEstimate(tupleExpr, estimate);
+				if (estimate == null) {
+					return BindingProfile.fromEstimate(tupleExpr, null);
+				}
+				IdentityHashMap<TupleExpr, BindingProfile> byNode = outputProfileCache
+						.computeIfAbsent(estimate, ignored -> new IdentityHashMap<>());
+				BindingProfile cached = byNode.get(tupleExpr);
+				if (cached != null && Objects.equals(cached.endpointMode(), BindingProfile.endpointMode(tupleExpr))) {
+					return cached;
+				}
+				BindingProfile profile = BindingProfile.fromEstimate(tupleExpr, estimate);
+				byNode.put(tupleExpr, profile);
+				return profile;
 			} catch (RuntimeException e) {
 				return BindingProfile.endpointOnly(tupleExpr);
 			}

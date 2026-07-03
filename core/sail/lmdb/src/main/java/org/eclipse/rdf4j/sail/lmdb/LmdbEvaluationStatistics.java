@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -145,6 +146,8 @@ class LmdbEvaluationStatistics
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_MIN_FANOUT = 64.0d;
 	private static final double CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS = 100_000.0d;
 	private static final long CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS = 1_000_000L;
+	private static final int CORRELATED_ANTI_EXISTS_EXACT_CACHE_MAX_ENTRIES = 8_192;
+	private static final Map<CorrelatedAntiExistsExactCacheKey, Optional<CorrelatedAntiExistsExactEstimate>> CORRELATED_ANTI_EXISTS_EXACT_CACHE = new ConcurrentHashMap<>();
 	private static final int OMNI_BRIDGE_CHAIN_REORDER_MAX_FACTORS = 6;
 	private static final int OMNI_BRIDGE_CHAIN_REORDER_MAX_CANDIDATES = 120;
 	private static final String BOUND_JOIN_PRODUCT_SOURCE = "lmdb-bound-join-product";
@@ -1331,6 +1334,16 @@ class LmdbEvaluationStatistics
 				|| !conditionUsesOnlyPatternBindings(antiPattern.condition(), antiPattern.pattern())) {
 			return null;
 		}
+		// The scan below is fully determined by the two patterns, the condition and the committed store
+		// state; the inputRows argument only gates entry above. Cache after that gate so repeated planning
+		// contexts (one per candidate join prefix) don't re-execute the anti-join.
+		CorrelatedAntiExistsExactCacheKey cacheKey = new CorrelatedAntiExistsExactCacheKey(
+				System.identityHashCode(tripleStore), tripleStore.getDataRevision(),
+				factorFingerprint(inputPattern), factorFingerprint(antiProbe), sharedBinding);
+		Optional<CorrelatedAntiExistsExactEstimate> cached = CORRELATED_ANTI_EXISTS_EXACT_CACHE.get(cacheKey);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
 		DefaultEvaluationStrategy strategy = exactFilterEvaluationStrategy();
 		QueryValueEvaluationStep condition = antiPattern.condition() == null
 				? null
@@ -1341,7 +1354,7 @@ class LmdbEvaluationStatistics
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			PatternIds inputIds = patternIds(inputPattern, null, LmdbValue.UNKNOWN_ID);
 			if (inputIds == null || inputIds.zeroRows()) {
-				return null;
+				return cacheExactCorrelatedAntiExists(cacheKey, null);
 			}
 			Map<Long, Boolean> antiMatches = new HashMap<>();
 			long inputRowsScanned = 0L;
@@ -1358,7 +1371,7 @@ class LmdbEvaluationStatistics
 						}
 						inputRowsScanned++;
 						if (inputRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS) {
-							return null;
+							return cacheExactCorrelatedAntiExists(cacheKey, null);
 						}
 						long sharedId = row[inputSharedComponent.ordinal()];
 						Boolean matched = antiMatches.get(sharedId);
@@ -1366,12 +1379,12 @@ class LmdbEvaluationStatistics
 							CorrelatedAntiProbeResult result = exactAntiProbeMatches(txn, antiPattern.pattern(),
 									condition, strategy, sharedBinding, sharedId);
 							if (result == null) {
-								return null;
+								return cacheExactCorrelatedAntiExists(cacheKey, null);
 							}
 							rhsRowsScanned += result.rhsRowsScanned();
 							probeLookupRows++;
 							if (probeLookupRows + rhsRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS) {
-								return null;
+								return cacheExactCorrelatedAntiExists(cacheKey, null);
 							}
 							matched = result.matched();
 							antiMatches.put(sharedId, matched);
@@ -1383,17 +1396,28 @@ class LmdbEvaluationStatistics
 				}
 			}
 			if (inputRowsScanned == 0L) {
-				return new CorrelatedAntiExistsExactEstimate(0.0d, 0.0d, 0.0d, probeLookupRows,
-						rhsRowsScanned, probeLookupRows + rhsRowsScanned);
+				return cacheExactCorrelatedAntiExists(cacheKey, new CorrelatedAntiExistsExactEstimate(0.0d, 0.0d,
+						0.0d, probeLookupRows, rhsRowsScanned, probeLookupRows + rhsRowsScanned));
 			}
 			double outputRows = Math.max(0.0d, inputRowsScanned - matchedRows);
 			double probeOutputRows = matchedRows;
 			double probeWorkRows = Math.max(probeLookupRows, probeLookupRows + rhsRowsScanned);
-			return new CorrelatedAntiExistsExactEstimate(inputRowsScanned, matchedRows, outputRows,
-					probeLookupRows, rhsRowsScanned, Math.max(probeWorkRows, probeOutputRows));
+			return cacheExactCorrelatedAntiExists(cacheKey, new CorrelatedAntiExistsExactEstimate(inputRowsScanned,
+					matchedRows, outputRows, probeLookupRows, rhsRowsScanned,
+					Math.max(probeWorkRows, probeOutputRows)));
 		} catch (IOException | RuntimeException e) {
+			// Not cached: exceptions are not a deterministic function of the store state.
 			return null;
 		}
+	}
+
+	private CorrelatedAntiExistsExactEstimate cacheExactCorrelatedAntiExists(CorrelatedAntiExistsExactCacheKey key,
+			CorrelatedAntiExistsExactEstimate estimate) {
+		if (CORRELATED_ANTI_EXISTS_EXACT_CACHE.size() >= CORRELATED_ANTI_EXISTS_EXACT_CACHE_MAX_ENTRIES) {
+			CORRELATED_ANTI_EXISTS_EXACT_CACHE.clear();
+		}
+		CORRELATED_ANTI_EXISTS_EXACT_CACHE.put(key, Optional.ofNullable(estimate));
+		return estimate;
 	}
 
 	private CorrelatedAntiProbeResult exactAntiProbeMatches(Txn txn, StatementPattern pattern,
@@ -2576,7 +2600,8 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> cacheFactorCostEstimate(OptimizationCostScope scope,
 			ScopedFactorCostCacheKey cacheKey, Optional<FactorCostEstimate> estimate) {
 		if (scope != null && cacheKey != null) {
-			scope.factorCostCache.put(cacheKey, estimate);
+			// Probe keys wrap caller-owned collections; snapshot them before the key outlives this call.
+			scope.factorCostCache.put(cacheKey.toStorable(), estimate);
 		}
 		return estimate;
 	}
@@ -4567,13 +4592,17 @@ class LmdbEvaluationStatistics
 		JoinFactorCostModel.EstimationTier tier = context.getEstimationTier() == null
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: context.getEstimationTier();
+		// Probe key: wraps the context's collections without copying. Cache hits compare by content, so a
+		// hit is exactly as correct as with a defensive copy; toStorable() snapshots on the store path.
+		Set<String> boundVars = context.getCurrentlyBoundVars();
+		Map<String, Set<Value>> finiteBindingValues = context.getFiniteBindingValues();
 		return new ScopedFactorCostCacheKey(factorFingerprint(factor),
-				FactorCostCacheKey.immutableBoundVars(context.getCurrentlyBoundVars()),
+				boundVars == null || boundVars.isEmpty() ? Set.of() : boundVars,
 				Double.doubleToLongBits(context.getOuterPrefixRows()),
 				Double.doubleToLongBits(context.getDistinctLookupBindings()),
 				context.isNestedIteratorInvocation(),
 				context.shouldCollectMetrics(),
-				ScopedFactorCostCacheKey.immutableFiniteBindingValues(context.getFiniteBindingValues()), tier,
+				finiteBindingValues == null || finiteBindingValues.isEmpty() ? Map.of() : finiteBindingValues, tier,
 				finiteBranchRowsCacheKey(context.getPrefixFactors()), RequestedAccessPath.of(context));
 	}
 
@@ -4608,7 +4637,8 @@ class LmdbEvaluationStatistics
 		for (TupleExpr factor : factors) {
 			fingerprints.add(factorFingerprint(factor));
 		}
-		return new FiniteBranchRowsCacheKey(List.copyOf(fingerprints), decisionDriven);
+		// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
+		return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
 	}
 
 	private boolean hasFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
@@ -10375,6 +10405,10 @@ class LmdbEvaluationStatistics
 	private record CorrelatedAntiProbePattern(StatementPattern pattern, ValueExpr condition) {
 	}
 
+	private record CorrelatedAntiExistsExactCacheKey(int tripleStoreIdentity, long dataRevision,
+			Object inputFingerprint, Object antiProbeFingerprint, String sharedBinding) {
+	}
+
 	private record CorrelatedAntiProbeResult(boolean matched, long rhsRowsScanned) {
 	}
 
@@ -10619,6 +10653,13 @@ class LmdbEvaluationStatistics
 			}
 			return copy.isEmpty() ? Map.of() : Map.copyOf(copy);
 		}
+
+		private ScopedFactorCostCacheKey toStorable() {
+			return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
+					outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
+					immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
+					requestedAccessPath);
+		}
 	}
 
 	private record FiniteDerivedSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
@@ -10689,7 +10730,8 @@ class LmdbEvaluationStatistics
 			for (TupleExpr factor : factors) {
 				fingerprints.add(FactorCostCacheKey.factorFingerprint(factor));
 			}
-			return new FiniteBranchRowsCacheKey(List.copyOf(fingerprints), decisionDriven);
+			// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
+			return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
 		}
 	}
 

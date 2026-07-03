@@ -248,8 +248,8 @@ public final class MemoGroup {
 		}
 
 		private static boolean sameDeliveredContext(Winner left, Winner right) {
-			return Objects.equals(left.deliveredProperties(), right.deliveredProperties())
-					&& left.expression().groupId() == right.expression().groupId();
+			return left.expression().groupId() == right.expression().groupId()
+					&& Objects.equals(left.deliveredProperties(), right.deliveredProperties());
 		}
 
 		private static boolean baselineBlocksRuleAlternative(Winner existing, Winner candidate) {
