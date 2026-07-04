@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -113,6 +114,21 @@ class LmdbSemanticDependencyOptimizerTest {
 		assertInstanceOf(Join.class, projection.getArg(), () -> root.toString());
 		assertEquals(2, countStatementPatterns(root));
 		assertNull(projection.getArg().getStringMetricPlanned("optimizer.rewriteProof"));
+	}
+
+	@Test
+	void preservesFilterConditionWhenSameObjectVarProvesFunctionalDuplicate() {
+		Filter filter = new Filter(
+				new Join(statementPattern("s", SSN, "x"), statementPattern("s", SSN, "x")),
+				new Compare(new Var("x"), new ValueConstant(VF.createLiteral(5)), Compare.CompareOp.GT));
+		QueryRoot root = new QueryRoot(project(filter, "s", "x"));
+
+		optimize(root, functionalSsnDependencies());
+
+		Projection projection = assertInstanceOf(Projection.class, root.getArg(), () -> root.toString());
+		Filter retainedFilter = assertInstanceOf(Filter.class, projection.getArg(), () -> root.toString());
+		assertEquals(1, countStatementPatterns(retainedFilter));
+		assertProof(assertInstanceOf(StatementPattern.class, retainedFilter.getArg(), () -> root.toString()));
 	}
 
 	private static LmdbSemanticDependencies functionalSsnDependencies() {

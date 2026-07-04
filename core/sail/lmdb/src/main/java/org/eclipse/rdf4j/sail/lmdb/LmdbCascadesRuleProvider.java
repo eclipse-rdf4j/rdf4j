@@ -29,6 +29,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -1400,18 +1401,33 @@ final class LmdbCascadesRuleProvider {
 			return null;
 		}
 
-		BindingSetAssignment codeAssignment = valuesAssignment(left.codeName(), codeValues);
-		BindingSetAssignment typeAssignment = valuesAssignment("type", typeValues);
-		StatementPattern typePattern = new StatementPattern(new Var(entityName),
-				new Var(left.typePredicateName(), left.typePredicate()), new Var("type"));
-		StatementPattern codePattern = new StatementPattern(new Var(entityName),
-				new Var(left.codePredicateName(), left.codePredicate()), new Var(left.codeName()));
-		TupleExpr rewritten = new Join(new Join(codeAssignment, typeAssignment), new Join(typePattern, codePattern));
+		TupleExpr rewritten;
+		if (left.extraFactors().isEmpty() && right.extraFactors().isEmpty()) {
+			BindingSetAssignment codeAssignment = valuesAssignment(left.codeName(), codeValues);
+			BindingSetAssignment typeAssignment = valuesAssignment("type", typeValues);
+			StatementPattern typePattern = new StatementPattern(new Var(entityName),
+					new Var(left.typePredicateName(), left.typePredicate()), new Var("type"));
+			StatementPattern codePattern = new StatementPattern(new Var(entityName),
+					new Var(left.codePredicateName(), left.codePredicate()), new Var(left.codeName()));
+			rewritten = new Join(new Join(codeAssignment, typeAssignment), new Join(typePattern, codePattern));
+		} else {
+			rewritten = new Union(finiteCodeTypeBranchRewrite(left, codeValues),
+					finiteCodeTypeBranchRewrite(right, codeValues));
+		}
 		Group alternative = group.clone();
 		alternative.setArg(rewritten);
 		alternative.setStringMetricPlanned("optimizer.semanticRewrite",
 				"lmdb-finite-code-type-values-rewrite;lmdb-remove-unused-optional");
 		return alternative;
+	}
+
+	private static TupleExpr finiteCodeTypeBranchRewrite(CodeTypeBranch branch, LinkedHashSet<Value> codeValues) {
+		List<TupleExpr> factors = new ArrayList<>(3 + branch.extraFactors().size());
+		factors.add(valuesAssignment(branch.codeName(), codeValues));
+		factors.add(branch.typePattern());
+		factors.add(branch.codePattern());
+		factors.addAll(branch.extraFactors());
+		return leftDeepJoin(factors);
 	}
 
 	static TupleExpr orFilterValuesAlternative(TupleExpr tupleExpr) {
@@ -2589,22 +2605,40 @@ final class LmdbCascadesRuleProvider {
 		List<TupleExpr> factors = new ArrayList<>();
 		collectJoinFactors(filter.getArg(), factors);
 		BindingSetAssignment targetAssignment = null;
-		StatementPattern typePattern = null;
+		List<StatementPattern> constantEntityPatterns = new ArrayList<>();
 		StatementPattern codePattern = null;
+		List<TupleExpr> extraFactors = new ArrayList<>();
 		for (TupleExpr factor : factors) {
 			if (factor instanceof BindingSetAssignment assignment
 					&& assignment.getBindingNames().contains(filterDomain.targetName())) {
+				if (targetAssignment != null
+						|| !assignment.getBindingNames().equals(Set.of(filterDomain.targetName()))) {
+					return null;
+				}
 				targetAssignment = assignment;
 			} else if (factor instanceof StatementPattern pattern && statementSubjectName(pattern).equals(entityName)) {
-				if (statementObjectValue(pattern) != null) {
-					typePattern = pattern;
-				} else if (filterDomain.codeName().equals(statementObjectName(pattern))) {
+				if (filterDomain.codeName().equals(statementObjectName(pattern))) {
+					if (codePattern != null) {
+						return null;
+					}
 					codePattern = pattern;
+				} else if (statementObjectValue(pattern) != null) {
+					constantEntityPatterns.add(pattern);
+				} else {
+					extraFactors.add(factor);
 				}
+			} else {
+				extraFactors.add(factor);
 			}
 		}
+		StatementPattern typePattern = selectCodeTypePattern(constantEntityPatterns);
 		if (targetAssignment == null || typePattern == null || codePattern == null) {
 			return null;
+		}
+		for (StatementPattern pattern : constantEntityPatterns) {
+			if (pattern != typePattern) {
+				extraFactors.add(pattern);
+			}
 		}
 		Value typePredicate = statementPredicateValue(typePattern);
 		Value codePredicate = statementPredicateValue(codePattern);
@@ -2618,7 +2652,24 @@ final class LmdbCascadesRuleProvider {
 			return null;
 		}
 		return new CodeTypeBranch(entityName, filterDomain.codeName(), typePredicateName(typePattern),
-				typePredicate, codePredicateName(codePattern), codePredicate, typeValue, codeValues);
+				typePredicate, codePredicateName(codePattern), codePredicate, typeValue, codeValues, typePattern,
+				codePattern, extraFactors);
+	}
+
+	private static StatementPattern selectCodeTypePattern(List<StatementPattern> constantEntityPatterns) {
+		if (constantEntityPatterns.size() == 1) {
+			return constantEntityPatterns.getFirst();
+		}
+		StatementPattern rdfTypePattern = null;
+		for (StatementPattern pattern : constantEntityPatterns) {
+			if (sameValue(statementPredicateValue(pattern), RDF.TYPE)) {
+				if (rdfTypePattern != null) {
+					return null;
+				}
+				rdfTypePattern = pattern;
+			}
+		}
+		return rdfTypePattern;
 	}
 
 	private static CodeFilterDomain codeFilterDomain(ValueExpr condition) {
@@ -2732,7 +2783,8 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private record CodeTypeBranch(String entityName, String codeName, String typePredicateName, Value typePredicate,
-			String codePredicateName, Value codePredicate, Value typeValue, LinkedHashSet<Value> codeValues) {
+			String codePredicateName, Value codePredicate, Value typeValue, LinkedHashSet<Value> codeValues,
+			StatementPattern typePattern, StatementPattern codePattern, List<TupleExpr> extraFactors) {
 		boolean compatibleWith(CodeTypeBranch other) {
 			return other != null
 					&& entityName.equals(other.entityName)

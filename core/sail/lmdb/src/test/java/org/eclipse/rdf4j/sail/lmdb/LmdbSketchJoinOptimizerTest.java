@@ -355,6 +355,23 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void calendarValueEqualityDoesNotBecomeTermExactFiniteAnchor() {
+		BindingSetAssignment targets = values("target",
+				VF.createLiteral("2020-01-01T05:00:00Z", XSD.DATETIME));
+		StatementPattern recordedOn = statementPattern("record", "recordedOn", "date");
+		DeferredFilter filter = new DeferredFilter(equal("date", "target"), Set.of("date", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, recordedOn, Set.of(recordedOn), null);
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets,
+				recordedOn),
+				List.of(filter), new CalendarDateTimeObjectDomainStatistics());
+
+		assertTrue(analysis.finiteAnchorOptions().isEmpty(),
+				"Calendar value equality must not be replaced by a term-exact anchor when the stored lexical form "
+						+ "can differ from the query literal: " + analysis.finiteAnchorOptions());
+	}
+
+	@Test
 	void integerRangeFiniteAnchorAllowsMoreThanSmallLiteralLimit() {
 		StatementPattern weight = statementPattern("node", "weight", "w");
 		ValueExpr condition = and(
@@ -1357,6 +1374,21 @@ class LmdbSketchJoinOptimizerTest {
 		@Override
 		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
 			return Optional.of(RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT))));
+		}
+	}
+
+	private static final class CalendarDateTimeObjectDomainStatistics extends EvaluationStatistics
+			implements LmdbPredicateObjectDomainSource {
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.finiteValues(List.of(
+					VF.createLiteral("2020-01-01T05:00:00.000Z", XSD.DATETIME))));
 		}
 	}
 

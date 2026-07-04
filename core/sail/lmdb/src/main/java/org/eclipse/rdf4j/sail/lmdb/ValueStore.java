@@ -2976,12 +2976,7 @@ class ValueStore extends AbstractValueFactory {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
-		int directionValue = directionAndLangLength >> 6;
-		Literal.BaseDirection baseDirection = switch (directionValue) {
-		case 1 -> Literal.BaseDirection.LTR;
-		case 2 -> Literal.BaseDirection.RTL;
-		default -> Literal.BaseDirection.NONE;
-		};
+		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
 
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
@@ -3029,9 +3024,12 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		int directionAndLangLength = memGetByte(dataAddress + position) & 0xFF;
+		int langLength = directionAndLangLength & 0x3F;
+		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
+
 		// Get language tag
 		String lang = null;
-		int langLength = memGetByte(dataAddress + position) & 0xFF;
 		position++;
 		int langPosition = position;
 		if (langLength > 0) {
@@ -3044,7 +3042,7 @@ class ValueStore extends AbstractValueFactory {
 
 		if (value == null) {
 			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, id);
+				return new LmdbLiteral(revision, label, lang, baseDirection, id);
 			} else if (datatype != null) {
 				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
 			} else {
@@ -3054,7 +3052,10 @@ class ValueStore extends AbstractValueFactory {
 			value.setLabel(label);
 			if (lang != null) {
 				value.setLanguage(lang);
-				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+				value.setBaseDirection(baseDirection);
+				value.setDatatype(baseDirection == Literal.BaseDirection.NONE
+						? CoreDatatype.RDF.LANGSTRING
+						: CoreDatatype.RDF.DIRLANGSTRING);
 			} else if (datatype != null) {
 				value.setDatatype(datatype, coreDatatype);
 			} else {
@@ -3081,9 +3082,12 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		int directionAndLangLength = bb.get() & 0xFF;
+		int langLength = directionAndLangLength & 0x3F;
+		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
+
 		// Get language tag
 		String lang = null;
-		int langLength = bb.get() & 0xFF;
 		int langPosition = bb.position();
 		if (langLength > 0) {
 			lang = stringFromBuffer(bb, langPosition, langLength);
@@ -3095,7 +3099,7 @@ class ValueStore extends AbstractValueFactory {
 
 		if (value == null) {
 			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, id);
+				return new LmdbLiteral(revision, label, lang, baseDirection, id);
 			} else if (datatype != null) {
 				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
 			} else {
@@ -3105,7 +3109,10 @@ class ValueStore extends AbstractValueFactory {
 			value.setLabel(label);
 			if (lang != null) {
 				value.setLanguage(lang);
-				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+				value.setBaseDirection(baseDirection);
+				value.setDatatype(baseDirection == Literal.BaseDirection.NONE
+						? CoreDatatype.RDF.LANGSTRING
+						: CoreDatatype.RDF.DIRLANGSTRING);
 			} else if (datatype != null) {
 				value.setDatatype(datatype, coreDatatype);
 			} else {
@@ -3113,6 +3120,14 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return value;
 		}
+	}
+
+	private static Literal.BaseDirection baseDirection(int directionAndLangLength) {
+		return switch (directionAndLangLength >> 6) {
+		case 1 -> Literal.BaseDirection.LTR;
+		case 2 -> Literal.BaseDirection.RTL;
+		default -> Literal.BaseDirection.NONE;
+		};
 	}
 
 	private String stringFromBuffer(ByteBuffer data, int position, int length) {

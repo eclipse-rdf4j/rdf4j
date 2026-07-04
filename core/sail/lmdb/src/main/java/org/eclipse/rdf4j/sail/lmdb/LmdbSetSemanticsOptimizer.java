@@ -281,6 +281,14 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 			}
 			Join membershipProbe = new Join(anchor.clone(), pattern.clone());
 			boolean directJoinSafe = duplicateKeyVars.containsAll(correlationBindings);
+			if (!directJoinSafe) {
+				Set<String> probeOnlyDuplicateKeyVars = new LinkedHashSet<>(duplicateKeyVars);
+				probeOnlyDuplicateKeyVars.retainAll(patternBindings);
+				probeOnlyDuplicateKeyVars.removeAll(remainingBindings);
+				if (!probeOnlyDuplicateKeyVars.isEmpty()) {
+					return null;
+				}
+			}
 			TupleExpr replacement = directJoinSafe ? new Join(membershipProbe, remaining)
 					: new Filter(remaining,
 							new Exists(membershipProbe));

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -970,6 +971,40 @@ public class LmdbSailStoreTest {
 				verify(estimatorSpy, never()).addStatements(any());
 				verify(estimatorSpy, never()).addStatement(any());
 				verify(estimatorSpy, times(1)).recordStoreSizeDelta(8192L, 0L);
+			} finally {
+				estimatorField.set(backingStore, originalEstimator);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void readCommittedBulkRetainsStatementsWhenEstimatorBecomesReadyAfterSizing() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 4096);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-estimator-ready-flip"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
+			estimatorField.setAccessible(true);
+			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
+			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
+			AtomicInteger readinessChecks = new AtomicInteger();
+			doAnswer(invocation -> readinessChecks.incrementAndGet() > 1).when(estimatorSpy).isReadyNonBlocking();
+			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
+			doAnswer(invocation -> null).when(estimatorSpy).recordStoreSizeDelta(anyLong(), anyLong());
+
+			estimatorField.set(backingStore, estimatorSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				assertDoesNotThrow(() -> {
+					sink.approveAll(sampleStatements(4096), Set.of());
+					sink.flush();
+				}, "A readiness flip after retained-statement sizing must not break valid bulk inserts");
 			} finally {
 				estimatorField.set(backingStore, originalEstimator);
 			}

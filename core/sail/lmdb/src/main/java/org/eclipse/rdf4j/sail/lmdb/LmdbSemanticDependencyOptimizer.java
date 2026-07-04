@@ -66,7 +66,10 @@ final class LmdbSemanticDependencyOptimizer implements QueryOptimizer {
 			if (filter.getArg()instanceof Join join) {
 				RewriteCandidate candidate = candidate(join, filter.getCondition(), dependencies);
 				if (candidate != null) {
-					filter.replaceWith(replacement(candidate, filter));
+					TupleExpr replacement = replacement(candidate, filter);
+					filter.replaceWith(candidate.conditionConsumed()
+							? replacement
+							: new Filter(replacement, filter.getCondition().clone()));
 				}
 			}
 		}
@@ -112,11 +115,12 @@ final class LmdbSemanticDependencyOptimizer implements QueryOptimizer {
 		if (leftObject == null || rightObject == null) {
 			return null;
 		}
-		if (!leftObject.equals(rightObject) && !conditionProvesEquality(condition, leftObject, rightObject)) {
+		boolean conditionConsumed = !leftObject.equals(rightObject);
+		if (conditionConsumed && !conditionProvesEquality(condition, leftObject, rightObject)) {
 			return null;
 		}
 
-		return new RewriteCandidate(left, leftPredicate, leftObject, rightObject);
+		return new RewriteCandidate(left, leftPredicate, leftObject, rightObject, conditionConsumed);
 	}
 
 	private static TupleExpr replacement(RewriteCandidate candidate, TupleExpr original) {
@@ -197,6 +201,6 @@ final class LmdbSemanticDependencyOptimizer implements QueryOptimizer {
 	}
 
 	private record RewriteCandidate(StatementPattern keptPattern, Value predicate, String keptObjectName,
-			String removedObjectName) {
+			String removedObjectName, boolean conditionConsumed) {
 	}
 }

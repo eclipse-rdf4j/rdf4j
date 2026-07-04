@@ -224,6 +224,27 @@ class LmdbSetSemanticsOptimizerTest {
 		assertRewriteCertificate(optimizedJoin, "DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER", "23", "false");
 	}
 
+	@Test
+	void keepsFiniteMembershipPatternWhenDistinctCountUsesPatternLocalVariable() {
+		BindingSetAssignment names = values("optName", "user0", "user1");
+		StatementPattern membership = new StatementPattern(new Var("a"), new Var("membershipPredicate"),
+				new Var("optName"), new Var("link"));
+		StatementPattern correlatedRemainder = statementPattern("a", "follows", "link");
+		Group group = new Group(new Join(new Join(names, membership), correlatedRemainder));
+		group.addGroupElement(new GroupElem("aCount", new Count(new Var("a"), true)));
+		group.addGroupElement(new GroupElem("predicateCount", new Count(new Var("membershipPredicate"), true)));
+		QueryRoot root = new QueryRoot(group);
+
+		new LmdbSetSemanticsOptimizer().optimize(root, null, null);
+
+		Group optimizedGroup = assertInstanceOf(Group.class, root.getArg(), () -> root.toString());
+		assertFalse(containsExists(optimizedGroup.getArg()),
+				() -> "A DISTINCT-counted variable local to the membership pattern must stay row-producing: "
+						+ root);
+		assertTrue(containsStatementPatternWithPredicate(optimizedGroup.getArg(), "membershipPredicate"),
+				() -> root.toString());
+	}
+
 	private static QueryRoot optimizeBeforeSketch(TupleExpr tupleExpr) {
 		QueryRoot root = new QueryRoot(tupleExpr);
 		TripleSource tripleSource = new EmptyTripleSource();
@@ -314,6 +335,27 @@ class LmdbSetSemanticsOptimizerTest {
 		if (tupleExpr instanceof Join join) {
 			return containsStatementPatternWithObject(join.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(join.getRightArg(), objectName);
+		}
+		return false;
+	}
+
+	private static boolean containsStatementPatternWithPredicate(TupleExpr tupleExpr, String predicateName) {
+		if (tupleExpr instanceof StatementPattern) {
+			return predicateName.equals(((StatementPattern) tupleExpr).getPredicateVar().getName());
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return containsStatementPatternWithPredicate(filter.getArg(), predicateName);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return containsStatementPatternWithPredicate(extension.getArg(), predicateName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsStatementPatternWithPredicate(leftJoin.getLeftArg(), predicateName)
+					|| containsStatementPatternWithPredicate(leftJoin.getRightArg(), predicateName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsStatementPatternWithPredicate(join.getLeftArg(), predicateName)
+					|| containsStatementPatternWithPredicate(join.getRightArg(), predicateName);
 		}
 		return false;
 	}

@@ -1984,9 +1984,8 @@ class LmdbSailStore implements SailStore {
 					return;
 				}
 
-				int retainedStatementStart = firstRetainedStatementIndex(statementCount);
-				Statement[] retainedStatements = retainedStatementStart < statementCount
-						? new Statement[statementCount - retainedStatementStart]
+				Statement[] retainedStatements = explicit && sketchBasedJoinEstimator != null
+						? new Statement[statementCount]
 						: null;
 				int[] subjects = new int[statementCount];
 				int[] predicates = new int[statementCount];
@@ -2003,8 +2002,8 @@ class LmdbSailStore implements SailStore {
 						Value obj = statement.getObject();
 						Resource context = statement.getContext();
 
-						if (retainedStatements != null && statementIndex >= retainedStatementStart) {
-							retainedStatements[statementIndex - retainedStatementStart] = statement;
+						if (retainedStatements != null) {
+							retainedStatements[statementIndex] = statement;
 						}
 						subjects[statementIndex] = valueCollector.add(subj);
 						predicates[statementIndex] = valueCollector.add(pred);
@@ -2030,7 +2029,7 @@ class LmdbSailStore implements SailStore {
 						int batchIndex = bulk.size - 1;
 						bulk.objectValues[batchIndex] = valueCollector.values[objects[i]];
 						if (bulk.statements != null) {
-							last = retainedStatements[i - retainedStatementStart];
+							last = retainedStatements[i];
 							bulk.statements[batchIndex] = last;
 						}
 						if (bulk.isFull()) {
@@ -2191,21 +2190,25 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private BulkAddQuadsOperation newBulkAddQuadsOperation(boolean explicit, int expectedStatementCount) {
-			boolean retainStatements = retainEstimatorStatements(expectedStatementCount);
+			boolean hasEstimator = explicit && sketchBasedJoinEstimator != null;
+			boolean deferEstimatorAdds = hasEstimator && shouldDeferExactEstimatorAddChunk(expectedStatementCount);
+			boolean retainStatements = hasEstimator && !deferEstimatorAdds;
 			int capacity = Math.max(1, Math.min(bulkOperationSize, expectedStatementCount));
 			BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit, retainStatements, capacity);
-			configureBulkAddQuadsOperation(bulk, expectedStatementCount);
+			configureBulkAddQuadsOperation(bulk, retainStatements, deferEstimatorAdds);
 			return bulk;
 		}
 
 		private BulkAddQuadsOperation reusableBulkAddQuadsOperation(BulkAddQuadsOperation bulk, boolean explicit,
 				int expectedStatementCount) {
-			boolean retainStatements = retainEstimatorStatements(expectedStatementCount);
+			boolean hasEstimator = explicit && sketchBasedJoinEstimator != null;
+			boolean deferEstimatorAdds = hasEstimator && shouldDeferExactEstimatorAddChunk(expectedStatementCount);
+			boolean retainStatements = hasEstimator && !deferEstimatorAdds;
 			int capacity = Math.max(1, Math.min(bulkOperationSize, expectedStatementCount));
 			if (bulk.explicit == explicit && bulk.capacity == capacity
 					&& (bulk.statements != null) == retainStatements) {
 				bulk.reset();
-				configureBulkAddQuadsOperation(bulk, expectedStatementCount);
+				configureBulkAddQuadsOperation(bulk, retainStatements, deferEstimatorAdds);
 				return bulk;
 			}
 			return newBulkAddQuadsOperation(explicit, expectedStatementCount);
@@ -2219,34 +2222,15 @@ class LmdbSailStore implements SailStore {
 			return reusableBulkAddQuadsOperation(bulk, explicit, expectedStatementCount);
 		}
 
-		private void configureBulkAddQuadsOperation(BulkAddQuadsOperation bulk, int expectedStatementCount) {
+		private void configureBulkAddQuadsOperation(BulkAddQuadsOperation bulk, boolean retainStatements,
+				boolean deferEstimatorAdds) {
 			bulk.estimatorBatchCallback = null;
 			bulk.deferredEstimatorAddCallback = null;
-			boolean hasEstimator = explicit && sketchBasedJoinEstimator != null;
-			boolean deferEstimatorAdds = hasEstimator && shouldDeferExactEstimatorAddChunk(expectedStatementCount);
-			boolean retainStatements = hasEstimator && !deferEstimatorAdds;
 			if (retainStatements) {
 				bulk.estimatorBatchCallback = this::queueEstimatorAdds;
 			} else if (deferEstimatorAdds) {
 				bulk.deferredEstimatorAddCallback = this::submitDeferredEstimatorAddCount;
 			}
-		}
-
-		private boolean retainEstimatorStatements(int expectedStatementCount) {
-			return explicit && sketchBasedJoinEstimator != null
-					&& !shouldDeferExactEstimatorAddChunk(expectedStatementCount);
-		}
-
-		private int firstRetainedStatementIndex(int statementCount) {
-			int index = 0;
-			while (index < statementCount) {
-				int expectedStatementCount = Math.min(bulkOperationSize, statementCount - index);
-				if (retainEstimatorStatements(expectedStatementCount)) {
-					return index;
-				}
-				index += expectedStatementCount;
-			}
-			return statementCount;
 		}
 
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {

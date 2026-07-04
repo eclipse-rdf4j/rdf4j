@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
@@ -55,10 +56,12 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -817,6 +820,48 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
 				"rule=lmdb-finite-code-type-values-rewrite"), diagnosticPlan);
 		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
+	}
+
+	@Test
+	void finiteCodeTypeValuesRewritePreservesBranchesWithExtraConstraints() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI typePredicate = RDF.TYPE;
+		IRI codePredicate = vf.createIRI("http://example.com/theme/medical/code");
+		IRI activePredicate = vf.createIRI("http://example.com/theme/medical/active");
+		IRI conditionType = vf.createIRI("http://example.com/theme/medical/Condition");
+		IRI medicationType = vf.createIRI("http://example.com/theme/medical/Medication");
+		Value target = vf.createLiteral("DX-200");
+		Value fallback = vf.createLiteral("DX-202");
+		BindingSetAssignment targets = singleValueAssignment("target", target);
+		ValueExpr condition = new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+				new Compare(new Var("code"), new ValueConstant(fallback), Compare.CompareOp.EQ));
+		TupleExpr constrainedConditionBranch = new Filter(
+				new Join(targets.clone(),
+						new Join(new StatementPattern(new Var("entity"), new Var("activePredicate", activePredicate),
+								new Var("active", vf.createLiteral(true))),
+								new Join(new StatementPattern(new Var("entity"),
+										new Var("typePredicate", typePredicate), new Var("conditionType",
+												conditionType)),
+										new StatementPattern(new Var("entity"),
+												new Var("codePredicate", codePredicate), new Var("code"))))),
+				condition.clone());
+		TupleExpr medicationBranch = new Filter(
+				new Join(targets.clone(),
+						new Join(new StatementPattern(new Var("entity"), new Var("typePredicate", typePredicate),
+								new Var("medicationType", medicationType)),
+								new StatementPattern(new Var("entity"), new Var("codePredicate", codePredicate),
+										new Var("code")))),
+				condition.clone());
+		Group group = new Group(new Union(constrainedConditionBranch, medicationBranch));
+		group.addGroupElement(new GroupElem("count", new Count(new Var("entity"), true)));
+
+		Group rewritten = LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group);
+
+		assertNotNull(rewritten, "The finite code/type rewrite should keep optimizing constrained branches: " + group);
+		assertTrue(containsBindingSetAssignmentFor(rewritten, "code"), rewritten::toString);
+		assertTrue(containsUnion(rewritten), rewritten::toString);
+		assertTrue(containsStatementPredicate(rewritten, activePredicate.stringValue()),
+				"The finite code/type rewrite must preserve branch-local constraints: " + rewritten);
 	}
 
 	@Test
@@ -1704,6 +1749,7 @@ class LmdbOptimizerPipelineTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding(bindingName, value);
+		assignment.setBindingNames(Set.of(bindingName));
 		assignment.setBindingSets(List.of(bindingSet));
 		return assignment;
 	}

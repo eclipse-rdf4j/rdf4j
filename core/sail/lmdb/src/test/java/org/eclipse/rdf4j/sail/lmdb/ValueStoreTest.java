@@ -750,6 +750,38 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testDirectedLanguageLiteralBatchResolvePreservesBaseDirection() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(new LmdbStoreConfig().setInlineLiterals(false));
+		Literal first = SimpleValueFactory.getInstance()
+				.createLiteral("directed batch literal first ".repeat(20), "en", Literal.BaseDirection.LTR);
+		Literal second = SimpleValueFactory.getInstance()
+				.createLiteral("directed batch literal second ".repeat(20), "en", Literal.BaseDirection.RTL);
+
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(first);
+		long secondId = valueStore.storeValue(second);
+		valueStore.commit();
+		reopenValueStore(new LmdbStoreConfig().setInlineLiterals(false));
+
+		Literal lazyFirst = (Literal) valueStore.getLazyValue(firstId);
+		Literal lazySecond = (Literal) valueStore.getLazyValue(secondId);
+		assertFalse(isInitialized(lazyFirst));
+		assertFalse(isInitialized(lazySecond));
+
+		LmdbValue[] lazyValues = { (LmdbValue) lazySecond, (LmdbValue) lazyFirst };
+		int[] sortedOrder = sortedOrder(new long[] { secondId, firstId });
+		((LmdbValue) lazyFirst).getValueStoreRevision().resolveValues(lazyValues, sortedOrder, lazyValues.length);
+
+		assertEquals(first, lazyFirst);
+		assertEquals(Literal.BaseDirection.LTR, lazyFirst.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, lazyFirst.getDatatype());
+		assertEquals(second, lazySecond);
+		assertEquals(Literal.BaseDirection.RTL, lazySecond.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, lazySecond.getDatatype());
+	}
+
+	@Test
 	public void testLazyBNodeHashCodeDoesNotInitializeAfterRestart() throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(hashCacheEnabledConfig());
