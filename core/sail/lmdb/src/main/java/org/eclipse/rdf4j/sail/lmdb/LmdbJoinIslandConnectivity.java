@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -423,6 +424,9 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr instanceof TripleRef) {
 			return opaqueFactorsEnabled();
 		}
+		if (tupleExpr instanceof Lateral lateral) {
+			return opaqueFactorsEnabled() && lateral.getLeftArg() != null && lateral.getRightArg() != null;
+		}
 		return false;
 	}
 
@@ -460,6 +464,16 @@ final class LmdbJoinIslandConnectivity {
 						required.add(name);
 					}
 				}
+			}
+			return required.isEmpty() ? Set.of() : Set.copyOf(required);
+		}
+		if (factor instanceof Lateral lateral) {
+			// The right side may consume rightInputBindingNames; anything its own left side does not assuredly
+			// bind must come from earlier island factors.
+			Set<String> required = LmdbJoinPlanSupport.plannerBindingNames(lateral.getRightInputBindingNames());
+			if (lateral.getLeftArg() != null) {
+				required.removeAll(
+						LmdbJoinPlanSupport.plannerBindingNames(lateral.getLeftArg().getAssuredBindingNames()));
 			}
 			return required.isEmpty() ? Set.of() : Set.copyOf(required);
 		}
@@ -521,6 +535,13 @@ final class LmdbJoinIslandConnectivity {
 			Set<String> visibleAssignments = nestedAssignmentNames(group);
 			visibleAssignments.retainAll(LmdbJoinPlanSupport.plannerBindingNames(group.getBindingNames()));
 			maybeVars.addAll(visibleAssignments);
+			return maybeVars;
+		}
+		if (factor instanceof Lateral lateral) {
+			// The LATERAL scope boundary keeps internal BINDs from being overwritten by pushed bindings; only
+			// maybe-bound outputs (e.g. optional vars inside the pipeline) constrain reordering.
+			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(lateral.getBindingNames());
+			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(lateral.getAssuredBindingNames()));
 			return maybeVars;
 		}
 		if (factor instanceof LeftJoin || factor instanceof Union || factor instanceof Service) {

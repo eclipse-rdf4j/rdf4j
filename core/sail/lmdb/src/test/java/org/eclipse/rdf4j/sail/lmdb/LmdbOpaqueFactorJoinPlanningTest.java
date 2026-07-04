@@ -28,11 +28,13 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -314,6 +316,52 @@ class LmdbOpaqueFactorJoinPlanningTest {
 				new Var("nameValue", VF.createLiteral("Name42")));
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(tripleRef, annotation)),
 				"An island containing an RDF-star triple reference should be reorderable");
+	}
+
+	private static Lateral lateralFactor() {
+		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
+				new Var("x"));
+		Extension perRowBind = new Extension(new SingletonSet(), new ExtensionElem(new Str(new Var("x")), "xs"));
+		return new Lateral(follows, perRowBind, follows.getBindingNames());
+	}
+
+	@Test
+	void lateralFactorIslandIsOwnedByConnectedPlanner() {
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(lateralFactor(), selectiveName)),
+				"An island whose only non-pattern factor is a LATERAL should be reorderable");
+	}
+
+	@Test
+	void selectivePatternIsOrderedBeforeLateralFactor() {
+		StatementPattern selectiveName = new StatementPattern(new Var("x"), new Var("namePred", NAME),
+				new Var("nameValue", VF.createLiteral("Name42")));
+		Join island = new Join(lateralFactor(), selectiveName);
+		SelectiveNameStatistics statistics = new SelectiveNameStatistics();
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> plan = LmdbCascadesConnectedJoinPlanner.plan(island, Set.of(),
+				statistics, statistics);
+
+		assertTrue(plan.isPresent(), "Expected the connected planner to own the LATERAL-bearing island");
+		TupleExpr first = leftmostFactor(plan.get().tupleExpr());
+		assertTrue(first instanceof StatementPattern,
+				() -> "Expected the selective statement pattern to be seeded first: " + plan.get().tupleExpr());
+		assertEquals(NAME, ((StatementPattern) first).getPredicateVar().getValue(),
+				() -> "Expected the selective name lookup before the LATERAL pipeline: " + plan.get().tupleExpr());
+	}
+
+	@Test
+	void lateralMaybeVarSharedWithAnotherFactorKeepsIslandFrozen() {
+		StatementPattern follows = new StatementPattern(new Var("person"), new Var("followsPred", FOLLOWS),
+				new Var("x"));
+		LeftJoin maybeNick = new LeftJoin(new SingletonSet(),
+				new StatementPattern(new Var("x"), new Var("nickPred", NICKNAME), new Var("nick")));
+		Lateral lateral = new Lateral(follows, maybeNick, follows.getBindingNames());
+		StatementPattern consumesMaybeVar = new StatementPattern(new Var("nick"), new Var("otherPred", NAME),
+				new Var("z"));
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(new Join(lateral, consumesMaybeVar)),
+				"A LATERAL whose maybe-bound output is consumed by another factor must not be reordered");
 	}
 
 	private static TupleExpr leftmostFactor(TupleExpr tupleExpr) {
