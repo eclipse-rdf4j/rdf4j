@@ -145,6 +145,8 @@ public interface CascadesCostModel {
 		// instance also lets downstream PhysicalProperties/BindingProfile equality short-circuit on
 		// identity instead of deep map comparison.
 		private final IdentityHashMap<StatisticsEstimate, IdentityHashMap<TupleExpr, BindingProfile>> outputProfileCache = new IdentityHashMap<>();
+		private static final int INPUT_WINNER_ESTIMATE_CACHE_MAX_ENTRIES = 8_192;
+		private final IdentityHashMap<Winner, StatisticsEstimate> inputWinnerEstimateCache = new IdentityHashMap<>();
 
 		public DefaultCascadesCostModel(EvaluationStatistics statistics, JoinFactorCostModel factorCostModel,
 				RdfStatisticsProvider rdfStatisticsProvider) {
@@ -1562,6 +1564,13 @@ public interface CascadesCostModel {
 			if (winner == null) {
 				return estimate(fallback, boundVars);
 			}
+			// The winner-derived estimate is a pure function of the winner: it ignores boundVars, and by the time
+			// a winner is passed as an input its own rich estimate is already in physicalEstimateCache. Memoizing
+			// per winner identity removes the bag/profile-overlay object churn that dominates planning CPU.
+			StatisticsEstimate memoized = inputWinnerEstimateCache.get(winner);
+			if (memoized != null) {
+				return memoized;
+			}
 			TupleExpr plan = winner.plan() == null ? fallback : winner.plan();
 			String source = winner.provenance() == null || winner.provenance().estimate() == null
 					? "physical-input"
@@ -1573,14 +1582,21 @@ public interface CascadesCostModel {
 							source + "-physical-input");
 			BindingProfile profile = winner.deliveredProperties() == null ? BindingProfile.ANY
 					: winner.deliveredProperties().bindingProfile();
+			StatisticsEstimate result;
 			if (profile != null && !profile.isAny()) {
 				Map<String, Double> metrics = winner.provenance() == null || winner.provenance().estimate() == null
 						? Map.of()
 						: winner.provenance().estimate().doubleMetrics();
 				bag = overlayBindingProfile(bag, profile, source + "-binding-profile-input", metrics);
-				return StatisticsEstimate.fromBag(bag, source + "-binding-profile-input");
+				result = StatisticsEstimate.fromBag(bag, source + "-binding-profile-input");
+			} else {
+				result = StatisticsEstimate.fromBag(bag, source + "-physical-input");
 			}
-			return StatisticsEstimate.fromBag(bag, source + "-physical-input");
+			if (inputWinnerEstimateCache.size() >= INPUT_WINNER_ESTIMATE_CACHE_MAX_ENTRIES) {
+				inputWinnerEstimateCache.clear();
+			}
+			inputWinnerEstimateCache.put(winner, result);
+			return result;
 		}
 
 		/**
