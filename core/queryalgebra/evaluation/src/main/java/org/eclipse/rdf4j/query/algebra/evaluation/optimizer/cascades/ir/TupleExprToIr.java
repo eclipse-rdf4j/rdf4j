@@ -238,7 +238,7 @@ public final class TupleExprToIr {
 		if (expression instanceof ListMemberOperator listMember) {
 			List<ValueExpr> args = listMember.getArguments();
 			if (args.isEmpty()) {
-				return new ScalarExpr.FunctionCall("urn:rdf4j:listMember", List.of());
+				return ScalarExpr.FunctionCall.opaque("urn:rdf4j:listMember", listMember);
 			}
 			List<ScalarExpr> candidates = new java.util.ArrayList<>(args.size() - 1);
 			for (int i = 1; i < args.size(); i++) {
@@ -253,7 +253,9 @@ public final class TupleExprToIr {
 		if (expression instanceof Str str) {
 			return new ScalarExpr.FunctionCall(FN_STRING_IRI, List.of(scalar(str.getArg())));
 		}
-		return new ScalarExpr.FunctionCall("urn:rdf4j:native:" + expression.getClass().getName(), List.of());
+		// No structural IR form exists for this value expression; keep the original so the round-trip back to
+		// algebra restores it instead of a lossy placeholder that would evaluate as an unknown function.
+		return ScalarExpr.FunctionCall.opaque("urn:rdf4j:native:" + expression.getClass().getName(), expression);
 	}
 
 	private PlanIr convertWithUniverse(TupleExpr subQuery) {

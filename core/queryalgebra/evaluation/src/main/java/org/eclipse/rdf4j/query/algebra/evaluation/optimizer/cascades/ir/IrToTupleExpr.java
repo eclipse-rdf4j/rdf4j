@@ -219,6 +219,11 @@ public final class IrToTupleExpr {
 			return exists.negated() ? new Not(nested) : nested;
 		}
 		if (expression instanceof ScalarExpr.FunctionCall call) {
+			if (call.opaqueOriginal() != null) {
+				// A value expression the IR could not represent structurally; restore the original instead of
+				// emitting a placeholder function call that would evaluate as an unknown function.
+				return call.opaqueOriginal().clone();
+			}
 			List<ValueExpr> args = new ArrayList<>(call.args().size());
 			for (ScalarExpr arg : call.args()) {
 				args.add(scalar(arg));

@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -96,6 +98,39 @@ class TupleExprIrRoundTripTest {
 
 		assertTrue(((StatementPattern) rendered).getSubjectVar().isConstant());
 		assertFalse(((StatementPattern) rendered).getPredicateVar().isConstant());
+	}
+
+	@Test
+	void roundTripPreservesValueExprsTheIrCannotRepresent() {
+		// IRIFunction has no ScalarExpr form. The IR must round-trip it losslessly instead of degrading it to a
+		// placeholder function call with a urn:rdf4j:native: URI and dropped arguments, which evaluates to
+		// "Unknown function" and loses the argument semantics (W3C bind error tests, SES-2250).
+		Extension extension = new Extension(pattern("s", "p", "o"),
+				new ExtensionElem(new IRIFunction(new Var("o")), "iri"));
+
+		TupleExpr rendered = IrToTupleExpr.convert(TupleExprToIr.convert(extension));
+
+		ExtensionElem renderedElem = ((Extension) rendered).getElements().get(0);
+		assertTrue(renderedElem.getExpr() instanceof IRIFunction,
+				() -> "The IR round-trip must preserve value expressions it cannot represent, but produced: "
+						+ renderedElem.getExpr());
+		assertNotSame(extension.getElements().get(0).getExpr(), renderedElem.getExpr(),
+				"The rendered tree must not alias the input tree's expression nodes");
+	}
+
+	@Test
+	void roundTripPreservesListMemberOperator() {
+		ListMemberOperator in = new ListMemberOperator();
+		in.addArgument(new Var("o"));
+		in.addArgument(new ValueConstant(VF.createLiteral("a")));
+		in.addArgument(new ValueConstant(VF.createLiteral("b")));
+		Filter filter = new Filter(pattern("s", "p", "o"), in);
+
+		TupleExpr rendered = IrToTupleExpr.convert(TupleExprToIr.convert(filter));
+
+		assertTrue(((Filter) rendered).getCondition() instanceof ListMemberOperator,
+				() -> "IN(...) must survive the IR round-trip with its arguments, but produced: "
+						+ ((Filter) rendered).getCondition());
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {

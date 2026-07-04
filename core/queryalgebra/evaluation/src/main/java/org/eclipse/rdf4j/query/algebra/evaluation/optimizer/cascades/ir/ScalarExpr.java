@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 
 /** Query-local scalar expression IR. Conditions are three-valued/erroring SPARQL expressions, not plain booleans. */
@@ -83,10 +84,22 @@ public sealed interface ScalarExpr permits ScalarExpr.VarRef,ScalarExpr.Constant
 		}
 	}
 
-	record FunctionCall(String iri, List<ScalarExpr> args) implements ScalarExpr {
+	record FunctionCall(String iri, List<ScalarExpr> args, ValueExpr opaqueOriginal) implements ScalarExpr {
 		public FunctionCall {
 			iri = iri == null || iri.isBlank() ? "urn:rdf4j:function:unknown" : iri;
 			args = args == null || args.isEmpty() ? List.of() : List.copyOf(args);
+		}
+
+		public FunctionCall(String iri, List<ScalarExpr> args) {
+			this(iri, args, null);
+		}
+
+		/**
+		 * A value expression the IR has no structural form for, wrapped so the round-trip back to algebra restores the
+		 * original instead of a lossy placeholder function call. Matching still sees the placeholder IRI.
+		 */
+		public static FunctionCall opaque(String iri, ValueExpr original) {
+			return new FunctionCall(iri, List.of(), original);
 		}
 	}
 }

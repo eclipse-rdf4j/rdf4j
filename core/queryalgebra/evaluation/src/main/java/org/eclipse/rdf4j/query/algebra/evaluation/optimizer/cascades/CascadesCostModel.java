@@ -1566,8 +1566,11 @@ public interface CascadesCostModel {
 			String source = winner.provenance() == null || winner.provenance().estimate() == null
 					? "physical-input"
 					: winner.provenance().estimate().source();
-			BagEstimate bag = bagWithBindings(plan, winner.cost().rows(), winner.cost().workRows(),
-					source + "-physical-input");
+			BagEstimate cachedBag = cachedWinnerBag(winner);
+			BagEstimate bag = cachedBag != null
+					? cachedBag
+					: bagWithBindings(plan, winner.cost().rows(), winner.cost().workRows(),
+							source + "-physical-input");
 			BindingProfile profile = winner.deliveredProperties() == null ? BindingProfile.ANY
 					: winner.deliveredProperties().bindingProfile();
 			if (profile != null && !profile.isAny()) {
@@ -1578,6 +1581,28 @@ public interface CascadesCostModel {
 				return StatisticsEstimate.fromBag(bag, source + "-binding-profile-input");
 			}
 			return StatisticsEstimate.fromBag(bag, source + "-physical-input");
+		}
+
+		/**
+		 * The rich estimate this model computed when it costed the winner's own expression. The winner only carries
+		 * scalar cost, but {@code physicalEstimateCache} still holds the full bag (per-variable distinct counts,
+		 * evidence) keyed by the same expression identity; a row match ties the cached entry to the input combination
+		 * that produced this winner. Falls back to {@code null} — never worse than the scalar path.
+		 */
+		private BagEstimate cachedWinnerBag(Winner winner) {
+			if (winner.expression() == null || winner.cost() == null) {
+				return null;
+			}
+			Map<PhysicalInputKey, StatisticsEstimate> byInput = physicalEstimateCache.get(winner.expression());
+			if (byInput == null) {
+				return null;
+			}
+			for (StatisticsEstimate estimate : byInput.values()) {
+				if (estimate != null && estimate.bag() != null && estimate.rows() == winner.cost().rows()) {
+					return estimate.bag();
+				}
+			}
+			return null;
 		}
 
 		private TupleExpr inputWinnerPlan(List<Winner> inputWinners, int index, TupleExpr fallback) {

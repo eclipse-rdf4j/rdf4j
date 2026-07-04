@@ -266,6 +266,39 @@ public final class RuleDsl {
 				: RuleGuard.GuardResult.fail("duplicates may change at " + nodeCaptureName);
 	}
 
+	/**
+	 * Rejects reordering when one captured subtree consumes a BIND output produced by the other. In written order the
+	 * consumer evaluates after the assignment and join-filters on the (possibly error-unbound) value; reordered, the
+	 * Extension can be evaluated with its output pre-bound and {@code ExtensionIterator} overwrites instead of
+	 * join-filtering, losing BIND error semantics (W3C SES-2250).
+	 */
+	public static RuleGuard noCrossBindOutputs(String leftCaptureName, String rightCaptureName) {
+		return capture -> {
+			IrNode left = capture.node(leftCaptureName);
+			IrNode right = capture.node(rightCaptureName);
+			BindingMask leftOutputs = subtreeBindOutputs(capture.ir(), left.id());
+			BindingMask rightOutputs = subtreeBindOutputs(capture.ir(), right.id());
+			boolean crosses = leftOutputs.intersects(right.bindings().possible())
+					|| rightOutputs.intersects(left.bindings().possible());
+			return crosses
+					? RuleGuard.GuardResult.fail("BIND output shared across join inputs at " + leftCaptureName + "/"
+							+ rightCaptureName)
+					: RuleGuard.GuardResult
+							.ok("noCrossBindOutputs(" + leftCaptureName + ", " + rightCaptureName + ")");
+		};
+	}
+
+	private static BindingMask subtreeBindOutputs(PlanIr ir, IrNodeId id) {
+		IrNode node = ir.node(id);
+		BindingMask outputs = node.op() == IrOp.EXTENSION
+				? node.bindings().localBindOutputs()
+				: BindingMask.EMPTY;
+		for (IrNodeId input : node.inputs()) {
+			outputs = outputs.union(subtreeBindOutputs(ir, input));
+		}
+		return outputs;
+	}
+
 	public static RuleGuard finiteAnchor(String scalarCaptureName) {
 		return capture -> {
 			ScalarFacts facts = capture.scalarFacts(scalarCaptureName);

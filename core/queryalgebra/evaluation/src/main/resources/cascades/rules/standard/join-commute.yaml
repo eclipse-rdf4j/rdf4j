@@ -11,6 +11,8 @@ match:
 guards:
   - name: barrierFree
     args: [j]
+  - name: noCrossBindOutputs
+    args: [left, right]
 emit:
   name: join
   args:

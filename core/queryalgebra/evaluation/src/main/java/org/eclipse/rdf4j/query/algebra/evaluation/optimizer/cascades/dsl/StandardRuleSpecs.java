@@ -38,6 +38,7 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.minusNestedReorder;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.minusSharedAssured;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.negatedBoundRhsOnlyAssured;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noCrossBindOutputs;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noLeftJoinCondition;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noScopeChange;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.opNotIn;
@@ -114,6 +115,7 @@ public final class StandardRuleSpecs {
 				.promise(80)
 				.match(join("j", capture("left"), capture("right")))
 				.where(barrierFree("j"))
+				.where(noCrossBindOutputs("left", "right"))
 				.emit(join(ref("right"), ref("left")))
 				.proof("innerJoin", "bagCompatible")
 				.reason("JOIN inputs commute under SPARQL bag semantics")

@@ -54,6 +54,10 @@ public final class RuleIntrinsicRegistry {
 			requireArity(name, args, 1);
 			yield RuleDsl.barrierFree(args.get(0));
 		}
+		case "noCrossBindOutputs" -> {
+			requireArity(name, args, 2);
+			yield RuleDsl.noCrossBindOutputs(args.get(0), args.get(1));
+		}
 		default -> throw new IllegalArgumentException("Unknown rule guard intrinsic: " + name);
 		};
 	}

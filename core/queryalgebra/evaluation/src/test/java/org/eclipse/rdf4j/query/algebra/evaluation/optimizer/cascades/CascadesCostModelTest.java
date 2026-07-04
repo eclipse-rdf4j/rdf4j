@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -142,6 +143,44 @@ class CascadesCostModelTest {
 				"A physical winner should deliver the joined sketch profile to its parent winner boundary");
 		assertNotSame(leftSketch, joinedSketch, "The delivered joined sketch must not be stale left input evidence");
 		assertNotSame(rightSketch, joinedSketch, "The delivered joined sketch must not be stale right input evidence");
+	}
+
+	@Test
+	void parentJoinReusesCachedRichChildEstimateWithoutBindingProfile() {
+		// The child join is costed first with sketch-profiled inputs, so the model caches a rich estimate for the
+		// child expression (distinct(y) far below its rows). The parent join then receives a winner over that child
+		// whose delivered properties carry NO binding profile — only scalar cost. A model that already costed the
+		// child must recover the cached rich bag instead of collapsing to scalar rows, so its parent estimate
+		// differs from a cold model that never saw the child.
+		CascadesCostModel warmModel = CascadesCostModel.from(new EvaluationStatistics());
+		Join childJoin = new Join(pattern("s", "p1", "x"), pattern("x", "p2", "y"));
+		MemoExpr childExpr = new MemoExpr(20, 0, "Join", List.of(1, 2), "test", childJoin,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "child-join");
+		Winner childLeft = sketchedProfileWinner(1, childJoin.getLeftArg(), "x", 100.0d,
+				new TestSketch(60.0d, 17.0d));
+		Winner childRight = sketchedProfileWinner(2, childJoin.getRightArg(), "y", 100.0d,
+				new TestSketch(7.0d, 17.0d));
+		CostVector childCost = warmModel.localCost(childExpr, OptimizationGoal.root(),
+				List.of(childLeft, childRight));
+
+		Join parentJoin = new Join(childJoin, pattern("y", "p3", "z"));
+		MemoExpr parentExpr = new MemoExpr(30, 0, "Join", List.of(20, 3), "test", parentJoin,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "parent-join");
+		Winner profileLessChildWinner = new Winner(childExpr, childJoin, PhysicalProperties.builder()
+				.boundVars(childJoin.getBindingNames())
+				.build(), childCost, List.of(), false, "");
+		Winner rightWinner = winner(3, parentJoin.getRightArg(), 50.0d);
+
+		CostVector warm = warmModel.localCost(parentExpr, OptimizationGoal.root(),
+				List.of(profileLessChildWinner, rightWinner));
+		CascadesCostModel coldModel = CascadesCostModel.from(new EvaluationStatistics());
+		CostVector cold = coldModel.localCost(parentExpr, OptimizationGoal.root(),
+				List.of(profileLessChildWinner, rightWinner));
+
+		assertNotEquals(cold.rows(), warm.rows(),
+				"A model that already costed the child expression must reuse its cached rich estimate for parent "
+						+ "costing instead of collapsing the winner to scalar rows (cold=" + cold.rows() + ", warm="
+						+ warm.rows() + ")");
 	}
 
 	@Test

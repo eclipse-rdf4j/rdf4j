@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -108,6 +110,47 @@ class StandardRuleSpecTest {
 		assertEquals(1, applications.size());
 		assertInstanceOf(Join.class, applications.get(0).alternative());
 		assertTrue(applications.get(0).proofs().get(0).facts().contains("bagCompatible"));
+	}
+
+	@Test
+	void joinCommuteDoesNotFireAcrossBindOutputDependency() {
+		// Written order evaluates the BIND before the pattern that joins on its output, so the pattern filters on
+		// the (possibly error-unbound) value. Commuting puts the Extension on the lookup side with its output
+		// pre-bound, and ExtensionIterator overwrites instead of join-filtering — BIND error semantics are lost
+		// (W3C SES-2250 bind error tests).
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinCommute());
+		Extension bind = new Extension(pattern("s", "p1", "x"), new ExtensionElem(new Str(new Var("x")), "xs"));
+		Join join = new Join(bind, pattern("y", "p2", "xs"));
+
+		List<RuleApplication> applications = rule.apply(expr(join), null, null);
+
+		assertEquals(List.of(), applications,
+				"join-commute must not reverse a join whose one input consumes the other input's BIND output");
+	}
+
+	@Test
+	void joinCommuteDoesNotFireAcrossNestedBindOutputDependency() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinCommute());
+		Extension bind = new Extension(pattern("s", "p1", "x"), new ExtensionElem(new Str(new Var("x")), "xs"));
+		Join left = new Join(pattern("y", "p2", "xs"), pattern("y", "p3", "z"));
+		Join join = new Join(left, bind);
+
+		List<RuleApplication> applications = rule.apply(expr(join), null, null);
+
+		assertEquals(List.of(), applications,
+				"the guard must see BIND outputs and consumers nested anywhere below the two join inputs");
+	}
+
+	@Test
+	void joinCommuteStillFiresWhenBindOutputStaysLocal() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinCommute());
+		Extension bind = new Extension(pattern("s", "p1", "x"), new ExtensionElem(new Str(new Var("x")), "xs"));
+		Join join = new Join(bind, pattern("x", "p2", "z"));
+
+		List<RuleApplication> applications = rule.apply(expr(join), null, null);
+
+		assertEquals(1, applications.size(),
+				"a BIND output no other input consumes does not block commutation");
 	}
 
 	@Test
