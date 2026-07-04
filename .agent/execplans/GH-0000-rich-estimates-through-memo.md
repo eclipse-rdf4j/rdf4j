@@ -8,8 +8,11 @@ Two goals with one root cause. Accuracy: when the cascades planner costs a join 
 
 ## Progress
 
-- [x] (2026-07-04) Research complete; findings below. No production edits yet.
-- [ ] Milestone 1: reuse cached rich `StatisticsEstimate`s for input winners (failing test first, see Plan of Work).
+- [x] (2026-07-04) Research complete; findings below.
+- [x] (2026-07-04) Milestone 1 committed as 327771e45e. Red: `CascadesCostModelTest#parentJoinReusesCachedRichChildEstimateWithoutBindingProfile` (cold=50.0 == warm=50.0, pure scalar collapse); green via `cachedWinnerBag` identity lookup in `inputWinnerEstimate`. The estimate change surfaced TWO latent generic bugs, both fixed at the root in the same commit:
+  1. Lossy IR round-trip: `TupleExprToIr.scalar()` degraded unsupported ValueExprs (IRIFunction, empty ListMemberOperator) to placeholder `urn:rdf4j:native:` function calls with dropped arguments, which `IrToTupleExpr` emitted as REAL FunctionCall algebra → "Unknown function" at evaluation. Fixed with `ScalarExpr.FunctionCall.opaque(iri, original)` carrying the original expression; round-trip restores a clone. Red/green: `TupleExprIrRoundTripTest#roundTripPreservesValueExprsTheIrCannotRepresent`.
+  2. Unsound join-commute over BIND outputs: commuting `Join(Extension, consumer-of-output)` puts the Extension on the lookup side with its output pre-bound; `ExtensionIterator` overwrites instead of join-filtering, losing BIND error semantics (W3C SES-2250). Fixed with the new `noCrossBindOutputs` guard (RuleDsl + intrinsic registry + join-commute yaml + code spec); associativity preserves operand order so only commute needs it, and the subtree-level mask check also blocks commute-after-associate compositions. Red/green: `StandardRuleSpecTest#joinCommuteDoesNotFireAcrossBindOutputDependency` (+nested +still-fires-when-local variants).
+  Verification: queryalgebra module green; `core/sail/lmdb` exact known-red baseline; LMDB W3C compliance IMPROVED beyond baseline — LmdbSPARQLComplianceTest 10→9 (bind()[3] fixed, bind()[6] restored) and LmdbSPARQL11QueryComplianceTest 6→5 (tests()[25] fixed): those pre-existing failures were earlier victims of the same unsound commute. New compliance baseline: 9 + 5.
 - [ ] Milestone 2: per-subset witness caching in the omni estimator (JFR-evidence loop, Routine B with benchmark proof).
 - [ ] Milestone 3: buildPlan clone reduction (lazy or memoized plan construction) — only if Milestone 2's JFR still shows it hot.
 - [ ] Final: planQuery/runQuery A/B (≥2×5 s warmup, ≥3×5 s measurement, back-to-back; see memory note lmdb-theme-benchmark-harness), retrospective.
