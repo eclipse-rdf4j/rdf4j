@@ -10,8 +10,12 @@ The generic Cascades rule catalog (`RuleRegistry.standardLogicalRules()` in `cor
 
 - [x] (2026-07-04) Red: `LmdbRuleRegistryCoverageTest` — `tests=1, failures=1`, listing all seventeen missing rule ids; `LmdbOpaqueOperatorCardinalityTest` — `tests=4, failures=4` (SERVICE estimated at 102.0; keyed GROUP 120=input; keyless GROUP 120≠1; TripleRef 10 vs statement proxy 30).
 - [x] (2026-07-04) Green: seventeen rules registered in `LmdbCascadesRuleProvider.rules` behind `STANDARD_RULE_PARITY_PROPERTY` (default on); `LmdbCardinalityCalculator` gains `meet(Service)` floor (1 000 rows for constant endpoints), `meet(Group)` (keyless → 1.0; keyed → clamp(√input × keys, [1, input])), and `getCardinality(TripleRef)` statement-pattern proxy via `statementPatternCardinalitySource`. Both test classes pass.
-- [ ] Regression sweep: cascades suite selection, full `core/sail/lmdb` module vs known-red baseline, LMDB W3C compliance (SERVICE rules and estimate changes shift plans broadly).
-- [ ] Format, header check, commit.
+- [x] (2026-07-04) Regression sweep: cascades suite selection green (only the two known-reds); full `core/sail/lmdb` module = exact known-red baseline per class; LMDB W3C compliance initially regressed one test (`tests()[170]`, sq08) — root-caused to the generic `hasSubqueryModifier` guard, fixed in `StructuralCascadesRules` (Extension chain walk), reproducer `LmdbSubqueryAggregateScopeTest` red→green; compliance then exactly at baseline (6 + 10) and `core/queryalgebra/evaluation` module green.
+- [x] (2026-07-04) Format, header check, committed as a2df217c28.
+
+## Outcomes & Retrospective (final)
+
+Phase 2 shipped: seventeen standard logical rules registered for LMDB with a parity contract test preventing future drift, and three placeholder estimates replaced (SERVICE floor 1 000, GROUP BY collapse, TripleRef statement proxy). The registration surfaced and fixed a real generic-rule correctness bug (aggregate subquery inlining, W3C sq08) that no other store could have caught — evidence that compliance suites must gate every rule-catalog change on this branch. Phase 3's LATERAL work is blocked on a product decision: LATERAL already exists on `develop` (116 commits ahead); importing it means merging develop into this branch, which invalidates the current known-red baselines and needs its own session. Next roadmap phase: rich estimates through the memo (scalar-collapse fix) plus omni witness probe cost.
 
 ## Surprises & Discoveries
 
