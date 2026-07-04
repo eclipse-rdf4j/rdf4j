@@ -128,7 +128,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setVersion(String version) {
-		this.dirty = !Objects.equals(this.version, version);
+		this.dirty |= !Objects.equals(this.version, version);
 		this.version = version;
 		return this;
 	}
@@ -138,7 +138,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
-		this.dirty = !Objects.equals(this.tripleIndexes, tripleIndexes);
+		this.dirty |= !Objects.equals(this.tripleIndexes, tripleIndexes);
 		this.tripleIndexes = tripleIndexes;
 		return this;
 	}
@@ -148,7 +148,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
-		this.dirty = !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
+		this.dirty |= !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
 		this.tripleTermIndexes = tripleTermIndexes;
 		return this;
 	}

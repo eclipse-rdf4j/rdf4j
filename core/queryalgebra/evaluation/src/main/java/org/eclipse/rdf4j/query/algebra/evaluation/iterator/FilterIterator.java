@@ -383,6 +383,12 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static Set<String> filterScopeBindingNames(Filter filter) {
 		Set<String> scopeBindingNames = new LinkedHashSet<>(filter.getBindingNames());
 		Set<String> conditionBindingNames = VarNameCollector.process(filter.getCondition());
+		if (!filter.isVariableScopeChange()) {
+			// A filter that does not change variable scope evaluates its condition against the group's bindings,
+			// including bindings pushed in during evaluation that no algebra parent can reveal.
+			scopeBindingNames.addAll(conditionBindingNames);
+			return scopeBindingNames;
+		}
 		if (scopeBindingNames.containsAll(conditionBindingNames)) {
 			return scopeBindingNames;
 		}

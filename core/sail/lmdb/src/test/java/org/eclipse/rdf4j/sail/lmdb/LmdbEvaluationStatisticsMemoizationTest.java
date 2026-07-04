@@ -153,12 +153,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertFalse(statistics.supportsJoinEstimation(),
 				"Expected later not-ready sketches to be observed immediately");
 		verify(estimator, times(2)).isReadyNonBlocking();
-
-		LmdbPlannerAwait.awaitPlannerAssertion("supportsJoinEstimation cache expires", Duration.ofSeconds(2), () -> {
-			assertFalse(statistics.supportsJoinEstimation(),
-					"Expected readiness cache invalidation after cache window");
-			verify(estimator, times(2)).isReadyNonBlocking();
-		});
 	}
 
 	@Test

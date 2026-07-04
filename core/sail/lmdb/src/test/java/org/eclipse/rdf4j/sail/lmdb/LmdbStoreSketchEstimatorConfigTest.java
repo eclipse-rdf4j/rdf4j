@@ -72,11 +72,12 @@ class LmdbStoreSketchEstimatorConfigTest {
 	}
 
 	@Test
-	void unsetSketchEstimatorEnabledDefaultsToDisabled() {
+	void unsetSketchEstimatorEnabledDefaultsToHeapHeuristic() {
+		// This branch's planner stack is on by default when the heap can carry the sketch snapshots.
 		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
 
 		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES - 1)).isFalse();
-		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES)).isFalse();
+		assertThat(store.shouldUseSketchBasedJoinEstimator(SKETCH_ESTIMATOR_MIN_HEAP_BYTES)).isTrue();
 	}
 
 	@Test

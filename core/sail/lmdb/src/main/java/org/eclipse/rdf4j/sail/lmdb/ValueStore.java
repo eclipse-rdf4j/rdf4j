@@ -556,7 +556,11 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			// Persist the EFFECTIVE term-index set (config plus defaults): a null config value would otherwise
+			// leave the property unwritten and fail reopen validation.
+			Set<String> effectiveTermSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
+			effectiveTermSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+			properties.setTripleTermIndexes(String.join(",", TripleIndex.orderIndexSpecs(effectiveTermSpecs)));
 		} catch (IOException | SailException e) {
 			throw e;
 		}
@@ -2069,6 +2073,16 @@ class ValueStore extends AbstractValueFactory {
 					continue;
 				}
 
+				if (value.isTripleTerm()) {
+					// Triple terms are stored via their component ids and the triple-term indexes, not as plain
+					// value records; route through getId which handles creation and caching.
+					long tripleId = getId(value, true);
+					ids[i] = tripleId;
+					if (isOwnValue && tripleId != LmdbValue.UNKNOWN_ID) {
+						((LmdbValue) value).setInternalID(tripleId, revision);
+					}
+					continue;
+				}
 				byte[] data = value2data(value, true);
 				if (data == null && value instanceof Literal) {
 					data = literal2legacy((Literal) value);

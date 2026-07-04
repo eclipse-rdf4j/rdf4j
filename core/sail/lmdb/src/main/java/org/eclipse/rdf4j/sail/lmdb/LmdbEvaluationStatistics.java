@@ -233,9 +233,6 @@ class LmdbEvaluationStatistics
 	private final boolean operatorFeedbackTrackingEnabled;
 	private final boolean operatorFeedbackRuntimeTrackingEnabled;
 	private final boolean operatorFeedbackApplyEnabled;
-	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
-	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
-	private volatile boolean joinSupportCacheValue = false;
 	private volatile boolean statementPatternCardinalityFailureLogged;
 	private final ThreadLocal<OptimizationCostScope> optimizationCostScope = new ThreadLocal<>();
 
