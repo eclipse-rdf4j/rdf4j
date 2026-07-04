@@ -11,9 +11,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
@@ -64,5 +66,27 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 		con = sail.getConnection();
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
+	}
+
+	@Test
+	public void testDirectedLanguageLiteralBaseDirectionPersistsAfterRestart() {
+		Literal expected = vf.createLiteral("directed literal ".repeat(20), "en", Literal.BaseDirection.RTL);
+
+		con.begin();
+		con.addStatement(picasso, paints, expected);
+		con.commit();
+		con.close();
+		sail.shutDown();
+
+		sail.init();
+		con = sail.getConnection();
+
+		try (var statements = con.getStatements(picasso, paints, null, false)) {
+			assertTrue(statements.hasNext());
+			Literal actual = (Literal) statements.next().getObject();
+			assertEquals(expected, actual);
+			assertEquals(Literal.BaseDirection.RTL, actual.getBaseDirection());
+			assertEquals(RDF.DIRLANGSTRING, actual.getDatatype());
+		}
 	}
 }
