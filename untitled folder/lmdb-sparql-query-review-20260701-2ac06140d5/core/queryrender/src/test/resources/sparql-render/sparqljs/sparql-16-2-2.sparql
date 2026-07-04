@@ -1,0 +1,11 @@
+PREFIX  dc: <http://purl.org/dc/elements/1.1/>
+PREFIX app: <http://example.org/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+CONSTRUCT { ?s ?p ?o } WHERE
+ {
+   GRAPH ?g { ?s ?p ?o } .
+   ?g dc:publisher <http://www.w3.org/> .
+   ?g dc:date ?date .
+   FILTER ( app:customDate(?date) > "2005-02-28T00:00:00Z"^^xsd:dateTime ) .
+ }

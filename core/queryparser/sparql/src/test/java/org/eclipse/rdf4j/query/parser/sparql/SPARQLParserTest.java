@@ -1223,6 +1223,64 @@ public class SPARQLParserTest {
 		});
 	}
 
+	@Test
+	public void lateralRejectsSelectStarBindToLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL { SELECT * { BIND("rebinding" AS ?o) } }
+				}
+				""";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void lateralRejectsSelectStarValuesForLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL { SELECT * { VALUES ?o { ex:o1 } } }
+				}
+				""";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void lateralAllowsHiddenSubSelectValuesForLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL {
+				    SELECT ?label { BIND("local" AS ?label) }
+				    VALUES ?o { ex:o1 }
+				  }
+				}
+				""";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void lateralRejectsGroupByAliasForLeftVariable() {
+		String query = """
+				PREFIX ex: <http://example.org/>
+				SELECT * WHERE {
+				  ?s ex:p ?o .
+				  LATERAL {
+				    SELECT ?o { ?s ex:q ?x }
+				    GROUP BY ("rebinding" AS ?o)
+				  }
+				}
+				""";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
 	private AggregateFunctionFactory buildDummyFactory() {
 		return new AggregateFunctionFactory() {
 			@Override

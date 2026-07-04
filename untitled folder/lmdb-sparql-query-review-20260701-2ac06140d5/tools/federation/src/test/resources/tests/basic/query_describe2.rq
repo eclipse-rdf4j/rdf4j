@@ -1,0 +1,5 @@
+# describe all resources
+PREFIX : <http://example.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/> 
+
+DESCRIBE ?s WHERE { ?s ?p ?o }

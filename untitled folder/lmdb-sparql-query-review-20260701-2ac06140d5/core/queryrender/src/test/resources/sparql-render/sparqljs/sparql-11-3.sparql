@@ -1,0 +1,7 @@
+PREFIX : <http://data.example/>
+SELECT (AVG(?size) AS ?asize)
+WHERE {
+  ?x :size ?size
+}
+GROUP BY ?x
+HAVING(AVG(?size) > 10)

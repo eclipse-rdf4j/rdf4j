@@ -204,7 +204,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()),
+				return Var.of(var.getName(),
+						valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get(), lit.getBaseDirection()),
 						anonymous, constant);
 			}
 

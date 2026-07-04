@@ -1,0 +1,11 @@
+PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+
+DELETE WHERE {
+  GRAPH <http://example.com/names> {
+    ?person foaf:givenName 'Fred' ;
+            ?property1 ?value1
+  }
+  GRAPH <http://example.com/addresses> {
+    ?person ?property2 ?value2
+  }
+}

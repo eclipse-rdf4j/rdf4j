@@ -1,0 +1,6 @@
+@prefix : <http://example.org/> .
+
+:Item1 :p :Pred1 .
+:Item2 :p :Pred2 .
+:Item2 :p :Pred3 .
+:Item3 :p :Pred4 .

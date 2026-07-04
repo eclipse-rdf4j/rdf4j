@@ -1,0 +1,6 @@
+SELECT * WHERE {
+  ?a ?b ?c.
+  FILTER (?a = 1 || ?a = 2 || ?a = 3 || ?a = 4)
+  FILTER (?a = 1 && ?a = 2 && ?a = 3 && ?a = 4)
+  FILTER (?a = 1 && ?a = 2 || ?a = 3 && ?a = 4)
+}

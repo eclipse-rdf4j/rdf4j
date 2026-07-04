@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -166,7 +167,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(electricalGridQuery())
@@ -209,14 +210,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void optimizedPlanIncludesLmdbPlannedIndexMetrics(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(plannedIndexMetricsQuery())
@@ -295,14 +296,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void unboundLocalFilterDoesNotReducePhysicalAccessWork(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel.FactorCostEstimate filteredNameCost = costModel
@@ -326,14 +327,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	@Test
 	void plannerStartsElectricalQ2WithFilteredSubstationNameWhenOnlyPredicatePrefixIsAvailable(@TempDir File dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			StatementPattern typePattern = transformerTypePattern();
 			StatementPattern feedsPattern = transformerFeedsPattern();
@@ -359,14 +360,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void plannerAcceptsGeneralSegmentShapesAndReportsAdditiveWork(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
 
@@ -396,14 +397,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void optimizedSocialMediaQ4StartsWithUSideRestrictionBeforeFollowsProbe(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticSocialMediaQ4Data(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -445,14 +446,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void predicateOnlyAccessIsCostedAsPrefixScan(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticSocialMediaQ4Data(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			StatementPattern followsByPredicate = new StatementPattern(Var.of("u"),
@@ -475,14 +476,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void directLookupChainFromFiniteUserTuplesDoesNotExpandEstimate(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticSocialMediaChainData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesForPlanning(store);
 
 			BindingSetAssignment tuples = socialChainTupleBindings();
 			StatementPattern followsAB = followsPattern("a", "b");
@@ -1386,15 +1387,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private static PlannedBranch planGeneratorBranch(File dataDir, String indexes) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
+		LmdbStoreConfig config = sketchEnabledConfig(indexes);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSyntheticGridData(repository);
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			estimator.rebuild();
+			rebuildSketchesForPlanning(store);
 
 			StatementPattern typePattern = generatorTypePattern();
 			StatementPattern feedsPattern = feedsPattern();
@@ -1433,6 +1433,18 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				.contains("costModel=lmdb"),
 				"Expected LMDB physical refinement diagnostics: "
 						+ attempt.getPlan().get().getSummaryStringMetrics());
+	}
+
+	private static LmdbStoreConfig sketchEnabledConfig(String indexes) {
+		return new LmdbStoreConfig(indexes).setSketchEstimatorEnabled(true);
+	}
+
+	private static void rebuildSketchesForPlanning(LmdbStore store) throws InterruptedException {
+		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+		estimator.stop();
+		estimator.rebuild();
+		assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS),
+				"Expected manually rebuilt sketches to be ready before planning");
 	}
 
 	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {

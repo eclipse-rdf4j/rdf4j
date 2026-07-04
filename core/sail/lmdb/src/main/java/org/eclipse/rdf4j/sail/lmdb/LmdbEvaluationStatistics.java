@@ -123,7 +123,6 @@ class LmdbEvaluationStatistics
 		LmdbPredicateObjectDomainSource, RdfStatisticsProvider, LeoLearnedEvidenceService {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
-	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
 	private static final double DIRECT_LOOKUP_WORK_ROW_FLOOR = 1.0d;
 	private static final int BOUNDED_GREEDY_MIN_ACTIONS = 7;
 	private static final double BOUNDED_GREEDY_MAX_WORK_ROWS = 10_000.0d;
@@ -329,17 +328,7 @@ class LmdbEvaluationStatistics
 		if (sketchBasedJoinEstimator == null) {
 			return false;
 		}
-		long now = System.currentTimeMillis();
-		long revisionId = valueStore.getRevision().getRevisionId();
-		if (now < joinSupportCacheExpiryMs && revisionId == joinSupportCacheRevisionId) {
-			return joinSupportCacheValue;
-		}
-
-		boolean ready = sketchBasedJoinEstimator.isReadyNonBlocking();
-		joinSupportCacheValue = ready;
-		joinSupportCacheRevisionId = revisionId;
-		joinSupportCacheExpiryMs = now + JOIN_SUPPORT_CACHE_TTL_MS;
-		return ready;
+		return sketchBasedJoinEstimator.isReadyNonBlocking();
 	}
 
 	@Override

@@ -1,0 +1,10 @@
+SELECT * WHERE {
+	?a rdfs:label "abcd" ;
+		rdfs:label "efgh"^^xsd:string ;
+		rdfs:label "ijkl"@de ;
+		rdfs:label "mn\"\'\"op\n\t" ;
+		<urn:someBoolean> "true"^^xsd:boolean ;
+		<urn:someDouble> "1.0"^^xsd:double ;
+		<urn:someInteger> "1"^^xsd:integer ;
+		<urn:someDateTime> "2002-10-10T12:00:00-05:00"^^xsd:dateTime .
+} 

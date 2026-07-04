@@ -137,7 +137,8 @@ public interface ValueStoreRevision {
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore == null || valueStore.getRevision().getRevisionId() != getRevisionId()) {
+		if (valueStore == null || !valueStore.valueHashCacheEnabled
+				|| valueStore.getRevision().getRevisionId() != getRevisionId()) {
 			return 0;
 		}
 		return valueStore.getStoredHash(id);

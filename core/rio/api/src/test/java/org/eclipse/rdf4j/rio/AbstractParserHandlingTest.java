@@ -1003,7 +1003,7 @@ public abstract class AbstractParserHandlingTest {
 	@Test
 	public void testRDF12Compatibility1() throws Exception {
 		Model expectedModel = new LinkedHashModel();
-		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/p2"),
 				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
 		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/4"), DC.SOURCE, t1));
 		TripleTerm t2 = vf.createTripleTerm(vf.createIRI("http://example.com/s"), DC.DATE, t1);
@@ -1024,7 +1024,8 @@ public abstract class AbstractParserHandlingTest {
 	@Test
 	public void testRDF12Compatibility2() throws Exception {
 		Model expectedModel = new LinkedHashModel();
-		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/а1"),
+				vf.createIRI("http://example.com/p2"),
 				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
 		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/4"), DC.SOURCE, t1));
 		TripleTerm t2 = vf.createTripleTerm(vf.createIRI("http://example.com/s"), DC.DATE, t1);

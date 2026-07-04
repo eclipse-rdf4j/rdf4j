@@ -166,6 +166,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		if (initializedValue instanceof LmdbLiteral lmdbLiteral) {
 			this.label = lmdbLiteral.label;
 			this.language = lmdbLiteral.language;
+			this.baseDirection = lmdbLiteral.baseDirection;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
 			this.initialized = true;
@@ -230,7 +231,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public BaseDirection getBaseDirection() {
+		init();
 		return baseDirection;
+	}
+
+	public void setBaseDirection(BaseDirection baseDirection) {
+		this.baseDirection = baseDirection;
 	}
 
 	public void setLanguage(String language) {

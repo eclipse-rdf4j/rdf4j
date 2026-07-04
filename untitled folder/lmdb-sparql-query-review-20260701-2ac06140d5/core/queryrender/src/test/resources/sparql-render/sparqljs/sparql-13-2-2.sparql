@@ -1,0 +1,5 @@
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT  ?name
+FROM NAMED <http://example.org/alice>
+FROM NAMED <http://example.org/bob>
+WHERE   { ?x foaf:name ?name }

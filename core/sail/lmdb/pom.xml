@@ -220,6 +220,11 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
+			<groupId>org.junit-pioneer</groupId>
+			<artifactId>junit-pioneer</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryrender</artifactId>
 			<version>${project.version}</version>

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.trig;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringWriter;
+import java.net.URISyntaxException;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -45,7 +46,8 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 				BasicWriterSettings.PRETTY_PRINT,
 				BasicWriterSettings.INLINE_BLANK_NODES,
 				BasicWriterSettings.BASE_DIRECTIVE,
-				TurtleWriterSettings.ABBREVIATE_NUMBERS
+				TurtleWriterSettings.ABBREVIATE_NUMBERS,
+				TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES
 		};
 	}
 
@@ -66,7 +68,7 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 		Rio.write(model, stringWriter, RDFFormat.TRIG,
 				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
 
-		assertTrue(stringWriter.toString().startsWith("VERSION \"1.2\"\n"));
+		assertTrue(stringWriter.toString().startsWith("@version \"1.2\" .\n"));
 	}
 
 	@Test
@@ -79,7 +81,7 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 		Rio.write(model, stringWriter, RDFFormat.TRIG,
 				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
 
-		assertTrue(stringWriter.toString().startsWith("VERSION \"1.2\"\n"));
+		assertTrue(stringWriter.toString().startsWith("@version \"1.2\" .\n"));
 	}
 
 	@Test
@@ -92,7 +94,7 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 		StringWriter stringWriter = new StringWriter();
 		Rio.write(model, stringWriter, RDFFormat.TRIG);
 
-		assertTrue(stringWriter.toString().startsWith("VERSION \"1.2\"\n"));
+		assertTrue(stringWriter.toString().startsWith("@version \"1.2\" .\n"));
 	}
 
 	@Test
@@ -103,6 +105,40 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 		StringWriter stringWriter = new StringWriter();
 		Rio.write(model, stringWriter, RDFFormat.TRIG);
 
-		assertTrue(stringWriter.toString().startsWith("VERSION \"1.2\"\n"));
+		assertTrue(stringWriter.toString().startsWith("@version \"1.2\" .\n"));
 	}
+
+	@Test
+	public void testRDFStyleDirectivesPrintedByDefault() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE);
+		assertTrue(stringWriter.toString()
+				.startsWith("@base <http://example.com/base/> .\n" +
+						"@prefix ex: <http://example.com/prefix/> .\n" +
+						"@version \"1.2\" .\n"));
+	}
+
+	@Test
+	public void testSPARQLStyleDirectivesPrintedUponConfiguration() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE,
+				new WriterConfig().set(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES, true));
+		assertTrue(stringWriter.toString()
+				.startsWith("BASE <http://example.com/base/>\n" +
+						"PREFIX ex: <http://example.com/prefix/>\n" +
+						"VERSION \"1.2\"\n"));
+	}
+
 }

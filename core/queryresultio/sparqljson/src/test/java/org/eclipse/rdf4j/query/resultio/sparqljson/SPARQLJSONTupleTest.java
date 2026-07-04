@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -292,7 +291,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -311,7 +309,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J_incompleteTriple() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -325,7 +322,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatRDF4J_doubleSubject() {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -339,7 +335,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatStardog() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -358,7 +353,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatStardog_NamedGraph() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();
@@ -378,7 +372,6 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	@Disabled("pending implementation of SPARQL 1.2 and adjusting RDFStar tests to RDF 1.2")
 	public void testRDFStar_extendedFormatJena() throws Exception {
 		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
 		QueryResultCollector handler = new QueryResultCollector();

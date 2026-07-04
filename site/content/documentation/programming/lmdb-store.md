@@ -115,13 +115,15 @@ config.setPredicateGuaranteeIndexEnabled(false);
 config.setPredicateGuaranteeIndexAutoRebuild(false);
 // exclude selected predicates from predicate guarantee tracking
 config.setPredicateGuaranteeExcludedPredicates("http://example.com/vocab/volatilePredicate");
+// force sketch-based join estimation on or off (defaults to on when the JVM heap is at least 2 GB)
+config.setSketchEstimatorEnabled(true);
 // set maximum size of value db to 1 GiB
 
 config.setValueDBSize(1_073_741_824L);
 // set maximum size of triple db to 1 GiB
 config.setTripleDBSize(1_073_741_824L);
 
-Repository repo = new SailRepository(new LmdbStore(dataDir), config);
+Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 ```
 
 The optional value hash cache stores precomputed `Value.hashCode()` results in `hashes.dat`. It is disabled by default.
@@ -157,6 +159,16 @@ Use `LmdbStoreConfig.setPredicateGuaranteeExcludedPredicates(...)` to skip selec
 or whitespace separated list of predicate IRIs. IRIs may be written either as plain strings or wrapped in angle
 brackets. Excluded predicates are not recorded, are not used for planning, and changing the exclusion list changes
 the metadata version so that automatic rebuilds refresh the remaining guarantees.
+
+Sketch-based join estimation is disabled by default. To enable it, set
+`LmdbStoreConfig.setSketchEstimatorEnabled(true)` when creating the store. Repository configuration files can enable it
+with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:sketchEstimatorEnabled true .
+```
 
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store

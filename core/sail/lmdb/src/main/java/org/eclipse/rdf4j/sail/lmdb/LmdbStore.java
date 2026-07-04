@@ -500,6 +500,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			return sketchEstimatorEnabled;
 		}
 
+		// This branch's planner stack (cascades + sketches) is on by default when the heap can carry the
+		// sketch snapshots; upstream develop defaults the estimator off.
 		return maxMemoryBytes >= SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES;
 	}
 

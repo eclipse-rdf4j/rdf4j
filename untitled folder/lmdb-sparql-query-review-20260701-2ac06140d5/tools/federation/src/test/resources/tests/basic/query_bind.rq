@@ -1,0 +1,11 @@
+# make a test for BIND 
+
+PREFIX : <http://example.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/> 
+
+SELECT ?s ?interest
+{
+  BIND ("Alan" as ?name) .
+  ?s foaf:name ?name .
+  ?s foaf:interest ?interest .
+} 

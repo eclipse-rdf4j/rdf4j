@@ -1,0 +1,37 @@
+{
+	"head": {
+		"link": [],
+		"vars": [
+			"lc",
+			"subj"
+		]
+	},
+	"results": {
+		"distinct": false,
+		"ordered": true,
+		"bindings": [
+			{
+				"lc": {
+					"type": "literal",
+					"xml:lang": "de",
+					"value": "Altin Lala"
+				},
+				"subj": {
+					"type": "uri",
+					"value": "http://de.dbpedia.org/resource/Altin_Lala"
+				}
+			},
+			{
+				"lc": {
+					"type": "typed-literal",
+					"datatype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString",
+					"value": "Hans Lala"
+				},
+				"subj": {
+					"type": "uri",
+					"value": "http://de.dbpedia.org/resource/Hans_Lala"
+				}
+			}
+		]
+	}
+}

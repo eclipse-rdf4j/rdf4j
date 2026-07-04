@@ -1,0 +1,14 @@
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@base <http://example.org/ns/> .
+
+<alien> dc:title "Alien"@en ;
+        dc:date "1979-05-25T00:00:00Z"^^xsd:dateTime .
+<aliens> dc:title "Aliens"@en ;
+         dc:date "1986-07-18T00:00:00Z"^^xsd:dateTime .
+<alien3> dc:title "Alien³"@en ;
+         dc:date "1992-05-22T00:00:00Z"^^xsd:dateTime .
+<resurrection> dc:title "Alien: Resurrection"@en ;
+               dc:date "1997-11-26T00:00:00Z"^^xsd:dateTime .
+<prometheus> dc:title "Prometheus"@en ; 
+             dc:date "2012-06-08T00:00:00Z"^^xsd:dateTime .

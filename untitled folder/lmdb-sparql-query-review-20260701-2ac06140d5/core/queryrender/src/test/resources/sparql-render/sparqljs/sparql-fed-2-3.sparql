@@ -1,0 +1,7 @@
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+SELECT ?name
+WHERE
+{
+  SERVICE SILENT <http://people.example.org/sparql> { 
+    <http://example.org/people15> foaf:name ?name . }
+}

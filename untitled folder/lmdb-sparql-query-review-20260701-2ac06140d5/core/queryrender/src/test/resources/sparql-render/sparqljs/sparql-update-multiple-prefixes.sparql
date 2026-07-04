@@ -1,0 +1,4 @@
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+INSERT DATA { <http://example/book1> dc:title "A new book" .} ;
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+INSERT DATA { <http://example/book2> rdfs:label "A second book" .}

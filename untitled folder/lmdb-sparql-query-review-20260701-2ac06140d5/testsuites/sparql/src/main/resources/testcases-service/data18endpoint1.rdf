@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<rdf:RDF
+	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" >
+  <rdf:Description rdf:about="http://example.org/id/longform/160">
+    <rdfs:label xml:lang="ja">(抗真菌薬;イミダゾール系) ケトコナゾール</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://example.org/id/longform/52">
+    <rdfs:label xml:lang="ja">(脳や癌細胞の代謝活性を測定するPET診断薬) フッ素18-フルオロ-2-デオキシ-D-グルコース</rdfs:label>
+  </rdf:Description>
+</rdf:RDF>

@@ -1,0 +1,11 @@
+@prefix : <http://example.org/> .
+
+{
+  :a1 a :X .
+  :a1 :name "a1" .
+  :b1 :p1 :a1.
+   
+  :a2 :name "a2" .
+  :b2 :p1 :a2.
+   
+}

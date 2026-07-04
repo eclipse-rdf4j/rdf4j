@@ -1,0 +1,9 @@
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+PREFIX geof: <http://www.opengis.net/def/function/geosparql/>
+
+SELECT ?city
+WHERE { ?city geo:asWKT ?coord1 .
+        <http://example.org/colorado> geo:asWKT ?coord2 .
+        FILTER ( geof:sfContains(?coord2, ?coord1) )
+        FILTER ( ?city != <http://example.org/colorado> )
+}

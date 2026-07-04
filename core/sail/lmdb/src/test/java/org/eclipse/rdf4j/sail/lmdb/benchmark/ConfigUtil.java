@@ -34,6 +34,7 @@ final class ConfigUtil {
 
 	static LmdbStoreConfig createConfig(String tripleIndexes) {
 		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+		config.setSketchEstimatorEnabled(true);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());

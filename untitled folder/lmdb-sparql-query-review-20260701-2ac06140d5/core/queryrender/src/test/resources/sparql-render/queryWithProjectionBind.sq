@@ -1,0 +1,4 @@
+PREFIX : <http://example.org/>
+select ?a ?b (<http://example.org/someiri> as ?someiri) where { 
+	?a :label ?b .
+} 

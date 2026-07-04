@@ -120,7 +120,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void automaticLmdbStoreSwitchesToLmdbEvaluationStrategyFactoryAfterSketchesAreReady(@TempDir File dataDir)
 			throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			addSingleStatement(store, "urn:ready");
@@ -147,7 +147,7 @@ class LmdbOptimizerPipelineTest {
 
 	@Test
 	void longLivedConnectionsChooseCurrentAutomaticFactoryPerQueryCreation(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
@@ -170,7 +170,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void automaticFactoryPreservesConfiguredPipelineAfterSketchesBecomeReady(@TempDir File dataDir) throws Exception {
 		QueryOptimizerPipeline customPipeline = List::of;
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.getEvaluationStrategyFactory().setOptimizerPipeline(customPipeline);
 		store.init();
 		try {
@@ -1760,6 +1760,10 @@ class LmdbOptimizerPipelineTest {
 				store.shutDown();
 			}
 		}
+	}
+
+	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
+		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
 	}
 
 	private static final class ProcessResult {

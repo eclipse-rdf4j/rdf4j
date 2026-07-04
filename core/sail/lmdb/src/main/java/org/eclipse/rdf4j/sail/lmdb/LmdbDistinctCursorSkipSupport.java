@@ -57,12 +57,12 @@ final class LmdbDistinctCursorSkipSupport {
 		return Optional.ofNullable(bestPlan);
 	}
 
-	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
+	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleIndex index, long[] quad,
 			int prefixLength) {
 		return writeSuccessorKey(keyBuffer, index, quad, null, prefixLength);
 	}
 
-	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
+	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleIndex index, long[] quad,
 			long[] lowerBoundTemplate, int prefixLength) {
 		if (keyBuffer == null || index == null || quad == null || prefixLength <= 0) {
 			return false;
@@ -79,7 +79,7 @@ final class LmdbDistinctCursorSkipSupport {
 		return true;
 	}
 
-	static boolean writeCurrentPrefixLowerBoundKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
+	static boolean writeCurrentPrefixLowerBoundKey(ByteBuffer keyBuffer, TripleIndex index, long[] quad,
 			long[] lowerBoundTemplate, int prefixLength) {
 		if (keyBuffer == null || index == null || quad == null || prefixLength <= 0) {
 			return false;

@@ -2148,14 +2148,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return true;
 		}
 		if ((epoch & 1L) != 0L) {
-			if (rebuildRequiredNow || !sketchesLoadedNow) {
-				return false;
-			}
-			synchronized (readyState) {
-				return hasRequiredActiveSketchGroups(readyState);
-			}
+			return hasResidentReadySnapshot(readyState, sketchesLoadedNow);
 		}
-		if (rebuildRequiredNow || !sketchesLoadedNow) {
+		if (rebuildRequiredNow) {
+			return false;
+		}
+		if (!sketchesLoadedNow) {
 			return false;
 		}
 		synchronized (readyState) {
@@ -2164,6 +2162,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				rememberPositiveReadiness(epoch);
 			}
 			return ready;
+		}
+	}
+
+	private boolean hasResidentReadySnapshot(State readyState, boolean sketchesLoadedNow) {
+		if (!sketchesLoadedNow) {
+			return false;
+		}
+		synchronized (readyState) {
+			return hasRequiredActiveSketchGroups(readyState);
 		}
 	}
 

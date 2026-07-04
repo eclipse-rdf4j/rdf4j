@@ -14,11 +14,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.file.Files;
 import java.util.List;
@@ -33,6 +37,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ValueStoreHashCacheTest {
+
+	private static final ValueLayout.OfInt HASH_LAYOUT = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
 	private ValueStore valueStore;
 
@@ -55,6 +61,30 @@ class ValueStoreHashCacheTest {
 		assertTrue("hashCode should initialize lazy IRIs when the hash cache is disabled", isInitialized(lazyValue));
 		assertFalse(hashFile(dataDir).exists());
 		assertFalse(integrityFile(dataDir).exists());
+	}
+
+	@Test
+	void configAloneShouldEnableHashCache(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = hashCacheEnabledConfig();
+		valueStore = createValueStore(dataDir, config);
+
+		IRI iri = Values.iri("urn:hash:config-only-enabled");
+		long id = storeValue(iri);
+
+		valueStore.close();
+		valueStore = null;
+
+		assertTrue(hashFile(dataDir).exists());
+		assertTrue(integrityFile(dataDir).exists());
+
+		valueStore = createValueStore(dataDir, config);
+
+		assertFalse("startup should remove integrity metadata until the next clean shutdown",
+				integrityFile(dataDir).exists());
+
+		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
+		assertEquals(iri.hashCode(), lazyValue.hashCode());
+		assertFalse("config alone should enable the mmap hash cache", isInitialized(lazyValue));
 	}
 
 	@Test
@@ -111,31 +141,6 @@ class ValueStoreHashCacheTest {
 		}, false);
 	}
 
-	@Test
-	void deleteShouldCleanMappedSegments(@TempDir File dataDir) throws Exception {
-		File valuesDir = new File(dataDir, "values");
-		assertTrue(valuesDir.mkdirs());
-
-		ValueStoreHashFile hashFile = new ValueStoreHashFile(valuesDir);
-		hashFile.put(1L, 1234);
-
-		MappedByteBuffer segment = firstSegment(hashFile);
-		assertTrue(hashFile(dataDir).exists());
-
-		hashFile.delete();
-
-		assertEquals(1234, segment.getInt(Integer.BYTES));
-		assertTrue("delete should clear tracked mapped segments", segments(hashFile).isEmpty());
-		assertFalse("delete should invalidate integrity metadata immediately", integrityFile(dataDir).exists());
-
-		ValueStoreHashFile reopened = new ValueStoreHashFile(valuesDir);
-		try {
-			assertEquals("reopened cache should ignore stale mapped contents after delete", 0, reopened.get(1L));
-		} finally {
-			reopened.close();
-		}
-	}
-
 	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
 			boolean corruptHashFile) throws Exception {
 		LmdbStoreConfig config = hashCacheEnabledConfig();
@@ -156,6 +161,49 @@ class ValueStoreHashCacheTest {
 		assertFalse(isInitialized(lazyValue));
 		assertEquals(expectedHash, lazyValue.hashCode());
 		assertTrue("invalid cache metadata should force lazy IRIs to recompute their hash", isInitialized(lazyValue));
+	}
+
+	@Test
+	void closeShouldReleaseMappedSegments(@TempDir File dataDir) throws Exception {
+		File valuesDir = new File(dataDir, "values");
+		assertTrue(valuesDir.mkdirs());
+
+		ValueStoreHashFile hashFile = new ValueStoreHashFile(valuesDir);
+		hashFile.put(1L, 1234);
+
+		Object segment = firstSegment(hashFile);
+		assertEquals(1234, readHash(segment));
+
+		hashFile.close();
+
+		assertThrows(IllegalStateException.class, () -> readHash(segment));
+		assertTrue("close should clear tracked mapped segments", segments(hashFile).isEmpty());
+		assertTrue("clean close should persist integrity metadata", integrityFile(dataDir).exists());
+	}
+
+	@Test
+	void deleteShouldReleaseMappedSegments(@TempDir File dataDir) throws Exception {
+		File valuesDir = new File(dataDir, "values");
+		assertTrue(valuesDir.mkdirs());
+
+		ValueStoreHashFile hashFile = new ValueStoreHashFile(valuesDir);
+		hashFile.put(1L, 1234);
+
+		Object segment = firstSegment(hashFile);
+		assertTrue(hashFile(dataDir).exists());
+
+		hashFile.delete();
+
+		assertThrows(IllegalStateException.class, () -> readHash(segment));
+		assertTrue("delete should clear tracked mapped segments", segments(hashFile).isEmpty());
+		assertFalse("delete should invalidate integrity metadata immediately", integrityFile(dataDir).exists());
+
+		ValueStoreHashFile reopened = new ValueStoreHashFile(valuesDir);
+		try {
+			assertEquals("reopened cache should ignore stale mapped contents after delete", 0, reopened.get(1L));
+		} finally {
+			reopened.close();
+		}
 	}
 
 	private ValueStore createValueStore(File dataDir, LmdbStoreConfig config) throws IOException {
@@ -188,15 +236,25 @@ class ValueStoreHashCacheTest {
 	}
 
 	@SuppressWarnings("unchecked")
-	private MappedByteBuffer firstSegment(ValueStoreHashFile hashFile) throws Exception {
+	private Object firstSegment(ValueStoreHashFile hashFile) throws Exception {
 		return segments(hashFile).getFirst();
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<MappedByteBuffer> segments(ValueStoreHashFile hashFile) throws Exception {
+	private List<Object> segments(ValueStoreHashFile hashFile) throws Exception {
 		Field segmentsField = ValueStoreHashFile.class.getDeclaredField("segments");
 		segmentsField.setAccessible(true);
-		return (List<MappedByteBuffer>) segmentsField.get(hashFile);
+		return (List<Object>) segmentsField.get(hashFile);
+	}
+
+	private int readHash(Object segment) {
+		if (segment instanceof MemorySegment memorySegment) {
+			return memorySegment.get(HASH_LAYOUT, Integer.BYTES);
+		}
+		if (segment instanceof MappedByteBuffer mappedByteBuffer) {
+			return mappedByteBuffer.getInt(Integer.BYTES);
+		}
+		throw new AssertionError("Unexpected hash cache segment type: " + segment.getClass());
 	}
 
 	@AfterEach

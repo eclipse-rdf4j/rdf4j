@@ -1,0 +1,6 @@
+PREFIX : <http://example.com/data/#>
+SELECT ?x (MIN(?y) * 2 AS ?min)
+WHERE {
+  ?x :p ?y .
+  ?x :q ?z .
+} GROUP BY ?x (STR(?z))

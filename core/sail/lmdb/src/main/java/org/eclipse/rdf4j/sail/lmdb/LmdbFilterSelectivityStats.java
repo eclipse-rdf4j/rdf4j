@@ -860,10 +860,10 @@ class LmdbFilterSelectivityStats
 
 	private boolean matchesRepeatedVarEquality(StatementPattern pattern, long[] row) {
 		Map<String, Long> bindingsByName = new HashMap<>(4);
-		return matchesRepeatedVar(pattern.getSubjectVar(), row[TripleStore.SUBJ_IDX], bindingsByName)
-				&& matchesRepeatedVar(pattern.getPredicateVar(), row[TripleStore.PRED_IDX], bindingsByName)
-				&& matchesRepeatedVar(pattern.getObjectVar(), row[TripleStore.OBJ_IDX], bindingsByName)
-				&& matchesRepeatedVar(pattern.getContextVar(), row[TripleStore.CONTEXT_IDX], bindingsByName);
+		return matchesRepeatedVar(pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX], bindingsByName)
+				&& matchesRepeatedVar(pattern.getPredicateVar(), row[TripleIndex.PRED_IDX], bindingsByName)
+				&& matchesRepeatedVar(pattern.getObjectVar(), row[TripleIndex.OBJ_IDX], bindingsByName)
+				&& matchesRepeatedVar(pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX], bindingsByName);
 	}
 
 	private boolean matchesRepeatedVar(Var var, long valueId, Map<String, Long> bindingsByName) {
@@ -876,10 +876,10 @@ class LmdbFilterSelectivityStats
 
 	private BindingSet toBindingSet(StatementPattern pattern, long[] row) throws IOException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
-		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleStore.SUBJ_IDX]);
-		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleStore.PRED_IDX]);
-		addBinding(bindingSet, pattern.getObjectVar(), row[TripleStore.OBJ_IDX]);
-		addBinding(bindingSet, pattern.getContextVar(), row[TripleStore.CONTEXT_IDX]);
+		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX]);
+		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleIndex.PRED_IDX]);
+		addBinding(bindingSet, pattern.getObjectVar(), row[TripleIndex.OBJ_IDX]);
+		addBinding(bindingSet, pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX]);
 		return bindingSet;
 	}
 

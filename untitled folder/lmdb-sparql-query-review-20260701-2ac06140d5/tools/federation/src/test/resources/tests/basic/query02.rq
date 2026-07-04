@@ -1,0 +1,8 @@
+# extract all triples
+
+PREFIX : <http://example.org/> 
+
+CONSTRUCT { ?s ?p ?o } WHERE
+{
+  ?s ?p ?o .
+} 

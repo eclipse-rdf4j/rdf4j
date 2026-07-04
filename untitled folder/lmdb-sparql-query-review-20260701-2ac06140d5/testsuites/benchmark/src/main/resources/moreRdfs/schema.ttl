@@ -1,0 +1,18 @@
+@prefix ex: <http://example.org/ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+ex:subSubProp rdfs:subPropertyOf ex:subProp .
+ex:subProp rdfs:subPropertyOf ex:supProp .
+ex:subProp a rdfs:ContainerMembershipProperty.
+
+ex:supProp rdfs:range ex:Range.
+
+ex:supProp rdfs:domain ex:Domain.
+
+
+ex:Range rdfs:subClassOf ex:SupRange.
+
+ex:SupRange rdfs:subClassOf ex:Domain.
+
+ex:Domain rdfs:subClassOf ex:SupDomain.

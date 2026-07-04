@@ -37,12 +37,14 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -321,9 +323,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			if (canEvaluateConditionAgainstInputBindings(filter)) {
 				this.retain = Function.identity();
 			} else {
+				final Set<String> bindingNames = filterScopeBindingNames(filter);
 				this.retain = (bs) -> {
 					QueryBindingSet nbs = new QueryBindingSet(bs);
-					nbs.retainAll(filter.getBindingNames());
+					nbs.retainAll(bindingNames);
 					return nbs;
 				};
 			}
@@ -351,10 +354,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
-		final Set<String> bindingNames = new LinkedHashSet<>(filter.getBindingNames());
-		if (!filter.isVariableScopeChange()) {
-			bindingNames.addAll(VarNameCollector.process(filter.getCondition()));
-		}
+		final Set<String> bindingNames = filterScopeBindingNames(filter);
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
 		@SuppressWarnings("unchecked")
@@ -378,6 +378,34 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			}
 			return nbs;
 		};
+	}
+
+	private static Set<String> filterScopeBindingNames(Filter filter) {
+		Set<String> scopeBindingNames = new LinkedHashSet<>(filter.getBindingNames());
+		Set<String> conditionBindingNames = VarNameCollector.process(filter.getCondition());
+		if (scopeBindingNames.containsAll(conditionBindingNames)) {
+			return scopeBindingNames;
+		}
+
+		QueryModelNode child = filter;
+		QueryModelNode parent = filter.getParentNode();
+		while (parent != null && !scopeBindingNames.containsAll(conditionBindingNames)) {
+			if (isVariableScopeChange(child)) {
+				break;
+			}
+			if (parent instanceof Join join && join.getRightArg() == child) {
+				scopeBindingNames.addAll(join.getLeftArg().getBindingNames());
+			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+				scopeBindingNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			}
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		return scopeBindingNames;
+	}
+
+	private static boolean isVariableScopeChange(QueryModelNode node) {
+		return node instanceof VariableScopeChange && ((VariableScopeChange) node).isVariableScopeChange();
 	}
 
 	private static boolean canEvaluateConditionAgainstInputBindings(Filter filter) {

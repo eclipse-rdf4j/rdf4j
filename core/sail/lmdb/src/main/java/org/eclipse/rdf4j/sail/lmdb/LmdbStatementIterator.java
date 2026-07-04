@@ -91,16 +91,16 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 				return null;
 			}
 
-			long subjID = quad[TripleStore.SUBJ_IDX];
+			long subjID = quad[TripleIndex.SUBJ_IDX];
 			Resource subj = getSubject(subjID);
 
-			long predID = quad[TripleStore.PRED_IDX];
+			long predID = quad[TripleIndex.PRED_IDX];
 			IRI pred = getPredicate(predID);
 
-			long objID = quad[TripleStore.OBJ_IDX];
+			long objID = quad[TripleIndex.OBJ_IDX];
 			Value obj = getObject(objID);
 
-			long contextID = quad[TripleStore.CONTEXT_IDX];
+			long contextID = quad[TripleIndex.CONTEXT_IDX];
 			Resource context = getContext(contextID);
 
 			return valueStore.createStatement(subj, pred, obj, context);

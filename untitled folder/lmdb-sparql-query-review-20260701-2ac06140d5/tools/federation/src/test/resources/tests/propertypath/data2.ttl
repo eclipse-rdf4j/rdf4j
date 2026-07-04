@@ -1,0 +1,27 @@
+@prefix : <http://example.org/> .
+@prefix ns3: <http://namespace3.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . 
+@prefix owl:  <http://www.w3.org/2002/07/owl#> . 
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> . 
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+:MySubClass2 a owl:Class ;
+	rdfs:label "My Sub Class 2" ;
+	rdfs:subClassOf :MyClass .
+
+:MySubSubClass1 a owl:Class ;
+	rdfs:label "My Sub Sub Class 1" ;
+	rdfs:subClassOf :MySubClass2 .
+	
+:Concept2 skos:altLabel "Concept2 AltLabel" .
+
+:Concept3 a :MyClass ;
+	rdfs:label "Concept3" ;
+	skos:altLabel "Concept3 AltLabel" .
+
+# labels for SKOS concepts
+:mammals rdfs:label "Mammals" .
+:bovinae rdfs:label "Bovinae" .
+:cows rdfs:label "Cows" .

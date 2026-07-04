@@ -37,156 +37,119 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	private int jjMoveStringLiteralDfa0_0() {
-		switch (curChar) {
-		case 33:
+		return switch (curChar) {
+		case 33 -> {
 			jjmatchedKind = 19;
-			return jjMoveStringLiteralDfa1_0(0x4000L, 0x0L, 0x0L, 0x0L);
-		case 38:
-			return jjMoveStringLiteralDfa1_0(0x200000L, 0x0L, 0x0L, 0x0L);
-		case 40:
-			jjmatchedKind = 4;
-			return jjMoveNfa_0(0);
-		case 41:
-			jjmatchedKind = 5;
-			return jjMoveNfa_0(0);
-		case 42:
-			jjmatchedKind = 24;
-			return jjMoveNfa_0(0);
-		case 43:
-			jjmatchedKind = 22;
-			return jjMoveNfa_0(0);
-		case 44:
-			jjmatchedKind = 11;
-			return jjMoveNfa_0(0);
-		case 45:
-			jjmatchedKind = 23;
-			return jjMoveNfa_0(0);
-		case 46:
-			jjmatchedKind = 12;
-			return jjMoveNfa_0(0);
-		case 47:
-			jjmatchedKind = 26;
-			return jjMoveNfa_0(0);
-		case 59:
-			jjmatchedKind = 10;
-			return jjMoveNfa_0(0);
-		case 60:
-			jjmatchedKind = 16;
-			return jjMoveStringLiteralDfa1_0(0x20000L, 0x0L, 0x0L, 0x10L);
-		case 61:
-			jjmatchedKind = 13;
-			return jjMoveNfa_0(0);
-		case 62:
-			jjmatchedKind = 15;
-			return jjMoveStringLiteralDfa1_0(0x40000L, 0x0L, 0x0L, 0x20L);
-		case 63:
-			jjmatchedKind = 25;
-			return jjMoveNfa_0(0);
-		case 65:
-			return jjMoveStringLiteralDfa1_0(0x1024000000000L, 0x200000100000L, 0x401000L, 0x0L);
-		case 66:
-		case 98:
-			return jjMoveStringLiteralDfa1_0(0x800200000000L, 0x28000081L, 0x0L, 0x0L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa1_0(0x1000000000L, 0x460000010040L, 0xc400L, 0x0L);
-		case 68:
-		case 100:
-			return jjMoveStringLiteralDfa1_0(0x800200a000000000L, 0x10000000000000L, 0x260800L, 0x0L);
-		case 69:
-		case 101:
-			return jjMoveStringLiteralDfa1_0(0x800000000000000L, 0x80000000000L, 0x0L, 0x0L);
-		case 70:
-			return jjMoveStringLiteralDfa1_0(0x100040000000000L, 0x800004000000L, 0x0L, 0x0L);
-		case 71:
-			return jjMoveStringLiteralDfa1_0(0x20400000000000L, 0x400000L, 0x0L, 0x0L);
-		case 72:
-			return jjMoveStringLiteralDfa1_0(0x200000000000000L, 0x20000000000000L, 0x180L, 0x0L);
-		case 73:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0xc038L, 0x810001L, 0x0L);
-		case 76:
-			return jjMoveStringLiteralDfa1_0(0x6004000000000000L, 0x10000000000L, 0x240L, 0x0L);
-		case 77:
-			return jjMoveStringLiteralDfa1_0(0x80000000000000L, 0x4480000000c0000L, 0x2000L, 0x0L);
-		case 78:
-			return jjMoveStringLiteralDfa1_0(0x400080000000000L, 0x2000000000000L, 0x0L, 0x0L);
-		case 79:
-			return jjMoveStringLiteralDfa1_0(0x18200000000000L, 0x0L, 0x10L, 0x0L);
-		case 80:
-			return jjMoveStringLiteralDfa1_0(0x400000000L, 0x0L, 0x8L, 0x0L);
-		case 82:
-			return jjMoveStringLiteralDfa1_0(0x10000000000L, 0x1104001000000L, 0x0L, 0x0L);
-		case 83:
-			return jjMoveStringLiteralDfa1_0(0x1000000800000000L, 0xf880003f10a21702L, 0x100004L, 0x0L);
-		case 84:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x300000002000000L, 0x1000002L, 0x0L);
-		case 85:
-			return jjMoveStringLiteralDfa1_0(0x40000000000000L, 0x8080000800L, 0x2000000L, 0x0L);
-		case 86:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x40000000L, 0x20L, 0x0L);
-		case 87:
-			return jjMoveStringLiteralDfa1_0(0x100000000000L, 0x0L, 0x80000L, 0x0L);
-		case 89:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x4000000000000L, 0x0L, 0x0L);
-		case 91:
-			jjmatchedKind = 8;
-			return jjMoveNfa_0(0);
-		case 93:
-			jjmatchedKind = 9;
-			return jjMoveNfa_0(0);
-		case 94:
-			jjmatchedKind = 28;
-			return jjMoveStringLiteralDfa1_0(0x20000000L, 0x0L, 0x0L, 0x0L);
-		case 97:
-			jjmatchedKind = 32;
-			return jjMoveStringLiteralDfa1_0(0x1024000000000L, 0x200000100000L, 0x401000L, 0x0L);
-		case 102:
-			return jjMoveStringLiteralDfa1_0(0x100040000000000L, 0x800004000000L, 0x0L, 0x0L);
-		case 103:
-			return jjMoveStringLiteralDfa1_0(0x20400000000000L, 0x400000L, 0x0L, 0x0L);
-		case 104:
-			return jjMoveStringLiteralDfa1_0(0x200000000000000L, 0x20000000000000L, 0x180L, 0x0L);
-		case 105:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0xc038L, 0x810001L, 0x0L);
-		case 108:
-			return jjMoveStringLiteralDfa1_0(0x6004000000000000L, 0x10000000000L, 0x240L, 0x0L);
-		case 109:
-			return jjMoveStringLiteralDfa1_0(0x80000000000000L, 0x4480000000c0000L, 0x2000L, 0x0L);
-		case 110:
-			return jjMoveStringLiteralDfa1_0(0x400080000000000L, 0x2000000000000L, 0x0L, 0x0L);
-		case 111:
-			return jjMoveStringLiteralDfa1_0(0x18200000000000L, 0x0L, 0x10L, 0x0L);
-		case 112:
-			return jjMoveStringLiteralDfa1_0(0x400000000L, 0x0L, 0x8L, 0x0L);
-		case 114:
-			return jjMoveStringLiteralDfa1_0(0x10000000000L, 0x1104001000000L, 0x0L, 0x0L);
-		case 115:
-			return jjMoveStringLiteralDfa1_0(0x1000000800000000L, 0xf880003f10a21702L, 0x100004L, 0x0L);
-		case 116:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x300000002000000L, 0x1000002L, 0x0L);
-		case 117:
-			return jjMoveStringLiteralDfa1_0(0x40000000000000L, 0x8080000800L, 0x2000000L, 0x0L);
-		case 118:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x40000000L, 0x20L, 0x0L);
-		case 119:
-			return jjMoveStringLiteralDfa1_0(0x100000000000L, 0x0L, 0x80000L, 0x0L);
-		case 121:
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x4000000000000L, 0x0L, 0x0L);
-		case 123:
-			jjmatchedKind = 6;
-			return jjMoveStringLiteralDfa1_0(0x0L, 0x0L, 0x0L, 0x80L);
-		case 124:
-			jjmatchedKind = 27;
-			return jjMoveStringLiteralDfa1_0(0x100000L, 0x0L, 0x0L, 0x100L);
-		case 125:
-			jjmatchedKind = 7;
-			return jjMoveNfa_0(0);
-		case 126:
-			jjmatchedKind = 198;
-			return jjMoveNfa_0(0);
-		default:
-			return jjMoveNfa_0(0);
+			yield jjMoveStringLiteralDfa1_0(0x4000L, 0x0L, 0x0L, 0x0L);
 		}
+		case 38 -> jjMoveStringLiteralDfa1_0(0x200000L, 0x0L, 0x0L, 0x0L);
+		case 40 -> {
+			jjmatchedKind = 4;
+			yield jjMoveNfa_0(0);
+		}
+		case 41 -> {
+			jjmatchedKind = 5;
+			yield jjMoveNfa_0(0);
+		}
+		case 42 -> {
+			jjmatchedKind = 24;
+			yield jjMoveNfa_0(0);
+		}
+		case 43 -> {
+			jjmatchedKind = 22;
+			yield jjMoveNfa_0(0);
+		}
+		case 44 -> {
+			jjmatchedKind = 11;
+			yield jjMoveNfa_0(0);
+		}
+		case 45 -> {
+			jjmatchedKind = 23;
+			yield jjMoveNfa_0(0);
+		}
+		case 46 -> {
+			jjmatchedKind = 12;
+			yield jjMoveNfa_0(0);
+		}
+		case 47 -> {
+			jjmatchedKind = 26;
+			yield jjMoveNfa_0(0);
+		}
+		case 59 -> {
+			jjmatchedKind = 10;
+			yield jjMoveNfa_0(0);
+		}
+		case 60 -> {
+			jjmatchedKind = 16;
+			yield jjMoveStringLiteralDfa1_0(0x20000L, 0x0L, 0x0L, 0x20L);
+		}
+		case 61 -> {
+			jjmatchedKind = 13;
+			yield jjMoveNfa_0(0);
+		}
+		case 62 -> {
+			jjmatchedKind = 15;
+			yield jjMoveStringLiteralDfa1_0(0x40000L, 0x0L, 0x0L, 0x40L);
+		}
+		case 63 -> {
+			jjmatchedKind = 25;
+			yield jjMoveNfa_0(0);
+		}
+		case 65 -> jjMoveStringLiteralDfa1_0(0x1024000000000L, 0x400000200000L, 0x802000L, 0x0L);
+		case 66, 98 -> jjMoveStringLiteralDfa1_0(0x800200000000L, 0x50000102L, 0x0L, 0x0L);
+		case 67, 99 -> jjMoveStringLiteralDfa1_0(0x1000000000L, 0x8c0000020080L, 0x18800L, 0x0L);
+		case 68, 100 -> jjMoveStringLiteralDfa1_0(0x200a000000000L, 0x20000000000001L, 0x4c1000L, 0x0L);
+		case 69, 101 -> jjMoveStringLiteralDfa1_0(0x1000000000000000L, 0x100000000000L, 0x0L, 0x0L);
+		case 70, 102 -> jjMoveStringLiteralDfa1_0(0x200040000000000L, 0x1000008000000L, 0x0L, 0x0L);
+		case 71, 103 -> jjMoveStringLiteralDfa1_0(0x40400000000000L, 0x800000L, 0x0L, 0x0L);
+		case 72, 104 -> jjMoveStringLiteralDfa1_0(0x400000000000000L, 0x40000000000000L, 0x300L, 0x0L);
+		case 73, 105 -> jjMoveStringLiteralDfa1_0(0x0L, 0x18070L, 0x1020002L, 0x0L);
+		case 76, 108 -> jjMoveStringLiteralDfa1_0(0xc024000000000000L, 0x20000000000L, 0x480L, 0x0L);
+		case 77, 109 -> jjMoveStringLiteralDfa1_0(0x100000000000000L, 0x890000000180000L, 0x4000L, 0x0L);
+		case 78, 110 -> jjMoveStringLiteralDfa1_0(0x800080000000000L, 0x4000000000000L, 0x0L, 0x0L);
+		case 79, 111 -> jjMoveStringLiteralDfa1_0(0x18200000000000L, 0x0L, 0x20L, 0x0L);
+		case 80, 112 -> jjMoveStringLiteralDfa1_0(0x400000000L, 0x0L, 0x10L, 0x0L);
+		case 82, 114 -> jjMoveStringLiteralDfa1_0(0x10000000000L, 0x2208002000000L, 0x0L, 0x0L);
+		case 83, 115 -> jjMoveStringLiteralDfa1_0(0x2000000800000000L, 0xf100007e21442e04L, 0x200009L, 0x0L);
+		case 84, 116 -> jjMoveStringLiteralDfa1_0(0x0L, 0x600000004000000L, 0x2000004L, 0x0L);
+		case 85, 117 -> jjMoveStringLiteralDfa1_0(0x80000000000000L, 0x10100001000L, 0x4000000L, 0x0L);
+		case 86, 118 -> jjMoveStringLiteralDfa1_0(0x0L, 0x80000000L, 0x40L, 0x0L);
+		case 87, 119 -> jjMoveStringLiteralDfa1_0(0x100000000000L, 0x0L, 0x100000L, 0x0L);
+		case 89, 121 -> jjMoveStringLiteralDfa1_0(0x0L, 0x8000000000000L, 0x0L, 0x0L);
+		case 91 -> {
+			jjmatchedKind = 8;
+			yield jjMoveNfa_0(0);
+		}
+		case 93 -> {
+			jjmatchedKind = 9;
+			yield jjMoveNfa_0(0);
+		}
+		case 94 -> {
+			jjmatchedKind = 28;
+			yield jjMoveStringLiteralDfa1_0(0x20000000L, 0x0L, 0x0L, 0x0L);
+		}
+		case 97 -> {
+			jjmatchedKind = 32;
+			yield jjMoveStringLiteralDfa1_0(0x1024000000000L, 0x400000200000L, 0x802000L, 0x0L);
+		}
+		case 123 -> {
+			jjmatchedKind = 6;
+			yield jjMoveStringLiteralDfa1_0(0x0L, 0x0L, 0x0L, 0x100L);
+		}
+		case 124 -> {
+			jjmatchedKind = 27;
+			yield jjMoveStringLiteralDfa1_0(0x100000L, 0x0L, 0x0L, 0x200L);
+		}
+		case 125 -> {
+			jjmatchedKind = 7;
+			yield jjMoveNfa_0(0);
+		}
+		case 126 -> {
+			jjmatchedKind = 199;
+			yield jjMoveNfa_0(0);
+		}
+		default -> jjMoveNfa_0(0);
+		};
 	}
 
 	private int jjMoveStringLiteralDfa1_0(long active0, long active1, long active2, long active3) {
@@ -203,8 +166,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			}
 			break;
 		case 60:
-			if ((active3 & 0x10L) != 0L) {
-				jjmatchedKind = 196;
+			if ((active3 & 0x20L) != 0L) {
+				jjmatchedKind = 197;
 				jjmatchedPos = 1;
 			}
 			break;
@@ -221,101 +184,81 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			}
 			break;
 		case 62:
-			if ((active3 & 0x20L) != 0L) {
-				jjmatchedKind = 197;
+			if ((active3 & 0x40L) != 0L) {
+				jjmatchedKind = 198;
 				jjmatchedPos = 1;
 			}
 			break;
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa2_0(active0, 0xe200080200000000L, active1, 0x10100044280002L, active2,
-					0x201c0L, active3, 0L);
-		case 66:
-		case 98:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x200000000000L, active2, 0x10L, active3, 0L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x18000000000L, active2, 0L, active3, 0L);
-		case 68:
-		case 100:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x400000000000000L, active2, 0x1000L, active3, 0L);
-		case 69:
-		case 101:
-			return jjMoveStringLiteralDfa2_0(active0, 0x2012800000000L, active1, 0x84404011800000L, active2, 0x240020L,
+		case 65, 97:
+			return jjMoveStringLiteralDfa2_0(active0, 0xc420080200000000L, active1, 0x20200088500005L, active2,
+					0x40380L, active3, 0L);
+		case 66, 98:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x400000000000L, active2, 0x20L, active3, 0L);
+		case 67, 99:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x30000000000L, active2, 0L, active3, 0L);
+		case 68, 100:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x800000000000000L, active2, 0x2000L, active3, 0L);
+		case 69, 101:
+			return jjMoveStringLiteralDfa2_0(active0, 0x2012800000000L, active1, 0x108808023000000L, active2, 0x480040L,
 					active3, 0L);
-		case 70:
-		case 102:
-			if ((active1 & 0x4000L) != 0L) {
-				jjmatchedKind = 78;
-				jjmatchedPos = 1;
-			}
-			return jjMoveStringLiteralDfa2_0(active0, 0x8000000000000L, active1, 0L, active2, 0L, active3, 0L);
-		case 72:
-		case 104:
-			return jjMoveStringLiteralDfa2_0(active0, 0x100000000000L, active1, 0xf800000000000000L, active2, 0L,
-					active3, 0L);
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa2_0(active0, 0x184008000000000L, active1, 0x140000028040000L, active2,
-					0x180000L, active3, 0L);
-		case 76:
-		case 108:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x800000000000L, active2, 0x400400L, active3, 0L);
-		case 78:
-		case 110:
+		case 70, 102:
 			if ((active1 & 0x8000L) != 0L) {
 				jjmatchedKind = 79;
 				jjmatchedPos = 1;
 			}
-			return jjMoveStringLiteralDfa2_0(active0, 0x40000000000000L, active1, 0x80080000080L, active2, 0x810000L,
+			return jjMoveStringLiteralDfa2_0(active0, 0x8000000000000L, active1, 0L, active2, 0L, active3, 0L);
+		case 72, 104:
+			return jjMoveStringLiteralDfa2_0(active0, 0x100000000000L, active1, 0xf000000000000000L, active2, 0x1L,
 					active3, 0L);
-		case 79:
-		case 111:
-			if ((active2 & 0x1000000L) != 0L) {
-				jjmatchedKind = 152;
+		case 73, 105:
+			return jjMoveStringLiteralDfa2_0(active0, 0x304008000000000L, active1, 0x280000050080000L, active2,
+					0x300000L, active3, 0L);
+		case 76, 108:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x1000000000000L, active2, 0x800800L, active3, 0L);
+		case 78, 110:
+			if ((active1 & 0x10000L) != 0L) {
+				jjmatchedKind = 80;
 				jjmatchedPos = 1;
 			}
-			return jjMoveStringLiteralDfa2_0(active0, 0x400001000000000L, active1, 0x2b060000010041L, active2, 0x6200L,
+			return jjMoveStringLiteralDfa2_0(active0, 0x80000000000000L, active1, 0x100100000100L, active2, 0x1020000L,
 					active3, 0L);
-		case 80:
-		case 112:
+		case 79, 111:
+			if ((active2 & 0x2000000L) != 0L) {
+				jjmatchedKind = 153;
+				jjmatchedPos = 1;
+			}
+			return jjMoveStringLiteralDfa2_0(active0, 0x800001000000000L, active1, 0x560c0000020082L, active2, 0xc400L,
+					active3, 0L);
+		case 80, 112:
 			return jjMoveStringLiteralDfa2_0(active0, 0x10000000000000L, active1, 0L, active2, 0L, active3, 0L);
-		case 82:
-		case 114:
-			return jjMoveStringLiteralDfa2_0(active0, 0x20640400000000L, active1, 0x2400000L, active2, 0x880aL, active3,
-					0L);
-		case 83:
-		case 115:
+		case 82, 114:
+			return jjMoveStringLiteralDfa2_0(active0, 0x40640400000000L, active1, 0x4800000L, active2, 0x11014L,
+					active3, 0L);
+		case 83, 115:
 			if ((active0 & 0x20000000000L) != 0L) {
 				jjmatchedKind = 41;
 				jjmatchedPos = 1;
 			}
-			return jjMoveStringLiteralDfa2_0(active0, 0x1004000000000L, active1, 0x38L, active2, 0x2000001L, active3,
+			return jjMoveStringLiteralDfa2_0(active0, 0x1004000000000L, active1, 0x70L, active2, 0x4000002L, active3,
 					0L);
-		case 84:
-		case 116:
-			return jjMoveStringLiteralDfa2_0(active0, 0x1000000000000000L, active1, 0x3d00001700L, active2, 0L, active3,
+		case 84, 116:
+			return jjMoveStringLiteralDfa2_0(active0, 0x2000000000000000L, active1, 0x7a00002e00L, active2, 0L, active3,
 					0L);
-		case 85:
-		case 117:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x200020800L, active2, 0x4L, active3, 0L);
-		case 86:
-		case 118:
-			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x100000L, active2, 0L, active3, 0L);
-		case 88:
-		case 120:
-			return jjMoveStringLiteralDfa2_0(active0, 0x800000000000000L, active1, 0L, active2, 0L, active3, 0L);
-		case 89:
-		case 121:
+		case 85, 117:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x400041000L, active2, 0x8L, active3, 0L);
+		case 86, 118:
+			return jjMoveStringLiteralDfa2_0(active0, 0L, active1, 0x200000L, active2, 0L, active3, 0L);
+		case 88, 120:
+			return jjMoveStringLiteralDfa2_0(active0, 0x1000000000000000L, active1, 0L, active2, 0L, active3, 0L);
+		case 89, 121:
 			if ((active0 & 0x800000000000L) != 0L) {
 				jjmatchedKind = 47;
 				jjmatchedPos = 1;
 			}
 			break;
-		case 90:
-		case 122:
-			if ((active1 & 0x200000000000000L) != 0L) {
-				jjmatchedKind = 121;
+		case 90, 122:
+			if ((active1 & 0x400000000000000L) != 0L) {
+				jjmatchedKind = 122;
 				jjmatchedPos = 1;
 			}
 			break;
@@ -329,14 +272,14 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			if ((active0 & 0x100000L) != 0L) {
 				jjmatchedKind = 20;
 				jjmatchedPos = 1;
-			} else if ((active3 & 0x80L) != 0L) {
-				jjmatchedKind = 199;
+			} else if ((active3 & 0x100L) != 0L) {
+				jjmatchedKind = 200;
 				jjmatchedPos = 1;
 			}
 			break;
 		case 125:
-			if ((active3 & 0x100L) != 0L) {
-				jjmatchedKind = 200;
+			if ((active3 & 0x200L) != 0L) {
+				jjmatchedKind = 201;
 				jjmatchedPos = 1;
 			}
 			break;
@@ -357,130 +300,107 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		}
 		switch (curChar) {
 		case 53:
-			if ((active1 & 0x400000000000000L) != 0L) {
-				jjmatchedKind = 122;
+			if ((active1 & 0x800000000000000L) != 0L) {
+				jjmatchedKind = 123;
 				jjmatchedPos = 2;
 			}
 			break;
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa3_0(active0, 0x20000000000000L, active1, 0xf804018000000040L, active2, 0x200L);
-		case 66:
-		case 98:
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x200000008L, active2, 0x4L);
-		case 67:
-		case 99:
+		case 65, 97:
+			return jjMoveStringLiteralDfa3_0(active0, 0x40000000000000L, active1, 0xf008030000000080L, active2, 0x401L);
+		case 66, 98:
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x400000010L, active2, 0x8L);
+		case 67, 99:
 			if ((active0 & 0x1000000000000L) != 0L) {
 				jjmatchedKind = 48;
 				jjmatchedPos = 2;
 			}
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x80080000000000L, active2, 0L);
-		case 68:
-		case 100:
-			if ((active2 & 0x1000L) != 0L) {
-				jjmatchedKind = 140;
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x100100000000000L, active2, 0L);
+		case 68, 100:
+			if ((active2 & 0x2000L) != 0L) {
+				jjmatchedKind = 141;
 				jjmatchedPos = 2;
 			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x210000000000L, active1, 0x80000000L, active2, 0L);
-		case 69:
-		case 101:
-			return jjMoveStringLiteralDfa3_0(active0, 0x100400000000L, active1, 0L, active2, 0x8408L);
-		case 70:
-		case 102:
-			return jjMoveStringLiteralDfa3_0(active0, 0x8000000000000L, active1, 0L, active2, 0x200000L);
-		case 71:
-		case 103:
-			if ((active1 & 0x100000L) != 0L) {
-				jjmatchedKind = 84;
+			return jjMoveStringLiteralDfa3_0(active0, 0x210000000000L, active1, 0x100000000L, active2, 0L);
+		case 69, 101:
+			return jjMoveStringLiteralDfa3_0(active0, 0x100400000000L, active1, 0L, active2, 0x10810L);
+		case 70, 102:
+			return jjMoveStringLiteralDfa3_0(active0, 0x8000000000000L, active1, 0L, active2, 0x400000L);
+		case 71, 103:
+			if ((active1 & 0x200000L) != 0L) {
+				jjmatchedKind = 85;
 				jjmatchedPos = 2;
 			}
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x1000000L, active2, 0L);
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa3_0(active0, 0x840000000000000L, active1, 0x400000000800L, active2,
-					0x2000002L);
-		case 74:
-		case 106:
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0L, active2, 0x10L);
-		case 75:
-		case 107:
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x2000000L, active2, 0L);
+		case 73, 105:
+			return jjMoveStringLiteralDfa3_0(active0, 0x1080000000000000L, active1, 0x800000001000L, active2,
+					0x4000004L);
+		case 74, 106:
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0L, active2, 0x20L);
+		case 75, 107:
 			if ((active0 & 0x4000000000L) != 0L) {
 				jjmatchedKind = 38;
 				jjmatchedPos = 2;
 			}
 			break;
-		case 76:
-		case 108:
-			if ((active2 & 0x400000L) != 0L) {
-				jjmatchedKind = 150;
+		case 76, 108:
+			if ((active2 & 0x800000L) != 0L) {
+				jjmatchedKind = 151;
 				jjmatchedPos = 2;
 			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x100000800000000L, active1, 0x44000010L, active2, 0x140000L);
-		case 77:
-		case 109:
-			if ((active1 & 0x20000L) != 0L) {
-				jjmatchedKind = 81;
-				jjmatchedPos = 2;
-			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x4080000000000L, active1, 0x100000000200002L, active2, 0L);
-		case 78:
-		case 110:
+			return jjMoveStringLiteralDfa3_0(active0, 0x200000800000000L, active1, 0x88000020L, active2, 0x280000L);
+		case 77, 109:
 			if ((active1 & 0x40000L) != 0L) {
 				jjmatchedKind = 82;
 				jjmatchedPos = 2;
 			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x6080001000000000L, active1, 0x48160028000020L, active2, 0x40L);
-		case 79:
-		case 111:
-			return jjMoveStringLiteralDfa3_0(active0, 0x440000000000L, active1, 0x800000400080L, active2, 0x800L);
-		case 80:
-		case 112:
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x4000800000L, active2, 0x4000L);
-		case 82:
-		case 114:
-			if ((active0 & 0x1000000000000000L) != 0L) {
-				jjmatchedKind = 60;
-				jjmatchedPos = 2;
-			}
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x3d10001700L, active2, 0x20L);
-		case 83:
-		case 115:
-			if ((active1 & 0x200000000000L) != 0L) {
-				jjmatchedKind = 109;
-				jjmatchedPos = 2;
-			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x200a200000000L, active1, 0L, active2, 0x10180L);
-		case 84:
-		case 116:
-			if ((active0 & 0x400000000000000L) != 0L) {
-				jjmatchedKind = 58;
-				jjmatchedPos = 2;
-			}
-			return jjMoveStringLiteralDfa3_0(active0, 0x8010000000000000L, active1, 0L, active2, 0x8a0001L);
-		case 85:
-		case 117:
-			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x21000002010001L, active2, 0L);
-		case 86:
-		case 118:
-			return jjMoveStringLiteralDfa3_0(active0, 0x200000000000000L, active1, 0L, active2, 0x2000L);
-		case 87:
-		case 119:
-			if ((active1 & 0x2000000000000L) != 0L) {
-				jjmatchedKind = 113;
-				jjmatchedPos = 2;
-			}
-			break;
-		case 88:
-		case 120:
+			return jjMoveStringLiteralDfa3_0(active0, 0x4080000000000L, active1, 0x200000000400004L, active2, 0L);
+		case 78, 110:
 			if ((active1 & 0x80000L) != 0L) {
 				jjmatchedKind = 83;
 				jjmatchedPos = 2;
 			}
+			return jjMoveStringLiteralDfa3_0(active0, 0xc100001000000000L, active1, 0x902c0050000040L, active2, 0x80L);
+		case 79, 111:
+			return jjMoveStringLiteralDfa3_0(active0, 0x440000000000L, active1, 0x1000000800100L, active2, 0x1000L);
+		case 80, 112:
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x8001000000L, active2, 0x8000L);
+		case 82, 114:
+			if ((active0 & 0x2000000000000000L) != 0L) {
+				jjmatchedKind = 61;
+				jjmatchedPos = 2;
+			}
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x7a20002e00L, active2, 0x40L);
+		case 83, 115:
+			if ((active1 & 0x400000000000L) != 0L) {
+				jjmatchedKind = 110;
+				jjmatchedPos = 2;
+			}
+			return jjMoveStringLiteralDfa3_0(active0, 0x200a200000000L, active1, 0L, active2, 0x20300L);
+		case 84, 116:
+			if ((active0 & 0x800000000000000L) != 0L) {
+				jjmatchedKind = 59;
+				jjmatchedPos = 2;
+			}
+			return jjMoveStringLiteralDfa3_0(active0, 0x30000000000000L, active1, 0x1L, active2, 0x1140002L);
+		case 85, 117:
+			return jjMoveStringLiteralDfa3_0(active0, 0L, active1, 0x42000004020002L, active2, 0L);
+		case 86, 118:
+			return jjMoveStringLiteralDfa3_0(active0, 0x400000000000000L, active1, 0L, active2, 0x4000L);
+		case 87, 119:
+			if ((active1 & 0x4000000000000L) != 0L) {
+				jjmatchedKind = 114;
+				jjmatchedPos = 2;
+			}
 			break;
-		case 89:
-		case 121:
-			if ((active1 & 0x10000000000000L) != 0L) {
-				jjmatchedKind = 116;
+		case 88, 120:
+			if ((active1 & 0x100000L) != 0L) {
+				jjmatchedKind = 84;
+				jjmatchedPos = 2;
+			}
+			break;
+		case 89, 121:
+			if ((active1 & 0x20000000000000L) != 0L) {
+				jjmatchedKind = 117;
 				jjmatchedPos = 2;
 			}
 			break;
@@ -500,168 +420,123 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		}
 		switch (curChar) {
 		case 49:
-			if ((active1 & 0x800000000000000L) != 0L) {
-				jjmatchedKind = 123;
+			if ((active1 & 0x1000000000000000L) != 0L) {
+				jjmatchedKind = 124;
 				jjmatchedPos = 3;
 			}
 			break;
 		case 50:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x3000000000000000L, active2, 0L);
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x6000000000000000L, active2, 0L);
 		case 51:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x4000000000000000L, active2, 0L);
-		case 53:
 			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x8000000000000000L, active2, 0L);
-		case 65:
-		case 97:
-			if ((active2 & 0x20000L) != 0L) {
-				jjmatchedKind = 145;
+		case 53:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0L, active2, 0x1L);
+		case 65, 97:
+			if ((active2 & 0x40000L) != 0L) {
+				jjmatchedKind = 146;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x8000000000000000L, active1, 0x2000800000L, active2, 0x208400L);
-		case 66:
-		case 98:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x1000000000L, active2, 0L);
-		case 67:
-		case 99:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x4001000001L, active2, 0x410800L);
+		case 66, 98:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
+		case 67, 99:
 			if ((active0 & 0x2000000000000L) != 0L) {
 				jjmatchedKind = 49;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x2000000000L, active1, 0x20000000000L, active2, 0L);
-		case 68:
-			if ((active1 & 0x800L) != 0L) {
-				jjmatchedKind = 75;
+			return jjMoveStringLiteralDfa4_0(active0, 0x2000000000L, active1, 0x40000000000L, active2, 0L);
+		case 68, 100:
+			if ((active1 & 0x1000L) != 0L) {
+				jjmatchedKind = 76;
 				jjmatchedPos = 3;
-			} else if ((active1 & 0x8000000L) != 0L) {
-				jjmatchedKind = 91;
+			} else if ((active1 & 0x10000000L) != 0L) {
+				jjmatchedKind = 92;
 				jjmatchedPos = 3;
-			} else if ((active1 & 0x100000000000L) != 0L) {
-				jjmatchedKind = 108;
+			} else if ((active1 & 0x200000000000L) != 0L) {
+				jjmatchedKind = 109;
 				jjmatchedPos = 3;
-			} else if ((active2 & 0x200L) != 0L) {
-				jjmatchedKind = 137;
+			} else if ((active2 & 0x400L) != 0L) {
+				jjmatchedKind = 138;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x20000180L, active2, 0x8L);
-		case 69:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x40000300L, active2, 0x10L);
+		case 69, 101:
 			if ((active0 & 0x200000000L) != 0L) {
 				jjmatchedKind = 33;
 				jjmatchedPos = 3;
-			} else if ((active1 & 0x2000000L) != 0L) {
-				jjmatchedKind = 89;
+			} else if ((active1 & 0x4000000L) != 0L) {
+				jjmatchedKind = 90;
 				jjmatchedPos = 3;
-			} else if ((active2 & 0x2000L) != 0L) {
-				jjmatchedKind = 141;
+			} else if ((active2 & 0x4000L) != 0L) {
+				jjmatchedKind = 142;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x280800000000L, active1, 0x100000881000002L, active2, 0x150010L);
-		case 70:
-		case 102:
+			return jjMoveStringLiteralDfa4_0(active0, 0x20280800000000L, active1, 0x200001102000004L, active2,
+					0x2a0020L);
+		case 70, 102:
 			return jjMoveStringLiteralDfa4_0(active0, 0x400000000L, active1, 0L, active2, 0L);
-		case 71:
-		case 103:
-			if ((active0 & 0x2000000000000000L) != 0L) {
-				jjmatchedKind = 61;
+		case 71, 103:
+			if ((active0 & 0x4000000000000000L) != 0L) {
+				jjmatchedKind = 62;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x4000000000000000L, active1, 0L, active2, 0x40L);
-		case 72:
-		case 104:
-			if ((active2 & 0x80000L) != 0L) {
-				jjmatchedKind = 147;
+			return jjMoveStringLiteralDfa4_0(active0, 0x8000000000000000L, active1, 0L, active2, 0x80L);
+		case 72, 104:
+			if ((active2 & 0x100000L) != 0L) {
+				jjmatchedKind = 148;
 				jjmatchedPos = 3;
 			}
 			break;
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa4_0(active0, 0x214000000000000L, active1, 0x10L, active2, 0L);
-		case 74:
-		case 106:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0L, active2, 0x4L);
-		case 76:
-		case 108:
-			if ((active1 & 0x400000000000L) != 0L) {
-				jjmatchedKind = 110;
+		case 73, 105:
+			return jjMoveStringLiteralDfa4_0(active0, 0x414000000000000L, active1, 0x20L, active2, 0L);
+		case 74, 106:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0L, active2, 0x8L);
+		case 76, 108:
+			if ((active1 & 0x800000000000L) != 0L) {
+				jjmatchedKind = 111;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x4100000648L, active2, 0x180L);
-		case 77:
-		case 109:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x8200000c90L, active2, 0x300L);
+		case 77, 109:
 			if ((active0 & 0x40000000000L) != 0L) {
 				jjmatchedKind = 42;
 				jjmatchedPos = 3;
 			}
 			break;
-		case 78:
-		case 110:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x1000000010001L, active2, 0x2000000L);
-		case 79:
-		case 111:
-			if ((active2 & 0x800000L) != 0L) {
-				jjmatchedKind = 151;
+		case 78, 110:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x2000000020002L, active2, 0x4000000L);
+		case 79, 111:
+			if ((active2 & 0x1000000L) != 0L) {
+				jjmatchedKind = 152;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x40000000000000L, active1, 0x80880000000000L, active2, 0L);
-		case 80:
-		case 112:
-			if ((active2 & 0x800L) != 0L) {
-				jjmatchedKind = 139;
+			return jjMoveStringLiteralDfa4_0(active0, 0x80000000000000L, active1, 0x101100000000000L, active2, 0L);
+		case 80, 112:
+			if ((active2 & 0x1000L) != 0L) {
+				jjmatchedKind = 140;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x20000000000000L, active1, 0x200000L, active2, 0x2L);
-		case 82:
-		case 114:
-			if ((active1 & 0x4000000000000L) != 0L) {
-				jjmatchedKind = 114;
+			return jjMoveStringLiteralDfa4_0(active0, 0x40000000000000L, active1, 0x400000L, active2, 0x4L);
+		case 82, 114:
+			if ((active1 & 0x8000000000000L) != 0L) {
+				jjmatchedKind = 115;
 				jjmatchedPos = 3;
 			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x100000000000L, active1, 0x20000000000000L, active2, 0x1L);
-		case 83:
-		case 115:
-			return jjMoveStringLiteralDfa4_0(active0, 0x808001000000000L, active1, 0x18604000000L, active2, 0x20L);
-		case 84:
-		case 116:
-			return jjMoveStringLiteralDfa4_0(active0, 0x100008000000000L, active1, 0x8040000000000L, active2, 0L);
-		case 85:
-		case 117:
-			return jjMoveStringLiteralDfa4_0(active0, 0x80410000000000L, active1, 0x40000040401020L, active2, 0L);
-		case 86:
-		case 118:
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x10000000L, active2, 0L);
-		case 89:
-		case 121:
-			if ((active2 & 0x4000L) != 0L) {
-				jjmatchedKind = 142;
+			return jjMoveStringLiteralDfa4_0(active0, 0x100000000000L, active1, 0x40000000000000L, active2, 0x2L);
+		case 83, 115:
+			return jjMoveStringLiteralDfa4_0(active0, 0x1008001000000000L, active1, 0x30c08000000L, active2, 0x40L);
+		case 84, 116:
+			return jjMoveStringLiteralDfa4_0(active0, 0x200008000000000L, active1, 0x10080000000000L, active2, 0L);
+		case 85, 117:
+			return jjMoveStringLiteralDfa4_0(active0, 0x100410000000000L, active1, 0x80000080802040L, active2, 0L);
+		case 86, 118:
+			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x20000000L, active2, 0L);
+		case 89, 121:
+			if ((active2 & 0x8000L) != 0L) {
+				jjmatchedKind = 143;
 				jjmatchedPos = 3;
 			}
 			break;
-		case 100:
-			if ((active1 & 0x800L) != 0L) {
-				jjmatchedKind = 75;
-				jjmatchedPos = 3;
-			} else if ((active1 & 0x8000000L) != 0L) {
-				jjmatchedKind = 91;
-				jjmatchedPos = 3;
-			} else if ((active1 & 0x100000000000L) != 0L) {
-				jjmatchedKind = 108;
-				jjmatchedPos = 3;
-			} else if ((active2 & 0x200L) != 0L) {
-				jjmatchedKind = 137;
-				jjmatchedPos = 3;
-			}
-			return jjMoveStringLiteralDfa4_0(active0, 0L, active1, 0x20000180L, active2, 0x8L);
-		case 101:
-			if ((active0 & 0x200000000L) != 0L) {
-				jjmatchedKind = 33;
-				jjmatchedPos = 3;
-			} else if ((active1 & 0x2000000L) != 0L) {
-				jjmatchedKind = 89;
-				jjmatchedPos = 3;
-			} else if ((active2 & 0x2000L) != 0L) {
-				jjmatchedKind = 141;
-				jjmatchedPos = 3;
-			}
-			return jjMoveStringLiteralDfa4_0(active0, 0x280800000000L, active1, 0x100000881000002L, active2, 0x150010L);
 		default:
 			break;
 		}
@@ -678,203 +553,133 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		}
 		switch (curChar) {
 		case 49:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x8000000000000000L, active2, 0L);
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0L, active2, 0x1L);
 		case 50:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x1000000000000000L, active2, 0L);
-		case 53:
 			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x2000000000000000L, active2, 0L);
-		case 56:
+		case 53:
 			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x4000000000000000L, active2, 0L);
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x64000000608L, active2, 0x180L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa5_0(active0, 0x10800000000L, active1, 0L, active2, 0x10L);
-		case 68:
+		case 56:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x8000000000000000L, active2, 0L);
+		case 65, 97:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0xc8000000c10L, active2, 0x300L);
+		case 67, 99:
+			return jjMoveStringLiteralDfa5_0(active0, 0x10800000000L, active1, 0L, active2, 0x20L);
+		case 68, 100:
 			if ((active0 & 0x80000000000L) != 0L) {
 				jjmatchedKind = 43;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x1L) != 0L) {
-				jjmatchedKind = 64;
+			} else if ((active1 & 0x2L) != 0L) {
+				jjmatchedKind = 65;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x1000000000000L) != 0L) {
-				jjmatchedKind = 112;
+			} else if ((active1 & 0x2000000000000L) != 0L) {
+				jjmatchedKind = 113;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x80000000000L, active2, 0x40L);
-		case 69:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x100000000000L, active2, 0x80L);
+		case 69, 101:
 			if ((active0 & 0x100000000000L) != 0L) {
 				jjmatchedKind = 44;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x80L) != 0L) {
-				jjmatchedKind = 71;
+			} else if ((active1 & 0x100L) != 0L) {
+				jjmatchedKind = 72;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x4000000L) != 0L) {
-				jjmatchedKind = 90;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x8000000000L) != 0L) {
-				jjmatchedKind = 103;
+			} else if ((active1 & 0x8000000L) != 0L) {
+				jjmatchedKind = 91;
 				jjmatchedPos = 4;
 			} else if ((active1 & 0x10000000000L) != 0L) {
 				jjmatchedKind = 104;
 				jjmatchedPos = 4;
-			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x108000000000000L, active1, 0x1140000040L, active2, 0x4L);
-		case 70:
-		case 102:
-			if ((active1 & 0x80000000L) != 0L) {
-				jjmatchedKind = 95;
+			} else if ((active1 & 0x20000000000L) != 0L) {
+				jjmatchedKind = 105;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
-		case 71:
-		case 103:
-			if ((active2 & 0x2000000L) != 0L) {
-				jjmatchedKind = 153;
+			return jjMoveStringLiteralDfa5_0(active0, 0x208000000000000L, active1, 0x2280000080L, active2, 0x8L);
+		case 70, 102:
+			if ((active1 & 0x100000000L) != 0L) {
+				jjmatchedKind = 96;
 				jjmatchedPos = 4;
 			}
-			break;
-		case 72:
-		case 104:
-			if ((active0 & 0x20000000000000L) != 0L) {
-				jjmatchedKind = 53;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x8000000000000L) != 0L) {
-				jjmatchedKind = 115;
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x4000000000L, active2, 0L);
+		case 71, 103:
+			if ((active2 & 0x4000000L) != 0L) {
+				jjmatchedKind = 154;
 				jjmatchedPos = 4;
 			}
 			break;
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa5_0(active0, 0x8400000000L, active1, 0x30000000L, active2, 0x29L);
-		case 76:
-		case 108:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x200000L, active2, 0x2L);
-		case 77:
-		case 109:
-			return jjMoveStringLiteralDfa5_0(active0, 0x4000000000000000L, active1, 0x20L, active2, 0L);
-		case 78:
-		case 110:
+		case 72, 104:
 			if ((active0 & 0x40000000000000L) != 0L) {
 				jjmatchedKind = 54;
 				jjmatchedPos = 4;
+			} else if ((active1 & 0x10000000000000L) != 0L) {
+				jjmatchedKind = 116;
+				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x200000000000000L, active1, 0x80000800000000L, active2,
-					0x100000L);
-		case 79:
-		case 111:
+			break;
+		case 73, 105:
+			return jjMoveStringLiteralDfa5_0(active0, 0x8400000000L, active1, 0x60000000L, active2, 0x52L);
+		case 76, 108:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x400000L, active2, 0x4L);
+		case 77, 109:
+			return jjMoveStringLiteralDfa5_0(active0, 0x8000000000000000L, active1, 0x40L, active2, 0L);
+		case 78, 110:
+			if ((active0 & 0x80000000000000L) != 0L) {
+				jjmatchedKind = 55;
+				jjmatchedPos = 4;
+			}
+			return jjMoveStringLiteralDfa5_0(active0, 0x400000000000000L, active1, 0x100001000000000L, active2,
+					0x200000L);
+		case 79, 111:
 			return jjMoveStringLiteralDfa5_0(active0, 0x10000000000000L, active1, 0L, active2, 0L);
-		case 80:
-		case 112:
+		case 80, 112:
 			if ((active0 & 0x400000000000L) != 0L) {
 				jjmatchedKind = 46;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x400000L, active2, 0L);
-		case 82:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x800000L, active2, 0L);
+		case 82, 114:
 			if ((active0 & 0x200000000000L) != 0L) {
 				jjmatchedKind = 45;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x800000000000L) != 0L) {
-				jjmatchedKind = 111;
-				jjmatchedPos = 4;
-			} else if ((active2 & 0x400L) != 0L) {
-				jjmatchedKind = 138;
-				jjmatchedPos = 4;
-			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x2000000000L, active1, 0x800000L, active2, 0x10000L);
-		case 83:
-		case 115:
-			if ((active0 & 0x80000000000000L) != 0L) {
-				jjmatchedKind = 55;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x20000000000000L) != 0L) {
-				jjmatchedKind = 117;
-				jjmatchedPos = 4;
-			}
-			break;
-		case 84:
-			if ((active0 & 0x4000000000000L) != 0L) {
-				jjmatchedKind = 50;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x100L) != 0L) {
-				jjmatchedKind = 72;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x10000L) != 0L) {
-				jjmatchedKind = 80;
-				jjmatchedPos = 4;
-			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x8800001000000000L, active1, 0x40000600000012L, active2,
-					0x48000L);
-		case 85:
-		case 117:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x1000L, active2, 0x200000L);
-		case 88:
-		case 120:
-			if ((active1 & 0x1000000L) != 0L) {
-				jjmatchedKind = 88;
-				jjmatchedPos = 4;
-			}
-			break;
-		case 90:
-		case 122:
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x100000000000000L, active2, 0L);
-		case 100:
-			if ((active0 & 0x80000000000L) != 0L) {
-				jjmatchedKind = 43;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x1L) != 0L) {
-				jjmatchedKind = 64;
 				jjmatchedPos = 4;
 			} else if ((active1 & 0x1000000000000L) != 0L) {
 				jjmatchedKind = 112;
 				jjmatchedPos = 4;
-			}
-			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x80000000000L, active2, 0x40L);
-		case 101:
-			if ((active0 & 0x100000000000L) != 0L) {
-				jjmatchedKind = 44;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x80L) != 0L) {
-				jjmatchedKind = 71;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x4000000L) != 0L) {
-				jjmatchedKind = 90;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x8000000000L) != 0L) {
-				jjmatchedKind = 103;
-				jjmatchedPos = 4;
-			} else if ((active1 & 0x10000000000L) != 0L) {
-				jjmatchedKind = 104;
+			} else if ((active2 & 0x800L) != 0L) {
+				jjmatchedKind = 139;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x108000000000000L, active1, 0x1140000040L, active2, 0x4L);
-		case 114:
-			if ((active0 & 0x200000000000L) != 0L) {
-				jjmatchedKind = 45;
+			return jjMoveStringLiteralDfa5_0(active0, 0x20002000000000L, active1, 0x1000000L, active2, 0x20000L);
+		case 83, 115:
+			if ((active0 & 0x100000000000000L) != 0L) {
+				jjmatchedKind = 56;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x800000000000L) != 0L) {
-				jjmatchedKind = 111;
-				jjmatchedPos = 4;
-			} else if ((active2 & 0x400L) != 0L) {
-				jjmatchedKind = 138;
+			} else if ((active1 & 0x40000000000000L) != 0L) {
+				jjmatchedKind = 118;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x2000000000L, active1, 0x800000L, active2, 0x10000L);
-		case 116:
+			break;
+		case 84, 116:
 			if ((active0 & 0x4000000000000L) != 0L) {
 				jjmatchedKind = 50;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x100L) != 0L) {
-				jjmatchedKind = 72;
+			} else if ((active1 & 0x200L) != 0L) {
+				jjmatchedKind = 73;
 				jjmatchedPos = 4;
-			} else if ((active1 & 0x10000L) != 0L) {
-				jjmatchedKind = 80;
+			} else if ((active1 & 0x20000L) != 0L) {
+				jjmatchedKind = 81;
 				jjmatchedPos = 4;
 			}
-			return jjMoveStringLiteralDfa5_0(active0, 0x8800001000000000L, active1, 0x40000600000012L, active2,
-					0x48000L);
+			return jjMoveStringLiteralDfa5_0(active0, 0x1000001000000000L, active1, 0x80000c00000025L, active2,
+					0x90000L);
+		case 85, 117:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x2000L, active2, 0x400000L);
+		case 88, 120:
+			if ((active1 & 0x2000000L) != 0L) {
+				jjmatchedKind = 89;
+				jjmatchedPos = 4;
+			}
+			break;
+		case 90, 122:
+			return jjMoveStringLiteralDfa5_0(active0, 0L, active1, 0x200000000000000L, active2, 0L);
 		default:
 			break;
 		}
@@ -891,168 +696,118 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		}
 		switch (curChar) {
 		case 50:
-			if ((active1 & 0x8000000000000000L) != 0L) {
-				jjmatchedKind = 127;
+			if ((active2 & 0x1L) != 0L) {
+				jjmatchedKind = 128;
 				jjmatchedPos = 5;
 			}
 			break;
 		case 52:
-			if ((active1 & 0x1000000000000000L) != 0L) {
-				jjmatchedKind = 124;
+			if ((active1 & 0x2000000000000000L) != 0L) {
+				jjmatchedKind = 125;
 				jjmatchedPos = 5;
-			} else if ((active1 & 0x4000000000000000L) != 0L) {
-				jjmatchedKind = 126;
+			} else if ((active1 & 0x8000000000000000L) != 0L) {
+				jjmatchedKind = 127;
 				jjmatchedPos = 5;
 			}
 			break;
 		case 54:
-			if ((active1 & 0x2000000000000000L) != 0L) {
-				jjmatchedKind = 125;
+			if ((active1 & 0x4000000000000000L) != 0L) {
+				jjmatchedKind = 126;
 				jjmatchedPos = 5;
 			}
 			break;
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa6_0(active0, 0x4000000000000000L, active1, 0x400800000L, active2, 0L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x4010000000L, active2, 0xcL);
-		case 68:
-		case 100:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x80000800000000L, active2, 0L);
-		case 69:
-			if ((active1 & 0x200000L) != 0L) {
-				jjmatchedKind = 85;
+		case 65, 97:
+			return jjMoveStringLiteralDfa6_0(active0, 0x8020000000000000L, active1, 0x801000000L, active2, 0L);
+		case 67, 99:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x8020000000L, active2, 0x18L);
+		case 68, 100:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x100001000000000L, active2, 0L);
+		case 69, 101:
+			if ((active1 & 0x400000L) != 0L) {
+				jjmatchedKind = 86;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x2L) != 0L) {
-				jjmatchedKind = 129;
+			} else if ((active2 & 0x4L) != 0L) {
+				jjmatchedKind = 130;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x8000L) != 0L) {
-				jjmatchedKind = 143;
+			} else if ((active2 & 0x10000L) != 0L) {
+				jjmatchedKind = 144;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x40000L) != 0L) {
-				jjmatchedKind = 146;
+			} else if ((active2 & 0x80000L) != 0L) {
+				jjmatchedKind = 147;
 				jjmatchedPos = 5;
 			}
-			return jjMoveStringLiteralDfa6_0(active0, 0x10000000000L, active1, 0x40080000000032L, active2, 0L);
-		case 70:
-		case 102:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x1000000000L, active2, 0L);
-		case 71:
-		case 103:
-			if ((active0 & 0x200000000000000L) != 0L) {
-				jjmatchedKind = 57;
+			return jjMoveStringLiteralDfa6_0(active0, 0x10000000000L, active1, 0x80100000000064L, active2, 0L);
+		case 70, 102:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
+		case 71, 103:
+			if ((active0 & 0x400000000000000L) != 0L) {
+				jjmatchedKind = 58;
 				jjmatchedPos = 5;
 			}
 			break;
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa6_0(active0, 0x2000000000L, active1, 0x40000001000L, active2, 0x40L);
-		case 76:
-		case 108:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0L, active2, 0x200000L);
-		case 78:
-		case 110:
-			if ((active1 & 0x100000000L) != 0L) {
-				jjmatchedKind = 96;
-				jjmatchedPos = 5;
-			}
-			return jjMoveStringLiteralDfa6_0(active0, 0x10008000000000L, active1, 0x20000608L, active2, 0x180L);
-		case 79:
-		case 111:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x100000000000000L, active2, 0x20L);
-		case 80:
-		case 112:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0L, active2, 0x1L);
-		case 82:
-		case 114:
-			if ((active0 & 0x100000000000000L) != 0L) {
-				jjmatchedKind = 56;
-				jjmatchedPos = 5;
-			} else if ((active1 & 0x200000000L) != 0L) {
+		case 73, 105:
+			return jjMoveStringLiteralDfa6_0(active0, 0x2000000000L, active1, 0x80000002000L, active2, 0x80L);
+		case 76, 108:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0L, active2, 0x400000L);
+		case 78, 110:
+			if ((active1 & 0x200000000L) != 0L) {
 				jjmatchedKind = 97;
 				jjmatchedPos = 5;
 			}
-			return jjMoveStringLiteralDfa6_0(active0, 0x1000000000L, active1, 0L, active2, 0L);
-		case 83:
-		case 115:
-			if ((active0 & 0x800000000000000L) != 0L) {
-				jjmatchedKind = 59;
+			return jjMoveStringLiteralDfa6_0(active0, 0x10008000000000L, active1, 0x40000c10L, active2, 0x300L);
+		case 79, 111:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x200000000000000L, active2, 0x40L);
+		case 80, 112:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0L, active2, 0x2L);
+		case 82, 114:
+			if ((active0 & 0x200000000000000L) != 0L) {
+				jjmatchedKind = 57;
 				jjmatchedPos = 5;
-			} else if ((active1 & 0x40000000L) != 0L) {
-				jjmatchedKind = 94;
+			} else if ((active1 & 0x400000000L) != 0L) {
+				jjmatchedKind = 98;
 				jjmatchedPos = 5;
 			}
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x40L, active2, 0L);
-		case 84:
+			return jjMoveStringLiteralDfa6_0(active0, 0x1000000000L, active1, 0L, active2, 0L);
+		case 83, 115:
+			if ((active0 & 0x1000000000000000L) != 0L) {
+				jjmatchedKind = 60;
+				jjmatchedPos = 5;
+			} else if ((active1 & 0x80000000L) != 0L) {
+				jjmatchedKind = 95;
+				jjmatchedPos = 5;
+			}
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x80L, active2, 0L);
+		case 84, 116:
 			if ((active0 & 0x800000000L) != 0L) {
 				jjmatchedKind = 35;
 				jjmatchedPos = 5;
 			} else if ((active0 & 0x8000000000000L) != 0L) {
 				jjmatchedKind = 51;
 				jjmatchedPos = 5;
-			} else if ((active1 & 0x20000000000L) != 0L) {
-				jjmatchedKind = 105;
+			} else if ((active1 & 0x40000000000L) != 0L) {
+				jjmatchedKind = 106;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x10L) != 0L) {
-				jjmatchedKind = 132;
+			} else if ((active2 & 0x20L) != 0L) {
+				jjmatchedKind = 133;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x10000L) != 0L) {
-				jjmatchedKind = 144;
+			} else if ((active2 & 0x20000L) != 0L) {
+				jjmatchedKind = 145;
 				jjmatchedPos = 5;
-			} else if ((active2 & 0x100000L) != 0L) {
-				jjmatchedKind = 148;
+			} else if ((active2 & 0x200000L) != 0L) {
+				jjmatchedKind = 149;
 				jjmatchedPos = 5;
 			}
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
-		case 88:
-		case 120:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x4000000000L, active2, 0L);
+		case 88, 120:
 			if ((active0 & 0x400000000L) != 0L) {
 				jjmatchedKind = 34;
 				jjmatchedPos = 5;
 			}
 			break;
-		case 89:
-		case 121:
-			return jjMoveStringLiteralDfa6_0(active0, 0x8000000000000000L, active1, 0L, active2, 0L);
+		case 89, 121:
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x1L, active2, 0L);
 		case 95:
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x400000L, active2, 0L);
-		case 101:
-			if ((active1 & 0x200000L) != 0L) {
-				jjmatchedKind = 85;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x2L) != 0L) {
-				jjmatchedKind = 129;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x8000L) != 0L) {
-				jjmatchedKind = 143;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x40000L) != 0L) {
-				jjmatchedKind = 146;
-				jjmatchedPos = 5;
-			}
-			return jjMoveStringLiteralDfa6_0(active0, 0x10000000000L, active1, 0x40080000000032L, active2, 0L);
-		case 116:
-			if ((active0 & 0x800000000L) != 0L) {
-				jjmatchedKind = 35;
-				jjmatchedPos = 5;
-			} else if ((active0 & 0x8000000000000L) != 0L) {
-				jjmatchedKind = 51;
-				jjmatchedPos = 5;
-			} else if ((active1 & 0x20000000000L) != 0L) {
-				jjmatchedKind = 105;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x10L) != 0L) {
-				jjmatchedKind = 132;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x10000L) != 0L) {
-				jjmatchedKind = 144;
-				jjmatchedPos = 5;
-			} else if ((active2 & 0x100000L) != 0L) {
-				jjmatchedKind = 148;
-				jjmatchedPos = 5;
-			}
-			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
+			return jjMoveStringLiteralDfa6_0(active0, 0L, active1, 0x800000L, active2, 0L);
 		default:
 			break;
 		}
@@ -1068,114 +823,92 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(5);
 		}
 		switch (curChar) {
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa7_0(active0, 0x10000000000000L, active1, 0L, active2, 0x8L);
-		case 66:
-		case 98:
+		case 65, 97:
+			return jjMoveStringLiteralDfa7_0(active0, 0x10000000000000L, active1, 0L, active2, 0x10L);
+		case 66, 98:
 			return jjMoveStringLiteralDfa7_0(active0, 0x2000000000L, active1, 0L, active2, 0L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa7_0(active0, 0x8000000000L, active1, 0x400040L, active2, 0L);
-		case 68:
-		case 100:
+		case 67, 99:
+			return jjMoveStringLiteralDfa7_0(active0, 0x8000000000L, active1, 0x800080L, active2, 0L);
+		case 68, 100:
 			if ((active0 & 0x10000000000L) != 0L) {
 				jjmatchedKind = 40;
 				jjmatchedPos = 6;
-			} else if ((active1 & 0x1000L) != 0L) {
-				jjmatchedKind = 76;
+			} else if ((active1 & 0x2000L) != 0L) {
+				jjmatchedKind = 77;
 				jjmatchedPos = 6;
 			}
 			break;
-		case 69:
-		case 101:
-			if ((active1 & 0x10000000L) != 0L) {
-				jjmatchedKind = 92;
+		case 69, 101:
+			if ((active1 & 0x20000000L) != 0L) {
+				jjmatchedKind = 93;
 				jjmatchedPos = 6;
-			} else if ((active1 & 0x4000000000L) != 0L) {
-				jjmatchedKind = 102;
-				jjmatchedPos = 6;
-			}
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
-		case 71:
-		case 103:
-			if ((active1 & 0x200L) != 0L) {
-				jjmatchedKind = 73;
-				jjmatchedPos = 6;
-			} else if ((active2 & 0x80L) != 0L) {
-				jjmatchedKind = 135;
+			} else if ((active1 & 0x8000000000L) != 0L) {
+				jjmatchedKind = 103;
 				jjmatchedPos = 6;
 			}
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x20000400L, active2, 0x100L);
-		case 75:
-		case 107:
-			if ((active1 & 0x8L) != 0L) {
-				jjmatchedKind = 67;
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x4000000000L, active2, 0L);
+		case 71, 103:
+			if ((active1 & 0x400L) != 0L) {
+				jjmatchedKind = 74;
+				jjmatchedPos = 6;
+			} else if ((active2 & 0x100L) != 0L) {
+				jjmatchedKind = 136;
+				jjmatchedPos = 6;
+			}
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x40000800L, active2, 0x200L);
+		case 75, 107:
+			if ((active1 & 0x10L) != 0L) {
+				jjmatchedKind = 68;
 				jjmatchedPos = 6;
 			}
 			break;
-		case 76:
-		case 108:
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0L, active2, 0x1L);
-		case 78:
-		case 110:
-			if ((active2 & 0x20L) != 0L) {
-				jjmatchedKind = 133;
+		case 76, 108:
+			if ((active0 & 0x20000000000000L) != 0L) {
+				jjmatchedKind = 53;
 				jjmatchedPos = 6;
 			}
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x100040000000000L, active2, 0L);
-		case 79:
-		case 111:
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x1000000000L, active2, 0L);
-		case 80:
-		case 112:
-			return jjMoveStringLiteralDfa7_0(active0, 0x8000000000000000L, active1, 0L, active2, 0L);
-		case 82:
-		case 114:
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0L, active2, 0x2L);
+		case 78, 110:
 			if ((active2 & 0x40L) != 0L) {
 				jjmatchedKind = 134;
 				jjmatchedPos = 6;
 			}
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x400000032L, active2, 0L);
-		case 83:
-			if ((active1 & 0x800000000L) != 0L) {
-				jjmatchedKind = 99;
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x200080000000000L, active2, 0L);
+		case 79, 111:
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
+		case 80, 112:
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x1L, active2, 0L);
+		case 82, 114:
+			if ((active2 & 0x80L) != 0L) {
+				jjmatchedKind = 135;
 				jjmatchedPos = 6;
-			} else if ((active1 & 0x40000000000000L) != 0L) {
-				jjmatchedKind = 118;
+			}
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x800000064L, active2, 0L);
+		case 83, 115:
+			if ((active1 & 0x1000000000L) != 0L) {
+				jjmatchedKind = 100;
 				jjmatchedPos = 6;
 			} else if ((active1 & 0x80000000000000L) != 0L) {
 				jjmatchedKind = 119;
 				jjmatchedPos = 6;
+			} else if ((active1 & 0x100000000000000L) != 0L) {
+				jjmatchedKind = 120;
+				jjmatchedPos = 6;
 			}
 			break;
-		case 84:
-		case 116:
-			if ((active2 & 0x4L) != 0L) {
-				jjmatchedKind = 130;
+		case 84, 116:
+			if ((active2 & 0x8L) != 0L) {
+				jjmatchedKind = 131;
 				jjmatchedPos = 6;
-			} else if ((active2 & 0x200000L) != 0L) {
-				jjmatchedKind = 149;
+			} else if ((active2 & 0x400000L) != 0L) {
+				jjmatchedKind = 150;
 				jjmatchedPos = 6;
 			}
-			return jjMoveStringLiteralDfa7_0(active0, 0x4000000000000000L, active1, 0x800000L, active2, 0L);
-		case 85:
-		case 117:
+			return jjMoveStringLiteralDfa7_0(active0, 0x8000000000000000L, active1, 0x1000000L, active2, 0L);
+		case 85, 117:
 			return jjMoveStringLiteralDfa7_0(active0, 0x1000000000L, active1, 0L, active2, 0L);
 		case 95:
-			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x80000000000L, active2, 0L);
-		case 115:
-			if ((active1 & 0x800000000L) != 0L) {
-				jjmatchedKind = 99;
-				jjmatchedPos = 6;
-			} else if ((active1 & 0x40000000000000L) != 0L) {
-				jjmatchedKind = 118;
-				jjmatchedPos = 6;
-			} else if ((active1 & 0x80000000000000L) != 0L) {
-				jjmatchedKind = 119;
-				jjmatchedPos = 6;
-			}
-			break;
+			return jjMoveStringLiteralDfa7_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
 		default:
 			break;
 		}
@@ -1191,98 +924,69 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(6);
 		}
 		switch (curChar) {
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x10L, active2, 0L);
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa8_0(active0, 0x4000001000000000L, active1, 0L, active2, 0L);
-		case 68:
-		case 100:
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x400L, active2, 0x100L);
-		case 69:
+		case 65, 97:
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x20L, active2, 0L);
+		case 67, 99:
+			return jjMoveStringLiteralDfa8_0(active0, 0x8000001000000000L, active1, 0L, active2, 0L);
+		case 68, 100:
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x800L, active2, 0x200L);
+		case 69, 101:
 			if ((active0 & 0x2000000000L) != 0L) {
 				jjmatchedKind = 37;
 				jjmatchedPos = 7;
-			} else if ((active0 & 0x8000000000000000L) != 0L) {
-				jjmatchedKind = 63;
+			} else if ((active1 & 0x1L) != 0L) {
+				jjmatchedKind = 64;
 				jjmatchedPos = 7;
-			} else if ((active1 & 0x40L) != 0L) {
-				jjmatchedKind = 70;
+			} else if ((active1 & 0x80L) != 0L) {
+				jjmatchedKind = 71;
 				jjmatchedPos = 7;
-			} else if ((active1 & 0x100000000000000L) != 0L) {
-				jjmatchedKind = 120;
+			} else if ((active1 & 0x200000000000000L) != 0L) {
+				jjmatchedKind = 121;
 				jjmatchedPos = 7;
-			} else if ((active2 & 0x1L) != 0L) {
-				jjmatchedKind = 128;
+			} else if ((active2 & 0x2L) != 0L) {
+				jjmatchedKind = 129;
 				jjmatchedPos = 7;
 			}
 			break;
-		case 70:
-		case 102:
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x80000000000L, active2, 0L);
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x20L, active2, 0L);
-		case 76:
-		case 108:
+		case 70, 102:
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
+		case 73, 105:
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x40L, active2, 0L);
+		case 76, 108:
 			if ((active0 & 0x10000000000000L) != 0L) {
 				jjmatchedKind = 52;
 				jjmatchedPos = 7;
 			}
 			break;
-		case 77:
-		case 109:
-			if ((active1 & 0x2L) != 0L) {
-				jjmatchedKind = 65;
+		case 77, 109:
+			if ((active1 & 0x4L) != 0L) {
+				jjmatchedKind = 66;
 				jjmatchedPos = 7;
 			}
 			break;
-		case 79:
-		case 111:
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0xc00000L, active2, 0L);
-		case 82:
-		case 114:
-			if ((active1 & 0x2000000000L) != 0L) {
-				jjmatchedKind = 101;
+		case 79, 111:
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x1800000L, active2, 0L);
+		case 82, 114:
+			if ((active1 & 0x4000000000L) != 0L) {
+				jjmatchedKind = 102;
 				jjmatchedPos = 7;
 			}
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x1000000000L, active2, 0L);
-		case 83:
-		case 115:
-			if ((active1 & 0x20000000L) != 0L) {
-				jjmatchedKind = 93;
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x2000000000L, active2, 0L);
+		case 83, 115:
+			if ((active1 & 0x40000000L) != 0L) {
+				jjmatchedKind = 94;
 				jjmatchedPos = 7;
-			} else if ((active1 & 0x40000000000L) != 0L) {
-				jjmatchedKind = 106;
+			} else if ((active1 & 0x80000000000L) != 0L) {
+				jjmatchedKind = 107;
 				jjmatchedPos = 7;
 			}
 			break;
-		case 84:
-		case 116:
+		case 84, 116:
 			if ((active0 & 0x8000000000L) != 0L) {
 				jjmatchedKind = 39;
 				jjmatchedPos = 7;
 			}
-			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x400000000L, active2, 0x8L);
-		case 101:
-			if ((active0 & 0x2000000000L) != 0L) {
-				jjmatchedKind = 37;
-				jjmatchedPos = 7;
-			} else if ((active0 & 0x8000000000000000L) != 0L) {
-				jjmatchedKind = 63;
-				jjmatchedPos = 7;
-			} else if ((active1 & 0x40L) != 0L) {
-				jjmatchedKind = 70;
-				jjmatchedPos = 7;
-			} else if ((active1 & 0x100000000000000L) != 0L) {
-				jjmatchedKind = 120;
-				jjmatchedPos = 7;
-			} else if ((active2 & 0x1L) != 0L) {
-				jjmatchedKind = 128;
-				jjmatchedPos = 7;
-			}
-			break;
+			return jjMoveStringLiteralDfa8_0(active0, 0L, active1, 0x800000000L, active2, 0x10L);
 		default:
 			break;
 		}
@@ -1298,58 +1002,48 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(7);
 		}
 		switch (curChar) {
-		case 67:
-		case 99:
+		case 67, 99:
+			if ((active1 & 0x40L) != 0L) {
+				jjmatchedKind = 70;
+				jjmatchedPos = 8;
+			}
+			break;
+		case 69, 101:
+			if ((active1 & 0x2000000000L) != 0L) {
+				jjmatchedKind = 101;
+				jjmatchedPos = 8;
+			} else if ((active2 & 0x10L) != 0L) {
+				jjmatchedKind = 132;
+				jjmatchedPos = 8;
+			}
+			break;
+		case 72, 104:
+			return jjMoveStringLiteralDfa9_0(active0, 0x8000000000000000L, active1, 0L, active2, 0L);
+		case 73, 105:
+			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x800L, active2, 0x200L);
+		case 76, 108:
 			if ((active1 & 0x20L) != 0L) {
 				jjmatchedKind = 69;
 				jjmatchedPos = 8;
 			}
 			break;
-		case 69:
-		case 101:
-			if ((active1 & 0x1000000000L) != 0L) {
-				jjmatchedKind = 100;
-				jjmatchedPos = 8;
-			} else if ((active2 & 0x8L) != 0L) {
-				jjmatchedKind = 131;
-				jjmatchedPos = 8;
-			}
-			break;
-		case 72:
-		case 104:
-			return jjMoveStringLiteralDfa9_0(active0, 0x4000000000000000L, active1, 0L, active2, 0L);
-		case 73:
-		case 105:
-			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x400L, active2, 0x100L);
-		case 76:
-		case 108:
-			if ((active1 & 0x10L) != 0L) {
-				jjmatchedKind = 68;
+		case 78, 110:
+			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x800000L, active2, 0L);
+		case 79, 111:
+			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
+		case 82, 114:
+			if ((active1 & 0x1000000L) != 0L) {
+				jjmatchedKind = 88;
 				jjmatchedPos = 8;
 			}
 			break;
-		case 78:
-		case 110:
-			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x400000L, active2, 0L);
-		case 79:
-		case 111:
-			return jjMoveStringLiteralDfa9_0(active0, 0L, active1, 0x80000000000L, active2, 0L);
-		case 82:
-		case 114:
-			if ((active1 & 0x800000L) != 0L) {
-				jjmatchedKind = 87;
+		case 83, 115:
+			if ((active1 & 0x800000000L) != 0L) {
+				jjmatchedKind = 99;
 				jjmatchedPos = 8;
 			}
 			break;
-		case 83:
-		case 115:
-			if ((active1 & 0x400000000L) != 0L) {
-				jjmatchedKind = 98;
-				jjmatchedPos = 8;
-			}
-			break;
-		case 84:
-		case 116:
+		case 84, 116:
 			if ((active0 & 0x1000000000L) != 0L) {
 				jjmatchedKind = 36;
 				jjmatchedPos = 8;
@@ -1369,27 +1063,31 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		} catch (java.io.IOException e) {
 			return jjMoveNfa_0(8);
 		}
-		switch (curChar) {
-		case 67:
-		case 99:
-			return jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x400000L, active2, 0L);
-		case 69:
-		case 101:
-			return jjMoveStringLiteralDfa10_0(active0, 0x4000000000000000L, active1, 0L, active2, 0L);
-		case 82:
-		case 114:
-			if ((active1 & 0x400L) != 0L) {
-				jjmatchedKind = 74;
+		return switch (curChar) {
+		case 67, 99 -> jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x800000L, active2, 0L);
+		case 69, 101 -> jjMoveStringLiteralDfa10_0(active0, 0x8000000000000000L, active1, 0L, active2, 0L);
+		case 82 -> {
+			if ((active1 & 0x800L) != 0L) {
+				jjmatchedKind = 75;
 				jjmatchedPos = 9;
-			} else if ((active2 & 0x100L) != 0L) {
-				jjmatchedKind = 136;
+			} else if ((active2 & 0x200L) != 0L) {
+				jjmatchedKind = 137;
 				jjmatchedPos = 9;
 			}
-			return jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x80000000000L, active2, 0L);
-		default:
-			break;
+			yield jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
 		}
-		return jjMoveNfa_0(9);
+		case 114 -> {
+			if ((active1 & 0x800L) != 0L) {
+				jjmatchedKind = 75;
+				jjmatchedPos = 9;
+			} else if ((active2 & 0x200L) != 0L) {
+				jjmatchedKind = 137;
+				jjmatchedPos = 9;
+			}
+			yield jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
+		}
+		default -> jjMoveNfa_0(9);
+		};
 	}
 
 	private int jjMoveStringLiteralDfa10_0(long old0, long active0, long old1, long active1, long old2, long active2) {
@@ -1401,18 +1099,16 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(9);
 		}
 		switch (curChar) {
-		case 65:
-		case 97:
-			return jjMoveStringLiteralDfa11_0(active0, 0L, active1, 0x400000L);
-		case 83:
-		case 115:
-			if ((active0 & 0x4000000000000000L) != 0L) {
-				jjmatchedKind = 62;
+		case 65, 97:
+			return jjMoveStringLiteralDfa11_0(active0, 0L, active1, 0x800000L);
+		case 83, 115:
+			if ((active0 & 0x8000000000000000L) != 0L) {
+				jjmatchedKind = 63;
 				jjmatchedPos = 10;
 			}
 			break;
 		case 95:
-			return jjMoveStringLiteralDfa11_0(active0, 0L, active1, 0x80000000000L);
+			return jjMoveStringLiteralDfa11_0(active0, 0L, active1, 0x100000000000L);
 		default:
 			break;
 		}
@@ -1428,16 +1124,14 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(10);
 		}
 		switch (curChar) {
-		case 84:
-		case 116:
-			if ((active1 & 0x400000L) != 0L) {
-				jjmatchedKind = 86;
+		case 84, 116:
+			if ((active1 & 0x800000L) != 0L) {
+				jjmatchedKind = 87;
 				jjmatchedPos = 11;
 			}
 			break;
-		case 85:
-		case 117:
-			return jjMoveStringLiteralDfa12_0(active1, 0x80000000000L);
+		case 85, 117:
+			return jjMoveStringLiteralDfa12_0(active1, 0x100000000000L);
 		default:
 			break;
 		}
@@ -1452,14 +1146,10 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		} catch (java.io.IOException e) {
 			return jjMoveNfa_0(11);
 		}
-		switch (curChar) {
-		case 82:
-		case 114:
-			return jjMoveStringLiteralDfa13_0(active1, 0x80000000000L);
-		default:
-			break;
-		}
-		return jjMoveNfa_0(12);
+		return switch (curChar) {
+		case 82, 114 -> jjMoveStringLiteralDfa13_0(active1, 0x100000000000L);
+		default -> jjMoveNfa_0(12);
+		};
 	}
 
 	private int jjMoveStringLiteralDfa13_0(long old1, long active1) {
@@ -1471,10 +1161,9 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			return jjMoveNfa_0(12);
 		}
 		switch (curChar) {
-		case 73:
-		case 105:
-			if ((active1 & 0x80000000000L) != 0L) {
-				jjmatchedKind = 107;
+		case 73, 105:
+			if ((active1 & 0x100000000000L) != 0L) {
+				jjmatchedKind = 108;
 				jjmatchedPos = 13;
 			}
 			break;
@@ -1549,8 +1238,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					switch (jjstateSet[--i]) {
 					case 0:
 						if ((0x3ff000000000000L & l) != 0L) {
-							if (kind > 161)
-								kind = 161;
+							if (kind > 162)
+								kind = 162;
 							{
 								jjCheckNAddStates(0, 6);
 							}
@@ -1564,8 +1253,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						} else if (curChar == 43) {
 							jjCheckNAddStates(12, 16);
 						} else if (curChar == 58) {
-							if (kind > 155)
-								kind = 155;
+							if (kind > 156)
+								kind = 156;
 							{
 								jjCheckNAddStates(17, 19);
 							}
@@ -1639,8 +1328,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 14:
-						if (curChar == 62 && kind > 154)
-							kind = 154;
+						if (curChar == 62 && kind > 155)
+							kind = 155;
 						break;
 					case 15:
 						if (curChar == 58)
@@ -1649,8 +1338,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 16:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 157)
-							kind = 157; {
+						if (kind > 158)
+							kind = 158; {
 						jjCheckNAddTwoStates(17, 18);
 					}
 						break;
@@ -1660,19 +1349,18 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 18:
-						if ((0x3ff200000000000L & l) != 0L && kind > 157)
-							kind = 157;
+						if ((0x3ff200000000000L & l) != 0L && kind > 158)
+							kind = 158;
 						break;
 					case 20:
 						if (curChar == 63)
 							jjstateSet[jjnewStateCnt++] = 21;
 						break;
-					case 21:
-					case 22:
+					case 21, 22:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 158)
-							kind = 158; {
+						if (kind > 159)
+							kind = 159; {
 						jjCheckNAdd(22);
 					}
 						break;
@@ -1680,12 +1368,11 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						if (curChar == 36)
 							jjstateSet[jjnewStateCnt++] = 24;
 						break;
-					case 24:
-					case 25:
+					case 24, 25:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 159)
-							kind = 159; {
+						if (kind > 160)
+							kind = 160; {
 						jjCheckNAdd(25);
 					}
 						break;
@@ -1697,8 +1384,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 29:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 160)
-							kind = 160; {
+						if (kind > 161)
+							kind = 161; {
 						jjCheckNAddStates(28, 30);
 					}
 						break;
@@ -1727,8 +1414,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 42:
-						if (curChar == 39 && kind > 174)
-							kind = 174;
+						if (curChar == 39 && kind > 175)
+							kind = 175;
 						break;
 					case 43:
 						if (curChar == 34) {
@@ -1746,16 +1433,15 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 47:
-						if (curChar == 34 && kind > 175)
-							kind = 175;
+						if (curChar == 34 && kind > 176)
+							kind = 176;
 						break;
 					case 48:
 						if (curChar == 39) {
 							jjCheckNAddStates(33, 36);
 						}
 						break;
-					case 49:
-					case 54:
+					case 49, 54:
 						if (curChar == 39) {
 							jjCheckNAddTwoStates(50, 51);
 						}
@@ -1776,8 +1462,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 55:
-						if (curChar == 39 && kind > 176)
-							kind = 176;
+						if (curChar == 39 && kind > 177)
+							kind = 177;
 						break;
 					case 56:
 						if (curChar == 39)
@@ -1796,8 +1482,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							jjCheckNAddStates(39, 42);
 						}
 						break;
-					case 60:
-					case 65:
+					case 60, 65:
 						if (curChar == 34) {
 							jjCheckNAddTwoStates(61, 62);
 						}
@@ -1818,8 +1503,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 66:
-						if (curChar == 34 && kind > 177)
-							kind = 177;
+						if (curChar == 34 && kind > 178)
+							kind = 178;
 						break;
 					case 67:
 						if (curChar == 34)
@@ -1843,8 +1528,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							jjstateSet[jjnewStateCnt++] = 82;
 						break;
 					case 82:
-						if (curChar == 58 && kind > 155)
-							kind = 155;
+						if (curChar == 58 && kind > 156)
+							kind = 156;
 						break;
 					case 83:
 						if ((0x3ff600000000000L & l) != 0L) {
@@ -1863,8 +1548,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 86:
 						if ((0x7ff000000000000L & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -1874,8 +1559,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 88:
-						if ((0x7ff200000000000L & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0x7ff200000000000L & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 90:
 						if ((0xa800fffa00000000L & l) != 0L) {
@@ -1901,18 +1586,18 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							jjstateSet[jjnewStateCnt++] = 95;
 						break;
 					case 95:
-						if ((0x3ff000000000000L & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0x3ff000000000000L & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 96:
-						if ((0xa800fffa00000000L & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0xa800fffa00000000L & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 98:
 						if ((0xa800fffa00000000L & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -1927,32 +1612,32 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 101:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
 					case 102:
 						if (curChar != 58)
 							break;
-						if (kind > 155)
-							kind = 155; {
+						if (kind > 156)
+							kind = 156; {
 						jjCheckNAddStates(17, 19);
 					}
 						break;
 					case 103:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 161)
-							kind = 161; {
+						if (kind > 162)
+							kind = 162; {
 						jjCheckNAddStates(0, 6);
 					}
 						break;
 					case 104:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 161)
-							kind = 161; {
+						if (kind > 162)
+							kind = 162; {
 						jjCheckNAdd(104);
 					}
 						break;
@@ -1969,8 +1654,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 107:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 164)
-							kind = 164; {
+						if (kind > 165)
+							kind = 165; {
 						jjCheckNAdd(107);
 					}
 						break;
@@ -1997,8 +1682,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 113:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 167)
-							kind = 167; {
+						if (kind > 168)
+							kind = 168; {
 						jjCheckNAdd(113);
 					}
 						break;
@@ -2015,8 +1700,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 117:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 167)
-							kind = 167; {
+						if (kind > 168)
+							kind = 168; {
 						jjCheckNAdd(117);
 					}
 						break;
@@ -2028,8 +1713,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 119:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 162)
-							kind = 162; {
+						if (kind > 163)
+							kind = 163; {
 						jjCheckNAdd(119);
 					}
 						break;
@@ -2046,8 +1731,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 122:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 165)
-							kind = 165; {
+						if (kind > 166)
+							kind = 166; {
 						jjCheckNAdd(122);
 					}
 						break;
@@ -2069,8 +1754,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 127:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 172)
-							kind = 172; {
+						if (kind > 173)
+							kind = 173; {
 						jjCheckNAdd(127);
 					}
 						break;
@@ -2102,8 +1787,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 134:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 172)
-							kind = 172; {
+						if (kind > 173)
+							kind = 173; {
 						jjCheckNAdd(134);
 					}
 						break;
@@ -2120,8 +1805,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 138:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 172)
-							kind = 172; {
+						if (kind > 173)
+							kind = 173; {
 						jjCheckNAdd(138);
 					}
 						break;
@@ -2133,8 +1818,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 140:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 163)
-							kind = 163; {
+						if (kind > 164)
+							kind = 164; {
 						jjCheckNAdd(140);
 					}
 						break;
@@ -2151,8 +1836,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 143:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 166)
-							kind = 166; {
+						if (kind > 167)
+							kind = 167; {
 						jjCheckNAdd(143);
 					}
 						break;
@@ -2174,8 +1859,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 148:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 173)
-							kind = 173; {
+						if (kind > 174)
+							kind = 174; {
 						jjCheckNAdd(148);
 					}
 						break;
@@ -2207,8 +1892,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 155:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 173)
-							kind = 173; {
+						if (kind > 174)
+							kind = 174; {
 						jjCheckNAdd(155);
 					}
 						break;
@@ -2225,8 +1910,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 159:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 173)
-							kind = 173; {
+						if (kind > 174)
+							kind = 174; {
 						jjCheckNAdd(159);
 					}
 						break;
@@ -2248,8 +1933,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 164:
 						if ((0x3ff000000000000L & l) == 0L)
 							break;
-						if (kind > 167)
-							kind = 167; {
+						if (kind > 168)
+							kind = 168; {
 						jjCheckNAdd(164);
 					}
 						break;
@@ -2291,11 +1976,10 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							kind = 31;
 						break;
 					case 9:
-						if ((0x20000000200L & l) != 0L && kind > 77)
-							kind = 77;
+						if ((0x20000000200L & l) != 0L && kind > 78)
+							kind = 78;
 						break;
-					case 10:
-					case 78:
+					case 10, 78:
 						if ((0x4000000040000L & l) != 0L) {
 							jjCheckNAdd(9);
 						}
@@ -2312,8 +1996,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 16:
 						if ((0x7fffffe87fffffeL & l) == 0L)
 							break;
-						if (kind > 157)
-							kind = 157; {
+						if (kind > 158)
+							kind = 158; {
 						jjCheckNAddTwoStates(17, 18);
 					}
 						break;
@@ -2323,28 +2007,26 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 18:
-						if ((0x7fffffe87fffffeL & l) != 0L && kind > 157)
-							kind = 157;
+						if ((0x7fffffe87fffffeL & l) != 0L && kind > 158)
+							kind = 158;
 						break;
 					case 19:
 						if (curChar == 95)
 							jjstateSet[jjnewStateCnt++] = 15;
 						break;
-					case 21:
-					case 22:
-						if ((0x7fffffe87fffffeL & l) == 0L)
-							break;
-						if (kind > 158)
-							kind = 158; {
-						jjCheckNAdd(22);
-					}
-						break;
-					case 24:
-					case 25:
+					case 21, 22:
 						if ((0x7fffffe87fffffeL & l) == 0L)
 							break;
 						if (kind > 159)
 							kind = 159; {
+						jjCheckNAdd(22);
+					}
+						break;
+					case 24, 25:
+						if ((0x7fffffe87fffffeL & l) == 0L)
+							break;
+						if (kind > 160)
+							kind = 160; {
 						jjCheckNAdd(25);
 					}
 						break;
@@ -2356,22 +2038,22 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 27:
 						if ((0x7fffffe07fffffeL & l) == 0L)
 							break;
-						if (kind > 160)
-							kind = 160; {
+						if (kind > 161)
+							kind = 161; {
 						jjCheckNAddStates(74, 76);
 					}
 						break;
 					case 29:
 						if ((0x7fffffe07fffffeL & l) == 0L)
 							break;
-						if (kind > 160)
-							kind = 160; {
+						if (kind > 161)
+							kind = 161; {
 						jjCheckNAddStates(28, 30);
 					}
 						break;
 					case 31:
-						if (curChar == 114 && kind > 160)
-							kind = 160;
+						if (curChar == 114 && kind > 161)
+							kind = 161;
 						break;
 					case 32:
 						if (curChar == 116)
@@ -2382,8 +2064,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							jjstateSet[jjnewStateCnt++] = 32;
 						break;
 					case 34:
-						if (curChar == 108 && kind > 160)
-							kind = 160;
+						if (curChar == 108 && kind > 161)
+							kind = 161;
 						break;
 					case 35:
 						if (curChar == 116)
@@ -2455,11 +2137,10 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 71:
-						if ((0x20000000200L & l) != 0L && kind > 66)
-							kind = 66;
+						if ((0x20000000200L & l) != 0L && kind > 67)
+							kind = 67;
 						break;
-					case 72:
-					case 75:
+					case 72, 75:
 						if ((0x4000000040000L & l) != 0L) {
 							jjCheckNAdd(71);
 						}
@@ -2508,8 +2189,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 86:
 						if ((0x7fffffe87fffffeL & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -2519,8 +2200,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 88:
-						if ((0x7fffffe87fffffeL & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0x7fffffe87fffffeL & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 89:
 						if (curChar == 92) {
@@ -2546,12 +2227,12 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							jjstateSet[jjnewStateCnt++] = 95;
 						break;
 					case 95:
-						if ((0x7e0000007eL & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0x7e0000007eL & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 96:
-						if ((0x4000000080000001L & l) != 0L && kind > 156)
-							kind = 156;
+						if ((0x4000000080000001L & l) != 0L && kind > 157)
+							kind = 157;
 						break;
 					case 97:
 						if (curChar == 92)
@@ -2560,8 +2241,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 98:
 						if ((0x4000000080000001L & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -2572,8 +2253,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 101:
 						if ((0x7e0000007eL & l) == 0L)
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -2654,8 +2335,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 16:
 						if (!jjCanMove_1(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 157)
-							kind = 157; {
+						if (kind > 158)
+							kind = 158; {
 						jjCheckNAddTwoStates(17, 18);
 					}
 						break;
@@ -2665,38 +2346,38 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 18:
-						if (jjCanMove_2(hiByte, i1, i2, l1, l2) && kind > 157)
-							kind = 157;
+						if (jjCanMove_2(hiByte, i1, i2, l1, l2) && kind > 158)
+							kind = 158;
 						break;
 					case 21:
 						if (!jjCanMove_1(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 158)
-							kind = 158; {
+						if (kind > 159)
+							kind = 159; {
 						jjCheckNAdd(22);
 					}
 						break;
 					case 22:
 						if (!jjCanMove_2(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 158)
-							kind = 158; {
+						if (kind > 159)
+							kind = 159; {
 						jjCheckNAdd(22);
 					}
 						break;
 					case 24:
 						if (!jjCanMove_1(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 159)
-							kind = 159; {
+						if (kind > 160)
+							kind = 160; {
 						jjCheckNAdd(25);
 					}
 						break;
 					case 25:
 						if (!jjCanMove_2(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 159)
-							kind = 159; {
+						if (kind > 160)
+							kind = 160; {
 						jjCheckNAdd(25);
 					}
 						break;
@@ -2743,8 +2424,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 					case 86:
 						if (!jjCanMove_1(hiByte, i1, i2, l1, l2))
 							break;
-						if (kind > 156)
-							kind = 156; {
+						if (kind > 157)
+							kind = 157; {
 						jjCheckNAddStates(49, 52);
 					}
 						break;
@@ -2754,8 +2435,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 						}
 						break;
 					case 88:
-						if (jjCanMove_2(hiByte, i1, i2, l1, l2) && kind > 156)
-							kind = 156;
+						if (jjCanMove_2(hiByte, i1, i2, l1, l2) && kind > 157)
+							kind = 157;
 						break;
 					default:
 						if (i1 == 0 || l1 == 0 || i2 == 0 || l2 == 0)
@@ -2817,8 +2498,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, "\74\74", "\76\76",
-			"\176", "\173\174", "\174\175", };
+			null, null, null, null, null, null, null, null, null, null, null, "\74\74",
+			"\76\76", "\176", "\173\174", "\174\175", };
 
 	protected Token jjFillToken() {
 		final Token t;
@@ -2853,65 +2534,34 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			164,
 	};
 
-	private static final boolean jjCanMove_0(int hiByte, int i1, int i2, long l1, long l2) {
-		switch (hiByte) {
-		case 0:
+	private static boolean jjCanMove_0(int hiByte, int i1, int i2, long l1, long l2) {
+		if (hiByte == 0) {
 			return ((jjbitVec2[i2] & l2) != 0L);
-		default:
-			if ((jjbitVec0[i1] & l1) != 0L)
-				return true;
-			return false;
 		}
+		return (jjbitVec0[i1] & l1) != 0L;
 	}
 
-	private static final boolean jjCanMove_1(int hiByte, int i1, int i2, long l1, long l2) {
-		switch (hiByte) {
-		case 0:
-			return ((jjbitVec4[i2] & l2) != 0L);
-		case 3:
-			return ((jjbitVec5[i2] & l2) != 0L);
-		case 32:
-			return ((jjbitVec6[i2] & l2) != 0L);
-		case 33:
-			return ((jjbitVec7[i2] & l2) != 0L);
-		case 47:
-			return ((jjbitVec8[i2] & l2) != 0L);
-		case 48:
-			return ((jjbitVec0[i2] & l2) != 0L);
-		case 253:
-			return ((jjbitVec9[i2] & l2) != 0L);
-		case 255:
-			return ((jjbitVec10[i2] & l2) != 0L);
-		default:
-			if ((jjbitVec3[i1] & l1) != 0L)
-				return true;
-			return false;
-		}
+	private static boolean jjCanMove_1(int hiByte, int i1, int i2, long l1, long l2) {
+		return jjCanMoveCommon(hiByte, i1, i2, l1, l2, jjbitVec4, jjbitVec5, jjbitVec6);
 	}
 
-	private static final boolean jjCanMove_2(int hiByte, int i1, int i2, long l1, long l2) {
-		switch (hiByte) {
-		case 0:
-			return ((jjbitVec11[i2] & l2) != 0L);
-		case 3:
-			return ((jjbitVec12[i2] & l2) != 0L);
-		case 32:
-			return ((jjbitVec13[i2] & l2) != 0L);
-		case 33:
-			return ((jjbitVec7[i2] & l2) != 0L);
-		case 47:
-			return ((jjbitVec8[i2] & l2) != 0L);
-		case 48:
-			return ((jjbitVec0[i2] & l2) != 0L);
-		case 253:
-			return ((jjbitVec9[i2] & l2) != 0L);
-		case 255:
-			return ((jjbitVec10[i2] & l2) != 0L);
-		default:
-			if ((jjbitVec3[i1] & l1) != 0L)
-				return true;
-			return false;
-		}
+	private static boolean jjCanMove_2(int hiByte, int i1, int i2, long l1, long l2) {
+		return jjCanMoveCommon(hiByte, i1, i2, l1, l2, jjbitVec11, jjbitVec12, jjbitVec13);
+	}
+
+	private static boolean jjCanMoveCommon(
+			int hiByte, int i1, int i2, long l1, long l2, long[] jjbitVec11, long[] jjbitVec12, long[] jjbitVec13) {
+		return switch (hiByte) {
+		case 0 -> ((jjbitVec11[i2] & l2) != 0L);
+		case 3 -> ((jjbitVec12[i2] & l2) != 0L);
+		case 32 -> ((jjbitVec13[i2] & l2) != 0L);
+		case 33 -> ((jjbitVec7[i2] & l2) != 0L);
+		case 47 -> ((jjbitVec8[i2] & l2) != 0L);
+		case 48 -> ((jjbitVec0[i2] & l2) != 0L);
+		case 253 -> ((jjbitVec9[i2] & l2) != 0L);
+		case 255 -> ((jjbitVec10[i2] & l2) != 0L);
+		default -> (jjbitVec3[i1] & l1) != 0L;
+		};
 	}
 
 	int curLexState = 0;
@@ -2958,7 +2608,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 							specialToken = (specialToken.next = matchedToken);
 						}
 					}
-					continue EOFLoop;
+					continue;
 				}
 			}
 			int error_line = input_stream.getEndLine();
@@ -2987,25 +2637,13 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	void SkipLexicalActions(Token matchedToken) {
-		switch (jjmatchedKind) {
-		default:
-			break;
-		}
 	}
 
 	void MoreLexicalActions() {
 		jjimageLen += (lengthOfMatch = jjmatchedPos + 1);
-		switch (jjmatchedKind) {
-		default:
-			break;
-		}
 	}
 
 	void TokenLexicalActions(Token matchedToken) {
-		switch (jjmatchedKind) {
-		default:
-			break;
-		}
 	}
 
 	private void jjCheckNAdd(int state) {
@@ -3071,7 +2709,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 
 	/** Switch to specified lex state. */
 	public void SwitchTo(int lexState) {
-		if (lexState >= 1 || lexState < 0)
+		if (lexState != 0)
 			throw new TokenMgrError("Error: Ignoring invalid lexical state : " + lexState + ". State unchanged.",
 					TokenMgrError.INVALID_LEXICAL_STATE);
 		else
@@ -3093,10 +2731,10 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 			-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 			-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 			-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-			-1,
+			-1, -1,
 	};
 	static final long[] jjtoToken = {
-			0xfffffffffffffff1L, 0xffffffffffffffffL, 0x3f0ffffffffffL, 0x1f0L,
+			0xfffffffffffffff1L, 0xffffffffffffffffL, 0x7e1ffffffffffL, 0x3e0L,
 	};
 	static final long[] jjtoSkip = {
 			0xcL, 0x0L, 0x0L, 0x0L,

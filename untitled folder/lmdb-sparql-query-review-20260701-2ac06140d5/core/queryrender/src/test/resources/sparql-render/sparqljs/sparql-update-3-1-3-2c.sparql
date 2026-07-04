@@ -1,0 +1,24 @@
+PREFIX dc:  <http://purl.org/dc/elements/1.1/>
+PREFIX dcmitype: <http://purl.org/dc/dcmitype/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT
+  { GRAPH <http://example/bookStore2> { ?book ?p ?v } }
+WHERE
+  { GRAPH  <http://example/bookStore>
+     { ?book dc:date ?date . 
+       FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime )
+       ?book ?p ?v
+     }
+  } ;
+
+WITH <http://example/bookStore>
+DELETE
+ { ?book ?p ?v }
+WHERE
+ { ?book dc:date ?date ;
+         dc:type dcmitype:PhysicalObject .
+   FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime ) 
+   ?book ?p ?v
+ } 
+

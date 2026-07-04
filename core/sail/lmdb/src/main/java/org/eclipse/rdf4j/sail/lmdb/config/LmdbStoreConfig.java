@@ -79,6 +79,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private String tripleIndexes;
 
+	private String tripleTermIndexes;
+
 	private long tripleDBSize = -1;
 
 	private long valueDBSize = -1;
@@ -168,6 +170,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setTripleIndexes(String tripleIndexes) {
 		this.tripleIndexes = tripleIndexes;
+		return this;
+	}
+
+	public String getTripleTermIndexes() {
+		return tripleTermIndexes;
+	}
+
+	public LmdbStoreConfig setTripleTermIndexes(String tripleTermIndexes) {
+		this.tripleTermIndexes = tripleTermIndexes;
 		return this;
 	}
 
@@ -485,6 +496,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (tripleIndexes != null) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}
+		if (tripleTermIndexes != null) {
+			m.add(implNode, LmdbStoreSchema.TRIPLE_TERM_INDEXES, vf.createLiteral(tripleTermIndexes));
+		}
 		if (tripleDBSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, vf.createLiteral(tripleDBSize));
 		}
@@ -598,6 +612,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		try {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))
 					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_TERM_INDEXES, null))
+					.ifPresent(lit -> setTripleTermIndexes(lit.getLabel()));
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, null))
 					.ifPresent(lit -> {

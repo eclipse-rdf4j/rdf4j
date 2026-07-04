@@ -1,0 +1,43 @@
+@prefix : <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . 
+@prefix owl:  <http://www.w3.org/2002/07/owl#> . 
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> . 
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+:MyClass a owl:Class ;
+	rdfs:label "My Class" .
+	
+:MySubClass1 a owl:Class ;
+	rdfs:label "My Sub Class 1" ;
+	rdfs:subClassOf :MyClass .
+
+
+:Concept1 a :MyClass ;
+	rdfs:label "Concept1" ;
+	skos:altLabel "Concept1 AltLabel" .
+
+# note: we define altLabel in data2.ttl	
+:Concept2 a :MyClass ;
+	rdfs:label "Concept2" .
+
+# data for exclusive path
+foaf:Agent a owl:Class ; 
+	rdfs:label "Agent" .
+foaf:Person rdfs:subClassOf foaf:Agent ;
+	rdfs:label "Person" .
+:Person1 a foaf:Agent ;
+	rdfs:label "Person 1" .
+:Person2 a foaf:Person ;
+	rdfs:label "Person 2" .
+	
+:SubConcept1 a :MySubClass1 ;
+	rdfs:label "Sub Concept 1" .
+
+# small taxonomie
+:mammals rdf:type skos:Concept .
+:bovinae rdf:type skos:Concept ;
+	skos:broader :mammals .
+:cows rdf:type skos:Concept ;
+	skos:broader :bovinae .

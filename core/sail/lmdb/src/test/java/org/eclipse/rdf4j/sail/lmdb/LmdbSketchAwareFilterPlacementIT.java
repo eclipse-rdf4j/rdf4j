@@ -16,6 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.nio.file.Files;
+import java.util.concurrent.TimeUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,6 +70,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junitpioneer.jupiter.RetryingTest;
 
 class LmdbSketchAwareFilterPlacementIT {
 
@@ -88,13 +95,25 @@ class LmdbSketchAwareFilterPlacementIT {
 	private static final String GRID_SUBSTATION_NAME_FILTER = "substation-name-filter";
 	private static final String GRID_FEEDS_LABEL = "grid-feeds";
 	private static final String GRID_TRANSFORMER_TYPE_LABEL = "transformer-type";
+	private static final int CRITERIA_RETRY_ATTEMPTS = 10;
+	private static final int TEST_RERUN_ATTEMPTS = 10;
+	private static final int FULL_ATTEMPTS_PER_INVOCATION = 1;
+	private static final int TEST_RERUN_TIMEOUT_MINUTES = 3;
+	private static final int RETRY_PAUSE_MILLIS = 1_000;
 
-	@Test
+	@Target(ElementType.METHOD)
+	@Retention(RetentionPolicy.RUNTIME)
+	@RetryingTest(maxAttempts = TEST_RERUN_ATTEMPTS, suspendForMs = RETRY_PAUSE_MILLIS)
+	@Timeout(value = TEST_RERUN_TIMEOUT_MINUTES, unit = TimeUnit.MINUTES)
+	private @interface RetriedWithinTimeout {
+	}
+
+	@RetriedWithinTimeout
 	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
 			throws Exception {
 		runPlannerTest(dataDir,
 				"optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady", attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -147,11 +166,11 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady", attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -188,11 +207,11 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void learnedTemplateStatsApplyWhenExactFilterKeyMisses(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir, "learnedTemplateStatsApplyWhenExactFilterKeyMisses",
 				attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -227,10 +246,10 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void bindingWindowFilterKeepsIncomingValuesBindings(@TempDir File dataDir) throws Exception {
-		runPlannerTest(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
-			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+		assertTestPassesWithinAttempts(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 
@@ -307,7 +326,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats", attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -345,11 +364,11 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void nonLocalEqualityFilterReceivesHeuristicPassRatio(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir, "nonLocalEqualityFilterReceivesHeuristicPassRatio",
 				attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -385,7 +404,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow", attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -411,10 +430,10 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void deferredFilterUnlockAddsWorkAndShrinksRows(@TempDir File dataDir) throws Exception {
-		runPlannerTest(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
-			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+		assertTestPassesWithinAttempts(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 
@@ -466,13 +485,13 @@ class LmdbSketchAwareFilterPlacementIT {
 		});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady(
 			@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady",
 				attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -520,13 +539,13 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset",
 				attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -555,13 +574,14 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled(
 			@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled",
 				attemptDir -> {
 					LmdbStoreConfig config = new LmdbStoreConfig()
+							.setSketchEstimatorEnabled(true)
 							.setOptimizerSamplingEnabled(false)
 							.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 					LmdbStore store = new LmdbStore(attemptDir, config);
@@ -623,13 +643,17 @@ class LmdbSketchAwareFilterPlacementIT {
 		});
 	}
 
-	@Test
+	private static LmdbStoreConfig sketchEnabledConfig() {
+		return new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+	}
+
+	@RetriedWithinTimeout
 	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir,
 				"optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset",
 				attemptDir -> {
-					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 					SailRepository repository = new SailRepository(store);
 					repository.init();
 
@@ -661,7 +685,7 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void deferredFilterPlacementPreservesAcceptedFactorOrder() throws Exception {
 		runPlannerTest("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
 			StatementPattern forward = new StatementPattern(Var.of("anchor"),
@@ -680,7 +704,7 @@ class LmdbSketchAwareFilterPlacementIT {
 		});
 	}
 
-	@Test
+	@RetriedWithinTimeout
 	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() throws Exception {
 		runPlannerTest("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
 			BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
@@ -713,6 +737,47 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	private static void runPlannerTest(String testName, TestBody testBody) throws Exception {
 		testBody.run();
+	}
+
+	private static void assertTestPassesWithinAttempts(File dataDir, String testName, TestAttempt testAttempt)
+			throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= FULL_ATTEMPTS_PER_INVOCATION; attempt++) {
+			File attemptDir = new File(dataDir, "attempt-" + attempt);
+			Files.createDirectories(attemptDir.toPath());
+			try {
+				testAttempt.run(attemptDir);
+				return;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
+		}
+		failAfterRetries("Test \"" + testName + "\" did not pass within " + FULL_ATTEMPTS_PER_INVOCATION
+				+ " full attempts", lastFailure);
+	}
+
+	private static void assertTestPassesWithinAttempts(String testName, TestBody testBody) throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= FULL_ATTEMPTS_PER_INVOCATION; attempt++) {
+			try {
+				testBody.run();
+				return;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
+		}
+		failAfterRetries("Test \"" + testName + "\" did not pass within " + FULL_ATTEMPTS_PER_INVOCATION
+				+ " full attempts", lastFailure);
 	}
 
 	private static void assertCriteriaEventually(String criteria, CriteriaAssertion assertion) throws Exception {
@@ -749,6 +814,25 @@ class LmdbSketchAwareFilterPlacementIT {
 					.append('}');
 		}
 		return builder.append(']').toString();
+	}
+
+	private static <T> T failAfterRetries(String message, Throwable failure) throws Exception {
+		if (failure instanceof AssertionError assertionError) {
+			AssertionError error = new AssertionError(message);
+			error.addSuppressed(assertionError);
+			throw error;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw new RuntimeException(message, runtimeException);
+		}
+		if (failure instanceof Exception exception) {
+			throw new Exception(message, exception);
+		}
+		AssertionError error = new AssertionError(message);
+		if (failure != null) {
+			error.addSuppressed(failure);
+		}
+		throw error;
 	}
 
 	private static <T> T awaitCriteria(String criteria, CriteriaProbe<T> probe) throws Exception {

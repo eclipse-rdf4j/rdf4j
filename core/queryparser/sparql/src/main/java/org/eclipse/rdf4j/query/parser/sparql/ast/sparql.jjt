@@ -264,6 +264,7 @@ TOKEN [IGNORE_CASE] :
 |	<LIMIT: "limit">
 |	<OFFSET: "offset">
 |	<OPTIONAL: "optional">
+|	<LATERAL: "lateral">
 |	<GRAPH: "graph">
 |	<UNION: "union">
 |	<MINUS_SETOPER: "minus">
@@ -551,7 +552,7 @@ void ConstructQuery() :
 void Construct() :
 {}
 {
-	<CONSTRUCT> [ LOOKAHEAD(3) ConstructClause() ]
+	<CONSTRUCT> [ LOOKAHEAD(2) ConstructClause() ]
 
 }
 
@@ -792,6 +793,7 @@ void GraphPatternNotTriples() #void :
 |	MinusGraphPattern()
 |	ServiceGraphPattern()
 | 	InlineData()
+|	LateralGraphPattern()
 }
 
 void OptionalGraphPattern() :
@@ -800,6 +802,14 @@ void OptionalGraphPattern() :
 	// Note: does not refer GroupGraphPattern() because constraints are not limited
 	// to the optional graph pattern, but can also reference the operator's LHS
 	<OPTIONAL> <LBRACE> (SubSelect() | GraphPattern()) <RBRACE>
+}
+
+void LateralGraphPattern() :
+{}
+{
+	// Note: does not refer GroupGraphPattern() because constraints are not limited
+	// to the lateral graph pattern, but can also reference the operator's LHS
+	<LATERAL> <LBRACE> (SubSelect() | GraphPattern()) <RBRACE>
 }
 
 void GraphGraphPattern() :
@@ -901,9 +911,9 @@ void ObjectList():
 void TriplesSameSubjectPath() :
 {}
 {
-    LOOKAHEAD(<TRIPLE_OPEN> <LPAREN>) VarOrTerm() PropertyListPath()
+    LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) VarOrTerm() PropertyListPath()
     |
-    LOOKAHEAD(<TRIPLE_OPEN>) ReifiedTripleSubject() [PropertyListPath()]
+    LOOKAHEAD(1, <TRIPLE_OPEN>) ReifiedTripleSubject() [PropertyListPath()]
     |
     VarOrTerm() PropertyListPath()
     |
@@ -1095,7 +1105,7 @@ void GraphNodePath() #void :
 void VarOrTerm() #void :
 {}
 {
-    LOOKAHEAD(<TRIPLE_OPEN> <LPAREN>) TripleTerm()
+    LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm()
 |
 	Var()
 |
@@ -1159,9 +1169,9 @@ void ReifiedTriple() :
 {}
 {
     <TRIPLE_OPEN>
-        ( LOOKAHEAD(<TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
+        ( LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
         Verb()
-        ( LOOKAHEAD(<TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
+        ( LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
         [
             <TILDE>
             ( IRIref() | BlankNode() | Var() )

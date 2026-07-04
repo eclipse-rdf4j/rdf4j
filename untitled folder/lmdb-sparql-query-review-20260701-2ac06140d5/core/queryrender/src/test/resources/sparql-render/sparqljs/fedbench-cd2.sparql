@@ -1,0 +1,5 @@
+SELECT ?party ?page  WHERE {
+   <http://dbpedia.org/resource/Barack_Obama> <http://dbpedia.org/ontology/party> ?party .
+   ?x <http://data.nytimes.com/elements/topicPage> ?page .
+   ?x <http://www.w3.org/2002/07/owl#sameAs> <http://dbpedia.org/resource/Barack_Obama> .
+}

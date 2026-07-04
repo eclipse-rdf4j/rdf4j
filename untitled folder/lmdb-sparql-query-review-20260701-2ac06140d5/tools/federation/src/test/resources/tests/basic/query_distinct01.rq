@@ -1,0 +1,8 @@
+# make a test for distinct keyword
+
+PREFIX : <http://example.org/> 
+
+SELECT DISTINCT ?s  
+{
+  ?s :p ?o .
+} 

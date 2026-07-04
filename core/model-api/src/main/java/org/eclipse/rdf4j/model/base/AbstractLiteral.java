@@ -175,7 +175,8 @@ public abstract class AbstractLiteral implements Literal {
 		return this == o || o instanceof Literal
 				&& getLabel().equals(((Literal) o).getLabel())
 				&& getDatatype().equals(((Literal) o).getDatatype())
-				&& equals(getLanguage(), ((Literal) o).getLanguage());
+				&& equals(getLanguage(), ((Literal) o).getLanguage())
+				&& getBaseDirection() == ((Literal) o).getBaseDirection();
 	}
 
 	@Override

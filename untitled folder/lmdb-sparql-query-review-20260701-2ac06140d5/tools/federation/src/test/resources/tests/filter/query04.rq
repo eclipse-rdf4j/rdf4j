@@ -1,0 +1,10 @@
+# extract all persons and apply a filter on the name (test insertion of value)
+
+PREFIX : <http://namespace1.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?s ?name
+{
+  ?s foaf:name ?name .
+  FILTER (?name="Person1" && ?s=:Person_1)
+} 

@@ -1,0 +1,26 @@
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> 
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+SELECT DISTINCT 
+	?s (?o AS ?o1) 
+	(<http://www.w3.org/2001/XMLSchema#boolean>(?o) AS ?o2) 
+	(COUNT(DISTINCT ?p) AS ?count) 
+	(rdf:type AS ?typeProperty) 
+WHERE {
+	{ 	
+		?s ?p ?o . 
+		?s rdf:type foaf:Person . 
+		BIND ('42' AS ?knowsname ) . 
+		?o rdf:type dc:Document . } 
+		MINUS 
+		{
+			?s rdf:type rdfs:Resource . 
+			OPTIONAL { ?s ?p ?o . } 
+		} 
+		FILTER (NOT EXISTS { ?s rdfs:label ?o }) 
+	} GROUP BY ?s ?o 
+		HAVING (?count=5) 
+		ORDER BY ?s ?o1 
+		LIMIT 10 OFFSET 5 
+		VALUES (?s) { (<http:example.org/dummy>) }

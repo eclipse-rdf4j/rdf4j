@@ -74,6 +74,8 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTOptionalGraphPattern node, Object data) throws VisitorException;
 
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException;
+
 	public Object visit(ASTGraphGraphPattern node, Object data) throws VisitorException;
 
 	public Object visit(ASTUnionGraphPattern node, Object data) throws VisitorException;
@@ -326,4 +328,4 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTModify node, Object data) throws VisitorException;
 }
-/* JavaCC - OriginalChecksum=327c7a1ade3b8dcf8fc0a49e505d2383 (do not edit this line) */
+/* JavaCC - OriginalChecksum=737e41e22025c9cd9ff3e27d425e96d6 (do not edit this line) */

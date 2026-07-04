@@ -17,12 +17,21 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -47,7 +56,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	protected Resource lastWrittenSubject = null;
 	protected char quote = '"';
 	protected boolean entityQuote = false;
-	private boolean itsNamespaceUsed = false;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -117,11 +125,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 			// This export format needs the RDF namespace to be defined, add a
 			// prefix for it if there isn't one yet.
 			setNamespace(RDF.PREFIX, RDF.NAMESPACE);
-			if (itsNamespaceUsed) {
-				writeNewLine();
-				writeIndent();
-				writeQuotedAttribute("xmlns:its", ITS_NAMESPACE);
-			}
+			setNamespace("its", ITS_NAMESPACE);
 
 			WriterConfig writerConfig = getWriterConfig();
 			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? '\'' : '\"';
@@ -257,17 +261,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 
 				// Write new subject:
 				writeNewLine();
-				writeStartOfStartTag(RDF.NAMESPACE, "Description");
-				if (subj instanceof BNode) {
-					BNode bNode = (BNode) subj;
-					writeAttribute("nodeID", getValidNodeId(bNode));
-				} else if (baseIRI != null) {
-					writeAttribute("about", baseIRI.relativize(subj.stringValue()));
-				} else {
-					IRI uri = (IRI) subj;
-					writeAttribute("about", uri.toString());
-				}
-				writeEndOfStartTag();
+				writeSubject(subj);
 				writeNewLine();
 
 				lastWrittenSubject = subj;
@@ -278,105 +272,26 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 			writeStartOfStartTag(predNamespace, predLocalName);
 
 			// OBJECT
-			if (obj instanceof TripleTerm) {
+			if (obj instanceof TripleTerm tripleTerm) {
+				writeAttribute(RDF.NAMESPACE, "version", "1.2");
 
-				TripleTerm t = (TripleTerm) obj;
-				writeAttribute("parseType", "Resource");
+				// RDF 1.2 triple terms use rdf:parseType="Triple"
+				writeAttribute(RDF.NAMESPACE, "parseType", "Triple");
 				writeEndOfStartTag();
 				writeNewLine();
-				// rdf:subject
-				writeIndent();
-				writeIndent();
-				writeStartOfStartTag(RDF.NAMESPACE, "subject");
-				writeAttribute("resource", t.getSubject().stringValue());
-				writeEndOfEmptyTag();
-				writeNewLine();
-				// rdf:predicate
-				writeIndent();
-				writeIndent();
-				writeStartOfStartTag(RDF.NAMESPACE, "predicate");
-				writeAttribute("resource", t.getPredicate().stringValue());
-				writeEndOfEmptyTag();
-				writeNewLine();
-				// rdf:object
-				writeIndent();
-				writeIndent();
-				writeStartOfStartTag(RDF.NAMESPACE, "object");
 
-				Value innerObj = t.getObject();
-				if (innerObj instanceof IRI) {
-					writeAttribute("resource", innerObj.stringValue());
-					writeEndOfEmptyTag();
-				} else if (innerObj instanceof BNode) {
-					writeAttribute("nodeID", getValidNodeId((BNode) innerObj));
-					writeEndOfEmptyTag();
-				} else {
-					Literal lit = (Literal) innerObj;
-					if (lit.getLanguage().isPresent()) {
-						writeAttribute(lit.getLanguage().get());
-					} else if (lit.getCoreDatatype() != CoreDatatype.XSD.STRING) {
-						writeAttribute("datatype", lit.getDatatype().toString());
-					}
-					writeEndOfStartTag();
-					writeCharacterData(lit.getLabel());
-					writeEndTag(RDF.NAMESPACE, "object");
-				}
+				// Write nested triple as normal RDF/XML so RDFXMLParser's parseType="Triple"
+				// logic can capture exactly one inner triple as a TripleTerm.
+				writeTripleTerm(tripleTerm);
 
 				writeNewLine();
 				writeIndent();
 				writeEndTag(predNamespace, predLocalName);
-			} else if (obj instanceof Resource) {
-				Resource objRes = (Resource) obj;
 
-				if (objRes instanceof BNode) {
-					BNode bNode = (BNode) objRes;
-					writeAttribute("nodeID", getValidNodeId(bNode));
-				} else if (baseIRI != null) {
-					writeAttribute("resource", baseIRI.relativize(objRes.stringValue()));
-				} else {
-					IRI uri = (IRI) objRes;
-					writeAttribute("resource", uri.toString());
-				}
-
-				writeEndOfEmptyTag();
-			} else if (obj instanceof Literal) {
-				Literal objLit = (Literal) obj;
-				// datatype attribute
-				boolean isXMLLiteral = false;
-
-				if (objLit.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING) {
-					// DIRLANGSTRING is always a language literal
-					writeAttribute(objLit.getLanguage().get());
-					String dir = String.valueOf(objLit.getBaseDirection());
-					itsNamespaceUsed = true;
-					writeAttribute("its:dir", dir);
-
-				} else if (Literals.isLanguageLiteral(objLit)) {
-					writeAttribute(objLit.getLanguage().get());
-
-				} else {
-					// other datatypes
-					CoreDatatype coreDatatype = objLit.getCoreDatatype();
-					isXMLLiteral = coreDatatype == CoreDatatype.RDF.XMLLITERAL;
-
-					if (isXMLLiteral) {
-						writeAttribute("parseType", "Literal");
-					} else if (coreDatatype != CoreDatatype.XSD.STRING) {
-						writeAttribute("datatype", objLit.getDatatype().toString());
-					}
-				}
-
-				writeEndOfStartTag();
-
-				// label
-				if (isXMLLiteral) {
-					// Write XML literal as plain XML
-					writer.write(objLit.getLabel());
-				} else {
-					writeCharacterData(objLit.getLabel());
-				}
-
-				writeEndTag(predNamespace, predLocalName);
+			} else if (obj instanceof Resource objRes) {
+				writeResource(objRes);
+			} else if (obj instanceof Literal objLit) {
+				writeLiteral(objLit, predNamespace, predLocalName, true);
 			}
 
 			writeNewLine();
@@ -386,6 +301,140 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
+	}
+
+	private void writeSubject(Resource subj) throws IOException {
+		writeStartOfStartTag(RDF.NAMESPACE, "Description");
+		if (subj instanceof BNode bNode) {
+			writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+		} else if (baseIRI != null) {
+			writeAttribute(RDF.NAMESPACE, "about", baseIRI.relativize(subj.stringValue()));
+		} else {
+			IRI uri = (IRI) subj;
+			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
+		}
+		writeEndOfStartTag();
+	}
+
+	private void writeResource(Resource resource) throws IOException {
+		if (resource instanceof BNode bNode) {
+			writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+		} else if (baseIRI != null) {
+			writeAttribute(RDF.NAMESPACE, "resource", baseIRI.relativize(resource.stringValue()));
+		} else {
+			IRI uri = (IRI) resource;
+			writeAttribute(RDF.NAMESPACE, "resource", uri.toString());
+		}
+
+		writeEndOfEmptyTag();
+	}
+
+	private void writeLiteral(Literal objLit, String predNamespace, String predLocalName, boolean shouldAddVersion)
+			throws IOException {
+		// datatype attribute
+		boolean isXMLLiteral = false;
+
+		if (objLit.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING) {
+			// DIRLANGSTRING is always a language literal
+			writeXmlLangAttribute(objLit.getLanguage().get());
+			if (shouldAddVersion) {
+				writeAttribute(RDF.NAMESPACE, "version", "1.2");
+			}
+			writeAttribute(ITS_NAMESPACE, "version", "2.0");
+			String dir = String.valueOf(objLit.getBaseDirection());
+			writeAttribute(ITS_NAMESPACE, "dir", XMLUtil.sanitizeLiteralDirection(dir));
+
+		} else if (Literals.isLanguageLiteral(objLit)) {
+			writeXmlLangAttribute(objLit.getLanguage().get());
+
+		} else {
+			// other datatypes
+			CoreDatatype coreDatatype = objLit.getCoreDatatype();
+			isXMLLiteral = coreDatatype == CoreDatatype.RDF.XMLLITERAL;
+
+			if (isXMLLiteral) {
+				writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
+			} else if (coreDatatype != CoreDatatype.XSD.STRING) {
+				writeAttribute(RDF.NAMESPACE, "datatype", objLit.getDatatype().toString());
+			}
+		}
+
+		writeEndOfStartTag();
+
+		// label
+		if (isXMLLiteral) {
+			// Write XML literal as plain XML
+			writer.write(objLit.getLabel());
+		} else {
+			writeCharacterData(objLit.getLabel());
+		}
+
+		writeEndTag(predNamespace, predLocalName);
+	}
+
+	/**
+	 * Writes a triple term as RDF/XML content for rdf:parseType="Triple".
+	 *
+	 * For a triple term (s, p, o) this encodes:
+	 *
+	 * <rdf:Description rdf:about|rdf:nodeID="s"> <p ...encoding-of-o.../> </rdf:Description>
+	 *
+	 * Nested triple terms in object position are handled by using rdf:parseType="Triple" again and recursively calling
+	 * this method.
+	 */
+	protected void writeTripleTerm(TripleTerm t) throws IOException, RDFHandlerException {
+		// Inner subject node element for the triple term
+		writeIndent();
+		writeIndent();
+
+		Resource subj = t.getSubject();
+		writeSubject(subj);
+		writeNewLine();
+
+		// Inner predicate/property element for the triple term
+		IRI pred = t.getPredicate();
+		String predString = pred.toString();
+		int predSplitIdx = XMLUtil.findURISplitIndex(predString);
+		if (predSplitIdx == -1) {
+			throw new RDFHandlerException(
+					"Unable to create XML namespace-qualified name for triple term predicate: " + predString);
+		}
+		String predNamespace = predString.substring(0, predSplitIdx);
+		String predLocalName = predString.substring(predSplitIdx);
+
+		writeIndent();
+		writeIndent();
+		writeIndent();
+		writeStartOfStartTag(predNamespace, predLocalName);
+
+		// Inner object of the triple term
+		Value innerObj = t.getObject();
+
+		if (innerObj instanceof TripleTerm tripleTerm) {
+			// Nested triple term: <p rdf:parseType="Triple"> ... </p>
+			writeAttribute(RDF.NAMESPACE, "parseType", "Triple");
+			writeEndOfStartTag();
+			writeNewLine();
+
+			writeTripleTerm(tripleTerm);
+
+			writeNewLine();
+			writeIndent();
+			writeIndent();
+			writeIndent();
+			writeEndTag(predNamespace, predLocalName);
+
+		} else if (innerObj instanceof Resource objRes) {
+			writeResource(objRes);
+
+		} else if (innerObj instanceof Literal lit) {
+			writeLiteral(lit, predNamespace, predLocalName, false);
+		}
+
+		writeNewLine();
+		writeIndent();
+		writeIndent();
+		writeEndTag(RDF.NAMESPACE, "Description");
 	}
 
 	@Override
@@ -439,18 +488,18 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 		}
 	}
 
-	protected void writeAttribute(String value) throws IOException {
+	protected void writeXmlLangAttribute(String value) throws IOException {
 		writeQuotedAttribute(" " + "xml:lang", value);
 	}
 
-	protected void writeAttribute(String attName, String value)
+	protected void writeAttribute(String namespace, String attName, String value)
 			throws IOException, RDFHandlerException {
 		// Note: attribute cannot use the default namespace
-		String prefix = namespaceTable.get(RDF.NAMESPACE);
+		String prefix = namespaceTable.get(namespace);
 
 		if (prefix == null) {
 			throw new RDFHandlerException(
-					"No prefix has been declared for the namespace used in this attribute: " + RDF.NAMESPACE);
+					"No prefix has been declared for the namespace used in this attribute: " + namespace);
 		}
 
 		writeQuotedAttribute(" " + prefix + ":" + attName, value);

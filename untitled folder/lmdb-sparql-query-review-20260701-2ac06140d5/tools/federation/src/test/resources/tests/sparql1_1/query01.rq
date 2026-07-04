@@ -1,0 +1,7 @@
+# extract all triples
+
+PREFIX : <http://example.org/> 
+
+SELECT (SUM(?int) as ?sum) {
+  ?s :int ?int .
+} GROUP BY ?s

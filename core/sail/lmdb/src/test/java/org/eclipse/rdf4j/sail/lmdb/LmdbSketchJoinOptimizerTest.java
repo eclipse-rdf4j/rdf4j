@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -95,6 +96,20 @@ class LmdbSketchJoinOptimizerTest {
 
 		assertEquals(List.of(boundObjects, guard, lookup), joinArgs(root.getArg()));
 		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
+	void keepsLateralBeforeFollowingJoinArgument() {
+		StatementPattern left = statementPattern("s", "pLeft", "o");
+		StatementPattern right = statementPattern("s", "pLateral", "l");
+		Lateral lateral = new Lateral(left, right, Set.of("s"));
+		StatementPattern following = statementPattern("z", "pCheap", "l");
+		QueryRoot root = new QueryRoot(new Join(lateral, following));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(following, lateral));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(lateral, following), joinArgs(root.getArg()));
 	}
 
 	@Test

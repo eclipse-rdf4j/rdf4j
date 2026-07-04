@@ -136,9 +136,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void memoizesSupportsJoinEstimationAndInvalidatesAfterCacheWindow() throws Exception {
+	void checksSupportsJoinEstimationReadinessOnEachCall() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.isReadyNonBlocking()).thenReturn(true, false, false);
+		when(estimator.isReadyNonBlocking()).thenReturn(true, false);
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);
 		when(valueStore.getRevision()).thenReturn(revision);
@@ -150,14 +150,34 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				estimator);
 
 		assertTrue(statistics.supportsJoinEstimation(), "Expected initial readiness probe");
-		assertTrue(statistics.supportsJoinEstimation(), "Expected second probe to use cached readiness");
-		verify(estimator, times(1)).isReadyNonBlocking();
+		assertFalse(statistics.supportsJoinEstimation(),
+				"Expected later not-ready sketches to be observed immediately");
+		verify(estimator, times(2)).isReadyNonBlocking();
 
 		LmdbPlannerAwait.awaitPlannerAssertion("supportsJoinEstimation cache expires", Duration.ofSeconds(2), () -> {
 			assertFalse(statistics.supportsJoinEstimation(),
 					"Expected readiness cache invalidation after cache window");
 			verify(estimator, times(2)).isReadyNonBlocking();
 		});
+	}
+
+	@Test
+	void doesNotCacheFalseSupportsJoinEstimationWhenSketchesBecomeReady() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReadyNonBlocking()).thenReturn(false, true);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(
+				valueStore,
+				mock(TripleStore.class),
+				estimator);
+
+		assertFalse(statistics.supportsJoinEstimation(), "Expected not-ready sketches before rebuild");
+		assertTrue(statistics.supportsJoinEstimation(), "Expected ready sketches to be observed immediately");
+		verify(estimator, times(2)).isReadyNonBlocking();
 	}
 
 	@Test
@@ -4398,6 +4418,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -4439,6 +4460,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -4545,6 +4567,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -4577,6 +4600,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-cycle").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -4615,6 +4639,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-promotion").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -4909,6 +4934,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		} else {
 			System.setProperty(name, previousValue);
 		}
+	}
+
+	private static LmdbStoreConfig sketchEnabledConfig() {
+		return new LmdbStoreConfig().setSketchEstimatorEnabled(true);
 	}
 
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)

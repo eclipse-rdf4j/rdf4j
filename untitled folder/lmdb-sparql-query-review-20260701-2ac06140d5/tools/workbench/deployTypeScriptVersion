@@ -1,0 +1,12 @@
+#!/bin/bash
+
+indir=~/Documents/git/sesame/core/http/workbench/src/main/webapp/scripts
+srcdir=/tmp/tsout
+mkdir -p $srcdir
+rm -f $srcdir/*.js*
+destdir=~/tomcat7/webapps/openrdf-workbench/scripts
+cd $indir
+tsc --noImplicitAny --sourcemap --sourceRoot "/openrdf-workbench/scripts" --outDir $srcdir *.ts
+cp $srcdir/*.js* $destdir
+cp *.ts $destdir
+echo 'Replaced deployed JavaScript files with compiled TypeScript versions.'

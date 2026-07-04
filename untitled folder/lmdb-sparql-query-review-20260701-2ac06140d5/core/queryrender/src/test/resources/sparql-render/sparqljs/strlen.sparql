@@ -1,0 +1,1 @@
+SELECT ?str (STRLEN(?str) as ?strlen) { [] ?p ?str }

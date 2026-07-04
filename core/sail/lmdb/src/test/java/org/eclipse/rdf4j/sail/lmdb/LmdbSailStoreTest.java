@@ -980,7 +980,7 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllBulkFailureDoesNotMutateNonIsolatedEstimatorBeforeStoreSuccess() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
 		setBulkOperationSize(config, 2);
 		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
 		sail.init();

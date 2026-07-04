@@ -1,0 +1,12 @@
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "p"
+         ProjectionElem "o"
+      StatementSourcePattern
+         Var (name=s)
+         Var (name=p)
+         Var (name=o)
+         StatementSource (id=endpoint1, type=REMOTE)
+         StatementSource (id=endpoint2, type=REMOTE)

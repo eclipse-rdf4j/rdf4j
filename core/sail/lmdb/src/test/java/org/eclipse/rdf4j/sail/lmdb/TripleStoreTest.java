@@ -150,12 +150,12 @@ public class TripleStoreTest {
 			fallbackStore.commit();
 
 			fallbackStore.startTransaction();
-			TripleStore.TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
+			TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
 			long writeTxn = getWriteTxn(fallbackStore);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				MDBVal keyVal = MDBVal.malloc(stack);
 				MDBVal dataVal = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 				mainIndex.toKey(keyBuf, subj[0], pred[0], obj[0], context[0]);
 				keyBuf.flip();
 				keyVal.mv_data(keyBuf);
@@ -188,13 +188,13 @@ public class TripleStoreTest {
 	@Test
 	public void testLeadingFieldSortPreservesPriorOrderWithinGroups() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(tripleStore);
 
 		int[] statementIndices = { 0, 1, 2, 3 };
 		long[] subj = { 1, 2, 3, 4 };
@@ -219,13 +219,13 @@ public class TripleStoreTest {
 		try (TripleStore ignoredPropertyStore = new TripleStore(ignoredPropertyDir, new LmdbStoreConfig("spoc,posc"),
 				null)) {
 			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 			method.setAccessible(true);
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
 
 			@SuppressWarnings("unchecked")
-			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField
+			List<TripleIndex> indexes = (List<TripleIndex>) indexesField
 					.get(ignoredPropertyStore);
 
 			int[] statementIndices = { 0, 1, 2, 3 };
@@ -252,13 +252,13 @@ public class TripleStoreTest {
 	@Test
 	public void testLeadingFieldSortKeepsPriorOrderWhenLeadingValuesMatch() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(tripleStore);
 
 		int[] statementIndices = { 0, 1, 2, 3 };
 		long[] subj = { 101, 102, 103, 104 };
@@ -275,13 +275,13 @@ public class TripleStoreTest {
 	@Test
 	public void testLeadingFieldSortPreservesDuplicateGroupOrder() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(tripleStore);
 
 		int[] statementIndices = { 0, 1, 2 };
 		long[] subj = { 10, 20, 30 };
@@ -304,15 +304,15 @@ public class TripleStoreTest {
 				new LmdbStoreConfig("spoc,psoc,opsc,ospc"),
 				null)) {
 			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 			method.setAccessible(true);
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
 
 			@SuppressWarnings("unchecked")
-			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(orderedIndexStore);
-			TripleStore.TripleIndex psoc = findIndex(indexes, "psoc");
-			TripleStore.TripleIndex opsc = findIndex(indexes, "opsc");
+			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(orderedIndexStore);
+			TripleIndex psoc = findIndex(indexes, "psoc");
+			TripleIndex opsc = findIndex(indexes, "opsc");
 
 			int[] statementIndices = { 0, 2, 1, 3 };
 			long[] subj = { 1, 2, 1, 2 };
@@ -331,13 +331,13 @@ public class TripleStoreTest {
 	@Test
 	public void testLeadingFieldSortCompletesForEqualLeadingValues() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(tripleStore);
 
 		int size = 512;
 		int[] statementIndices = new int[size];
@@ -368,15 +368,15 @@ public class TripleStoreTest {
 		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir, new LmdbStoreConfig("spoc,psoc,opsc"),
 				null)) {
 			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 			method.setAccessible(true);
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
 
 			@SuppressWarnings("unchecked")
-			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(orderedIndexStore);
-			TripleStore.TripleIndex psoc = findIndex(indexes, "psoc");
-			TripleStore.TripleIndex opsc = findIndex(indexes, "opsc");
+			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(orderedIndexStore);
+			TripleIndex psoc = findIndex(indexes, "psoc");
+			TripleIndex opsc = findIndex(indexes, "opsc");
 
 			Random random = new Random(378245L);
 			for (int attempt = 0; attempt < 25; attempt++) {
@@ -411,14 +411,14 @@ public class TripleStoreTest {
 		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir, new LmdbStoreConfig("spoc,psoc,ospc"),
 				null)) {
 			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 			method.setAccessible(true);
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
 
 			@SuppressWarnings("unchecked")
-			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(orderedIndexStore);
-			TripleStore.TripleIndex ospc = findIndex(indexes, "ospc");
+			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(orderedIndexStore);
+			TripleIndex ospc = findIndex(indexes, "ospc");
 
 			Random random = new Random(88931L);
 			for (int attempt = 0; attempt < 25; attempt++) {
@@ -442,7 +442,7 @@ public class TripleStoreTest {
 		}
 	}
 
-	private TripleStore.TripleIndex findIndex(List<TripleStore.TripleIndex> indexes, String fieldSeq) {
+	private TripleIndex findIndex(List<TripleIndex> indexes, String fieldSeq) {
 		return indexes.stream()
 				.filter(index -> fieldSeq.equals(new String(index.getFieldSeq())))
 				.findFirst()
@@ -457,7 +457,7 @@ public class TripleStoreTest {
 		return values;
 	}
 
-	private void assertLeadingFieldSortMatchesReference(Method method, TripleStore store, TripleStore.TripleIndex index,
+	private void assertLeadingFieldSortMatchesReference(Method method, TripleStore store, TripleIndex index,
 			int[] statementIndices, long[] subj, long[] pred, long[] obj, long[] context) throws Exception {
 		int[] expected = stableLeadingFieldSort(statementIndices, index, subj, pred, obj, context);
 
@@ -467,7 +467,7 @@ public class TripleStoreTest {
 				Arrays.toString(statementIndices));
 	}
 
-	private int[] stableLeadingFieldSort(int[] statementIndices, TripleStore.TripleIndex index, long[] subj,
+	private int[] stableLeadingFieldSort(int[] statementIndices, TripleIndex index, long[] subj,
 			long[] pred,
 			long[] obj, long[] context) {
 		Integer[] boxed = new Integer[statementIndices.length];
@@ -484,7 +484,7 @@ public class TripleStoreTest {
 		return stableSorted;
 	}
 
-	private int compareByLeadingField(TripleStore.TripleIndex index, int leftStatementIndex, int rightStatementIndex,
+	private int compareByLeadingField(TripleIndex index, int leftStatementIndex, int rightStatementIndex,
 			long[] subj, long[] pred, long[] obj, long[] context) {
 		char leadingField = index.getFieldSeq()[0];
 		return Long.compare(fieldValue(leadingField, leftStatementIndex, subj, pred, obj, context),
@@ -492,10 +492,10 @@ public class TripleStoreTest {
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<TripleStore.TripleIndex> getIndexes(TripleStore store) throws Exception {
+	private List<TripleIndex> getIndexes(TripleStore store) throws Exception {
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
-		return (List<TripleStore.TripleIndex>) indexesField.get(store);
+		return (List<TripleIndex>) indexesField.get(store);
 	}
 
 	private long getWriteTxn(TripleStore store) throws Exception {
@@ -521,18 +521,18 @@ public class TripleStoreTest {
 
 	@Test
 	public void testShouldKeepCurrentOrderWhenSortingAlignedBatches() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("shouldResetToMainIndexOrder", char[].class, char[].class,
-				char[].class);
-		method.setAccessible(true);
-
 		assertFalse("SPOC -> PSOC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "psoc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "spoc".toCharArray(),
+						"psoc".toCharArray()));
 		assertFalse("SPOC -> OSPC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "ospc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "spoc".toCharArray(),
+						"ospc".toCharArray()));
 		assertFalse("PSOC -> OPSC should reuse the current order",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "opsc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "psoc".toCharArray(),
+						"opsc".toCharArray()));
 		assertTrue("PSOC -> OSPC should reset to SPOC first",
-				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "ospc".toCharArray()));
+				TripleIndex.shouldResetToMainIndexOrder("spoc".toCharArray(), "psoc".toCharArray(),
+						"ospc".toCharArray()));
 	}
 
 	@Test
@@ -546,7 +546,7 @@ public class TripleStoreTest {
 			indexesField.setAccessible(true);
 
 			@SuppressWarnings("unchecked")
-			List<TripleStore.TripleIndex> configuredIndexes = (List<TripleStore.TripleIndex>) indexesField
+			List<TripleIndex> configuredIndexes = (List<TripleIndex>) indexesField
 					.get(orderedIndexStore);
 
 			assertEquals(Arrays.asList("spoc", "ospc", "posc", "opsc", "sopc", "psoc"),

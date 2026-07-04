@@ -1,0 +1,4 @@
+PREFIX dcterms: <http://purl.org/dc/elements/1.1/>
+
+select ?s ?o 
+where { ?s dcterms:title ?o }

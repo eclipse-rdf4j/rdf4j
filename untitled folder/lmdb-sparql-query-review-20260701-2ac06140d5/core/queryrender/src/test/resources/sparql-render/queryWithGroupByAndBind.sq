@@ -1,0 +1,5 @@
+PREFIX : <http://example.org/>
+select ?a ?b (SUM(?c) as ?sum) where { 
+	?a :label ?c .
+	BIND ("constant" as ?b)
+} GROUP BY ?a ?b

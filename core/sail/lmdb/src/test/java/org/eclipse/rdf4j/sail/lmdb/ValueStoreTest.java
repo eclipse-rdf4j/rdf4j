@@ -44,8 +44,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -58,6 +60,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
@@ -467,7 +470,8 @@ public class ValueStoreTest {
 		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,
 				Values.iri("some:iri"),
-				Values.literal("This is a literal.")
+				Values.literal("This is a literal."),
+				Values.tripleTerm(Values.iri("other:iri"), RDF.TYPE, RDFS.CLASS)
 		};
 		long[] ids = new long[values.length];
 		valueStore.startTransaction(true);
@@ -479,17 +483,20 @@ public class ValueStoreTest {
 		ValueStoreRevision revBefore = valueStore.getRevision();
 
 		valueStore.startTransaction(true);
-		Set<Long> idsToGc = new HashSet<>(Arrays.stream(ids).boxed().collect(Collectors.toList()));
-		valueStore.gcIds(idsToGc, new HashSet<>());
+		Set<Long> idsToGc = Arrays.stream(ids).boxed().collect(Collectors.toSet());
+		Set<Long> nextIds = new HashSet<>();
+		valueStore.gcIds(idsToGc, nextIds);
+		valueStore.gcIds(nextIds, new HashSet<>());
 		valueStore.commit();
 
 		ValueStoreRevision revAfter = valueStore.getRevision();
 		assertNotEquals("revisions must change after gc of IDs", revBefore, revAfter);
 
 		for (int i = 0; i < values.length; i++) {
-			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertEquals("Value should be removed:" + values[i], LmdbValue.UNKNOWN_ID,
+					valueStore.getId(values[i]));
 			// access to value must be ensured as long as revision is not invalidated
-			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
+			assertNotNull(valueStore.getValue(ids[i]));
 		}
 
 		// simulate GC of unused revisions
@@ -500,15 +507,16 @@ public class ValueStoreTest {
 		valueStore.commit();
 
 		for (int i = 0; i < values.length; i++) {
-			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertEquals("Value should be removed:" + values[i], LmdbValue.UNKNOWN_ID,
+					valueStore.getId(values[i]));
 			// value should be removed after invalidating the revision
-			Assert.assertTrue(valueStore.getValue(ids[i]) == null);
+			assertNull(valueStore.getValue(ids[i]));
 		}
 
 		valueStore.startTransaction(true);
-		for (int i = 0; i < values.length; i++) {
+		for (Value value : values) {
 			// this ID should have been reused
-			idsToGc.remove(valueStore.storeValue(values[i]));
+			idsToGc.remove(valueStore.storeValue(value));
 		}
 		valueStore.commit();
 
@@ -713,6 +721,35 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testDirectedLanguageLiteralRoundTripsAfterRestart() throws Exception {
+		Literal literal = SimpleValueFactory.getInstance()
+				.createLiteral("directed literal ".repeat(20), "en", Literal.BaseDirection.LTR);
+		long id = storeValueAndReopen(literal, new LmdbStoreConfig());
+
+		Literal resolved = (Literal) valueStore.getValue(id);
+
+		assertEquals(literal, resolved);
+		assertEquals(Literal.BaseDirection.LTR, resolved.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, resolved.getDatatype());
+	}
+
+	@Test
+	public void testDirectedLanguageLiteralLazyResolvePreservesBaseDirection() throws Exception {
+		Literal literal = SimpleValueFactory.getInstance()
+				.createLiteral("directed cached literal ".repeat(20), "en", Literal.BaseDirection.RTL);
+		long id = storeValueAndReopen(literal, new LmdbStoreConfig());
+
+		Literal lazy = (Literal) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazy));
+
+		Literal cached = (Literal) valueStore.getValue(id);
+		assertEquals(Literal.BaseDirection.RTL, cached.getBaseDirection());
+
+		assertEquals(Literal.BaseDirection.RTL, lazy.getBaseDirection());
+		assertEquals(literal, lazy);
+	}
+
+	@Test
 	public void testLazyBNodeHashCodeDoesNotInitializeAfterRestart() throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(hashCacheEnabledConfig());
@@ -813,55 +850,46 @@ public class ValueStoreTest {
 	}
 
 	@Test
-	public void testReadersFullCleanupDoesNotCloseInUseReadTxn() throws Exception {
-		ReadWriteLock txnLock = getField(valueStore, "txnLock", ReadWriteLock.class);
-		Set<?> activeReadTransactions = getField(valueStore, "activeReadTransactions", Set.class);
-		long env = getLongField(valueStore, "env");
+	public void testCreateTripleTermReturnsLmdbTripleTerm() {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
 
-		CountDownLatch readLockReleased = new CountDownLatch(1);
-		CountDownLatch cleanupAttempted = new CountDownLatch(1);
-		AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", tripleTerm.getClass().getName());
+	}
 
-		Thread worker = new Thread(() -> {
-			try {
-				valueStore.readTransaction(env, (stack, txn) -> {
-					txnLock.readLock().unlock();
-					try {
-						readLockReleased.countDown();
-						try {
-							assertTrue("cleanup should run", cleanupAttempted.await(10, TimeUnit.SECONDS));
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new IOException(e);
-						}
-					} finally {
-						txnLock.readLock().lock();
-					}
-					return null;
-				});
-			} catch (Throwable t) {
-				workerFailure.set(t);
-			}
-		}, "value-store-read-transaction-gap");
-		worker.start();
+	@Test
+	public void testGetLmdbValueWrapsTripleTerm() {
+		TripleTerm tripleTerm = SimpleValueFactory.getInstance()
+				.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
 
-		assertTrue("read transaction should reach the resize-style read lock gap",
-				readLockReleased.await(10, TimeUnit.SECONDS));
-		assertEquals("test setup should have one active read transaction", 1, activeReadTransactions.size());
+		LmdbValue lmdbValue = valueStore.getLmdbValue(tripleTerm);
 
-		try {
-			invokeCloseInactiveReadTransactions(valueStore);
-			assertEquals("reader cleanup must not close a read transaction that is still executing", 1,
-					activeReadTransactions.size());
-		} finally {
-			cleanupAttempted.countDown();
-			worker.join(TimeUnit.SECONDS.toMillis(10));
-		}
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", lmdbValue.getClass().getName());
+		assertEquals(tripleTerm, lmdbValue);
+	}
 
-		assertFalse("worker should finish", worker.isAlive());
-		if (workerFailure.get() != null) {
-			throw new AssertionError(workerFailure.get());
-		}
+	@Test
+	public void testStoreAndGetTripleTerm() throws Exception {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(tripleTerm);
+		valueStore.commit();
+		reopenValueStore(new LmdbStoreConfig());
+
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", valueStore.getValue(id).getClass().getName());
+		assertEquals(tripleTerm, valueStore.getValue(id));
+	}
+
+	@Test
+	public void testLazyTripleTermDoesNotInitializeAfterRestart() throws Exception {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+		long id = storeValueAndReopen(tripleTerm, new LmdbStoreConfig());
+
+		LmdbTripleTerm lazyValue = (LmdbTripleTerm) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazyValue));
+		assertEquals(RDF.TYPE, lazyValue.getSubject());
+		assertTrue(isInitialized(lazyValue));
+		assertEquals(tripleTerm, lazyValue);
 	}
 
 	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {

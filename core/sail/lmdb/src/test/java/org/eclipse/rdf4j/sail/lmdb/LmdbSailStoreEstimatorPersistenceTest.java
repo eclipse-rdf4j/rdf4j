@@ -99,7 +99,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 	@Test
 	void storeConfigIsPassedToSketchEstimator(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		LmdbStoreConfig config = sketchEnabledConfig("spoc");
 		invokeConfig(config, "setSketchEstimatorSubjectBucketCount", int.class, 64);
 		invokeConfig(config, "setSketchEstimatorPredicateBucketCount", int.class, 16);
 		invokeConfig(config, "setSketchEstimatorObjectBucketCount", int.class, 32);
@@ -128,7 +128,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -145,7 +145,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		assertTrue(estimatorStore(dataDir).isDirectory(), "Expected estimator directory after shutdown");
 		assertTrue(estimatorMetadata(dataDir).isFile(), "Expected estimator metadata after shutdown");
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			LmdbSailStore backingStore = reopened.getBackingStore();
@@ -173,7 +173,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:default-store:p");
 		var o = vf.createIRI("urn:default-store:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -199,7 +199,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	void closeWritesFilterSelectivitySidecarAndReloadsItAfterRestart(@TempDir File dataDir) throws Exception {
 		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		double learnedPassRatioBeforeShutdown;
@@ -219,7 +219,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		assertTrue(new File(dataDir, FILTER_SNAPSHOT_FILE).isFile(),
 				"Expected filter selectivity sidecar after LMDB shutdown");
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
@@ -235,7 +235,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	void closeWritesSampledFilterSelectivitySidecarAndReloadsItAfterRestart(@TempDir File dataDir)
 			throws Exception {
 		Filter sampledFilter = firstFilter(SAMPLED_FILTER_QUERY);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+		LmdbStoreConfig config = sketchEnabledConfig("spoc")
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 
@@ -263,7 +263,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		assertTrue(new File(dataDir, FILTER_SNAPSHOT_FILE).isFile(),
 				"Expected filter selectivity sidecar after LMDB shutdown");
 
-		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc")
+		LmdbStoreConfig reopenedConfig = sketchEnabledConfig("spoc")
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		LmdbStore reopened = new LmdbStore(dataDir, reopenedConfig);
@@ -285,11 +285,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	void ignoresFilterSelectivitySidecarWhenEstimatorSnapshotRevisionChanges(@TempDir File dataDir) throws Exception {
 		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
 			loadNameData(repository);
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 			recordLearnedFilterPassRatio(store, learnedFilter);
 		} finally {
 			repository.shutDown();
@@ -299,7 +300,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		FileTime originalTimestamp = Files.getLastModifiedTime(metadata);
 		Files.setLastModifiedTime(metadata, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
@@ -317,7 +318,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -343,7 +344,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		assertFalse(new File(dataDir, SNAPSHOT_FILE + ".sketches").exists(),
 				"Directory store must not write legacy sketch sidecars");
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
@@ -365,7 +366,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var o2 = vf.createIRI("urn:restart:o2");
 		var c1 = vf.createIRI("urn:restart:c1");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -381,7 +382,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			store.shutDown();
 		}
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
@@ -421,7 +422,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var o2 = vf.createIRI("urn:cycle:o2");
 		var c1 = vf.createIRI("urn:cycle:c1");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		SailRepository repository = new SailRepository(store);
 
 		repository.init();
@@ -477,7 +478,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:rc:p");
 		var o = vf.createIRI("urn:rc:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -552,7 +553,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 					vf.createIRI("urn:direct-estimator:o:" + i)));
 		}
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -591,7 +592,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -623,7 +624,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:rollback:p");
 		var o = vf.createIRI("urn:rollback:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -670,7 +671,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:read-committed-rollback:p");
 		var o = vf.createIRI("urn:read-committed-rollback:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -778,7 +779,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:notready:p");
 		var o = vf.createIRI("urn:notready:o");
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -831,7 +832,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				() -> withEstimatorProperty("memoryMonitorEstimatedOperationBytes", "1",
 						() -> withEstimatorProperty("incrementalQueueEstimatedStatementBytes",
 								Long.toString(Long.MAX_VALUE / 2), () -> {
-									LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+									LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 									store.init();
 									try {
 										LmdbSailStore backingStore = store.getBackingStore();
@@ -1072,7 +1073,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 		writeLegacySnapshot(dataDir.toPath().resolve(SNAPSHOT_FILE));
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -1085,7 +1086,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			store.shutDown();
 		}
 
-		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
 			try (NotifyingSailConnection conn = reopened.getConnection()) {
@@ -1095,6 +1096,10 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		} finally {
 			reopened.shutDown();
 		}
+	}
+
+	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
+		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
 	}
 
 	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)

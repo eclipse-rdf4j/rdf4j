@@ -315,6 +315,29 @@ There are two ways to reach the “Change Server” page, which allows you to en
 
 A full URL is expected in the “Change Server” field. You may enter a `file:///` URL to access a local repository on the Workbench server, but need to be sure that the Workbench server process has permission to access the given folder.
 
+### Configuring Accepted Server Prefixes
+
+For security, Workbench does not allow users to switch to arbitrary servers by default. A server URL entered on the "Change Server" page must start with one of the accepted server prefixes before Workbench will connect to it. The default accepted prefix is `/rdf4j-server`, which allows the RDF4J Server deployed next to Workbench and rejects remote `http://...`, `https://...`, and `file:///...` targets unless an administrator explicitly allows them.
+
+Administrators can configure the allow-list as a whitespace-separated list of concrete prefixes. The JVM system property `org.eclipse.rdf4j.workbench.accepted-server-prefixes` has highest precedence and overrides the Workbench servlet init-param `accepted-server-prefixes` in `WEB-INF/web.xml`. If neither value is set to a non-blank value, Workbench uses `/rdf4j-server`.
+
+For example, when starting `rdf4j-server-boot` or a servlet container, allow the local server and two remote RDF4J Server deployments like this:
+
+```sh
+-Dorg.eclipse.rdf4j.workbench.accepted-server-prefixes="/rdf4j-server https://rdf4j.example.org/rdf4j-server https://staging.example.net/rdf4j-server"
+```
+
+For WAR deployments, you can instead edit the Workbench servlet init-param:
+
+```xml
+<init-param>
+  <param-name>accepted-server-prefixes</param-name>
+  <param-value>/rdf4j-server https://rdf4j.example.org/rdf4j-server</param-value>
+</init-param>
+```
+
+Use concrete host/path prefixes. Prefixes are plain prefix matches with a path, query, or fragment boundary; they are not regular expressions. Scheme-only `http:`, `https:`, and `file:` entries are ignored. Broad `http://` or `https://` prefixes are technically possible but not recommended because they allow Workbench users to make server-side connections to arbitrary HTTP(S) hosts. To allow a local file repository, configure a specific `file:///...` directory prefix and make sure the Workbench process can read that directory.
+
 ### Important Security Consideration
 
 Workbench stores user name and password credentials in plain-text cookies in the browser. You will need to configure your Workbench server for HTTPS to properly

@@ -1,0 +1,4 @@
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX ns: <http://example.org/ns#>
+INSERT DATA
+{ GRAPH <http://example/bookStore> { <http://example/book1>  ns:price  42 } }

@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Focused tests that directly exercise TripleStore.TripleIndex#toKey to provide coverage for behavior-neutral
- * optimizations such as internal key encoding caching.
+ * Focused tests that directly exercise TripleIndex#toKey to provide coverage for behavior-neutral optimizations such as
+ * internal key encoding caching.
  */
 class TripleIndexToKeyCacheTest {
 
@@ -61,7 +61,7 @@ class TripleIndexToKeyCacheTest {
 		long context = Long.MAX_VALUE;
 
 		tripleStore.startTransaction();
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
+		TripleIndex index = new TripleIndex("spoc", "spoc", true, tripleStore.env, tripleStore.writeTxn);
 		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
@@ -89,7 +89,7 @@ class TripleIndexToKeyCacheTest {
 		long context = Long.MAX_VALUE;
 
 		tripleStore.startTransaction();
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc");
+		TripleIndex index = new TripleIndex("posc", "posc", true, tripleStore.env, tripleStore.writeTxn);
 		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
@@ -111,7 +111,7 @@ class TripleIndexToKeyCacheTest {
 	@Test
 	void patternScoreUsesConstructorFieldSequence() throws Exception {
 		tripleStore.startTransaction();
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
+		TripleIndex index = tripleStore.createIndexForTesting("spoc");
 		tripleStore.endTransaction(true);
 
 		char[] fieldSeq = index.getFieldSeq();
@@ -133,7 +133,7 @@ class TripleIndexToKeyCacheTest {
 
 		for (String fieldSequence : fieldSequences) {
 			tripleStore.startTransaction();
-			TripleStore.TripleIndex index = tripleStore.new TripleIndex(fieldSequence);
+			TripleIndex index = tripleStore.createIndexForTesting(fieldSequence);
 			tripleStore.endTransaction(true);
 			for (long[] pattern : patterns) {
 				assertEquals(expectedPatternScore(fieldSequence, pattern[0], pattern[1], pattern[2], pattern[3]),
@@ -145,11 +145,11 @@ class TripleIndexToKeyCacheTest {
 	@Test
 	void bestIndexStopsAfterPerfectScore() throws Exception {
 		tripleStore.startTransaction();
-		TripleStore.TripleIndex perfectIndex = new FixedScoreTripleIndex(tripleStore, "spoc", 4, false);
-		TripleStore.TripleIndex laterIndex = new FixedScoreTripleIndex(tripleStore, "posc", 0, true);
+		TripleIndex perfectIndex = new FixedScoreTripleIndex(tripleStore, "spoc", 4, false);
+		TripleIndex laterIndex = new FixedScoreTripleIndex(tripleStore, "posc", 0, true);
 		tripleStore.endTransaction(true);
 
-		List<TripleStore.TripleIndex> indexes = getIndexes();
+		List<TripleIndex> indexes = getIndexes();
 		indexes.clear();
 		indexes.add(perfectIndex);
 		indexes.add(laterIndex);
@@ -176,21 +176,27 @@ class TripleIndexToKeyCacheTest {
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<TripleStore.TripleIndex> getIndexes() throws Exception {
+	private List<TripleIndex> getIndexes() throws Exception {
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
-		return (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		return (List<TripleIndex>) indexesField.get(tripleStore);
 	}
 
-	private static class FixedScoreTripleIndex extends TripleStore.TripleIndex {
+	private static class FixedScoreTripleIndex extends TripleIndex {
 
 		private final int score;
 		private final boolean failOnScore;
 
-		FixedScoreTripleIndex(TripleStore store, String fieldSeq, int score, boolean failOnScore) throws IOException {
-			store.super(fieldSeq);
+		FixedScoreTripleIndex(TripleStore store, String fieldSeq, int score, boolean failOnScore) throws Exception {
+			super("test-" + fieldSeq, fieldSeq, false, longField(store, "env"), longField(store, "writeTxn"));
 			this.score = score;
 			this.failOnScore = failOnScore;
+		}
+
+		private static long longField(TripleStore store, String name) throws Exception {
+			Field field = TripleStore.class.getDeclaredField(name);
+			field.setAccessible(true);
+			return field.getLong(store);
 		}
 
 		@Override

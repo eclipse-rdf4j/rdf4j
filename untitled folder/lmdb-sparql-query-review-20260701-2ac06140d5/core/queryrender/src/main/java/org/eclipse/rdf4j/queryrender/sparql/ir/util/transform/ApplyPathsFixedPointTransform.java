@@ -1,0 +1,94 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
+
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+
+/**
+ * Apply path-related transforms repeatedly until the WHERE block reaches a textual fixed point. The fingerprint is
+ * computed by rendering the WHERE as a subselect so non-WHERE text does not affect convergence.
+ *
+ * Guarded to a small iteration budget to avoid accidental oscillations.
+ */
+public final class ApplyPathsFixedPointTransform extends BaseTransform {
+	private ApplyPathsFixedPointTransform() {
+	}
+
+	public static IrBGP apply(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		String prev = null;
+		IrBGP cur = bgp;
+		int guard = 0;
+		while (true) {
+			// Render WHERE to a stable string fingerprint
+			final String fp = fingerprintWhere(cur, r);
+			if (fp.equals(prev)) {
+				break; // reached fixed point
+			}
+			if (++guard > 12) { // safety to avoid infinite cycling
+				break;
+			}
+			prev = fp;
+			// Single iteration: apply path fusions and normalizations that can unlock each other
+			IrBGP next = ApplyPathsTransform.apply(cur, r);
+
+			// Lift scope only inside GRAPH bodies for path-generated unions so braces are preserved
+			// after fusing the UNION down to a single path triple.
+			next = LiftPathUnionScopeInsideGraphTransform.apply(next);
+
+			// (no-op) Scope preservation is handled by the union fuser.
+//			System.out.println(fingerprintWhere(cur, r));
+			// Fuse a pure UNION of simple triples (possibly GRAPH-wrapped) to a single alternation path
+			next = FuseUnionOfSimpleTriplesTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Fuse a path followed by UNION of opposite-direction tail triples into an alternation tail
+			next = FusePathPlusTailAlternationUnionTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Fuse a pre-path triple followed by a UNION of two tail branches into a single alternation tail
+			next = FusePrePathThenUnionAlternationTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Fuse UNION of bare-NPS path triples (optionally GRAPH-wrapped) into a single NPS with combined members
+			next = FuseUnionOfNpsBranchesTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Merge adjacent GRAPH blocks with the same graph ref so that downstream fusers see a single body
+			next = CoalesceAdjacentGraphsTransform.apply(next);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Within UNIONs, partially fuse compatible path-triple branches into a single alternation branch
+			next = FuseUnionOfPathTriplesPartialTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// Now that adjacent GRAPHs are coalesced, normalize inner GRAPH bodies for SP/PT fusions
+			next = ApplyNormalizeGraphInnerPathsTransform.apply(next, r);
+//			System.out.println(fingerprintWhere(cur, r));
+
+			// (disabled) Canonicalize grouping around split middle steps
+			cur = next;
+		}
+		return cur;
+	}
+
+	/** Build a stable text fingerprint of a WHERE block for fixed-point detection. */
+	public static String fingerprintWhere(IrBGP where, TupleExprIRRenderer r) {
+		final IrSelect tmp = new IrSelect(false);
+		tmp.setWhere(where);
+		// Render as a subselect to avoid prologue/dataset noise; header is constant (SELECT *)
+		return r.render(tmp, null, true);
+	}
+}

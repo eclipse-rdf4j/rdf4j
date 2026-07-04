@@ -1,0 +1,13 @@
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+
+SELECT DISTINCT ?p ?name (COUNT(?other) AS ?count) WHERE {
+        ?p a foaf:Person ; foaf:knows ?other ; rdfs:label ?name
+        FILTER (LANG(?name) = "en")
+}
+GROUP BY ?p ?name
+ORDER BY desc(?count)
+LIMIT 100

@@ -1,0 +1,8 @@
+PREFIX : <http://example.org/> 
+
+SELECT ?s ?o ?o2 WHERE{  
+	?s <http://purl.org/dc/terms/source> ?o 
+	OPTIONAL { 
+   		?s <http://purl.org/dc/terms/title> ?o2 
+   	} 
+}

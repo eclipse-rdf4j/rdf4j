@@ -40,6 +40,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
+	private static final IRI TRIPLE_TERM_INDEXES = Values.iri(LmdbStoreSchema.NAMESPACE + "tripleTermIndexes");
+
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
 
 	private static final IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = Values
@@ -165,6 +167,18 @@ class LmdbStoreConfigTest {
 				"getNoReadahead",
 				noReadahead,
 				noReadahead
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "spoc", "spoc,posc" })
+	void testThatLmdbStoreConfigParseAndExportTripleTermIndexes(final String tripleTermIndexes) {
+		testParseAndExport(
+				TRIPLE_TERM_INDEXES,
+				Values.literal(tripleTermIndexes),
+				LmdbStoreConfig::getTripleTermIndexes,
+				tripleTermIndexes,
+				true
 		);
 	}
 

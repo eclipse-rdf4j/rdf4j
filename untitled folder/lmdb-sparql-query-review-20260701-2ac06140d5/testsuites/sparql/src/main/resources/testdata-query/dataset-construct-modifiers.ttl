@@ -1,0 +1,18 @@
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix site: <http://example.org/stats#> .
+
+<urn:1> foaf:name "Alice" ;
+  site:hits 2349 ;
+  foaf:nick "Al" .
+
+<urn:2> foaf:name "Bob" ;
+  site:hits 105 ;
+  foaf:nick "Bo" .
+
+<urn:3> foaf:name "Eve" ;
+  site:hits 181 ;
+  foaf:nick "Ev" .
+
+<urn:4> foaf:name "Samuel" ;
+  site:hits 11 ;
+  foaf:nick "Sam" .

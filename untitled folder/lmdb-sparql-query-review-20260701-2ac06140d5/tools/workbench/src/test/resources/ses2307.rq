@@ -1,0 +1,8 @@
+prefix : <http://example.org/> 
+SELECT ?s ?p ?o 
+WHERE {
+    { SELECT ?s  
+      WHERE { ?s a :AClass } 
+      LIMIT 2 }
+     ?s ?p ?o
+}

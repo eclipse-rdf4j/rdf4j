@@ -1,0 +1,6 @@
+# describe alan
+
+PREFIX : <http://example.org/> 
+PREFIX foaf: <http://xmlns.com/foaf/0.1/> 
+
+DESCRIBE ?s WHERE { ?s <http://xmlns.com/foaf/0.1/name> "Alan" }

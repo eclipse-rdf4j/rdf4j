@@ -1,0 +1,9 @@
+# Default graph
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.org/> .
+
+ex:a dc:publisher "Bob"@en_foobar .
+ex:a dc:date "december 12"^^xsd:dateTime .
+
+ex:b ex:number "4.0"^^xsd:integer .

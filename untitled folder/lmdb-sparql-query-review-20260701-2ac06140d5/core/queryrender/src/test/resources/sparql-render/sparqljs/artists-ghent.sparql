@@ -1,0 +1,18 @@
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dbpedia: <http://dbpedia.org/resource/>
+PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>
+
+CONSTRUCT {
+  ?person a dbpedia-owl:Artist;
+          rdfs:label ?name;
+          dbpedia-owl:birthPlace ?city.
+}
+WHERE {
+  ?person a dbpedia-owl:Artist;
+          rdfs:label ?name;
+          dbpedia-owl:birthPlace ?city.
+  ?city rdfs:label ?cityName;
+        rdfs:label "Ghent"@en;
+        dbpedia-owl:country ?country.
+  ?country rdfs:label "Belgium"@en.
+}

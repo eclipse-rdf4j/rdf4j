@@ -1,0 +1,11 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sparql: <http://www.openrdf.org/config/repository/sparql#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "sparql2" ;
+   rdfs:label "SPARQL2" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SPARQLRepository" ;
+      sparql:query-endpoint <http://localhost:8080/openrdf-sesame/repositories/sparql>
+   ].

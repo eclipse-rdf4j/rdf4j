@@ -61,7 +61,7 @@ class ServerBootSignalIT {
 	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
 	private ExecutorService streamExecutor;
-	private final List<Runnable> cleanupActions = new ArrayList<>();
+	private final List<CleanupAction> cleanupActions = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -74,15 +74,23 @@ class ServerBootSignalIT {
 	}
 
 	@AfterEach
-	void tearDown() {
-		for (Runnable cleanup : cleanupActions) {
+	void tearDown() throws Exception {
+		Exception cleanupFailure = null;
+		for (int i = cleanupActions.size() - 1; i >= 0; i--) {
 			try {
-				cleanup.run();
-			} catch (Exception ignored) {
-				// best-effort cleanup
+				cleanupActions.get(i).run();
+			} catch (Exception e) {
+				if (cleanupFailure == null) {
+					cleanupFailure = e;
+				} else {
+					cleanupFailure.addSuppressed(e);
+				}
 			}
 		}
 		streamExecutor.shutdownNow();
+		if (cleanupFailure != null) {
+			throw cleanupFailure;
+		}
 	}
 
 	@Test
@@ -100,6 +108,8 @@ class ServerBootSignalIT {
 		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		int serverPort = findFreePort();
 		int managementPort = findFreePort();
+		TempAppDataDir appDataDir = TempAppDataDir.create("rdf4j-server-boot-signal-");
+		cleanupActions.add(appDataDir::close);
 		Instant startedAt = Instant.now();
 
 		// Find the executable JAR
@@ -112,7 +122,8 @@ class ServerBootSignalIT {
 				.findFirst()
 				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
 
-		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
+		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, appDataDir.systemPropertyArgument(), "-jar",
+				jarPath.toString(),
 				"--server.port=" + serverPort,
 				"--management.server.port=" + managementPort);
 		processBuilder.directory(projectRoot.toFile());
@@ -126,11 +137,10 @@ class ServerBootSignalIT {
 				"Allocated ports: server.port=" + serverPort + ", management.server.port=" + managementPort);
 
 		Process process = processBuilder.start();
-		cleanupActions.add(() -> process.destroyForcibly());
+		cleanupActions.add(() -> destroyProcess(process));
 		appendOutput(outputBuffer, "Launched process pid=" + process.pid());
 		logProcessState(outputBuffer, process, "immediately after process launch");
 		Thread.sleep(1000);
-		cleanupActions.add(process::destroyForcibly);
 
 		CountDownLatch started = new CountDownLatch(1);
 		startStreamGobbler(process, started, outputBuffer);
@@ -211,7 +221,7 @@ class ServerBootSignalIT {
 		Process signalProcess = new ProcessBuilder("kill", "-s", signalName, Long.toString(pid))
 				.redirectErrorStream(true)
 				.start();
-		cleanupActions.add(() -> signalProcess.destroyForcibly());
+		cleanupActions.add(() -> destroyProcess(signalProcess));
 		if (!signalProcess.waitFor(5, SECONDS)) {
 			signalProcess.destroyForcibly();
 			signalProcess.waitFor(5, SECONDS);
@@ -234,6 +244,13 @@ class ServerBootSignalIT {
 	private void appendOutput(StringBuilder outputBuffer, String line) {
 		synchronized (outputBuffer) {
 			outputBuffer.append(line).append(System.lineSeparator());
+		}
+	}
+
+	private void destroyProcess(Process process) throws InterruptedException {
+		if (process.isAlive()) {
+			process.destroyForcibly();
+			process.waitFor(5, SECONDS);
 		}
 	}
 
@@ -358,5 +375,10 @@ class ServerBootSignalIT {
 			}
 		}
 		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
+	}
+
+	@FunctionalInterface
+	private interface CleanupAction {
+		void run() throws Exception;
 	}
 }

@@ -1,0 +1,6 @@
+PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>
+SELECT ?p ?c WHERE {
+    ?p a dbpedia-owl:Artist.
+    ?p dbpedia-owl:birthPlace ?c.
+    ?c <http://xmlns.com/foaf/0.1/name> "York"@en.
+}

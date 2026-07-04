@@ -293,8 +293,8 @@ public class Statements {
 	 * @param consumer the {@link Consumer} function for the produced statements.
 	 */
 	@Experimental
-	public static void convertRDF12ReificationToRDF11(Statement st, Consumer<Statement> consumer) {
-		convertRDF12ReificationToRDF11(SimpleValueFactory.getInstance(), st, consumer);
+	public static void convertRDF12ToStandardReification(Statement st, Consumer<Statement> consumer) {
+		convertRDF12ToStandardReification(SimpleValueFactory.getInstance(), st, consumer);
 	}
 
 	/**
@@ -309,7 +309,7 @@ public class Statements {
 	 * @param consumer the {@link Consumer} function for the produced statements.
 	 */
 	@Experimental
-	public static void convertRDF12ReificationToRDF11(ValueFactory vf, Statement st, Consumer<Statement> consumer) {
+	public static void convertRDF12ToStandardReification(ValueFactory vf, Statement st, Consumer<Statement> consumer) {
 		Resource subject = st.getSubject();
 		IRI predicate = st.getPredicate();
 		Value object = st.getObject();

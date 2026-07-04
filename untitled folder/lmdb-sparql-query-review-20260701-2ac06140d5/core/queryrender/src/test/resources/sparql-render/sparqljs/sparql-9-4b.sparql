@@ -1,0 +1,6 @@
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+  PREFIX :     <http://example/>
+  SELECT ?person
+  { 
+    :x foaf:knows+ ?person
+  }

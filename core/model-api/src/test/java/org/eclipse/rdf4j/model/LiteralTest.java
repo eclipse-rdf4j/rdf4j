@@ -846,6 +846,19 @@ public abstract class LiteralTest {
 	}
 
 	@Test
+	public final void testEqualsAndHashCodeBaseDirection() {
+
+		final Literal ltr = literal("label", "en", Literal.BaseDirection.LTR);
+		final Literal sameLtr = literal("label", "EN", Literal.BaseDirection.LTR);
+		final Literal rtl = literal("label", "en", Literal.BaseDirection.RTL);
+
+		assertThat(ltr).isEqualTo(sameLtr);
+		assertThat(ltr.hashCode()).isEqualTo(sameLtr.hashCode());
+
+		assertThat(ltr).isNotEqualTo(rtl);
+	}
+
+	@Test
 	public final void testEqualsAndHashCodeXSDString() {
 
 		// in RDF 1.1, there is no distinction between plain and string-typed literals

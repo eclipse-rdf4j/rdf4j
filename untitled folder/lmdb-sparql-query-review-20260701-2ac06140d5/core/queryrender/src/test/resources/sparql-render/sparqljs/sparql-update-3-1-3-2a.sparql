@@ -1,0 +1,11 @@
+PREFIX dc:  <http://purl.org/dc/elements/1.1/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT 
+  { GRAPH <http://example/bookStore2> { ?book ?p ?v } }
+WHERE
+  { GRAPH  <http://example/bookStore>
+       { ?book dc:date ?date .
+         FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime )
+         ?book ?p ?v
+  } }	

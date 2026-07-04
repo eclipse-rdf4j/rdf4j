@@ -76,6 +76,7 @@
 		<fastutil.version>8.5.18</fastutil.version>
 		<jmhVersion>1.37</jmhVersion>
 		<junit.version>6.0.2</junit.version>
+		<junit-pioneer.version>2.3.0</junit-pioneer.version>
 		<mockito.version>5.21.0</mockito.version>
 		<mockserver.version>5.15.0</mockserver.version>
 		<awaitility.version>4.3.0</awaitility.version>
@@ -108,7 +109,7 @@
 					<plugin>
 						<groupId>org.sonatype.central</groupId>
 						<artifactId>central-publishing-maven-plugin</artifactId>
-						<version>0.7.0</version>
+						<version>0.11.0</version>
 						<extensions>true</extensions>
 						<configuration>
 							<publishingServerId>central</publishingServerId>
@@ -763,6 +764,25 @@
 				<version>${junit.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.junit-pioneer</groupId>
+				<artifactId>junit-pioneer</artifactId>
+				<version>${junit-pioneer.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>org.junit.jupiter</groupId>
+						<artifactId>junit-jupiter-api</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.junit.jupiter</groupId>
+						<artifactId>junit-jupiter-params</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.junit.platform</groupId>
+						<artifactId>junit-platform-launcher</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.mockito</groupId>

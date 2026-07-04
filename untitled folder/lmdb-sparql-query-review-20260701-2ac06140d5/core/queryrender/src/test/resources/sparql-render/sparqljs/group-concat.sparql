@@ -1,0 +1,5 @@
+SELECT ?s (GROUP_CONCAT(?p) AS ?plist) (GROUP_CONCAT(DISTINCT ?p; SEPARATOR = ",\"/") AS ?plist2)
+{
+  ?s ?p ?c
+}
+GROUP BY ?s

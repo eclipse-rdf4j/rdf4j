@@ -1,0 +1,6 @@
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX func: <http://example.org/functions#>
+SELECT ?name ?id
+WHERE { ?x foaf:name  ?name ;
+           func:empId   ?id .
+        FILTER (func:even(?id)) }
