@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -138,8 +139,8 @@ public class LmdbNativeFactorizedRowsTest {
 				.hasSameSizeAs(genericRows(limitedQuery));
 		List<String> full = genericRows(unlimitedQuery);
 		for (String row : nativeRows) {
-			int remaining = java.util.Collections.frequency(nativeRows, row);
-			assertThat(java.util.Collections.frequency(full, row))
+			int remaining = Collections.frequency(nativeRows, row);
+			assertThat(Collections.frequency(full, row))
 					.as("row " + row + " occurs often enough in the full result")
 					.isGreaterThanOrEqualTo(remaining);
 		}

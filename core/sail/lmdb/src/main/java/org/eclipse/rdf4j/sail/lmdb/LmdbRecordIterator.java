@@ -82,6 +82,18 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean exactKeyFound = false;
 
+	/**
+	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
+	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
+	 */
+	private static final boolean SKIP_SCAN_ENABLED = !"false"
+			.equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
+	private static final int SKIP_MIN_RUN = 4;
+	private int consecutiveFiltered;
+	private long[] skipKeyValues;
+	private long[] skipTargetQuad;
+	private ByteBuffer skipKeyBuf;
+
 	/** Non-null when this iterator's cursor handle may be parked for reuse instead of closed. */
 	private final TripleStore.CursorPool cursorPool;
 	private TripleStore.CursorPool.PooledCursor pooledCursor;
@@ -273,6 +285,7 @@ class LmdbRecordIterator implements RecordIterator {
 					if (matchStatus == TripleIndex.KEY_MATCH) {
 						// Matching value found
 						sourceRowsMatchedActual++;
+						consecutiveFiltered = 0;
 						// fetch next value
 						fetchNext = true;
 						return quad;
@@ -283,7 +296,7 @@ class LmdbRecordIterator implements RecordIterator {
 						lastResult = MDB_NOTFOUND;
 					} else {
 						// value doesn't match search key/mask, fetch next value
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						lastResult = advancePastFiltered(keyAddress);
 					}
 				}
 			}
@@ -370,19 +383,21 @@ class LmdbRecordIterator implements RecordIterator {
 						matchObj, matchContext, quad);
 				if (matchStatus == TripleIndex.KEY_MATCH) {
 					sourceRowsMatchedActual++;
+					consecutiveFiltered = 0;
 					System.arraycopy(quad, 0, buffer, rows * 4, 4);
 					rows++;
 					if (rows == maxRows) {
 						fetchNext = true;
 						return rows;
 					}
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					sourceRowsFilteredActual++;
 					if (matchStatus == TripleIndex.KEY_OUT_OF_RANGE) {
 						break;
 					}
+					lastResult = advancePastFiltered(keyAddress);
 				}
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 			}
 			closeInternal(false);
 			return rows;
@@ -398,6 +413,41 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 		closeInternal(false);
 		return null;
+	}
+
+	/**
+	 * Advances past a KEY_FILTERED key: plain MDB_NEXT for short mismatch runs, or a computed MDB_SET_RANGE seek past
+	 * the whole non-matching run once {@link #SKIP_MIN_RUN} consecutive keys were rejected (skip-scan). Returns the
+	 * cursor-get result code, or MDB_NOTFOUND when no later key in the range can match.
+	 */
+	private int advancePastFiltered(long keyAddress) {
+		if (!SKIP_SCAN_ENABLED || ++consecutiveFiltered < SKIP_MIN_RUN) {
+			return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+		}
+		if (skipKeyBuf == null) {
+			skipKeyValues = new long[4];
+			skipTargetQuad = new long[4];
+			skipKeyBuf = pool.getKeyBuffer();
+		}
+		int action = index.skipTarget(keyAddress, rangePrefixLength, matchSubj, matchPred, matchObj, matchContext,
+				skipKeyValues, skipTargetQuad);
+		if (action == TripleIndex.SKIP_EXHAUSTED) {
+			return MDB_NOTFOUND;
+		}
+		if (action == TripleIndex.SKIP_NONE) {
+			return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+		}
+		skipKeyBuf.clear();
+		index.toKey(skipKeyBuf, skipTargetQuad[0], skipTargetQuad[1], skipTargetQuad[2], skipTargetQuad[3]);
+		skipKeyBuf.flip();
+		LmdbUtil.setMDBValData(keyData, skipKeyBuf);
+		int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			// the scan loops treat any non-SUCCESS code as exhaustion; a genuine LMDB error must not
+			// silently truncate query results
+			throw new SailException("LMDB error during skip-scan seek: " + rc);
+		}
+		return rc;
 	}
 
 	private boolean isOutOfRange() {
@@ -443,6 +493,10 @@ class LmdbRecordIterator implements RecordIterator {
 			pool.free(maxKeyBuf);
 			maxKeyBuf = null;
 		}
+		if (skipKeyBuf != null) {
+			pool.free(skipKeyBuf);
+			skipKeyBuf = null;
+		}
 	}
 
 	/** Releases all resources of a retained iterator. Idempotent; must be called by the retaining owner. */
@@ -479,6 +533,7 @@ class LmdbRecordIterator implements RecordIterator {
 		quad[3] = context;
 		this.fetchNext = false;
 		this.exactKeyFound = false;
+		this.consecutiveFiltered = 0;
 		this.index = index;
 		if (rangeSearch) {
 			if (minKeyBuf == null) {

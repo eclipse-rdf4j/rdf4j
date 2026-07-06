@@ -123,6 +123,14 @@ final class AggregateSpec {
 		return new AggregateSpec(name, -1, constant, distinct, AggKind.COUNT);
 	}
 
+	/**
+	 * COUNT(*): every solution row contributes exactly once, so the spec only needs a constant that is never UNKNOWN.
+	 * Must not be used with DISTINCT — COUNT(DISTINCT *) deduplicates full rows, which this state cannot represent.
+	 */
+	static AggregateSpec star(String name) {
+		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT);
+	}
+
 	long value(RowState row) {
 		return slot >= 0 ? row.slots[slot] : constant;
 	}

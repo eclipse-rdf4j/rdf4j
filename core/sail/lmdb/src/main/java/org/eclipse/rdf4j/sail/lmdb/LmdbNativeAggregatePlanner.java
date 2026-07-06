@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -241,7 +242,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * constant ids, both endpoints the same variable — returns null so the whole fragment falls back to the generic
 	 * evaluator, whose PathIteration remains the semantics oracle.
 	 */
-	SlotPlan compilePath(org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath alp) {
+	SlotPlan compilePath(ArbitraryLengthPath alp) {
 		if (!PathPlan.ENABLED || alp.getMinLength() > 1L) {
 			return null;
 		}
@@ -293,8 +294,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			return plan;
 		}
-		if (expr instanceof org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) {
-			return compilePath((org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) expr);
+		if (expr instanceof ArbitraryLengthPath) {
+			return compilePath((ArbitraryLengthPath) expr);
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;

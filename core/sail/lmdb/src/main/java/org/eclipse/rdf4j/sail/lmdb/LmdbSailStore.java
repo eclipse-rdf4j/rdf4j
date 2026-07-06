@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -1707,28 +1708,28 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public long idOf(Value value) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		public long idOf(Value value) throws QueryEvaluationException {
 			try {
-				checkOpen();
+				// no open-check: id resolution reads only the value store, not this worker's read txn
 				if (value == null) {
 					return LmdbValue.UNKNOWN_ID;
 				}
 				return valueStore.getId(value);
 			} catch (IOException e) {
-				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+				throw new QueryEvaluationException(e);
 			}
 		}
 
 		@Override
-		public Value lazyValue(long id) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		public Value lazyValue(long id) throws QueryEvaluationException {
 			try {
-				checkOpen();
+				// no open-check — see idOf
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				return valueStore.getLazyValue(id);
 			} catch (IOException e) {
-				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+				throw new QueryEvaluationException(e);
 			}
 		}
 
@@ -1842,28 +1843,29 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public long idOf(Value value) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		public long idOf(Value value) throws QueryEvaluationException {
 			try {
-				assertNativeSourceOpen();
+				// no dataset-open assertion: id resolution reads only the value store, and result rows
+				// (lazy slot views) must stay resolvable after the query iteration closed this dataset
 				if (value == null) {
 					return LmdbValue.UNKNOWN_ID;
 				}
 				return valueStore.getId(value);
 			} catch (IOException e) {
-				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+				throw new QueryEvaluationException(e);
 			}
 		}
 
 		@Override
-		public Value lazyValue(long id) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		public Value lazyValue(long id) throws QueryEvaluationException {
 			try {
-				assertNativeSourceOpen();
+				// no dataset-open assertion — see idOf
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				return valueStore.getLazyValue(id);
 			} catch (IOException e) {
-				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+				throw new QueryEvaluationException(e);
 			}
 		}
 

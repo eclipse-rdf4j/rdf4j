@@ -168,6 +168,11 @@ final class LmdbNativeParallelAggregation {
 					}
 					break;
 				} catch (CancellationException e) {
+					// a cancelled worker produced no partial result: merging the remainder would silently
+					// undercount, so the query must fail instead
+					if (error == null) {
+						error = e;
+					}
 					break;
 				}
 			}

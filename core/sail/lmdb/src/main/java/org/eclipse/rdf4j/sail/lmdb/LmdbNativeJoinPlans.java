@@ -251,25 +251,38 @@ final class MultiJoinPlan implements SlotPlan {
 		SlotPlan[] ordered = new SlotPlan[children.length];
 		boolean[] used = new boolean[children.length];
 		long syntheticMask = 0L;
+		long bound = row.boundMask();
 		for (int depth = 0; depth < ordered.length; depth++) {
 			int best = -1;
 			int bestScore = Integer.MIN_VALUE;
 			long bestEstimate = Long.MAX_VALUE;
+			boolean bestConnected = false;
 			for (int i = 0; i < children.length; i++) {
 				if (used[i]) {
 					continue;
 				}
 				SlotPlan child = children[i];
+				// cross-product guard: a child sharing no variable with the bound slots multiplies the
+				// intermediate result by its full match count, so connected children win outright; a
+				// child producing no slots is at most an existence check and cannot open a cross product
+				long produced = child.producedMask();
+				boolean connected = produced == 0L || (produced & bound) != 0L;
+				if (bestConnected && !connected) {
+					continue;
+				}
 				int score = child.boundScore(row);
 				long estimate = normalizedEstimate(child.estimate(row));
-				if (score > bestScore || (score == bestScore && estimate < bestEstimate)) {
+				if ((connected && !bestConnected)
+						|| score > bestScore || (score == bestScore && estimate < bestEstimate)) {
 					best = i;
 					bestScore = score;
 					bestEstimate = estimate;
+					bestConnected = connected;
 				}
 			}
 			used[best] = true;
 			ordered[depth] = children[best];
+			bound |= children[best].producedMask();
 			syntheticMask |= bindSyntheticProducedSlots(row, children[best]);
 		}
 		// The synthetic binding above only affects order choice. It must not leak into execution.

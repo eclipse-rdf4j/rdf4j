@@ -1231,26 +1231,37 @@ final class LmdbNativeQueryCompiler {
 				bound[i] = (seedMask & (1L << i)) != 0L;
 			}
 
+			long boundMask = seedMask;
 			for (int depth = 0; depth < order.length; depth++) {
 				int best = -1;
 				int bestScore = Integer.MIN_VALUE;
 				long bestEstimate = Long.MAX_VALUE;
+				boolean bestConnected = false;
 				for (int i = 0; i < allPatterns.length; i++) {
 					if (used[i]) {
 						continue;
 					}
 					NativePattern pattern = allPatterns[i];
+					// cross-product guard: prefer patterns sharing a variable with the bound slots; a
+					// pattern producing no slots is at most an existence check and stays eligible
+					boolean connected = pattern.producedMask == 0L || (pattern.producedMask & boundMask) != 0L;
+					if (bestConnected && !connected) {
+						continue;
+					}
 					int score = pattern.score(bound);
 					long estimate = normalizedEstimate(pattern.staticEstimate);
-					if (score > bestScore || (score == bestScore && estimate < bestEstimate)) {
+					if ((connected && !bestConnected)
+							|| score > bestScore || (score == bestScore && estimate < bestEstimate)) {
 						bestScore = score;
 						bestEstimate = estimate;
 						best = i;
+						bestConnected = connected;
 					}
 				}
 				used[best] = true;
 				NativePattern chosen = allPatterns[best];
 				order[depth] = chosen;
+				boundMask |= chosen.producedMask;
 				markProduced(bound, chosen);
 			}
 			return order;

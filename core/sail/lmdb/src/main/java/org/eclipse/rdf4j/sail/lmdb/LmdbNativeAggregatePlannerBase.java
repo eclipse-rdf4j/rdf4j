@@ -334,6 +334,13 @@ abstract class LmdbNativeAggregatePlannerBase {
 				return null;
 			}
 			ValueExpr arg = ((AbstractAggregateOperator) op).getArg();
+			if (arg == null) {
+				if (kind != AggKind.COUNT || op.isDistinct()) {
+					return null;
+				}
+				specs[i] = AggregateSpec.star(elem.getName());
+				continue;
+			}
 			if (!(arg instanceof Var)) {
 				return null;
 			}

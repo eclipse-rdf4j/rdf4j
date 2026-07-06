@@ -1942,7 +1942,10 @@ public final class ThemeQueryCatalog {
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SOCIAL_MEDIA, expectedCountBindingValues(
 				6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.LIBRARY, expectedCountBindingValues(
-				128853, 3, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1));
+				// index 9 is 2, not 0: every generated dueDate is >= 2024-01-15 (loanDate + 14 days), so the
+				// NOT EXISTS date cutoff of 2024-01-10 filters nothing and exactly two members qualify — see
+				// LmdbLibraryQ9CatalogExpectationTest for the dataset-derived ground truth
+				128853, 3, -1, 7958, 0, 217, -1, 77295, -1, 2, 4, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ENGINEERING, expectedCountBindingValues(
 				132672, 3, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.HIGHLY_CONNECTED, expectedCountBindingValues(

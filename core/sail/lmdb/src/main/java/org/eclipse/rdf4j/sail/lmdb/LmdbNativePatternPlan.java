@@ -153,7 +153,7 @@ final class PatternPlan implements SlotPlan {
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return PatternCursor.empty();
 		}
-		if (doesNotProduceBindings(row.slots)) {
+		if (doesNotProduceBindings(row.slots) && atMostOneQuadCanMatch(context)) {
 			return openAsExistenceCheck(row.source, subj, pred, obj, context);
 		}
 		if (contexts.isFixed()) {
@@ -359,6 +359,15 @@ final class PatternPlan implements SlotPlan {
 	boolean doesNotProduceBindings(long[] slots) {
 		return termDoesNotProduceBinding(s, slots) && termDoesNotProduceBinding(p, slots)
 				&& termDoesNotProduceBinding(o, slots) && termDoesNotProduceBinding(c, slots);
+	}
+
+	/**
+	 * Even with every produced slot bound, solution multiplicity still matters: a triple stored in several graphs
+	 * matches a default-graph pattern once per quad, so the one-shot existence check is only sound when the context is
+	 * pinned to a single concrete value (directly or through a single-id dataset constraint).
+	 */
+	boolean atMostOneQuadCanMatch(long context) {
+		return context != UNKNOWN || (contexts.isFixed() && contexts.ids.length <= 1);
 	}
 
 	boolean termDoesNotProduceBinding(Term term, long[] slots) {

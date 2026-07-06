@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -190,16 +191,6 @@ final class LmdbNativeFactorizedRows {
 				prefixOnly.toArray(new NativeBooleanFilter[0]));
 	}
 
-	static int[] slotsOf(long mask) {
-		int[] slots = new int[Long.bitCount(mask)];
-		int i = 0;
-		while (mask != 0L) {
-			slots[i++] = Long.numberOfTrailingZeros(mask);
-			mask &= mask - 1;
-		}
-		return slots;
-	}
-
 	void evaluate(RowState row, RowSink sink) throws IOException {
 		try (RowCursor prefix = flatCount == 0 ? new SingletonCursor()
 				: prefixDepths != null ? new ChunkedPrefixCursor(row, prefixDepths)
@@ -218,7 +209,13 @@ final class LmdbNativeFactorizedRows {
 						continue prefixLoop;
 					}
 					if (branch.role == ROLE_COUNT) {
-						multiplicity *= result.count;
+						// saturate instead of overflowing: a wrapped-negative multiplicity would make the
+						// emit loop drop every solution for this prefix row
+						if (multiplicity >= Long.MAX_VALUE / result.count) {
+							multiplicity = Long.MAX_VALUE;
+						} else {
+							multiplicity *= result.count;
+						}
 					} else if (branch.role == ROLE_ENUM) {
 						enumResults[enumCount] = result;
 						enumBranches[enumCount] = branch;

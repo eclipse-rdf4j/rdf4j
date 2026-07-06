@@ -901,42 +901,56 @@ class ValueStore extends AbstractValueFactory {
 			// revision lock (and the shared value cache probe) is pure overhead on this very hot path
 			return new LmdbLiteral(lazyRevision, id);
 		}
+		// the body only reads the race-tolerant value cache and the revision fields, so an optimistic read
+		// suffices; a concurrent revision swap (write lock during commit) fails validation and we retry
+		// under the full read lock, discarding the possibly-stale shell
+		long optimistic = revisionLock.tryOptimisticRead();
+		if (optimistic != 0L) {
+			LmdbValue resultValue = lazyValueForId(id);
+			if (revisionLock.validate(optimistic)) {
+				return resultValue;
+			}
+		}
 		long stamp = revisionLock.readLock();
 		try {
-			// Do not use a store-global lazy-value cache here. The query benchmark showed that a global hash
-			// probe on every statement term costs more CPU than it saves on high-cardinality scans. Iterators
-			// that see local repetition keep their own tiny last-value cache instead.
-			LmdbValue resultValue = cachedValue(id);
-
-			if (resultValue == null) {
-				int idType = ValueIds.getIdType(id);
-				switch (idType) {
-				case ValueIds.T_URI:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case ValueIds.T_DOUBLE:
-				case ValueIds.T_LITERAL:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case ValueIds.T_BNODE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				case ValueIds.T_TRIPLE:
-					resultValue = new LmdbTripleTerm(lazyRevision, id);
-					break;
-				default:
-					if (ValueIds.isInlined(id)) {
-						resultValue = new LmdbLiteral(lazyRevision, id);
-						break;
-					}
-					throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
-				}
-			}
-
-			return resultValue;
+			return lazyValueForId(id);
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
+	}
+
+	private LmdbValue lazyValueForId(long id) throws IOException {
+		// Do not use a store-global lazy-value cache here. The query benchmark showed that a global hash
+		// probe on every statement term costs more CPU than it saves on high-cardinality scans. Iterators
+		// that see local repetition keep their own tiny last-value cache instead.
+		LmdbValue resultValue = cachedValue(id);
+
+		if (resultValue == null) {
+			int idType = ValueIds.getIdType(id);
+			switch (idType) {
+			case ValueIds.T_URI:
+				resultValue = new LmdbIRI(lazyRevision, id);
+				break;
+			case ValueIds.T_DOUBLE:
+			case ValueIds.T_LITERAL:
+				resultValue = new LmdbLiteral(lazyRevision, id);
+				break;
+			case ValueIds.T_BNODE:
+				resultValue = new LmdbBNode(lazyRevision, id);
+				break;
+			case ValueIds.T_TRIPLE:
+				resultValue = new LmdbTripleTerm(lazyRevision, id);
+				break;
+			default:
+				if (ValueIds.isInlined(id)) {
+					resultValue = new LmdbLiteral(lazyRevision, id);
+					break;
+				}
+				throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+			}
+		}
+
+		return resultValue;
 	}
 
 	/**
