@@ -1,1 +1,0 @@
-The test queries in this directory are reused from the SPARQL.js project (https://github.com/RubenVerborgh/SPARQL.js) under the terms of the MIT license. 

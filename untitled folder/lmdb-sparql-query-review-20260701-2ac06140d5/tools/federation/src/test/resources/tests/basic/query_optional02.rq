@@ -1,9 +1,0 @@
-PREFIX : <http://example.org/> 
-
-SELECT ?o ?o2 WHERE{
-    # make a test for optional (without projecting subject)  
-	?s <http://purl.org/dc/terms/source> ?o 
-	OPTIONAL { 
-   		?s <http://purl.org/dc/terms/title> ?o2 
-   	} 
-}

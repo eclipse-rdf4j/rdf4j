@@ -1,7 +1,0 @@
-PREFIX : <http://example.com/ns#>
-
-SELECT * {
-    VALUES (?x ?y) {
-        ( <<( <<(:s :p :o )>> :q :z )>> 1 )
-    }
-}

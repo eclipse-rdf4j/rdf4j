@@ -1,2 +1,0 @@
-PREFIX ent:  <http://org.example.com/employees#>
-DESCRIBE ?x WHERE { ?x ent:employeeId "1234" }

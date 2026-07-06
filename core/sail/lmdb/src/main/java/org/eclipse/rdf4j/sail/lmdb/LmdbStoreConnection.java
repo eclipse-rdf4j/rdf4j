@@ -71,8 +71,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		if (lmdbStore.usesDefaultAutomaticOptimizerPipeline() && isolationLevel != null
 				&& isolationLevel.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
 			EvaluationStatistics statistics = lmdbStore.getSailStore().getEvaluationStatistics();
-			strategy.setOptimizerPipeline(new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics,
-					LmdbSemanticDependencies.empty(), true));
+			strategy.setOptimizerPipeline(new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics, true));
 		}
 		return strategy;
 	}

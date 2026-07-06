@@ -1,5 +1,0 @@
-PREFIX z: <http://example/>
-SELECT *
-{
-  _:a z:b _:1_2_3_
-}

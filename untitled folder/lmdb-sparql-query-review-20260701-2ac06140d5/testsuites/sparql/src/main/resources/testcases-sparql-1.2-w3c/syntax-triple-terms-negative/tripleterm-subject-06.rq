@@ -1,5 +1,0 @@
-PREFIX : <http://example.com/ns#>
-
-SELECT * {
-   BIND( <<( "literal" :q :z )>> AS ?X )
-}

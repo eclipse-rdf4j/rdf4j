@@ -42,7 +42,8 @@ final class RdfTermDomain {
 		LITERAL_WITH_LANGUAGE,
 		LITERAL_WITHOUT_LANGUAGE,
 		NUMBER,
-		CANONICAL_INTEGER;
+		CANONICAL_INTEGER,
+		CANONICAL_DATETIME;
 
 		private long mask() {
 			return 1L << ordinal();
@@ -58,7 +59,8 @@ final class RdfTermDomain {
 	private static final long KIND_MASK = Fact.IRI.mask() | Fact.LITERAL.mask() | Fact.BNODE.mask();
 	private static final long LANGUAGE_MASK = Fact.LITERAL_WITH_LANGUAGE.mask() | Fact.LITERAL_WITHOUT_LANGUAGE.mask();
 	private static final long TIMEZONE_MASK = Fact.DATE_UTC.mask() | Fact.DATE_WITHOUT_TIMEZONE.mask();
-	private static final long UNIVERSAL_FACT_MASK = Fact.NUMBER.mask() | Fact.CANONICAL_INTEGER.mask();
+	private static final long UNIVERSAL_FACT_MASK = Fact.NUMBER.mask() | Fact.CANONICAL_INTEGER.mask()
+			| Fact.CANONICAL_DATETIME.mask();
 	private static final long XSD_DATATYPE_MASK = xsdDatatypeMask();
 	private static final long POSSIBLE_FACT_MASK = KIND_MASK | LANGUAGE_MASK | TIMEZONE_MASK | XSD_DATATYPE_MASK;
 
@@ -559,6 +561,10 @@ final class RdfTermDomain {
 		if ((mask & Fact.CANONICAL_INTEGER.mask()) != 0L && datatypes != 0L && !hasIntegerDatatype(datatypes)) {
 			return true;
 		}
+		if ((mask & Fact.CANONICAL_DATETIME.mask()) != 0L && datatypes != 0L
+				&& (datatypes & datatypeMask(CoreDatatype.XSD.DATETIME)) == 0L) {
+			return true;
+		}
 		long timezone = mask & TIMEZONE_MASK;
 		if (timezone != 0L && datatypes != 0L && !hasCalendarDatatype(datatypes)) {
 			return true;
@@ -628,6 +634,11 @@ final class RdfTermDomain {
 			}
 		} else {
 			mask |= Fact.DATE_WITHOUT_TIMEZONE.mask();
+		}
+		// Only xsd:dateTime has a true canonicalizer; other calendar datatypes pass through
+		// XMLDatatypeUtil.normalize unchanged, so a fixed-point check would be vacuous for them.
+		if (xsdDatatype == CoreDatatype.XSD.DATETIME && label.equals(XMLDatatypeUtil.normalizeDateTime(label))) {
+			mask |= Fact.CANONICAL_DATETIME.mask();
 		}
 		return mask;
 	}

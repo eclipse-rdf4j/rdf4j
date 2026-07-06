@@ -372,6 +372,58 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void calendarFactOnlyGuaranteeWithNonCanonicalStoredFormsDoesNotBecomeTermExactAnchor() {
+		BindingSetAssignment targets = values("target",
+				VF.createLiteral("2020-01-01T05:00:00Z", XSD.DATETIME));
+		StatementPattern recordedOn = statementPattern("record", "recordedOn", "date");
+		DeferredFilter filter = new DeferredFilter(equal("date", "target"), Set.of("date", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, recordedOn, Set.of(recordedOn), null);
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets,
+				recordedOn),
+				List.of(filter),
+				new FactOnlyDateTimeObjectDomainStatistics("2020-01-01T05:00:00.000Z"));
+
+		assertTrue(analysis.finiteAnchorOptions().isEmpty(),
+				"A fact-only dateTime guarantee derived from non-canonical stored lexical forms must not replace a "
+						+ "value-equality filter with a term-exact anchor: " + analysis.finiteAnchorOptions());
+	}
+
+	@Test
+	void calendarFactOnlyCanonicalGuaranteeAnchorsOnCanonicalLexicalForm() {
+		BindingSetAssignment targets = values("target",
+				VF.createLiteral("2020-01-01T05:00:00.000+00:00", XSD.DATETIME));
+		StatementPattern recordedOn = statementPattern("record", "recordedOn", "date");
+		DeferredFilter filter = new DeferredFilter(equal("date", "target"), Set.of("date", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, recordedOn, Set.of(recordedOn), null);
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets,
+				recordedOn),
+				List.of(filter),
+				new FactOnlyDateTimeObjectDomainStatistics("2018-03-04T05:06:07Z"));
+
+		BindingSetAssignment materializedAnchor = analysis.finiteAnchorOptions()
+				.getFirst()
+				.factors()
+				.stream()
+				.filter(BindingSetAssignment.class::isInstance)
+				.map(BindingSetAssignment.class::cast)
+				.filter(assignment -> assignment.getBindingNames().containsAll(Set.of("date", "target")))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"A canonical dateTime guarantee should produce a materialized equality assignment: "
+								+ analysis.finiteAnchorOptions()));
+		List<BindingSet> rows = new ArrayList<>();
+		materializedAnchor.getBindingSets().forEach(rows::add);
+		assertEquals(1, rows.size(),
+				"SPARQL dateTime value equality should pair the anchor constant with its canonical stored form");
+		assertEquals(VF.createLiteral("2020-01-01T05:00:00Z", XSD.DATETIME), rows.getFirst().getValue("date"),
+				"The anchor must probe the canonical lexical form, not the query constant's verbatim form");
+		assertEquals(VF.createLiteral("2020-01-01T05:00:00.000+00:00", XSD.DATETIME),
+				rows.getFirst().getValue("target"));
+	}
+
+	@Test
 	void integerRangeFiniteAnchorAllowsMoreThanSmallLiteralLimit() {
 		StatementPattern weight = statementPattern("node", "weight", "w");
 		ValueExpr condition = and(
@@ -1374,6 +1426,26 @@ class LmdbSketchJoinOptimizerTest {
 		@Override
 		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
 			return Optional.of(RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT))));
+		}
+	}
+
+	private static final class FactOnlyDateTimeObjectDomainStatistics extends EvaluationStatistics
+			implements LmdbPredicateObjectDomainSource {
+
+		private final String storedLabel;
+
+		private FactOnlyDateTimeObjectDomainStatistics(String storedLabel) {
+			this.storedLabel = storedLabel;
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			return Optional.of(RdfTermDomain.classify(VF.createLiteral(storedLabel, XSD.DATETIME)));
 		}
 	}
 

@@ -1,9 +1,0 @@
-# make a for distinc in subqueries
-
-PREFIX : <http://example.org/> 
-
-SELECT ?x ?o 
-{
-  ?x :p ?p .
-  ?x :o ?o
-} 

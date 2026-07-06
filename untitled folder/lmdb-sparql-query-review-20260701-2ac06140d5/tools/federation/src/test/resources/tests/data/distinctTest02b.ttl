@@ -1,8 +1,0 @@
-@prefix : <http://example.org/> .
-
-:Item1 :type :y1 .
-:y1 :p :Pred1 .
-:Item2 :type :y2 .
-:y2 :p :Pred2 .
-:Item3 :type :y2 .
-:y2 :p :Something .

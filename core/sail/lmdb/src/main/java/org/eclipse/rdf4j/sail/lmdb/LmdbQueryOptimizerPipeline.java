@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -61,27 +60,18 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
-	private final LmdbSemanticDependencies semanticDependencies;
 	private final boolean preserveSerializableObservationOrder;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		this(strategy, tripleSource, evaluationStatistics, LmdbSemanticDependencies.empty());
+		this(strategy, tripleSource, evaluationStatistics, false);
 	}
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics, LmdbSemanticDependencies semanticDependencies) {
-		this(strategy, tripleSource, evaluationStatistics, semanticDependencies, false);
-	}
-
-	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics, LmdbSemanticDependencies semanticDependencies,
-			boolean preserveSerializableObservationOrder) {
+			EvaluationStatistics evaluationStatistics, boolean preserveSerializableObservationOrder) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
-		this.semanticDependencies = Objects.requireNonNull(semanticDependencies,
-				"semanticDependencies must not be null");
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
 	}
 
@@ -110,9 +100,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbProjectionPushdownOptimizer());
 			optimizers.add(new LmdbSetSemanticsOptimizer());
-		}
-		if (!semanticDependencies.isEmpty()) {
-			optimizers.add(new LmdbSemanticDependencyOptimizer(semanticDependencies));
 		}
 		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
 			optimizers.add(new LmdbStandardPlanBaselineOptimizer(

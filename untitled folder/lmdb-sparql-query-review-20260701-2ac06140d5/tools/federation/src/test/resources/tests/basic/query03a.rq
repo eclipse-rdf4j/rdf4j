@@ -1,5 +1,0 @@
-# ask for a particular triple pattern
-
-PREFIX foaf: <http://xmlns.com/foaf/0.1/> 
-
-ASK { ?x foaf:name "Alan" . ?x foaf:interest ?y }

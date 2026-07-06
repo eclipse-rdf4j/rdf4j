@@ -1,5 +1,0 @@
-PREFIX ex: <http://example.com/>
-SELECT (MAX(?value) AS ?max)
-WHERE {
-	?x ex:p ?value
-}

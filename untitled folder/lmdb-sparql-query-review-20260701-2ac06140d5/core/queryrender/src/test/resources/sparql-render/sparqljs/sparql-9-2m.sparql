@@ -1,4 +1,0 @@
-BASE <http://example.org/>
-PREFIX ex: <http://example.org/#>
-  SELECT *
-  { ?ancestor (ex:motherOf|ex:fatherOf)+ <#me> }

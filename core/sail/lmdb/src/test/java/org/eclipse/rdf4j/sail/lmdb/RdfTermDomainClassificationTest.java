@@ -111,6 +111,48 @@ class RdfTermDomainClassificationTest {
 	}
 
 	@Test
+	void classifiesCanonicalDateTimeFacts() {
+		RdfTermDomain canonicalUtc = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00Z", XSD.DATETIME));
+		assertHas(canonicalUtc, RdfTermDomain.Fact.CANONICAL_DATETIME);
+
+		RdfTermDomain canonicalWithoutTimezone = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00", XSD.DATETIME));
+		assertHas(canonicalWithoutTimezone, RdfTermDomain.Fact.CANONICAL_DATETIME);
+
+		RdfTermDomain trailingFractionalZeros = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00.000Z", XSD.DATETIME));
+		assertFalse(trailingFractionalZeros.has(RdfTermDomain.Fact.CANONICAL_DATETIME));
+
+		RdfTermDomain utcOffset = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00+00:00", XSD.DATETIME));
+		assertFalse(utcOffset.has(RdfTermDomain.Fact.CANONICAL_DATETIME));
+
+		RdfTermDomain fractionalSeconds = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00.5Z", XSD.DATETIME));
+		assertHas(fractionalSeconds, RdfTermDomain.Fact.CANONICAL_DATETIME);
+
+		// Other calendar datatypes have no canonicalizer, so no canonicity can be claimed for them.
+		RdfTermDomain date = RdfTermDomain.classify(VF.createLiteral("2024-01-01Z", XSD.DATE));
+		assertFalse(date.has(RdfTermDomain.Fact.CANONICAL_DATETIME));
+	}
+
+	@Test
+	void observedJoinsDropCanonicalDateTimeWhenAnyStoredFormIsNotCanonical() {
+		RdfTermDomain canonical = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00Z", XSD.DATETIME));
+		RdfTermDomain nonCanonical = RdfTermDomain
+				.classify(VF.createLiteral("2024-01-01T05:00:00.000Z", XSD.DATETIME));
+		RdfTermDomain mixed = canonical.combine(nonCanonical);
+		assertHas(mixed, RdfTermDomain.Fact.DATE_UTC);
+		assertFalse(mixed.has(RdfTermDomain.Fact.CANONICAL_DATETIME));
+
+		RdfTermDomain allCanonical = canonical
+				.combine(RdfTermDomain.classify(VF.createLiteral("2025-06-30T12:30:45Z", XSD.DATETIME)));
+		assertHas(allCanonical, RdfTermDomain.Fact.CANONICAL_DATETIME);
+	}
+
+	@Test
 	void classifiesEveryXsdDatatypeFact() {
 		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
 			RdfTermDomain guarantee = RdfTermDomain

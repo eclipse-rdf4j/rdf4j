@@ -1,3 +1,0 @@
-@prefix : <http://example.org/> .
-
-:c :p  "string"@en .

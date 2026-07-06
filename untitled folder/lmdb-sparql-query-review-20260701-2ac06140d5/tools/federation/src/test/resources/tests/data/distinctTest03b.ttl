@@ -1,6 +1,0 @@
-@prefix : <http://example.org/> .
-
-:Something1 :Pred1 :Object.
-:Something2 :Pred2 :Object.
-:Something3 :Pred3 :Object.
-:Something4 :Pred4 :Other.

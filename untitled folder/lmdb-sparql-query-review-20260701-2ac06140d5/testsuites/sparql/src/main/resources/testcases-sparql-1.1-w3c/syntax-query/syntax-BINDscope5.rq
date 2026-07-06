@@ -1,7 +1,0 @@
-PREFIX : <http://www.example.org>
-SELECT *
-   {
-    { :s :p ?Y }
-     UNION
-    { BIND (1 AS ?Y) } 
-   }

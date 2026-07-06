@@ -1,8 +1,0 @@
-PREFIX : <http://example.com/>
-SELECT * WHERE {
-        ?x :p ?n
-        FILTER NOT EXISTS {
-                ?x :q ?m .
-                FILTER(?n = ?m)
-        }
-}

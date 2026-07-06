@@ -1,3 +1,0 @@
-SELECT * WHERE {
-  <<?s [] ?o ~ :iri>> ?p2 ?o2 .
-}

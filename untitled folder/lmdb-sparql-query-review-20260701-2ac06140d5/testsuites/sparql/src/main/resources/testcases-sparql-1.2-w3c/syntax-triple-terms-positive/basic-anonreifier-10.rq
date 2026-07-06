@@ -1,5 +1,0 @@
-PREFIX : <http://example.com/ns#>
-
-SELECT * WHERE {
-   << :s :p << ?s :p2 :o2 >> >> .
-}

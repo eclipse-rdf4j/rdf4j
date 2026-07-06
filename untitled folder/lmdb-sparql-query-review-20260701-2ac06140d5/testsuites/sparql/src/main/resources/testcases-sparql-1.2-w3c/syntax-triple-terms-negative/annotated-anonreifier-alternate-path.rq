@@ -1,5 +1,0 @@
-PREFIX : <http://example.com/> 
-
-SELECT * WHERE {
-    ?s :p|:q ?o {| ?pp ?oo |} .
-}

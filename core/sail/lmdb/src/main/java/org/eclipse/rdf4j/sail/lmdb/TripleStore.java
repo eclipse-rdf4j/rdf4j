@@ -139,7 +139,7 @@ class TripleStore implements Closeable {
 
 	private static final String PREDICATE_OBJECT_DOMAINS_DB = "predicate-object-domains";
 	private static final String PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB = "predicate-object-domain-degradations";
-	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v2";
+	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v3";
 	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
 	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
 	private static final int PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES = Long.BYTES * 2;

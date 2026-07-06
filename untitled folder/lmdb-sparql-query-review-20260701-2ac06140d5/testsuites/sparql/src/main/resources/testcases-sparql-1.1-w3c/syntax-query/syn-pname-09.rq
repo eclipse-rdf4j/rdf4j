@@ -1,8 +1,0 @@
-PREFIX z: <http://example/z#>
-PREFIX : <http://example/>
-
-SELECT *
-{
-  :a :123 :12.3 .
-  :: z:: :_12.3_ .
-}

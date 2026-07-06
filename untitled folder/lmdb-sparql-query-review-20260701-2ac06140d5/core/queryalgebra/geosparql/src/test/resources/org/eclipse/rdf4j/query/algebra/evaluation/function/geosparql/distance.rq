@@ -1,9 +1,0 @@
-PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-PREFIX geof: <http://www.opengis.net/def/function/geosparql/>
-PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>
-
-SELECT ?dist
-WHERE { <http://example.org/amsterdam> geo:asWKT ?coord1 .
-        <http://example.org/brussels> geo:asWKT ?coord2 .
-        BIND( geof:distance(?coord1, ?coord2, uom:metre) as ?dist)
-}

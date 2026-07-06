@@ -1,4 +1,0 @@
-SELECT * {
-    ?s ?p ?o .
-    BIND(<< ?s ?p ?o ~ :iri >> AS ?t )
-}

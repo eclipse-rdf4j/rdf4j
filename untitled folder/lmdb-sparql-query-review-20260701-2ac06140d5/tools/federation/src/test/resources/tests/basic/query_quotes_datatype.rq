@@ -1,5 +1,0 @@
-PREFIX : <http://example.org/>
-SELECT ?s
-{ ?s ?p '''SPARQL 1.1 Basic
-Federated Query'''^^:someType
-}

@@ -117,10 +117,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String LEO_PHYSICAL_IMPLEMENTATION = "optimizer.leoPhysicalImplementation";
 	private static final String LEO_RULE_STEERING_APPLIED = "optimizer.leoRuleSteeringApplied";
 	private static final String PLANNED_PHYSICAL_IMPLEMENTATION = "plannedPhysicalImplementation";
-	private static final String LEARNED_EXPORT_OPERATOR_FILE = "operator-feedback.operators";
-	private static final String LEARNED_EXPORT_SURFACE_FILE = "operator-feedback.leo";
-	private static final String LEARNED_EXPORT_SUMMARY_FILE = "summary.txt";
-	private static final String LEARNED_EXPORT_DETAIL_FILE = "learned-evidence-detail.txt";
 	private static final String PLANNED_LEO_CANDIDATE_ID = "plannedLeoCandidateId";
 	private static final String PLANNED_LEO_CANDIDATE_RULE_ID = "plannedLeoCandidateRuleId";
 	private static final String PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT = "plannedLeoCandidateLogicalFingerprint";
@@ -219,16 +215,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		dirty = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty() || !shadowByOperator.isEmpty()
 				|| !planCandidates.isEmpty();
 		surfaceDirty = !leoSurfaceStats.isEmpty();
-	}
-
-	@Override
-	public void invalidate() {
-		reset();
-	}
-
-	@Override
-	public void resetLearnedEvidence() {
-		reset();
 	}
 
 	@Override
@@ -774,7 +760,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				+ ", feedbackCloseCount=" + node.getCostFeedbackCloseCountActual();
 	}
 
-	@Override
 	public synchronized void persistIfDirty() {
 		if (!dirty && !surfaceDirty) {
 			return;
@@ -1920,120 +1905,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			builder.append(", debug=").append(debug.replace('\n', ';'));
 		}
 		return builder.toString();
-	}
-
-	@Override
-	public synchronized String learnedEvidenceSummary() {
-		StringBuilder builder = new StringBuilder(512);
-		builder.append("LMDB learned optimizer evidence\n")
-				.append("epoch=")
-				.append(feedbackEpoch)
-				.append('\n')
-				.append("directOperators=")
-				.append(learnedByOperator.size())
-				.append('\n')
-				.append("multipliers=")
-				.append(learnedMultipliers.size())
-				.append('\n')
-				.append("shadowOperators=")
-				.append(shadowByOperator.size())
-				.append('\n')
-				.append("planCandidates=")
-				.append(planCandidates.size())
-				.append('\n')
-				.append("fanoutSurfacesEmpty=")
-				.append(leoSurfaceStats.isEmpty())
-				.append('\n')
-				.append("ruleSteeringCooldownUntilEpoch=")
-				.append(ruleSteeringCooldownUntilEpoch)
-				.append('\n')
-				.append("ruleSteeringBadMisses=")
-				.append(ruleSteeringBadMisses)
-				.append('\n');
-		return builder.toString();
-	}
-
-	@Override
-	public synchronized String learnedEvidenceDetails() {
-		StringBuilder builder = new StringBuilder(1024);
-		builder.append(learnedEvidenceSummary()).append('\n');
-		appendDetails(builder, "direct", learnedByOperator, 40);
-		appendDetails(builder, "multiplier", learnedMultipliers, 40);
-		appendDetails(builder, "shadow", shadowByOperator, 40);
-		appendDetails(builder, "planCandidate", planCandidates, 40);
-		return builder.toString();
-	}
-
-	private static void appendDetails(StringBuilder builder, String label, Map<OperatorKey, ?> entries, int limit) {
-		if (entries == null || entries.isEmpty()) {
-			return;
-		}
-		int emitted = 0;
-		for (var entry : entries.entrySet()) {
-			if (emitted++ >= limit) {
-				builder.append(label).append(" ... truncated at ").append(limit).append('\n');
-				return;
-			}
-			builder.append(label)
-					.append(' ')
-					.append(entry.getKey())
-					.append(' ')
-					.append(entry.getValue())
-					.append('\n');
-		}
-	}
-
-	@Override
-	public synchronized void exportLearnedEvidence(Path targetDirectory) throws IOException {
-		Objects.requireNonNull(targetDirectory, "targetDirectory");
-		Files.createDirectories(targetDirectory);
-		persistIfDirty();
-		if (Files.isRegularFile(sidecarPath)) {
-			Files.copy(sidecarPath, targetDirectory.resolve(LEARNED_EXPORT_OPERATOR_FILE),
-					StandardCopyOption.REPLACE_EXISTING);
-		}
-		if (Files.isRegularFile(leoSurfacePath)) {
-			Files.copy(leoSurfacePath, targetDirectory.resolve(LEARNED_EXPORT_SURFACE_FILE),
-					StandardCopyOption.REPLACE_EXISTING);
-		}
-		Files.writeString(targetDirectory.resolve(LEARNED_EXPORT_SUMMARY_FILE), learnedEvidenceSummary(),
-				StandardCharsets.UTF_8);
-		Files.writeString(targetDirectory.resolve(LEARNED_EXPORT_DETAIL_FILE), learnedEvidenceDetails(),
-				StandardCharsets.UTF_8);
-	}
-
-	@Override
-	public synchronized void importLearnedEvidence(Path sourceDirectory) throws IOException {
-		Objects.requireNonNull(sourceDirectory, "sourceDirectory");
-		Path operatorSource = sourceDirectory.resolve(LEARNED_EXPORT_OPERATOR_FILE);
-		Path surfaceSource = sourceDirectory.resolve(LEARNED_EXPORT_SURFACE_FILE);
-		if (Files.isRegularFile(operatorSource)) {
-			Files.copy(operatorSource, sidecarPath, StandardCopyOption.REPLACE_EXISTING);
-		}
-		if (Files.isRegularFile(surfaceSource)) {
-			Files.copy(surfaceSource, leoSurfacePath, StandardCopyOption.REPLACE_EXISTING);
-		}
-		learnedByOperator.clear();
-		learnedMultipliers.clear();
-		shadowByOperator.clear();
-		planCandidates.clear();
-		feedbackEpoch = 0L;
-		ruleSteeringBadMisses = 0;
-		ruleSteeringCooldownUntilEpoch = 0L;
-		loadIfPresent();
-		leoSurfaceStats.copyFrom(loadLeoSurfaceStats());
-		dirty = false;
-		surfaceDirty = false;
-	}
-
-	synchronized LmdbLeoShadowBenchmarkReport shadowBenchmarkReport() {
-		long directSamples = learnedByOperator.values().stream().mapToLong(counts -> counts.sampleCount).sum();
-		long multiplierSamples = learnedMultipliers.values().stream().mapToLong(counts -> counts.sampleCount).sum();
-		long shadowSamples = shadowByOperator.values().stream().mapToLong(counts -> counts.sampleCount).sum();
-		long candidateSamples = planCandidates.values().stream().mapToLong(counts -> counts.sampleCount).sum();
-		return new LmdbLeoShadowBenchmarkReport(learnedByOperator.size(), directSamples, learnedMultipliers.size(),
-				multiplierSamples, shadowByOperator.size(), shadowSamples, planCandidates.size(), candidateSamples,
-				ruleSteeringCooldownUntilEpoch > feedbackEpoch, learnedEvidenceSummary());
 	}
 
 	private SnapshotRevision currentEstimatorRevision() {

@@ -1,7 +1,0 @@
-PREFIX : <http://example/>
-
-SELECT (count(*) AS ?C)
-WHERE {
-   ?s :p ?x
-}
-GROUP BY ?s

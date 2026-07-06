@@ -1,3 +1,0 @@
-SELECT * WHERE {
-	BIND ("abcd" as ?a)
-} 

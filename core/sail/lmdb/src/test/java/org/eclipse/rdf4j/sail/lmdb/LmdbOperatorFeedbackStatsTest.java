@@ -251,23 +251,6 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void learnedEvidenceCanBeExportedAndSummarized(@TempDir Path tempDir) throws Exception {
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Join observed = join("s", "x", "o");
-		complete(observed, 100, 10, 20);
-		observed.setJoinLeftBindingsConsumedActual(50);
-		observed.setJoinRightBindingsConsumedActual(100);
-		stats.recordOperatorOutcome(observed);
-
-		Path exportDir = tempDir.resolve("leo-export");
-		stats.exportLearnedEvidence(exportDir);
-
-		assertTrue(Files.isRegularFile(exportDir.resolve("summary.txt")),
-				"The learned-state export should include a human-readable summary");
-		assertTrue(stats.learnedEvidenceSummary().contains("directOperators="));
-	}
-
-	@Test
 	void persistsAndResetsWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);

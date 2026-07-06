@@ -1,6 +1,0 @@
-PREFIX : <http://example/>
-VERSION "1.2"
-
-SELECT * {
-  << ?s ?p ?o >> .
-}

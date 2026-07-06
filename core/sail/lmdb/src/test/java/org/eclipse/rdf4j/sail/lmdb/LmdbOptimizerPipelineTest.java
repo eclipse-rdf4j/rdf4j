@@ -302,27 +302,6 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineAddsSemanticDependencyOptimizerOnlyWhenConfigured() {
-		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-		List<QueryOptimizer> defaultOptimizers = optimizers(
-				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
-
-		assertFalse(defaultOptimizers.stream().anyMatch(LmdbSemanticDependencyOptimizer.class::isInstance));
-
-		LmdbSemanticDependencies dependencies = LmdbSemanticDependencies.builder()
-				.functionalBySubject(SimpleValueFactory.getInstance().createIRI("urn:ssn"))
-				.build();
-		List<QueryOptimizer> configuredOptimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
-				new EvaluationStatistics(), dependencies).getOptimizers());
-
-		int semanticIndex = indexOf(configuredOptimizers, LmdbSemanticDependencyOptimizer.class);
-		assertTrue(semanticIndex >= 0);
-		assertTrue(indexOf(configuredOptimizers, LmdbSetSemanticsOptimizer.class) < semanticIndex);
-		assertTrue(semanticIndex < indexOf(configuredOptimizers, LmdbFilterSimplifierOptimizer.class));
-	}
-
-	@Test
 	void lmdbPipelineDoesNotRunEagerDomainFilterOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -862,6 +841,54 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(containsUnion(rewritten), rewritten::toString);
 		assertTrue(containsStatementPredicate(rewritten, activePredicate.stringValue()),
 				"The finite code/type rewrite must preserve branch-local constraints: " + rewritten);
+	}
+
+	@Test
+	void finiteCodeTypeValuesRewriteLeavesOriginalTreeNodesUntouched() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI typePredicate = RDF.TYPE;
+		IRI codePredicate = vf.createIRI("http://example.com/theme/medical/code");
+		IRI activePredicate = vf.createIRI("http://example.com/theme/medical/active");
+		IRI conditionType = vf.createIRI("http://example.com/theme/medical/Condition");
+		IRI medicationType = vf.createIRI("http://example.com/theme/medical/Medication");
+		Value target = vf.createLiteral("DX-200");
+		Value fallback = vf.createLiteral("DX-202");
+		BindingSetAssignment targets = singleValueAssignment("target", target);
+		ValueExpr condition = new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+				new Compare(new Var("code"), new ValueConstant(fallback), Compare.CompareOp.EQ));
+		StatementPattern activePattern = new StatementPattern(new Var("entity"),
+				new Var("activePredicate", activePredicate), new Var("active", vf.createLiteral(true)));
+		StatementPattern conditionTypePattern = new StatementPattern(new Var("entity"),
+				new Var("typePredicate", typePredicate), new Var("conditionType", conditionType));
+		StatementPattern conditionCodePattern = new StatementPattern(new Var("entity"),
+				new Var("codePredicate", codePredicate), new Var("code"));
+		TupleExpr constrainedConditionBranch = new Filter(
+				new Join(targets.clone(),
+						new Join(activePattern, new Join(conditionTypePattern, conditionCodePattern))),
+				condition.clone());
+		StatementPattern medicationTypePattern = new StatementPattern(new Var("entity"),
+				new Var("typePredicate", typePredicate), new Var("medicationType", medicationType));
+		StatementPattern medicationCodePattern = new StatementPattern(new Var("entity"),
+				new Var("codePredicate", codePredicate), new Var("code"));
+		TupleExpr medicationBranch = new Filter(
+				new Join(targets.clone(), new Join(medicationTypePattern, medicationCodePattern)),
+				condition.clone());
+		Group group = new Group(new Union(constrainedConditionBranch, medicationBranch));
+		group.addGroupElement(new GroupElem("count", new Count(new Var("entity"), true)));
+		List<StatementPattern> originalPatterns = List.of(activePattern, conditionTypePattern, conditionCodePattern,
+				medicationTypePattern, medicationCodePattern);
+		List<QueryModelNode> originalParents = originalPatterns.stream()
+				.map(StatementPattern::getParentNode)
+				.collect(Collectors.toList());
+
+		Group rewritten = LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group);
+
+		assertNotNull(rewritten);
+		for (int i = 0; i < originalPatterns.size(); i++) {
+			assertSame(originalParents.get(i), originalPatterns.get(i).getParentNode(),
+					"Building a rewrite alternative must not re-parent nodes of the original tree; pattern "
+							+ originalPatterns.get(i) + " was moved to " + originalPatterns.get(i).getParentNode());
+		}
 	}
 
 	@Test

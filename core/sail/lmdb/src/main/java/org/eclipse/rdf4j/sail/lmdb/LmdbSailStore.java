@@ -938,39 +938,6 @@ class LmdbSailStore implements SailStore {
 				operatorFeedbackStats, statementPatternCardinalitySource);
 	}
 
-	public void resetLearnedOptimizerFeedback() {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.resetLearnedEvidence();
-			scheduleEstimatorPersist();
-		}
-	}
-
-	public String summarizeLearnedOptimizerFeedback() {
-		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceSummary();
-	}
-
-	public String describeLearnedOptimizerFeedback() {
-		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceDetails();
-	}
-
-	public void exportLearnedOptimizerFeedback(Path targetDirectory) throws IOException {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.exportLearnedEvidence(targetDirectory);
-		}
-	}
-
-	public void importLearnedOptimizerFeedback(Path sourceDirectory) throws IOException {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.importLearnedEvidence(sourceDirectory);
-			scheduleEstimatorPersist();
-		}
-	}
-
-	LmdbLeoShadowBenchmarkReport learnedOptimizerShadowBenchmarkReport() {
-		return operatorFeedbackStats == null ? new LmdbLeoShadowBenchmarkReport(0, 0, 0, 0, 0, 0, 0, 0, false, "")
-				: operatorFeedbackStats.shadowBenchmarkReport();
-	}
-
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);

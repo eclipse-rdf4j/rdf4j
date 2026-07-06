@@ -1,6 +1,0 @@
-PREFIX : <http://example/>
-
-SELECT ?x ?langdir {
-  ?x :p ?object .
-  BIND( LANGDIR(?object) AS ?langdir )
-} ORDER BY ?x

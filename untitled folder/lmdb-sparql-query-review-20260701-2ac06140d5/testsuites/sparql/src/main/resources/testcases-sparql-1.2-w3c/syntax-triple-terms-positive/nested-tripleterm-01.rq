@@ -1,6 +1,0 @@
-PREFIX : <http://example.com/ns#>
-
-SELECT * {
-  :s :r <<(?S :p :o )>> .
-  :s :q <<( :s1 :r <<(?S :p :o )>> )>> .
-}

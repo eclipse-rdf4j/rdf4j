@@ -1,8 +1,0 @@
-PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-PREFIX geof: <http://www.opengis.net/def/function/geosparql/>
-
-SELECT ?within
-WHERE { <http://example.org/brussels> geo:asWKT ?coord1 .
-        <http://example.org/colorado> geo:asWKT ?coord2 .
-        BIND ( geof:sfWithin(?coord1, ?coord2) as ?within )
-}

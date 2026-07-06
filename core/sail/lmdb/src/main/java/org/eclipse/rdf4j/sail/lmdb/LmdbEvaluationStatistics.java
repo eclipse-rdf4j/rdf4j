@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11281,50 +11280,6 @@ class LmdbEvaluationStatistics
 
 	String learnedOptimizerExplainDiff(TupleExpr tupleExpr) {
 		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.explainEstimateDiff(tupleExpr);
-	}
-
-	@Override
-	public String learnedEvidenceSummary() {
-		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceSummary();
-	}
-
-	String learnedOptimizerSummary() {
-		return learnedEvidenceSummary();
-	}
-
-	@Override
-	public String learnedEvidenceDetails() {
-		return operatorFeedbackStats == null ? "" : operatorFeedbackStats.learnedEvidenceDetails();
-	}
-
-	String learnedOptimizerDetails() {
-		return learnedEvidenceDetails();
-	}
-
-	@Override
-	public void exportLearnedEvidence(Path targetDirectory) throws IOException {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.exportLearnedEvidence(targetDirectory);
-		}
-	}
-
-	@Override
-	public void importLearnedEvidence(Path sourceDirectory) throws IOException {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.importLearnedEvidence(sourceDirectory);
-		}
-	}
-
-	@Override
-	public void resetLearnedEvidence() {
-		if (operatorFeedbackStats != null) {
-			operatorFeedbackStats.resetLearnedEvidence();
-		}
-	}
-
-	LmdbLeoShadowBenchmarkReport learnedOptimizerShadowBenchmarkReport() {
-		return operatorFeedbackStats == null ? new LmdbLeoShadowBenchmarkReport(0, 0, 0, 0, 0, 0, 0, 0, false, "")
-				: operatorFeedbackStats.shadowBenchmarkReport();
 	}
 
 	private void recordStatementPatternFanout(StatementPattern pattern) {

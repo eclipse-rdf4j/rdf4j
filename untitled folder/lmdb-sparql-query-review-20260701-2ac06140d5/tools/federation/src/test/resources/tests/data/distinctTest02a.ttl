@@ -1,4 +1,0 @@
-@prefix : <http://example.org/> .
-
-:s :pred :Pred1 .
-:s :pred :Pred2 .

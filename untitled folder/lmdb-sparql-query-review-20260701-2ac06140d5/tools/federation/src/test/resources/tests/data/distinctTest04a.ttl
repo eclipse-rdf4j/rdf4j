@@ -1,4 +1,0 @@
-@prefix : <http://example.org/> .
-
-:Item1 :p :URI1 .
-:Item1 :p :URI2 .

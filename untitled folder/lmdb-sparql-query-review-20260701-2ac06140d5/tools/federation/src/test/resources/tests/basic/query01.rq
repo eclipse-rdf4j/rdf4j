@@ -1,8 +1,0 @@
-# extract all triples
-
-PREFIX : <http://example.org/> 
-
-SELECT ?s ?p ?o
-{
-  ?s ?p ?o .
-} 

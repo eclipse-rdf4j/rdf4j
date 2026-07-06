@@ -1280,7 +1280,11 @@ final class GuaranteePlanOptionProvider {
 				if (!calendarAnchorMatchesGuarantee(literal, guarantee)) {
 					return new LinkedHashSet<>();
 				}
-				values.add(value);
+				if (literal.getCoreDatatype() == CoreDatatype.XSD.DATETIME) {
+					values.add(VF.createLiteral(XMLDatatypeUtil.normalizeDateTime(literal.getLabel()), XSD.DATETIME));
+				} else {
+					values.add(value);
+				}
 			} else if (LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
 				values.add(value);
 			} else {
@@ -1334,10 +1338,16 @@ final class GuaranteePlanOptionProvider {
 				datatype)) {
 			return false;
 		}
-		if (datatype == CoreDatatype.XSD.TIME) {
+		if (datatype != CoreDatatype.XSD.DATETIME) {
 			return false;
 		}
 		if (guarantee.singleXsdDatatype() != datatype) {
+			return false;
+		}
+		// A term-exact anchor can only stand in for SPARQL value equality when every stored object is in the
+		// canonical lexical form; DATE_UTC/DATE_WITHOUT_TIMEZONE alone still permit value-equal lexical variants
+		// (e.g. "…05:00:00Z" vs "…05:00:00.000Z") that a term-level dictionary join would silently miss.
+		if (!guarantee.has(RdfTermDomain.Fact.CANONICAL_DATETIME)) {
 			return false;
 		}
 		RdfTermDomain literalGuarantee = RdfTermDomain.classify(literal);
