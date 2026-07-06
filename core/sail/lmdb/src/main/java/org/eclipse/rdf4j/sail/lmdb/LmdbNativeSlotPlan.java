@@ -136,7 +136,7 @@ interface SlotPlan {
 			return filterPlan.filterMask >= 0L && canReorder(filterPlan.arg);
 		}
 		return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan
-				|| plan instanceof MultiJoinPlan;
+				|| plan instanceof PathPlan || plan instanceof MultiJoinPlan;
 	}
 
 	static void collectReorderable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {

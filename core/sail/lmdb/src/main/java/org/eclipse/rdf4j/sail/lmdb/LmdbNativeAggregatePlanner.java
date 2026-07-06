@@ -235,6 +235,53 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames);
 	}
 
+	/**
+	 * Compiles a SPARQL {@code +}/{@code *} path over a single constant predicate into a native BFS plan (see
+	 * {@link PathPlan}). Anything outside that shape — sequences, alternations, graph-variable scoping, unknown
+	 * constant ids, both endpoints the same variable — returns null so the whole fragment falls back to the generic
+	 * evaluator, whose PathIteration remains the semantics oracle.
+	 */
+	SlotPlan compilePath(org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath alp) {
+		if (!PathPlan.ENABLED || alp.getMinLength() > 1L) {
+			return null;
+		}
+		if (!(alp.getPathExpression() instanceof StatementPattern)) {
+			return null;
+		}
+		StatementPattern sp = (StatementPattern) alp.getPathExpression();
+		Var subjVar = alp.getSubjectVar();
+		Var objVar = alp.getObjectVar();
+		if (subjVar.getName().equals(objVar.getName())) {
+			return null;
+		}
+		PatternPlan step = compileStatementPattern(sp);
+		if (step == null) {
+			return null;
+		}
+		if (!step.p.isConstant() || step.p.hasSlot() || step.c.hasSlot() || step.hasRepeatedSlot()) {
+			return null;
+		}
+		int subjPos = endpointPosition(sp, subjVar);
+		int objPos = endpointPosition(sp, objVar);
+		if (subjPos < 0 || objPos < 0 || subjPos == objPos) {
+			return null;
+		}
+		Term subjTerm = subjPos == TripleIndex.SUBJ_IDX ? step.s : step.o;
+		Term objTerm = objPos == TripleIndex.SUBJ_IDX ? step.s : step.o;
+		return new PathPlan(step, subjTerm.slot, subjTerm.constant, objTerm.slot, objTerm.constant, subjPos, objPos,
+				alp.getMinLength() == 0L);
+	}
+
+	static int endpointPosition(StatementPattern sp, Var endpoint) {
+		if (sp.getSubjectVar().getName().equals(endpoint.getName())) {
+			return TripleIndex.SUBJ_IDX;
+		}
+		if (sp.getObjectVar().getName().equals(endpoint.getName())) {
+			return TripleIndex.OBJ_IDX;
+		}
+		return -1;
+	}
+
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
 		if (expr instanceof SingletonSet) {
 			return SlotPlan.singleton();
@@ -245,6 +292,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return SlotPlan.empty();
 			}
 			return plan;
+		}
+		if (expr instanceof org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) {
+			return compilePath((org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) expr);
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;

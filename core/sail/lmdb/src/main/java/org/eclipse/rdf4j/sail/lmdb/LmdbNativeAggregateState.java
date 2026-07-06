@@ -296,6 +296,20 @@ final class AggState {
 	long count(int index) {
 		return specs[index].distinct ? distinctSets[index].size() : counts[index];
 	}
+
+	/**
+	 * Merges a parallel worker's partial state into this one. Only valid for COUNT-kind aggregates (the parallel gate
+	 * guarantees {@link AggregateSpec#allCounts}): plain counts add, distinct id sets union.
+	 */
+	void mergeCountsFrom(AggState other) {
+		for (int i = 0; i < specs.length; i++) {
+			if (distinctSets[i] != null) {
+				distinctSets[i].addAll(other.distinctSets[i]);
+			} else {
+				counts[i] += other.counts[i];
+			}
+		}
+	}
 }
 
 final class GroupKey {
@@ -406,6 +420,18 @@ final class LongHashSet {
 
 	long size() {
 		return size;
+	}
+
+	/** Unions another set into this one (parallel worker merge). */
+	void addAll(LongHashSet other) {
+		if (other.containsEmptySentinel) {
+			add(EMPTY);
+		}
+		for (long value : other.table) {
+			if (value != EMPTY) {
+				add(value);
+			}
+		}
 	}
 
 	void rehash() {

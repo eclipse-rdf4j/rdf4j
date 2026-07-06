@@ -1675,6 +1675,140 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * A sibling read-only view for intra-query parallelism: it owns one untracked read transaction (pinned to the
+	 * snapshot that was current when it was opened, never reset on writes) and is confined to the worker thread that
+	 * uses it. The shared value store is safe to read concurrently; per-thread LMDB cursor pooling comes from
+	 * {@code TripleStore.CursorPool}.
+	 */
+	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
+
+		private final Txn txn;
+		private final boolean explicit;
+		private volatile boolean closed;
+
+		ParallelSnapshotSource(Txn txn, boolean explicit) {
+			this.txn = txn;
+			this.explicit = explicit;
+		}
+
+		private void checkOpen() {
+			if (closed) {
+				throw new QueryInterruptedException("Parallel source has been closed");
+			}
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				txn.close();
+			}
+		}
+
+		@Override
+		public long idOf(Value value) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				checkOpen();
+				if (value == null) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+				return valueStore.getId(value);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Value lazyValue(long id) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+			try {
+				checkOpen();
+				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+					return null;
+				}
+				return valueStore.getLazyValue(id);
+			} catch (IOException e) {
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public Object idSpace() {
+			return valueStore;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public NativeProbe newProbe() {
+			return new NativeProbe() {
+				private LmdbRecordIterator retained;
+
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return EmptyRecordIterator.INSTANCE;
+					}
+					if (retained == null) {
+						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
+					} else {
+						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+					}
+					return retained;
+				}
+
+				@Override
+				public void close() {
+					if (retained != null) {
+						retained.dispose();
+						retained = null;
+					}
+				}
+			};
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return 0;
+			}
+			return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) throws IOException {
+			checkOpen();
+			return hasStatementsInSource() && tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return 0D;
+			}
+			try {
+				return tripleStore.cardinality(subj, pred, obj, context);
+			} catch (IOException | RuntimeException e) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return explicit || mayHaveInferred;
+		}
+	}
+
 	private final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
 
 		private final boolean explicit;
@@ -1860,6 +1994,46 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public boolean hasStatementsInSource() {
 			return explicit || mayHaveInferred;
+		}
+
+		@Override
+		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				TxnManager txnManager = tripleStore.getTxnManager();
+				StampedLongAdderLockManager txnLockManager = txnManager.lockManager();
+				long txnStamp;
+				try {
+					txnStamp = txnLockManager.readLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException(e);
+				}
+				ParallelSnapshotSource[] pending = new ParallelSnapshotSource[count];
+				try {
+					// opened back-to-back under the transaction read lock: writers commit under the matching
+					// write lock, so no commit can interleave and every transaction observes the identical
+					// last-committed snapshot; untracked transactions keep that snapshot for their lifetime
+					for (int i = 0; i < count; i++) {
+						pending[i] = new ParallelSnapshotSource(txnManager.createReadTxnUntracked(), explicit);
+					}
+					ParallelSnapshotSource[] result = pending;
+					pending = null;
+					return result;
+				} finally {
+					txnLockManager.unlockRead(txnStamp);
+					if (pending != null) {
+						for (ParallelSnapshotSource source : pending) {
+							if (source != null) {
+								source.close();
+							}
+						}
+					}
+				}
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
 		}
 
 		private long acquireNativeSourceReadLock() throws IOException {

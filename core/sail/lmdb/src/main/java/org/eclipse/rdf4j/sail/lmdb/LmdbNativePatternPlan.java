@@ -366,13 +366,18 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	boolean bind(long[] quad, RowState row) {
-		if (namedContextScope && !contexts.isFixed() && quad[TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+		return bind(quad, 0, row);
+	}
+
+	/** Binds the quad found at {@code offset} in a batch buffer of four-long records. */
+	boolean bind(long[] quad, int offset, RowState row) {
+		if (namedContextScope && !contexts.isFixed() && quad[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
 			return false;
 		}
-		return bindTerm(s, quad[TripleIndex.SUBJ_IDX], row)
-				&& bindTerm(p, quad[TripleIndex.PRED_IDX], row)
-				&& bindTerm(o, quad[TripleIndex.OBJ_IDX], row)
-				&& bindTerm(c, quad[TripleIndex.CONTEXT_IDX], row);
+		return bindTerm(s, quad[offset + TripleIndex.SUBJ_IDX], row)
+				&& bindTerm(p, quad[offset + TripleIndex.PRED_IDX], row)
+				&& bindTerm(o, quad[offset + TripleIndex.OBJ_IDX], row)
+				&& bindTerm(c, quad[offset + TripleIndex.CONTEXT_IDX], row);
 	}
 
 	boolean bindTerm(Term term, long id, RowState row) {

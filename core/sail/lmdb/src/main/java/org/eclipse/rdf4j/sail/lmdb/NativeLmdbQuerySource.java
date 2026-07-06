@@ -82,4 +82,21 @@ interface NativeLmdbQuerySource {
 	double estimate(long subj, long pred, long obj, long context);
 
 	boolean hasStatementsInSource();
+
+	/** A sibling source over the same committed snapshot, owned by the caller and closed when done. */
+	interface ParallelSource extends NativeLmdbQuerySource, java.io.Closeable {
+
+		@Override
+		void close();
+	}
+
+	/**
+	 * Opens {@code count} additional sources over the same committed snapshot as this source, for intra-query
+	 * parallelism: each returned source owns its own read-only transaction and may be used from its own thread
+	 * independently of this source and of the other siblings. Returns {@code null} when the implementation cannot
+	 * guarantee same-snapshot siblings (the default), which callers must treat as "parallelism unsupported".
+	 */
+	default ParallelSource[] openParallelSources(int count) throws IOException {
+		return null;
+	}
 }

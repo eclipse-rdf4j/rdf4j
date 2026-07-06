@@ -174,6 +174,23 @@ final class MultiJoinPlan implements SlotPlan {
 		return cursor;
 	}
 
+	/**
+	 * Like {@link #openChain} but with a caller-supplied cursor standing in for the ordered depth-0 child (parallel
+	 * morsel execution: workers read the root scan's quads from a shared queue instead of scanning themselves).
+	 */
+	RowCursor openChainFrom(OrderedPlan plan, RowCursor leftmost, int upToExclusive, RowState row)
+			throws IOException {
+		SlotPlan[] ordered = plan.order;
+		RowCursor cursor = applyFilters(leftmost, plan.filterDepth, 0, row);
+		long leftProduced = ordered[0].producedMask();
+		for (int i = 1; i < upToExclusive; i++) {
+			cursor = new JoinCursor(cursor, ordered[i], row, leftProduced);
+			cursor = applyFilters(cursor, plan.filterDepth, i, row);
+			leftProduced |= ordered[i].producedMask();
+		}
+		return cursor;
+	}
+
 	RowCursor applyFilters(RowCursor cursor, int[] filterDepth, int depth, RowState row) {
 		for (int i = 0; i < filterDepth.length; i++) {
 			if (filterDepth[i] == depth) {

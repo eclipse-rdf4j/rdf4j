@@ -154,6 +154,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	final int[] groupSlots;
 	final AggregateSpec[] aggregates;
 	final AggContext aggContext;
+	final boolean strictCompare;
 	final BindingSet base;
 	Iterator<BindingSet> resultIterator;
 	BindingSet next;
@@ -168,6 +169,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		this.groupSlots = groupSlots;
 		this.aggregates = aggregates;
 		this.aggContext = new AggContext(source, strictCompare);
+		this.strictCompare = strictCompare;
 		this.base = base;
 	}
 
@@ -215,6 +217,18 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		RowState row = new RowState(source, layout, base);
 		if (!initialize(row)) {
 			return noInputResult();
+		}
+		MultiJoinPlan parallelPlan = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 1
+				? (MultiJoinPlan) arg
+				// a bare statement pattern (COUNT over one scan) parallelizes as a one-child join
+				: arg instanceof PatternPlan
+						? new MultiJoinPlan(new SlotPlan[] { arg }, new MaskedFilter[0])
+						: null;
+		if (parallelPlan != null) {
+			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row);
+			if (parallel != null) {
+				return parallel;
+			}
 		}
 		if (arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 2) {
 			MultiJoinPlan multiJoin = (MultiJoinPlan) arg;

@@ -109,6 +109,106 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		return false;
 	}
 
+	@Override
+	public ParallelSource[] openParallelSources(int count) throws IOException {
+		ParallelSource[][] members = new ParallelSource[sources.size()][];
+		boolean complete = false;
+		try {
+			for (int i = 0; i < sources.size(); i++) {
+				members[i] = sources.get(i).openParallelSources(count);
+				if (members[i] == null) {
+					return null;
+				}
+			}
+			ParallelSource[] result = new ParallelSource[count];
+			for (int j = 0; j < count; j++) {
+				NativeLmdbQuerySource[] slice = new NativeLmdbQuerySource[sources.size()];
+				ParallelSource[] owned = new ParallelSource[sources.size()];
+				for (int i = 0; i < sources.size(); i++) {
+					slice[i] = members[i][j];
+					owned[i] = members[i][j];
+				}
+				result[j] = new CompositeParallelSource(
+						new CompositeNativeLmdbQuerySource(List.of(slice), idSpace), owned);
+			}
+			complete = true;
+			return result;
+		} finally {
+			if (!complete) {
+				for (ParallelSource[] member : members) {
+					if (member != null) {
+						for (ParallelSource source : member) {
+							source.close();
+						}
+					}
+				}
+			}
+		}
+	}
+
+	private static final class CompositeParallelSource implements ParallelSource {
+
+		private final CompositeNativeLmdbQuerySource delegate;
+		private final ParallelSource[] owned;
+
+		CompositeParallelSource(CompositeNativeLmdbQuerySource delegate, ParallelSource[] owned) {
+			this.delegate = delegate;
+			this.owned = owned;
+		}
+
+		@Override
+		public void close() {
+			for (ParallelSource source : owned) {
+				source.close();
+			}
+		}
+
+		@Override
+		public long idOf(Value value) throws QueryEvaluationException {
+			return delegate.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) throws QueryEvaluationException {
+			return delegate.lazyValue(id);
+		}
+
+		@Override
+		public Object idSpace() {
+			return delegate.idSpace();
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			return delegate.statements(subj, pred, obj, context);
+		}
+
+		@Override
+		public NativeProbe newProbe() {
+			return delegate.newProbe();
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) throws IOException {
+			return delegate.count(subj, pred, obj, context);
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) throws IOException {
+			return delegate.has(subj, pred, obj, context);
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return delegate.estimate(subj, pred, obj, context);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return delegate.hasStatementsInSource();
+		}
+	}
+
 	private static final class ConcatenatingRecordIterator implements RecordIterator {
 
 		private final List<NativeLmdbQuerySource> sources;

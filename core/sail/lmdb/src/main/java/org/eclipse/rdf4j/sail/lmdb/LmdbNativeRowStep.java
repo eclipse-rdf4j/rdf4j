@@ -238,6 +238,35 @@ final class NativeRowsStep implements QueryEvaluationStep {
 			ArrayList<BindingSet> results = new ArrayList<>();
 			HashMap<GroupKey, Boolean> seen = distinct ? new HashMap<>() : null;
 			GroupKey probe = distinct ? new GroupKey(new long[sourceSlots.length]) : null;
+			if (LmdbNativeFactorizedRows.ENABLED && arg instanceof MultiJoinPlan
+					&& ((MultiJoinPlan) arg).children.length > 0) {
+				MultiJoinPlan multiJoin = (MultiJoinPlan) arg;
+				try {
+					LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
+							multiJoin.derivedPlan(row), row, row.boundMask(), sourceSlots, distinct);
+					if (factorized != null) {
+						factorized.evaluate(row, (slots, multiplicity) -> {
+							if (distinct) {
+								if (registerDistinct(seen, probe, slots)) {
+									results.add(project(slots, values));
+								}
+								return !streamingCap || results.size() < emitCap;
+							}
+							BindingSet projected = project(slots, values);
+							for (long i = 0; i < multiplicity; i++) {
+								results.add(projected);
+								if (streamingCap && results.size() >= emitCap) {
+									return false;
+								}
+							}
+							return true;
+						});
+						return slice(results);
+					}
+				} catch (IOException e) {
+					throw new QueryEvaluationException(e);
+				}
+			}
 			try (RowCursor cursor = arg.open(row)) {
 				while (cursor.next()) {
 					if (distinct && !registerDistinct(seen, probe, row.slots)) {
