@@ -11,12 +11,20 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -69,11 +77,13 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 	}
 
 	@Test
-	public void testDirectedLanguageLiteralBaseDirectionPersistsAfterRestart() {
-		Literal expected = vf.createLiteral("directed literal ".repeat(20), "en", Literal.BaseDirection.RTL);
+	public void testDirectedLanguageLiteralStatementPatternAfterRestart() {
+		IRI subject = vf.createIRI("http://example.org/subject");
+		IRI predicate = vf.createIRI("http://example.org/predicate");
+		Literal expected = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
 
 		con.begin();
-		con.addStatement(picasso, paints, expected);
+		con.addStatement(subject, predicate, expected);
 		con.commit();
 		con.close();
 		sail.shutDown();
@@ -81,12 +91,19 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 		sail.init();
 		con = sail.getConnection();
 
-		try (var statements = con.getStatements(picasso, paints, null, false)) {
-			assertTrue(statements.hasNext());
-			Literal actual = (Literal) statements.next().getObject();
+		ParsedTupleQuery tupleQuery = (ParsedTupleQuery) QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?o WHERE { ?s <http://example.org/predicate> ?o . FILTER(?o = \"שלום\"@he--rtl) }", null);
+
+		try (CloseableIteration<? extends BindingSet> result = con.evaluate(tupleQuery.getTupleExpr(), null,
+				EmptyBindingSet.getInstance(), false)) {
+			assertTrue(result.hasNext(), "expect directed language literal statement pattern to match");
+			BindingSet bindingSet = result.next();
+			assertEquals(subject, bindingSet.getValue("s"));
+			Literal actual = (Literal) bindingSet.getValue("o");
 			assertEquals(expected, actual);
 			assertEquals(Literal.BaseDirection.RTL, actual.getBaseDirection());
 			assertEquals(RDF.DIRLANGSTRING, actual.getDatatype());
+			assertFalse(result.hasNext(), "expect single solution");
 		}
 	}
 }
