@@ -19,8 +19,9 @@ You can see it working by running the new unit tests (they run without any LMDB 
 - [x] (2026-07-06 21:50Z) Milestone A: core data structures — `NodeSets`, `Hypergraph` (+ DOT printer) with unit tests (15 tests green).
 - [x] (2026-07-06 21:50Z) Milestone B: DPhyp enumerator `SubgraphEnumerator` + naive DPsub oracle + acceptance/property tests (12 tests green, incl. 200-random-graph oracle parity).
 - [x] (2026-07-06 21:50Z) Milestone C: `PlanHypergraph`, `JoinPlan`, `CostingReceiver`, `HypergraphOptimizer` facade + costing tests (16 tests green; bushy-beats-left-deep proven).
-- [ ] Milestone D: LMDB adapter `LmdbHypergraphJoinPlanner` behind system property, hooked into `LmdbCascadesConnectedJoinPlanner.plan(...)`, with unit tests using a synthetic cost model.
-- [ ] Test evidence captured (Surefire snippets in `Artifacts and Notes`), full module regression triaged against known-red baseline, committed.
+- [x] (2026-07-06 22:05Z) Milestone D: LMDB adapter `LmdbHypergraphJoinPlanner` behind system property, hooked into `LmdbCascadesConnectedJoinPlanner.plan(...)`, with unit tests using a synthetic cost model (9 tests green; 52 total across the feature).
+- [x] (2026-07-06 22:10Z) Test evidence captured (Surefire snippets in `Artifacts and Notes`), planner regression tests triaged against known-red baseline (1 failure = the documented pre-existing `LmdbCascadesOptimizerTest#budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner`; zero new), committed.
+- [ ] Future (Milestone E, out of scope for this change): opaque factors as hyperedges via `opaqueRequiredVars`, property-path endpoint rules, bushy `PlanTemplate` caching, parameterized path storage, interesting orders, `ThemeQueryPlanRunBenchmark` A/B comparison, default-on decision.
 
 ## Surprises & Discoveries
 
@@ -29,6 +30,8 @@ You can see it working by running the new unit tests (they run without any LMDB 
 - `Join` in RDF4J algebra is binary and evaluation handles arbitrary trees, but this repo's LMDB evaluation can execute the right side of a Join per left-row (bound join). The adapter therefore costs a bushy right side under an explicit hash/materialized-join model; execution-side operator choice remains RDF4J's. Flag stays default-off until benchmarked (Milestone E, future).
 - The working tree at the start of this work already contained staged deletions of finished execplans and the staged design doc `hypergraph-plan.md`; commits for this work must add only its own files (`git commit -- <paths>`), leaving the user's staged state untouched.
 - DPhyp emits each csg-cmp pair once with *one* connecting edge index even when several hyperedges cross the cut. The costing receiver therefore derives join cardinality from the predicate list (every predicate whose TES becomes newly satisfied), not from the reported edge, which also makes cycle predicates apply exactly once with no extra bookkeeping.
+- Conditional-probe join selectivities are direction-dependent when the underlying estimator is asymmetric (probing j with i bound need not match probing i with j bound). The adapter probes both directions and combines them with a geometric mean; with a symmetric estimator this reduces to the plain ratio.
+- Widening the `Step` record to package visibility requires widening its compact canonical constructor too — javac rejects a `private Step {` compact constructor on a package-visible record ("attempting to assign stronger access privileges").
 
 ## Decision Log
 
@@ -56,7 +59,9 @@ You can see it working by running the new unit tests (they run without any LMDB 
 
 ## Outcomes & Retrospective
 
-(To be written at milestone completion.)
+(2026-07-06, Milestones A–D complete.) Delivered the self-contained hypergraph optimizer package (`NodeSets`, `Hypergraph` + DOT, `SubgraphEnumerator`, `PlanHypergraph`, `JoinPlan`, `CostModel`, `CostingReceiver`, `HypergraphOptimizer`) and the flag-gated adapter `LmdbHypergraphJoinPlanner` with its hook in `LmdbCascadesConnectedJoinPlanner.plan(...)`. 52 new tests, all green. The DPhyp transcription matched the brute-force DPsub oracle on 200 random hypergraphs on its first run — the paper-faithful two-loop structure plus the `B(i)` forbidden-set conventions were transcribed correctly; the only bugs along the way were a test-code lambda capture, a record-constructor visibility mismatch, and one wrong test expectation about disconnected islands. The bushy-beats-left-deep property is demonstrated at both layers (synthetic core costs, and adapter with a symmetric synthetic estimator). Regression: the three planner-adjacent suites show exactly the one pre-existing known-red failure and nothing new; with the flag off the only code on the hot path is one `Boolean.getBoolean` check.
+
+Deviations from hypergraph-plan.md worth noting: predicates carry all cardinality (edges are pure connectivity), which turns exactly-once predicate application into a structural property instead of bitmap bookkeeping; row estimates are canonical per node set (stronger than MySQL, which tolerates per-path row drift); the Pareto frontier is intentionally degenerate (cost-only) until orderings/parameterized paths arrive. Outer joins/semijoins (conflict rules, TES ≠ SES), interesting orders, post-join operators and graph simplification remain future milestones — the core's hyperedge machinery they need is in place and tested.
 
 ## Context and Orientation
 
@@ -164,6 +169,21 @@ Surefire evidence, Milestones A–C (2026-07-06 21:49Z, `mvn -B -ntp -o -Dmaven.
 The only failure on the first compile was a test-code lambda capture (`iteration` not effectively final); the paper-faithful DPhyp transcription passed the 200-random-graph oracle parity test on its first execution.
 
 Seed/extension estimate conventions mirrored from `dpPlan` for the adapter: seeds use `estimateStep(factors, i, initial, 0.0d, false, List.of(), ...)`; extensions use `estimateStep(factors, j, boundVars, prefixRows, true, prefixFactors, ...)`.
+
+Surefire evidence, Milestone D (2026-07-06 22:04Z, same command shape with `LmdbHypergraphJoinPlannerTest` added):
+
+    Running org.eclipse.rdf4j.sail.lmdb.LmdbHypergraphJoinPlannerTest
+    Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.072 s
+    Results: Tests run: 52, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+
+One test expectation was corrected during Milestone D: the existing connected planner also returns empty for a disconnected island of plain statement patterns (no finite-anchor bridge), so `declinesDisconnectedIslands` asserts flag-on/flag-off parity instead of presence.
+
+Regression evidence (2026-07-06 22:10Z, flag off, `-Dtest='LmdbCascadesOptimizerTest,LmdbJoinPlanSupportTest,LmdbCascadesConnectedRuleAdmissibilityTest'`):
+
+    LmdbCascadesOptimizerTest:                Tests run: 53, Failures: 1 (budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner — pre-existing known-red on this branch, verified on baseline 2026-07-02 before this work)
+    LmdbCascadesConnectedRuleAdmissibilityTest: Tests run: 11, Failures: 0
+    LmdbJoinPlanSupportTest:                   Tests run: 7,  Failures: 0
+    Total: 71 run, 1 failure — identical to the pre-existing baseline; zero new failures.
 
 ## Interfaces and Dependencies
 

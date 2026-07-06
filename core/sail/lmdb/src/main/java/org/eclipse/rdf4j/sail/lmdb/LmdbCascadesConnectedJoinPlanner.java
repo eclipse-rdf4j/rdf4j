@@ -105,6 +105,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 			trace.add("reject factorCount=" + factors.size());
 			return Optional.empty();
 		}
+		if (LmdbHypergraphJoinPlanner.enabled()) {
+			Optional<Plan> dphypPlan = LmdbHypergraphJoinPlanner.tryPlan(factors, initialBoundVars, costModel,
+					fallbackStatistics, tier, trace);
+			if (dphypPlan.isPresent()) {
+				return dphypPlan;
+			}
+		}
 		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
 		PlanCacheKey cacheKey = scopedPlanCacheAvailable(scopedStatistics)
 				? new PlanCacheKey(factorFingerprints(factors, scopedStatistics), plannerNames(initialBoundVars),
@@ -513,7 +520,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return null;
 	}
 
-	private static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
+	static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,
 			boolean nested, List<TupleExpr> prefixFactors, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		return estimateStep(factors, factorIndex, boundVars, prefixRows, nested, prefixFactors, costModel,
@@ -1351,7 +1358,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private static final class Trace {
+	static final class Trace {
 		private final boolean enabled;
 		private final int limit;
 		private final StringBuilder priorityBuilder;
@@ -1370,7 +1377,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			this.builder = enabled ? new StringBuilder(Math.min(4096, limit)) : null;
 		}
 
-		private boolean enabled() {
+		boolean enabled() {
 			return enabled;
 		}
 
@@ -1779,12 +1786,12 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private record Step(int factorIndex, Set<String> boundVarsBefore, double workRows, double outputRows,
+	record Step(int factorIndex, Set<String> boundVarsBefore, double workRows, double outputRows,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics, double rowQErrorMax,
 			double workQErrorMax, double confidence, double evidenceCount, boolean disconnected)
 			implements Comparable<Step> {
 
-		private Step {
+		Step {
 			boundVarsBefore = boundVarsBefore == null || boundVarsBefore.isEmpty() ? Set.of()
 					: Set.copyOf(boundVarsBefore);
 			stringMetrics = stringMetrics == null || stringMetrics.isEmpty() ? Map.of() : Map.copyOf(stringMetrics);
