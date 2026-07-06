@@ -322,7 +322,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public enum Pair {
 		SP(Component.S, Component.P, Component.O, Component.C),
-		// SO(Component.S, Component.O, Component.P, Component.C),
 		SC(Component.S, Component.C, Component.P, Component.O),
 		PO(Component.P, Component.O, Component.S, Component.C),
 		PC(Component.P, Component.C, Component.S, Component.O),
@@ -508,6 +507,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* ────────────────────────────────────────────────────────────── */
 
 	private final SketchStatementSource statementSource;
+	private final SketchKeyProvider sketchKeyProvider;
 	private final int maxBucketCount;
 	private final int subjectBucketCount;
 	private final int predicateBucketCount;
@@ -1281,9 +1281,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private record StatementUpdateBatch(StatementUpdateQueue queue, StatementUpdateChunk[] chunks, int updateCount) {
 	}
 
-	private record IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, long thetaHs, long thetaHp,
-			long thetaHo, long thetaHc, long thetaSig, long spKey, long soKey, long scKey, long poKey, long pcKey,
-			long ocKey) {
+	private record IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, SketchTermKey predicateKey,
+			SketchTermKey contextKey, long thetaHs, long thetaHp, long thetaHo, long thetaHc, long thetaSig,
+			long spKey, long scKey, long poKey, long pcKey, long ocKey) {
 	}
 
 	private record TransformedStatementChunk(int index, IngestEvent[] events, int eventCount, int updateCount) {
@@ -1302,7 +1302,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private enum IngestPartition {
 		SINGLES,
 		SP,
-		SO,
 		SC,
 		PO,
 		PC,
@@ -1921,6 +1920,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		memoryMonitorEstimatedOperationBytes = Math.max(1L, memoryMonitorEstimatedOperationBytes);
 
 		this.statementSource = Objects.requireNonNull(statementSource, "statementSource");
+		SketchKeyProvider providedSketchKeyProvider = this.statementSource.sketchKeyProvider();
+		this.sketchKeyProvider = providedSketchKeyProvider == null ? SketchKeyProvider.defaultProvider()
+				: providedSketchKeyProvider;
 		this.maxBucketCount = maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets);
 		this.subjectBucketCount = sBuckets;
 		this.predicateBucketCount = pBuckets;
@@ -2574,7 +2576,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public record OmniBridgeProbeEstimate(double inputRows, double outputRows, double probeRows,
 			int inputWitnesses, int outputWitnesses, double samplingProbability, double confidence, String source,
-			boolean exactZero, String fallbackReason, String inputBindingName, String outputBindingName) {
+			boolean exactZero, String fallbackReason, String inputBindingName, String outputBindingName,
+			String predicateKeyKind) {
 
 	}
 
@@ -2903,9 +2906,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 							return stopRebuildUnderMemoryPressure(tgt, targetBuffer, targetSlot, seen, startMillis);
 						}
 					}
-					IngestEvent event = toIngestEvent(str(st.getSubject()), str(st.getPredicate()),
-							str(st.getObject()),
-							str(st.getContext()), false);
+					IngestEvent event = toIngestEvent(st, false);
 					if (event == null) {
 						continue;
 					}
@@ -3313,12 +3314,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private IngestEvent toIngestEvent(String s, String p, String o, String c, boolean isDelete) {
+	private IngestEvent toIngestEvent(Statement statement, boolean isDelete) {
 		try {
-			int si = hash(Component.S, s);
-			int pi = hash(Component.P, p);
-			int oi = hash(Component.O, o);
-			int ci = hash(Component.C, c);
+			String s = str(statement.getSubject());
+			String p = str(statement.getPredicate());
+			String o = str(statement.getObject());
+			String c = str(statement.getContext());
+			boolean omniRuntime = sketchStrategy == SketchStrategy.OMNI;
+			int si = omniRuntime ? 0 : hash(Component.S, s);
+			int pi = omniRuntime ? 0 : hash(Component.P, p);
+			int oi = omniRuntime ? 0 : hash(Component.O, o);
+			int ci = omniRuntime ? 0 : hash(Component.C, c);
 
 			long hs = valueFingerprint(s);
 			long hp = valueFingerprint(p);
@@ -3330,14 +3336,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			long thetaHo = thetaHash(ho);
 			long thetaHc = thetaHash(hc);
 			long thetaSig = thetaHash(sig);
-			long spKey = pairKey(si, pi);
-			long soKey = pairKey(si, oi);
-			long scKey = pairKey(si, ci);
-			long poKey = pairKey(pi, oi);
-			long pcKey = pairKey(pi, ci);
-			long ocKey = pairKey(oi, ci);
-			return new IngestEvent(isDelete, si, pi, oi, ci, thetaHs, thetaHp, thetaHo, thetaHc, thetaSig, spKey, soKey,
-					scKey, poKey, pcKey, ocKey);
+			long spKey = omniRuntime ? 0L : pairKey(si, pi);
+			long scKey = omniRuntime ? 0L : pairKey(si, ci);
+			long poKey = omniRuntime ? 0L : pairKey(pi, oi);
+			long pcKey = omniRuntime ? 0L : pairKey(pi, ci);
+			long ocKey = omniRuntime ? 0L : pairKey(oi, ci);
+			SketchTermKey predicateKey = omniRuntime ? sketchKeyProvider.predicateKey(statement.getPredicate()) : null;
+			SketchTermKey contextKey = omniRuntime ? sketchKeyProvider.contextKey(statement.getContext()) : null;
+			return new IngestEvent(isDelete, si, pi, oi, ci, predicateKey, contextKey, thetaHs, thetaHp, thetaHo,
+					thetaHc, thetaSig, spKey, scKey, poKey, pcKey, ocKey);
 		} catch (NullPointerException npe) {
 			return null;
 		}
@@ -3593,7 +3600,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				} else {
 					churnSampler.recordAdd(s, p, o, c, samplingInterval());
 				}
-				IngestEvent event = toIngestEvent(s, p, o, c, chunk.isDelete);
+				IngestEvent event = toIngestEvent(statement, chunk.isDelete);
 				remainingUpdates--;
 				if (event == null) {
 					continue;
@@ -3904,6 +3911,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			long predicateHash = event.thetaHp;
 			long objectHash = event.thetaHo;
 			long contextHash = event.thetaHc;
+			SketchTermKey predicateKey = event.predicateKey;
+			SketchTermKey contextKey = event.contextKey;
 			statements.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.S.ordinal()], subjectHash, statementIdentifier,
 					1.0d);
 			statements.updateStatic(OMNI_COMPONENT_ATTRIBUTES[Component.P.ordinal()], predicateHash,
@@ -3936,16 +3945,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 						OmniJoinEstimator.orderedTupleHash(predicateHash, objectHash, contextHash), subjectIdentifier,
 						1.0d);
 			}
-			edgeForward.updatePredicate(predicateHash, subjectHash, objectHash, 1.0d);
-			edgeReverse.updatePredicate(predicateHash, objectHash, subjectHash, 1.0d);
-			edgeForward.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, objectHash, 1.0d);
-			edgeReverse.updatePredicate(predicateHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, subjectHash, 1.0d);
+			edgeForward.updatePredicate(predicateKey, subjectHash, objectHash, 1.0d);
+			edgeReverse.updatePredicate(predicateKey, objectHash, subjectHash, 1.0d);
+			edgeForward.updatePredicate(predicateKey, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, objectHash, 1.0d);
+			edgeReverse.updatePredicate(predicateKey, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, subjectHash, 1.0d);
 			if (ingestContextSurfaces) {
-				edgeForward.updatePredicateContext(predicateHash, contextHash, subjectHash, objectHash, 1.0d);
-				edgeReverse.updatePredicateContext(predicateHash, contextHash, objectHash, subjectHash, 1.0d);
-				edgeForward.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+				edgeForward.updatePredicateContext(predicateKey, contextKey, subjectHash, objectHash, 1.0d);
+				edgeReverse.updatePredicateContext(predicateKey, contextKey, objectHash, subjectHash, 1.0d);
+				edgeForward.updatePredicateContext(predicateKey, contextKey, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
 						objectHash, 1.0d);
-				edgeReverse.updatePredicateContext(predicateHash, contextHash, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
+				edgeReverse.updatePredicateContext(predicateKey, contextKey, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH,
 						subjectHash, 1.0d);
 			}
 			for (Component fixed : COMPONENT_VALUES) {
@@ -4140,8 +4149,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			accumulateSingleUpdates(updates, event);
 			accumulatePair(updates, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
 					event.thetaHc);
-//			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-//					event.thetaHc);
 			if (contextPairSketchesEnabled) {
 				accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
 						event.thetaHo);
@@ -4165,10 +4172,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		case SINGLES:
 			accumulateSingleUpdates(updates, event);
 			break;
-//		case SO:
-//			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-//					event.thetaHc);
-//			break;
 		case SC:
 			if (!contextPairSketchesEnabled) {
 				break;
@@ -5463,11 +5466,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (!Double.isFinite(inputWitnessRows) || inputWitnessRows <= 0.0d) {
 			return Optional.empty();
 		}
-		String predicateValue = getValueOrNull(bridge.getPredicateVar());
-		if (predicateValue == null) {
+		SketchTermKey predicateKey = exactPredicateKey(bridge.getPredicateVar());
+		if (predicateKey == null) {
 			return Optional.empty();
 		}
-		long predicateHash = omniValueHash(predicateValue);
+		boolean contextBound = hasBoundValue(bridge.getContextVar());
+		SketchTermKey contextKey = contextBound ? exactContextKey(bridge.getContextVar()) : null;
+		if (contextBound && contextKey == null) {
+			return Optional.empty();
+		}
 		flushPendingIncremental();
 		State snap = current;
 		if (snap == null || snap.omniJoinEstimator == null || snap.omniJoinEstimatorHasDeletes) {
@@ -5479,15 +5486,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return Optional.empty();
 			}
 			OmniJoinEstimator.Relation relation = snap.omniJoinEstimator.relation(direction.relationName());
-			if (hasBoundValue(bridge.getContextVar())) {
-				outputWitness = snap.omniJoinEstimator.probeJoinPredicateContextRetainedAtMost(inputWitness, relation,
-						predicateHash, omniValueHash(getValueOrNull(bridge.getContextVar())),
-						OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
-			} else {
-				outputWitness = snap.omniJoinEstimator.probeJoinPredicateRetainedAtMost(inputWitness, relation,
-						predicateHash,
-						OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
-			}
+			PredicateSketchFamily predicateFamily = new PredicateSketchFamily(snap.omniJoinEstimator, predicateKey,
+					contextKey);
+			outputWitness = predicateFamily.follow(inputWitness, relation, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
 		}
 		if (outputWitness == null || (outputWitness.isEmpty()
 				&& outputWitness.fallbackReason() == OmniWitnessSet.FallbackReason.NONE)) {
@@ -5504,8 +5505,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		String fallbackReason = omniFallbackReason(inputWitness, outputWitness, outputWitness);
 		return Optional.of(new OmniBridgeProbeEstimate(normalizeRows(prefixRows), outputRows, probeRows,
 				inputWitness.retainedWitnessCount(), outputWitness.retainedWitnessCount(),
-				inputWitness.samplingProbability(), confidence, "omni-bridge-probe", false, fallbackReason,
-				direction.inputBindingName(), direction.outputBindingName()));
+				inputWitness.samplingProbability(), confidence, "per-predicate-omni", false, fallbackReason,
+				direction.inputBindingName(), direction.outputBindingName(), predicateKey.keyKindName()));
 	}
 
 	OmniJoinDiagnostic diagnoseOmniOrderedConnectedJoin(List<TupleExpr> orderedFactors, Set<String> boundVars) {
@@ -6417,11 +6418,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (inputWitness.retainedWitnessCount() > maxRetainedWitnesses) {
 			return null;
 		}
-		String predicateValue = getValueOrNull(bridge.getPredicateVar());
-		if (predicateValue == null) {
+		SketchTermKey predicateKey = exactPredicateKey(bridge.getPredicateVar());
+		if (predicateKey == null) {
 			return null;
 		}
-		long predicateHash = omniValueHash(predicateValue);
+		boolean contextBound = hasBoundValue(bridge.getContextVar());
+		SketchTermKey contextKey = contextBound ? exactContextKey(bridge.getContextVar()) : null;
+		if (contextBound && contextKey == null) {
+			return null;
+		}
 		flushPendingIncremental();
 		State snap = current;
 		if (snap == null || snap.omniJoinEstimator == null || snap.omniJoinEstimatorHasDeletes) {
@@ -6432,14 +6437,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return null;
 			}
 			OmniJoinEstimator.Relation relation = snap.omniJoinEstimator.relation(relationName);
-			if (hasBoundValue(bridge.getContextVar())) {
-				return snap.omniJoinEstimator.probeJoinPredicateContextRetainedAtMost(inputWitness, relation,
-						predicateHash,
-						omniValueHash(getValueOrNull(bridge.getContextVar())),
-						OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
-			}
-			return snap.omniJoinEstimator.probeJoinPredicateRetainedAtMost(inputWitness, relation, predicateHash,
-					OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
+			PredicateSketchFamily predicateFamily = new PredicateSketchFamily(snap.omniJoinEstimator, predicateKey,
+					contextKey);
+			return predicateFamily.follow(inputWitness, relation, maxRetainedWitnesses);
 		}
 	}
 
@@ -6452,19 +6452,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (inputWitness.retainedWitnessCount() > OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES) {
 			return null;
 		}
-		String predicateValue = getValueOrNull(bridge.getPredicateVar());
-		if (predicateValue == null) {
+		SketchTermKey predicateKey = exactPredicateKey(bridge.getPredicateVar());
+		if (predicateKey == null) {
 			return null;
 		}
-		long predicateHash = omniValueHash(predicateValue);
-		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
-		if (hasBoundValue(bridge.getContextVar())) {
-			return estimator.probeJoinPredicateContextRetainedAtMost(inputWitness, relation, predicateHash,
-					omniValueHash(getValueOrNull(bridge.getContextVar())),
-					OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
+		boolean contextBound = hasBoundValue(bridge.getContextVar());
+		SketchTermKey contextKey = contextBound ? exactContextKey(bridge.getContextVar()) : null;
+		if (contextBound && contextKey == null) {
+			return null;
 		}
-		return estimator.probeJoinPredicateRetainedAtMost(inputWitness, relation, predicateHash,
-				OmniJoinEstimator.OutputIdentifier.RECORD, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
+		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
+		PredicateSketchFamily predicateFamily = new PredicateSketchFamily(estimator, predicateKey, contextKey);
+		return predicateFamily.follow(inputWitness, relation, OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
 	}
 
 	private OmniWitnessSet probeOmniPredicateEdgeAny(OmniJoinEstimator estimator, OmniRelation relationName,
@@ -6478,20 +6477,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (estimator == null || relationName == null || pattern == null || !hasBoundValue(pattern.getPredicateVar())) {
 			return null;
 		}
-		String predicateValue = getValueOrNull(pattern.getPredicateVar());
-		if (predicateValue == null) {
+		SketchTermKey predicateKey = exactPredicateKey(pattern.getPredicateVar());
+		if (predicateKey == null) {
 			return null;
 		}
-		long predicateHash = omniValueHash(predicateValue);
-		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
-		OmniJoinEstimator.Predicate anyEdgeValue = OmniJoinEstimator.Predicate
-				.equalHash(OMNI_PREDICATE_EDGE_ANY_VALUE_HASH);
-		if (hasBoundValue(pattern.getContextVar())) {
-			return estimator.probePredicateContextRetainedAtMost(relation, predicateHash,
-					omniValueHash(getValueOrNull(pattern.getContextVar())), anyEdgeValue,
-					maxRetainedWitnesses);
+		boolean contextBound = hasBoundValue(pattern.getContextVar());
+		SketchTermKey contextKey = contextBound ? exactContextKey(pattern.getContextVar()) : null;
+		if (contextBound && contextKey == null) {
+			return null;
 		}
-		return estimator.probePredicateRetainedAtMost(relation, predicateHash, anyEdgeValue, maxRetainedWitnesses);
+		OmniJoinEstimator.Relation relation = estimator.relation(relationName);
+		PredicateSketchFamily predicateFamily = new PredicateSketchFamily(estimator, predicateKey, contextKey);
+		return predicateFamily.probeValues(relation, OMNI_PREDICATE_EDGE_ANY_VALUE_HASH, maxRetainedWitnesses);
 	}
 
 	private OmniWitnessSet intersectOmniWitnesses(OmniWitnessSet first, OmniWitnessSet second) {
@@ -12982,6 +12979,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		return var.getValue()instanceof IRI iri ? iri : null;
+	}
+
+	private SketchTermKey exactPredicateKey(Var var) {
+		IRI predicate = exactBoundIri(var);
+		return predicate == null ? null : sketchKeyProvider.predicateKey(predicate);
+	}
+
+	private SketchTermKey exactContextKey(Var var) {
+		if (var == null || !var.hasValue()) {
+			return null;
+		}
+		Value value = var.getValue();
+		if (value == null) {
+			return sketchKeyProvider.contextKey(null);
+		}
+		return value instanceof Resource context ? sketchKeyProvider.contextKey(context) : null;
 	}
 
 	private Value exactBoundValue(Var var) {

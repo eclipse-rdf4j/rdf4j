@@ -584,7 +584,7 @@ final class SketchJoinOrderPlanner {
 			if (source == null || source.isBlank()) {
 				continue;
 			}
-			if (source.startsWith("omni-")) {
+			if (source.contains("omni")) {
 				copySketchMetrics(summaryStringMetrics, summaryDoubleMetrics, step);
 				return;
 			}
@@ -600,6 +600,7 @@ final class SketchJoinOrderPlanner {
 	private static void copySketchMetrics(Map<String, String> summaryStringMetrics,
 			Map<String, Double> summaryDoubleMetrics, JoinOrderPlanner.PlanStep step) {
 		copyStringMetricIfPresent(summaryStringMetrics, step, "plannedSketchEstimateSource");
+		copyStringMetricIfPresent(summaryStringMetrics, step, "plannedSketchPredicateKeyKind");
 		copyStringMetricIfPresent(summaryStringMetrics, step, "plannedSketchStrategy");
 		Double confidence = step.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE);
 		if (confidence != null && Double.isFinite(confidence)) {
@@ -7223,7 +7224,7 @@ final class SketchJoinOrderPlanner {
 		}
 		String source = estimate.sketchEstimateSource();
 		stringMetrics.put("plannedSketchEstimateSource", source);
-		if (source.startsWith("omni-")) {
+		if (source.contains("omni")) {
 			stringMetrics.put("plannedSketchStrategy", "omni");
 		}
 		double confidence = estimate.sketchEstimateConfidence();

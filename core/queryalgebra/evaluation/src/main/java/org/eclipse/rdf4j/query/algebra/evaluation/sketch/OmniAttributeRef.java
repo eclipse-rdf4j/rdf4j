@@ -15,8 +15,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Objects;
 
-record OmniAttributeRef(byte kind, byte staticId, long first, long second) {
+record OmniAttributeRef(byte kind, byte staticId, SketchTermKey predicateKey, SketchTermKey contextKey) {
 
 	static final byte KIND_STATIC = 1;
 	static final byte KIND_PREDICATE = 2;
@@ -26,9 +27,18 @@ record OmniAttributeRef(byte kind, byte staticId, long first, long second) {
 
 	OmniAttributeRef {
 		switch (kind) {
-		case KIND_STATIC -> validateStaticId(staticId);
-		case KIND_PREDICATE, KIND_PREDICATE_CONTEXT -> {
-			// valid dynamic attribute
+		case KIND_STATIC -> {
+			validateStaticId(staticId);
+			predicateKey = null;
+			contextKey = null;
+		}
+		case KIND_PREDICATE -> {
+			predicateKey = Objects.requireNonNull(predicateKey, "predicateKey");
+			contextKey = null;
+		}
+		case KIND_PREDICATE_CONTEXT -> {
+			predicateKey = Objects.requireNonNull(predicateKey, "predicateKey");
+			contextKey = Objects.requireNonNull(contextKey, "contextKey");
 		}
 		default -> throw new IllegalArgumentException("Unsupported Omni attribute kind: " + kind);
 		}
@@ -62,25 +72,25 @@ record OmniAttributeRef(byte kind, byte staticId, long first, long second) {
 	}
 
 	static OmniAttributeRef staticAttribute(byte staticId) {
-		return new OmniAttributeRef(KIND_STATIC, staticId, 0L, 0L);
+		return new OmniAttributeRef(KIND_STATIC, staticId, null, null);
 	}
 
-	static OmniAttributeRef predicate(long predicateHash) {
-		return new OmniAttributeRef(KIND_PREDICATE, (byte) 0, predicateHash, 0L);
+	static OmniAttributeRef predicate(SketchTermKey predicateKey) {
+		return new OmniAttributeRef(KIND_PREDICATE, (byte) 0, predicateKey, null);
 	}
 
-	static OmniAttributeRef predicateContext(long predicateHash, long contextHash) {
-		return new OmniAttributeRef(KIND_PREDICATE_CONTEXT, (byte) 0, predicateHash, contextHash);
+	static OmniAttributeRef predicateContext(SketchTermKey predicateKey, SketchTermKey contextKey) {
+		return new OmniAttributeRef(KIND_PREDICATE_CONTEXT, (byte) 0, predicateKey, contextKey);
 	}
 
 	void writeTo(DataOutput out) throws IOException {
 		out.writeByte(kind);
 		switch (kind) {
 		case KIND_STATIC -> out.writeByte(staticId);
-		case KIND_PREDICATE -> out.writeLong(first);
+		case KIND_PREDICATE -> predicateKey.writeTo(out);
 		case KIND_PREDICATE_CONTEXT -> {
-			out.writeLong(first);
-			out.writeLong(second);
+			predicateKey.writeTo(out);
+			contextKey.writeTo(out);
 		}
 		default -> throw new IOException("Unsupported Omni attribute kind: " + kind);
 		}
@@ -90,8 +100,8 @@ record OmniAttributeRef(byte kind, byte staticId, long first, long second) {
 		byte kind = in.readByte();
 		return switch (kind) {
 		case KIND_STATIC -> staticAttribute(in.readByte());
-		case KIND_PREDICATE -> predicate(in.readLong());
-		case KIND_PREDICATE_CONTEXT -> predicateContext(in.readLong(), in.readLong());
+		case KIND_PREDICATE -> predicate(SketchTermKey.readFrom(in));
+		case KIND_PREDICATE_CONTEXT -> predicateContext(SketchTermKey.readFrom(in), SketchTermKey.readFrom(in));
 		default -> throw new IOException("Unsupported Omni attribute kind: " + kind);
 		};
 	}

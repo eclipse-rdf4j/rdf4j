@@ -62,8 +62,10 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchKeyProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchTermKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -79,6 +81,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import jdk.jfr.Category;
 import jdk.jfr.Enabled;
@@ -106,6 +109,8 @@ class LmdbSailStore implements SailStore {
 	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
 	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
 	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
+	private static final int LMDB_SKETCH_KEY_CACHE_INITIAL_CAPACITY = 128;
+	private static final int LMDB_SKETCH_KEY_CACHE_MAX_ENTRIES = 16_384;
 
 	private final TripleStore tripleStore;
 
@@ -412,6 +417,7 @@ class LmdbSailStore implements SailStore {
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
 
 		private final SketchStatementSource delegate = new SailStoreStatementSource(LmdbSailStore.this);
+		private final SketchKeyProvider sketchKeyProvider = new LmdbSketchKeyProvider();
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
@@ -448,6 +454,73 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public ValueFactory getValueFactory() {
 			return delegate.getValueFactory();
+		}
+
+		@Override
+		public SketchKeyProvider sketchKeyProvider() {
+			return sketchKeyProvider;
+		}
+	}
+
+	private final class LmdbSketchKeyProvider implements SketchKeyProvider {
+
+		private final ThreadLocal<LmdbSketchKeyCache> keyCache = ThreadLocal.withInitial(LmdbSketchKeyCache::new);
+
+		@Override
+		public SketchTermKey predicateKey(IRI predicate) {
+			return termKey(predicate);
+		}
+
+		@Override
+		public SketchTermKey contextKey(Resource context) {
+			return context == null ? SketchTermKey.defaultContext() : termKey(context);
+		}
+
+		private SketchTermKey termKey(Value value) {
+			long id = fastInternalId(value);
+			if (id == LmdbValue.UNKNOWN_ID) {
+				try {
+					id = valueStore.getId(value);
+				} catch (IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			}
+			if (id != LmdbValue.UNKNOWN_ID) {
+				long scope = valueStore.getRevision().getRevisionId();
+				return keyCache.get().lmdbValueId(id, scope);
+			}
+			return SketchTermKey.iriString(value.stringValue());
+		}
+
+		private long fastInternalId(Value value) {
+			if (value instanceof LmdbValue lmdbValue
+					&& Objects.equals(lmdbValue.getValueStoreRevision(), valueStore.getRevision())) {
+				return lmdbValue.getInternalID();
+			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+	}
+
+	private static final class LmdbSketchKeyCache {
+
+		private long scope = Long.MIN_VALUE;
+		private final Long2ObjectOpenHashMap<SketchTermKey> byId = new Long2ObjectOpenHashMap<>(
+				LMDB_SKETCH_KEY_CACHE_INITIAL_CAPACITY);
+
+		private SketchTermKey lmdbValueId(long id, long currentScope) {
+			if (scope != currentScope) {
+				scope = currentScope;
+				byId.clear();
+			}
+			SketchTermKey key = byId.get(id);
+			if (key == null) {
+				if (byId.size() >= LMDB_SKETCH_KEY_CACHE_MAX_ENTRIES) {
+					byId.clear();
+				}
+				key = SketchTermKey.lmdbValueId(id, currentScope);
+				byId.put(id, key);
+			}
+			return key;
 		}
 	}
 

@@ -46,7 +46,7 @@ public class OmniJoinEstimatorBenchmark {
 	private long singleValue;
 	private long multiValueA;
 	private long multiValueB;
-	private long predicateHash;
+	private SketchTermKey predicateKey;
 	private OmniWitnessSet joinInput;
 	private OmniWitnessSet intersectionLeft;
 	private OmniWitnessSet intersectionRight;
@@ -61,7 +61,7 @@ public class OmniJoinEstimatorBenchmark {
 		singleValue = OmniJoinEstimator.stableHash("single-value");
 		multiValueA = OmniJoinEstimator.stableHash("multi-value-a");
 		multiValueB = OmniJoinEstimator.stableHash("multi-value-b");
-		predicateHash = OmniJoinEstimator.stableHash("edge");
+		predicateKey = SketchTermKey.lmdbValueId(OmniJoinEstimator.stableHash("edge"), 0L);
 		for (int i = 0; i < 4096; i++) {
 			long witness = witnessHash(i);
 			statement.updateStatic(ATTR_P, singleValue, witness, 1.0d);
@@ -71,7 +71,7 @@ public class OmniJoinEstimatorBenchmark {
 		for (int i = 0; i < 512; i++) {
 			long joinValue = witnessHash(i);
 			for (int output = 0; output < 8; output++) {
-				edgeForward.updatePredicate(predicateHash, joinValue, witnessHash((i * 8) + output), 1.0d);
+				edgeForward.updatePredicate(predicateKey, joinValue, witnessHash((i * 8) + output), 1.0d);
 			}
 		}
 		OmniJoinEstimator.Relation subjectStar = exactSnapshotEstimator.relation(OmniRelation.SUBJECT_STAR);
@@ -123,7 +123,7 @@ public class OmniJoinEstimatorBenchmark {
 
 	@Benchmark
 	public double exactDirectedJoinProbe() {
-		return estimator.estimateRows(estimator.probeJoinPredicate(joinInput, edgeForward, predicateHash,
+		return estimator.estimateRows(estimator.probeJoinPredicate(joinInput, edgeForward, predicateKey,
 				OmniJoinEstimator.OutputIdentifier.RECORD));
 	}
 

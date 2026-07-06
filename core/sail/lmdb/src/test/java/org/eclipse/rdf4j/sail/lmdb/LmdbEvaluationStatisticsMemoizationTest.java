@@ -35,6 +35,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -100,7 +101,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisti
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchKeyProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchTermKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -2220,10 +2223,53 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertNotNull(estimate);
 		assertNotNull(estimate.countMinEvidence());
-		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
-		assertEquals("omni-bridge-probe", estimate.surfaceSource());
+		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertEquals("per-predicate-omni", estimate.surfaceSource());
+		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 96.0d,
 				() -> "Bridge probe should preserve prefix witness fanout, estimate=" + estimate);
+	}
+
+	@Test
+	void boundJoinProductReportsLmdbPredicateKeyKindWhenProviderUsesValueIds() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI rdfType = vf.createIRI("urn:test:rdf:type");
+		IRI encounterClass = vf.createIRI("urn:test:medical:Encounter");
+		IRI hasCondition = vf.createIRI("urn:test:medical:hasCondition");
+		InMemorySketchStatementSource source = new InMemorySketchStatementSource(new LmdbLikeSketchKeyProvider());
+		for (int encounterIndex = 0; encounterIndex < 48; encounterIndex++) {
+			Resource encounter = vf.createIRI("urn:test:medical:encounter:" + encounterIndex);
+			source.add(vf.createStatement(encounter, rdfType, encounterClass));
+			Resource condition = vf.createIRI("urn:test:medical:condition:" + encounterIndex);
+			source.add(vf.createStatement(encounter, hasCondition, condition));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withNominalEntries(4096)
+						.withSubjectBucketCount(4096)
+						.withPredicateBucketCount(64)
+						.withObjectBucketCount(4096)
+						.withContextBucketCount(16)
+						.withEstimateCacheSeconds(0)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		estimator.rebuild();
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
+				Var.of("type", rdfType), Var.of("class", encounterClass));
+		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
+				Var.of("hasCondition", hasCondition), Var.of("condition"));
+
+		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 48.0d, false);
+
+		assertNotNull(estimate);
+		assertNotNull(estimate.countMinEvidence());
+		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertEquals("lmdbValueId", estimate.sketchPredicateKeyKind());
 	}
 
 	@Test
@@ -2265,7 +2311,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertNotNull(estimate);
 		assertNotNull(estimate.countMinEvidence());
-		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
+		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 24.0d,
 				() -> "Finite anchor should walk back through the bridge, estimate=" + estimate);
 	}
@@ -2314,7 +2361,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertNotNull(estimate);
 		assertNotNull(estimate.countMinEvidence());
-		assertEquals("omni-bridge-probe", estimate.countMinEvidence().source());
+		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 32.0d,
 				() -> "Subject-star prefix witnesses should feed the bridge probe, estimate=" + estimate);
 	}
@@ -4815,9 +4863,23 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	private static final class InMemorySketchStatementSource implements SketchStatementSource {
 		private final List<Statement> statements = new ArrayList<>();
+		private final SketchKeyProvider sketchKeyProvider;
+
+		private InMemorySketchStatementSource() {
+			this(SketchKeyProvider.defaultProvider());
+		}
+
+		private InMemorySketchStatementSource(SketchKeyProvider sketchKeyProvider) {
+			this.sketchKeyProvider = sketchKeyProvider;
+		}
 
 		void add(Statement statement) {
 			statements.add(statement);
+		}
+
+		@Override
+		public SketchKeyProvider sketchKeyProvider() {
+			return sketchKeyProvider;
 		}
 
 		@Override
@@ -4837,6 +4899,33 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				matches.add(statement);
 			}
 			return new CloseableIteratorIteration<>(matches.iterator());
+		}
+	}
+
+	private static final class LmdbLikeSketchKeyProvider implements SketchKeyProvider {
+
+		private static final long TEST_SCOPE = 7L;
+		private final Map<Value, Long> ids = new HashMap<>();
+		private long nextId = 1L;
+
+		@Override
+		public SketchTermKey predicateKey(IRI predicate) {
+			return SketchTermKey.lmdbValueId(id(predicate), TEST_SCOPE);
+		}
+
+		@Override
+		public SketchTermKey contextKey(Resource context) {
+			return context == null ? SketchTermKey.defaultContext()
+					: SketchTermKey.lmdbValueId(id(context), TEST_SCOPE);
+		}
+
+		private synchronized long id(Value value) {
+			Long id = ids.get(value);
+			if (id == null) {
+				id = nextId++;
+				ids.put(value, id);
+			}
+			return id;
 		}
 	}
 

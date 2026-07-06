@@ -124,19 +124,47 @@ class OmniJoinEstimatorTest {
 	void cappedJoinProbeStopsBeforeOversizedOutputMaterializes() {
 		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
-		long predicate = OmniJoinEstimator.stableHash("knows");
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:predicate:knows");
 		long joinValue = OmniJoinEstimator.stableHash("person:source");
 		for (long id = 1; id <= 1_000; id++) {
-			relation.updatePredicate(predicate, joinValue, id, 1.0d);
+			relation.updatePredicate(predicateKey, joinValue, id, 1.0d);
 		}
 		OmniWitnessSet input = OmniWitnessSet.builder()
 				.put(joinValue, 1.0d)
 				.build();
 
-		OmniWitnessSet capped = estimator.probeJoinPredicateRetainedAtMost(input, relation, predicate,
+		OmniWitnessSet capped = estimator.probeJoinPredicateRetainedAtMost(input, relation, predicateKey,
 				OmniJoinEstimator.OutputIdentifier.RECORD, 32);
 
 		assertEquals(null, capped);
+	}
+
+	@Test
+	void exactPredicateKeysPreventHashCollisionStateSharing() {
+		OmniJoinEstimator estimator = newEstimator(64, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
+		SketchTermKey predicateA = SketchTermKey.iriString("urn:collision:FB");
+		SketchTermKey predicateB = SketchTermKey.iriString("urn:collision:Ea");
+		assertEquals(predicateA.hashCode(), predicateB.hashCode());
+		long sharedSubject = OmniJoinEstimator.stableHash("urn:subject:shared");
+		long objectA = OmniJoinEstimator.stableHash("urn:object:a");
+		long objectB = OmniJoinEstimator.stableHash("urn:object:b");
+
+		relation.updatePredicate(predicateA, sharedSubject, objectA, 1.0d);
+		relation.updatePredicate(predicateB, sharedSubject, objectB, 1.0d);
+		OmniWitnessSet input = OmniWitnessSet.builder()
+				.put(sharedSubject, 1.0d)
+				.build();
+
+		OmniWitnessSet outputA = estimator.probeJoinPredicate(input, relation, predicateA,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+		OmniWitnessSet outputB = estimator.probeJoinPredicate(input, relation, predicateB,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+
+		assertTrue(outputA.containsHash(objectA));
+		assertFalse(outputA.containsHash(objectB));
+		assertTrue(outputB.containsHash(objectB));
+		assertFalse(outputB.containsHash(objectA));
 	}
 
 	@Test
@@ -317,22 +345,22 @@ class OmniJoinEstimatorTest {
 	void predicateAndPredicateContextAttributesPersistSeparately() throws Exception {
 		OmniJoinEstimator writer = newEstimator(64, 4, 64);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.EDGE_FORWARD);
-		long predicateHash = OmniJoinEstimator.stableHash("urn:p");
-		long contextHash = OmniJoinEstimator.stableHash("urn:g");
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:p");
+		SketchTermKey contextKey = SketchTermKey.iriString("urn:g");
 		long subjectHash = OmniJoinEstimator.stableHash("urn:s");
 		long objectHash = OmniJoinEstimator.stableHash("urn:o");
 		long contextualObjectHash = OmniJoinEstimator.stableHash("urn:o:contextual");
 
-		relation.updatePredicate(predicateHash, subjectHash, objectHash, 1.0d);
-		relation.updatePredicateContext(predicateHash, contextHash, subjectHash, contextualObjectHash, 1.0d);
+		relation.updatePredicate(predicateKey, subjectHash, objectHash, 1.0d);
+		relation.updatePredicateContext(predicateKey, contextKey, subjectHash, contextualObjectHash, 1.0d);
 
 		OmniJoinEstimator reader = newEstimator(64, 4, 64);
 		reader.loadFromByteArray(writer.toByteArray());
 		OmniJoinEstimator.Relation loadedRelation = reader.relation(OmniRelation.EDGE_FORWARD);
 
-		OmniWitnessSet predicateOnly = reader.probePredicate(loadedRelation, predicateHash,
+		OmniWitnessSet predicateOnly = reader.probePredicate(loadedRelation, predicateKey,
 				OmniJoinEstimator.Predicate.equalHash(subjectHash));
-		OmniWitnessSet predicateAndContext = reader.probePredicateContext(loadedRelation, predicateHash, contextHash,
+		OmniWitnessSet predicateAndContext = reader.probePredicateContext(loadedRelation, predicateKey, contextKey,
 				OmniJoinEstimator.Predicate.equalHash(subjectHash));
 
 		assertTrue(predicateOnly.containsHash(objectHash));

@@ -166,6 +166,7 @@ class LmdbEvaluationStatistics
 	private static final double COUNT_MIN_MAX_CALIBRATION_FACTOR = 1.0d;
 	private static final String PLANNED_SKETCH_STRATEGY = "plannedSketchStrategy";
 	private static final String PLANNED_SKETCH_ESTIMATE_SOURCE = "plannedSketchEstimateSource";
+	private static final String PLANNED_SKETCH_PREDICATE_KEY_KIND = "plannedSketchPredicateKeyKind";
 	private static final String PLANNED_SKETCH_UPPER_BOUND_ROWS = "plannedSketchUpperBoundRows";
 	private static final String PLANNED_SKETCH_CALIBRATED_ROWS = "plannedSketchCalibratedRows";
 	private static final String PLANNED_SKETCH_CALIBRATION_FACTOR = "plannedSketchCalibrationFactor";
@@ -636,7 +637,7 @@ class LmdbEvaluationStatistics
 		}
 		JoinOrderPlan joinOrderPlan = plan.get();
 		String source = joinOrderPlan.getSummaryStringMetrics().get(PLANNED_SKETCH_ESTIMATE_SOURCE);
-		if (source == null || !source.startsWith("omni-")) {
+		if (source == null || !source.contains("omni")) {
 			return null;
 		}
 		double rows = joinOrderPlan.getEstimatedFinalRows();
@@ -786,7 +787,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static boolean isOmniJoinEvidence(JoinFrequencyEstimate estimate) {
-		return estimate != null && estimate.source() != null && estimate.source().startsWith("omni-");
+		return estimate != null && estimate.source() != null && estimate.source().contains("omni");
 	}
 
 	@Override
@@ -2626,7 +2627,7 @@ class LmdbEvaluationStatistics
 	private boolean hasProtectedEstimateSource(String source) {
 		return "lmdb-finite-binding-lookup".equals(source)
 				|| "lmdb-finite-derived-surface".equals(source)
-				|| (source != null && source.startsWith("omni-"));
+				|| (source != null && source.contains("omni"));
 	}
 
 	private Map<String, Double> parentDoubleMetrics(FactorCostEstimate childEstimate) {
@@ -5204,6 +5205,9 @@ class LmdbEvaluationStatistics
 			}
 		}
 		stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, countMinEvidence.source());
+		if (productEstimate.sketchPredicateKeyKind() != null && !productEstimate.sketchPredicateKeyKind().isBlank()) {
+			stringMetrics.put(PLANNED_SKETCH_PREDICATE_KEY_KIND, productEstimate.sketchPredicateKeyKind());
+		}
 		if (trustedCountMinSurface(countMinEvidence) && !productEstimate.exactRows()) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, countMinEvidence.source());
 		}
@@ -7965,7 +7969,8 @@ class LmdbEvaluationStatistics
 		if (bestEstimate != null && rightIntroducesNoNewBindings && bestEstimate.productRows() > prefixRows) {
 			bestEstimate = new BoundJoinProductEstimate(prefixRows, bestEstimate.prefixRows(),
 					bestEstimate.prefixSurfaceRows(), bestEstimate.prefixRightSurfaceRows(),
-					bestEstimate.joinVarName(), bestEstimate.exactRows(), bestEstimate.countMinEvidence());
+					bestEstimate.joinVarName(), bestEstimate.exactRows(), bestEstimate.countMinEvidence(),
+					bestEstimate.surfaceSource(), bestEstimate.sketchPredicateKeyKind());
 		}
 		return bestEstimate;
 	}
@@ -7991,7 +7996,7 @@ class LmdbEvaluationStatistics
 		traceBoundJoinProductCandidate(rightFactor, probe.source(), probe.inputBindingName(), prefixRows,
 				probe.inputRows(), probe.outputRows());
 		return new BoundJoinProductEstimate(probe.outputRows(), prefixRows, probe.inputRows(), probe.outputRows(),
-				probe.inputBindingName(), probe.exactZero(), evidence, probe.source());
+				probe.inputBindingName(), probe.exactZero(), evidence, probe.source(), probe.predicateKeyKind());
 	}
 
 	private boolean shouldForceExactBoundJoinProductSurface(double prefixRows) {
@@ -10784,7 +10789,7 @@ class LmdbEvaluationStatistics
 
 	record BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
 			double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
-			JoinFrequencyEstimate countMinEvidence, String surfaceSource) {
+			JoinFrequencyEstimate countMinEvidence, String surfaceSource, String sketchPredicateKeyKind) {
 
 		BoundJoinProductEstimate {
 			if (surfaceSource == null || surfaceSource.isBlank()) {
@@ -10794,9 +10799,16 @@ class LmdbEvaluationStatistics
 
 		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
 				double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
+				JoinFrequencyEstimate countMinEvidence, String surfaceSource) {
+			this(productRows, prefixRows, prefixSurfaceRows, prefixRightSurfaceRows, joinVarName, exactRows,
+					countMinEvidence, surfaceSource, null);
+		}
+
+		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
+				double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
 				JoinFrequencyEstimate countMinEvidence) {
 			this(productRows, prefixRows, prefixSurfaceRows, prefixRightSurfaceRows, joinVarName, exactRows,
-					countMinEvidence, exactRows ? "exact-full-prefix" : "modeled-surface");
+					countMinEvidence, exactRows ? "exact-full-prefix" : "modeled-surface", null);
 		}
 
 		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,

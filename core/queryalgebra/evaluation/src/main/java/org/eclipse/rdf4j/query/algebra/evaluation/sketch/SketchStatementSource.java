@@ -33,4 +33,8 @@ public interface SketchStatementSource {
 	default ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
+
+	default SketchKeyProvider sketchKeyProvider() {
+		return SketchKeyProvider.defaultProvider();
+	}
 }

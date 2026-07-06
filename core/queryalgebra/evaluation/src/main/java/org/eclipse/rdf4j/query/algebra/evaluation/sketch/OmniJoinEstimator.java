@@ -38,6 +38,8 @@ import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 
 /** Paper-style Omni join estimator over sampled weighted witnesses. */
@@ -46,7 +48,7 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 3;
+	private static final int SERIAL_VERSION = 4;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	private static final int PROBE_CACHE_SIZE = 1024;
 	private static final int MAPPED_VALUE_RECORD_CACHE_SIZE = 4096;
@@ -258,25 +260,26 @@ final class OmniJoinEstimator {
 		return probeIndex(index, predicate, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
-	OmniWitnessSet probePredicate(Relation relation, long predicateHash, Predicate predicate) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+	OmniWitnessSet probePredicate(Relation relation, SketchTermKey predicateKey, Predicate predicate) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateKey);
 		return probeIndex(index, predicate, -1);
 	}
 
-	OmniWitnessSet probePredicateRetainedAtMost(Relation relation, long predicateHash, Predicate predicate,
+	OmniWitnessSet probePredicateRetainedAtMost(Relation relation, SketchTermKey predicateKey, Predicate predicate,
 			int maxRetainedWitnesses) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateKey);
 		return probeIndex(index, predicate, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
-	OmniWitnessSet probePredicateContext(Relation relation, long predicateHash, long contextHash, Predicate predicate) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+	OmniWitnessSet probePredicateContext(Relation relation, SketchTermKey predicateKey, SketchTermKey contextKey,
+			Predicate predicate) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateKey, contextKey);
 		return probeIndex(index, predicate, -1);
 	}
 
-	OmniWitnessSet probePredicateContextRetainedAtMost(Relation relation, long predicateHash, long contextHash,
-			Predicate predicate, int maxRetainedWitnesses) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+	OmniWitnessSet probePredicateContextRetainedAtMost(Relation relation, SketchTermKey predicateKey,
+			SketchTermKey contextKey, Predicate predicate, int maxRetainedWitnesses) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateKey, contextKey);
 		return probeIndex(index, predicate, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
@@ -342,27 +345,28 @@ final class OmniJoinEstimator {
 		return probeJoin(input, index, outputIdentifier, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
-	OmniWitnessSet probeJoinPredicate(OmniWitnessSet input, Relation relation, long predicateHash,
+	OmniWitnessSet probeJoinPredicate(OmniWitnessSet input, Relation relation, SketchTermKey predicateKey,
 			OutputIdentifier outputIdentifier) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateKey);
 		return probeJoin(input, index, outputIdentifier, -1);
 	}
 
-	OmniWitnessSet probeJoinPredicateRetainedAtMost(OmniWitnessSet input, Relation relation, long predicateHash,
+	OmniWitnessSet probeJoinPredicateRetainedAtMost(OmniWitnessSet input, Relation relation, SketchTermKey predicateKey,
 			OutputIdentifier outputIdentifier, int maxRetainedWitnesses) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateHash);
+		AttributeIndex index = relation == null ? null : relation.indexPredicate(predicateKey);
 		return probeJoin(input, index, outputIdentifier, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
-	OmniWitnessSet probeJoinPredicateContext(OmniWitnessSet input, Relation relation, long predicateHash,
-			long contextHash, OutputIdentifier outputIdentifier) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+	OmniWitnessSet probeJoinPredicateContext(OmniWitnessSet input, Relation relation, SketchTermKey predicateKey,
+			SketchTermKey contextKey, OutputIdentifier outputIdentifier) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateKey, contextKey);
 		return probeJoin(input, index, outputIdentifier, -1);
 	}
 
-	OmniWitnessSet probeJoinPredicateContextRetainedAtMost(OmniWitnessSet input, Relation relation, long predicateHash,
-			long contextHash, OutputIdentifier outputIdentifier, int maxRetainedWitnesses) {
-		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateHash, contextHash);
+	OmniWitnessSet probeJoinPredicateContextRetainedAtMost(OmniWitnessSet input, Relation relation,
+			SketchTermKey predicateKey, SketchTermKey contextKey, OutputIdentifier outputIdentifier,
+			int maxRetainedWitnesses) {
+		AttributeIndex index = relation == null ? null : relation.indexPredicateContext(predicateKey, contextKey);
 		return probeJoin(input, index, outputIdentifier, requireRetainedLimit(maxRetainedWitnesses));
 	}
 
@@ -1154,8 +1158,8 @@ final class OmniJoinEstimator {
 		private final int nominalEntries;
 		private final long seed;
 		private final AttributeIndex[] staticAttributes = new AttributeIndex[OmniAttributeRef.STATIC_COUNT];
-		private final Long2ObjectOpenHashMap<AttributeIndex> predicateAttributes = new Long2ObjectOpenHashMap<>();
-		private final Long2ObjectOpenHashMap<Long2ObjectOpenHashMap<AttributeIndex>> predicateContextAttributes = new Long2ObjectOpenHashMap<>();
+		private final Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex> predicateAttributes = new Object2ObjectOpenHashMap<>();
+		private final Object2ObjectOpenHashMap<SketchTermKey, Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex>> predicateContextAttributes = new Object2ObjectOpenHashMap<>();
 
 		private Relation(OmniRelation name, int width, int rows, int nominalEntries, long seed) {
 			this.name = name;
@@ -1184,20 +1188,21 @@ final class OmniJoinEstimator {
 			return index == null ? 0.0d : index.totalWeight(valueHash);
 		}
 
-		void updatePredicate(long predicateHash, long valueHash, long identifierHash,
+		void updatePredicate(SketchTermKey predicateKey, long valueHash, long identifierHash,
 				double estimatedMultiplicity) {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			attributePredicate(predicateHash).updateHash(valueHash, identifierHash, estimatedMultiplicity);
+			attributePredicate(predicateKey).updateHash(valueHash, identifierHash, estimatedMultiplicity);
 		}
 
-		void updatePredicateContext(long predicateHash, long contextHash, long valueHash, long identifierHash,
+		void updatePredicateContext(SketchTermKey predicateKey, SketchTermKey contextKey, long valueHash,
+				long identifierHash,
 				double estimatedMultiplicity) {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			attributePredicateContext(predicateHash, contextHash).updateHash(valueHash, identifierHash,
+			attributePredicateContext(predicateKey, contextKey).updateHash(valueHash, identifierHash,
 					estimatedMultiplicity);
 		}
 
@@ -1205,21 +1210,23 @@ final class OmniJoinEstimator {
 			return staticAttributes[staticOffset(attributeId)];
 		}
 
-		AttributeIndex indexPredicate(long predicateHash) {
-			return predicateAttributes.get(predicateHash);
+		AttributeIndex indexPredicate(SketchTermKey predicateKey) {
+			return predicateKey == null ? null : predicateAttributes.get(predicateKey);
 		}
 
-		AttributeIndex indexPredicateContext(long predicateHash, long contextHash) {
-			Long2ObjectOpenHashMap<AttributeIndex> byContext = predicateContextAttributes.get(predicateHash);
-			return byContext == null ? null : byContext.get(contextHash);
+		AttributeIndex indexPredicateContext(SketchTermKey predicateKey, SketchTermKey contextKey) {
+			Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex> byContext = predicateKey == null ? null
+					: predicateContextAttributes.get(predicateKey);
+			return byContext == null || contextKey == null ? null : byContext.get(contextKey);
 		}
 
 		private AttributeIndex attribute(OmniAttributeRef ref) {
 			Objects.requireNonNull(ref, "ref");
 			return switch (ref.kind()) {
 			case OmniAttributeRef.KIND_STATIC -> attributeStatic(ref.staticId());
-			case OmniAttributeRef.KIND_PREDICATE -> attributePredicate(ref.first());
-			case OmniAttributeRef.KIND_PREDICATE_CONTEXT -> attributePredicateContext(ref.first(), ref.second());
+			case OmniAttributeRef.KIND_PREDICATE -> attributePredicate(ref.predicateKey());
+			case OmniAttributeRef.KIND_PREDICATE_CONTEXT -> attributePredicateContext(ref.predicateKey(),
+					ref.contextKey());
 			default -> throw new IllegalArgumentException("Unsupported Omni attribute kind: " + ref.kind());
 			};
 		}
@@ -1236,29 +1243,33 @@ final class OmniJoinEstimator {
 			return index;
 		}
 
-		private AttributeIndex attributePredicate(long predicateHash) {
-			AttributeIndex index = predicateAttributes.get(predicateHash);
+		private AttributeIndex attributePredicate(SketchTermKey predicateKey) {
+			Objects.requireNonNull(predicateKey, "predicateKey");
+			AttributeIndex index = predicateAttributes.get(predicateKey);
 			if (index == null) {
-				OmniAttributeRef attribute = OmniAttributeRef.predicate(predicateHash);
+				OmniAttributeRef attribute = OmniAttributeRef.predicate(predicateKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
 						compactLargePostings(attribute));
-				predicateAttributes.put(predicateHash, index);
+				predicateAttributes.put(predicateKey, index);
 			}
 			return index;
 		}
 
-		private AttributeIndex attributePredicateContext(long predicateHash, long contextHash) {
-			Long2ObjectOpenHashMap<AttributeIndex> byContext = predicateContextAttributes.get(predicateHash);
+		private AttributeIndex attributePredicateContext(SketchTermKey predicateKey, SketchTermKey contextKey) {
+			Objects.requireNonNull(predicateKey, "predicateKey");
+			Objects.requireNonNull(contextKey, "contextKey");
+			Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex> byContext = predicateContextAttributes
+					.get(predicateKey);
 			if (byContext == null) {
-				byContext = new Long2ObjectOpenHashMap<>();
-				predicateContextAttributes.put(predicateHash, byContext);
+				byContext = new Object2ObjectOpenHashMap<>();
+				predicateContextAttributes.put(predicateKey, byContext);
 			}
-			AttributeIndex index = byContext.get(contextHash);
+			AttributeIndex index = byContext.get(contextKey);
 			if (index == null) {
-				OmniAttributeRef attribute = OmniAttributeRef.predicateContext(predicateHash, contextHash);
+				OmniAttributeRef attribute = OmniAttributeRef.predicateContext(predicateKey, contextKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
 						compactLargePostings(attribute));
-				byContext.put(contextHash, index);
+				byContext.put(contextKey, index);
 			}
 			return index;
 		}
@@ -1311,16 +1322,17 @@ final class OmniJoinEstimator {
 					entries.add(new AttributeEntry(OmniAttributeRef.staticAttribute((byte) i), index));
 				}
 			}
-			for (Long2ObjectMap.Entry<AttributeIndex> entry : predicateAttributes.long2ObjectEntrySet()) {
-				entries.add(new AttributeEntry(OmniAttributeRef.predicate(entry.getLongKey()), entry.getValue()));
+			for (Object2ObjectMap.Entry<SketchTermKey, AttributeIndex> entry : predicateAttributes
+					.object2ObjectEntrySet()) {
+				entries.add(new AttributeEntry(OmniAttributeRef.predicate(entry.getKey()), entry.getValue()));
 			}
-			for (Long2ObjectMap.Entry<Long2ObjectOpenHashMap<AttributeIndex>> predicateEntry : predicateContextAttributes
-					.long2ObjectEntrySet()) {
-				for (Long2ObjectMap.Entry<AttributeIndex> contextEntry : predicateEntry.getValue()
-						.long2ObjectEntrySet()) {
+			for (Object2ObjectMap.Entry<SketchTermKey, Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex>> predicateEntry : predicateContextAttributes
+					.object2ObjectEntrySet()) {
+				for (Object2ObjectMap.Entry<SketchTermKey, AttributeIndex> contextEntry : predicateEntry.getValue()
+						.object2ObjectEntrySet()) {
 					entries.add(new AttributeEntry(
-							OmniAttributeRef.predicateContext(predicateEntry.getLongKey(),
-									contextEntry.getLongKey()),
+							OmniAttributeRef.predicateContext(predicateEntry.getKey(),
+									contextEntry.getKey()),
 							contextEntry.getValue()));
 				}
 			}

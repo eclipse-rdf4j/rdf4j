@@ -107,20 +107,20 @@ class OmniJoinEstimatorSortedWitnessTest {
 	void exactDirectedJoinMergesSortedOutputPostings() {
 		OmniJoinEstimator estimator = newEstimator();
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
-		long predicate = OmniJoinEstimator.stableHash("knows");
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:predicate:knows");
 		long sourceA = 3L;
 		long sourceB = 11L;
 		long sharedOutput = 5L;
 		long lastOutput = Long.MIN_VALUE;
-		relation.updatePredicate(predicate, sourceA, lastOutput, 7.0d);
-		relation.updatePredicate(predicate, sourceA, sharedOutput, 2.0d);
-		relation.updatePredicate(predicate, sourceB, sharedOutput, 3.0d);
+		relation.updatePredicate(predicateKey, sourceA, lastOutput, 7.0d);
+		relation.updatePredicate(predicateKey, sourceA, sharedOutput, 2.0d);
+		relation.updatePredicate(predicateKey, sourceB, sharedOutput, 3.0d);
 
 		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(new long[] { sourceA, sourceB },
 				new double[] { 2.0d, 3.0d }, 2, 1.0d, 1.0d,
 				OmniWitnessSet.FallbackReason.NONE, 1.0d);
 
-		OmniWitnessSet output = estimator.probeJoinPredicate(input, relation, predicate,
+		OmniWitnessSet output = estimator.probeJoinPredicate(input, relation, predicateKey,
 				OmniJoinEstimator.OutputIdentifier.RECORD);
 
 		assertSortedUnsigned(output);
@@ -136,7 +136,7 @@ class OmniJoinEstimatorSortedWitnessTest {
 	void exactDirectedJoinMergesManyShortSortedOutputPostings() {
 		OmniJoinEstimator estimator = newEstimator();
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
-		long predicate = OmniJoinEstimator.stableHash("knows");
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:predicate:knows");
 		long sharedOutput = 7L;
 		long[] inputHashes = new long[40];
 		double[] inputWeights = new double[40];
@@ -147,14 +147,14 @@ class OmniJoinEstimatorSortedWitnessTest {
 			inputHashes[i] = source;
 			inputWeights[i] = inputWeight;
 			sharedWeight += inputWeight;
-			relation.updatePredicate(predicate, source, sharedOutput, 1.0d);
-			relation.updatePredicate(predicate, source, 100L + i, 1.0d);
+			relation.updatePredicate(predicateKey, source, sharedOutput, 1.0d);
+			relation.updatePredicate(predicateKey, source, 100L + i, 1.0d);
 		}
 
 		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(inputHashes, inputWeights, inputHashes.length,
 				1.0d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 1.0d);
 
-		OmniWitnessSet output = estimator.probeJoinPredicate(input, relation, predicate,
+		OmniWitnessSet output = estimator.probeJoinPredicate(input, relation, predicateKey,
 				OmniJoinEstimator.OutputIdentifier.RECORD);
 
 		assertSortedUnsigned(output);

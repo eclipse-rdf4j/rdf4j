@@ -124,12 +124,11 @@ class OmniWitnessPersistenceStoreTest {
 	void mappedSnapshotKeepsExactWeightsBelowCompactionThreshold(@TempDir Path tempDir) throws Exception {
 		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 4, 64, SEED);
 		OmniJoinEstimator.Relation events = estimator.relation(OmniRelation.EDGE_FORWARD);
-		long predicate = OmniJoinEstimator.stableHash("urn:p");
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:p");
 		long subject = OmniJoinEstimator.stableHash("urn:s");
 		int exactWitnesses = 96;
 		for (int i = 0; i < exactWitnesses; i++) {
-			events.updatePredicate(predicate, subject, OmniJoinEstimator.stableHash("event:" + i),
-					1.0d);
+			events.updatePredicate(predicateKey, subject, OmniJoinEstimator.stableHash("event:" + i), 1.0d);
 		}
 
 		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
