@@ -1,0 +1,165 @@
+/*****************************************************************************
+
+Copyright (c) 1996, 2026, Oracle and/or its affiliates.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+*****************************************************************************/
+
+/** @file include/row0upd.ic
+ Update of a row
+
+ Created 12/27/1996 Heikki Tuuri
+ *******************************************************/
+
+#include "mtr0log.h"
+#ifndef UNIV_HOTBACKUP
+#include "lock0lock.h"
+#include "row0row.h"
+#include "trx0trx.h"
+#include "trx0undo.h"
+#endif /* !UNIV_HOTBACKUP */
+#include "page0zip.h"
+
+inline upd_t *upd_create(ulint n, mem_heap_t *heap) {
+  upd_t *update;
+
+  update = static_cast<upd_t *>(
+      mem_heap_zalloc(heap, sizeof(upd_t) + sizeof(upd_field_t) * n));
+
+  update->n_capacity = n;
+  update->n_fields = n;
+  update->fields = reinterpret_cast<upd_field_t *>(&update[1]);
+  update->heap = heap;
+  update->per_stmt_heap = nullptr;
+
+  for (ulint i = 0; i < n; ++i) {
+    upd_field_t *uf = &update->fields[i];
+    uf->heap = heap;
+  }
+
+  return (update);
+}
+
+inline ulint upd_get_n_fields(const upd_t *update) {
+  ut_ad(update);
+
+  return update->n_fields;
+}
+
+class upd_get_nth_field_t_impl {
+  template <typename FieldType>
+  static FieldType *get(const upd_t *update, ulint n) {
+    ut_ad(update);
+    ut_ad(n < update->n_fields);
+    return update->fields + n;
+  }
+  friend upd_field_t *upd_get_nth_field(upd_t *update, ulint n) {
+    return get<upd_field_t>(update, n);
+  }
+  friend const upd_field_t *upd_get_nth_field(const upd_t *update, ulint n) {
+    return get<const upd_field_t>(update, n);
+  }
+};
+
+inline void upd_field_set_field_no(upd_field_t *upd_field, ulint field_no,
+                                   const dict_index_t *index) {
+  upd_field->field_no = field_no;
+  upd_field->orig_len = 0;
+
+  if (field_no >= dict_index_get_n_fields(index)) {
+    ib::error(ER_IB_MSG_628)
+        << " trying to access field " << field_no << " in " << index->name
+        << " of table " << index->table->name << " which contains only "
+        << index->n_fields << " fields";
+    ut_d(ut_error);
+  }
+}
+
+inline void upd_field_set_v_field_no(upd_field_t *upd_field, ulint field_no,
+                                     const dict_index_t *index) {
+  upd_field->field_no = field_no;
+  upd_field->orig_len = 0;
+
+  if (field_no >= dict_table_get_n_v_cols(index->table)) {
+    ib::error(ER_IB_MSG_629) << " trying to access virtual field " << field_no
+                             << " in " << index->name << " of table "
+                             << index->table->name << " which contains only "
+                             << index->table->n_v_cols << " virutal columns";
+    ut_d(ut_error);
+  }
+
+  dict_table_get_nth_v_col(index->table, field_no)
+      ->m_col.copy_type(dfield_get_type(&upd_field->new_val));
+}
+
+inline const upd_field_t *upd_get_field_by_field_no(const upd_t *update,
+                                                    ulint no, bool is_virtual) {
+  ulint i;
+  for (i = 0; i < upd_get_n_fields(update); i++) {
+    const upd_field_t *uf = upd_get_nth_field(update, i);
+
+    /* matches only if the field matches that of is_virtual */
+    if ((!is_virtual) != (!uf->is_virtual())) {
+      continue;
+    }
+
+    if (uf->field_no == no) {
+      return uf;
+    }
+  }
+
+  return nullptr;
+}
+
+#ifndef UNIV_HOTBACKUP
+
+inline void row_upd_rec_sys_fields(rec_t *rec, page_zip_des_t *page_zip,
+                                   const dict_index_t *index,
+                                   const ulint *offsets, const trx_t *trx,
+                                   roll_ptr_t roll_ptr) {
+  ut_ad(index->is_clustered());
+  ut_ad(rec_offs_validate(rec, index, offsets));
+
+  if (page_zip) {
+    ulint pos = index->get_sys_col_pos(DATA_TRX_ID);
+    page_zip_write_trx_id_and_roll_ptr(page_zip, rec, offsets, pos, trx->id,
+                                       roll_ptr);
+  } else {
+    ulint offset = index->trx_id_offset;
+
+    if (!offset) {
+      offset = row_get_trx_id_offset(index, offsets);
+    }
+
+    /* During IMPORT the trx id in the record can be in the
+    future, if the .ibd file is being imported from another
+    instance. During IMPORT roll_ptr will be 0. */
+    ut_ad(roll_ptr == 0 ||
+          lock_check_trx_id_sanity(trx_read_trx_id(rec + offset), rec, index,
+                                   offsets));
+
+    trx_write_trx_id(rec + offset, trx->id);
+    trx_write_roll_ptr(rec + offset + DATA_TRX_ID_LEN, roll_ptr);
+  }
+}
+#endif /* !UNIV_HOTBACKUP */

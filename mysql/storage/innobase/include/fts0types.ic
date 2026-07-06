@@ -1,0 +1,206 @@
+/*****************************************************************************
+
+Copyright (c) 2007, 2026, Oracle and/or its affiliates.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+*****************************************************************************/
+
+/** @file include/fts0types.ic
+ Full text search types.
+
+ Created 2007-03-27 Sunny Bains
+ *******************************************************/
+
+#ifndef INNOBASE_FTS0TYPES_IC
+#define INNOBASE_FTS0TYPES_IC
+
+#include "ha_prototypes.h"
+#include "rem0cmp.h"
+
+/** Duplicate a string. */
+inline void fts_string_dup(fts_string_t *dst,       /*!< in: dup to here */
+                           const fts_string_t *src, /*!< in: src string */
+                           mem_heap_t *heap)        /*!< in: heap to use */
+{
+  dst->f_str = (byte *)mem_heap_alloc(heap, src->f_len + 1);
+  memcpy(dst->f_str, src->f_str, src->f_len);
+
+  dst->f_len = src->f_len;
+  dst->f_str[src->f_len] = 0;
+  dst->f_n_char = src->f_n_char;
+}
+
+/** Compare two doc_ids.
+ @param[in] id1  1st doc_id to compare
+ @param[in] id2  2nd doc_id to compare
+ @return < 0 if id1 < id2, 0 if id1 == id2, > 0 if id1 > id2 */
+inline int fts_doc_id_cmp(doc_id_t id1, doc_id_t id2) {
+  if (id1 < id2) {
+    return -1;
+  } else if (id1 > id2) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+/** Compare doc_ids of 2 objects.
+ @param[in] p1 Pointer to first instance o1 of T
+ @param[in] p2 Pointer to second instance o2 of T
+ @return sign(o1->doc_id - o2->doc_id) */
+template <typename T>
+int fts_doc_id_field_cmp(const void *p1, const void *p2) {
+  const T *o1 = static_cast<const T *>(p1);
+  const T *o2 = static_cast<const T *>(p2);
+
+  return fts_doc_id_cmp(o1->doc_id, o2->doc_id);
+}
+
+/** Get the first character's code position for FTS index partition
+@param[in]      cs        Character set
+@param[in]      p2        string
+@param[in]      len2    string length
+*/
+extern ulint innobase_strnxfrm(const CHARSET_INFO *cs, const uchar *p2,
+                               const ulint len2);
+
+/** Check if fts index charset is cjk
+@param[in]      cs      charset
+@retval true    if the charset is cjk
+@retval false   if not. */
+inline bool fts_is_charset_cjk(const CHARSET_INFO *cs) {
+  if (strcmp(cs->m_coll_name, "gb2312_chinese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "gbk_chinese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "big5_chinese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "gb18030_chinese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "ujis_japanese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "sjis_japanese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "cp932_japanese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "eucjpms_japanese_ci") == 0 ||
+      strcmp(cs->m_coll_name, "euckr_korean_ci") == 0) {
+    return (true);
+  } else {
+    return (false);
+  }
+}
+
+/** Select the FTS auxiliary index for the given character by range.
+@param[in]      cs      charset
+@param[in]      str     string
+@param[in]      len     string length
+@retval the index to use for the string */
+inline ulint fts_select_index_by_range(const CHARSET_INFO *cs, const byte *str,
+                                       ulint len) {
+  ulint selected = 0;
+  ulint value = innobase_strnxfrm(cs, str, len);
+
+  while (fts_index_selector[selected].value != 0) {
+    if (fts_index_selector[selected].value == value) {
+      return (selected);
+
+    } else if (fts_index_selector[selected].value > value) {
+      return (selected > 0 ? selected - 1 : 0);
+    }
+
+    ++selected;
+  }
+
+  ut_ad(selected > 1);
+
+  return (selected - 1);
+}
+
+/** Select the FTS auxiliary index for the given character by hash.
+@param[in]      cs      charset
+@param[in]      str     string
+@param[in]      len     string length
+@retval the index to use for the string */
+inline ulint fts_select_index_by_hash(const CHARSET_INFO *cs, const byte *str,
+                                      ulint len) {
+  int char_len;
+
+  ut_ad(!(str == nullptr && len > 0));
+
+  if (str == nullptr || len == 0) {
+    return 0;
+  }
+
+  /* Get the first char */
+  char_len = my_mbcharlen_ptr(cs, reinterpret_cast<const char *>(str),
+                              reinterpret_cast<const char *>(str + len));
+  ut_ad(static_cast<ulint>(char_len) <= len);
+
+  /*
+    Get collation hash code. Force truncation to ulong for legacy reasons;
+    it gives different results for Windows and Linux, but it needs to match
+    on-disk data.
+   */
+  uint64_t nr1 = 1;
+  uint64_t nr2 = 4;
+  cs->coll->hash_sort(cs, str, char_len, &nr1, &nr2);
+
+  return (static_cast<ulong>(nr1) % FTS_NUM_AUX_INDEX);
+}
+
+/** Select the FTS auxiliary table for the given character.
+@param[in]      cs      charset
+@param[in]      str     string
+@param[in]      len     string length in bytes
+@retval the auxiliary table number to use for the string, zero-based */
+inline ulint fts_select_index(const CHARSET_INFO *cs, const byte *str,
+                              ulint len) {
+  /* Words which compare equal using the character set's collation (have
+  the same sort order) MUST go into the same auxiliary table.
+  This is necessary as selecting a word using the equality operator will
+  select all words equal in the table's/field's collation order.
+  Other parts of FTS (e.g. index optimization) depend on this property.
+
+  This property is guaranteed by using collation-provided transforms,
+  which provide binary-equal values for collation-equal arguments:
+  weight string (strnxfrm) for alphabetic scripts, and collation hash
+  for non-alphabetic (CJK = Chinese, Korean and Japanese). */
+  ulint selected;
+
+  if (fts_is_charset_cjk(cs)) {
+    selected = fts_select_index_by_hash(cs, str, len);
+  } else {
+    selected = fts_select_index_by_range(cs, str, len);
+  }
+
+  return (selected);
+}
+
+/** Return the selected FTS aux index suffix. */
+inline const char *fts_get_suffix(ulint selected) /*!< in: selected index */
+{
+  return (fts_index_selector[selected].suffix);
+}
+
+/** Return the selected FTS aux index suffix in 5.7 compatible format
+@param[in]      selected        selected index
+@return the suffix name */
+inline const char *fts_get_suffix_5_7(ulint selected) {
+  return (fts_index_selector_5_7[selected].suffix);
+}
+
+#endif /* INNOBASE_FTS0TYPES_IC */

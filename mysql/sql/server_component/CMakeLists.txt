@@ -1,0 +1,113 @@
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is designed to work with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License, version 2.0, for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+IF (WITH_MYSQL_AI)
+  ADD_COMPILE_DEFINITIONS(MYSQL_AI)
+ENDIF()
+
+SET(MYSQL_SERVER_COMPONENT_SOURCES
+  audit_api_message_service_imp.cc
+  backup_lock_service.cc
+  bulk_data_service.cc
+  clone_protocol_service.cc
+  component_status_var_service.cc
+  component_sys_var_service.cc
+  debug_keyword_service_imp.cc
+  debug_sync_service_imp.cc
+  dynamic_loader_path_filter.cc
+  host_application_signal_imp.cc
+  keyring_iterator_service_imp.cc
+  log_builtins.cc
+  log_builtins_filter.cc
+  log_sink_buffer.cc
+  log_sink_perfschema.cc
+  log_sink_trad.cc
+  log_source_backtrace.cc
+  mysql_cond_service.cc
+  mysql_connection_attributes_iterator_imp.cc
+  mysql_current_thread_reader_imp.cc
+  mysql_global_variable_attributes_service_imp.cc
+  mysql_mutex_service.cc
+  mysql_psi_system_service.cc
+  mysql_runtime_error.cc
+  mysql_runtime_warning.cc
+  mysql_timestamp_imp.cc
+  mysql_rwlock_service.cc
+  mysql_server_runnable_imp.cc
+  mysql_string_service.cc
+  ongoing_transaction_query_service.cc
+  page_track_service.cc
+  persistent_dynamic_loader.cc
+  plugin_registry_service.cc
+  security_context_imp.cc
+  server_component.cc
+  system_variable_source_imp.cc
+  table_access_service.cc
+  thread_cleanup_register_imp.cc
+  udf_metadata_imp.cc
+  audit_api_connection_service_imp.cc
+  mysql_query_attributes_imp.cc
+  mysql_server_keyring_lockable_imp.cc
+  mysql_system_variable_update_imp.cc
+  mysql_system_variable_reader_imp.cc
+  mysql_thd_attributes_imp.cc
+  transaction_delegate_control_imp.cc
+  mysql_audit_print_service_longlong_data_source_imp.cc
+  mysql_audit_print_service_double_data_source_imp.cc
+  mysql_command_services_imp.cc
+  mysql_command_consumer_imp.cc
+  mysql_command_delegates.cc
+  mysql_command_backend.cc
+  mysql_status_variable_reader_imp.cc
+  storing_auto_thd.cc
+  mysql_thd_store_imp.cc
+  set_variables_helper.cc
+  mysql_thd_store_imp.cc
+  mysql_server_event_tracking_bridge_imp.cc
+  dynamic_loader_service_notification_imp.cc
+  event_tracking_information.cc
+  mysql_stored_program_imp.cc
+  mysql_simple_error_log_imp.cc
+  mysql_statement_service_imp.cc
+  mysql_signal_handler_imp.cc
+  applier_metrics_service_imp.cc
+  mysql_library_imp.cc
+  mysql_json_encode_imp.cc
+  mysql_my_thread_imp.cc
+  mysql_file_imp.cc
+  mysql_server_attributes_imp.cc
+  mysql_lock_free_hash_imp.cc
+  )
+
+# This static library is used to build mysqld binary and in some unit test cases
+ADD_LIBRARY(mysql_server_component_services STATIC
+  ${MYSQL_SERVER_COMPONENT_SOURCES})
+TARGET_COMPILE_DEFINITIONS(mysql_server_component_services
+  PRIVATE WITH_MYSQL_COMPONENTS_TEST_DRIVER)
+TARGET_LINK_LIBRARIES(mysql_server_component_services
+  PRIVATE
+  extra::rapidjson
+  ext::zlib
+  extra::unordered_dense
+  )
+ADD_DEPENDENCIES(mysql_server_component_services GenError)

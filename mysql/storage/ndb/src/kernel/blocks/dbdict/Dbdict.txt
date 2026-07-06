@@ -1,0 +1,110 @@
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is designed to work with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms, as
+# designated in a particular file or component or in included license
+# documentation. The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+# the GNU General Public License, version 2.0, for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+
+Event creation
+
+USER                      DICT(Master)            UTIL                   SUMA
+================================================================================
+CREATE_EVENT_REQ::create
+-------------------------->
+			  - Get ID
+                          CREATE_SUBID
+                          ----------------------------------------------->
+                          <-----------------------------------------------
+			  - insert into system table
+                          UTIL_PREPARE::insert
+                          ------------------------>
+                          <------------------------
+                          UTIL_EXECUTE
+                          ------------------------>
+                          <------------------------
+CREATE_EVENT_CONF
+<--------------------------
+
+
+Event dropping
+
+USER                      DICT(Master)            UTIL                   SUMA
+================================================================================
+DROP_EVENT_REQ
+-------------------------->
+			  - remove from system table
+                          UTIL_PREPARE::delete
+                          ------------------------>
+                          <------------------------
+                          UTIL_EXECUTE        
+                          ------------------------>
+                          <------------------------
+DROP_EVENT_CONF
+<--------------------------
+
+
+
+create NdbEventOperation
+
+USER                      DICT(Master)         (Slaves)           UTIL
+=======================================================================
+CREATE_EVENT_REQ::get
+-------------------------->
+			  - read from system table
+                          UTIL_PREPARE::read
+                          ---------------------------------------->
+                          <----------------------------------------
+                          UTIL_EXECUTE        
+                          ---------------------------------------->
+                          <----------------------------------------
+								  SUMA
+                          CREATE_EVENT_REQ::after_get            ======
+                          ---------------------->
+						SUB_CREATE
+						------------------>
+						<------------------
+						SUB_SYNC
+						------------------>
+						<------------------
+                          CREATE_EVENT_CONF
+                          <----------------------
+CREATE_EVENT_CONF
+<-------------------------
+
+
+
+USER                      DICT(Master)         (Slaves)           SUMA
+=======================================================================
+SUB_START_REQ
+-------------------------->
+                          SUB_START_REQ
+                          ---------------------->
+						SUB_START_REQ
+						------------------>
+						<------------------
+                          SUB_START_CONF
+                          <----------------------
+SUB_START_CONF
+<-------------------------
+
+
+SUB_STOP analogous to SUB_STOP
+
+
+
