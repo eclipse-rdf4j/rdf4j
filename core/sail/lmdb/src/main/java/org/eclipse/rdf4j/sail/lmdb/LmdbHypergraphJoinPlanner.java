@@ -67,7 +67,7 @@ final class LmdbHypergraphJoinPlanner {
 	}
 
 	static boolean enabled() {
-		return Boolean.getBoolean(DPHYP_PROPERTY);
+		return true;
 	}
 
 	private static int maxFactors() {
