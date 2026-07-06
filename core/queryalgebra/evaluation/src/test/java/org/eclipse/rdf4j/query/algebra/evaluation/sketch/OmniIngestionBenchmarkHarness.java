@@ -28,10 +28,10 @@ public final class OmniIngestionBenchmarkHarness {
 	private static final long SEED = 0x51E7C0DEL;
 	private static final long ANY_VALUE_HASH = 0x4f4d4e495f454447L;
 
-	private static final int STATEMENTS = 1_000_000;
+	private static final int STATEMENTS = 5_000_000;
 	private static final int STATEMENTS_PER_SUBJECT = 20;
 	private static final int PREDICATES = 64;
-	private static final int POPULAR_OBJECTS = 1_000;
+	private static final int POPULAR_OBJECTS = 4_000;
 
 	private static final byte ATTR_S = OmniAttributeRef.component(0);
 	private static final byte ATTR_P = OmniAttributeRef.component(1);

@@ -36,10 +36,17 @@ import java.util.Arrays;
 
 /** Internal cell: a stream count plus the k smallest unsigned identifier hashes observed by the cell. */
 final class OmniSketchCell {
+	private static final int MAX_STAGING_CAPACITY = 256;
+
 	private final int nominalEntries;
 	private long count;
 	private long[] hashes;
 	private int retained;
+	// Unsorted arrivals below the current retention threshold; merged into the sorted sample in batches so a
+	// retained insert costs an append instead of a memmove of the sample array. The k-smallest-distinct sample
+	// is order independent, so the post-flush state is identical to inserting each hash eagerly.
+	private long[] staging;
+	private int stagingSize;
 
 	OmniSketchCell(final int nominalEntries) {
 		this(nominalEntries, 0L, new long[Math.max(0, nominalEntries)], 0);
@@ -57,6 +64,7 @@ final class OmniSketchCell {
 	}
 
 	int getRetainedEntries() {
+		flushStaging();
 		return retained;
 	}
 
@@ -65,10 +73,12 @@ final class OmniSketchCell {
 	}
 
 	long[] copyHashes() {
+		flushStaging();
 		return Arrays.copyOf(hashes, retained);
 	}
 
 	long[] hashesArray() {
+		flushStaging();
 		return hashes;
 	}
 
@@ -87,32 +97,45 @@ final class OmniSketchCell {
 				return false;
 			}
 			if (cmp == 0) {
-				return true;
+				return true; // The min-hash sample is set-valued even when stream count is not.
 			}
 		}
-		final int pos = binarySearch(identifierHash);
-		if (pos >= 0) {
-			return true; // The min-hash sample is set-valued even when stream count is not.
+		if (staging == null) {
+			staging = new long[Math.min(MAX_STAGING_CAPACITY, Math.max(16, nominalEntries))];
 		}
-		final int insertAt = -pos - 1;
-		if (retained < nominalEntries) {
-			ensureCapacity(nominalEntries);
-			System.arraycopy(hashes, insertAt, hashes, insertAt + 1, retained - insertAt);
-			hashes[insertAt] = identifierHash;
-			retained++;
-			return true;
+		staging[stagingSize++] = identifierHash;
+		if (stagingSize == staging.length) {
+			flushStaging();
 		}
-		if (retained == 0 || compareUnsigned(identifierHash, hashes[retained - 1]) >= 0) {
-			return false;
-		}
-		System.arraycopy(hashes, insertAt, hashes, insertAt + 1, retained - insertAt - 1);
-		hashes[insertAt] = identifierHash;
 		return true;
+	}
+
+	private void flushStaging() {
+		if (stagingSize == 0) {
+			return;
+		}
+		// sort in unsigned order via the sign-flip trick
+		for (int i = 0; i < stagingSize; i++) {
+			staging[i] ^= Long.MIN_VALUE;
+		}
+		Arrays.sort(staging, 0, stagingSize);
+		for (int i = 0; i < stagingSize; i++) {
+			staging[i] ^= Long.MIN_VALUE;
+		}
+		final long[] merged = mergeSamples(hashes, retained, staging, stagingSize, nominalEntries);
+		retained = merged.length;
+		hashes = merged.length < nominalEntries ? Arrays.copyOf(merged, nominalEntries) : merged;
+		stagingSize = 0;
 	}
 
 	void merge(final OmniSketchCell other) {
 		count += other.count;
-		if (nominalEntries <= 0 || other.retained == 0) {
+		if (nominalEntries <= 0) {
+			return;
+		}
+		flushStaging();
+		other.flushStaging();
+		if (other.retained == 0) {
 			return;
 		}
 		hashes = mergeSamples(hashes, retained, other.hashes, other.retained, nominalEntries);
@@ -123,39 +146,19 @@ final class OmniSketchCell {
 	}
 
 	OmniSketchCell compactCopy() {
+		flushStaging();
 		return new OmniSketchCell(nominalEntries, count, Arrays.copyOf(hashes, retained), retained);
 	}
 
 	OmniSketchCell heapCopy() {
+		flushStaging();
 		final long[] copy = Arrays.copyOf(hashes, Math.max(nominalEntries, retained));
 		return new OmniSketchCell(nominalEntries, count, copy, retained);
 	}
 
 	OmniSketchSummary toSummary() {
+		flushStaging();
 		return new OmniSketchSummary(count, Arrays.copyOf(hashes, retained), retained, nominalEntries, count, count);
-	}
-
-	private void ensureCapacity(final int capacity) {
-		if (hashes.length < capacity) {
-			hashes = Arrays.copyOf(hashes, capacity);
-		}
-	}
-
-	private int binarySearch(final long key) {
-		int low = 0;
-		int high = retained - 1;
-		while (low <= high) {
-			final int mid = (low + high) >>> 1;
-			final int cmp = compareUnsigned(hashes[mid], key);
-			if (cmp < 0) {
-				low = mid + 1;
-			} else if (cmp > 0) {
-				high = mid - 1;
-			} else {
-				return mid;
-			}
-		}
-		return -(low + 1);
 	}
 
 	static long[] mergeSamples(final long[] a, final int aLen, final long[] b, final int bLen, final int limit) {

@@ -141,9 +141,9 @@ final class OmniJoinEstimator {
 					byte[] sketchPayload = index.sketch.compact().toByteArray();
 					out.writeInt(sketchPayload.length);
 					out.write(sketchPayload);
-					Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash = index.weightsForSerialization();
+					Long2ObjectOpenHashMap<ValueWeights> weightsByValueHash = index.weightsForSerialization();
 					out.writeInt(weightsByValueHash.size());
-					for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> valueEntry : weightsByValueHash
+					for (Long2ObjectMap.Entry<ValueWeights> valueEntry : weightsByValueHash
 							.long2ObjectEntrySet()) {
 						out.writeLong(valueEntry.getLongKey());
 						Long2DoubleOpenHashMap weights = valueEntry.getValue();
@@ -900,7 +900,7 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	private record SnapshotWeights(Long2DoubleOpenHashMap weights, OmniSketchProbeResult probe) {
+	private record SnapshotWeights(ValueWeights weights, OmniSketchProbeResult probe) {
 	}
 
 	private record CachedWitnessPostings(long[] witnessHashes, double[] weights, double postingWeight) {
@@ -1353,10 +1353,28 @@ final class OmniJoinEstimator {
 		}
 	}
 
+	/**
+	 * Per-value witness weights, carrying the value's compaction flag so the ingest hot path can read it without a
+	 * separate hash lookup. For values whose weights map was dropped entirely, the flag lives in
+	 * {@code compactedValueHashes} instead.
+	 */
+	static final class ValueWeights extends Long2DoubleOpenHashMap {
+		private static final long serialVersionUID = 1L;
+
+		boolean compacted;
+
+		ValueWeights() {
+		}
+
+		ValueWeights(int expected) {
+			super(expected);
+		}
+	}
+
 	private static final class AttributeIndex {
 		private final UpdateOmniSketch sketch;
 		private MappedWitnessIndex mappedBase;
-		private Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash;
+		private Long2ObjectOpenHashMap<ValueWeights> weightsByValueHash;
 		private final Long2DoubleOpenHashMap totalWeightByValueHash = new Long2DoubleOpenHashMap();
 		private final LongOpenHashSet totalOnlyValueHashes = new LongOpenHashSet();
 		private final LongOpenHashSet compactedValueHashes = new LongOpenHashSet();
@@ -1364,10 +1382,10 @@ final class OmniJoinEstimator {
 		private final int compactThreshold;
 		private final boolean exactSmallPostings;
 		private final boolean compactLargePostings;
-		private long probeCacheEpoch = 1L;
+		private volatile long probeCacheEpoch = 1L;
 		private long[] probeCacheKeys;
 		private long[] probeCacheEpochs;
-		private OmniSketchProbeResult[] probeCacheValues;
+		private volatile OmniSketchProbeResult[] probeCacheValues;
 		private Long2ObjectOpenHashMap<CachedWitnessPostings> witnessPostingsCache;
 		private long[] mappedValueRecordCacheKeys;
 		private boolean[] mappedValueRecordCachePopulated;
@@ -1391,36 +1409,62 @@ final class OmniJoinEstimator {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			totalOnlyValueHashes.remove(valueHash);
+			if (!totalOnlyValueHashes.isEmpty()) {
+				totalOnlyValueHashes.remove(valueHash);
+			}
 			boolean retained = sketch.updateHashAndCheckRetained(valueHash, identifierHash);
 			invalidateProbeCache();
 			invalidateWitnessCache(valueHash);
-			boolean compacted = compactedValueHashes.contains(valueHash);
+			ValueWeights weights = weightsForRead(valueHash);
+			// only registered maps (never empty) carry the flag; an empty map is an unregistered lazy stub
+			boolean compacted = weights != null && !weights.isEmpty() ? weights.compacted
+					: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash);
 			if (compacted || !exactSmallPostings) {
 				totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
 			}
-			Long2DoubleOpenHashMap weights = weightsForRead(valueHash);
-			if (weights != null && weights.containsKey(identifierHash)) {
-				weights.addTo(identifierHash, estimatedMultiplicity);
+			boolean mayInsert = retained || (exactSmallPostings && !compacted);
+			if (weights == null || weights.isEmpty()) {
+				if (!mayInsert) {
+					return;
+				}
+				if (weights == null) {
+					weights = new ValueWeights(4);
+				}
+				if (compacted) {
+					// the flag moves from the fallback set onto the new weights map
+					weights.compacted = true;
+					compactedValueHashes.remove(valueHash);
+				}
+				ensureWeightsByValueHash().put(valueHash, weights);
+				weights.put(identifierHash, estimatedMultiplicity);
+			} else if (mayInsert) {
+				// stored weights are always positive, so a zero previous value means the identifier is new
+				double previous = weights.addTo(identifierHash, estimatedMultiplicity);
+				if (previous != 0.0d) {
+					compactSampledWeightsIfOversized(valueHash, weights, compacted);
+					return;
+				}
+			} else {
+				double previous = weights.get(identifierHash);
+				if (previous == 0.0d) {
+					return;
+				}
+				weights.put(identifierHash, previous + estimatedMultiplicity);
 				compactSampledWeightsIfOversized(valueHash, weights, compacted);
 				return;
 			}
-			if (!exactSmallPostings && !retained) {
-				return;
-			}
-			if (compacted && !retained) {
-				return;
-			}
-			weights = weightsForValue(valueHash);
-			weights.addTo(identifierHash, estimatedMultiplicity);
 			if (compacted || !exactSmallPostings) {
 				compactSampledWeightsIfOversized(valueHash, weights, compacted);
 				return;
 			}
 			if (compactLargePostings && weights.size() > compactThreshold) {
 				ensureTotalWeight(valueHash, weights);
-				compactWeightsForValue(valueHash, weights);
-				compactedValueHashes.add(valueHash);
+				ValueWeights current = compactWeightsForValue(valueHash, weights);
+				if (current != null) {
+					current.compacted = true;
+				} else {
+					compactedValueHashes.add(valueHash);
+				}
 			}
 		}
 
@@ -1494,19 +1538,23 @@ final class OmniJoinEstimator {
 				return;
 			}
 			List<Long> removeKeys = null;
-			Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> replacementWeights = null;
-			for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> entry : weightsByValueHash.long2ObjectEntrySet()) {
+			Long2ObjectOpenHashMap<ValueWeights> replacementWeights = null;
+			for (Long2ObjectMap.Entry<ValueWeights> entry : weightsByValueHash.long2ObjectEntrySet()) {
 				long valueHash = entry.getLongKey();
-				Long2DoubleOpenHashMap retained = retainedWeightsForValue(valueHash, entry.getValue());
+				ValueWeights retained = retainedWeightsForValue(valueHash, entry.getValue());
 				if (retained.isEmpty()) {
 					if (removeKeys == null) {
 						removeKeys = new ArrayList<>();
+					}
+					if (entry.getValue().compacted) {
+						compactedValueHashes.add(valueHash);
 					}
 					removeKeys.add(valueHash);
 				} else if (retained.size() != entry.getValue().size()) {
 					if (replacementWeights == null) {
 						replacementWeights = new Long2ObjectOpenHashMap<>();
 					}
+					retained.compacted = entry.getValue().compacted;
 					replacementWeights.put(valueHash, retained);
 				}
 			}
@@ -1517,22 +1565,34 @@ final class OmniJoinEstimator {
 				}
 			}
 			if (replacementWeights != null) {
-				for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> entry : replacementWeights.long2ObjectEntrySet()) {
+				for (Long2ObjectMap.Entry<ValueWeights> entry : replacementWeights.long2ObjectEntrySet()) {
 					weightsByValueHash.put(entry.getLongKey(), entry.getValue());
 					invalidateWitnessCache(entry.getLongKey());
 				}
 			}
 		}
 
-		private void compactWeightsForValue(long valueHash, Long2DoubleOpenHashMap weights) {
+		/**
+		 * @return the weights map left in place for the value after compaction, or {@code null} when the value no
+		 *         longer has one (its compaction flag then lives in {@code compactedValueHashes})
+		 */
+		private ValueWeights compactWeightsForValue(long valueHash, ValueWeights weights) {
 			ensureTotalWeight(valueHash, weights);
-			Long2DoubleOpenHashMap retained = retainedWeightsForValue(valueHash, weights);
+			ValueWeights current = weights;
+			ValueWeights retained = retainedWeightsForValue(valueHash, weights);
 			if (retained.isEmpty()) {
 				weightsByValueHash.remove(valueHash);
+				if (weights.compacted) {
+					compactedValueHashes.add(valueHash);
+				}
+				current = null;
 			} else if (retained.size() != weights.size()) {
+				retained.compacted = weights.compacted;
 				weightsByValueHash.put(valueHash, retained);
+				current = retained;
 			}
 			invalidateWitnessCache(valueHash);
+			return current;
 		}
 
 		private void ensureTotalWeight(long valueHash, Long2DoubleOpenHashMap weights) {
@@ -1546,7 +1606,7 @@ final class OmniJoinEstimator {
 			}
 		}
 
-		private void compactSampledWeightsIfOversized(long valueHash, Long2DoubleOpenHashMap weights,
+		private void compactSampledWeightsIfOversized(long valueHash, ValueWeights weights,
 				boolean compacted) {
 			if ((compacted || !exactSmallPostings) && sampledWeightsOversized(weights)) {
 				compactWeightsForValue(valueHash, weights);
@@ -1566,20 +1626,20 @@ final class OmniJoinEstimator {
 			return limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit;
 		}
 
-		private Long2DoubleOpenHashMap retainedWeightsForValue(long valueHash, Long2DoubleOpenHashMap exactWeights) {
+		private ValueWeights retainedWeightsForValue(long valueHash, Long2DoubleOpenHashMap exactWeights) {
 			return retainedWeightsForValueWithProbe(valueHash, exactWeights).weights();
 		}
 
 		private SnapshotWeights retainedWeightsForValueWithProbe(long valueHash, Long2DoubleOpenHashMap exactWeights) {
 			if (exactWeights == null || exactWeights.isEmpty()) {
-				return new SnapshotWeights(new Long2DoubleOpenHashMap(), null);
+				return new SnapshotWeights(new ValueWeights(), null);
 			}
 			OmniSketchProbeResult probe = probeValue(valueHash);
 			long[] retainedHashes = probe.getIdentifierHashesUnsafe();
 			if (retainedHashes.length == 0) {
-				return new SnapshotWeights(new Long2DoubleOpenHashMap(), probe);
+				return new SnapshotWeights(new ValueWeights(), probe);
 			}
-			Long2DoubleOpenHashMap retainedWeights = new Long2DoubleOpenHashMap(
+			ValueWeights retainedWeights = new ValueWeights(
 					Math.min(retainedHashes.length, exactWeights.size()));
 			for (long retainedHash : retainedHashes) {
 				double weight = exactWeights.get(retainedHash);
@@ -1594,7 +1654,7 @@ final class OmniJoinEstimator {
 			if (lazyWeights != null) {
 				weightsForRead(valueHash);
 			}
-			if (exactSmallPostings && !compactedValueHashes.contains(valueHash)) {
+			if (exactSmallPostings && !isCompacted(valueHash)) {
 				return witnessCursor(valueHash);
 			}
 			long[] retainedHashes = probe == null ? null : probe.getIdentifierHashesUnsafe();
@@ -1615,7 +1675,7 @@ final class OmniJoinEstimator {
 		}
 
 		private boolean hasExactPostingGuarantee(long valueHash) {
-			if (!exactSmallPostings || compactedValueHashes.contains(valueHash) || lazyWeights != null) {
+			if (!exactSmallPostings || isCompacted(valueHash) || lazyWeights != null) {
 				return false;
 			}
 			boolean hasOverlayWeights = hasOverlayWeights(valueHash);
@@ -1645,15 +1705,31 @@ final class OmniJoinEstimator {
 			return probe;
 		}
 
-		private synchronized void invalidateProbeCache() {
-			if (probeCacheValues == null) {
+		private void invalidateProbeCache() {
+			// Mutations run under the owning estimator's state lock (single writer at a time), so a volatile
+			// epoch bump is enough for probeValue readers to observe the invalidation without this method
+			// taking the monitor on every ingest update.
+			OmniSketchProbeResult[] values = probeCacheValues;
+			if (values == null) {
 				return;
 			}
-			probeCacheEpoch++;
-			if (probeCacheEpoch == 0L) {
-				probeCacheEpoch = 1L;
-				Arrays.fill(probeCacheValues, null);
+			long epoch = probeCacheEpoch + 1L;
+			if (epoch == 0L) {
+				synchronized (this) {
+					probeCacheEpoch = 1L;
+					Arrays.fill(values, null);
+				}
+				return;
 			}
+			probeCacheEpoch = epoch;
+		}
+
+		private boolean isCompacted(long valueHash) {
+			ValueWeights weights = weightsByValueHash == null ? null : weightsByValueHash.get(valueHash);
+			if (weights != null) {
+				return weights.compacted;
+			}
+			return !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash);
 		}
 
 		private static int probeCacheSlot(long valueHash) {
@@ -1943,7 +2019,7 @@ final class OmniJoinEstimator {
 			}
 			if (weightsByValueHash != null) {
 				boolean hasEmittedValues = !emittedValues.isEmpty();
-				for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> valueEntry : weightsByValueHash
+				for (Long2ObjectMap.Entry<ValueWeights> valueEntry : weightsByValueHash
 						.long2ObjectEntrySet()) {
 					long valueHash = valueEntry.getLongKey();
 					if (!hasEmittedValues || !emittedValues.contains(valueHash)) {
@@ -1977,7 +2053,7 @@ final class OmniJoinEstimator {
 			List<ValuePostings> postings = new ArrayList<>(expectedPostings);
 			LongOpenHashSet emittedValues = totalOnlyValueHashes.isEmpty() ? null : new LongOpenHashSet();
 			if (weightsByValueHash != null) {
-				for (Long2ObjectMap.Entry<Long2DoubleOpenHashMap> valueEntry : weightsByValueHash
+				for (Long2ObjectMap.Entry<ValueWeights> valueEntry : weightsByValueHash
 						.long2ObjectEntrySet()) {
 					long valueHash = valueEntry.getLongKey();
 					ValuePostings valuePostings = toValuePostings(valueHash, valueEntry.getValue());
@@ -2017,7 +2093,7 @@ final class OmniJoinEstimator {
 
 		private boolean shouldPersistExactInMemoryWeights(long valueHash) {
 			return mappedBase == null && lazyWeights == null && exactSmallPostings
-					&& !compactedValueHashes.contains(valueHash);
+					&& !isCompacted(valueHash);
 		}
 
 		private ValuePostings toExactValuePostings(long valueHash, Long2DoubleOpenHashMap weightsByWitnessHash) {
@@ -2094,9 +2170,9 @@ final class OmniJoinEstimator {
 			OmniSketchProbeResult probe = probeValue(valueHash);
 			long[] retainedHashes = probe.getIdentifierHashesUnsafe();
 			if (retainedHashes.length == 0) {
-				return new SnapshotWeights(new Long2DoubleOpenHashMap(), probe);
+				return new SnapshotWeights(new ValueWeights(), probe);
 			}
-			Long2DoubleOpenHashMap retainedWeights = new Long2DoubleOpenHashMap(retainedHashes.length);
+			ValueWeights retainedWeights = new ValueWeights(retainedHashes.length);
 			addCursorRetainedWeights(cursor, retainedHashes, 1.0d, retainedWeights);
 			return new SnapshotWeights(retainedWeights, probe);
 		}
@@ -2115,19 +2191,8 @@ final class OmniJoinEstimator {
 			return sum;
 		}
 
-		private Long2DoubleOpenHashMap weightsForValue(long valueHash) {
-			Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash = ensureWeightsByValueHash();
-			Long2DoubleOpenHashMap weights = weightsByValueHash.get(valueHash);
-			if (weights == null) {
-				weights = new Long2DoubleOpenHashMap(4);
-				weightsByValueHash.put(valueHash, weights);
-			}
-			invalidateWitnessCache(valueHash);
-			return weights;
-		}
-
-		private Long2DoubleOpenHashMap weightsForRead(long valueHash) {
-			Long2DoubleOpenHashMap weights = weightsByValueHash == null ? null : weightsByValueHash.get(valueHash);
+		private ValueWeights weightsForRead(long valueHash) {
+			ValueWeights weights = weightsByValueHash == null ? null : weightsByValueHash.get(valueHash);
 			if (weights != null) {
 				return weights;
 			}
@@ -2143,7 +2208,7 @@ final class OmniJoinEstimator {
 			return weights;
 		}
 
-		private Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> ensureWeightsByValueHash() {
+		private Long2ObjectOpenHashMap<ValueWeights> ensureWeightsByValueHash() {
 			if (weightsByValueHash == null) {
 				weightsByValueHash = new Long2ObjectOpenHashMap<>();
 			}
@@ -2157,7 +2222,7 @@ final class OmniJoinEstimator {
 			for (int i = 0; i < lazyWeights.valueHashes.length; i++) {
 				long valueHash = lazyWeights.valueHashes[i];
 				if (weightsByValueHash == null || !weightsByValueHash.containsKey(valueHash)) {
-					Long2DoubleOpenHashMap weights = lazyWeights.loadAt(i);
+					ValueWeights weights = lazyWeights.loadAt(i);
 					if (weights != null && !weights.isEmpty()) {
 						ensureWeightsByValueHash().put(valueHash, weights);
 						invalidateWitnessCache(valueHash);
@@ -2167,7 +2232,7 @@ final class OmniJoinEstimator {
 			lazyWeights = null;
 		}
 
-		private Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsForSerialization() {
+		private Long2ObjectOpenHashMap<ValueWeights> weightsForSerialization() {
 			materializeAllLazyWeights();
 			return weightsByValueHash == null ? new Long2ObjectOpenHashMap<>() : weightsByValueHash;
 		}
@@ -2175,7 +2240,7 @@ final class OmniJoinEstimator {
 
 	private record LazyWeightPayload(byte[] payload, long[] valueHashes, int[] witnessOffsets, int[] witnessCounts) {
 
-		private Long2DoubleOpenHashMap load(long valueHash) {
+		private ValueWeights load(long valueHash) {
 			for (int i = 0; i < valueHashes.length; i++) {
 				if (valueHashes[i] == valueHash) {
 					return loadAt(i);
@@ -2184,12 +2249,12 @@ final class OmniJoinEstimator {
 			return null;
 		}
 
-		private Long2DoubleOpenHashMap loadAt(int index) {
+		private ValueWeights loadAt(int index) {
 			int witnessCount = witnessCounts[index];
 			if (witnessCount <= 0) {
-				return new Long2DoubleOpenHashMap();
+				return new ValueWeights();
 			}
-			Long2DoubleOpenHashMap weights = new Long2DoubleOpenHashMap(witnessCount);
+			ValueWeights weights = new ValueWeights(witnessCount);
 			ByteBuffer buffer = ByteBuffer.wrap(payload, witnessOffsets[index], witnessCount * LAZY_WEIGHT_ENTRY_BYTES);
 			for (int witnessIndex = 0; witnessIndex < witnessCount; witnessIndex++) {
 				long witnessHash = buffer.getLong();
