@@ -7490,6 +7490,8 @@ class LmdbEvaluationStatistics
 		}
 		double prefixRows = duplicateCorrectionPrefixRows(leftFactors, knownLeftRows, rightFactors.getFirst());
 		if (!isPositiveFinite(prefixRows)) {
+			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+					"reason=prefix-rows, prefixRows=" + prefixRows);
 			return null;
 		}
 
@@ -7504,8 +7506,9 @@ class LmdbEvaluationStatistics
 				continue;
 			}
 			PrefixBridgeEstimate prefixBridge = prefixBridgeRows(leftFactors, bridge, prefixRows);
-			if (prefixBridge == null || !isPositiveFinite(prefixBridge.rows())
-					|| !isPositiveFinite(prefixBridge.prefixRows())) {
+			// The ordered-rows fallback inside prefixBridgeRows carries no per-bridge prefix denominator; the
+			// caller-level prefix rows are the same quantity, so those candidates stay eligible for fanout math.
+			if (prefixBridge == null || !isPositiveFinite(prefixBridge.rows())) {
 				continue;
 			}
 			bridgeCandidates.add(new BridgeCandidate(bridge, prefixBridge));
@@ -7514,6 +7517,8 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (bridgeCandidates.size() < 2) {
+			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+					"reason=bridge-candidates, count=" + bridgeCandidates.size());
 			return null;
 		}
 
@@ -7527,12 +7532,18 @@ class LmdbEvaluationStatistics
 			PrefixBridgeEstimate prefixBridge = bridgeCandidate.prefixBridge();
 			Set<String> bridgeBindingNames = plannerBindingNames(bridgeCandidate.bridge().getBindingNames());
 			boundNames.addAll(bridgeBindingNames);
-			double fanout = prefixBridge.rows() / prefixBridge.prefixRows();
+			double fanoutDenominator = isPositiveFinite(prefixBridge.prefixRows())
+					? prefixBridge.prefixRows()
+					: prefixRows;
+			double fanout = prefixBridge.rows() / fanoutDenominator;
 			if (!isPositiveFinite(fanout)) {
+				traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null, "reason=fanout, fanout=" + fanout);
 				return null;
 			}
 			combinedRows *= fanout;
 			if (!isFiniteNonNegative(combinedRows)) {
+				traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null,
+						"reason=combined-rows, combinedRows=" + combinedRows);
 				return null;
 			}
 			if (isPositiveFinite(prefixBridge.prefixSurfaceRows())) {
@@ -7545,6 +7556,8 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (!isPositiveFinite(combinedRows) || boundNames.isEmpty()) {
+			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+					"reason=combined-invalid, combinedRows=" + combinedRows + ", boundNames=" + boundNames.size());
 			return null;
 		}
 
@@ -7568,6 +7581,8 @@ class LmdbEvaluationStatistics
 					combinedRows, Double.NaN, Double.NaN, "multi-bridge-product", joinVarName(bridgeJoinVarNames));
 		}
 		if (!factorsReachableFromBindings(boundNames, remainingFactors)) {
+			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+					"reason=remaining-unreachable, remaining=" + remainingFactors.size());
 			return null;
 		}
 
@@ -7588,6 +7603,8 @@ class LmdbEvaluationStatistics
 					combinedRows, finiteBindingValues);
 		}
 		if (!isFiniteNonNegative(productRows)) {
+			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+					"reason=continuation, productRows=" + productRows + ", combinedRows=" + combinedRows);
 			return null;
 		}
 		return new OptionalBridgeProductEstimate(productRows, combinedRows, prefixRows, minimumPrefixSurfaceRows,
@@ -9587,6 +9604,10 @@ class LmdbEvaluationStatistics
 		StatisticsEstimate estimate = starEstimate.get();
 		Map<String, String> stringMetrics = new HashMap<>();
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.method());
+		if (estimate.method() != null && estimate.method().contains("omni")) {
+			stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, estimate.method());
+			stringMetrics.put(PLANNED_SKETCH_STRATEGY, SketchBasedJoinEstimator.SketchStrategy.OMNI.configValue());
+		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, LmdbStarJoinScanSupport.ACCESS_MODE);
 		stringMetrics.put(LmdbStarJoinScanSupport.SUBJECT_VAR_METRIC, starPlan.get().subjectName());
 		stringMetrics.put(LmdbStarJoinScanSupport.PROOF_METRIC,
