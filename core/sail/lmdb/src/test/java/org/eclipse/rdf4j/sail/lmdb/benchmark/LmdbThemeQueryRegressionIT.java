@@ -2147,17 +2147,8 @@ class LmdbThemeQueryRegressionIT {
 						dataDir.resolve("theme-query-regression-" + theme.name() + "-" + primeIndexKey(primeIndexes)),
 						storeKey,
 						storeDirectory -> {
-							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-							SailRepository repository = new SailRepository(store);
-							try {
-								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								loadData(repository, theme);
-								persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, theme, primeIndexes);
-								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-							} finally {
-								shutdownAndRelease(repository, store);
-							}
+							loadWithEstimatorDisabled(storeDirectory, repository -> loadData(repository, theme));
+							prepareEstimatorSnapshot(storeDirectory, theme, primeIndexes);
 						});
 		if (preparedStore.reused()) {
 			System.out.println("Reusing persistent store " + preparedStore.storeDirectory() + " for " + theme.name()
@@ -2172,34 +2163,45 @@ class LmdbThemeQueryRegressionIT {
 				.boxed()
 				.collect(Collectors.toList());
 		Path themeDir = dataDir.resolve("benchmark-" + theme.name() + "-" + primeIndexKey(indexes));
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadBenchmarkData(repository);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, indexes);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
+		loadWithEstimatorDisabled(themeDir, LmdbThemeQueryRegressionIT::loadBenchmarkData);
+		prepareEstimatorSnapshot(themeDir, theme, indexes);
 		return themeDir;
 	}
 
 	private static Path prepareFreshRuntimeThemeStore(Path dataDir, Theme theme) throws Exception {
 		Path themeDir = dataDir.resolve("runtime-" + theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		loadWithEstimatorDisabled(themeDir, repository -> loadData(repository, theme));
+		prepareEstimatorSnapshot(themeDir, theme, List.of());
+		return themeDir;
+	}
+
+	private static void loadWithEstimatorDisabled(Path storeDirectory, RepositoryLoader loader) throws Exception {
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createBulkLoadConfig());
 		SailRepository repository = new SailRepository(store);
 		try {
-			loadData(repository, theme);
-			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup", 60,
-					TimeUnit.SECONDS);
+			loader.load(repository);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	private static void prepareEstimatorSnapshot(Path storeDirectory, Theme theme, List<Integer> primeIndexes)
+			throws Exception {
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, primeIndexes);
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
-		return themeDir;
+	}
+
+	@FunctionalInterface
+	private interface RepositoryLoader {
+		void load(SailRepository repository) throws Exception;
 	}
 
 	private static String primeIndexKey(List<Integer> primeIndexes) {
@@ -2862,7 +2864,7 @@ class LmdbThemeQueryRegressionIT {
 				"FILTER (?capacity IN (700, 800, 900))",
 				"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
 		assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
-				"VALUES ?threshold { 700 }",
+				"?generator a <http://example.com/theme/grid/Generator> .",
 				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
 		assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
 				"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);

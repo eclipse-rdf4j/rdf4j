@@ -283,9 +283,9 @@ public class ThemeQueryBenchmark {
 		storeConfig.setIterationCacheSyncThreshold(0);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
-//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;

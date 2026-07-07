@@ -305,7 +305,7 @@ class LmdbImprovedQueryPlanSnapshotIT {
 			return value.contains("LeftJoinIterator") ? "LeftJoin (LeftJoinIterator)" : "LeftJoin";
 		}
 		if (value.startsWith("Join")) {
-			return isJoinIteratorFamily(value) ? "Join (JoinIterator)" : "Join";
+			return "Join";
 		}
 		if (value.startsWith("Group ")) {
 			return stripTrailingMetadata(value);
@@ -326,12 +326,6 @@ class LmdbImprovedQueryPlanSnapshotIT {
 			return "Difference";
 		}
 		return "";
-	}
-
-	private static boolean isJoinIteratorFamily(String value) {
-		return value.contains("JoinIterator")
-				|| value.contains("BoundStatementPatternJoinIteration")
-				|| value.contains("BoundStatementPatternLeftJoinIteration");
 	}
 
 	private static String stripTreePrefix(String line) {

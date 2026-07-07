@@ -425,6 +425,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			return engineeringQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
 			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
@@ -606,6 +609,13 @@ class LmdbThemeTopRegressionSnapshotIT {
 			List<String> mismatches = engineeringQ9FastShapeMismatches(renderedQuery, plan);
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ8FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast requirement-component shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		}
 	}
@@ -1176,6 +1186,36 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"plannedLookupComponents=[P]", "optional component name should stay predicate-local");
 		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/satisfies",
 				"plannedIndexAccessMode=directLookup", "correlated satisfies EXISTS should be direct");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
+	private static List<String> engineeringQ8FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"satisfies bridge should remain visible");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"satisfies should bind component before the component type guard");
+		requireBefore(mismatches, renderedQuery,
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"component type guard should run before assembly fanout");
+		requireBefore(mismatches, renderedQuery,
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"OPTIONAL",
+				"mandatory component chain should finish before optional dependsOn fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL", "FILTER (?optDep != ?component)",
+				"optional dependsOn fanout should stay before the optDep filter");
+		requireDoesNotContain(mismatches, plan, "Join (BoundStatementPatternJoinIteration) (resultSizeEstimate=520)",
+				"component type guard should not run through the known slow bound-statement count shape");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/satisfies", "satisfies");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Component type");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/partOf", "partOf");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/dependsOn", "dependsOn");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
 		return mismatches;
 	}

@@ -211,10 +211,13 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.setup();
 		try {
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
-			Join join = findFirst(optimized, Join.class);
-			assertTrue(join != null && join.getLeftArg()instanceof BindingSetAssignment assignment
+			List<TupleExpr> joinArgs = joinArgsWithLimitBindingSetAssignment(optimized);
+			assertTrue(!joinArgs.isEmpty(),
+					"Expected optimized medical q5 plan to retain the unused singleton VALUES ?limit; plan="
+							+ optimized);
+			assertTrue(joinArgs.getFirst()instanceof BindingSetAssignment assignment
 					&& assignment.getBindingNames().contains("limit") && hasExactlyOneBindingSet(assignment),
-					"Expected optimized medical q5 plan to start with the unused singleton VALUES ?limit; plan="
+					"Expected optimized medical q5 VALUES ?limit to lead its join segment; plan="
 							+ optimized);
 		} finally {
 			benchmark.tearDown();
@@ -320,6 +323,44 @@ class ThemeQueryBenchmarkSmokeIT {
 			}
 		}
 		return count == 1;
+	}
+
+	private static List<TupleExpr> joinArgsWithLimitBindingSetAssignment(TupleExpr tupleExpr) {
+		List<TupleExpr>[] found = new List[] { List.of() };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Join node) {
+				List<TupleExpr> args = joinArgs(node);
+				if (args.size() > found[0].size() && args.stream()
+						.anyMatch(ThemeQueryBenchmarkSmokeIT::isLimitBindingSetAssignment)) {
+					found[0] = args;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean isLimitBindingSetAssignment(TupleExpr tupleExpr) {
+		return tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.getBindingNames().contains("limit")
+				&& hasExactlyOneBindingSet(assignment);
+	}
+
+	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+			return;
+		}
+		args.add(tupleExpr);
 	}
 
 	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {

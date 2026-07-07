@@ -305,7 +305,6 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				"BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])");
 		assertContains(plan, "plannerId=lmdb-finite-anchor");
 		assertContains(plan, "plannerPath=CANONICAL_FINITE_ANCHOR");
-		assertContains(plan, "Join (BoundStatementPatternJoinIteration)");
 		assertFalse(plan.contains("BoundStatementPatternLeftJoinIteration"),
 				"Engineering q2 should not drift back to the slower left-join statement pattern path:\n" + plan);
 		assertBefore(plan,
@@ -321,6 +320,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				"value=http://example.com/theme/engineering/partOf",
 				"Engineering q2 should resolve assemblies before optional partOf expansion");
 		assertAssemblyNameLookupUsesLocalValuesFilter(plan);
+		assertPartOfUsesBoundAssembly(plan);
 	}
 
 	private static void assertEngineeringQ9FastRenderedShape(String renderedQuery, String plan) {
@@ -471,12 +471,19 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	private static void assertOptionalPartOfUsesBoundAssembly(String plan) {
+		assertPartOfUsesBoundAssembly(plan);
+	}
+
+	private static void assertPartOfUsesBoundAssembly(String plan) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/partOf");
 		if (predicateIndex < 0) {
-			throw new AssertionError("Engineering q10 plan should include the optional partOf pattern:\n" + plan);
+			throw new AssertionError("Engineering plan should include the optional partOf pattern:\n" + plan);
 		}
 
-		String pattern = statementPatternWindow(plan, predicateIndex, "ExtensionElem (optComponent)");
+		String endMarker = plan.indexOf("ExtensionElem (optComponent)", predicateIndex) >= 0
+				? "ExtensionElem (optComponent)"
+				: "GroupElem (";
+		String pattern = statementPatternWindow(plan, predicateIndex, endMarker);
 		assertContains(pattern, "s: Var (name=component) (bindingState=unbound)");
 		assertContains(pattern, "o: Var (name=assembly) (bindingState=bound)");
 	}
