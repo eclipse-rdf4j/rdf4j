@@ -7490,8 +7490,10 @@ class LmdbEvaluationStatistics
 		}
 		double prefixRows = duplicateCorrectionPrefixRows(leftFactors, knownLeftRows, rightFactors.getFirst());
 		if (!isPositiveFinite(prefixRows)) {
-			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
-					"reason=prefix-rows, prefixRows=" + prefixRows);
+			if (estimateTraceEnabled()) {
+				traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+						"reason=prefix-rows, prefixRows=" + prefixRows);
+			}
 			return null;
 		}
 
@@ -7517,8 +7519,10 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (bridgeCandidates.size() < 2) {
-			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
-					"reason=bridge-candidates, count=" + bridgeCandidates.size());
+			if (estimateTraceEnabled()) {
+				traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+						"reason=bridge-candidates, count=" + bridgeCandidates.size());
+			}
 			return null;
 		}
 
@@ -7532,18 +7536,26 @@ class LmdbEvaluationStatistics
 			PrefixBridgeEstimate prefixBridge = bridgeCandidate.prefixBridge();
 			Set<String> bridgeBindingNames = plannerBindingNames(bridgeCandidate.bridge().getBindingNames());
 			boundNames.addAll(bridgeBindingNames);
-			double fanoutDenominator = isPositiveFinite(prefixBridge.prefixRows())
-					? prefixBridge.prefixRows()
-					: prefixRows;
-			double fanout = prefixBridge.rows() / fanoutDenominator;
+			double fanout = multiBridgePerRowFanout(bridgeCandidate.bridge(), prefixBridge, leftBindingNames);
 			if (!isPositiveFinite(fanout)) {
-				traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null, "reason=fanout, fanout=" + fanout);
+				double fanoutDenominator = isPositiveFinite(prefixBridge.prefixRows())
+						? prefixBridge.prefixRows()
+						: prefixRows;
+				fanout = prefixBridge.rows() / fanoutDenominator;
+			}
+			if (!isPositiveFinite(fanout)) {
+				if (estimateTraceEnabled()) {
+					traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null,
+							"reason=fanout, fanout=" + fanout);
+				}
 				return null;
 			}
 			combinedRows *= fanout;
 			if (!isFiniteNonNegative(combinedRows)) {
-				traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null,
-						"reason=combined-rows, combinedRows=" + combinedRows);
+				if (estimateTraceEnabled()) {
+					traceEstimate("multi-bridge-null", bridgeCandidate.bridge(), null,
+							"reason=combined-rows, combinedRows=" + combinedRows);
+				}
 				return null;
 			}
 			if (isPositiveFinite(prefixBridge.prefixSurfaceRows())) {
@@ -7556,8 +7568,11 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (!isPositiveFinite(combinedRows) || boundNames.isEmpty()) {
-			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
-					"reason=combined-invalid, combinedRows=" + combinedRows + ", boundNames=" + boundNames.size());
+			if (estimateTraceEnabled()) {
+				traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+						"reason=combined-invalid, combinedRows=" + combinedRows + ", boundNames="
+								+ boundNames.size());
+			}
 			return null;
 		}
 
@@ -7566,12 +7581,20 @@ class LmdbEvaluationStatistics
 		for (BridgeCandidate bridgeCandidate : bridgeCandidates) {
 			leftWithBridges.add(bridgeCandidate.bridge());
 		}
+		double fanoutProductRows = combinedRows;
 		double orderedRows = connectedByBindingNames(leftWithBridges) ? estimateFiniteBranchRows(leftWithBridges)
 				: Double.NaN;
 		if (isPositiveFinite(orderedRows) && !needsDuplicateCorrection(prefixRows, minimumPrefixSurfaceRows)) {
 			combinedRows = orderedRows;
 		} else if (isPositiveFinite(orderedRows)) {
 			combinedRows = Math.max(combinedRows, orderedRows);
+		}
+		if (estimateTraceEnabled()) {
+			traceEstimate("multi-bridge-combined", rightFactors.getFirst(), null,
+					"prefixRows=" + prefixRows + ", fanoutProductRows=" + fanoutProductRows
+							+ ", orderedRows=" + orderedRows + ", combinedRows=" + combinedRows
+							+ ", duplicateMultiplier=" + duplicateMultiplier
+							+ ", minimumPrefixSurfaceRows=" + minimumPrefixSurfaceRows);
 		}
 
 		List<TupleExpr> remainingFactors = factorsWithoutIdentities(rightFactors, selectedBridges);
@@ -7581,8 +7604,10 @@ class LmdbEvaluationStatistics
 					combinedRows, Double.NaN, Double.NaN, "multi-bridge-product", joinVarName(bridgeJoinVarNames));
 		}
 		if (!factorsReachableFromBindings(boundNames, remainingFactors)) {
-			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
-					"reason=remaining-unreachable, remaining=" + remainingFactors.size());
+			if (estimateTraceEnabled()) {
+				traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+						"reason=remaining-unreachable, remaining=" + remainingFactors.size());
+			}
 			return null;
 		}
 
@@ -7603,12 +7628,38 @@ class LmdbEvaluationStatistics
 					combinedRows, finiteBindingValues);
 		}
 		if (!isFiniteNonNegative(productRows)) {
-			traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
-					"reason=continuation, productRows=" + productRows + ", combinedRows=" + combinedRows);
+			if (estimateTraceEnabled()) {
+				traceEstimate("multi-bridge-null", rightFactors.getFirst(), null,
+						"reason=continuation, productRows=" + productRows + ", combinedRows=" + combinedRows);
+			}
 			return null;
 		}
 		return new OptionalBridgeProductEstimate(productRows, combinedRows, prefixRows, minimumPrefixSurfaceRows,
 				bridgeSurfaceRows, productRows, rightRows, bridgeSurfaceRows, source, joinVarName(bridgeJoinVarNames));
+	}
+
+	/**
+	 * Per-left-row fanout of a bridge pattern: bridge rows divided by the distinct values of the variable it shares
+	 * with the left side. OPTIONAL keeps unmatched left rows, so the fanout never drops below one. Returns NaN when the
+	 * shared variable is ambiguous or the statistics cannot price it.
+	 */
+	private double multiBridgePerRowFanout(StatementPattern bridge, PrefixBridgeEstimate prefixBridge,
+			Set<String> leftBindingNames) {
+		String sharedVarName = prefixBridge.joinVarName();
+		if (sharedVarName == null) {
+			Set<String> shared = plannerBindingNames(bridge.getBindingNames());
+			shared.retainAll(leftBindingNames);
+			if (shared.size() != 1) {
+				return Double.NaN;
+			}
+			sharedVarName = shared.iterator().next();
+		}
+		double bridgeRows = bridgeAccessRows(bridge);
+		double bridgeDistinct = sketchBasedJoinEstimator.estimateJoinVarDistinctRows(bridge, sharedVarName);
+		if (!isPositiveFinite(bridgeRows) || !isPositiveFinite(bridgeDistinct)) {
+			return Double.NaN;
+		}
+		return Math.max(1.0d, bridgeRows / bridgeDistinct);
 	}
 
 	private List<TupleExpr> factorsWithoutIdentities(List<TupleExpr> factors, Set<TupleExpr> excluded) {

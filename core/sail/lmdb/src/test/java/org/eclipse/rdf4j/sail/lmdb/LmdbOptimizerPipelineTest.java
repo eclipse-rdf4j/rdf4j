@@ -1118,6 +1118,10 @@ class LmdbOptimizerPipelineTest {
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0));
 		estimator.rebuild();
+		// The omni subject-star surface is only offered once the estimator reports ready; without awaiting,
+		// planning can race the background snapshot and fall back to the characteristic-set source, dropping the
+		// omni-join-estimator evidence this test asserts.
+		LmdbPlannerAwait.awaitEstimatorReady(estimator);
 		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
 		try {
 			TripleSource tripleSource = new EmptyTripleSource();

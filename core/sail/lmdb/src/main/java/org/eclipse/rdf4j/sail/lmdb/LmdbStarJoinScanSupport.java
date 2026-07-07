@@ -81,6 +81,13 @@ final class LmdbStarJoinScanSupport {
 		}
 		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, ACCESS_MODE);
 		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.method());
+		// When the batched star scan is priced off the omni subject-star surface it is the plan's carrier of omni
+		// sketch evidence; without these the whole tree can lack any omni-sourced node once the star subsumes the
+		// individual joins.
+		if (estimate.method() != null && estimate.method().contains("omni")) {
+			tupleExpr.setStringMetricPlanned("plannedSketchStrategy", "omni");
+			tupleExpr.setStringMetricPlanned("plannedSketchEstimateSource", estimate.method());
+		}
 		LmdbRewriteProof proof = new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.STAR_MULTI_PREDICATE_SCAN,
 				LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
 				Set.of("subject=" + plan.subjectName(), "predicates=" + plan.predicateValues().size(),
