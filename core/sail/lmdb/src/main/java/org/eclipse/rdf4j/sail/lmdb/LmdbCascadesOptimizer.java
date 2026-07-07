@@ -155,7 +155,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
 			OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required);
 			if (budgetedSearch) {
-				goal = goal.asBudgeted(Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS)),
+				goal = goal.asBudgeted(Duration.ofMillis(configuredTimeoutMillis()),
 						intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
 			} else if (mode == Mode.SHADOW) {
 				goal = new OptimizationGoal(goal.requiredProperties(), goal.semanticScope(), goal.costPolicy(),
@@ -632,17 +632,22 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		group.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
 	}
 
-	private OptimizationGoal freshSubtreeGoal(OptimizationGoal goal, Set<String> contextualBoundVars,
+	OptimizationGoal freshSubtreeGoal(OptimizationGoal goal, Set<String> contextualBoundVars,
 			Set<String> subtreeBindings) {
 		Set<String> boundVars = contextualBoundVars(contextualBoundVars, subtreeBindings);
 		if (goal == null || goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
 			OptimizationGoal subtreeGoal = goal == null ? OptimizationGoal.root() : goal;
 			return subtreeGoal.withRequiredProperties(requiredBoundProperties(boundVars)).withoutRowGoal();
 		}
-		long timeoutNanos = Duration.ofMillis(longProperty(TIMEOUT_MILLIS_PROPERTY, DEFAULT_TIMEOUT_MILLIS))
-				.toNanos();
-		long now = System.nanoTime();
-		long deadline = Long.MAX_VALUE - now < timeoutNanos ? Long.MAX_VALUE : now + timeoutNanos;
+		long timeoutMillis = configuredTimeoutMillis();
+		long deadline;
+		if (timeoutMillis <= 0L) {
+			deadline = Long.MAX_VALUE;
+		} else {
+			long timeoutNanos = Duration.ofMillis(timeoutMillis).toNanos();
+			long now = System.nanoTime();
+			deadline = Long.MAX_VALUE - now < timeoutNanos ? Long.MAX_VALUE : now + timeoutNanos;
+		}
 		return new OptimizationGoal(requiredBoundProperties(boundVars), goal.semanticScope(), goal.costPolicy(),
 				goal.costBound(), goal.excludedProperties(), goal.searchMode(), deadline, goal.taskBudget(),
 				OptimizationGoal.RowGoal.ALL, goal.estimationTier());
@@ -1641,6 +1646,22 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return Math.max(1, Integer.parseInt(value.trim()));
 		} catch (NumberFormatException e) {
 			return fallback;
+		}
+	}
+
+	/**
+	 * Wall-clock budget for budgeted searches. {@code <= 0} disables the wall-clock deadline entirely (deterministic
+	 * planning: the task-count budget is the only bound); absent or unparsable values fall back to the default.
+	 */
+	static long configuredTimeoutMillis() {
+		String value = System.getProperty(TIMEOUT_MILLIS_PROPERTY);
+		if (value == null || value.isBlank()) {
+			return DEFAULT_TIMEOUT_MILLIS;
+		}
+		try {
+			return Math.max(0L, Long.parseLong(value.trim()));
+		} catch (NumberFormatException e) {
+			return DEFAULT_TIMEOUT_MILLIS;
 		}
 	}
 

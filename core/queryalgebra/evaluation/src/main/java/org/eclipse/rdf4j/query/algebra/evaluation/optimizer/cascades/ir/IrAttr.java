@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -32,12 +33,26 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 	}
 
 	record StatementPatternAttr(VarTerm subject, VarTerm predicate, VarTerm object, VarTerm context,
-			StatementPattern.Scope scope) implements IrAttr {
+			StatementPattern.Scope scope, Map<String, String> plannedStringMetrics,
+			Map<String, Double> plannedDoubleMetrics, Map<String, Long> plannedLongMetrics) implements IrAttr {
 		public StatementPatternAttr {
 			Objects.requireNonNull(subject, "subject");
 			Objects.requireNonNull(predicate, "predicate");
 			Objects.requireNonNull(object, "object");
 			scope = scope == null ? StatementPattern.Scope.DEFAULT_CONTEXTS : scope;
+			// Planned metrics carry pre-planning physical contracts (e.g. distinct-cursor-skip requirements);
+			// they must survive the IR round-trip or rules that rebuild the pattern sever those contracts.
+			plannedStringMetrics = plannedStringMetrics == null || plannedStringMetrics.isEmpty() ? Map.of()
+					: Map.copyOf(plannedStringMetrics);
+			plannedDoubleMetrics = plannedDoubleMetrics == null || plannedDoubleMetrics.isEmpty() ? Map.of()
+					: Map.copyOf(plannedDoubleMetrics);
+			plannedLongMetrics = plannedLongMetrics == null || plannedLongMetrics.isEmpty() ? Map.of()
+					: Map.copyOf(plannedLongMetrics);
+		}
+
+		public StatementPatternAttr(VarTerm subject, VarTerm predicate, VarTerm object, VarTerm context,
+				StatementPattern.Scope scope) {
+			this(subject, predicate, object, context, scope, Map.of(), Map.of(), Map.of());
 		}
 
 		public List<BindingSymbol> nonConstantSymbols() {

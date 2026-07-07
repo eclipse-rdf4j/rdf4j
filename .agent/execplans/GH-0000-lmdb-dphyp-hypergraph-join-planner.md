@@ -27,7 +27,7 @@ You can see it working by running the new unit tests (they run without any LMDB 
 
 - The existing planner already names its estimate source "hypergraph" but is left-deep-prefix only; the new code must use distinct naming (`dphyp`) everywhere to avoid confusion.
 - `JoinFactorCostModel.estimateFactorCost(factor, CostContext)` is prefix-oriented: it estimates one factor given bound variables and prefix rows. There is no direct API for "rows of joining two arbitrary subtrees", so the adapter derives per-edge selectivities from pairwise conditional probes (see Decision Log) and keeps one canonical row estimate per node set.
-- `Join` in RDF4J algebra is binary and evaluation handles arbitrary trees, but this repo's LMDB evaluation can execute the right side of a Join per left-row (bound join). The adapter therefore costs a bushy right side under an explicit hash/materialized-join model; execution-side operator choice remains RDF4J's. Flag stays default-off until benchmarked (Milestone E, future).
+- `Join` in RDF4J algebra is binary and evaluation handles arbitrary trees, but this repo's LMDB evaluation can execute the right side of a Join per left-row (bound join). The adapter therefore costs a bushy right side under an explicit hash/materialized-join model; execution-side operator choice remains RDF4J's. Flag was default-off for v1; on 2026-07-07 (after the toTupleExpr hash-hint fix and the 2026-07-06 benchmark wins on q1/q6/q10) the default was flipped to ON by explicit user decision — `-Drdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp=false` is the kill switch.
 - The working tree at the start of this work already contained staged deletions of finished execplans and the staged design doc `hypergraph-plan.md`; commits for this work must add only its own files (`git commit -- <paths>`), leaving the user's staged state untouched.
 - DPhyp emits each csg-cmp pair once with *one* connecting edge index even when several hyperedges cross the cut. The costing receiver therefore derives join cardinality from the predicate list (every predicate whose TES becomes newly satisfied), not from the reported edge, which also makes cycle predicates apply exactly once with no extra bookkeeping.
 - Conditional-probe join selectivities are direction-dependent when the underlying estimator is asymmetric (probing j with i bound need not match probing i with j bound). The adapter probes both directions and combines them with a geometric mean; with a symmetric estimator this reduces to the plain ratio.
@@ -148,7 +148,7 @@ Unit level: the six new test classes pass; `SubgraphEnumeratorTest#matchesNaiveO
 
 ## Idempotence and Recovery
 
-All changes are additive except the small hook in `LmdbCascadesConnectedJoinPlanner.plan(...)`, which is guarded by a default-off system property; reverting is deleting the new files and the hook lines. Tests mutate no global state other than temporarily setting the system property inside try/finally (same pattern as `LmdbCascadesOptimizerTest`). Re-running any milestone's steps is safe.
+All changes are additive except the small hook in `LmdbCascadesConnectedJoinPlanner.plan(...)`, which is guarded by a system property (default ON since 2026-07-07; `=false` disables); reverting is deleting the new files and the hook lines. Tests mutate no global state other than temporarily setting the system property inside try/finally (same pattern as `LmdbCascadesOptimizerTest`). Re-running any milestone's steps is safe.
 
 ## Artifacts and Notes
 

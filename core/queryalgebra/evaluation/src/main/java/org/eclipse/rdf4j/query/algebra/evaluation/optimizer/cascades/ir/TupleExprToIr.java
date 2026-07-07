@@ -87,7 +87,8 @@ public final class TupleExprToIr {
 					IrAttr.VarTerm.fromVar(pattern.getObjectVar(), builder.universe()),
 					pattern.getContextVar() == null ? null
 							: IrAttr.VarTerm.fromVar(pattern.getContextVar(), builder.universe()),
-					pattern.getScope());
+					pattern.getScope(), pattern.getStringMetricsPlanned(), pattern.getDoubleMetricsPlanned(),
+					pattern.getLongMetricsPlanned());
 			return builder.statementPattern(attr);
 		}
 		if (tupleExpr instanceof BindingSetAssignment assignment) {

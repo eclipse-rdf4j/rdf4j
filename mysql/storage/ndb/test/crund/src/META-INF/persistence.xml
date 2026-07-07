@@ -17,24 +17,22 @@
  specific language governing permissions and limitations
  under the License.   
 -->
-<persistence xmlns="http://java.sun.com/xml/ns/persistence"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    version="1.0">
+<persistence xmlns="http://java.sun.com/xml/ns/persistence" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.0">
 
     <!--
         Need to enumerate each persistent class first in the persistence.xml
         See: http://issues.apache.org/jira/browse/OPENJPA-78
     -->
-    <persistence-unit name="none" transaction-type="RESOURCE_LOCAL">
-        <class>com.mysql.cluster.crund.A</class>
-        <class>com.mysql.cluster.crund.B</class>
-    </persistence-unit>
+	<persistence-unit name="none" transaction-type="RESOURCE_LOCAL">
+		<class>com.mysql.cluster.crund.A</class>
+		<class>com.mysql.cluster.crund.B</class>
+	</persistence-unit>
 
     <!--
         A persistence unit is a set of listed persistent entities as well
         the configuration of an EntityManagerFactory.
     -->
-    <persistence-unit name="crundjpa" transaction-type="RESOURCE_LOCAL">
+	<persistence-unit name="crundjpa" transaction-type="RESOURCE_LOCAL">
         <!--
             The default provider can be OpenJPA, or some other product.
             This element is optional if OpenJPA is the only JPA provider
@@ -59,10 +57,10 @@
         -->
 
         <!-- We must enumerate each entity in the persistence unit -->
-        <class>com.mysql.cluster.crund.A</class>
-        <class>com.mysql.cluster.crund.B</class>
+		<class>com.mysql.cluster.crund.A</class>
+		<class>com.mysql.cluster.crund.B</class>
 
-        <properties>
+		<properties>
             <!-- OpenJPA properties if not provided as System properties -->
             <!--
             <property name="openjpa.ConnectionURL" 
@@ -75,7 +73,7 @@
                 value="secret"/>
             <property name="openjpa.Log" value="DefaultLevel=WARN, Tool=INFO"/>
             -->
-        </properties>
+		</properties>
 
-    </persistence-unit>
+	</persistence-unit>
 </persistence>

@@ -466,8 +466,10 @@ class LmdbOperatorFeedbackStatsTest {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 		String previousDetailed = System.getProperty(
 				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
+		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
 		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
 		System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
+		System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-cardinality-correction");
 		try {
 			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 			LmdbEvaluationStatistics evaluationStatistics = new LmdbEvaluationStatistics(null, null, null, null,
@@ -487,6 +489,7 @@ class LmdbOperatorFeedbackStatsTest {
 		} finally {
 			restoreOperatorFeedbackTrackingProperty(previous);
 			restoreOperatorFeedbackDetailedRuntimeProperty(previousDetailed);
+			restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
 		}
 	}
 
@@ -694,7 +697,9 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void planCandidateActualOutcomeCanRankPhysicalRule(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY);
+		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
 		System.setProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, "true");
+		System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-cardinality-correction");
 		try {
 			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 			LeoPlanCandidate slow = new LeoPlanCandidate("slow", "slow-rule", join("s", "x", "o"), 1000, 1000,
@@ -714,6 +719,7 @@ class LmdbOperatorFeedbackStatsTest {
 			assertTrue(ranking.bestConfidence() > 0.0d);
 		} finally {
 			restoreProperty(LmdbOperatorFeedbackStats.COMPLETED_TREE_RESCUE_PROPERTY, previous);
+			restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
 		}
 	}
 

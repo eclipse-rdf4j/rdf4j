@@ -43,7 +43,8 @@ final class RdfTermDomain {
 		LITERAL_WITHOUT_LANGUAGE,
 		NUMBER,
 		CANONICAL_INTEGER,
-		CANONICAL_DATETIME;
+		CANONICAL_DATETIME,
+		CANONICAL_DATE;
 
 		private long mask() {
 			return 1L << ordinal();
@@ -60,7 +61,7 @@ final class RdfTermDomain {
 	private static final long LANGUAGE_MASK = Fact.LITERAL_WITH_LANGUAGE.mask() | Fact.LITERAL_WITHOUT_LANGUAGE.mask();
 	private static final long TIMEZONE_MASK = Fact.DATE_UTC.mask() | Fact.DATE_WITHOUT_TIMEZONE.mask();
 	private static final long UNIVERSAL_FACT_MASK = Fact.NUMBER.mask() | Fact.CANONICAL_INTEGER.mask()
-			| Fact.CANONICAL_DATETIME.mask();
+			| Fact.CANONICAL_DATETIME.mask() | Fact.CANONICAL_DATE.mask();
 	private static final long XSD_DATATYPE_MASK = xsdDatatypeMask();
 	private static final long POSSIBLE_FACT_MASK = KIND_MASK | LANGUAGE_MASK | TIMEZONE_MASK | XSD_DATATYPE_MASK;
 
@@ -565,6 +566,10 @@ final class RdfTermDomain {
 				&& (datatypes & datatypeMask(CoreDatatype.XSD.DATETIME)) == 0L) {
 			return true;
 		}
+		if ((mask & Fact.CANONICAL_DATE.mask()) != 0L && datatypes != 0L
+				&& (datatypes & datatypeMask(CoreDatatype.XSD.DATE)) == 0L) {
+			return true;
+		}
 		long timezone = mask & TIMEZONE_MASK;
 		if (timezone != 0L && datatypes != 0L && !hasCalendarDatatype(datatypes)) {
 			return true;
@@ -634,6 +639,12 @@ final class RdfTermDomain {
 			}
 		} else {
 			mask |= Fact.DATE_WITHOUT_TIMEZONE.mask();
+			// Timezone-less xsd:date has no canonicalizer, but its lexical forms map 1:1 onto values once the
+			// two aliases the grammar still permits are excluded: zero-padded years beyond four digits and the
+			// negative-zero year.
+			if (xsdDatatype == CoreDatatype.XSD.DATE && hasCanonicalYearField(label)) {
+				mask |= Fact.CANONICAL_DATE.mask();
+			}
 		}
 		// Only xsd:dateTime has a true canonicalizer; other calendar datatypes pass through
 		// XMLDatatypeUtil.normalize unchanged, so a fixed-point check would be vacuous for them.
@@ -641,6 +652,19 @@ final class RdfTermDomain {
 			mask |= Fact.CANONICAL_DATETIME.mask();
 		}
 		return mask;
+	}
+
+	private static boolean hasCanonicalYearField(String label) {
+		int yearStart = label.startsWith("-") ? 1 : 0;
+		int yearEnd = label.indexOf('-', yearStart);
+		if (yearEnd < 0) {
+			return false;
+		}
+		int yearDigits = yearEnd - yearStart;
+		if (yearDigits == 4) {
+			return yearStart == 0 || !label.startsWith("-0000");
+		}
+		return yearDigits > 4 && label.charAt(yearStart) != '0';
 	}
 
 	private static boolean hasTimezone(String label) {

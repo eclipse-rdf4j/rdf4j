@@ -1338,10 +1338,16 @@ final class GuaranteePlanOptionProvider {
 				datatype)) {
 			return false;
 		}
-		if (datatype != CoreDatatype.XSD.DATETIME) {
+		if (guarantee.singleXsdDatatype() != datatype) {
 			return false;
 		}
-		if (guarantee.singleXsdDatatype() != datatype) {
+		if (datatype == CoreDatatype.XSD.DATE) {
+			// Timezone-less canonical xsd:date has exactly one lexical form per value, so a term-exact anchor is
+			// sound when both the query constant and every stored object carry the CANONICAL_DATE fact.
+			return RdfTermDomain.classify(literal).has(RdfTermDomain.Fact.CANONICAL_DATE)
+					&& guarantee.has(RdfTermDomain.Fact.CANONICAL_DATE);
+		}
+		if (datatype != CoreDatatype.XSD.DATETIME) {
 			return false;
 		}
 		// A term-exact anchor can only stand in for SPARQL value equality when every stored object is in the

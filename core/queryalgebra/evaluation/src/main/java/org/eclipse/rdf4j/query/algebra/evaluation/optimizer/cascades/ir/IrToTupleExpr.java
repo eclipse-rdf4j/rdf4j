@@ -94,9 +94,13 @@ public final class IrToTupleExpr {
 
 	private TupleExpr statementPattern(IrNode node) {
 		IrAttr.StatementPatternAttr attr = (IrAttr.StatementPatternAttr) node.attr();
-		return new StatementPattern(attr.scope(), attr.subject().asVar(), attr.predicate().asVar(),
-				attr.object().asVar(),
+		StatementPattern pattern = new StatementPattern(attr.scope(), attr.subject().asVar(),
+				attr.predicate().asVar(), attr.object().asVar(),
 				attr.context() == null ? null : attr.context().asVar());
+		attr.plannedStringMetrics().forEach(pattern::setStringMetricPlanned);
+		attr.plannedDoubleMetrics().forEach(pattern::setDoubleMetricPlanned);
+		attr.plannedLongMetrics().forEach(pattern::setLongMetricPlanned);
+		return pattern;
 	}
 
 	private TupleExpr finiteRows(IrNode node) {

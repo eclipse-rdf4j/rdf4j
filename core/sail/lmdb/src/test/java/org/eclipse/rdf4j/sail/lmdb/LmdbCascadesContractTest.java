@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -56,9 +57,11 @@ class LmdbCascadesContractTest {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 		String previousDetailed = System.getProperty(
 				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
+		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
 		try {
 			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
 			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
+			System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-cardinality-correction");
 			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(
 					tempDir.resolve("join-estimator.rjes"));
 			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
@@ -82,6 +85,11 @@ class LmdbCascadesContractTest {
 		} finally {
 			restoreFeedbackTracking(previous);
 			restoreFeedbackDetailedRuntime(previousDetailed);
+			if (previousProfile == null) {
+				System.clearProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+			} else {
+				System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
+			}
 		}
 	}
 

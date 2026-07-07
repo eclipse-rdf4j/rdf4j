@@ -1298,6 +1298,26 @@ class LmdbCascadesOptimizerTest {
 		return scopedUnion;
 	}
 
+	@Test
+	void zeroTimeoutMillisDisablesWallClockDeadlineForSubtreeGoals() throws InterruptedException {
+		String previousTimeout = System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, "0");
+		try {
+			LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+			OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(Duration.ofMillis(500), 128);
+			OptimizationGoal subtreeGoal = optimizer.freshSubtreeGoal(budgeted, Set.of(), Set.of());
+
+			// Sleep past the 1ms deadline that a clamped timeout would arm: with timeoutMillis=0 the subtree
+			// goal must carry no wall-clock deadline at all (deterministic planning, task budget only).
+			Thread.sleep(10L);
+
+			assertFalse(subtreeGoal.expired(),
+					"timeoutMillis=0 (deterministic planning) must mean task-budget-only: subtree goals must not "
+							+ "carry a wall-clock deadline");
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, previousTimeout);
+		}
+	}
+
 	private static void restoreMode(String previousMode) {
 		if (previousMode == null) {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);

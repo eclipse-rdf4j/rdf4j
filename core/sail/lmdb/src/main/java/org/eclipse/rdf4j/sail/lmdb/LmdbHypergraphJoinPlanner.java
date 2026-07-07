@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.sail.lmdb.hypergraph.PlanHypergraph;
  * {@link org.eclipse.rdf4j.sail.lmdb.hypergraph} optimizer, which searches all connected join trees — bushy included —
  * instead of only connected left-deep prefixes.
  * <p>
- * Enabled with {@code -Drdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp=true} (default off). The v1 scope is
+ * Enabled by default; disable with {@code -Drdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp=false}. The v1 scope is
  * deliberately narrow: every factor must be a plain {@link StatementPattern} with at least one runtime variable, and
  * the island must have 3..maxFactors factors whose shared-variable graph is connected. Anything else returns empty and
  * the caller falls through to the existing left-deep planner.
@@ -67,7 +67,7 @@ final class LmdbHypergraphJoinPlanner {
 	}
 
 	static boolean enabled() {
-		return true;
+		return Boolean.parseBoolean(System.getProperty(DPHYP_PROPERTY, "true"));
 	}
 
 	private static int maxFactors() {
@@ -300,6 +300,9 @@ final class LmdbHypergraphJoinPlanner {
 		join.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ALGORITHM, PLANNER_ALGORITHM_METRIC_VALUE);
 		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plan.rows());
 		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, plan.cost());
+		if (plan.kind() == JoinPlan.Kind.HASH_JOIN) {
+			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		}
 		return join;
 	}
 

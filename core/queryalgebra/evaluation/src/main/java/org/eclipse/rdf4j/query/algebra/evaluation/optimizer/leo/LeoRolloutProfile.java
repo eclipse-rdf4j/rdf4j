@@ -79,12 +79,14 @@ public enum LeoRolloutProfile {
 		if (configured == null || configured.isBlank()) {
 			configured = System.getProperty(LEGACY_PROFILE_PROPERTY);
 		}
-		return parse(configured, SAFE_CARDINALITY_CORRECTION);
+		// Learned corrections must be opted into explicitly; a silent apply-by-default profile lets learned
+		// state overrule store-backed statistics and makes planning nondeterministic across runs.
+		return parse(configured, OFF);
 	}
 
 	public static LeoRolloutProfile parse(String value, LeoRolloutProfile fallback) {
 		if (value == null || value.isBlank()) {
-			return fallback == null ? SAFE_CARDINALITY_CORRECTION : fallback;
+			return fallback == null ? OFF : fallback;
 		}
 		String normalized = value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
 		for (LeoRolloutProfile profile : values()) {
@@ -92,6 +94,6 @@ public enum LeoRolloutProfile {
 				return profile;
 			}
 		}
-		return fallback == null ? SAFE_CARDINALITY_CORRECTION : fallback;
+		return fallback == null ? OFF : fallback;
 	}
 }

@@ -730,6 +730,81 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void medicalQ2DateInFilterBecomesFiniteValuesAnchor(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadMedicalQ2EncounterDateData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalQ2DateInFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "date"),
+					"q2 xsd:date IN filter over a canonical timezone-less date object domain should become a "
+							+ "finite VALUES anchor (bound-object lookup) instead of a full scan with a "
+							+ "post-scan membership filter:\n" + optimizedPlan);
+			assertFalse(containsListMemberFor(optimized, "date"),
+					"The generated VALUES anchor should satisfy the date IN filter:\n" + optimizedPlan);
+			BindingSetAssignment dateAnchor = findBindingSetAssignment(optimized, "date")
+					.orElseThrow(() -> new AssertionError("Expected FILTER IN to become VALUES ?date:\n"
+							+ optimizedPlan));
+			assertEquals(2, countBindingSets(dateAnchor),
+					"Timezone-less canonical xsd:date anchors need no lexical-variant expansion:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void medicalQ3RangeFilterRewriteCompetesAgainstCostedOriginal(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			int expectedRows = loadMedicalQ3ObservationChainData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			long actualRows = 0;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalQ3RangeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+				try (TupleQueryResult result = connection.prepareTupleQuery(medicalQ3RangeFilterQuery())
+						.evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+						actualRows++;
+					}
+				}
+			}
+
+			assertEquals(expectedRows, actualRows, "The range filter must keep its semantics:\n" + optimizedPlan);
+			assertFalse(containsBindingSetAssignmentFor(optimized, "value"),
+					"An unselective integer-range VALUES rewrite must compete against the costed original and "
+							+ "lose to the selective patient-code chain; preselecting it drags every matching "
+							+ "observation through the join:\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void medicalQ7CodeOrFilterCombinesValuesAnchorWithAntiFilterPlacement(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -1524,6 +1599,81 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				Resource medication = VF.createIRI("urn:test:selective-medication:" + i);
 				connection.add(medication, RDF_TYPE, MED_MEDICATION);
 				connection.add(medication, MED_CODE, VF.createLiteral("MED-" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static String medicalQ3RangeFilterQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT ?patient ?value WHERE {",
+				"  ?patient med:code \"P-42\" .",
+				"  ?patient med:hasEncounter ?enc .",
+				"  ?enc med:hasObservation ?obs .",
+				"  ?obs med:value ?value .",
+				"  FILTER(?value > 60)",
+				"}");
+	}
+
+	private static int loadMedicalQ3ObservationChainData(SailRepository repository) {
+		IRI hasEncounter = VF.createIRI("http://example.com/theme/medical/hasEncounter");
+		IRI hasObservation = VF.createIRI("http://example.com/theme/medical/hasObservation");
+		int matchingRows = 0;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			int observationIndex = 0;
+			for (int p = 0; p < 200; p++) {
+				Resource patient = VF.createIRI("urn:test:q3-patient:" + p);
+				connection.add(patient, MED_CODE, VF.createLiteral("P-" + p));
+				for (int e = 0; e < 5; e++) {
+					Resource encounter = VF.createIRI("urn:test:q3-encounter:" + p + ":" + e);
+					connection.add(patient, hasEncounter, encounter);
+					for (int o = 0; o < 5; o++) {
+						Resource observation = VF.createIRI("urn:test:q3-observation:" + p + ":" + e + ":" + o);
+						int value = (observationIndex * 7) % 100 + 1;
+						observationIndex++;
+						connection.add(encounter, hasObservation, observation);
+						connection.add(observation, MED_VALUE,
+								VF.createLiteral(String.valueOf(value), XSD.INTEGER));
+						if (p == 42 && value > 60) {
+							matchingRows++;
+						}
+					}
+				}
+			}
+			connection.commit();
+		}
+		return matchingRows;
+	}
+
+	private static String medicalQ2DateInFilterQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT ?enc ?practitioner WHERE {",
+				"  ?enc a med:Encounter .",
+				"  ?enc med:recordedOn ?date .",
+				"  FILTER(?date IN (\"2024-01-01\"^^xsd:date, \"2024-02-01\"^^xsd:date))",
+				"  ?enc med:handledBy ?practitioner .",
+				"}");
+	}
+
+	private static void loadMedicalQ2EncounterDateData(SailRepository repository) {
+		IRI encounterType = VF.createIRI("http://example.com/theme/medical/Encounter");
+		IRI recordedOn = VF.createIRI("http://example.com/theme/medical/recordedOn");
+		IRI handledBy = VF.createIRI("http://example.com/theme/medical/handledBy");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 12_000; i++) {
+				Resource encounter = VF.createIRI("urn:test:q2-encounter:" + i);
+				Resource practitioner = VF.createIRI("urn:test:q2-practitioner:" + (i % 25));
+				int month = (i % 12) + 1;
+				int day = ((i / 12) % 28) + 1;
+				connection.add(encounter, RDF_TYPE, encounterType);
+				connection.add(encounter, recordedOn,
+						VF.createLiteral(String.format("2024-%02d-%02d", month, day), XSD.DATE));
+				connection.add(encounter, handledBy, practitioner);
 			}
 			connection.commit();
 		}

@@ -3692,11 +3692,7 @@ final class LmdbCascadesRuleProvider {
 	private static final class LmdbGuaranteeOptionImplementationRule extends LmdbRule {
 		private static final int MAX_CANDIDATE_METRICS = 8;
 		private static final int FIXED_ORDER_PRESELECTION_FACTOR_THRESHOLD = 6;
-		private static final double SEMANTIC_REWRITE_RARE_FILTER_INVOCATION_ROWS = 32.0d;
 		private static final double SEMANTIC_REWRITE_MIN_WORK_IMPROVEMENT_RATIO = 0.90d;
-		private static final double SEMANTIC_REWRITE_RISK_COMPETE_RATIO = 1.50d;
-		private static final String PLANNED_COST_CONFIDENCE = "plannedCostConfidence";
-		private static final String PLANNED_COST_WORK_Q_ERROR_MAX = "plannedCostWorkQErrorMax";
 
 		private final JoinOrderPlanner joinOrderPlanner;
 
@@ -3759,27 +3755,18 @@ final class LmdbCascadesRuleProvider {
 				CostedOption costed = candidate.get();
 				candidates.add(OptionCandidate.valid(option.name(), costed.plan(), costed.comparableWork(), "valid",
 						optionCandidateDetails(costed, option.satisfiedFilterIndex())));
-				if (costed.semanticRewrite()) {
-					if (preselectSemanticRewrite(costed, original, deferredFilters, option.satisfiedFilterIndex())
-							&& (selected == null || beats(costed, selected))) {
-						selected = costed;
-					} else {
-						costedAlternatives.add(costed);
-					}
-				} else {
-					costedAlternatives.add(costed);
-				}
+				costedAlternatives.add(costed);
 			}
 
-			if (selected == null) {
-				if (original.isPresent()) {
-					selected = original.get();
-					candidates.add(0, OptionCandidate.original(original.get()));
-				}
-				for (CostedOption costed : costedAlternatives) {
-					if (selected == null || beats(costed, selected)) {
-						selected = costed;
-					}
+			// Semantic rewrites compete on cost like every other alternative; preselecting one would authorize
+			// a semantic rewrite off a statistical estimate without ever costing the original.
+			if (original.isPresent()) {
+				selected = original.get();
+				candidates.add(0, OptionCandidate.original(original.get()));
+			}
+			for (CostedOption costed : costedAlternatives) {
+				if (selected == null || beats(costed, selected)) {
+					selected = costed;
 				}
 			}
 
@@ -3821,75 +3808,6 @@ final class LmdbCascadesRuleProvider {
 					"LMDB RDF term-domain guarantees are exposed as Cascades physical alternatives");
 			return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost, proof,
 					"lmdb-guarantee-options", snapshot(summaryEstimate, cost)));
-		}
-
-		private boolean preselectSemanticRewrite(CostedOption candidate, Optional<CostedOption> original,
-				List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			if (!candidate.semanticRewrite()) {
-				return false;
-			}
-			// Semantic rewrites create logical factors, such as FILTER IN -> VALUES, that the join planner can
-			// move. Do not reject them just because their local access path is worse at the FILTER's old position.
-			if (original.isEmpty()) {
-				return true;
-			}
-			if (!semanticRewriteCanCompete(candidate, original.get())
-					&& !semanticRewriteCanCompeteAgainstIncumbentRisk(candidate, original.get(),
-							originalFilters, satisfiedFilterIndex)) {
-				return false;
-			}
-			if (semanticPrefixRewrite(candidate)) {
-				return true;
-			}
-			if (!rareFilterMakesSemanticRewriteMoreExpensive(candidate, original.get(), originalFilters,
-					satisfiedFilterIndex)) {
-				return true;
-			}
-			return false;
-		}
-
-		private boolean rareFilterMakesSemanticRewriteMoreExpensive(CostedOption candidate, CostedOption original,
-				List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			double invocationRows = originalFilterInvocationRows(original.plan(), originalFilters,
-					satisfiedFilterIndex);
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(invocationRows)
-					|| invocationRows > SEMANTIC_REWRITE_RARE_FILTER_INVOCATION_ROWS) {
-				return false;
-			}
-			double candidateFullWork = optionFullWork(candidate.plan());
-			double originalFullWork = optionFullWork(original.plan());
-			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateFullWork)
-					&& LmdbJoinPlanSupport.isFiniteNonNegative(originalFullWork)
-					&& candidateFullWork > originalFullWork;
-		}
-
-		private double originalFilterInvocationRows(JoinOrderPlanner.JoinOrderPlan plan,
-				List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			if (plan == null || satisfiedFilterIndex < 0) {
-				return Double.NaN;
-			}
-			double passRatio = filterPassRatio(originalFilters, satisfiedFilterIndex);
-			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
-				if (!step.getAppliedFilterIndexes().contains(satisfiedFilterIndex)) {
-					continue;
-				}
-				double rows = maxFinite(step.getFactorOutputRows(), step.getPrefixOutputRows());
-				if (LmdbJoinPlanSupport.isValidPassRatio(passRatio) && passRatio > 0.0d
-						&& LmdbJoinPlanSupport.isFiniteNonNegative(step.getPrefixOutputRows())) {
-					rows = maxFinite(rows, step.getPrefixOutputRows() / passRatio);
-				}
-				return rows;
-			}
-			return Double.NaN;
-		}
-
-		private double filterPassRatio(List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			if (originalFilters == null || satisfiedFilterIndex < 0 || satisfiedFilterIndex >= originalFilters.size()) {
-				return Double.NaN;
-			}
-			EvaluationStatistics.FilterPassEstimate passEstimate = originalFilters.get(satisfiedFilterIndex)
-					.passEstimate();
-			return passEstimate == null ? Double.NaN : passEstimate.getPlanningPassRatio();
 		}
 
 		private double maxFinite(double left, double right) {
@@ -4910,80 +4828,6 @@ final class LmdbCascadesRuleProvider {
 			return semanticRewriteMateriallyBeats(candidate, incumbent);
 		}
 
-		private boolean semanticRewriteCanCompeteAgainstIncumbentRisk(CostedOption candidate,
-				CostedOption incumbent, List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			if (!candidate.semanticRewrite()
-					|| !removesMaterializedFiniteEqualityFilter(candidate, incumbent)
-					|| !nonExactFiniteFilterEstimate(originalFilters, satisfiedFilterIndex)) {
-				return false;
-			}
-			double candidateWork = candidate.comparableWork();
-			double incumbentWork = incumbent.comparableWork();
-			double incumbentRiskWork = riskAdjustedOptionWork(incumbent.plan());
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
-					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork)
-					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRiskWork)) {
-				return false;
-			}
-			return candidateWork <= incumbentRiskWork
-					&& candidateWork <= incumbentWork * SEMANTIC_REWRITE_RISK_COMPETE_RATIO;
-		}
-
-		private boolean nonExactFiniteFilterEstimate(List<DeferredFilter> originalFilters, int satisfiedFilterIndex) {
-			if (originalFilters == null || satisfiedFilterIndex < 0 || satisfiedFilterIndex >= originalFilters.size()) {
-				return false;
-			}
-			EvaluationStatistics.FilterPassEstimate estimate = originalFilters.get(satisfiedFilterIndex)
-					.passEstimate();
-			return estimate != null && estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.EXACT;
-		}
-
-		private double riskAdjustedOptionWork(JoinOrderPlanner.JoinOrderPlan plan) {
-			if (plan == null) {
-				return Double.NaN;
-			}
-			Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
-			double workRows = firstFiniteMetric(metrics,
-					TelemetryMetricNames.PLANNED_COST_WORK_ROWS,
-					TelemetryMetricNames.PLANNED_WORK_ROWS);
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
-				workRows = plan.getEstimatedTotalWork();
-			}
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
-				return Double.NaN;
-			}
-			double qError = metrics.getOrDefault(PLANNED_COST_WORK_Q_ERROR_MAX, 1.0d);
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(qError) || qError < 1.0d) {
-				qError = 1.0d;
-			}
-			double uncertaintyRows = metrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, 0.0d);
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(uncertaintyRows)) {
-				uncertaintyRows = 0.0d;
-			}
-			double confidence = metrics.getOrDefault(PLANNED_COST_CONFIDENCE,
-					metrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.0d));
-			if (!Double.isFinite(confidence)) {
-				confidence = 0.0d;
-			}
-			confidence = Math.max(0.0d, Math.min(1.0d, confidence));
-			double qErrorPenalty = Math.max(0.0d, qError - 1.0d) * 0.25d;
-			double riskWork = workRows * (1.0d + qErrorPenalty) + uncertaintyRows * (2.0d - confidence);
-			return Math.max(optionFullWork(plan), riskWork);
-		}
-
-		private double firstFiniteMetric(Map<String, Double> metrics, String... names) {
-			if (metrics == null || metrics.isEmpty() || names == null) {
-				return Double.NaN;
-			}
-			for (String name : names) {
-				Double value = metrics.get(name);
-				if (value != null && LmdbJoinPlanSupport.isFiniteNonNegative(value)) {
-					return value;
-				}
-			}
-			return Double.NaN;
-		}
-
 		private boolean semanticPrefixRewrite(CostedOption candidate) {
 			return candidate.details().contains("costing=semantic-prefix");
 		}
@@ -5414,17 +5258,6 @@ final class LmdbCascadesRuleProvider {
 
 		private List<OptionCandidate> summaryCandidates(List<OptionCandidate> candidates, CostedOption selected,
 				GuaranteePlanOptionProvider.Analysis analysis) {
-			if (selected.semanticRewrite()) {
-				List<OptionCandidate> summary = new ArrayList<>(candidates.size() + 1);
-				summary.add(
-						OptionCandidate.invalid("original", "skipped-semantic-rewrite selected=" + selected.name()));
-				for (OptionCandidate candidate : candidates) {
-					if (!"original".equals(candidate.name())) {
-						summary.add(candidate);
-					}
-				}
-				return List.copyOf(summary);
-			}
 			if (preselectableFixedOrder(selected, analysis)) {
 				List<OptionCandidate> summary = new ArrayList<>(candidates.size() + 1);
 				summary.add(OptionCandidate.invalid("original", "skipped-preselected"));
@@ -6571,12 +6404,12 @@ final class LmdbCascadesRuleProvider {
 			}
 			Set<String> boundVars = goalBoundVars(goal);
 			StatisticsEstimate inputEstimate = inputEstimate(difference.getLeftArg(), boundVars);
-			Optional<StatisticsEstimate> antiExistsEstimate = statisticsProvider.filter(filter.getArg(),
-					filter.getCondition(), inputEstimate, boundVars);
-			if (antiExistsEstimate.isEmpty()) {
-				return List.of();
-			}
-			StatisticsEstimate estimate = antiExistsEstimate.get();
+			// An empty probe means the estimator failed, not that the alternative is illegal. Bailing out here
+			// removes the plan from the memo entirely and the cost model never sees it; emit a conservative
+			// low-confidence estimate instead and let uncertainty costing rank it.
+			StatisticsEstimate estimate = statisticsProvider.filter(filter.getArg(),
+					filter.getCondition(), inputEstimate, boundVars)
+					.orElseGet(() -> unpricedAntiExistsEstimate(inputEstimate));
 			double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
 					Math.max(1.0d, estimate.rows()));
 			CostVector cost = estimate.vector()
@@ -6597,6 +6430,15 @@ final class LmdbCascadesRuleProvider {
 			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
 					"lmdb-correlated-minus-anti-exists",
 					snapshot(estimate, cost, "lmdb-correlated-anti-exists-filter")));
+		}
+
+		private static StatisticsEstimate unpricedAntiExistsEstimate(StatisticsEstimate inputEstimate) {
+			double rows = Math.max(1.0d, inputEstimate.rows());
+			double workRows = Math.max(inputEstimate.workRows(), rows) + rows;
+			return new StatisticsEstimate(rows,
+					QErrorInterval.heuristic(rows, 4.0d, "lmdb-correlated-anti-exists-unpriced-probe"), workRows,
+					"lmdb-correlated-anti-exists-unpriced-probe",
+					Map.of("plannedAntiExistsUnpricedProbe", 1.0d));
 		}
 
 		private StatisticsEstimate inputEstimate(TupleExpr input, Set<String> boundVars) {

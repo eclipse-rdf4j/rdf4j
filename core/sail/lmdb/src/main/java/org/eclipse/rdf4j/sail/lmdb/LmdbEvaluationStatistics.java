@@ -272,7 +272,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static boolean operatorFeedbackTrackingEnabledByProperty() {
-		return Boolean.parseBoolean(System.getProperty(OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true"));
+		return Boolean.parseBoolean(System.getProperty(OPERATOR_FEEDBACK_TRACKING_PROPERTY, "false"));
 	}
 
 	ValueStore getValueStore() {
@@ -3086,7 +3086,11 @@ class LmdbEvaluationStatistics
 		if (isFiniteNonNegative(estimatedOutputRows)) {
 			outputRows = Math.min(leftRows, estimatedOutputRows);
 		}
-		double workRows = leftWorkRows + Math.max(rightWorkRows, rightRows);
+		// A Difference node executes as SPARQLMinusIteration: every left row is compatibility-checked against
+		// the right rows sharing a (name, value) pair, which degenerates to |L| x |R| checks when shared values
+		// repeat. Charging the two inputs linearly hides that scan from the plan competition.
+		double compatibilityScanRows = leftRows * rightRows;
+		double workRows = leftWorkRows + Math.max(rightWorkRows, rightRows) + compatibilityScanRows;
 		if (!isFiniteNonNegative(workRows)) {
 			return Optional.empty();
 		}
@@ -3110,6 +3114,7 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put("plannedMinusLeftWorkRows", leftWorkRows);
 		doubleMetrics.put("plannedMinusRightRows", rightRows);
 		doubleMetrics.put("plannedMinusRightWorkRows", rightWorkRows);
+		doubleMetrics.put("plannedMinusCompatibilityScanRows", compatibilityScanRows);
 		doubleMetrics.put("plannedMinusOutputRows", outputRows);
 		propagateMaterializedFilterWorkRowsPerInvocation(doubleMetrics, left, right);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
@@ -9277,8 +9282,10 @@ class LmdbEvaluationStatistics
 					rowsBeforeFilter)
 					|| isFiniteExactDirectLookup(candidate.prefixComponentMask(), lookupComponentMask,
 							rowsBeforeFilter, lookupCombinations);
+			// Even a direct lookup touches every row the index returns before residual filters discount the
+			// output; costing only the filtered rows hides the anchor's access work from the plan competition.
 			double workRows = directLookup
-					? Math.max(lookupCombinations, rowsAfterFilter)
+					? Math.max(lookupCombinations, rowsBeforeFilter)
 					: rowsBeforeFilter;
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
@@ -11592,12 +11599,14 @@ class LmdbEvaluationStatistics
 
 		@Override
 		protected double getCardinality(StatementPattern sp) {
-			Optional<LeoEvidence> fanoutEvidence = learnedStatementPatternFanout(sp);
-			if (fanoutEvidence.isPresent()
-					&& fanoutEvidence.get().confidence() >= LEO_FANOUT_CONFIDENCE_THRESHOLD
-					&& isFiniteNonNegative(fanoutEvidence.get().rows())) {
-				stampLeoStatementPatternEvidence(sp, fanoutEvidence.get());
-				return fanoutEvidence.get().rows();
+			if (operatorFeedbackApplyEnabled) {
+				Optional<LeoEvidence> fanoutEvidence = learnedStatementPatternFanout(sp);
+				if (fanoutEvidence.isPresent()
+						&& fanoutEvidence.get().confidence() >= LEO_FANOUT_CONFIDENCE_THRESHOLD
+						&& isFiniteNonNegative(fanoutEvidence.get().rows())) {
+					stampLeoStatementPatternEvidence(sp, fanoutEvidence.get());
+					return fanoutEvidence.get().rows();
+				}
 			}
 			double cardinality = statementPatternCardinalitySource.estimateForPlanning(sp);
 			if (cardinality >= 0.0d) {

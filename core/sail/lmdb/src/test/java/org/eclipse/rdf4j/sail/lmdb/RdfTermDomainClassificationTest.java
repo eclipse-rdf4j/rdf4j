@@ -111,6 +111,37 @@ class RdfTermDomainClassificationTest {
 	}
 
 	@Test
+	void classifiesCanonicalDateFacts() {
+		RdfTermDomain canonical = RdfTermDomain.classify(VF.createLiteral("2024-01-01", XSD.DATE));
+		assertHas(canonical, RdfTermDomain.Fact.CANONICAL_DATE);
+		assertHas(canonical, RdfTermDomain.Fact.DATE_WITHOUT_TIMEZONE);
+
+		RdfTermDomain negativeYear = RdfTermDomain.classify(VF.createLiteral("-2024-01-01", XSD.DATE));
+		assertHas(negativeYear, RdfTermDomain.Fact.CANONICAL_DATE);
+
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("2024-01-01Z", XSD.DATE))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE), "timezoned dates permit value-equal lexical variants");
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("2024-01-01+00:00", XSD.DATE))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE), "timezoned dates permit value-equal lexical variants");
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("02024-01-01", XSD.DATE))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE), "zero-padded years alias shorter year fields");
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("-0000-01-01", XSD.DATE))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE), "negative-zero year aliases year zero");
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("not-a-date", XSD.DATE))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE));
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("2024-01-01T05:00:00", XSD.DATETIME))
+				.has(RdfTermDomain.Fact.CANONICAL_DATE), "the fact is reserved for xsd:date");
+
+		RdfTermDomain combined = RdfTermDomain.classify(VF.createLiteral("2024-01-01", XSD.DATE))
+				.combine(RdfTermDomain.classify(VF.createLiteral("2024-06-30", XSD.DATE)));
+		assertHas(combined, RdfTermDomain.Fact.CANONICAL_DATE);
+		RdfTermDomain mixed = RdfTermDomain.classify(VF.createLiteral("2024-01-01", XSD.DATE))
+				.combine(RdfTermDomain.classify(VF.createLiteral("2024-06-30Z", XSD.DATE)));
+		assertFalse(mixed.has(RdfTermDomain.Fact.CANONICAL_DATE),
+				"a single timezoned stored date must void the canonical-date guarantee");
+	}
+
+	@Test
 	void classifiesCanonicalDateTimeFacts() {
 		RdfTermDomain canonicalUtc = RdfTermDomain
 				.classify(VF.createLiteral("2024-01-01T05:00:00Z", XSD.DATETIME));

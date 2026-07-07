@@ -1395,7 +1395,11 @@ public interface CascadesCostModel {
 			if (!isFiniteNonNegative(outputRows) || !isFiniteNonNegative(selectedWorkRows)) {
 				return Optional.empty();
 			}
-			double childWorkFloor = left.workRows() + Math.max(right.workRows(), right.rows());
+			// A Difference executes as SPARQLMinusIteration, whose per-left-row compatibility check against the
+			// right rows sharing a (name, value) pair degenerates to |L| x |R| when shared values repeat; a
+			// purely linear floor hides that scan from the plan competition.
+			double childWorkFloor = left.workRows() + Math.max(right.workRows(), right.rows())
+					+ left.rows() * right.rows();
 			if (isFiniteNonNegative(childWorkFloor)) {
 				selectedWorkRows = Math.max(selectedWorkRows, Math.max(outputRows, childWorkFloor));
 			}

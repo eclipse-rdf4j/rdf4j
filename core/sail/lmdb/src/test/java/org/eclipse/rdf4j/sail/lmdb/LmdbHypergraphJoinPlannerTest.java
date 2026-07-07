@@ -150,10 +150,19 @@ class LmdbHypergraphJoinPlannerTest {
 
 	@Test
 	void flagOffKeepsTheExistingPlanner() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "false");
 		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(starIsland(), starModel());
 		assertTrue(result.isPresent());
 		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
-				"without the flag the left-deep planner must answer");
+				"with the flag explicitly off the left-deep planner must answer");
+	}
+
+	@Test
+	void dphypIsEnabledByDefault() {
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(starIsland(), starModel());
+		assertTrue(result.isPresent());
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
+				"with no flag set the dphyp bushy planner answers by default");
 	}
 
 	@Test
@@ -163,6 +172,35 @@ class LmdbHypergraphJoinPlannerTest {
 		assertTrue(result.isPresent());
 		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm());
 		assertEquals(3, result.get().factorCount());
+	}
+
+	@Test
+	void hashCostedJoinsCarryTheHashExecutionHint() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		// Uniform tables with no bound-variable reduction: a per-row nested-loop lookup costs outerRows x 1000
+		// while a hash join pays 2 x build + probe + output/2, so every pair is strictly cheaper as a hash join.
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 1000)
+				.table("b", 1000)
+				.table("c", 1000);
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("o1", "b", "o2"),
+				pattern("o2", "c", "o3"));
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(island, model).orElseThrow();
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+
+		List<Join> joins = new ArrayList<>();
+		result.tupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				joins.add(node);
+				super.meet(node);
+			}
+		});
+		assertFalse(joins.isEmpty());
+		for (Join join : joins) {
+			assertEquals("hash", join.getStringMetricPlanned("optimizer.joinAlgorithmHint"),
+					"a join costed as a hash join must execute as one instead of a per-row nested loop: " + join);
+		}
 	}
 
 	@Test

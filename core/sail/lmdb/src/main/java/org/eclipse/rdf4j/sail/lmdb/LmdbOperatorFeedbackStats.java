@@ -1764,7 +1764,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				|| !advice.usable(doubleProperty(LEO_RULE_STEERING_MIN_CONFIDENCE_PROPERTY, 0.55d))) {
 			return List.of();
 		}
-		boolean apply = Boolean.getBoolean("rdf4j.optimizer.lmdb.leoPlanRanking") && ruleSteeringActive()
+		boolean apply = Boolean.getBoolean(LEO_PLAN_RERANKING_PROPERTY) && ruleSteeringActive()
 				&& !advice.shadowOnly();
 		int delta = apply ? Math.max(1, intProperty(LEO_RULE_STEERING_MAX_DELTA_PROPERTY, 14) / 2) : 0;
 		String rule = tupleExpr instanceof Join ? "lmdb-connected-join-plan" : "lmdb-cascades-plan";
