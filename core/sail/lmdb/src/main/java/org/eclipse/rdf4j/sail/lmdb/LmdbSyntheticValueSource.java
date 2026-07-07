@@ -138,6 +138,7 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
 		if (synthetic(id)) {
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 			return valuesById.get(id);
 		}
 		return delegate.lazyValue(id);

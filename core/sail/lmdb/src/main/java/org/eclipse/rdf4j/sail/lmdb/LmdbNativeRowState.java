@@ -296,11 +296,18 @@ final class CopyBinding {
 	final int targetSlot;
 	final int sourceSlot;
 	final long constant;
+	final LmdbNativeCompiledInlineId computed;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
+		this(targetSlot, sourceSlot, constant, null);
+	}
+
+	CopyBinding(int targetSlot, int sourceSlot, long constant,
+			LmdbNativeCompiledInlineId computed) {
 		this.targetSlot = targetSlot;
 		this.sourceSlot = sourceSlot;
 		this.constant = constant;
+		this.computed = computed;
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {
@@ -311,8 +318,12 @@ final class CopyBinding {
 		return new CopyBinding(targetSlot, -1, constant);
 	}
 
+	static CopyBinding computed(int targetSlot, LmdbNativeCompiledInlineId computed) {
+		return new CopyBinding(targetSlot, -1, UNKNOWN, computed);
+	}
+
 	long value(RowState row) {
-		return sourceSlot >= 0 ? row.slots[sourceSlot] : constant;
+		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;
 	}
 }
 

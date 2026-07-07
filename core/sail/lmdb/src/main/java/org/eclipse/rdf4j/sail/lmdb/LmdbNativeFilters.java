@@ -84,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -94,6 +95,48 @@ import org.eclipse.rdf4j.sail.SailException;
 
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
+
+	default void close() {
+	}
+}
+
+final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
+	final NativeBooleanFilter delegate;
+	final Filter filter;
+	final EvaluationStatistics statistics;
+	final AtomicLong passed = new AtomicLong();
+	final AtomicLong filtered = new AtomicLong();
+
+	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics) {
+		this.delegate = delegate;
+		this.filter = filter;
+		this.statistics = statistics;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		boolean accepted = delegate.accept(row);
+		if (accepted) {
+			passed.incrementAndGet();
+		} else {
+			filtered.incrementAndGet();
+		}
+		return accepted;
+	}
+
+	@Override
+	public void close() {
+		long passedCount = passed.getAndSet(0L);
+		long filteredCount = filtered.getAndSet(0L);
+		if (passedCount > 0L || filteredCount > 0L) {
+			try {
+				statistics.recordFilterOutcome(filter, passedCount, filteredCount);
+			} catch (RuntimeException e) {
+				// Runtime optimizer feedback must never break query evaluation.
+			}
+		}
+		delegate.close();
+	}
 }
 
 final class StatementPatternExistsFilter implements NativeBooleanFilter {
@@ -343,15 +386,20 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final boolean constantOnLeft;
 	final Compare.CompareOp op;
 	final Predicate<BindingSet> fallback;
+	final LmdbNativeValueCodec codec;
+	final LmdbNativeValueCodec.DecodedValue constantDecoded;
 	final LongBooleanMemo memo = new LongBooleanMemo(512);
 
-	CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
+	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
+			Compare.CompareOp op,
 			Predicate<BindingSet> fallback) {
 		this.slot = slot;
 		this.constant = constant;
 		this.constantOnLeft = constantOnLeft;
 		this.op = op;
 		this.fallback = fallback;
+		this.codec = source.nativeValueCodec();
+		this.constantDecoded = codec == null ? null : codec.decode(constant);
 	}
 
 	@Override
@@ -368,6 +416,16 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		Boolean cached = memo.get(id);
 		if (cached != null) {
 			return cached;
+		}
+		if (codec != null && constantDecoded != null && !constantDecoded.error()) {
+			LmdbNativeValueCodec.DecodedValue value = codec.decode(id);
+			Boolean result = constantOnLeft
+					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op)
+					: LmdbNativeExpressionCompiler.compareAsBoolean(value, constantDecoded, op);
+			if (result != null) {
+				memo.put(id, result);
+				return result;
+			}
 		}
 		boolean result = fallback.test(row.view);
 		memo.put(id, result);

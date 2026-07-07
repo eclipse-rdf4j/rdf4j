@@ -30,6 +30,11 @@ interface NativeLmdbQuerySource {
 
 	Value lazyValue(long id) throws QueryEvaluationException;
 
+	default LmdbNativeValueCodec nativeValueCodec() {
+		Object idSpace = idSpace();
+		return idSpace instanceof ValueStore ? new LmdbNativeValueCodec((ValueStore) idSpace) : null;
+	}
+
 	/**
 	 * Returns an identity object for the LMDB value-id space. Native rows can only move IDs across source boundaries
 	 * when this object is shared.

@@ -220,7 +220,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			if (condition == null) {
 				return null;
 			}
-			plan = SlotPlan.filter(plan, condition, placeableFilterMask(filter.getCondition()));
+			plan = SlotPlan.filter(plan, recordFilterOutcomes(filter, condition),
+					placeableFilterMask(filter.getCondition()));
 		}
 		for (int i = hoisted.size() - 1; i >= 0; i--) {
 			CopyBinding[] copies = compileExtensionCopies(hoisted.get(i));
@@ -258,18 +259,24 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		for (int i = 0; i < copies.length; i++) {
 			ExtensionElem elem = extension.getElements().get(i);
 			ValueExpr expression = elem.getExpr();
-			if (!(expression instanceof Var)) {
-				return null;
-			}
-			Var sourceVar = (Var) expression;
-			if (sourceVar.hasValue()) {
-				long id = idOf(sourceVar.getValue());
-				if (id == UNKNOWN) {
+			if (expression instanceof Var) {
+				Var sourceVar = (Var) expression;
+				if (sourceVar.hasValue()) {
+					long id = idOf(sourceVar.getValue());
+					if (id == UNKNOWN) {
+						return null;
+					}
+					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+				} else {
+					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+				}
+			} else {
+				LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
+						.compileInlineId(expression, source, this::slot);
+				if (computed == null) {
 					return null;
 				}
-				copies[i] = CopyBinding.constant(slot(elem.getName()), id);
-			} else {
-				copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+				copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 			}
 		}
 		return copies;
@@ -380,6 +387,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
 			return compileGenericBoolean(expr);
+		}
+		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
+				.compileBoolean(expr, source, this::slot);
+		if (nativeExpression != null) {
+			return nativeExpression;
 		}
 		if (expr instanceof And) {
 			NativeBooleanFilter left = compileBoolean(((And) expr).getLeftArg());
@@ -578,10 +590,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	NativeBooleanFilter cachedCompareIfPossible(Compare.CompareOp op, IdOperand left, IdOperand right,
 			Predicate<BindingSet> fallback) {
 		if (left.isSlot() && right.isConstant()) {
-			return new CachedCompareFilter(left.slot, right.constant, false, op, fallback);
+			return new CachedCompareFilter(source, left.slot, right.constant, false, op, fallback);
 		}
 		if (left.isConstant() && right.isSlot()) {
-			return new CachedCompareFilter(right.slot, left.constant, true, op, fallback);
+			return new CachedCompareFilter(source, right.slot, left.constant, true, op, fallback);
 		}
 		return null;
 	}

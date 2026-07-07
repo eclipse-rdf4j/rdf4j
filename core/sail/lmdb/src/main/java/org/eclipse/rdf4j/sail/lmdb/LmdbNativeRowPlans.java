@@ -205,6 +205,7 @@ final class FilterCursor implements RowCursor {
 	@Override
 	public void close() {
 		arg.close();
+		filter.close();
 	}
 }
 

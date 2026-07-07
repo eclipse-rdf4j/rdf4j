@@ -35,6 +35,7 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final NativeLmdbQuerySource nativeSource;
 	private final boolean nativeEnabled;
+	private final EvaluationStatistics evaluationStatistics;
 
 	LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
@@ -43,6 +44,7 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 				trackResultSize);
 		this.nativeSource = extractNativeSource(tripleSource);
 		this.nativeEnabled = Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
+		this.evaluationStatistics = evaluationStatistics;
 	}
 
 	@Override
@@ -84,6 +86,10 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
 		return super.precompile(expr, context);
+	}
+
+	EvaluationStatistics evaluationStatistics() {
+		return evaluationStatistics;
 	}
 
 	private static NativeLmdbQuerySource extractNativeSource(TripleSource tripleSource) {

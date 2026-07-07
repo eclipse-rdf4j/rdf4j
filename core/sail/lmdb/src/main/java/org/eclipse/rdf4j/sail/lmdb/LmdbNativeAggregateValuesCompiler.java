@@ -136,10 +136,13 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		} finally {
 			requiredAggregateNames = previousRequired;
 		}
-		return data == null ? null
-				: SlotPlan.filter(data,
-						new ValueSetFilter(source, slot(folded.filteredVariable), folded.ids, folded.values),
-						1L << slot(folded.filteredVariable));
+		if (data == null) {
+			return null;
+		}
+		NativeBooleanFilter valueSet = new ValueSetFilter(source, slot(folded.filteredVariable), folded.ids,
+				folded.values);
+		return SlotPlan.filter(data, recordFilterOutcomes(feedbackFilterForValuesFold(dataExpr, filter), valueSet),
+				1L << slot(folded.filteredVariable));
 	}
 
 	SlotPlan compileTupleWithConstantFilter(TupleExpr expr, String variable, long[] ids,
@@ -181,7 +184,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			}
 			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
 			return condition == null ? null
-					: SlotPlan.filter(arg, condition, placeableFilterMask(filter.getCondition()));
+					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+							placeableFilterMask(filter.getCondition()));
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
@@ -194,18 +198,24 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			for (int i = 0; i < copies.length; i++) {
 				ExtensionElem elem = extension.getElements().get(i);
 				ValueExpr expression = elem.getExpr();
-				if (!(expression instanceof Var)) {
-					return null;
-				}
-				Var sourceVar = (Var) expression;
-				if (sourceVar.hasValue()) {
-					long id = idOf(sourceVar.getValue());
-					if (id == UNKNOWN) {
+				if (expression instanceof Var) {
+					Var sourceVar = (Var) expression;
+					if (sourceVar.hasValue()) {
+						long id = idOf(sourceVar.getValue());
+						if (id == UNKNOWN) {
+							return null;
+						}
+						copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+					} else {
+						copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+					}
+				} else {
+					LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
+							.compileInlineId(expression, source, this::slot);
+					if (computed == null) {
 						return null;
 					}
-					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
-				} else {
-					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+					copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 				}
 			}
 			return SlotPlan.extension(arg, copies);

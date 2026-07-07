@@ -1727,6 +1727,7 @@ class LmdbSailStore implements SailStore {
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
+				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 				return valueStore.getLazyValue(id);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
@@ -1863,6 +1864,7 @@ class LmdbSailStore implements SailStore {
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
+				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 				return valueStore.getLazyValue(id);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);

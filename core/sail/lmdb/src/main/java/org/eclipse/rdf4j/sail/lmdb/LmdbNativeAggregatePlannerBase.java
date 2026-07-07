@@ -119,6 +119,18 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
+	NativeBooleanFilter recordFilterOutcomes(Filter filter, NativeBooleanFilter delegate) {
+		if (filter == null || strategy.evaluationStatistics() == null) {
+			return delegate;
+		}
+		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics());
+	}
+
+	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {
+		return new Filter(new Join(dataExpr.clone(), valuesFilter.getArg().clone()),
+				valuesFilter.getCondition().clone());
+	}
+
 	Set<String> wellDesignedOptionalOnlyNames(TupleExpr root) {
 		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_WELL_DESIGNED_CHECK, "true"))) {
 			return Set.of();

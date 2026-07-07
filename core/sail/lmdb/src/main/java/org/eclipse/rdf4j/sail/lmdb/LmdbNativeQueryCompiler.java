@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -88,12 +90,13 @@ final class LmdbNativeQueryCompiler {
 		private final QueryEvaluationContext context;
 		private final LmdbNativeEvaluationStrategy strategy;
 		private final NativeLmdbQuerySource source;
+		private final EvaluationStatistics evaluationStatistics;
 		private final Map<String, Integer> slots = new HashMap<>();
 		private final NativeSlotLayout layout;
 		private QueryEvaluationContext slotAwareContext;
 		private final List<String> slotNames = new ArrayList<>();
 		private final List<NativePattern> patterns = new ArrayList<>();
-		private final List<ValueExpr> filters = new ArrayList<>();
+		private final List<FilterCandidate> filters = new ArrayList<>();
 		private boolean impossible;
 		private boolean sawSingleton;
 
@@ -102,13 +105,14 @@ final class LmdbNativeQueryCompiler {
 			this.context = context;
 			this.strategy = strategy;
 			this.source = source;
+			this.evaluationStatistics = strategy.evaluationStatistics();
 			this.layout = new NativeSlotLayout(slots, LmdbQueryEvaluationContext.layoutOf(context));
 		}
 
 		private boolean collect(TupleExpr expr) {
 			if (expr instanceof Filter) {
 				Filter filter = (Filter) expr;
-				splitConjuncts(filter.getCondition(), filters);
+				splitConjuncts(filter.getCondition(), filter, true, filters);
 				return collect(filter.getArg());
 			}
 			if (expr instanceof Join) {
@@ -256,10 +260,21 @@ final class LmdbNativeQueryCompiler {
 			return slotAwareContext;
 		}
 
-		private NativeFilter compileFilter(ValueExpr expr) {
+		private NativeFilter compileFilter(FilterCandidate filter) {
+			ValueExpr expr = filter.condition;
 			NativeFilter idFilter = compileIdFilter(expr);
 			if (idFilter != null) {
-				return idFilter;
+				return recordFilterOutcomes(filter.recordedFilter, idFilter);
+			}
+			LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
+					.compileBoolean(expr, source, name -> {
+						Integer slot = slots.get(name);
+						return slot == null ? -1 : slot;
+					});
+			if (nativeExpression != null) {
+				return recordFilterOutcomes(filter.recordedFilter,
+						new CompositeFilter(nativeExpression.requiredMask(),
+								row -> nativeExpression.accept(slot -> row.slots[slot])));
 			}
 			Set<String> varNames = VarNameCollector.process(expr);
 			long required = 0L;
@@ -281,7 +296,14 @@ final class LmdbNativeQueryCompiler {
 				return new CompositeFilter(0L, row -> false);
 			}
 			Predicate<BindingSet> predicate = step.asPredicate();
-			return new GenericNativeFilter(required, predicate);
+			return recordFilterOutcomes(filter.recordedFilter, new GenericNativeFilter(required, predicate));
+		}
+
+		private NativeFilter recordFilterOutcomes(Filter filter, NativeFilter delegate) {
+			if (filter == null || evaluationStatistics == null) {
+				return delegate;
+			}
+			return new RecordingNativeFilter(delegate, filter, evaluationStatistics);
 		}
 
 		private NativeFilter compileIdFilter(ValueExpr expr) {
@@ -451,13 +473,24 @@ final class LmdbNativeQueryCompiler {
 		}
 	}
 
-	private static void splitConjuncts(ValueExpr expr, List<ValueExpr> filters) {
+	private static void splitConjuncts(ValueExpr expr, Filter sourceFilter, boolean recordOutcomes,
+			List<FilterCandidate> filters) {
 		if (expr instanceof And) {
 			And and = (And) expr;
-			splitConjuncts(and.getLeftArg(), filters);
-			splitConjuncts(and.getRightArg(), filters);
+			splitConjuncts(and.getLeftArg(), sourceFilter, false, filters);
+			splitConjuncts(and.getRightArg(), sourceFilter, false, filters);
 		} else {
-			filters.add(expr);
+			filters.add(new FilterCandidate(expr, recordOutcomes ? sourceFilter : null));
+		}
+	}
+
+	private static final class FilterCandidate {
+		private final ValueExpr condition;
+		private final Filter recordedFilter;
+
+		private FilterCandidate(ValueExpr condition, Filter recordedFilter) {
+			this.condition = condition;
+			this.recordedFilter = recordedFilter;
 		}
 	}
 
@@ -782,6 +815,9 @@ final class LmdbNativeQueryCompiler {
 
 		boolean accept(RowState row);
 
+		default void close() {
+		}
+
 		static NativeFilter and(NativeFilter left, NativeFilter right) {
 			return new CompositeFilter(left.requiredMask() | right.requiredMask(),
 					row -> left.accept(row) && right.accept(row));
@@ -834,6 +870,50 @@ final class LmdbNativeQueryCompiler {
 		@Override
 		public boolean accept(RowState row) {
 			return predicate.test(row.bindingView);
+		}
+	}
+
+	private static final class RecordingNativeFilter implements NativeFilter {
+		private final NativeFilter delegate;
+		private final Filter filter;
+		private final EvaluationStatistics evaluationStatistics;
+		private final AtomicLong passed = new AtomicLong();
+		private final AtomicLong filtered = new AtomicLong();
+
+		private RecordingNativeFilter(NativeFilter delegate, Filter filter, EvaluationStatistics evaluationStatistics) {
+			this.delegate = delegate;
+			this.filter = filter;
+			this.evaluationStatistics = evaluationStatistics;
+		}
+
+		@Override
+		public long requiredMask() {
+			return delegate.requiredMask();
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			boolean accepted = delegate.accept(row);
+			if (accepted) {
+				passed.incrementAndGet();
+			} else {
+				filtered.incrementAndGet();
+			}
+			return accepted;
+		}
+
+		@Override
+		public void close() {
+			long passedCount = passed.getAndSet(0L);
+			long filteredCount = filtered.getAndSet(0L);
+			if (passedCount > 0L || filteredCount > 0L) {
+				try {
+					evaluationStatistics.recordFilterOutcome(filter, passedCount, filteredCount);
+				} catch (RuntimeException e) {
+					// Planner feedback must never break query evaluation.
+				}
+			}
+			delegate.close();
 		}
 	}
 
@@ -1145,6 +1225,9 @@ final class LmdbNativeQueryCompiler {
 				closed = true;
 				for (Frame frame : frames) {
 					frame.close();
+				}
+				for (NativeFilter filter : allFilters) {
+					filter.close();
 				}
 			}
 		}

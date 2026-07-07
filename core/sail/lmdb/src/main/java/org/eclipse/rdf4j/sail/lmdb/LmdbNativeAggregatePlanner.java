@@ -386,7 +386,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
 			return arg == null || condition == null ? null
-					: SlotPlan.filter(arg, condition, placeableFilterMask(filter.getCondition()));
+					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+							placeableFilterMask(filter.getCondition()));
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;

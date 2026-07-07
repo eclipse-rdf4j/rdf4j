@@ -285,11 +285,20 @@ final class NativeRowsStep implements QueryEvaluationStep {
 
 		// ORDER BY: snapshot full slot rows (keys may be unprojected), sort on materialized key values,
 		// then project/dedup/slice in SPARQL pipeline order
+		LmdbNativeValueCodec orderCodec = values.source.nativeValueCodec();
 		java.util.Comparator<long[]> comparator = (a, b) -> {
 			for (int k = 0; k < orderSlots.length; k++) {
-				Value left = orderValue(a[orderSlots[k]], values);
-				Value right = orderValue(b[orderSlots[k]], values);
-				int cmp = values.comparator.compare(left, right);
+				long leftId = a[orderSlots[k]];
+				long rightId = b[orderSlots[k]];
+				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec);
+				int cmp;
+				if (nativeCmp != null) {
+					cmp = nativeCmp;
+				} else {
+					Value left = orderValue(leftId, values);
+					Value right = orderValue(rightId, values);
+					cmp = values.comparator.compare(left, right);
+				}
 				if (cmp != 0) {
 					return orderAscending[k] ? cmp : -cmp;
 				}
@@ -362,6 +371,14 @@ final class NativeRowsStep implements QueryEvaluationStep {
 			return null;
 		}
 		return values.value(id);
+	}
+
+	Integer orderCompare(long leftId, long rightId, LmdbNativeValueCodec codec) {
+		if (codec == null || leftId == UNKNOWN || leftId == NULL_CONTEXT_ID || rightId == UNKNOWN
+				|| rightId == NULL_CONTEXT_ID) {
+			return null;
+		}
+		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId), codec.decode(rightId));
 	}
 
 	BindingSet project(long[] slots, AggContext values) {
