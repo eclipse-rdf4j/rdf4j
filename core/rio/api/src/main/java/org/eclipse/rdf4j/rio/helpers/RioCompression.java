@@ -290,11 +290,13 @@ public enum RioCompression {
 		private static final String ZSTD = "com.github.luben.zstd.Zstd";
 		private static final String ZSTD_INPUT_STREAM = "com.github.luben.zstd.ZstdInputStream";
 		private static final String ZSTD_OUTPUT_STREAM = "com.github.luben.zstd.ZstdOutputStream";
+		private static volatile Constructor<?> zstdInputStreamConstructor;
+		private static volatile Constructor<?> zstdOutputStreamConstructor;
+		private static volatile Method zstdCompressMethod;
 
 		private static InputStream decompress(InputStream inputStream) throws IOException {
 			try {
-				Constructor<?> constructor = compressionClass(ZSTD_INPUT_STREAM).getConstructor(InputStream.class);
-				return (InputStream) constructor.newInstance(inputStream);
+				return (InputStream) zstdInputStreamConstructor().newInstance(inputStream);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(ZSTD_INPUT_STREAM, e);
 			}
@@ -302,8 +304,7 @@ public enum RioCompression {
 
 		private static OutputStream compress(OutputStream outputStream) throws IOException {
 			try {
-				Constructor<?> constructor = compressionClass(ZSTD_OUTPUT_STREAM).getConstructor(OutputStream.class);
-				return (OutputStream) constructor.newInstance(outputStream);
+				return (OutputStream) zstdOutputStreamConstructor().newInstance(outputStream);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(ZSTD_OUTPUT_STREAM, e);
 			}
@@ -311,11 +312,49 @@ public enum RioCompression {
 
 		private static byte[] compress(byte[] uncompressed) throws IOException {
 			try {
-				Method compress = compressionClass(ZSTD).getMethod("compress", byte[].class);
-				return (byte[]) compress.invoke(null, uncompressed);
+				return (byte[]) zstdCompressMethod().invoke(null, uncompressed);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(ZSTD, e);
 			}
+		}
+
+		private static Constructor<?> zstdInputStreamConstructor() throws IOException {
+			Constructor<?> constructor = zstdInputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(ZSTD_INPUT_STREAM).getConstructor(InputStream.class);
+					zstdInputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD_INPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> zstdOutputStreamConstructor() throws IOException {
+			Constructor<?> constructor = zstdOutputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(ZSTD_OUTPUT_STREAM).getConstructor(OutputStream.class);
+					zstdOutputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD_OUTPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Method zstdCompressMethod() throws IOException {
+			Method method = zstdCompressMethod;
+			if (method == null) {
+				try {
+					method = compressionClass(ZSTD).getMethod("compress", byte[].class);
+					zstdCompressMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD, e);
+				}
+			}
+			return method;
 		}
 
 		private static boolean isAvailable() {
@@ -334,12 +373,17 @@ public enum RioCompression {
 		private static final String BROTLI_INPUT_STREAM = "com.aayushatharva.brotli4j.decoder.BrotliInputStream";
 		private static final String BROTLI_OUTPUT_STREAM = "com.aayushatharva.brotli4j.encoder.BrotliOutputStream";
 		private static final String BROTLI_PARAMETERS = "com.aayushatharva.brotli4j.encoder.Encoder$Parameters";
+		private static volatile Constructor<?> brotliInputStreamConstructor;
+		private static volatile Constructor<?> brotliOutputStreamConstructor;
+		private static volatile Constructor<?> parametersConstructor;
+		private static volatile Method setQualityMethod;
+		private static volatile Method ensureAvailabilityMethod;
+		private static volatile Class<?> parametersClass;
 
 		private static InputStream decompress(InputStream inputStream) throws IOException {
 			ensureAvailable();
 			try {
-				Constructor<?> constructor = compressionClass(BROTLI_INPUT_STREAM).getConstructor(InputStream.class);
-				return (InputStream) constructor.newInstance(inputStream);
+				return (InputStream) brotliInputStreamConstructor().newInstance(inputStream);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(BROTLI_INPUT_STREAM, e);
 			}
@@ -348,13 +392,9 @@ public enum RioCompression {
 		private static OutputStream compress(OutputStream outputStream) throws IOException {
 			ensureAvailable();
 			try {
-				Class<?> parametersClass = compressionClass(BROTLI_PARAMETERS);
-				Object parameters = parametersClass.getConstructor().newInstance();
-				parametersClass.getMethod("setQuality", int.class).invoke(parameters, 4);
-
-				Constructor<?> constructor = compressionClass(BROTLI_OUTPUT_STREAM)
-						.getConstructor(OutputStream.class, parametersClass);
-				return (OutputStream) constructor.newInstance(outputStream, parameters);
+				Object parameters = parametersConstructor().newInstance();
+				setQualityMethod().invoke(parameters, 4);
+				return (OutputStream) brotliOutputStreamConstructor().newInstance(outputStream, parameters);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(BROTLI_OUTPUT_STREAM, e);
 			}
@@ -371,10 +411,85 @@ public enum RioCompression {
 
 		private static void ensureAvailable() throws IOException {
 			try {
-				compressionClass(BROTLI_LOADER).getMethod("ensureAvailability").invoke(null);
+				ensureAvailabilityMethod().invoke(null);
 			} catch (ReflectiveOperationException e) {
 				throw compressionUnavailable(BROTLI_LOADER, e);
 			}
+		}
+
+		private static Constructor<?> brotliInputStreamConstructor() throws IOException {
+			Constructor<?> constructor = brotliInputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(BROTLI_INPUT_STREAM).getConstructor(InputStream.class);
+					brotliInputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_INPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> brotliOutputStreamConstructor() throws IOException {
+			Constructor<?> constructor = brotliOutputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(BROTLI_OUTPUT_STREAM).getConstructor(OutputStream.class,
+							parametersClass());
+					brotliOutputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_OUTPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> parametersConstructor() throws IOException {
+			Constructor<?> constructor = parametersConstructor;
+			if (constructor == null) {
+				try {
+					constructor = parametersClass().getConstructor();
+					parametersConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_PARAMETERS, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Method setQualityMethod() throws IOException {
+			Method method = setQualityMethod;
+			if (method == null) {
+				try {
+					method = parametersClass().getMethod("setQuality", int.class);
+					setQualityMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_PARAMETERS, e);
+				}
+			}
+			return method;
+		}
+
+		private static Method ensureAvailabilityMethod() throws IOException {
+			Method method = ensureAvailabilityMethod;
+			if (method == null) {
+				try {
+					method = compressionClass(BROTLI_LOADER).getMethod("ensureAvailability");
+					ensureAvailabilityMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_LOADER, e);
+				}
+			}
+			return method;
+		}
+
+		private static Class<?> parametersClass() throws IOException {
+			Class<?> value = parametersClass;
+			if (value == null) {
+				value = compressionClass(BROTLI_PARAMETERS);
+				parametersClass = value;
+			}
+			return value;
 		}
 	}
 
