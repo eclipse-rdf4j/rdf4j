@@ -366,6 +366,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (pushedIntoPattern != null) {
 				return pushedIntoPattern;
 			}
+			SlotPlan innerJoined = compileLeftJoinFilterAsInnerJoin(filter, duplicateInsensitive);
+			if (innerJoined != null) {
+				return innerJoined;
+			}
 			SlotPlan factorized = compileFactorizedLeftJoinFilter(filter, duplicateInsensitive);
 			if (factorized != null) {
 				return factorized;
@@ -390,23 +394,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
-			CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
-			for (int i = 0; i < copies.length; i++) {
-				ExtensionElem elem = extension.getElements().get(i);
-				ValueExpr expression = elem.getExpr();
-				if (!(expression instanceof Var)) {
-					return null;
-				}
-				Var sourceVar = (Var) expression;
-				if (sourceVar.hasValue()) {
-					long id = idOf(sourceVar.getValue());
-					if (id == UNKNOWN) {
-						return null;
-					}
-					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
-				} else {
-					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
-				}
+			CopyBinding[] copies = compileExtensionCopies(extension);
+			if (copies == null) {
+				return null;
 			}
 			return SlotPlan.extension(arg, copies);
 		}

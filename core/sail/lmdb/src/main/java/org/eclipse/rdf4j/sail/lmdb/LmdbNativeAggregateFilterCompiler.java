@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -58,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
@@ -76,6 +78,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -138,6 +141,140 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return existing == null ? Term.unbound() : Term.slot(existing);
 	}
 
+	/**
+	 * Compiles {@code Filter(c, LeftJoin(L, R))} as {@code Filter(c, Join(L, R))} when c cannot accept a row whose
+	 * R-only variables are unbound. For such conditions the two forms are exactly equivalent — same rows, same
+	 * multiplicity — because every null-extended left-join row is dropped by the filter in one form and never produced
+	 * in the other. The inner form lets {@link MultiJoinPlan} reorder R's patterns together with L's, so a selective
+	 * filter on the optional side (SOCIAL_MEDIA q8's {@code ?optName IN (...)}) seeds the whole join instead of running
+	 * after full enumeration. BIND extensions sitting between the filter and the left join's graph pattern are hoisted
+	 * above the join when nothing in R or the conditions reads their targets, which keeps the pattern set flattenable.
+	 */
+	SlotPlan compileLeftJoinFilterAsInnerJoin(Filter filter, boolean duplicateInsensitive) {
+		if (!(filter.getArg() instanceof LeftJoin)) {
+			return null;
+		}
+		LeftJoin leftJoin = (LeftJoin) filter.getArg();
+		Set<String> rightOnly = rightOnlyBindingNames(leftJoin);
+		if (rightOnly.isEmpty() || !nullRejects(filter.getCondition(), rightOnly)) {
+			return null;
+		}
+		TupleExpr leftArg = leftJoin.getLeftArg();
+		ArrayList<Extension> hoisted = new ArrayList<>();
+		while (leftArg instanceof Extension
+				&& extensionHoistableAbove((Extension) leftArg, leftJoin, filter.getCondition())) {
+			hoisted.add((Extension) leftArg);
+			leftArg = ((Extension) leftArg).getArg();
+		}
+		Set<String> previousRequired = requiredAggregateNames;
+		SlotPlan left;
+		SlotPlan right = null;
+		boolean conditionFolded = false;
+		try {
+			java.util.HashSet<String> required = new java.util.HashSet<>(previousRequired);
+			required.addAll(sharedBindingNames(leftArg, leftJoin.getRightArg()));
+			required.addAll(VarNameCollector.process(filter.getCondition()));
+			if (leftJoin.hasCondition()) {
+				required.addAll(VarNameCollector.process(leftJoin.getCondition()));
+			}
+			for (Extension extension : hoisted) {
+				for (ExtensionElem elem : extension.getElements()) {
+					if (elem.getExpr() instanceof Var && !((Var) elem.getExpr()).hasValue()) {
+						required.add(((Var) elem.getExpr()).getName());
+					}
+				}
+			}
+			requiredAggregateNames = required;
+			left = compileTuple(leftArg, duplicateInsensitive);
+			if (left != null) {
+				// a filter reading only the optional side's variables evaluates identically per right row, so
+				// it can constrain the right pattern directly — ideally as exact index probes
+				if (leftJoin.getRightArg() instanceof StatementPattern
+						&& leftJoin.getRightArg()
+								.getBindingNames()
+								.containsAll(VarNameCollector.process(filter.getCondition()))) {
+					right = compileFilterIntoStatementPattern((StatementPattern) leftJoin.getRightArg(),
+							filter.getCondition());
+					conditionFolded = right != null;
+				}
+				if (right == null) {
+					right = compileTuple(leftJoin.getRightArg(), duplicateInsensitive);
+				}
+			}
+		} finally {
+			requiredAggregateNames = previousRequired;
+		}
+		if (left == null || right == null) {
+			return null;
+		}
+		SlotPlan plan = SlotPlan.join(left, right);
+		if (leftJoin.hasCondition()) {
+			NativeBooleanFilter joinCondition = compileBoolean(leftJoin.getCondition());
+			if (joinCondition == null) {
+				return null;
+			}
+			plan = SlotPlan.filter(plan, joinCondition, placeableFilterMask(leftJoin.getCondition()));
+		}
+		if (!conditionFolded) {
+			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
+			if (condition == null) {
+				return null;
+			}
+			plan = SlotPlan.filter(plan, condition, placeableFilterMask(filter.getCondition()));
+		}
+		for (int i = hoisted.size() - 1; i >= 0; i--) {
+			CopyBinding[] copies = compileExtensionCopies(hoisted.get(i));
+			if (copies == null) {
+				return null;
+			}
+			plan = SlotPlan.extension(plan, copies);
+		}
+		LEFTJOIN_FILTER_INNER_JOIN_REWRITES.incrementAndGet();
+		return plan;
+	}
+
+	/**
+	 * Whether the extension's copies commute with the enclosing left join and filter: nothing in the optional side or
+	 * either condition may read a copy target, and every element must be the plain variable/constant copy shape that
+	 * {@link #compileExtensionCopies(Extension)} supports.
+	 */
+	boolean extensionHoistableAbove(Extension extension, LeftJoin leftJoin, ValueExpr filterCondition) {
+		java.util.HashSet<String> referenced = new java.util.HashSet<>(leftJoin.getRightArg().getBindingNames());
+		referenced.addAll(VarNameCollector.process(filterCondition));
+		if (leftJoin.hasCondition()) {
+			referenced.addAll(VarNameCollector.process(leftJoin.getCondition()));
+		}
+		for (ExtensionElem elem : extension.getElements()) {
+			if (referenced.contains(elem.getName()) || !(elem.getExpr() instanceof Var)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The plain variable/constant copies of an extension, or null when an element is not a simple copy. */
+	CopyBinding[] compileExtensionCopies(Extension extension) {
+		CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+		for (int i = 0; i < copies.length; i++) {
+			ExtensionElem elem = extension.getElements().get(i);
+			ValueExpr expression = elem.getExpr();
+			if (!(expression instanceof Var)) {
+				return null;
+			}
+			Var sourceVar = (Var) expression;
+			if (sourceVar.hasValue()) {
+				long id = idOf(sourceVar.getValue());
+				if (id == UNKNOWN) {
+					return null;
+				}
+				copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+			} else {
+				copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+			}
+		}
+		return copies;
+	}
+
 	SlotPlan compileFactorizedLeftJoinFilter(Filter filter, boolean duplicateInsensitive) {
 		if (!duplicateInsensitive || !(filter.getArg() instanceof LeftJoin)) {
 			return null;
@@ -189,24 +326,43 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					&& nullRejects(((Or) condition).getRightArg(), nullableNames);
 		}
 		if (condition instanceof Compare) {
-			return referencesAny(((Compare) condition).getLeftArg(), nullableNames)
-					|| referencesAny(((Compare) condition).getRightArg(), nullableNames);
+			return errorsOnUnbound(((Compare) condition).getLeftArg(), nullableNames)
+					|| errorsOnUnbound(((Compare) condition).getRightArg(), nullableNames);
 		}
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> args = ((ListMemberOperator) condition).getArguments();
-			return !args.isEmpty() && referencesAny(args.get(0), nullableNames);
+			return !args.isEmpty() && errorsOnUnbound(args.get(0), nullableNames);
 		}
 		if (condition instanceof Bound) {
-			return referencesAny(((Bound) condition).getArg(), nullableNames);
+			Var var = ((Bound) condition).getArg();
+			return var != null && !var.hasValue() && nullableNames.contains(var.getName());
 		}
 		return false;
 	}
 
-	boolean referencesAny(ValueExpr expr, Set<String> names) {
-		for (String name : VarNameCollector.process(expr)) {
-			if (names.contains(name)) {
-				return true;
-			}
+	/**
+	 * Whether the expression is guaranteed to raise a type error whenever one of the given names is unbound. Only bare
+	 * variable references and operators that are strict in their arguments qualify; anything that can absorb
+	 * unboundness (COALESCE, IF, BOUND, EXISTS, arbitrary function calls) must answer false, because a filter over such
+	 * an expression can still accept a row whose optional side found no match.
+	 */
+	boolean errorsOnUnbound(ValueExpr expr, Set<String> names) {
+		if (expr instanceof Var) {
+			Var var = (Var) expr;
+			return !var.hasValue() && names.contains(var.getName());
+		}
+		if (expr instanceof MathExpr) {
+			return errorsOnUnbound(((MathExpr) expr).getLeftArg(), names)
+					|| errorsOnUnbound(((MathExpr) expr).getRightArg(), names);
+		}
+		if (expr instanceof Str) {
+			return errorsOnUnbound(((Str) expr).getArg(), names);
+		}
+		if (expr instanceof Lang) {
+			return errorsOnUnbound(((Lang) expr).getArg(), names);
+		}
+		if (expr instanceof Datatype) {
+			return errorsOnUnbound(((Datatype) expr).getArg(), names);
 		}
 		return false;
 	}

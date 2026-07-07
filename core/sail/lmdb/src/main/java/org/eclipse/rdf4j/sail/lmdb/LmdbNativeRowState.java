@@ -343,10 +343,13 @@ final class FoldedValueSet {
 final class ConstantFilter {
 	final String variable;
 	final long[] ids;
+	/** The query constants behind {@link #ids}, index-aligned; decides term-vs-value probe safety per candidate. */
+	final Value[] values;
 
-	ConstantFilter(String variable, long[] ids) {
+	ConstantFilter(String variable, long[] ids, Value[] values) {
 		this.variable = variable;
 		this.ids = ids;
+		this.values = values;
 	}
 }
 

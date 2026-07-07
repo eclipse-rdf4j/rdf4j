@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -56,6 +58,10 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong LEFTJOIN_REPLAY_MATERIALIZATIONS = new AtomicLong();
 	static final AtomicLong LEFTJOIN_HASH_BUILDS = new AtomicLong();
 	static final AtomicLong LEFTJOIN_MEMO_MATERIALIZATIONS = new AtomicLong();
+	/** Test observability: null-rejecting filters over a left join compiled as an inner join instead. */
+	static final AtomicLong LEFTJOIN_FILTER_INNER_JOIN_REWRITES = new AtomicLong();
+	/** Test observability: =/IN constant filters folded into exact statement-pattern probes. */
+	static final AtomicLong FILTER_INTO_PATTERN_PUSHDOWNS = new AtomicLong();
 
 	private LmdbNativeAggregateCompiler() {
 	}
@@ -104,6 +110,36 @@ final class LmdbNativeAggregateCompiler {
 		}
 		for (long id : ids) {
 			if (!safeResourceId(id)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Whether probing an index with this exact id finds precisely the statements whose term is value-equal to the given
+	 * query value. True for resources (term identity is value identity) and for string-family literals (xsd:string,
+	 * rdf:langString), whose distinct lexical forms are always distinct values. False for value-collapsible datatypes:
+	 * "1"^^xsd:integer and "01"^^xsd:integer are different terms with equal values, so a term-exact probe would miss
+	 * value-equal matches that a filter must accept.
+	 */
+	static boolean valueProbeSafeId(long id, Value value) {
+		if (safeResourceId(id)) {
+			return true;
+		}
+		if (id == UNKNOWN || value == null || !value.isLiteral()) {
+			return false;
+		}
+		CoreDatatype datatype = ((Literal) value).getCoreDatatype();
+		return datatype == CoreDatatype.XSD.STRING || datatype == CoreDatatype.RDF.LANGSTRING;
+	}
+
+	static boolean allValueProbeSafeIds(long[] ids, Value[] values) {
+		if (ids.length == 0 || values == null || values.length != ids.length) {
+			return false;
+		}
+		for (int i = 0; i < ids.length; i++) {
+			if (!valueProbeSafeId(ids[i], values[i])) {
 				return false;
 			}
 		}

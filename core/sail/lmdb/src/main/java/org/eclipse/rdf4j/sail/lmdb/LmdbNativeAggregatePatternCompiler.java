@@ -103,19 +103,27 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (!(filter.getArg() instanceof StatementPattern)) {
 			return null;
 		}
-		StatementPattern pattern = (StatementPattern) filter.getArg();
-		ConstantFilter constantFilter = extractConstantFilter(filter.getCondition());
+		return compileFilterIntoStatementPattern((StatementPattern) filter.getArg(), filter.getCondition());
+	}
+
+	SlotPlan compileFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
+		ConstantFilter constantFilter = extractConstantFilter(condition);
 		if (constantFilter == null || constantFilter.ids.length == 0) {
 			return null;
 		}
 		if (!patternContainsVariable(pattern, constantFilter.variable)) {
 			return null;
 		}
-		if (!allSafeExactIds(constantFilter.ids)) {
+		if (!allValueProbeSafeIds(constantFilter.ids, constantFilter.values)) {
 			return null;
 		}
 
-		return compileMultiValueStatementPattern(pattern, constantFilter.variable, constantFilter.ids, true, false);
+		SlotPlan plan = compileMultiValueStatementPattern(pattern, constantFilter.variable, constantFilter.ids,
+				constantFilter.values, true, false);
+		if (plan != null) {
+			FILTER_INTO_PATTERN_PUSHDOWNS.incrementAndGet();
+		}
+		return plan;
 	}
 
 	boolean patternContainsVariable(StatementPattern pattern, String variable) {
@@ -152,7 +160,16 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids,
 			boolean keepBinding, boolean allowPartial) {
-		if (!allSafeExactIds(ids)) {
+		return compileMultiValueStatementPattern(pattern, variable, ids, null, keepBinding, allowPartial);
+	}
+
+	/**
+	 * With {@code values} present, probe safety is judged per candidate id/value pair (admitting string-family
+	 * literals); without, only resource ids are admitted.
+	 */
+	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
+			boolean keepBinding, boolean allowPartial) {
+		if (values != null ? !allValueProbeSafeIds(ids, values) : !allSafeExactIds(ids)) {
 			return null;
 		}
 		ArrayList<PatternPlan> alternatives = new ArrayList<>(ids.length);
@@ -210,14 +227,32 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 
 	ConstantFilter extractConstantFilter(ValueExpr condition) {
 		ArrayList<Long> ids = new ArrayList<>();
-		String variable = collectConstantFilter(condition, ids, null);
-		return variable == null ? null : new ConstantFilter(variable, unique(ids));
+		ArrayList<Value> values = new ArrayList<>();
+		String variable = collectConstantFilter(condition, ids, values, null);
+		return variable == null ? null : uniqueConstantFilter(variable, ids, values);
 	}
 
-	String collectConstantFilter(ValueExpr expr, ArrayList<Long> ids, String currentVariable) {
+	ConstantFilter uniqueConstantFilter(String variable, ArrayList<Long> ids, ArrayList<Value> values) {
+		LongHashSet seen = new LongHashSet(ids.size());
+		long[] uniqueIds = new long[ids.size()];
+		Value[] uniqueValues = new Value[ids.size()];
+		int size = 0;
+		for (int i = 0; i < ids.size(); i++) {
+			long id = ids.get(i);
+			if (seen.add(id)) {
+				uniqueIds[size] = id;
+				uniqueValues[size] = values.get(i);
+				size++;
+			}
+		}
+		return new ConstantFilter(variable, Arrays.copyOf(uniqueIds, size), Arrays.copyOf(uniqueValues, size));
+	}
+
+	String collectConstantFilter(ValueExpr expr, ArrayList<Long> ids, ArrayList<Value> values,
+			String currentVariable) {
 		if (expr instanceof Or) {
-			String left = collectConstantFilter(((Or) expr).getLeftArg(), ids, currentVariable);
-			return left == null ? null : collectConstantFilter(((Or) expr).getRightArg(), ids, left);
+			String left = collectConstantFilter(((Or) expr).getLeftArg(), ids, values, currentVariable);
+			return left == null ? null : collectConstantFilter(((Or) expr).getRightArg(), ids, values, left);
 		}
 		if (expr instanceof ListMemberOperator) {
 			List<ValueExpr> args = ((ListMemberOperator) expr).getArguments();
@@ -238,14 +273,15 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 					return null;
 				}
 				ids.add(id);
+				values.add(value);
 			}
 			return variable;
 		}
 		if (expr instanceof Compare && ((Compare) expr).getOperator() == Compare.CompareOp.EQ) {
 			Compare compare = (Compare) expr;
-			String variable = collectConstantEquality(compare.getLeftArg(), compare.getRightArg(), ids);
+			String variable = collectConstantEquality(compare.getLeftArg(), compare.getRightArg(), ids, values);
 			if (variable == null) {
-				variable = collectConstantEquality(compare.getRightArg(), compare.getLeftArg(), ids);
+				variable = collectConstantEquality(compare.getRightArg(), compare.getLeftArg(), ids, values);
 			}
 			if (variable == null || (currentVariable != null && !currentVariable.equals(variable))) {
 				return null;
@@ -255,7 +291,8 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		return null;
 	}
 
-	String collectConstantEquality(ValueExpr varExpr, ValueExpr constExpr, ArrayList<Long> ids) {
+	String collectConstantEquality(ValueExpr varExpr, ValueExpr constExpr, ArrayList<Long> ids,
+			ArrayList<Value> values) {
 		if (!(varExpr instanceof Var) || ((Var) varExpr).hasValue()) {
 			return null;
 		}
@@ -268,6 +305,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		ids.add(id);
+		values.add(value);
 		return ((Var) varExpr).getName();
 	}
 
@@ -279,18 +317,6 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return ((Var) expr).getValue();
 		}
 		return null;
-	}
-
-	long[] unique(ArrayList<Long> ids) {
-		LongHashSet seen = new LongHashSet(ids.size());
-		long[] unique = new long[ids.size()];
-		int size = 0;
-		for (long id : ids) {
-			if (seen.add(id)) {
-				unique[size++] = id;
-			}
-		}
-		return size == unique.length ? unique : Arrays.copyOf(unique, size);
 	}
 
 	PatternPlan compileStatementPattern(StatementPattern sp) {
