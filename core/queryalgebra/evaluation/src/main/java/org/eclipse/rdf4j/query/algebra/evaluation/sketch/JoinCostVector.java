@@ -19,13 +19,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 @Experimental
 final class JoinCostVector implements Comparable<JoinCostVector> {
 
-	private static final double WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
-	private static final double WORK_EQUIVALENCE_RELATIVE_RATIO = 0.10d;
-	private static final double STRONG_RAW_WORK_IMPROVEMENT_RATIO = 0.75d;
-	private static final double ROBUST_REGRET_TOLERANCE_RATIO = 1.25d;
-	private static final double OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO = 0.50d;
-	private static final double OUTPUT_SURFACE_ROBUST_REGRET_RATIO = 2.00d;
-
 	private final double totalWorkRows;
 	private final double finalRows;
 	private final double maxIntermediateRows;
@@ -152,63 +145,35 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 
 	@Override
 	public int compareTo(JoinCostVector other) {
-		int rawComparison = Double.compare(totalWorkRows, other.totalWorkRows);
-		if (rawComparison != 0 && strongRawWorkImprovement(other)
-				&& robustRegretWithinTolerance(other, rawComparison)) {
-			return rawComparison;
+		int comparison = Double.compare(objectiveScore(), other.objectiveScore());
+		if (comparison != 0) {
+			return comparison;
 		}
-		int surfaceComparison = robustSurfaceImprovementComparison(other);
-		if (surfaceComparison != 0) {
-			return surfaceComparison;
+		comparison = Double.compare(robustWorkRows, other.robustWorkRows);
+		if (comparison != 0) {
+			return comparison;
 		}
-		int robustComparison = Double.compare(robustWorkRows, other.robustWorkRows);
-		if (robustComparison != 0 && !equivalentTotalWork(robustWorkRows, other.robustWorkRows)) {
-			return robustComparison;
+		comparison = Double.compare(totalWorkRows, other.totalWorkRows);
+		if (comparison != 0) {
+			return comparison;
 		}
-		if (equivalentTotalWork(totalWorkRows, other.totalWorkRows)) {
-			int comparison = Double.compare(outputSurfaceRows(), other.outputSurfaceRows());
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(rowQErrorMax, other.rowQErrorMax);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(workQErrorMax, other.workQErrorMax);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = -Double.compare(confidence, other.confidence);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = -Double.compare(evidenceCount, other.evidenceCount);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(finalRows, other.finalRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(maxIntermediateRows, other.maxIntermediateRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(cumulativeWorkRows, other.cumulativeWorkRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(uncertaintyRows, other.uncertaintyRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(cartesianWorkRows, other.cartesianWorkRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			return Double.compare(totalWorkRows, other.totalWorkRows);
+		comparison = Double.compare(outputSurfaceRows(), other.outputSurfaceRows());
+		if (comparison != 0) {
+			return comparison;
 		}
-		int comparison = rawComparison;
+		comparison = Double.compare(rowQErrorMax, other.rowQErrorMax);
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Double.compare(workQErrorMax, other.workQErrorMax);
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = -Double.compare(confidence, other.confidence);
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = -Double.compare(evidenceCount, other.evidenceCount);
 		if (comparison != 0) {
 			return comparison;
 		}
@@ -231,62 +196,13 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		return Double.compare(cartesianWorkRows, other.cartesianWorkRows);
 	}
 
+	private double objectiveScore() {
+		double score = robustWorkRows + outputSurfaceRows();
+		return Double.isFinite(score) && score >= 0.0d ? score : Double.MAX_VALUE;
+	}
+
 	private double outputSurfaceRows() {
 		return finalRows + uncertaintyRows;
-	}
-
-	private int robustSurfaceImprovementComparison(JoinCostVector other) {
-		double leftSurface = outputSurfaceRows();
-		double rightSurface = other.outputSurfaceRows();
-		if (!Double.isFinite(leftSurface) || !Double.isFinite(rightSurface)
-				|| leftSurface < 0.0d || rightSurface < 0.0d) {
-			return 0;
-		}
-		if (leftSurface < rightSurface
-				&& rightSurface > 0.0d
-				&& leftSurface <= rightSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
-				&& robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
-						other.robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
-			return -1;
-		}
-		if (rightSurface < leftSurface
-				&& leftSurface > 0.0d
-				&& rightSurface <= leftSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
-				&& other.robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
-						robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
-			return 1;
-		}
-		return 0;
-	}
-
-	private static boolean equivalentTotalWork(double left, double right) {
-		double difference = Math.abs(left - right);
-		if (difference <= WORK_EQUIVALENCE_ABSOLUTE_ROWS) {
-			return true;
-		}
-		double baseline = Math.max(1.0d, Math.min(left, right));
-		return difference <= baseline * WORK_EQUIVALENCE_RELATIVE_RATIO;
-	}
-
-	private boolean strongRawWorkImprovement(JoinCostVector other) {
-		double cheaperWork = Math.min(totalWorkRows, other.totalWorkRows);
-		double expensiveWork = Math.max(totalWorkRows, other.totalWorkRows);
-		return Double.isFinite(cheaperWork)
-				&& Double.isFinite(expensiveWork)
-				&& cheaperWork >= 0.0d
-				&& expensiveWork > 0.0d
-				&& cheaperWork <= expensiveWork * STRONG_RAW_WORK_IMPROVEMENT_RATIO;
-	}
-
-	private boolean robustRegretWithinTolerance(JoinCostVector other, int rawComparison) {
-		double cheaperRobustWork = rawComparison < 0 ? robustWorkRows : other.robustWorkRows;
-		double expensiveRobustWork = rawComparison < 0 ? other.robustWorkRows : robustWorkRows;
-		if (!Double.isFinite(cheaperRobustWork) || !Double.isFinite(expensiveRobustWork)) {
-			return false;
-		}
-		double tolerance = Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
-				expensiveRobustWork * ROBUST_REGRET_TOLERANCE_RATIO);
-		return cheaperRobustWork <= tolerance;
 	}
 
 	@Override
