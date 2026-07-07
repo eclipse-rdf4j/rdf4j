@@ -471,6 +471,16 @@ final class OmniJoinEstimator {
 		return witnessSet == null ? 0.0d : witnessSet.estimatedRows();
 	}
 
+	/**
+	 * Number of distinct values a static attribute has seen, or {@link Double#NaN} when the attribute has no index.
+	 * Exact for freshly ingested and memory-mapped state; heap-serialized snapshots only round-trip values that kept
+	 * retained witnesses, so counts loaded from them can under-report total-only values.
+	 */
+	double estimateStaticDistinctValues(Relation relation, byte attributeId) {
+		AttributeIndex index = relation == null ? null : relation.indexStatic(attributeId);
+		return index == null ? Double.NaN : (double) index.distinctValueCount();
+	}
+
 	private OmniWitnessSet intersectTwo(OmniWitnessSet left, OmniWitnessSet right, double probability,
 			double confidence, double minDetectable) {
 		SortedWitnessAccumulator output = new SortedWitnessAccumulator(Math.min(left.retainedWitnessCount(),
@@ -1390,6 +1400,11 @@ final class OmniJoinEstimator {
 		private long[] mappedValueRecordCacheKeys;
 		private boolean[] mappedValueRecordCachePopulated;
 		private MappedWitnessIndex.ValueRecord[] mappedValueRecordCacheValues;
+		/**
+		 * Number of distinct value hashes this attribute has seen. Seeded from snapshot value counts on load and
+		 * incremented on first-seen values; never decremented (compaction drops witnesses, not values).
+		 */
+		private long distinctValueCount;
 
 		private AttributeIndex(int width, int rows, int nominalEntries, long seed, boolean exactSmallPostings,
 				boolean compactLargePostings) {
@@ -1409,9 +1424,7 @@ final class OmniJoinEstimator {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			if (!totalOnlyValueHashes.isEmpty()) {
-				totalOnlyValueHashes.remove(valueHash);
-			}
+			boolean wasTotalOnly = !totalOnlyValueHashes.isEmpty() && totalOnlyValueHashes.remove(valueHash);
 			boolean retained = sketch.updateHashAndCheckRetained(valueHash, identifierHash);
 			invalidateProbeCache();
 			invalidateWitnessCache(valueHash);
@@ -1419,6 +1432,11 @@ final class OmniJoinEstimator {
 			// only registered maps (never empty) carry the flag; an empty map is an unregistered lazy stub
 			boolean compacted = weights != null && !weights.isEmpty() ? weights.compacted
 					: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash);
+			if (!wasTotalOnly && weights == null && !compacted
+					&& !totalWeightByValueHash.containsKey(valueHash)
+					&& mappedValueRecord(valueHash) == null) {
+				distinctValueCount++;
+			}
 			if (compacted || !exactSmallPostings) {
 				totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
 			}
@@ -1472,7 +1490,12 @@ final class OmniJoinEstimator {
 			if (!Double.isFinite(estimatedMultiplicity) || estimatedMultiplicity <= 0.0d) {
 				return;
 			}
-			totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
+			boolean firstWeight = totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity) == 0.0d;
+			if (firstWeight && weightsForRead(valueHash) == null
+					&& (compactedValueHashes.isEmpty() || !compactedValueHashes.contains(valueHash))
+					&& mappedValueRecord(valueHash) == null) {
+				distinctValueCount++;
+			}
 			totalOnlyValueHashes.add(valueHash);
 		}
 
@@ -1517,6 +1540,7 @@ final class OmniJoinEstimator {
 			compactedValueHashes.clear();
 			weightsByValueHash = null;
 			lazyWeights = null;
+			distinctValueCount = mappedBase == null ? 0L : mappedBase.valueCount();
 			sketch.reset();
 			if (mappedBase != null) {
 				sketch.merge(OmniSketch.wrap(mappedBase.sketchSegment()));
@@ -1529,7 +1553,12 @@ final class OmniJoinEstimator {
 			weightsByValueHash = null;
 			lazyWeights = valueHashes.length == 0 ? null
 					: new LazyWeightPayload(payload, valueHashes, witnessOffsets, witnessCounts);
+			distinctValueCount = valueHashes.length;
 			clearWitnessCache();
+		}
+
+		private long distinctValueCount() {
+			return distinctValueCount;
 		}
 
 		private void compactWeightsToRetainedSample() {

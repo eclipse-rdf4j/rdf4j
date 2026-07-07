@@ -135,11 +135,30 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		boolean runtimeTelemetryTree = tupleExpr != null && tupleExpr.isRuntimeTelemetryEnabled();
 		try {
 			optimizeWithBaseline(tupleExpr, dataset, bindings);
 		} finally {
 			LmdbStandardPlanBaselineOptimizer.clearBaseline(tupleExpr);
+			if (runtimeTelemetryTree) {
+				enableRuntimeTelemetry(tupleExpr);
+			}
 		}
+	}
+
+	/**
+	 * Rule rewrites rebuild algebra nodes through the IR, which drops the per-node runtime-telemetry flag the
+	 * connection enabled on the incoming tree; nodes executing with the flag off never aggregate their source metrics
+	 * (sourceRowsScannedActual and friends). Re-establish the flag on whatever tree optimization produced.
+	 */
+	private static void enableRuntimeTelemetry(TupleExpr tupleExpr) {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setRuntimeTelemetryEnabled(true);
+				super.meetNode(node);
+			}
+		});
 	}
 
 	private void optimizeWithBaseline(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {

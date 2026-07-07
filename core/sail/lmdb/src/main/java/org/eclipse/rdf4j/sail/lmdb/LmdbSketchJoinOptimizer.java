@@ -1303,7 +1303,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return branches;
 			}
 			if (condition == null && tupleExpr instanceof Filter filter) {
-				return List.of(new OptionalBranch(filter.getArg(), filter.getCondition()));
+				return new ArrayList<>(List.of(new OptionalBranch(filter.getArg(), filter.getCondition())));
 			}
 			return new ArrayList<>(List.of(new OptionalBranch(tupleExpr, condition)));
 		}

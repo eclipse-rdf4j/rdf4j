@@ -60,6 +60,10 @@ final class MappedWitnessIndex implements WitnessIndex {
 		return sketchSegment;
 	}
 
+	int valueCount() {
+		return valueCount;
+	}
+
 	@Override
 	public WitnessCursor cursor(long valueHash) {
 		ValueRecord record = valueRecord(valueHash);

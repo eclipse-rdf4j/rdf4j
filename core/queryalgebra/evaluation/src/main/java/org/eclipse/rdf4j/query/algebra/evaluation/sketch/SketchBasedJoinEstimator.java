@@ -4605,8 +4605,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		double card = estimateOmniStatementRows(st, fixed);
-		double distinct = clampDistinct(card, card);
+		double distinct = clampDistinct(omniStatementJoinVarDistinct(st, joinVar, fixed, card), card);
 		return new PatternStats(null, distinct, card);
+	}
+
+	/**
+	 * NDV of {@code joinVar} for a statement pattern with the given fixed components. All-wildcard patterns read the
+	 * maintained per-attribute distinct-value count; shapes without a distinct-capable index fall back to the row
+	 * count, the pre-existing conservative bound.
+	 */
+	private double omniStatementJoinVarDistinct(State st, Component joinVar, EnumMap<Component, String> fixed,
+			double card) {
+		if (joinVar != null && (fixed == null || fixed.isEmpty())) {
+			double distinctValues = st.omniJoinEstimator.estimateStaticDistinctValues(
+					st.omniJoinEstimator.relation(OMNI_RELATION_STATEMENT),
+					OMNI_COMPONENT_ATTRIBUTES[joinVar.ordinal()]);
+			if (Double.isFinite(distinctValues) && distinctValues >= 0.0d) {
+				return distinctValues;
+			}
+		}
+		return card;
 	}
 
 	private double estimateOmniStatementRows(State st, Map<Component, String> fixed) {
@@ -14262,8 +14280,64 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				getValueOrNull(pattern.getPredicateVar()),
 				getValueOrNull(pattern.getObjectVar()),
 				getValueOrNull(pattern.getContextVar()));
-		return new SummaryStats(estimate.bindings, estimate.distinct,
+		double distinct = refineOmniBoundPredicateJoinVarDistinct(pattern, joinVar, estimate.distinct,
+				estimate.resultSize);
+		return new SummaryStats(estimate.bindings, distinct,
 				applyFilterMultiplier(estimate.resultSize, filterMultiplier), false);
+	}
+
+	/**
+	 * For bound-predicate patterns the per-predicate ANY-hash edge postings know the distinct subject/object values
+	 * (exactly for small postings, theta-sampled otherwise); prefer them over the statement-level estimate, which has
+	 * no per-variable distinct index and can only echo row counts.
+	 */
+	private double refineOmniBoundPredicateJoinVarDistinct(StatementPattern pattern, Var joinVar, double fallback,
+			double rows) {
+		if (sketchStrategy != SketchStrategy.OMNI || !hasBoundValue(pattern.getPredicateVar())) {
+			return fallback;
+		}
+		if (hasBoundValue(pattern.getContextVar()) && !contextPairSketchesEnabled) {
+			return fallback;
+		}
+		Component component = getComponent(pattern, joinVar);
+		OmniRelation relationName;
+		if (component == Component.O && !hasBoundValue(pattern.getSubjectVar())) {
+			relationName = OMNI_RELATION_EDGE_FORWARD;
+		} else if (component == Component.S && !hasBoundValue(pattern.getObjectVar())) {
+			relationName = OMNI_RELATION_EDGE_REVERSE;
+		} else {
+			return fallback;
+		}
+		flushPendingIncremental();
+		State snap = current;
+		if (snap == null || snap.omniJoinEstimator == null || snap.omniJoinEstimatorHasDeletes) {
+			return fallback;
+		}
+		synchronized (snap) {
+			if (snap.omniJoinEstimatorHasDeletes) {
+				return fallback;
+			}
+			OmniWitnessSet witnesses = probeOmniPredicateEdgeAny(snap.omniJoinEstimator, relationName, pattern);
+			double distinct = omniWitnessDistinct(witnesses);
+			if (Double.isFinite(distinct) && distinct >= 0.0d) {
+				return clampDistinct(distinct, Double.isFinite(rows) && rows > 0.0d ? rows : distinct);
+			}
+		}
+		return fallback;
+	}
+
+	private static double omniWitnessDistinct(OmniWitnessSet witnesses) {
+		if (witnesses == null) {
+			return Double.NaN;
+		}
+		int retained = witnesses.retainedWitnessCount();
+		if (retained == 0) {
+			boolean trueZero = witnesses.fallbackReason() == OmniWitnessSet.FallbackReason.NONE
+					&& witnesses.estimatedRows() <= 0.0d;
+			return trueZero ? 0.0d : Double.NaN;
+		}
+		double probability = witnesses.samplingProbability();
+		return probability > 0.0d && probability < 1.0d ? retained / probability : retained;
 	}
 
 	private SummaryStats mergeSummaryStats(SummaryStats leftStats, SummaryStats rightStats) {
