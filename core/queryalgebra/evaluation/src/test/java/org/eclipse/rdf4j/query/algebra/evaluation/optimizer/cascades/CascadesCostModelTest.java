@@ -405,6 +405,22 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void outputGoalDoesNotLinearlyDiscountJoinWork() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "join-test", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "join-test");
+		CostVector fullCost = new CostVector(10_000.0d, 100_000.0d, 0.0d, 0.0d, 0.0d, 4.0d, 0.80d);
+
+		CostVector limited = model.applyOutputGoal(expression, OptimizationGoal.root().withResultRowLimit(10, true),
+				PhysicalProperties.ANY, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d);
+		assertEquals(fullCost.workRows(), limited.workRows(), 0.0d,
+				"LIMIT cannot infer join input work from the final output fraction");
+	}
+
+	@Test
 	void outputGoalKeepsHashJoinBuildWorkUnderStreamingLimit() {
 		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
 		Join hashJoin = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
@@ -422,8 +438,8 @@ class CascadesCostModelTest {
 		assertEquals(10.0d, limited.rows(), 0.0d);
 		assertTrue(limited.workRows() >= fullCost.memoryRows(),
 				"LIMIT must not discount the blocking hash-build footprint");
-		assertTrue(limited.workRows() < fullCost.workRows(),
-				"Hash join LIMIT costing should still discount streamable work after the build side is paid");
+		assertEquals(fullCost.workRows(), limited.workRows(), 0.0d,
+				"Hash join LIMIT costing cannot infer input-side work from final output fraction");
 	}
 
 	@Test
