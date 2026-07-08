@@ -68,8 +68,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1651,6 +1651,7 @@ class TripleStore implements Closeable {
 						throw new SailException(e);
 					}
 					try {
+						long committedTxnId = mdb_txn_id(writeTxn);
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							try {
@@ -1666,6 +1667,7 @@ class TripleStore implements Closeable {
 								}
 								updateFromCache();
 								// finally, commit write transaction
+								committedTxnId = mdb_txn_id(writeTxn);
 								E(mdb_txn_commit(writeTxn));
 							} finally {
 								recordCache = null;
@@ -1676,7 +1678,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
-						lastCommittedTxnId = getCurrentCommittedTransactionId();
+						lastCommittedTxnId = committedTxnId;
 						dataRevision.incrementAndGet();
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
