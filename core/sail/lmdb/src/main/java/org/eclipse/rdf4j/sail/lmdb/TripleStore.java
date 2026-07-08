@@ -76,6 +76,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -2824,12 +2825,14 @@ class TripleStore implements Closeable {
 							try {
 								closeAlignedWriteCursors();
 								long transaction = writeTxn;
+								long committedTxnId = mdb_txn_id(transaction);
 								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
 										LmdbUtil.getNewSize(pageSize, transaction, 0L));
 								writeTxn = 0;
 								result = commitWriteTransaction(transaction);
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
+									lastCommittedTxnId = committedTxnId;
 									committed = true;
 									if (advanceDataRevision && tripleMutation) {
 										dataRevision.incrementAndGet();
@@ -2857,7 +2860,6 @@ class TripleStore implements Closeable {
 								lockManager.unlockWrite(stamp);
 							}
 							if (result == MDB_SUCCESS) {
-								lastCommittedTxnId = getCurrentCommittedTransactionId();
 								break;
 							}
 							if (result != MDB_MAP_FULL || !autoGrow) {
