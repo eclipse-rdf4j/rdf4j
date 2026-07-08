@@ -12,8 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.hypergraph;
 
 /**
- * Pluggable cost callbacks for {@link CostingReceiver}. Costs are unit-free; only their relative order matters. Row
- * estimates are not part of this interface — they are canonical per node set and derived from the
+ * Pluggable rank-cost callbacks for {@link CostingReceiver}. Costs are local to the DPhyp search; only their relative
+ * order matters, and adapters must not export them as memo-facing work rows unless they define the same unit at the
+ * adapter boundary. Row estimates are not part of this interface — they are canonical per node set and derived from the
  * {@link PlanHypergraph} predicates.
  */
 public interface CostModel {

@@ -17,7 +17,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 
 /**
- * Multi-objective physical-plan cost used by Cascades winners.
+ * Multi-objective physical-plan cost used by Cascades winners. {@code workRows} is the comparable memo work-row field
+ * and must use a shared access-work unit at memo boundaries.
  */
 @Experimental
 public record CostVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,

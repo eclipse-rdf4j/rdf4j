@@ -1036,6 +1036,70 @@ class LmdbCascadesOptimizerTest {
 
 	@Test
 	@SuppressWarnings({ "rawtypes", "unchecked" })
+	void comparePolicyDoesNotUseSyntheticStandardPlanCostWhenCanonicalWorkRowsAreMissing() throws Exception {
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
+		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
+		Class<?> candidateClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanCandidate");
+		Object autoMode = Enum.valueOf((Class<Enum>) modeClass.asSubclass(Enum.class), "AUTO");
+		Object comparePolicy = Enum.valueOf((Class<Enum>) policyClass.asSubclass(Enum.class), "COMPARE");
+		Constructor<?> candidateConstructor = candidateClass
+				.getDeclaredConstructor(LmdbCascadesOptimizer.class, TupleExpr.class, String.class);
+		candidateConstructor.setAccessible(true);
+		StatementPattern standardRoot = pattern();
+		standardRoot.setCardinality(1.0d);
+		Object standardPlan = candidateConstructor.newInstance(optimizer, standardRoot, "test-standard");
+		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
+				CostVector.ofRowsAndWork(1.0d, 10_000.0d, QErrorInterval.exact(1.0d, "test-cascades")),
+				List.of(), false, "complete");
+		CascadesPlan cascadesPlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
+				1, OptimizationGoal.root(), Optional.of(winner), false, List.of("complete"));
+		Method standardPlanWins = LmdbCascadesOptimizer.class.getDeclaredMethod("standardPlanWins", modeClass,
+				policyClass, candidateClass, CascadesPlan.class);
+		standardPlanWins.setAccessible(true);
+
+		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, comparePolicy, standardPlan,
+				cascadesPlan),
+				"Compare policy must not replace Cascades from the uncalibrated synthetic standard-plan cost");
+	}
+
+	@Test
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	void comparePolicyUsesCanonicalStandardPlanWorkRows() throws Exception {
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
+		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
+		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
+		Class<?> candidateClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanCandidate");
+		Object autoMode = Enum.valueOf((Class<Enum>) modeClass.asSubclass(Enum.class), "AUTO");
+		Object comparePolicy = Enum.valueOf((Class<Enum>) policyClass.asSubclass(Enum.class), "COMPARE");
+		Constructor<?> candidateConstructor = candidateClass
+				.getDeclaredConstructor(LmdbCascadesOptimizer.class, TupleExpr.class, String.class);
+		candidateConstructor.setAccessible(true);
+		StatementPattern standardRoot = pattern();
+		standardRoot.setCardinality(1.0d);
+		standardRoot.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, 1_000.0d);
+		standardRoot.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 1_000.0d);
+		Object standardPlan = candidateConstructor.newInstance(optimizer, standardRoot, "test-standard");
+		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
+				CostVector.ofRowsAndWork(1.0d, 1_100.0d, QErrorInterval.exact(1.0d, "test-cascades")),
+				List.of(), false, "complete");
+		CascadesPlan cascadesPlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
+				1, OptimizationGoal.root(), Optional.of(winner), false, List.of("complete"));
+		Method standardPlanWins = LmdbCascadesOptimizer.class.getDeclaredMethod("standardPlanWins", modeClass,
+				policyClass, candidateClass, CascadesPlan.class);
+		standardPlanWins.setAccessible(true);
+
+		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, comparePolicy, standardPlan,
+				cascadesPlan),
+				"Canonical standard-plan work rows need the configured 1.2x improvement before replacement");
+	}
+
+	@Test
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	void fallbackStandardPlanDoesNotBeatCheaperApproximateCascadesPlan() throws Exception {
 		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
 		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");

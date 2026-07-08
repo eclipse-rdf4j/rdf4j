@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -55,10 +56,16 @@ class LmdbHypergraphJoinPlannerTest {
 	 */
 	private static final class SyntheticCostModel implements JoinFactorCostModel {
 		private final Map<String, Double> baseRows = new HashMap<>();
+		private final Map<String, Double> baseWorkRows = new HashMap<>();
 		private final Map<String, Map<String, Double>> boundVarSelectivity = new HashMap<>();
 
 		SyntheticCostModel table(String predicateLocalName, double rows) {
+			return table(predicateLocalName, rows, rows);
+		}
+
+		SyntheticCostModel table(String predicateLocalName, double rows, double workRows) {
 			baseRows.put(predicateLocalName, rows);
+			baseWorkRows.put(predicateLocalName, workRows);
 			return this;
 		}
 
@@ -87,14 +94,18 @@ class LmdbHypergraphJoinPlannerTest {
 				return Optional.empty();
 			}
 			double rows = base;
+			double workRows = baseWorkRows.getOrDefault(predicate, base);
 			Map<String, Double> selectivities = boundVarSelectivity.getOrDefault(predicate, Map.of());
 			for (Var var : List.of(pattern.getSubjectVar(), pattern.getObjectVar())) {
 				if (!var.hasValue() && boundVars.contains(var.getName())) {
-					rows *= selectivities.getOrDefault(var.getName(), 1.0d);
+					double selectivity = selectivities.getOrDefault(var.getName(), 1.0d);
+					rows *= selectivity;
+					workRows *= selectivity;
 				}
 			}
 			double output = Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows * rows : rows;
-			return Optional.of(new FactorCostEstimate(output, output));
+			double work = Double.isFinite(prefixRows) && prefixRows > 0.0d ? prefixRows * workRows : workRows;
+			return Optional.of(new FactorCostEstimate(work, output));
 		}
 	}
 
@@ -201,6 +212,31 @@ class LmdbHypergraphJoinPlannerTest {
 			assertEquals("hash", join.getStringMetricPlanned("optimizer.joinAlgorithmHint"),
 					"a join costed as a hash join must execute as one instead of a per-row nested loop: " + join);
 		}
+	}
+
+	@Test
+	void dphypHashRankCostDoesNotLeakIntoCascadesWorkRows() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 1000, 1000)
+				.table("b", 1000, 1000)
+				.table("c", 1000, 1000);
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("o1", "b", "o2"),
+				pattern("o2", "c", "o3"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(island, model).orElseThrow();
+		double expectedAccessWorkRows = 3000.0d;
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+		assertEquals(expectedAccessWorkRows, result.cost().workRows(), 0.0d);
+		assertEquals(expectedAccessWorkRows, result.estimate().workRows(), 0.0d);
+		assertEquals(expectedAccessWorkRows,
+				result.tupleExpr().getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+		assertEquals(expectedAccessWorkRows,
+				result.tupleExpr().getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS), 0.0d);
+		Double rankCost = result.estimate().doubleMetrics().get("optimizer.dphypRankCost");
+		assertTrue(rankCost != null && Double.isFinite(rankCost) && rankCost > expectedAccessWorkRows,
+				"DPhyp rank cost should remain diagnostic-only: " + rankCost);
 	}
 
 	@Test

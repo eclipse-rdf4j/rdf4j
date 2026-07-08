@@ -347,7 +347,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (goal == null || !candidate.isPresent() || !policy.boundsCascades() || !budgetedSearch) {
 			return goal;
 		}
-		CostVector bound = cascadesWorkBound(candidate.cost());
+		CostVector bound = cascadesWorkBound(standardPlanCanonicalWorkRows(candidate));
 		if (CostVector.INFINITE.equals(bound)) {
 			return goal;
 		}
@@ -365,30 +365,22 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan.approximate() && hasEmergencyFallbackProvenance(cascadesPlan)) {
 			return policy.fallbacks();
 		}
-		if (mode != Mode.EXACT && cascadesPlan.approximate()) {
-			return policy.compares() && standardPlanWinsByWork(candidate, cascadesPlan);
-		}
 		if (!policy.compares()) {
 			return false;
 		}
 		if (mode == Mode.EXACT) {
 			return false;
 		}
-		return standardPlanWinsByCost(candidate, cascadesPlan);
+		return standardPlanWinsByCanonicalWork(candidate, cascadesPlan);
 	}
 
-	private boolean standardPlanWinsByWork(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
-		CostVector standardCost = candidate.cost();
-		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
+	private boolean standardPlanWinsByCanonicalWork(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
+		double standardWork = standardPlanCanonicalWorkRows(candidate);
+		if (!isComparableWorkRows(standardWork)) {
 			return false;
 		}
-		CostVector cascadesCost = cascadesPlan.cost();
-		double standardWork = fallbackComparisonWork(standardCost);
-		double cascadesWork = fallbackComparisonWork(cascadesCost);
-		if (!Double.isFinite(standardWork) || standardWork >= Double.MAX_VALUE) {
-			return false;
-		}
-		if (!Double.isFinite(cascadesWork) || cascadesWork >= Double.MAX_VALUE) {
+		double cascadesWork = cascadesPlan.cost().workRows();
+		if (!isComparableWorkRows(cascadesWork)) {
 			return true;
 		}
 		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
@@ -406,41 +398,34 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return cascadesPlan.approximate();
 	}
 
-	private double fallbackComparisonWork(CostVector cost) {
-		if (cost == null) {
-			return Double.MAX_VALUE;
+	private double standardPlanCanonicalWorkRows(StandardPlanCandidate candidate) {
+		if (candidate == null || !candidate.isPresent()) {
+			return Double.NaN;
 		}
-		double score = cost.objectiveScore();
-		if (Double.isFinite(score) && score >= 0.0d && score < Double.MAX_VALUE) {
-			return score;
-		}
-		return cost.workRows();
+		return canonicalWorkRows(candidate.tupleExpr());
 	}
 
-	private boolean standardPlanWinsByCost(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
-		CostVector standardCost = candidate.cost();
-		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
-			return false;
+	private double canonicalWorkRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
 		}
-		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
-				DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT);
-		double standardScore = standardCost.objectiveScore();
-		double cascadesScore = cascadesPlan.cost().objectiveScore();
-		if (!Double.isFinite(standardScore) || standardScore >= Double.MAX_VALUE) {
-			return false;
+		double workRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
+		if (isComparableWorkRows(workRows)) {
+			return workRows;
 		}
-		if (!Double.isFinite(cascadesScore) || cascadesScore >= Double.MAX_VALUE) {
-			return true;
-		}
-		return standardScore * Math.max(1.0d, minImprovement) <= cascadesScore;
+		workRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+		return isComparableWorkRows(workRows) ? workRows : Double.NaN;
 	}
 
-	private CostVector cascadesWorkBound(CostVector standardCost) {
-		if (standardCost == null || !Double.isFinite(standardCost.workRows())
-				|| standardCost.workRows() >= Double.MAX_VALUE) {
+	private boolean isComparableWorkRows(double workRows) {
+		return Double.isFinite(workRows) && workRows >= 0.0d && workRows < Double.MAX_VALUE;
+	}
+
+	private CostVector cascadesWorkBound(double standardWorkRows) {
+		if (!isComparableWorkRows(standardWorkRows)) {
 			return CostVector.INFINITE;
 		}
-		double workRows = Math.max(1.0d, standardCost.workRows());
+		double workRows = Math.max(1.0d, standardWorkRows);
 		return new CostVector(Double.MAX_VALUE, workRows, Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE,
 				Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE,
 				0.0d, 0.0d);
@@ -1832,6 +1817,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 	}
 
+	/**
+	 * Diagnostic standard-plan annotation estimator. Its recursive shape formula is not calibrated against Cascades
+	 * {@link CostVector} instances and must not be used for standard-vs-Cascades arbitration.
+	 */
 	private final class StandardPlanCostEstimator {
 		private final IdentityHashMap<TupleExpr, CostVector> cache = new IdentityHashMap<>();
 
