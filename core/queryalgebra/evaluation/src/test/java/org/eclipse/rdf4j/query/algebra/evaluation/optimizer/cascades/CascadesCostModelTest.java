@@ -405,6 +405,28 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void outputGoalKeepsHashJoinBuildWorkUnderStreamingLimit() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join hashJoin = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		hashJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		PhysicalProperties streaming = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.STREAMING)
+				.build();
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "hash-test", hashJoin, streaming,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "hash-test");
+		CostVector fullCost = new CostVector(10_000.0d, 100_000.0d, 5_000.0d, 0.0d, 0.0d, 4.0d, 0.80d);
+
+		CostVector limited = model.applyOutputGoal(expression, OptimizationGoal.root().withResultRowLimit(10, true),
+				streaming, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d);
+		assertTrue(limited.workRows() >= fullCost.memoryRows(),
+				"LIMIT must not discount the blocking hash-build footprint");
+		assertTrue(limited.workRows() < fullCost.workRows(),
+				"Hash join LIMIT costing should still discount streamable work after the build side is paid");
+	}
+
+	@Test
 	void fallbackEstimatesCarryStatisticMissingDiagnostics() {
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null,
 				RdfStatisticsProvider.EMPTY);

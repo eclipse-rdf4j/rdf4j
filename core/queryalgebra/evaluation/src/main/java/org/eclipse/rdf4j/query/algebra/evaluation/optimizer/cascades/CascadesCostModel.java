@@ -574,8 +574,23 @@ public interface CascadesCostModel {
 				return cost.withRows(outputRows);
 			}
 			double fraction = Math.max(0.0d, Math.min(1.0d, requiredRows / Math.max(1.0d, cost.rows())));
-			double stoppedWork = Math.max(outputRows, Math.min(cost.workRows(), cost.workRows() * fraction));
+			double blockingWorkFloor = blockingEarlyStopWorkFloor(expression, cost);
+			double streamableWork = Math.max(0.0d, cost.workRows() - blockingWorkFloor);
+			double stoppedWork = Math.max(outputRows,
+					Math.min(cost.workRows(), blockingWorkFloor + streamableWork * fraction));
 			return cost.withRows(outputRows).withWorkRows(stoppedWork);
+		}
+
+		private double blockingEarlyStopWorkFloor(MemoExpr expression, CostVector cost) {
+			if (cost == null || cost.memoryRows() <= 0.0d) {
+				return 0.0d;
+			}
+			TupleExpr tupleExpr = expression == null ? null : expression.tupleExpr();
+			if (tupleExpr instanceof Join join
+					&& "hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
+				return Math.min(cost.workRows(), cost.memoryRows());
+			}
+			return 0.0d;
 		}
 
 		private boolean supportsStreamingEarlyStop(MemoExpr expression, OptimizationGoal goal,
