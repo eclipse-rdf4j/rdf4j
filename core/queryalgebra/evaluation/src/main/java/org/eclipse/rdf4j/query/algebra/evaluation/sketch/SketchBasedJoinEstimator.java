@@ -8486,6 +8486,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			Component component = getComponent(pattern, var);
 			FastAgmsBindingSummary sketch = globalComponentSketch(snap, component);
 			double distinct = clampDistinct((sketch == null ? 0.0d : sketch.effectiveDistinct()), rows);
+			if (!(Double.isFinite(distinct) && distinct > 0.0d) && snap.sketchStrategy == SketchStrategy.OMNI) {
+				JoinEstimate joinEstimate = estimate(component, null, null, null, null);
+				distinct = clampDistinct(joinEstimate.distinct, rows);
+				sketch = joinEstimate.bindings;
+			}
 			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 				distinct = clampDistinct(rows, rows);
 				sketch = null;

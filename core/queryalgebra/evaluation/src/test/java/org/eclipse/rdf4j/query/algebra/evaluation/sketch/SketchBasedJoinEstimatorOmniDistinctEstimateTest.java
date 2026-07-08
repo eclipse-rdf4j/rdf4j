@@ -16,12 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +71,24 @@ class SketchBasedJoinEstimatorOmniDistinctEstimateTest {
 
 		assertEquals(DISTINCT_SUBJECTS, estimate.distinct(), 1.0,
 				"all-wildcard subject distinct must be the subject count, not the row count");
+	}
+
+	@Test
+	void allUnboundPatternVarStatsReflectOmniStatementAttributeDistinctCounts() {
+		SketchBasedJoinEstimator estimator = ingestedEstimator();
+
+		BagEstimate bag = estimator
+				.bagEstimateForJoinOrdering(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), Set.of())
+				.orElseThrow();
+
+		assertEquals(PREDICATES * ROWS_PER_PREDICATE, bag.rows(), PREDICATES * ROWS_PER_PREDICATE * 0.10,
+				"all-unbound pattern row estimate should stay at the statement count");
+		assertEquals(DISTINCT_SUBJECTS, bag.variable("s").distinctRows(), 1.0,
+				"all-unbound subject variable distinct must use OMNI statement-attribute NDV");
+		assertEquals(PREDICATES, bag.variable("p").distinctRows(), 0.5,
+				"all-unbound predicate variable distinct must use OMNI statement-attribute NDV");
+		assertEquals(PREDICATES * DISTINCT_OBJECTS_PER_PREDICATE, bag.variable("o").distinctRows(), 5.0,
+				"all-unbound object variable distinct must use OMNI statement-attribute NDV");
 	}
 
 	@Test
