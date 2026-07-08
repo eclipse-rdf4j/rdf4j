@@ -167,6 +167,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setSketchEstimatorEnabled(false);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
