@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -87,8 +88,9 @@ final class DeferredFilter {
 	EvaluationStatistics.FilterPassEstimate passEstimate() {
 		EvaluationStatistics.FilterPassEstimate estimate = passEstimate;
 		if (estimate == null) {
-			if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-				estimate = lmdbStatistics
+			Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(statistics);
+			if (services.isPresent()) {
+				estimate = services.get()
 						.estimatePatternLocalFilterPass(condition, patternLocalBase, originPatterns)
 						.orElse(null);
 			}

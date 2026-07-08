@@ -95,15 +95,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimateProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.OmniCorrelatedProbeEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.OmniFiniteFilterProbeEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -111,6 +102,16 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniBridgeProbeEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniCorrelatedProbeEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniFiniteFilterProbeEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimateProvider;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -149,7 +150,7 @@ class LmdbEvaluationStatistics
 	private static final String OPTIONAL_BOUND_LOOKUP_SOURCE = "lmdb-optional-bound-lookup";
 	private static final String MINUS_BOUND_PROBE_SOURCE = "lmdb-minus-bound-probe";
 	private static final String ROW_PRESERVING_SUBPLAN_SOURCE = "lmdb-row-preserving-subplan";
-	private static final String FINITE_DERIVED_SURFACE_SOURCE = "lmdb-finite-derived-surface";
+	static final String FINITE_DERIVED_SURFACE_SOURCE = "lmdb-finite-derived-surface";
 	private static final String FINITE_ANCHOR_SKETCH_SOURCE = "lmdb-finite-anchor-sketch";
 	private static final String FINITE_ANCHOR_PAGE_WALK_SOURCE = "lmdb-finite-anchor-page-walk";
 	private static final String DECISION_PAGE_WALK_SOURCE = "lmdb-decision-page-walk";
@@ -2064,10 +2065,6 @@ class LmdbEvaluationStatistics
 
 	private double normalizedPlanRows(double value, double fallback) {
 		return isFiniteNonNegative(value) ? value : fallback;
-	}
-
-	private record FilterCostApplication(double workRows, double outputRows, Map<String, String> stringMetrics,
-			Map<String, Double> doubleMetrics) {
 	}
 
 	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
@@ -6689,10 +6686,6 @@ class LmdbEvaluationStatistics
 		return null;
 	}
 
-	private record ConnectedBranchEstimate(double rows, double minRows, double maxRows, int anchorCount,
-			int sampleCount) {
-	}
-
 	private double smallerFiniteRowCount(double currentRows, double candidateRows) {
 		if (!isFiniteNonNegative(candidateRows)) {
 			return currentRows;
@@ -7984,12 +7977,12 @@ class LmdbEvaluationStatistics
 				|| !isPositiveFinite(prefixRows)) {
 			return null;
 		}
-		Optional<SketchBasedJoinEstimator.OmniBridgeProbeEstimate> bridgeProbe = sketchBasedJoinEstimator
+		Optional<OmniBridgeProbeEstimate> bridgeProbe = sketchBasedJoinEstimator
 				.estimateOmniBridgeProbe(leftFactors, bridge, prefixRows);
 		if (bridgeProbe.isEmpty() || !isFiniteNonNegative(bridgeProbe.get().outputRows())) {
 			return null;
 		}
-		SketchBasedJoinEstimator.OmniBridgeProbeEstimate probe = bridgeProbe.get();
+		OmniBridgeProbeEstimate probe = bridgeProbe.get();
 		JoinFrequencyEstimate evidence = new JoinFrequencyEstimate(
 				Math.max(probe.probeRows(), probe.outputRows()),
 				probe.outputRows(),
@@ -10265,88 +10258,6 @@ class LmdbEvaluationStatistics
 		private int depth;
 	}
 
-	private static final class SetFactorCostCacheEntry {
-		private final Set<String> boundVars;
-		private final long knownOutputRowsBits;
-		private final boolean collectMetrics;
-		private final Map<String, Set<Value>> finiteBindingValues;
-		private final JoinFactorCostModel.EstimationTier estimationTier;
-		private final Optional<FactorCostEstimate> estimate;
-		private SetFactorCostCacheEntry next;
-
-		private SetFactorCostCacheEntry(Set<String> boundVars, long knownOutputRowsBits, boolean collectMetrics,
-				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-				Optional<FactorCostEstimate> estimate, SetFactorCostCacheEntry next) {
-			this.boundVars = boundVars;
-			this.knownOutputRowsBits = knownOutputRowsBits;
-			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = finiteBindingValues;
-			this.estimationTier = estimationTier;
-			this.estimate = estimate;
-			this.next = next;
-		}
-
-		private boolean matches(Set<String> boundVars, long knownOutputRowsBits, boolean collectMetrics,
-				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
-			return this.knownOutputRowsBits == knownOutputRowsBits
-					&& this.collectMetrics == collectMetrics
-					&& this.estimationTier == estimationTier
-					&& this.boundVars.equals(boundVars)
-					&& sameFiniteBindingValues(finiteBindingValues);
-		}
-
-		private boolean sameFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
-			if (this.finiteBindingValues == finiteBindingValues) {
-				return true;
-			}
-			if (this.finiteBindingValues.isEmpty() && finiteBindingValues.isEmpty()) {
-				return true;
-			}
-			return this.finiteBindingValues.equals(finiteBindingValues);
-		}
-	}
-
-	private static final class MaskFactorCostCacheEntry {
-		private final long boundVarMask;
-		private final long knownOutputRowsBits;
-		private final boolean collectMetrics;
-		private final Map<String, Set<Value>> finiteBindingValues;
-		private final JoinFactorCostModel.EstimationTier estimationTier;
-		private final Optional<FactorCostEstimate> estimate;
-		private MaskFactorCostCacheEntry next;
-
-		private MaskFactorCostCacheEntry(long boundVarMask, long knownOutputRowsBits, boolean collectMetrics,
-				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-				Optional<FactorCostEstimate> estimate, MaskFactorCostCacheEntry next) {
-			this.boundVarMask = boundVarMask;
-			this.knownOutputRowsBits = knownOutputRowsBits;
-			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = finiteBindingValues;
-			this.estimationTier = estimationTier;
-			this.estimate = estimate;
-			this.next = next;
-		}
-
-		private boolean matches(long boundVarMask, long knownOutputRowsBits, boolean collectMetrics,
-				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
-			return this.boundVarMask == boundVarMask
-					&& this.knownOutputRowsBits == knownOutputRowsBits
-					&& this.collectMetrics == collectMetrics
-					&& this.estimationTier == estimationTier
-					&& sameFiniteBindingValues(finiteBindingValues);
-		}
-
-		private boolean sameFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
-			if (this.finiteBindingValues == finiteBindingValues) {
-				return true;
-			}
-			if (this.finiteBindingValues.isEmpty() && finiteBindingValues.isEmpty()) {
-				return true;
-			}
-			return this.finiteBindingValues.equals(finiteBindingValues);
-		}
-	}
-
 	private record OptimizationCounterSnapshot(boolean scoped, long finiteDerivedSurfaceCacheHits,
 			long finiteDerivedSurfaceCacheMisses, long finiteBranchRowsCacheHits, long finiteBranchRowsCacheMisses,
 			long finiteBranchSurfaceCacheHits, long finiteBranchSurfaceCacheMisses,
@@ -10397,467 +10308,6 @@ class LmdbEvaluationStatistics
 			if (delta > 0L) {
 				doubleMetrics.put(metricName, (double) delta);
 			}
-		}
-	}
-
-	private record CorrelatedAntiExistsExactEstimate(double inputRows, double matchedRows, double outputRows,
-			double probeLookupRows, double rhsRowsScanned, double probeWorkRows) {
-
-		private double probeOutputRows() {
-			return matchedRows;
-		}
-	}
-
-	private record CorrelatedAntiProbePattern(StatementPattern pattern, ValueExpr condition) {
-	}
-
-	private record CorrelatedAntiExistsExactCacheKey(int tripleStoreIdentity, long dataRevision,
-			Object inputFingerprint, Object antiProbeFingerprint, String sharedBinding) {
-	}
-
-	private record CorrelatedAntiProbeResult(boolean matched, long rhsRowsScanned) {
-	}
-
-	private record PatternIds(long subjectId, long predicateId, long objectId, long contextId) {
-
-		private static final PatternIds ZERO_ROWS = new PatternIds(Long.MIN_VALUE, Long.MIN_VALUE,
-				Long.MIN_VALUE, Long.MIN_VALUE);
-
-		private boolean zeroRows() {
-			return this == ZERO_ROWS;
-		}
-	}
-
-	private static final class FactorCostCacheKey {
-		private FactorCostCacheKey() {
-		}
-
-		private static Set<String> immutableBoundVars(Set<String> boundVars) {
-			if (boundVars == null || boundVars.isEmpty()) {
-				return Set.of();
-			}
-			return Set.copyOf(boundVars);
-		}
-
-		private static Object factorFingerprint(TupleExpr factor) {
-			if (factor instanceof StatementPattern statementPattern) {
-				return StatementPatternFactorFingerprint.of(statementPattern);
-			}
-			if (factor instanceof BindingSetAssignment bindingSetAssignment) {
-				return BindingSetAssignmentFactorFingerprint.of(bindingSetAssignment);
-			}
-			if (factor instanceof Filter filter) {
-				return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg()),
-						valueExprFingerprint(filter.getCondition()));
-			}
-			if (factor instanceof LeftJoin leftJoin) {
-				return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg()),
-						factorFingerprint(leftJoin.getRightArg()), valueExprFingerprint(leftJoin.getCondition()));
-			}
-			if (factor instanceof Join join) {
-				return BinaryFactorFingerprint.of("Join", factorFingerprint(join.getLeftArg()),
-						factorFingerprint(join.getRightArg()), null);
-			}
-			return FallbackFactorFingerprint.of(factor == null ? "null" : factor.getClass().getName(),
-					factor == null ? "" : factor.toString());
-		}
-
-		private static Object valueExprFingerprint(Object valueExpr) {
-			return valueExpr == null ? null
-					: FallbackFactorFingerprint.of(valueExpr.getClass().getName(),
-							valueExpr.toString());
-		}
-
-		private static String valueFingerprint(Value value) {
-			return value == null ? "" : valueTypeName(value) + ':' + value;
-		}
-
-		private static String valueTypeName(Value value) {
-			try {
-				return value.getType().name();
-			} catch (IllegalStateException e) {
-				if (value instanceof IRI) {
-					return Value.Type.IRI.name();
-				}
-				if (value instanceof BNode) {
-					return Value.Type.BNode.name();
-				}
-				if (value instanceof Literal) {
-					return Value.Type.Literal.name();
-				}
-				if (value instanceof TripleTerm) {
-					return Value.Type.TripleTerm.name();
-				}
-				return value.getClass().getName();
-			}
-		}
-
-		private static int nullableHash(Object value) {
-			return value == null ? 0 : value.hashCode();
-		}
-
-		private static int hashStep(int seed, Object value) {
-			return 31 * seed + nullableHash(value);
-		}
-
-		private static int hashStep(int seed, boolean value) {
-			return 31 * seed + (value ? 1 : 0);
-		}
-
-		private record StatementPatternFactorFingerprint(int hash, StatementPattern.Scope scope, VarFingerprint subject,
-				VarFingerprint predicate, VarFingerprint object, VarFingerprint context) {
-
-			private static StatementPatternFactorFingerprint of(StatementPattern statementPattern) {
-				StatementPattern.Scope scope = statementPattern.getScope();
-				VarFingerprint subject = VarFingerprint.of(statementPattern.getSubjectVar());
-				VarFingerprint predicate = VarFingerprint.of(statementPattern.getPredicateVar());
-				VarFingerprint object = VarFingerprint.of(statementPattern.getObjectVar());
-				VarFingerprint context = VarFingerprint.of(statementPattern.getContextVar());
-				int hash = nullableHash(scope);
-				hash = hashStep(hash, subject);
-				hash = hashStep(hash, predicate);
-				hash = hashStep(hash, object);
-				hash = hashStep(hash, context);
-				return new StatementPatternFactorFingerprint(hash, scope, subject, predicate, object, context);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-
-		private record VarFingerprint(int hash, String name, Value value, boolean anonymous, boolean constant) {
-
-			private static VarFingerprint of(Var var) {
-				if (var == null) {
-					return null;
-				}
-				String name = var.getName();
-				Value value = var.getValue();
-				boolean anonymous = var.isAnonymous();
-				boolean constant = var.isConstant();
-				int hash = nullableHash(name);
-				hash = hashStep(hash, value);
-				hash = hashStep(hash, anonymous);
-				hash = hashStep(hash, constant);
-				return new VarFingerprint(hash, name, value, anonymous, constant);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-
-		private record BindingSetAssignmentFactorFingerprint(int hash, Set<String> bindingNames,
-				List<String> bindingRows) {
-
-			private static BindingSetAssignmentFactorFingerprint of(BindingSetAssignment bindingSetAssignment) {
-				List<String> bindingRows = new ArrayList<>();
-				Iterable<BindingSet> bindingSets = bindingSetAssignment.getBindingSets();
-				if (bindingSets != null) {
-					for (BindingSet bindingSet : bindingSets) {
-						List<String> row = new ArrayList<>();
-						for (String bindingName : bindingSet.getBindingNames()) {
-							row.add(bindingName + '=' + valueFingerprint(bindingSet.getValue(bindingName)));
-						}
-						row.sort(String::compareTo);
-						bindingRows.add(String.join(",", row));
-					}
-				}
-				bindingRows.sort(String::compareTo);
-				Set<String> bindingNames = Set.copyOf(bindingSetAssignment.getBindingNames());
-				int hash = nullableHash(bindingNames);
-				hash = hashStep(hash, bindingRows);
-				return new BindingSetAssignmentFactorFingerprint(hash, bindingNames, bindingRows);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-
-		private record UnaryFactorFingerprint(int hash, String operator, Object arg, Object condition) {
-
-			private static UnaryFactorFingerprint of(String operator, Object arg, Object condition) {
-				int hash = nullableHash(operator);
-				hash = hashStep(hash, arg);
-				hash = hashStep(hash, condition);
-				return new UnaryFactorFingerprint(hash, operator, arg, condition);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-
-		private record BinaryFactorFingerprint(int hash, String operator, Object left, Object right, Object condition) {
-
-			private static BinaryFactorFingerprint of(String operator, Object left, Object right, Object condition) {
-				int hash = nullableHash(operator);
-				hash = hashStep(hash, left);
-				hash = hashStep(hash, right);
-				hash = hashStep(hash, condition);
-				return new BinaryFactorFingerprint(hash, operator, left, right, condition);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-
-		private record FallbackFactorFingerprint(int hash, String type, String tree) {
-
-			private static FallbackFactorFingerprint of(String type, String tree) {
-				int hash = nullableHash(type);
-				hash = hashStep(hash, tree);
-				return new FallbackFactorFingerprint(hash, type, tree);
-			}
-
-			@Override
-			public int hashCode() {
-				return hash;
-			}
-		}
-	}
-
-	private record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
-			long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
-			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-			FiniteBranchRowsCacheKey prefixFactors, RequestedAccessPath requestedAccessPath) {
-
-		private static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context) {
-			JoinFactorCostModel.EstimationTier tier = context.getEstimationTier() == null
-					? JoinFactorCostModel.EstimationTier.STANDARD
-					: context.getEstimationTier();
-			FiniteBranchRowsCacheKey prefixFactors = FiniteBranchRowsCacheKey.of(context.getPrefixFactors());
-			return new ScopedFactorCostCacheKey(FactorCostCacheKey.factorFingerprint(factor),
-					FactorCostCacheKey.immutableBoundVars(context.getCurrentlyBoundVars()),
-					Double.doubleToLongBits(context.getOuterPrefixRows()),
-					Double.doubleToLongBits(context.getDistinctLookupBindings()),
-					context.isNestedIteratorInvocation(),
-					context.shouldCollectMetrics(),
-					immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
-					RequestedAccessPath.of(context));
-		}
-
-		private static Map<String, Set<Value>> immutableFiniteBindingValues(
-				Map<String, Set<Value>> finiteBindingValues) {
-			if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
-				return Map.of();
-			}
-			Map<String, Set<Value>> copy = new HashMap<>();
-			for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
-				if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty()) {
-					continue;
-				}
-				copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
-			}
-			return copy.isEmpty() ? Map.of() : Map.copyOf(copy);
-		}
-
-		private ScopedFactorCostCacheKey toStorable() {
-			return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
-					outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
-					immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-					requestedAccessPath);
-		}
-	}
-
-	private record FiniteDerivedSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-			String finiteVarName, Set<Value> finiteValues, boolean allowExact) {
-
-		private static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-				String finiteVarName, Set<Value> finiteValues, boolean allowExact) {
-			return new FiniteDerivedSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-					FactorCostCacheKey.factorFingerprint(factor), finiteVarName,
-					finiteValues == null || finiteValues.isEmpty() ? Set.of() : Set.copyOf(finiteValues),
-					allowExact);
-		}
-	}
-
-	private record FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey factors, String joinVarName,
-			boolean allowExact, boolean forceExact) {
-
-		private static FiniteBranchSurfaceCacheKey of(List<TupleExpr> factors, String joinVarName,
-				boolean allowExact) {
-			return new FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), joinVarName, allowExact,
-					false);
-		}
-	}
-
-	private record FiniteBranchFactorSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-			String joinVarName, boolean allowExact, boolean forceExact) {
-
-		private static FiniteBranchFactorSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-				String joinVarName, boolean allowExact) {
-			return of(prefixFactors, factor, joinVarName, allowExact, false);
-		}
-
-		private static FiniteBranchFactorSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-				String joinVarName, boolean allowExact, boolean forceExact) {
-			return new FiniteBranchFactorSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-					FactorCostCacheKey.factorFingerprint(factor), joinVarName, allowExact, forceExact);
-		}
-	}
-
-	private record CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-			String joinVarName) {
-
-		private static CountMinSurfaceCacheKey of(List<TupleExpr> factors, String joinVarName) {
-			return new CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), null, joinVarName);
-		}
-
-		private static CountMinSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-				String joinVarName) {
-			return new CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-					FactorCostCacheKey.factorFingerprint(factor), joinVarName);
-		}
-	}
-
-	private record CountMinSurfaceCalibration(double factor, double confidence) {
-	}
-
-	private record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
-
-		private static FiniteBranchRowsCacheKey of(List<TupleExpr> factors) {
-			return of(factors, false);
-		}
-
-		private static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven) {
-			if (factors == null || factors.isEmpty()) {
-				return new FiniteBranchRowsCacheKey(List.of(), decisionDriven);
-			}
-			List<Object> fingerprints = new ArrayList<>(factors.size());
-			for (TupleExpr factor : factors) {
-				fingerprints.add(FactorCostCacheKey.factorFingerprint(factor));
-			}
-			// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
-			return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
-		}
-	}
-
-	private record AccessPathEstimate(double workRowsPerInvocation, double rowsBeforeFilterAtAccess,
-			double rowsAfterFilterAtAccess, String indexFieldSequence, int prefixLength, int prefixComponentMask,
-			boolean directLookup, int lookupComponentMask, int missingLookupComponentMask, int candidateCount) {
-
-	}
-
-	private record RequestedAccessPath(String accessMode, int lookupComponentMask, int missingLookupComponentMask,
-			boolean directLookup) {
-
-		private static RequestedAccessPath of(JoinFactorCostModel.CostContext context) {
-			if (context == null || !context.hasRequestedAccessPath()) {
-				return null;
-			}
-			return new RequestedAccessPath(context.getRequestedAccessMode(), context.getRequestedLookupComponentMask(),
-					context.getRequestedMissingLookupComponentMask(), context.isRequestedDirectLookup());
-		}
-	}
-
-	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
-			boolean exactRows, String finiteVarName, String estimateSource,
-			JoinFrequencyEstimate countMinEvidence) {
-
-		FiniteDerivedSurfaceEstimate {
-			if (estimateSource == null || estimateSource.isBlank()) {
-				estimateSource = FINITE_DERIVED_SURFACE_SOURCE;
-			}
-		}
-
-		private FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
-				boolean exactRows, String finiteVarName) {
-			this(surfaceRows, prefixRows, branchCount, exactRows, finiteVarName, FINITE_DERIVED_SURFACE_SOURCE, null);
-		}
-
-		private FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
-				boolean exactRows, String finiteVarName, String estimateSource) {
-			this(surfaceRows, prefixRows, branchCount, exactRows, finiteVarName, estimateSource, null);
-		}
-
-	}
-
-	private record FiniteBranchSurfaceEstimate(double rows, boolean exactRows,
-			JoinFrequencyEstimate countMinEvidence) {
-
-		private FiniteBranchSurfaceEstimate(double rows, boolean exactRows) {
-			this(rows, exactRows, null);
-		}
-
-	}
-
-	private record BridgeContinuationEstimate(double rows, boolean exactRows) {
-
-	}
-
-	record OptionalBridgeProductEstimate(double productRows, double prefixBridgeRows, double prefixRows,
-			double prefixSurfaceRows, double prefixBridgeSurfaceRows, double continuationRows,
-			double bridgeRightRows, double bridgeRows, String source, String joinVarName) {
-
-	}
-
-	record BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
-			double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
-			JoinFrequencyEstimate countMinEvidence, String surfaceSource, String sketchPredicateKeyKind) {
-
-		BoundJoinProductEstimate {
-			if (surfaceSource == null || surfaceSource.isBlank()) {
-				surfaceSource = exactRows ? "exact-full-prefix" : "modeled-surface";
-			}
-		}
-
-		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
-				double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
-				JoinFrequencyEstimate countMinEvidence, String surfaceSource) {
-			this(productRows, prefixRows, prefixSurfaceRows, prefixRightSurfaceRows, joinVarName, exactRows,
-					countMinEvidence, surfaceSource, null);
-		}
-
-		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
-				double prefixRightSurfaceRows, String joinVarName, boolean exactRows,
-				JoinFrequencyEstimate countMinEvidence) {
-			this(productRows, prefixRows, prefixSurfaceRows, prefixRightSurfaceRows, joinVarName, exactRows,
-					countMinEvidence, exactRows ? "exact-full-prefix" : "modeled-surface", null);
-		}
-
-		BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
-				double prefixRightSurfaceRows, String joinVarName, boolean exactRows) {
-			this(productRows, prefixRows, prefixSurfaceRows, prefixRightSurfaceRows, joinVarName, exactRows, null);
-		}
-
-	}
-
-	private record BoundProductPageWalkBlend(double rawOutputRows, double rawWorkRows,
-			double pageWalkOutputRows, double pageWalkWorkRows, double outputRows, double workRows,
-			double repeatedInvocations, double accessRows, double accessWorkRows, double disagreementRatio,
-			String fusion) {
-
-	}
-
-	private record BridgeProductPrefixFactors(List<TupleExpr> factors, boolean preservesKnownRows) {
-
-	}
-
-	private record PrefixBridgeEstimate(double rows, double prefixRows, double prefixSurfaceRows,
-			double prefixBridgeSurfaceRows, String joinVarName) {
-
-	}
-
-	private record BridgeCandidate(StatementPattern bridge, PrefixBridgeEstimate prefixBridge) {
-
-	}
-
-	private record SubstitutedFactor(TupleExpr factor, boolean substituted, boolean unsupported) {
-		private static SubstitutedFactor skipped() {
-			return new SubstitutedFactor(null, false, false);
-		}
-
-		private static SubstitutedFactor unsupportedFactor() {
-			return new SubstitutedFactor(null, false, true);
 		}
 	}
 
@@ -11090,9 +10540,6 @@ class LmdbEvaluationStatistics
 			yield min >= constant ? Optional.of(1.0d) : Optional.empty();
 		}
 		};
-	}
-
-	private record VariableCompare(String variableName, Compare.CompareOp operator, Value constant) {
 	}
 
 	Optional<FilterPassEstimate> estimatePatternLocalFilterPass(org.eclipse.rdf4j.query.algebra.ValueExpr condition,

@@ -99,11 +99,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchKeyProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchTermKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -116,6 +111,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchKeyProvider;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchTermKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -1335,9 +1336,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.estimateExactConnectedJoin(any())).thenAnswer(invocation -> {
 			List<?> factors = invocation.getArgument(0);
 			if (factors.size() == 2) {
-				return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(100.0d, 100.0d, 100.0d, 2, 64);
+				return new ExactConnectedJoinEstimate(100.0d, 100.0d, 100.0d, 2, 64);
 			}
-			return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(250.0d, 200.0d, 400.0d, 3, 128);
+			return new ExactConnectedJoinEstimate(250.0d, 200.0d, 400.0d, 3, 128);
 		});
 		when(estimator.orderedCardinality(any())).thenReturn(120_000_000.0d);
 
@@ -1517,10 +1518,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			List<?> factors = invocation.getArgument(0);
 			if (factors.size() == 2) {
 				prefixBranchSamples.incrementAndGet();
-				return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(100.0d, 100.0d, 100.0d, 2, 64);
+				return new ExactConnectedJoinEstimate(100.0d, 100.0d, 100.0d, 2, 64);
 			}
 			fullBranchSamples.incrementAndGet();
-			return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(250.0d, 200.0d, 400.0d, 3, 128);
+			return new ExactConnectedJoinEstimate(250.0d, 200.0d, 400.0d, 3, 128);
 		});
 		when(estimator.orderedCardinality(any())).thenReturn(120_000_000.0d);
 
@@ -1949,7 +1950,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
 				Var.of("hasCondition", hasCondition), Var.of("condition"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+		BoundJoinProductEstimate estimate = statistics
 				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 96.0d, false);
 
 		assertNotNull(estimate);
@@ -1994,7 +1995,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
 				Var.of("hasCondition", hasCondition), Var.of("condition"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+		BoundJoinProductEstimate estimate = statistics
 				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 48.0d, false);
 
 		assertNotNull(estimate);
@@ -2037,7 +2038,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
 				Var.of("hasCondition", hasCondition), Var.of("condition"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+		BoundJoinProductEstimate estimate = statistics
 				.estimateBoundJoinProduct(List.of(conditionCode), encounterCondition, 24.0d, false);
 
 		assertNotNull(estimate);
@@ -2087,7 +2088,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
 				Var.of("hasCondition", hasCondition), Var.of("condition"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+		BoundJoinProductEstimate estimate = statistics
 				.estimateBoundJoinProduct(List.of(encounterType, encounterDate), encounterCondition, 32.0d, false);
 
 		assertNotNull(estimate);
@@ -2147,7 +2148,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
 				Var.of("codePredicate", code), Var.of("code", targetCode));
 
-		LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate = statistics
+		OptionalBridgeProductEstimate estimate = statistics
 				.estimateOptionalBridgeProduct(new Join(encounterType, encounterDate),
 						new Join(encounterCondition, conditionCode), 32.0d);
 
@@ -2367,7 +2368,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 						.thenReturn(2_000.0d);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
-			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+			BoundJoinProductEstimate estimate = statistics
 					.estimateBoundJoinProduct(prefixFactors, orgEmployee, 100.0d, true);
 
 			assertNotNull(estimate);
@@ -3133,7 +3134,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.cardinality(List.of(memberOf))).thenReturn(160_000.0d);
 		when(estimator.orderedCardinality(List.of(memberOf))).thenReturn(160_000.0d);
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics
+		BoundJoinProductEstimate estimate = statistics
 				.estimateBoundJoinProduct(List.of(memberOf), orgDepartment, 160_000.0d, false);
 
 		assertNotNull(estimate);
@@ -4847,10 +4848,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static Object factorCostFingerprint(TupleExpr factor) throws Exception {
-		Class<?> keyClass = Class.forName(LmdbEvaluationStatistics.class.getName() + "$FactorCostCacheKey");
-		Method method = keyClass.getDeclaredMethod("factorFingerprint", TupleExpr.class);
-		method.setAccessible(true);
-		return method.invoke(null, factor);
+		return FactorCostCacheKey.factorFingerprint(factor);
 	}
 
 	private static BindingSetAssignment finiteAnchor(String bindingName, org.eclipse.rdf4j.model.Value... values) {

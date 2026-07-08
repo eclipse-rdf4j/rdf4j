@@ -255,12 +255,12 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.objectBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>
 						<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
 						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 					</systemPropertyVariables>
@@ -270,12 +270,12 @@
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.objectBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextBucketCount>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
+						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>
 						<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
 						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 					</systemPropertyVariables>

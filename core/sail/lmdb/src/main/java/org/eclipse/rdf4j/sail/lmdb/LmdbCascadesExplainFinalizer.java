@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
@@ -74,24 +75,25 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private void annotateCostFeedback(TupleExpr tupleExpr) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics) || tupleExpr == null) {
+		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(statistics);
+		if (services.isEmpty() || tupleExpr == null) {
 			return;
 		}
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				if (node instanceof TupleExpr tuple) {
-					annotateCostFeedbackNode(lmdbStatistics, tuple);
+					annotateCostFeedbackNode(services.get(), tuple);
 				}
 				node.visitChildren(this);
 			}
 		});
 	}
 
-	private void annotateCostFeedbackNode(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
-		annotateLearnedEvidence(lmdbStatistics, tupleExpr);
-		annotateLearnedEvidenceExplain(lmdbStatistics, tupleExpr);
-		if (!lmdbStatistics.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
+	private void annotateCostFeedbackNode(LmdbPlannerServices services, TupleExpr tupleExpr) {
+		annotateLearnedEvidence(services, tupleExpr);
+		annotateLearnedEvidenceExplain(services, tupleExpr);
+		if (!services.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
 				|| protectedCostFeedbackSource(tupleExpr)) {
 			tupleExpr.setCostFeedbackTrackingEnabled(false);
 			return;
@@ -117,15 +119,15 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
 	}
 
-	private static void annotateLearnedEvidence(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
-		if (lmdbStatistics == null || tupleExpr == null) {
+	private static void annotateLearnedEvidence(LmdbPlannerServices services, TupleExpr tupleExpr) {
+		if (services == null || tupleExpr == null) {
 			return;
 		}
-		String debug = lmdbStatistics.debugEvidence(tupleExpr);
+		String debug = services.debugEvidence(tupleExpr);
 		if (debug != null && !debug.isBlank()) {
 			tupleExpr.setStringMetricPlanned("optimizer.leoEvidence", debug.strip());
 		}
-		lmdbStatistics.planRankingAdvice(tupleExpr).ifPresent(advice -> {
+		services.planRankingAdvice(tupleExpr).ifPresent(advice -> {
 			tupleExpr.setStringMetricPlanned("optimizer.leoPlanRankingCandidate", advice.candidateId());
 			tupleExpr.setStringMetricPlanned("optimizer.leoPlanRankingReason", advice.reason());
 			tupleExpr.setDoubleMetricPlanned("optimizer.leoPlanRankingConfidence", advice.confidence());
@@ -133,15 +135,15 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		});
 	}
 
-	private static void annotateLearnedEvidenceExplain(LmdbEvaluationStatistics lmdbStatistics, TupleExpr tupleExpr) {
-		if (lmdbStatistics == null || tupleExpr == null) {
+	private static void annotateLearnedEvidenceExplain(LmdbPlannerServices services, TupleExpr tupleExpr) {
+		if (services == null || tupleExpr == null) {
 			return;
 		}
-		String diff = lmdbStatistics.learnedOptimizerExplainDiff(tupleExpr);
+		String diff = services.learnedOptimizerExplainDiff(tupleExpr);
 		if (diff != null && !diff.isBlank()) {
 			tupleExpr.setStringMetricPlanned("optimizer.leoExplainDiff", diff);
 		}
-		String debug = lmdbStatistics.learnedOptimizerDebugEvidence(tupleExpr);
+		String debug = services.learnedOptimizerDebugEvidence(tupleExpr);
 		if (debug != null && !debug.isBlank()) {
 			tupleExpr.setStringMetricPlanned("optimizer.leoEvidence", debug.replace('\n', ';'));
 		}

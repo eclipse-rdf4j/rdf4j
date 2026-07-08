@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
 import org.junit.jupiter.api.Test;
 
 class LmdbCountMinEvidenceApiTest {

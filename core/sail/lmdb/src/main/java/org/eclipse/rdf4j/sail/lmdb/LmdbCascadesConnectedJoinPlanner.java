@@ -92,7 +92,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 			return Optional.empty();
 		}
-		LmdbEvaluationStatistics scopedStatistics = scopedPlanCacheStatistics(costModel, fallbackStatistics);
+		Optional<LmdbPlannerServices> scopedStatistics = scopedPlanCacheStatistics(costModel, fallbackStatistics);
 		List<TupleExpr> factors = canonicalFactors(LmdbJoinIslandConnectivity.flattenFactors(joinIsland),
 				scopedStatistics);
 		if (trace.enabled()) {
@@ -420,19 +420,19 @@ final class LmdbCascadesConnectedJoinPlanner {
 				trace.snapshot()));
 	}
 
-	private static List<TupleExpr> canonicalFactors(List<TupleExpr> factors, LmdbEvaluationStatistics statistics) {
+	private static List<TupleExpr> canonicalFactors(List<TupleExpr> factors, Optional<LmdbPlannerServices> services) {
 		if (factors == null || factors.isEmpty()) {
 			return List.of();
 		}
-		if (statistics == null) {
+		if (services.isEmpty()) {
 			return List.copyOf(factors);
 		}
 		List<TupleExpr> canonical = new ArrayList<>(factors);
-		canonical.sort((left, right) -> compareFactors(left, right, statistics));
+		canonical.sort((left, right) -> compareFactors(left, right, services.get()));
 		return List.copyOf(canonical);
 	}
 
-	private static int compareFactors(TupleExpr left, TupleExpr right, LmdbEvaluationStatistics statistics) {
+	private static int compareFactors(TupleExpr left, TupleExpr right, LmdbPlannerServices services) {
 		if (left == right) {
 			return 0;
 		}
@@ -442,8 +442,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (right == null) {
 			return 1;
 		}
-		Object leftFingerprint = factorFingerprint(left, statistics);
-		Object rightFingerprint = factorFingerprint(right, statistics);
+		Object leftFingerprint = factorFingerprint(left, services);
+		Object rightFingerprint = factorFingerprint(right, services);
 		int comparison = Integer.compare(nullableHash(leftFingerprint), nullableHash(rightFingerprint));
 		if (comparison != 0) {
 			return comparison;
@@ -467,57 +467,51 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return value == null ? "" : value.getClass().getName();
 	}
 
-	private static List<Object> factorFingerprints(List<TupleExpr> factors, LmdbEvaluationStatistics statistics) {
+	private static List<Object> factorFingerprints(List<TupleExpr> factors, Optional<LmdbPlannerServices> services) {
 		if (factors == null || factors.isEmpty()) {
 			return List.of();
 		}
 		List<Object> fingerprints = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
-			fingerprints.add(factorFingerprint(factor, statistics));
+			fingerprints.add(factorFingerprint(factor, services.orElse(null)));
 		}
 		return List.copyOf(fingerprints);
 	}
 
-	private static Object factorFingerprint(TupleExpr factor, LmdbEvaluationStatistics statistics) {
-		if (statistics != null) {
-			return statistics.optimizationScopedFactorFingerprint(factor);
+	private static Object factorFingerprint(TupleExpr factor, LmdbPlannerServices services) {
+		if (services != null) {
+			return services.optimizationScopedFactorFingerprint(factor);
 		}
 		return factor == null ? null : factor;
 	}
 
 	@SuppressWarnings("unchecked")
-	private static Optional<PlanTemplate> cachedPlanTemplate(LmdbEvaluationStatistics statistics,
+	private static Optional<PlanTemplate> cachedPlanTemplate(Optional<LmdbPlannerServices> services,
 			PlanCacheKey cacheKey) {
-		if (statistics == null || cacheKey == null) {
+		if (services.isEmpty() || cacheKey == null) {
 			return null;
 		}
-		Object cached = statistics.getOptimizationScopedPlannerCacheValue(cacheKey);
+		Object cached = services.get().getOptimizationScopedPlannerCacheValue(cacheKey);
 		if (cached instanceof Optional<?>) {
 			return (Optional<PlanTemplate>) cached;
 		}
 		return null;
 	}
 
-	private static void cachePlanTemplate(LmdbEvaluationStatistics statistics, PlanCacheKey cacheKey,
+	private static void cachePlanTemplate(Optional<LmdbPlannerServices> services, PlanCacheKey cacheKey,
 			Optional<PlanTemplate> template) {
-		if (statistics != null && cacheKey != null && template != null) {
-			statistics.putOptimizationScopedPlannerCacheValue(cacheKey, template);
+		if (services.isPresent() && cacheKey != null && template != null) {
+			services.get().putOptimizationScopedPlannerCacheValue(cacheKey, template);
 		}
 	}
 
-	private static boolean scopedPlanCacheAvailable(LmdbEvaluationStatistics statistics) {
-		return statistics != null && statistics.hasOptimizationScopedPlannerCache();
+	private static boolean scopedPlanCacheAvailable(Optional<LmdbPlannerServices> services) {
+		return services.isPresent() && services.get().hasOptimizationScopedPlannerCache();
 	}
 
-	private static LmdbEvaluationStatistics scopedPlanCacheStatistics(JoinFactorCostModel costModel,
+	private static Optional<LmdbPlannerServices> scopedPlanCacheStatistics(JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics) {
-		if (costModel instanceof LmdbEvaluationStatistics statistics) {
-			return statistics;
-		}
-		if (fallbackStatistics instanceof LmdbEvaluationStatistics statistics) {
-			return statistics;
-		}
-		return null;
+		return LmdbPlannerServices.from(costModel, fallbackStatistics);
 	}
 
 	static Step estimateStep(List<TupleExpr> factors, int factorIndex, Set<String> boundVars, double prefixRows,

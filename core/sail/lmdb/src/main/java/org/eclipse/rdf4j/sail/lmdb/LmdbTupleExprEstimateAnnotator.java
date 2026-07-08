@@ -56,12 +56,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
@@ -121,10 +121,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			Service.class);
 
 	private final EvaluationStatistics statistics;
+	private final Optional<LmdbPlannerServices> lmdbPlannerServices;
 
 	LmdbTupleExprEstimateAnnotator(EvaluationStatistics statistics) {
 		super(false);
 		this.statistics = statistics;
+		this.lmdbPlannerServices = LmdbPlannerServices.from(statistics);
 	}
 
 	static boolean hasAnnotationPolicy(Class<? extends TupleExpr> tupleExprType) {
@@ -621,20 +623,20 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private boolean stampPropertyPathEstimate(ArbitraryLengthPath node) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+		if (lmdbPlannerServices.isEmpty()) {
 			return false;
 		}
 		Set<String> boundVars = externalBoundVars(node);
-		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, boundVars);
+		Optional<PropertyPathEstimate> estimate = lmdbPlannerServices.get().estimatePropertyPath(node, boundVars);
 		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate, boundVars)).isPresent();
 	}
 
 	private boolean stampPropertyPathEstimate(ZeroLengthPath node) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+		if (lmdbPlannerServices.isEmpty()) {
 			return false;
 		}
 		Set<String> boundVars = externalBoundVars(node);
-		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, boundVars);
+		Optional<PropertyPathEstimate> estimate = lmdbPlannerServices.get().estimatePropertyPath(node, boundVars);
 		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate, boundVars)).isPresent();
 	}
 
@@ -703,14 +705,15 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private CharacteristicSetEstimate characteristicSetEstimate(Join node) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+		if (lmdbPlannerServices.isEmpty()) {
 			return null;
 		}
 		List<StatementPattern> patterns = new ArrayList<>();
 		if (!collectSubjectStarPatterns(node, patterns) || patterns.size() < 3) {
 			return null;
 		}
-		return lmdbStatistics.estimateSubjectStar(patterns, externalBoundVars(node))
+		return lmdbPlannerServices.get()
+				.estimateSubjectStar(patterns, externalBoundVars(node))
 				.orElse(null);
 	}
 
@@ -1254,8 +1257,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private BoundLookupEstimate boundJoinProductEstimate(TupleExpr left, TupleExpr right, double leftRows) {
-		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = lmdbStatistics
+		if (lmdbPlannerServices.isPresent()) {
+			BoundJoinProductEstimate estimate = lmdbPlannerServices.get()
 					.estimateBoundJoinProduct(left, right, leftRows);
 			if (estimate != null) {
 				stampBoundJoinProductEstimate(right, estimate);
@@ -1422,8 +1425,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private double optionalBridgeProductRows(LeftJoin node, double leftRows) {
-		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate = lmdbStatistics
+		if (lmdbPlannerServices.isPresent()) {
+			OptionalBridgeProductEstimate estimate = lmdbPlannerServices.get()
 					.estimateOptionalBridgeProduct(node.getLeftArg(), node.getRightArg(), leftRows);
 			if (estimate != null) {
 				stampOptionalBridgeProductEstimate(node, estimate);
@@ -1434,8 +1437,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private double boundJoinProductRows(LeftJoin node, double leftRows) {
-		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = lmdbStatistics
+		if (lmdbPlannerServices.isPresent()) {
+			BoundJoinProductEstimate estimate = lmdbPlannerServices.get()
 					.estimateBoundJoinProduct(node.getLeftArg(), node.getRightArg(), leftRows);
 			if (estimate != null) {
 				stampBoundJoinProductEstimate(node, estimate);
@@ -1447,7 +1450,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private void stampBoundJoinProductEstimate(QueryModelNode node,
-			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate) {
+			BoundJoinProductEstimate estimate) {
 		if (!hasSelectedPlannerOperatorFeedback(node)) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-bound-join-product");
 			node.setStringMetricPlanned("plannedEstimateFusion", "tuple_sketch_surface_product");
@@ -1469,7 +1472,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private void stampOptionalBridgeProductEstimate(LeftJoin node,
-			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
+			OptionalBridgeProductEstimate estimate) {
 		TupleExpr rightArg = node.getRightArg();
 		stampOptionalBridgeProductEstimate((QueryModelNode) node, estimate);
 		stampOptionalBridgeProductEstimate(rightArg, estimate);
@@ -1477,7 +1480,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private void stampOptionalBridgeProductEstimate(QueryModelNode node,
-			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
+			OptionalBridgeProductEstimate estimate) {
 		node.setDoubleMetricPlanned("plannedOptionalBridgeProductRows", estimate.productRows());
 		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeRows", estimate.prefixBridgeRows());
 		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixRows", estimate.prefixRows());
@@ -1539,9 +1542,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private OptionalSurfaceEstimate optionalSurfaceEstimate(LeftJoin node) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+		if (lmdbPlannerServices.isEmpty()) {
 			return null;
 		}
+		LmdbPlannerServices services = lmdbPlannerServices.get();
 		List<TupleExpr> prefixFactors = new ArrayList<>();
 		if (!collectSurfacePrefixFactors(node.getLeftArg(), prefixFactors) || prefixFactors.isEmpty()
 				|| !containsFiniteBindingAssignment(prefixFactors)) {
@@ -1552,9 +1556,9 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double leftRows = Double.NaN;
 		double matchedRows = Double.NaN;
 		for (String sharedBindingName : sharedBindingNames) {
-			double leftSurfaceRows = lmdbStatistics.estimateBoundJoinSurfaceRows(prefixFactors, sharedBindingName);
+			double leftSurfaceRows = services.estimateBoundJoinSurfaceRows(prefixFactors, sharedBindingName);
 			leftRows = smallerFiniteRowCount(leftRows, leftSurfaceRows);
-			double matchedSurfaceRows = lmdbStatistics.estimateBoundJoinSurfaceRows(prefixFactors, node.getRightArg(),
+			double matchedSurfaceRows = services.estimateBoundJoinSurfaceRows(prefixFactors, node.getRightArg(),
 					sharedBindingName);
 			matchedRows = smallerFiniteRowCount(matchedRows, matchedSurfaceRows);
 		}
@@ -1745,8 +1749,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private void stampCostFeedback(TupleExpr node, double rows, double workRows, String source) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)
-				|| !lmdbStatistics.supportsOperatorFeedbackTracking(node)
+		if (lmdbPlannerServices.isEmpty()
+				|| !lmdbPlannerServices.get().supportsOperatorFeedbackTracking(node)
 				|| !canTrackOperatorFeedback(node, source)) {
 			node.setCostFeedbackTrackingEnabled(false);
 			return;
@@ -2007,7 +2011,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private LmdbOperatorFeedbackStats.OperatorEstimate operatorFeedbackEstimate(TupleExpr node, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String source) {
 		if (!hasSelectedPlannerOperatorFeedback(node)
-				|| !(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)
+				|| lmdbPlannerServices.isEmpty()
 				|| !canApplyOperatorFeedback(node, source)) {
 			return null;
 		}
@@ -2015,8 +2019,9 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath) {
 			executionMode = node.getStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE);
 		}
-		return lmdbStatistics.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows,
-				executionMode);
+		return lmdbPlannerServices.get()
+				.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows,
+						executionMode);
 	}
 
 	private boolean canApplyOperatorFeedback(TupleExpr node, String source) {

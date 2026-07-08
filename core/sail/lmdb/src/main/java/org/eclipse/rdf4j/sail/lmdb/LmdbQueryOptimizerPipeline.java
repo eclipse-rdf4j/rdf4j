@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -79,9 +80,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(BINDING_ASSIGNER);
 		optimizers.add(new ConstantOptimizer(strategy));
 		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
-		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics
-				&& lmdbStatistics.getValueStore() != null) {
-			optimizers.add(new LmdbValueLookupOptimizer(lmdbStatistics.getValueStore()));
+		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(evaluationStatistics);
+		if (services.isPresent() && services.get().valueStore() != null) {
+			optimizers.add(new LmdbValueLookupOptimizer(services.get().valueStore()));
 		}
 		optimizers.add(COMPARE_OPTIMIZER);
 		optimizers.add(CONJUNCTIVE_CONSTRAINT_SPLITTER);

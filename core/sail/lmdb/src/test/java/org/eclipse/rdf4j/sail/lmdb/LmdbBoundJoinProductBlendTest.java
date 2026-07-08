@@ -50,10 +50,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.JoinFrequencyEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.junit.jupiter.api.Test;
 
 class LmdbBoundJoinProductBlendTest {
@@ -267,7 +267,7 @@ class LmdbBoundJoinProductBlendTest {
 		StatementPattern right = new StatementPattern(Var.of("right"), Var.of("rightPredicate", rightPredicate),
 				Var.of("join"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = statistics.estimateBoundJoinProduct(List.of(left),
+		BoundJoinProductEstimate estimate = statistics.estimateBoundJoinProduct(List.of(left),
 				right, 2.0d, false);
 
 		assertNotNull(estimate);
@@ -303,7 +303,7 @@ class LmdbBoundJoinProductBlendTest {
 		StatementPattern right = new StatementPattern(Var.of("encounter"), Var.of("rightPredicate", rightPredicate),
 				Var.of("drug"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate productEstimate = statistics
+		BoundJoinProductEstimate productEstimate = statistics
 				.estimateBoundJoinProduct(List.of(left), right, 3.0d, false);
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = statistics
 				.estimateFactorCost(right, CostContext.forOptimization(Set.of("encounter", "drug"), 3.0d, 3.0d,
@@ -350,7 +350,7 @@ class LmdbBoundJoinProductBlendTest {
 		StatementPattern right = new StatementPattern(Var.of("encounter"), Var.of("rightPredicate", rightPredicate),
 				Var.of("drug"));
 
-		LmdbEvaluationStatistics.BoundJoinProductEstimate productEstimate = statistics
+		BoundJoinProductEstimate productEstimate = statistics
 				.estimateBoundJoinProduct(List.of(left, middle), right, 3.0d, false);
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = statistics
 				.estimateFactorCost(right, CostContext.forOptimization(Set.of("encounter", "drug"), 3.0d, 3.0d,
@@ -479,7 +479,7 @@ class LmdbBoundJoinProductBlendTest {
 			double prefixSurfaceRows, double prefixRightSurfaceRows, String joinVarName,
 			boolean exactRows) throws Exception {
 		Class<?> type = Class.forName(
-				"org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStatistics$BoundJoinProductEstimate");
+				"org.eclipse.rdf4j.sail.lmdb.BoundJoinProductEstimate");
 		Constructor<?> constructor = type.getDeclaredConstructor(
 				double.class, double.class, double.class, double.class, String.class, boolean.class);
 		constructor.setAccessible(true);

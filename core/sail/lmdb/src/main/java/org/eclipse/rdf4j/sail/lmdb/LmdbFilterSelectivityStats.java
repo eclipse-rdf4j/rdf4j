@@ -57,16 +57,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSamplingEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class LmdbFilterSelectivityStats
-		implements JoinStatsProvider, SketchBasedJoinEstimator.PatternFilterSamplingEstimator {
+		implements JoinStatsProvider, PatternFilterSamplingEstimator {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbFilterSelectivityStats.class);
 
@@ -252,15 +254,15 @@ class LmdbFilterSelectivityStats
 	}
 
 	@Override
-	public SketchBasedJoinEstimator.PatternFilterSampleEstimate estimateFilterPass(Filter filter,
+	public PatternFilterSampleEstimate estimateFilterPass(Filter filter,
 			StatementPattern pattern) {
 		PatternFilterKey key = samplingKey(filter, pattern);
 		if (key == null) {
-			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		if (!supportsSampling(filter, pattern)) {
-			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		SamplingCandidate candidate = samplingCandidate(filter, pattern, key);
@@ -269,24 +271,24 @@ class LmdbFilterSelectivityStats
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
 			if (isUsableSampledPassRatio(cached)) {
-				return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
+				return new PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
 			}
 		}
 
 		if (!optimizerSamplingEnabled || optimizerSamplingMaxMillis <= 0L || optimizerSamplingMaxRows <= 0) {
-			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		SampledPassRatio sampled = sampleFilterPassRatio(candidate, true, 0L);
 		if (!isUsableSampledPassRatio(sampled)) {
-			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		synchronized (this) {
 			sampledByFilter.put(key, sampled);
 			dirty = true;
 		}
-		return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
+		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
 	}
 
 	synchronized List<BackgroundSamplingRequest> drainBackgroundSamplingRequests(int maxCount) {

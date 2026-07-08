@@ -34,14 +34,15 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactFiniteJoinSurfaceRequest;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactFiniteJoinSurfaceRequest;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactJoinSurfaceProvider;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactJoinSurfaceRequest;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -216,7 +217,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateFiniteJoinSurface(request);
 
-			assertEquals(SketchBasedJoinEstimator.ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE, rows, 0.0d,
+			assertEquals(ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE, rows, 0.0d,
 					"Exact finite-surface costing must not scan a large non-matching range to prove zero rows");
 		} finally {
 			repository.shutDown();

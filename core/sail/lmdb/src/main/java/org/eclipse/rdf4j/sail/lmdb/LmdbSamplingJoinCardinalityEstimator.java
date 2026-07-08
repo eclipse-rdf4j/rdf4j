@@ -31,14 +31,14 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactFiniteJoinSurfaceRequest;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinRequest;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactFiniteJoinSurfaceRequest;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactJoinRequest;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactJoinSurfaceProvider;
+import org.eclipse.rdf4j.sail.lmdb.sketch.ExactJoinSurfaceRequest;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 
 final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProvider {
 

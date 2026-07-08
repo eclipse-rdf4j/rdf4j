@@ -25,11 +25,11 @@ import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 public final class BenchmarkJoinEstimatorSupport {
 
@@ -49,7 +49,7 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final int DEFAULT_PREDICATE_BUCKET_COUNT = 64;
 	private static final int DEFAULT_CONTEXT_BUCKET_COUNT = 16;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
-	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
 	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
