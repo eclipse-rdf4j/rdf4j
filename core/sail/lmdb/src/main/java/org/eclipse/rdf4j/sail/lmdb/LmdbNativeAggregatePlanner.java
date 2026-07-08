@@ -139,9 +139,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
 			return null;
 		}
+		PrefixRunGroupCandidate prefixRun = tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates);
 		layout.freeze(slotNames);
 		return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare, strategy,
-				originalExpr, context, optionalOnlyNames);
+				originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
+				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows);
 	}
 
 	/**
@@ -165,12 +167,21 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			node = slice.getArg();
 		}
 		boolean distinct = false;
+		boolean reduced = false;
 		if (node instanceof Distinct) {
 			distinct = true;
 			node = ((Distinct) node).getArg();
 		} else if (node instanceof Reduced) {
-			// REDUCED permits but does not require de-duplication; treat as a plain stream
+			// REDUCED permits but does not require de-duplication; use prefix-run de-duplication when available.
+			reduced = true;
 			node = ((Reduced) node).getArg();
+		} else if (node instanceof Projection) {
+			QueryModelNode parent = node.getParentNode();
+			if (parent instanceof Distinct) {
+				distinct = true;
+			} else if (parent instanceof Reduced) {
+				reduced = true;
+			}
 		}
 		if (!(node instanceof Projection)) {
 			return null;
@@ -231,9 +242,108 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
 				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		PatternPlan prefixPattern = null;
+		LmdbPrefixRunPlan prefixRunPlan = null;
+		if ((distinct || reduced) && orderSlots.length == 0 && arg instanceof PatternPlan) {
+			PatternPlan pattern = (PatternPlan) arg;
+			prefixRunPlan = tryPrefixRunPlan(stepSource, pattern, sourceSlots);
+			if (prefixRunPlan != null) {
+				prefixPattern = pattern;
+			}
+		}
 		layout.freeze(slotNames);
 		return new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct, orderSlots,
-				orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames);
+				orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames, prefixPattern,
+				prefixRunPlan);
+	}
+
+	private PrefixRunGroupCandidate tryPrefixRunGroupPlan(NativeLmdbQuerySource stepSource, SlotPlan arg,
+			int[] groupSlots, AggregateSpec[] aggregates) {
+		if (!(arg instanceof PatternPlan)) {
+			return null;
+		}
+		PatternPlan pattern = (PatternPlan) arg;
+		int[] prefixSlots;
+		boolean countRunRows;
+		if (groupSlots.length > 0) {
+			if (aggregates.length == 0) {
+				prefixSlots = groupSlots;
+				countRunRows = false;
+			} else if (aggregates.length == 1 && isCountStar(aggregates[0])) {
+				prefixSlots = groupSlots;
+				countRunRows = true;
+			} else {
+				return null;
+			}
+		} else if (aggregates.length == 1 && isCountDistinctSlot(aggregates[0])) {
+			prefixSlots = new int[] { aggregates[0].slot };
+			countRunRows = false;
+		} else {
+			return null;
+		}
+		LmdbPrefixRunPlan plan = tryPrefixRunPlan(stepSource, pattern, prefixSlots);
+		return plan == null ? null : new PrefixRunGroupCandidate(pattern, plan, countRunRows);
+	}
+
+	private LmdbPrefixRunPlan tryPrefixRunPlan(NativeLmdbQuerySource stepSource, PatternPlan pattern, int[] slots) {
+		if (!prefixSafePattern(pattern)) {
+			return null;
+		}
+		int[] prefixFields = prefixFields(pattern, slots);
+		if (prefixFields == null) {
+			return null;
+		}
+		return stepSource.prefixRunPlan(prefixFields, constant(pattern.s), constant(pattern.p), constant(pattern.o),
+				constant(pattern.c));
+	}
+
+	private boolean prefixSafePattern(PatternPlan pattern) {
+		return !pattern.contexts.isFixed() && !pattern.namedContextScope
+				&& !pattern.hasRepeatedSlot() && !pattern.rejectsNullContextAtBind();
+	}
+
+	private int[] prefixFields(PatternPlan pattern, int[] slots) {
+		if (slots.length == 0 || slots.length > 3) {
+			return null;
+		}
+		int[] fields = new int[slots.length];
+		for (int i = 0; i < slots.length; i++) {
+			int field = pattern.quadPositionOfSlot(slots[i]);
+			if (field < 0) {
+				return null;
+			}
+			for (int j = 0; j < i; j++) {
+				if (fields[j] == field) {
+					return null;
+				}
+			}
+			fields[i] = field;
+		}
+		return fields;
+	}
+
+	private long constant(Term term) {
+		return term.isConstant() ? term.constant : UNKNOWN;
+	}
+
+	private boolean isCountStar(AggregateSpec spec) {
+		return spec.kind == AggKind.COUNT && !spec.distinct && spec.slot < 0 && spec.constant == NULL_CONTEXT_ID;
+	}
+
+	private boolean isCountDistinctSlot(AggregateSpec spec) {
+		return spec.kind == AggKind.COUNT && spec.distinct && spec.slot >= 0;
+	}
+
+	private static final class PrefixRunGroupCandidate {
+		final PatternPlan pattern;
+		final LmdbPrefixRunPlan plan;
+		final boolean countRunRows;
+
+		PrefixRunGroupCandidate(PatternPlan pattern, LmdbPrefixRunPlan plan, boolean countRunRows) {
+			this.pattern = pattern;
+			this.plan = plan;
+			this.countRunRows = countRunRows;
+		}
 	}
 
 	/**

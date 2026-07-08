@@ -43,6 +43,15 @@ interface NativeLmdbQuerySource {
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
+	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+		return null;
+	}
+
+	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows) throws IOException {
+		return null;
+	}
+
 	/**
 	 * A probe is an operator-owned handle for repeated pattern scans: the returned iterator is only valid until the
 	 * next {@code open} or {@code close}, which lets implementations retain the scan machinery (buffers, LMDB cursor,

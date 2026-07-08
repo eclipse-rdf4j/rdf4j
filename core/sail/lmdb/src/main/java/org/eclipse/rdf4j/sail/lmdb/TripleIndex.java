@@ -360,10 +360,10 @@ class TripleIndex {
 			long value = Varint.readUnsigned(key);
 			int field = indexMap[i];
 			long expected = expectedValue(field, matchSubj, matchPred, matchObj, matchContext);
+			quad[field] = value;
 			if (expected != -1 && value != expected) {
 				return i < rangePrefixLength ? KEY_OUT_OF_RANGE : KEY_FILTERED;
 			}
-			quad[field] = value;
 		}
 		return KEY_MATCH;
 	}
@@ -379,10 +379,10 @@ class TripleIndex {
 
 			int field = indexMap[i];
 			long expected = expectedValue(field, matchSubj, matchPred, matchObj, matchContext);
+			quad[field] = value;
 			if (expected != -1 && value != expected) {
 				return i < rangePrefixLength ? KEY_OUT_OF_RANGE : KEY_FILTERED;
 			}
-			quad[field] = value;
 		}
 		return KEY_MATCH;
 	}

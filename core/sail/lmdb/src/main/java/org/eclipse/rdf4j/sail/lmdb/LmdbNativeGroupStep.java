@@ -103,11 +103,15 @@ final class NativeGroupStep implements QueryEvaluationStep {
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
+	final PatternPlan prefixPattern;
+	final LmdbPrefixRunPlan prefixRunPlan;
+	final boolean prefixCountRunRows;
 	QueryEvaluationStep genericStep;
 
 	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
 			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
-			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames) {
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -119,6 +123,9 @@ final class NativeGroupStep implements QueryEvaluationStep {
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
 				: optionalOnlyNames.toArray(String[]::new);
+		this.prefixPattern = prefixPattern;
+		this.prefixRunPlan = prefixRunPlan;
+		this.prefixCountRunRows = prefixCountRunRows;
 	}
 
 	@Override
@@ -126,7 +133,8 @@ final class NativeGroupStep implements QueryEvaluationStep {
 		if (hasOptionalOnlyBinding(bindings)) {
 			return genericStep().evaluate(bindings);
 		}
-		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings);
+		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
+				prefixPattern, prefixRunPlan, prefixCountRunRows);
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
@@ -156,12 +164,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	final AggContext aggContext;
 	final boolean strictCompare;
 	final BindingSet base;
+	final PatternPlan prefixPattern;
+	final LmdbPrefixRunPlan prefixRunPlan;
+	final boolean prefixCountRunRows;
 	Iterator<BindingSet> resultIterator;
 	BindingSet next;
 	boolean closed;
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
-			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base) {
+			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -171,6 +183,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		this.aggContext = new AggContext(source, strictCompare);
 		this.strictCompare = strictCompare;
 		this.base = base;
+		this.prefixPattern = prefixPattern;
+		this.prefixRunPlan = prefixRunPlan;
+		this.prefixCountRunRows = prefixCountRunRows;
 	}
 
 	@Override
@@ -217,6 +232,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		RowState row = new RowState(source, layout, base);
 		if (!initialize(row)) {
 			return noInputResult();
+		}
+		List<BindingSet> prefixResults = evaluatePrefixRuns(row);
+		if (prefixResults != null) {
+			return prefixResults;
 		}
 		MultiJoinPlan parallelPlan = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 1
 				? (MultiJoinPlan) arg
@@ -277,6 +296,67 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			results.add(toBindingSet(entry.getKey(), entry.getValue(), true));
 		}
 		return results;
+	}
+
+	List<BindingSet> evaluatePrefixRuns(RowState row) {
+		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
+			return null;
+		}
+		long subj = prefixPattern.s.lookup(row.slots);
+		long pred = prefixPattern.p.lookup(row.slots);
+		long obj = prefixPattern.o.lookup(row.slots);
+		long context = prefixPattern.c.lookup(row.slots);
+		try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context,
+				prefixCountRunRows)) {
+			if (cursor == null) {
+				return null;
+			}
+			if (groupSlots.length == 0) {
+				AggState state = new AggState(aggregates, 16, aggContext);
+				boolean sawRow = false;
+				while (cursor.next()) {
+					int mark = row.mark();
+					try {
+						if (prefixPattern.bind(cursor.quad(), row)) {
+							sawRow = true;
+							state.add(row);
+						}
+					} finally {
+						row.rollback(mark);
+					}
+				}
+				return List.of(toBindingSet(null, state, sawRow));
+			}
+
+			ArrayList<BindingSet> results = new ArrayList<>();
+			while (cursor.next()) {
+				int mark = row.mark();
+				try {
+					if (prefixPattern.bind(cursor.quad(), row)) {
+						AggState state = new AggState(aggregates, 16, aggContext);
+						if (prefixCountRunRows) {
+							state.counts[0] += cursor.runRowCount();
+						} else {
+							state.add(row);
+						}
+						results.add(toBindingSet(groupKey(row), state, true));
+					}
+				} finally {
+					row.rollback(mark);
+				}
+			}
+			return results;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	GroupKey groupKey(RowState row) {
+		long[] ids = new long[groupSlots.length];
+		for (int i = 0; i < groupSlots.length; i++) {
+			ids[i] = row.slots[groupSlots[i]];
+		}
+		return new GroupKey(ids);
 	}
 
 	/**

@@ -536,6 +536,87 @@ class TripleStore implements Closeable {
 				rangeSearchByBoundMask[mask]);
 	}
 
+	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+		if (!LmdbPrefixRunPlan.isEnabled() || prefixFields == null || prefixFields.length == 0
+				|| prefixFields.length > 3) {
+			return null;
+		}
+		TripleIndex best = null;
+		int bestPrefixLength = Integer.MAX_VALUE;
+		for (TripleIndex index : indexes) {
+			int prefixLength = prefixLength(index, prefixFields, subj, pred, obj, context);
+			if (prefixLength > 0 && prefixLength <= 3 && prefixLength < bestPrefixLength) {
+				best = index;
+				bestPrefixLength = prefixLength;
+			}
+		}
+		if (best == null) {
+			return null;
+		}
+		return new LmdbPrefixRunPlan(best, prefixFields, bestPrefixLength);
+	}
+
+	LmdbPrefixRunIterator getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+			long context, boolean explicit, boolean countRunRows) throws IOException {
+		if (plan == null) {
+			throw new IllegalArgumentException("Prefix-run plan must not be null");
+		}
+		return new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
+	}
+
+	private static int prefixLength(TripleIndex index, int[] prefixFields, long subj, long pred, long obj,
+			long context) {
+		char[] fieldSeq = index.getFieldSeq();
+		int prefixFieldIndex = 0;
+		int matchedPrefixLength = -1;
+		boolean matchedPrefixField = false;
+		for (int i = 0; i < fieldSeq.length; i++) {
+			int field = statementField(fieldSeq[i]);
+			long bound = boundValue(field, subj, pred, obj, context);
+			if (prefixFieldIndex < prefixFields.length && bound == -1 && field == prefixFields[prefixFieldIndex]) {
+				matchedPrefixField = true;
+				prefixFieldIndex++;
+				if (prefixFieldIndex == prefixFields.length) {
+					matchedPrefixLength = i + 1;
+				}
+				continue;
+			}
+
+			if (bound != -1) {
+				if (matchedPrefixField && field != TripleIndex.CONTEXT_IDX) {
+					return -1;
+				}
+				continue;
+			}
+
+			if (prefixFieldIndex == prefixFields.length) {
+				continue;
+			}
+			return -1;
+		}
+		return matchedPrefixLength;
+	}
+
+	private static int statementField(char field) {
+		return switch (field) {
+		case 's' -> TripleIndex.SUBJ_IDX;
+		case 'p' -> TripleIndex.PRED_IDX;
+		case 'o' -> TripleIndex.OBJ_IDX;
+		case 'c' -> TripleIndex.CONTEXT_IDX;
+		default -> throw new IllegalArgumentException("Invalid statement field: " + field);
+		};
+	}
+
+	private static long boundValue(int field, long subj, long pred, long obj, long context) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> subj > 0 ? subj : -1;
+		case TripleIndex.PRED_IDX -> pred > 0 ? pred : -1;
+		case TripleIndex.OBJ_IDX -> obj > 0 ? obj : -1;
+		case TripleIndex.CONTEXT_IDX -> context >= 0 ? context : -1;
+		default -> throw new IllegalArgumentException("Invalid statement field index: " + field);
+		};
+	}
+
 	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 			return countAllTriples(txn, explicit);

@@ -1749,6 +1749,25 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return null;
+			}
+			return tripleStore.prefixRunPlan(prefixFields, subj, pred, obj, context);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return LmdbPrefixRunCursor.EMPTY;
+			}
+			return tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows);
+		}
+
+		@Override
 		public NativeProbe newProbe() {
 			return new NativeProbe() {
 				private LmdbRecordIterator retained;
@@ -1888,6 +1907,41 @@ class LmdbSailStore implements SailStore {
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
 				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+			long readStamp = acquireNativeSourceReadLockUnchecked();
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return null;
+				}
+				return tripleStore.prefixRunPlan(prefixFields, subj, pred, obj, context);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return LmdbPrefixRunCursor.EMPTY;
+				}
+				LmdbPrefixRunCursor cursor = tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit,
+						countRunRows);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedPrefixRunCursor(cursor, readStamp);
 			} finally {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
@@ -2049,6 +2103,15 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private long acquireNativeSourceReadLockUnchecked() {
+			try {
+				return nativeSourceLock.readLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+		}
+
 		private long acquireNativeSourceWriteLock() {
 			try {
 				return nativeSourceLock.writeLock();
@@ -2061,6 +2124,78 @@ class LmdbSailStore implements SailStore {
 		private void assertNativeSourceOpen() {
 			if (closed) {
 				throw new QueryInterruptedException("Query evaluation was interrupted");
+			}
+		}
+
+		private final class NativeSourceReadLockedPrefixRunCursor implements LmdbPrefixRunCursor {
+			private final LmdbPrefixRunCursor delegate;
+			private final long readStamp;
+			private boolean closed;
+
+			private NativeSourceReadLockedPrefixRunCursor(LmdbPrefixRunCursor delegate, long readStamp) {
+				this.delegate = delegate;
+				this.readStamp = readStamp;
+			}
+
+			@Override
+			public boolean next() throws IOException {
+				if (closed) {
+					return false;
+				}
+				try {
+					assertNativeSourceOpen();
+					boolean hasNext = delegate.next();
+					if (!hasNext) {
+						close();
+					}
+					return hasNext;
+				} catch (RuntimeException | Error | IOException e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
+			public long[] quad() {
+				return delegate.quad();
+			}
+
+			@Override
+			public long runRowCount() {
+				return delegate.runRowCount();
+			}
+
+			@Override
+			public long getSourceRowsScannedActual() {
+				return delegate.getSourceRowsScannedActual();
+			}
+
+			@Override
+			public long getSourceRowsMatchedActual() {
+				return delegate.getSourceRowsMatchedActual();
+			}
+
+			@Override
+			public long getSourceRowsFilteredActual() {
+				return delegate.getSourceRowsFilteredActual();
+			}
+
+			@Override
+			public String getIndexName() {
+				return delegate.getIndexName();
+			}
+
+			@Override
+			public void close() {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				try {
+					delegate.close();
+				} finally {
+					nativeSourceLock.unlockRead(readStamp);
+				}
 			}
 		}
 

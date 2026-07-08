@@ -68,6 +68,21 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.prefixRunPlan(prefixFields, subj, pred, obj, context);
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? LmdbPrefixRunCursor.EMPTY
+				: active.prefixRuns(plan, subj, pred, obj, context,
+						countRunRows);
+	}
+
+	@Override
 	public long count(long subj, long pred, long obj, long context) throws IOException {
 		long count = 0L;
 		for (NativeLmdbQuerySource source : sources) {
@@ -107,6 +122,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			}
 		}
 		return false;
+	}
+
+	private NativeLmdbQuerySource onlyActiveSource() {
+		NativeLmdbQuerySource active = null;
+		for (NativeLmdbQuerySource source : sources) {
+			if (!source.hasStatementsInSource()) {
+				continue;
+			}
+			if (active != null) {
+				return null;
+			}
+			active = source;
+		}
+		return active;
 	}
 
 	@Override

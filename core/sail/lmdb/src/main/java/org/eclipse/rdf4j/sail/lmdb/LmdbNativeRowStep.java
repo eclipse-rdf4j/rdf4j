@@ -156,12 +156,15 @@ final class NativeRowsStep implements QueryEvaluationStep {
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
+	final PatternPlan prefixPattern;
+	final LmdbPrefixRunPlan prefixRunPlan;
 	QueryEvaluationStep genericStep;
 
 	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
 			String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
 			long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
-			QueryEvaluationContext context, Set<String> optionalOnlyNames) {
+			QueryEvaluationContext context, Set<String> optionalOnlyNames, PatternPlan prefixPattern,
+			LmdbPrefixRunPlan prefixRunPlan) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -178,6 +181,8 @@ final class NativeRowsStep implements QueryEvaluationStep {
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
 				: optionalOnlyNames.toArray(String[]::new);
+		this.prefixPattern = prefixPattern;
+		this.prefixRunPlan = prefixRunPlan;
 	}
 
 	@Override
@@ -236,6 +241,10 @@ final class NativeRowsStep implements QueryEvaluationStep {
 
 		if (orderSlots.length == 0) {
 			ArrayList<BindingSet> results = new ArrayList<>();
+			List<BindingSet> prefixResults = evaluatePrefixRuns(row, values, emitCap);
+			if (prefixResults != null) {
+				return prefixResults;
+			}
 			HashMap<GroupKey, Boolean> seen = distinct ? new HashMap<>() : null;
 			GroupKey probe = distinct ? new GroupKey(new long[sourceSlots.length]) : null;
 			if (LmdbNativeFactorizedRows.ENABLED && arg instanceof MultiJoinPlan
@@ -379,6 +388,38 @@ final class NativeRowsStep implements QueryEvaluationStep {
 			return null;
 		}
 		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId), codec.decode(rightId));
+	}
+
+	List<BindingSet> evaluatePrefixRuns(RowState row, AggContext values, long emitCap) {
+		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
+			return null;
+		}
+		long subj = prefixPattern.s.lookup(row.slots);
+		long pred = prefixPattern.p.lookup(row.slots);
+		long obj = prefixPattern.o.lookup(row.slots);
+		long context = prefixPattern.c.lookup(row.slots);
+		try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false)) {
+			if (cursor == null) {
+				return null;
+			}
+			ArrayList<BindingSet> results = new ArrayList<>();
+			while (cursor.next()) {
+				int mark = row.mark();
+				try {
+					if (prefixPattern.bind(cursor.quad(), row)) {
+						results.add(project(row.slots, values));
+						if (results.size() >= emitCap) {
+							break;
+						}
+					}
+				} finally {
+					row.rollback(mark);
+				}
+			}
+			return slice(results);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
 	}
 
 	BindingSet project(long[] slots, AggContext values) {

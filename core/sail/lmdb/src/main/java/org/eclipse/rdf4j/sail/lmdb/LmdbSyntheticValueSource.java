@@ -158,6 +158,23 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return null;
+		}
+		return delegate.prefixRunPlan(prefixFields, subj, pred, obj, context);
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return LmdbPrefixRunCursor.EMPTY;
+		}
+		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+	}
+
+	@Override
 	public NativeProbe newProbe() {
 		NativeProbe inner = delegate.newProbe();
 		return new NativeProbe() {
