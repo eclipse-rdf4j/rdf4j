@@ -1087,6 +1087,10 @@ public class GenericPlanNode {
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ID);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ALGORITHM);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_PATH);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_EXECUTION_ENGINE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_EXECUTION_KIND);
 		for (Map.Entry<String, String> entry : stringMetricsPlanned.entrySet()) {
 			if (orderedEntries.stream().anyMatch(ordered -> ordered.getKey().equals(entry.getKey()))) {
 				continue;
@@ -1612,6 +1616,10 @@ public class GenericPlanNode {
 		appendExplainAnnotationDotRow(rows, "Join type", TelemetryMetricNames.JOIN_TYPE);
 		appendPlannedExplainAnnotationDotRow(rows, "Planned index", TelemetryMetricNames.PLANNED_INDEX_NAME);
 		appendPlannedExplainAnnotationDotRow(rows, "Planned bound vars", TelemetryMetricNames.PLANNED_BOUND_VARS);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned execution engine",
+				TelemetryMetricNames.PLANNED_EXECUTION_ENGINE);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned execution kind",
+				TelemetryMetricNames.PLANNED_EXECUTION_KIND);
 		if (getStringMetricActual(TelemetryMetricNames.INDEX_NAME) != null) {
 			appendExplainAnnotationDotRow(rows, "Index", TelemetryMetricNames.INDEX_NAME);
 		} else {

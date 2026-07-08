@@ -78,6 +78,25 @@ final class LmdbNativeQueryCompiler {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		QueryEvaluationStep step = compile(expr, context, strategy, source);
+		if (step != null) {
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP);
+		}
+		return step;
+	}
+
+	static boolean tryAnnotateForExplain(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		QueryEvaluationStep step = compile(expr, context, strategy, source);
+		if (step == null) {
+			return false;
+		}
+		LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP);
+		return true;
+	}
+
+	private static QueryEvaluationStep compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		Builder builder = new Builder(context, strategy, source);
 		if (!builder.collect(expr)) {
 			return null;

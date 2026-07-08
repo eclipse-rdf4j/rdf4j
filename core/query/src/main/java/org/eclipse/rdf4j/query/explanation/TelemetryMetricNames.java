@@ -110,6 +110,8 @@ public final class TelemetryMetricNames {
 	public static final String PLANNER_ID = "plannerId";
 	public static final String PLANNER_ALGORITHM = "plannerAlgorithm";
 	public static final String PLANNER_PATH = "plannerPath";
+	public static final String PLANNED_EXECUTION_ENGINE = "plannedExecutionEngine";
+	public static final String PLANNED_EXECUTION_KIND = "plannedExecutionKind";
 	public static final String PLANNED_INDEX_NAME = "plannedIndexName";
 	public static final String PLANNED_INDEX_PREFIX_LENGTH = "plannedIndexPrefixLength";
 	public static final String PLANNED_LOOKUP_COMPONENTS = "plannedLookupComponents";

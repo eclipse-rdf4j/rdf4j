@@ -68,19 +68,42 @@ final class LmdbNativeAggregateCompiler {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		CompileResult result = compile(expr, context, strategy, source);
+		if (result.step != null) {
+			LmdbNativeExplain.mark(expr, result.kind);
+			COMPILED.incrementAndGet();
+		}
+		return result.step;
+	}
+
+	static boolean tryAnnotateForExplain(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		CompileResult result = compile(expr, context, strategy, source);
+		if (result.step == null) {
+			return false;
+		}
+		LmdbNativeExplain.mark(expr, result.kind);
+		return true;
+	}
+
+	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		QueryEvaluationStep step = null;
+		String kind = LmdbNativeExplain.KIND_ROW;
 		if (expr instanceof Filter && ((Filter) expr).getArg() instanceof Group) {
 			step = compiler.compile((Filter) expr);
+			kind = LmdbNativeExplain.KIND_AGGREGATE;
 		} else if (expr instanceof Group) {
 			step = compiler.compile((Group) expr);
+			kind = LmdbNativeExplain.KIND_AGGREGATE;
 		} else {
 			step = compiler.compileRowRoot(expr);
 		}
-		if (step != null) {
-			COMPILED.incrementAndGet();
-		}
-		return step;
+		return new CompileResult(step, kind);
+	}
+
+	private record CompileResult(QueryEvaluationStep step, String kind) {
 	}
 
 	static boolean validValueForField(Value value, NativePatternField field) {

@@ -68,8 +68,12 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 		// actuals such as resultSizeActual and the LMDB index used; the native plan executes the whole
 		// fragment in one opaque step and cannot annotate individual nodes, so tracking queries run on
 		// the generic evaluator
-		if (nativeEnabled && !isTrackResultSize() && !isTrackTime() && nativeSource != null
-				&& nativeSource.hasStatementsInSource()) {
+		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
+			if (isTrackResultSize() || isTrackTime()) {
+				annotateNativeExplainPlan(expr, context);
+				return super.precompile(expr, context);
+			}
+
 			QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
 					nativeSource);
 			if (aggregateStep != null) {
@@ -82,6 +86,16 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 		}
 		return super.precompile(expr, context);
+	}
+
+	private void annotateNativeExplainPlan(TupleExpr expr, QueryEvaluationContext context) {
+		if (LmdbNativeExplain.isMarked(expr)) {
+			return;
+		}
+		if (LmdbNativeAggregateCompiler.tryAnnotateForExplain(expr, context, this, nativeSource)) {
+			return;
+		}
+		LmdbNativeQueryCompiler.tryAnnotateForExplain(expr, context, this, nativeSource);
 	}
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
