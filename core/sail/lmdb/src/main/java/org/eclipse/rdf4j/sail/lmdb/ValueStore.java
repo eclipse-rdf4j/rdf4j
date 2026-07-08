@@ -69,10 +69,10 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -103,7 +103,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -942,6 +944,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean freshValueSessionSpoiled;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
+	/**
+	 * This lock is required to block transactions while auto-growing the map size.
+	 */
+	private final ReadWriteLock txnLock = new ReentrantReadWriteLock();
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<String, VocabularyId> commonVocabulary = new ConcurrentHashMap<>();
 
