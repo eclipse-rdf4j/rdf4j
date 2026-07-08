@@ -3584,6 +3584,56 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void requestedAccessPathUsesRealIndexPrefixWhenLookupMaskIsNotCoverable() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		int subjectObjectBits = subjectBit | objectBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(1);
+		when(spoc.prefixComponentMask()).thenReturn(subjectBit);
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(0);
+		when(posc.prefixComponentMask()).thenReturn(0);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc, posc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p"),
+				Var.of("o"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(subjectObjectBits);
+		when(accessShape.estimateAccessRows(subjectObjectBits)).thenReturn(2.0d);
+		when(accessShape.estimateAccessRows(subjectBit)).thenReturn(10_000.0d);
+		when(accessShape.estimateAccessRows(0)).thenReturn(1_000_000.0d);
+		when(estimator.factorOutputRowsForCosting(pattern, Set.of("s", "o"))).thenReturn(2.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s", "o"))).thenReturn(accessShape);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
+				.forOptimization(Set.of("s", "o"), Double.NaN, Double.NaN, false, true, Map.of(), List.of())
+				.withRequestedAccessPath("inputBoundLookup", subjectObjectBits, 0, true);
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(pattern, context)
+				.orElseThrow();
+
+		assertEquals(10_000.0d, estimate.getAccessRowsBeforeFilter(), 0.0d);
+		assertEquals(10_000.0d, estimate.getWorkRows(), 0.0d);
+		assertFalse(estimate.isDirectLookup(), "requested {S,O} is not a direct lookup with spoc/posc indexes");
+		assertEquals(subjectBit, estimate.getLookupComponentMask());
+		assertEquals(objectBit, estimate.getMissingLookupComponentMask());
+		assertEquals("spoc", estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME));
+		assertEquals("prefixScan", estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+		assertEquals("[S]", estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
+		assertEquals("[O]", estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS));
+	}
+
+	@Test
 	void minusBoundProbeCostAccountsRepeatedLookupInvocations() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		TripleStore tripleStore = mock(TripleStore.class);

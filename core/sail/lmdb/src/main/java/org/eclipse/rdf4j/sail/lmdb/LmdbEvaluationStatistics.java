@@ -10173,8 +10173,9 @@ class LmdbEvaluationStatistics
 		if (request == null) {
 			return chooseAccessPath(accessShape, factorRows);
 		}
-		int lookupComponentMask = request.lookupComponentMask() & lookupComponentMaskWithConstants(accessShape,
-				accessShape.pattern());
+		int availableLookupComponentMask = lookupComponentMaskWithConstants(accessShape, accessShape.pattern());
+		int lookupComponentMask = request.lookupComponentMask() & availableLookupComponentMask;
+		int requestedMissingLookupComponentMask = request.missingLookupComponentMask() & availableLookupComponentMask;
 		if (lookupComponentMask == 0) {
 			double rowsBefore = accessShape.estimateAccessRows(0);
 			if (!isFiniteNonNegative(rowsBefore)) {
@@ -10182,63 +10183,66 @@ class LmdbEvaluationStatistics
 			}
 			return isFiniteNonNegative(rowsBefore) && isFiniteNonNegative(factorRows)
 					? new AccessPathEstimate(rowsBefore, rowsBefore, rowsBefore, "", 0, 0, false, 0,
-							request.missingLookupComponentMask(), 1)
+							requestedMissingLookupComponentMask, 1)
 					: null;
 		}
-		double rowsBefore = accessShape.estimateAccessRows(lookupComponentMask);
-		if (!isFiniteNonNegative(rowsBefore)) {
+		if (tripleStore == null) {
 			return null;
 		}
-		if (request.missingLookupComponentMask() != 0) {
-			double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
-			if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
-				rowsBefore = rowsBeforeLowerBound;
-			}
-		}
-		boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, lookupComponentMask)
-				&& isFiniteNonNegative(accessShape.filterMultiplier())
-				&& accessShape.filterMultiplier() < 1.0d;
-		double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
-		if (!isFiniteNonNegative(rowsAfter)) {
-			return null;
-		}
-		TripleStore.IndexAccessPath indexAccessPath = requestedIndexAccessPath(lookupComponentMask);
-		int prefixComponentMask = indexAccessPath == null ? lookupComponentMask : indexAccessPath.prefixComponentMask();
-		int prefixLength = indexAccessPath == null ? 0 : indexAccessPath.prefixLength();
-		String indexFieldSequence = indexAccessPath == null ? "" : indexAccessPath.indexFieldSequence();
-		boolean directLookup = request.directLookup()
-				&& isExactDirectLookup(prefixComponentMask, lookupComponentMask, rowsBefore);
-		boolean exactStatementDirectLookup = directLookup
-				&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
-		double plannedRowsBefore = exactStatementDirectLookup
-				? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
-				: rowsBefore;
-		double plannedRowsAfter = exactStatementDirectLookup
-				? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
-				: rowsAfter;
-		double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
-		if (!isFiniteNonNegative(workRows)) {
-			return null;
-		}
-		return new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter, indexFieldSequence,
-				prefixLength, prefixComponentMask, directLookup, lookupComponentMask,
-				request.missingLookupComponentMask(), 1);
-	}
-
-	private TripleStore.IndexAccessPath requestedIndexAccessPath(int lookupComponentMask) {
-		if (tripleStore == null || lookupComponentMask == 0) {
-			return null;
-		}
-		TripleStore.IndexAccessPath best = null;
-		for (TripleStore.IndexAccessPath candidate : tripleStore.indexAccessPaths(lookupComponentMask)) {
-			if ((candidate.prefixComponentMask() & lookupComponentMask) != lookupComponentMask) {
+		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupComponentMask);
+		int candidateCount = candidates.size();
+		AccessPathEstimate bestEstimate = null;
+		for (TripleStore.IndexAccessPath candidate : candidates) {
+			int prefixComponentMask = candidate.prefixComponentMask() & lookupComponentMask;
+			double rowsBefore = accessShape.estimateAccessRows(prefixComponentMask);
+			if (!isFiniteNonNegative(rowsBefore)) {
 				continue;
 			}
-			if (best == null || candidate.prefixLength() > best.prefixLength()) {
-				best = candidate;
+			int coveredLookupComponentMask = lookupComponentMask & prefixComponentMask;
+			int missingLookupComponentMask = requestedMissingLookupComponentMask
+					| (lookupComponentMask & ~prefixComponentMask);
+			if (missingLookupComponentMask != 0) {
+				double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
+				if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
+					rowsBefore = rowsBeforeLowerBound;
+				}
+			}
+			boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, prefixComponentMask)
+					&& isFiniteNonNegative(accessShape.filterMultiplier())
+					&& accessShape.filterMultiplier() < 1.0d;
+			double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
+			if (!isFiniteNonNegative(rowsAfter)) {
+				continue;
+			}
+			boolean directLookup = request.directLookup()
+					&& isExactDirectLookup(prefixComponentMask, lookupComponentMask, rowsBefore);
+			boolean exactStatementDirectLookup = directLookup
+					&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
+			double plannedRowsBefore = exactStatementDirectLookup
+					? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsBefore;
+			double plannedRowsAfter = exactStatementDirectLookup
+					? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsAfter;
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
+			if (!isFiniteNonNegative(workRows)) {
+				continue;
+			}
+			AccessPathEstimate estimate = new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter,
+					candidate.indexFieldSequence(), candidate.prefixLength(), prefixComponentMask, directLookup,
+					coveredLookupComponentMask, missingLookupComponentMask, candidateCount);
+			if (bestEstimate == null || compareAccessPathEstimate(estimate, bestEstimate) < 0) {
+				bestEstimate = estimate;
 			}
 		}
-		return best;
+		if (bestEstimate != null) {
+			return bestEstimate;
+		}
+		int missingLookupComponentMask = requestedMissingLookupComponentMask | lookupComponentMask;
+		return isFiniteNonNegative(factorRows)
+				? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false, 0,
+						missingLookupComponentMask, candidateCount)
+				: null;
 	}
 
 	private double rowsBeforeFilterLowerBound(double factorRows, double filterMultiplier) {
