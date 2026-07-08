@@ -73,7 +73,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 	void query2KeepsRatedPowerAnchorBeforeThresholdFilterAndPath(@TempDir File dataDir) throws Exception {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
 		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
-		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -104,7 +103,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			repository.shutDown();
 			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
 			restoreProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, previousBudget);
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 
@@ -112,7 +110,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 	void query3KeepsDirectPropertyValueLookupBeforePath(@TempDir File dataDir) throws Exception {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
 		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
-		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -144,7 +141,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			repository.shutDown();
 			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
 			restoreProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, previousBudget);
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 
@@ -155,7 +151,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
 		String previousTrace = System.setProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
 		String previousBudget = System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "256");
-		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -201,7 +196,6 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
 			restoreProperty(LmdbCascadesOptimizer.TRACE_PROPERTY, previousTrace);
 			restoreProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, previousBudget);
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 

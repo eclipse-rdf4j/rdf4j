@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.junit.jupiter.api.Test;
 
 class SketchJoinSketchAccuracyComparisonTest {
@@ -221,111 +220,6 @@ class SketchJoinSketchAccuracyComparisonTest {
 		assertTrue(relativeError(estimate.outputRows(), 16L) <= 0.25d,
 				() -> "Single-variable subject-star joins should use OMNI witness overlap. estimate="
 						+ estimate.outputRows());
-	}
-
-	@Test
-	void omniStrategyAnnotatesSubjectStarSingleVariableJoinOrderPlan() {
-		IRI primaryFlag = VF.createIRI("urn:omni-sketch:subject-star-plan:primaryFlag");
-		IRI secondaryFlag = VF.createIRI("urn:omni-sketch:subject-star-plan:secondaryFlag");
-		Value enabled = VF.createLiteral("enabled");
-		StubSketchStatementSource store = new StubSketchStatementSource();
-		for (int i = 0; i < 512; i++) {
-			Resource entity = VF.createIRI("urn:omni-sketch:subject-star-plan:entity:" + i);
-			if (i < 256) {
-				store.add(VF.createStatement(entity, primaryFlag, enabled));
-			}
-			if (i < 16 || (i >= 256 && i < 496)) {
-				store.add(VF.createStatement(entity, secondaryFlag, enabled));
-			}
-		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI));
-		estimator.rebuild();
-		StatementPattern primaryPattern = new StatementPattern(Var.of("entity"),
-				Var.of("primaryFlag", primaryFlag), Var.of("primary", enabled));
-		StatementPattern secondaryPattern = new StatementPattern(Var.of("entity"),
-				Var.of("secondaryFlag", secondaryFlag), Var.of("secondary", enabled));
-
-		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(List.of(primaryPattern, secondaryPattern),
-				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
-				.orElseThrow();
-
-		assertTrue(plan.getSteps()
-				.stream()
-				.anyMatch(step -> "omni-join-estimator".equals(
-						step.getStringMetrics().get("plannedSketchEstimateSource"))),
-				() -> "Single-variable subject-star join-order plans should expose OMNI evidence: "
-						+ plan.getSteps());
-	}
-
-	@Test
-	void omniStrategyAnnotatesDirectedFiniteAnchorJoinOrderPlan() {
-		IRI code = VF.createIRI("urn:omni-sketch:directed-finite:code");
-		IRI hasCondition = VF.createIRI("urn:omni-sketch:directed-finite:hasCondition");
-		IRI rdfType = VF.createIRI("urn:omni-sketch:directed-finite:type");
-		IRI encounterClass = VF.createIRI("urn:omni-sketch:directed-finite:Encounter");
-		Value targetCode = VF.createLiteral("DX-200");
-		Value otherCode = VF.createLiteral("DX-999");
-		StubSketchStatementSource store = new StubSketchStatementSource();
-		for (int i = 0; i < 256; i++) {
-			Resource condition = VF.createIRI("urn:omni-sketch:directed-finite:condition:" + i);
-			Resource encounter = VF.createIRI("urn:omni-sketch:directed-finite:encounter:" + (i % 64));
-			store.add(VF.createStatement(condition, code, i < 32 ? targetCode : otherCode));
-			if (i < 128) {
-				store.add(VF.createStatement(encounter, hasCondition, condition));
-			}
-			if (i < 96) {
-				store.add(VF.createStatement(encounter, rdfType, encounterClass));
-			}
-		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallBudgetConfig()
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
-				.withNominalEntries(4096));
-		estimator.rebuild();
-		BindingSetAssignment codeValues = finiteDomainRows(valueRow("code", targetCode));
-		StatementPattern conditionCode = new StatementPattern(Var.of("condition"),
-				Var.of("codePredicate", code), Var.of("code"));
-		StatementPattern encounterCondition = new StatementPattern(Var.of("encounter"),
-				Var.of("hasCondition", hasCondition), Var.of("condition"));
-		StatementPattern encounterType = new StatementPattern(Var.of("encounter"),
-				Var.of("type", rdfType), Var.of("typeValue", encounterClass));
-
-		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(
-				List.<TupleExpr>of(codeValues, conditionCode, encounterCondition, encounterType),
-				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
-				.orElseThrow();
-
-		assertTrue(plan.getSteps()
-				.stream()
-				.anyMatch(step -> "omni-join-estimator".equals(
-						step.getStringMetrics().get("plannedSketchEstimateSource"))),
-				() -> "Directed finite-anchor join-order plans should expose OMNI probe evidence: "
-						+ planStepMetrics(plan));
-		assertEquals("omni", plan.getSummaryStringMetrics().get("plannedSketchStrategy"),
-				() -> "Directed finite-anchor join-order summaries should expose OMNI strategy: "
-						+ plan.getSummaryStringMetrics());
-		assertEquals("omni-join-estimator", plan.getSummaryStringMetrics().get("plannedSketchEstimateSource"),
-				() -> "Directed finite-anchor join-order summaries should expose OMNI source: "
-						+ plan.getSummaryStringMetrics());
-		assertOmniStepForSharedVar(plan, "code");
-		assertOmniStepForSharedVar(plan, "condition");
-		assertOmniStepForSharedVar(plan, "encounter");
-	}
-
-	private static void assertOmniStepForSharedVar(JoinOrderPlanner.JoinOrderPlan plan, String sharedVar) {
-		assertTrue(plan.getSteps()
-				.stream()
-				.anyMatch(step -> "omni-join-estimator".equals(
-						step.getStringMetrics().get("plannedSketchEstimateSource"))
-						&& ("[" + sharedVar + "]").equals(step.getStringMetrics().get("sharedJoinVars"))),
-				() -> "Expected OMNI step for shared var " + sharedVar + ": " + planStepMetrics(plan));
-	}
-
-	private static List<Map<String, String>> planStepMetrics(JoinOrderPlanner.JoinOrderPlan plan) {
-		return plan.getSteps()
-				.stream()
-				.map(JoinOrderPlanner.PlanStep::getStringMetrics)
-				.toList();
 	}
 
 	private static Map<JoinKey, Long> bindingsFor(List<Statement> statements, StatementPattern pattern,

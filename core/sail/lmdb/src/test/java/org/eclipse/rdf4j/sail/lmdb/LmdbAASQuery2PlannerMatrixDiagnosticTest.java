@@ -495,8 +495,6 @@ class LmdbAASQuery2PlannerMatrixDiagnosticTest {
 			set(previous, LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, standardPolicy);
 			set(previous, LmdbCascadesOptimizer.BUDGET_PROPERTY, budget);
 			set(previous, LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, timeoutMillis);
-			set(previous, LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-					legacyOpaque ? "true" : null);
 			set(previous, LmdbCascadesOptimizer.TRACE_PROPERTY, "true");
 			set(previous, LmdbCascadesConnectedJoinPlanner.CONNECTED_JOIN_TRACE_PROPERTY, "true");
 			set(previous, LmdbCascadesConnectedJoinPlanner.TRACE_PROPERTY + ".lineLimit", "4096");

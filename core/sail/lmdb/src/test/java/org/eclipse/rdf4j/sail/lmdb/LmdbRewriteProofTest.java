@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -31,8 +30,6 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
@@ -41,34 +38,6 @@ import org.junit.jupiter.api.Test;
 class LmdbRewriteProofTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-
-	@Test
-	void negatedBoundOptionalAntiJoinCarriesLogicalBagProof() {
-		StatementPattern person = statementPattern("person", "type", "personType");
-		StatementPattern follows = statementPattern("person", "follows", "friend");
-		StatementPattern optional = statementPattern("person", "name", "optName");
-		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional),
-				new Not(new Bound(new Var("optName")))));
-
-		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
-
-		Difference difference = assertInstanceOf(Difference.class, root.getArg(), () -> root.getArg().toString());
-		assertProof(difference.getStringMetricPlanned("optimizer.negatedBoundOptionalAlternative"),
-				"OPTIONAL_NEGATED_BOUND_ANTI_JOIN", "LOGICAL_BAG_EQUIVALENT", "rhsFreshAssuredBinding=optName");
-	}
-
-	@Test
-	void optionalRhsAnchoringCarriesPhysicalProof() {
-		StatementPattern left = statementPattern("person", "type", "type");
-		StatementPattern right = statementPattern("person", "name", "name");
-		QueryRoot root = new QueryRoot(new LeftJoin(left, right));
-
-		new LmdbSketchJoinOptimizer(new OptionalAnchoringCostModel(right, 100.0d, 5.0d), false).optimize(root, null,
-				null);
-
-		assertProof(right.getStringMetricPlanned("optimizer.optionalRhsAnchoring"), "OPTIONAL_RHS_ANCHORING",
-				"PHYSICAL_EQUIVALENT", "leftAssuredSharedBindings=person");
-	}
 
 	@Test
 	void distinctIdempotentJoinCarriesSetProof() {
@@ -118,27 +87,4 @@ class LmdbRewriteProofTest {
 				new Var(objectName));
 	}
 
-	private static final class OptionalAnchoringCostModel extends EvaluationStatistics
-			implements JoinFactorCostModel {
-
-		private final TupleExpr rightArg;
-		private final double unanchoredWorkRows;
-		private final double anchoredWorkRows;
-
-		private OptionalAnchoringCostModel(TupleExpr rightArg, double unanchoredWorkRows, double anchoredWorkRows) {
-			this.rightArg = rightArg;
-			this.unanchoredWorkRows = unanchoredWorkRows;
-			this.anchoredWorkRows = anchoredWorkRows;
-		}
-
-		@Override
-		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
-				Set<String> currentlyBoundVars) {
-			if (factor == rightArg || factor.equals(rightArg)) {
-				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
-						currentlyBoundVars.contains("person") ? anchoredWorkRows : unanchoredWorkRows, 1.0d));
-			}
-			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
-		}
-	}
 }

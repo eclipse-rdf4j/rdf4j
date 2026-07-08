@@ -405,6 +405,44 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void outputGoalDoesNotLinearlyDiscountJoinWork() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "join-test", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "join-test");
+		CostVector fullCost = new CostVector(10_000.0d, 100_000.0d, 0.0d, 0.0d, 0.0d, 4.0d, 0.80d);
+
+		CostVector limited = model.applyOutputGoal(expression, OptimizationGoal.root().withResultRowLimit(10, true),
+				PhysicalProperties.ANY, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d);
+		assertEquals(fullCost.workRows(), limited.workRows(), 0.0d,
+				"LIMIT cannot infer join input work from the final output fraction");
+	}
+
+	@Test
+	void outputGoalKeepsHashJoinBuildWorkUnderStreamingLimit() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join hashJoin = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+		hashJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		PhysicalProperties streaming = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.STREAMING)
+				.build();
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "hash-test", hashJoin, streaming,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "hash-test");
+		CostVector fullCost = new CostVector(10_000.0d, 100_000.0d, 5_000.0d, 0.0d, 0.0d, 4.0d, 0.80d);
+
+		CostVector limited = model.applyOutputGoal(expression, OptimizationGoal.root().withResultRowLimit(10, true),
+				streaming, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d);
+		assertTrue(limited.workRows() >= fullCost.memoryRows(),
+				"LIMIT must not discount the blocking hash-build footprint");
+		assertEquals(fullCost.workRows(), limited.workRows(), 0.0d,
+				"Hash join LIMIT costing cannot infer input-side work from final output fraction");
+	}
+
+	@Test
 	void fallbackEstimatesCarryStatisticMissingDiagnostics() {
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null,
 				RdfStatisticsProvider.EMPTY);
@@ -710,6 +748,33 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void genericPhysicalJoinDoesNotInheritChildOrderingOrDistinctVars() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = pattern("work", "about", "topic");
+		TupleExpr right = pattern("topic", "mainEntityOfPage", "page");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties leftProperties = PhysicalProperties.builder()
+				.ordering(List.of("work"))
+				.distinctVars(Set.of("work"))
+				.boundVars(left.getBindingNames())
+				.build();
+		PhysicalProperties rightProperties = PhysicalProperties.builder()
+				.ordering(List.of("page"))
+				.distinctVars(Set.of("page"))
+				.boundVars(right.getBindingNames())
+				.build();
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, leftProperties, 8_000.0d), winner(3, right, rightProperties, 1.0d)));
+
+		assertTrue(delivered.ordering().isEmpty(), "A Join must not inherit child ordering without proof");
+		assertTrue(delivered.distinctVars().isEmpty(), "A Join must not union child distinct guarantees");
+		assertTrue(delivered.boundVars().containsAll(join.getBindingNames()));
+	}
+
+	@Test
 	void genericPhysicalDifferenceDoesNotSatisfyParameterizedChildInputBindings() {
 		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
 		TupleExpr left = pattern("work", "about", "topic");
@@ -986,6 +1051,15 @@ class CascadesCostModelTest {
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(plan.getBindingNames())
 				.build();
+		CostVector cost = rows > 0.0d
+				? CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d, "test-winner"))
+				: CostVector.ZERO;
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private static Winner winner(int groupId, TupleExpr plan, PhysicalProperties delivered, double rows) {
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), List.of(), "", plan,
+				delivered, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
 		CostVector cost = rows > 0.0d
 				? CostVector.ofRowsAndWork(rows, rows, QErrorInterval.heuristic(rows, 4.0d, "test-winner"))
 				: CostVector.ZERO;

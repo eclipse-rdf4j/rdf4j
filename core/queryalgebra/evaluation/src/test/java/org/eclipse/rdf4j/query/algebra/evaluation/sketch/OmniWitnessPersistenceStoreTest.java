@@ -248,8 +248,6 @@ class OmniWitnessPersistenceStoreTest {
 		String packageName = OmniWitnessPersistenceStore.class.getPackageName();
 
 		assertDoesNotThrow(() -> Class.forName(packageName + ".MappedWitnessIndex"));
-		assertDoesNotThrow(() -> Class.forName(packageName + ".OverlayWitnessIndex"));
-		assertDoesNotThrow(() -> Class.forName(packageName + ".CompositeWitnessIndex"));
 		assertDoesNotThrow(() -> Class.forName(packageName + ".OmniWitnessSnapshotWriter"));
 	}
 

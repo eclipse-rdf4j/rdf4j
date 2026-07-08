@@ -27,22 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceClean
  * no-Cascades pipeline.
  */
 final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
-	enum Kind {
-		SKETCH_INPUT,
-		STANDARD
-	}
-
 	private static final ThreadLocal<Map<TupleExpr, Baselines>> BASELINES = new ThreadLocal<>();
-
-	private final Kind kind;
-
-	LmdbStandardPlanBaselineOptimizer() {
-		this(Kind.STANDARD);
-	}
-
-	LmdbStandardPlanBaselineOptimizer(Kind kind) {
-		this.kind = kind == null ? Kind.STANDARD : kind;
-	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
@@ -58,28 +43,16 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 				BASELINES.set(baselines);
 			}
 			Baselines captured = baselines.computeIfAbsent(tupleExpr, key -> new Baselines());
-			if (kind == Kind.SKETCH_INPUT) {
-				captured.sketchInputPlan = standardPlan;
-			} else {
-				captured.standardPlan = standardPlan;
-			}
+			captured.standardPlan = standardPlan;
 		} catch (RuntimeException ignored) {
 			Map<TupleExpr, Baselines> baselines = BASELINES.get();
 			if (baselines != null) {
-				removeBaseline(baselines, tupleExpr, kind);
+				removeBaseline(baselines, tupleExpr);
 			}
 		}
 	}
 
 	static TupleExpr consumeBaseline(TupleExpr tupleExpr) {
-		return consumeBaseline(tupleExpr, Kind.STANDARD);
-	}
-
-	static TupleExpr consumeSketchInputBaseline(TupleExpr tupleExpr) {
-		return consumeBaseline(tupleExpr, Kind.SKETCH_INPUT);
-	}
-
-	private static TupleExpr consumeBaseline(TupleExpr tupleExpr, Kind kind) {
 		if (tupleExpr == null) {
 			return null;
 		}
@@ -91,14 +64,8 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 		if (captured == null) {
 			return null;
 		}
-		TupleExpr baseline;
-		if (kind == Kind.SKETCH_INPUT) {
-			baseline = captured.sketchInputPlan;
-			captured.sketchInputPlan = null;
-		} else {
-			baseline = captured.standardPlan;
-			captured.standardPlan = null;
-		}
+		TupleExpr baseline = captured.standardPlan;
+		captured.standardPlan = null;
 		removeIfEmpty(baselines, tupleExpr, captured);
 		return baseline;
 	}
@@ -117,21 +84,17 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static void removeBaseline(Map<TupleExpr, Baselines> baselines, TupleExpr tupleExpr, Kind kind) {
+	private static void removeBaseline(Map<TupleExpr, Baselines> baselines, TupleExpr tupleExpr) {
 		Baselines captured = baselines.get(tupleExpr);
 		if (captured == null) {
 			return;
 		}
-		if (kind == Kind.SKETCH_INPUT) {
-			captured.sketchInputPlan = null;
-		} else {
-			captured.standardPlan = null;
-		}
+		captured.standardPlan = null;
 		removeIfEmpty(baselines, tupleExpr, captured);
 	}
 
 	private static void removeIfEmpty(Map<TupleExpr, Baselines> baselines, TupleExpr tupleExpr, Baselines captured) {
-		if (captured.standardPlan == null && captured.sketchInputPlan == null) {
+		if (captured.standardPlan == null) {
 			baselines.remove(tupleExpr);
 		}
 		if (baselines.isEmpty()) {
@@ -141,6 +104,5 @@ final class LmdbStandardPlanBaselineOptimizer implements QueryOptimizer {
 
 	private static final class Baselines {
 		private TupleExpr standardPlan;
-		private TupleExpr sketchInputPlan;
 	}
 }

@@ -54,7 +54,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
 	void compareLegacyBenchmarkHarnessCatalogQ9WithForcedMinusOrder() throws Exception {
-		try (var ignored = BenchmarkJoinEstimatorSupport.enableLegacySketchOptimizer()) {
+		try (var ignored = BenchmarkJoinEstimatorSupport.forceStandardOptimizerMode()) {
 			ThemeQueryBenchmark benchmark = newBenchmark();
 			benchmark.setup();
 			try {

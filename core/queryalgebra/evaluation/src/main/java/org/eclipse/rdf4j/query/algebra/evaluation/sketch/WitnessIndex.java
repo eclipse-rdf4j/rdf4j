@@ -12,10 +12,6 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
-import it.unimi.dsi.fastutil.longs.Long2DoubleMap;
-import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-
 interface WitnessIndex {
 	WitnessCursor cursor(long valueHash);
 }
@@ -69,93 +65,6 @@ final class EmptyWitnessCursor implements WitnessCursor {
 	@Override
 	public int estimatedRemaining() {
 		return 0;
-	}
-}
-
-final class OverlayWitnessIndex implements WitnessIndex {
-	private final Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash;
-
-	OverlayWitnessIndex() {
-		this(new Long2ObjectOpenHashMap<>());
-	}
-
-	OverlayWitnessIndex(Long2ObjectOpenHashMap<Long2DoubleOpenHashMap> weightsByValueHash) {
-		this.weightsByValueHash = weightsByValueHash;
-	}
-
-	void add(long valueHash, long witnessHash, double weight) {
-		if (!Double.isFinite(weight) || weight <= 0.0d) {
-			return;
-		}
-		Long2DoubleOpenHashMap weights = weightsByValueHash.get(valueHash);
-		if (weights == null) {
-			weights = new Long2DoubleOpenHashMap(4);
-			weightsByValueHash.put(valueHash, weights);
-		}
-		weights.addTo(witnessHash, weight);
-	}
-
-	@Override
-	public WitnessCursor cursor(long valueHash) {
-		if (weightsByValueHash == null) {
-			return WitnessCursor.empty();
-		}
-		Long2DoubleOpenHashMap weights = weightsByValueHash.get(valueHash);
-		if (weights == null || weights.isEmpty()) {
-			return WitnessCursor.empty();
-		}
-		long[] witnessHashes = new long[weights.size()];
-		double[] witnessWeights = new double[weights.size()];
-		int offset = 0;
-		for (Long2DoubleMap.Entry entry : weights.long2DoubleEntrySet()) {
-			double weight = entry.getDoubleValue();
-			if (Double.isFinite(weight) && weight > 0.0d) {
-				witnessHashes[offset] = entry.getLongKey();
-				witnessWeights[offset] = weight;
-				offset++;
-			}
-		}
-		if (offset == 0) {
-			return WitnessCursor.empty();
-		}
-		if (offset != witnessHashes.length) {
-			witnessHashes = java.util.Arrays.copyOf(witnessHashes, offset);
-			witnessWeights = java.util.Arrays.copyOf(witnessWeights, offset);
-		}
-		sortByUnsignedHash(witnessHashes, witnessWeights);
-		return new ArrayWitnessCursor(witnessHashes, witnessWeights);
-	}
-
-	private static void sortByUnsignedHash(long[] hashes, double[] weights) {
-		for (int i = 1; i < hashes.length; i++) {
-			long hash = hashes[i];
-			double weight = weights[i];
-			int j = i - 1;
-			while (j >= 0 && Long.compareUnsigned(hashes[j], hash) > 0) {
-				hashes[j + 1] = hashes[j];
-				weights[j + 1] = weights[j];
-				j--;
-			}
-			hashes[j + 1] = hash;
-			weights[j + 1] = weight;
-		}
-	}
-}
-
-final class CompositeWitnessIndex implements WitnessIndex {
-	private final WitnessIndex base;
-	private final WitnessIndex overlay;
-
-	CompositeWitnessIndex(WitnessIndex base, WitnessIndex overlay) {
-		this.base = base;
-		this.overlay = overlay;
-	}
-
-	@Override
-	public WitnessCursor cursor(long valueHash) {
-		WitnessCursor baseCursor = base == null ? WitnessCursor.empty() : base.cursor(valueHash);
-		WitnessCursor overlayCursor = overlay == null ? WitnessCursor.empty() : overlay.cursor(valueHash);
-		return new MergedWitnessCursor(baseCursor, overlayCursor);
 	}
 }
 

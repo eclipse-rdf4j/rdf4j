@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -123,15 +124,7 @@ class LmdbEvaluationStatistics
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final double DIRECT_LOOKUP_WORK_ROW_FLOOR = 1.0d;
-	private static final int BOUNDED_GREEDY_MIN_ACTIONS = 7;
-	private static final double BOUNDED_GREEDY_MAX_WORK_ROWS = 10_000.0d;
-	private static final double BOUNDED_GREEDY_MAX_FINAL_ROWS = 1_024.0d;
-	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS = 50_000.0d;
-	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS = 4_096.0d;
-	private static final double BOUNDED_GREEDY_PLANNING_COST_WORK_ROWS = 512.0d;
-	private static final int BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS = 2;
-	private static final String BOUNDED_GREEDY_REASON_DEFERRED_FILTERS = "deferredFilters";
-	private static final String BOUNDED_GREEDY_REASON_FINITE_ASSIGNMENTS = "finiteAssignments";
+	private static final double EXACT_BOUND_JOIN_PRODUCT_MAX_PREFIX_ROWS = 10_000.0d;
 	private static final int FINITE_LOOKUP_MAX_COMBINATIONS = 256;
 	private static final int FINITE_DERIVED_SURFACE_MAX_FACTORS = 8;
 	private static final double FINITE_DERIVED_SURFACE_MIN_COMPLETE_LOOKUP_ROWS = 128.0d;
@@ -171,6 +164,9 @@ class LmdbEvaluationStatistics
 	private static final String PLANNED_SKETCH_CALIBRATED_ROWS = "plannedSketchCalibratedRows";
 	private static final String PLANNED_SKETCH_CALIBRATION_FACTOR = "plannedSketchCalibrationFactor";
 	private static final String PLANNED_SKETCH_CONFIDENCE = TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE;
+	private static final String PLANNED_COST_CONFIDENCE = "plannedCostConfidence";
+	private static final String LMDB_ORDERED_COST_PLANNER_ID = "lmdb-ordered-cost";
+	private static final String LMDB_ORDERED_COST_PATH = "ORDERED_COST";
 	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final String CONNECTED_JOIN_BLEND_SUPPRESSED = "plannedConnectedJoinBlendSuppressed";
@@ -630,8 +626,8 @@ class LmdbEvaluationStatistics
 		if (sketchBasedJoinEstimator == null || orderedFactors == null || orderedFactors.size() < 2) {
 			return null;
 		}
-		Optional<JoinOrderPlan> plan = sketchBasedJoinEstimator.estimateJoinOrder(orderedFactors,
-				boundVars == null ? Set.of() : boundVars, Algorithm.DYNAMIC_PROGRAMMING, this, List.of());
+		Optional<JoinOrderPlan> plan = estimateJoinOrder(orderedFactors,
+				boundVars == null ? Set.of() : boundVars, Algorithm.DYNAMIC_PROGRAMMING, List.of());
 		if (plan.isEmpty()) {
 			return null;
 		}
@@ -1873,127 +1869,20 @@ class LmdbEvaluationStatistics
 	@Override
 	public PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
-		if (!supportsJoinEstimation() && (sketchBasedJoinEstimator == null || !supportsLmdbPlanning())) {
-			return PlanningAttempt.rejected("lmdb-sketch", algorithm,
+		if (!supportsJoinEstimation() && !supportsLmdbPlanning()) {
+			return PlanningAttempt.rejected(LMDB_ORDERED_COST_PLANNER_ID, algorithm,
 					"ROBUST_NOT_READY", null,
 					List.of("rejected: sketch estimator not ready"));
 		}
-		if (shouldTryBoundedGreedyFirst(args, algorithm, deferredFilters)) {
-			PlanningAttempt boundedGreedyAttempt = toLmdbPlanningAttempt(sketchBasedJoinEstimator
-					.planJoinOrderAttempt(args, initiallyBoundVars, Algorithm.GREEDY, this, deferredFilters));
-			String boundedGreedyComparisonReason = boundedGreedyComparisonReason(args, deferredFilters);
-			boolean compareWithFullPlanner = boundedGreedyComparisonReason != null;
-			if (isBoundedGreedyPlan(boundedGreedyAttempt)) {
-				if (!compareWithFullPlanner) {
-					return withDecisionTrace(boundedGreedyAttempt, boundedGreedySelectedTrace(boundedGreedyAttempt));
-				}
-				boolean mustCompareWithFullPlanner = mustCompareWithFullPlanner(args, boundedGreedyComparisonReason);
-				if (!mustCompareWithFullPlanner && isBelowPlanningCostBoundedGreedyPlan(boundedGreedyAttempt)) {
-					return withDecisionTrace(boundedGreedyAttempt,
-							belowPlanningCostBoundedGreedySelectedTrace(boundedGreedyAttempt,
-									boundedGreedyComparisonReason));
-				}
-				if (!mustCompareWithFullPlanner && isFiniteDirectLookupBoundedGreedyPlan(boundedGreedyAttempt)) {
-					return withDecisionTrace(boundedGreedyAttempt,
-							finiteDirectLookupBoundedGreedySelectedTrace(boundedGreedyAttempt,
-									boundedGreedyComparisonReason));
-				}
-			}
-			PlanningAttempt selectedAttempt = toLmdbPlanningAttempt(sketchBasedJoinEstimator
-					.planJoinOrderAttempt(args, initiallyBoundVars, algorithm, this, deferredFilters));
-			if (isBoundedGreedyPlan(boundedGreedyAttempt) && compareWithFullPlanner
-					&& selectedAttempt.getPlan().isPresent()) {
-				return withDecisionTrace(selectedAttempt,
-						boundedGreedyComparedTrace(boundedGreedyAttempt, selectedAttempt,
-								boundedGreedyComparisonReason));
-			}
-			if (selectedAttempt.getPlan().isEmpty() && isBoundedGreedyPlan(boundedGreedyAttempt)) {
-				return withDecisionTrace(boundedGreedyAttempt,
-						boundedGreedyFallbackTrace(boundedGreedyAttempt, selectedAttempt));
-			}
-			return withDecisionTrace(selectedAttempt,
-					boundedGreedyRejectedTrace(boundedGreedyAttempt, selectedAttempt));
+		Optional<JoinOrderPlan> plan = orderedCostPlan(args, initiallyBoundVars, algorithm, deferredFilters);
+		if (plan.isEmpty()) {
+			return PlanningAttempt.rejected(LMDB_ORDERED_COST_PLANNER_ID, algorithm, LMDB_ORDERED_COST_PATH, null,
+					List.of("rejected: ordered cost plan unavailable"));
 		}
-		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
-				this, deferredFilters);
-		PlanningAttempt selectedAttempt = toLmdbPlanningAttempt(attempt);
+		JoinOrderPlan enrichedPlan = enrichPlanWithAccessMetrics(plan.get());
+		PlanningAttempt selectedAttempt = PlanningAttempt.planned(enrichedPlan, LMDB_ORDERED_COST_PLANNER_ID,
+				algorithm, LMDB_ORDERED_COST_PATH, enrichedPlan.getDiagnostics());
 		return withDecisionTrace(selectedAttempt, selectedPlannerTrace(selectedAttempt));
-	}
-
-	private boolean shouldTryBoundedGreedyFirst(List<TupleExpr> args, Algorithm algorithm,
-			List<FilterConstraint> deferredFilters) {
-		if (algorithm != Algorithm.DYNAMIC_PROGRAMMING || args == null || args.isEmpty()) {
-			return false;
-		}
-		int filterCount = deferredFilters == null ? 0 : deferredFilters.size();
-		return args.size() + filterCount >= BOUNDED_GREEDY_MIN_ACTIONS;
-	}
-
-	private String boundedGreedyComparisonReason(List<TupleExpr> args, List<FilterConstraint> deferredFilters) {
-		if (deferredFilters != null && !deferredFilters.isEmpty()) {
-			return BOUNDED_GREEDY_REASON_DEFERRED_FILTERS;
-		}
-		if (hasFiniteAssignmentFactor(args)) {
-			return BOUNDED_GREEDY_REASON_FINITE_ASSIGNMENTS;
-		}
-		return null;
-	}
-
-	private boolean mustCompareWithFullPlanner(List<TupleExpr> args, String comparisonReason) {
-		return BOUNDED_GREEDY_REASON_FINITE_ASSIGNMENTS.equals(comparisonReason)
-				&& hasCorrelatedFiniteAssignmentFactor(args);
-	}
-
-	private boolean hasFiniteAssignmentFactor(List<TupleExpr> args) {
-		if (args == null) {
-			return false;
-		}
-		for (TupleExpr arg : args) {
-			if (arg instanceof BindingSetAssignment assignment
-					&& assignment.getBindingSets() != null
-					&& assignment.getBindingSets().iterator().hasNext()) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean hasCorrelatedFiniteAssignmentFactor(List<TupleExpr> args) {
-		if (args == null) {
-			return false;
-		}
-		for (TupleExpr arg : args) {
-			if (arg instanceof BindingSetAssignment assignment
-					&& assignment.getBindingSets() != null
-					&& assignment.getBindingSets().iterator().hasNext()
-					&& assignment.getBindingNames().size() > 1) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean isBoundedGreedyPlan(PlanningAttempt attempt) {
-		if (attempt.getAlgorithm() != Algorithm.GREEDY || attempt.getPlan().isEmpty()) {
-			return false;
-		}
-		JoinOrderPlan plan = attempt.getPlan().get();
-		return isSmallBoundedGreedyPlan(plan) || isFiniteDirectLookupGreedyPlan(plan);
-	}
-
-	private boolean isBelowPlanningCostBoundedGreedyPlan(PlanningAttempt attempt) {
-		if (attempt.getPlan().isEmpty()) {
-			return false;
-		}
-		double estimatedWorkRows = attempt.getPlan().get().getEstimatedTotalWork();
-		return isFiniteNonNegative(estimatedWorkRows)
-				&& estimatedWorkRows <= BOUNDED_GREEDY_PLANNING_COST_WORK_ROWS;
-	}
-
-	private boolean isFiniteDirectLookupBoundedGreedyPlan(PlanningAttempt attempt) {
-		return attempt.getPlan()
-				.map(this::isFiniteDirectLookupGreedyPlan)
-				.orElse(false);
 	}
 
 	private PlanningAttempt withDecisionTrace(PlanningAttempt attempt, String decisionTrace) {
@@ -2011,52 +1900,13 @@ class LmdbEvaluationStatistics
 				attempt.getPlannerPath(), attempt.getDiagnostics());
 	}
 
-	private String boundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt) {
-		return "bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
-	}
-
-	private String belowPlanningCostBoundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt,
-			String comparisonReason) {
-		return "boundedGreedyAcceptedReason=belowPlanningCost, boundedGreedyComparisonReason=" + comparisonReason
-				+ ", bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
-	}
-
-	private String finiteDirectLookupBoundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt,
-			String comparisonReason) {
-		return "boundedGreedyAcceptedReason=finiteDirectLookup, boundedGreedyComparisonReason=" + comparisonReason
-				+ ", bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
-	}
-
-	private String boundedGreedyRejectedTrace(PlanningAttempt boundedGreedyAttempt, PlanningAttempt selectedAttempt) {
-		return "bounded-greedy rejected (" + attemptEstimateSummary(boundedGreedyAttempt) + "); "
-				+ selectedPlannerLabel(selectedAttempt) + " selected (" + attemptEstimateSummary(selectedAttempt)
-				+ ")";
-	}
-
-	private String boundedGreedyComparedTrace(PlanningAttempt boundedGreedyAttempt, PlanningAttempt selectedAttempt,
-			String rejectedReason) {
-		return "boundedGreedyCompared=true, boundedGreedyRejectedReason=" + rejectedReason
-				+ ", bounded-greedy rejected (" + attemptEstimateSummary(boundedGreedyAttempt) + "); "
-				+ selectedPlannerLabel(selectedAttempt) + " selected (" + attemptEstimateSummary(selectedAttempt)
-				+ ")";
-	}
-
-	private String boundedGreedyFallbackTrace(PlanningAttempt boundedGreedyAttempt, PlanningAttempt selectedAttempt) {
-		return "boundedGreedyCompared=true, boundedGreedyRejectedReason=fullPlannerNoPlan, bounded-greedy selected ("
-				+ attemptEstimateSummary(boundedGreedyAttempt) + "); " + selectedPlannerLabel(selectedAttempt)
-				+ " rejected (" + attemptEstimateSummary(selectedAttempt) + ")";
-	}
-
 	private String selectedPlannerTrace(PlanningAttempt selectedAttempt) {
 		return selectedPlannerLabel(selectedAttempt) + " selected (" + attemptEstimateSummary(selectedAttempt) + ")";
 	}
 
 	private String selectedPlannerLabel(PlanningAttempt attempt) {
-		if (attempt.getAlgorithm() == Algorithm.DYNAMIC_PROGRAMMING) {
-			return "pareto-memo";
-		}
-		if (attempt.getAlgorithm() == Algorithm.GREEDY) {
-			return "pareto-beam";
+		if (attempt.getPlannerId() != null && !attempt.getPlannerId().isBlank()) {
+			return attempt.getPlannerId();
 		}
 		return String.valueOf(attempt.getAlgorithm()).toLowerCase();
 	}
@@ -2070,73 +1920,154 @@ class LmdbEvaluationStatistics
 				+ ", path=" + attempt.getPlannerPath();
 	}
 
-	private boolean isSmallBoundedGreedyPlan(JoinOrderPlan plan) {
-		return isFiniteNonNegative(plan.getEstimatedTotalWork())
-				&& plan.getEstimatedTotalWork() <= BOUNDED_GREEDY_MAX_WORK_ROWS
-				&& isFiniteNonNegative(plan.getEstimatedFinalRows())
-				&& plan.getEstimatedFinalRows() <= BOUNDED_GREEDY_MAX_FINAL_ROWS
-				&& boundedUncertaintyRows(plan, BOUNDED_GREEDY_MAX_WORK_ROWS);
-	}
-
-	private boolean isFiniteDirectLookupGreedyPlan(JoinOrderPlan plan) {
-		if (!isFiniteNonNegative(plan.getEstimatedTotalWork())
-				|| plan.getEstimatedTotalWork() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS
-				|| !isFiniteNonNegative(plan.getEstimatedFinalRows())
-				|| plan.getEstimatedFinalRows() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS
-				|| !boundedUncertaintyRows(plan, BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS)
-				|| plan.getSteps().size() != plan.getOrderedArgs().size()) {
-			return false;
-		}
-		int directLookupSteps = 0;
-		double maxPrefixRows = 0.0d;
-		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
-			JoinOrderPlanner.PlanStep step = plan.getSteps().get(i);
-			if (!isFiniteNonNegative(step.getStepWorkRows()) || !isFiniteNonNegative(step.getPrefixOutputRows())) {
-				return false;
-			}
-			maxPrefixRows = Math.max(maxPrefixRows, step.getPrefixOutputRows());
-			if (LmdbJoinPlanSupport.collectPatternIdentities(plan.getOrderedArgs().get(i)).isEmpty()) {
-				continue;
-			}
-			String accessMode = step.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
-			if (!"directLookup".equals(accessMode)) {
-				return false;
-			}
-			directLookupSteps++;
-		}
-		return directLookupSteps >= BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS
-				&& maxPrefixRows <= BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS;
-	}
-
-	private boolean boundedUncertaintyRows(JoinOrderPlan plan, double maxUncertaintyRows) {
-		double uncertaintyRows = plan.getSummaryDoubleMetrics()
-				.getOrDefault(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, 0.0d);
-		return Double.isFinite(uncertaintyRows)
-				&& uncertaintyRows <= maxUncertaintyRows;
-	}
-
-	private PlanningAttempt toLmdbPlanningAttempt(PlanningAttempt attempt) {
-		if (attempt.getPlan().isEmpty()) {
-			return PlanningAttempt.rejected("lmdb-sketch", attempt.getAlgorithm(), attempt.getPlannerPath(),
-					attempt.getRejectedFactor(), attempt.getDiagnostics());
-		}
-		JoinOrderPlan enrichedPlan = enrichPlanWithAccessMetrics(attempt.getPlan().get());
-		return PlanningAttempt.planned(enrichedPlan, "lmdb-sketch", attempt.getAlgorithm(), attempt.getPlannerPath(),
-				enrichedPlan.getDiagnostics());
-	}
-
 	@Override
 	public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
 			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
-		if (!supportsJoinEstimation()) {
+		if (!supportsJoinEstimation() && !supportsLmdbPlanning()) {
 			return Optional.empty();
 		}
-		Optional<JoinOrderPlan> plan = sketchBasedJoinEstimator.estimateJoinOrder(orderedArgs, initiallyBoundVars,
-				algorithm, this, deferredFilters);
-		if (plan.isEmpty()) {
+		return orderedCostPlan(orderedArgs, initiallyBoundVars, algorithm, deferredFilters)
+				.map(this::enrichPlanWithAccessMetrics);
+	}
+
+	private Optional<JoinOrderPlan> orderedCostPlan(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		if (orderedArgs == null || orderedArgs.isEmpty()) {
 			return Optional.empty();
 		}
-		return Optional.of(enrichPlanWithAccessMetrics(plan.get()));
+		List<TupleExpr> expressions = List.copyOf(orderedArgs);
+		Set<String> currentBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty()
+				? Set.of()
+				: Set.copyOf(initiallyBoundVars);
+		Set<String> mutableBoundVars = new LinkedHashSet<>(currentBoundVars);
+		Map<String, Set<Value>> finiteBindingValues = new HashMap<>();
+		List<TupleExpr> prefixFactors = new ArrayList<>(expressions.size());
+		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(expressions.size());
+		List<String> diagnostics = new ArrayList<>();
+		boolean[] appliedFilters = deferredFilters == null || deferredFilters.isEmpty()
+				? null
+				: new boolean[deferredFilters.size()];
+		double prefixRows = 1.0d;
+		double totalWorkRows = 0.0d;
+		String sketchEstimateSource = null;
+		double confidence = 0.5d;
+
+		for (TupleExpr factor : expressions) {
+			Set<String> boundVarsBefore = Set.copyOf(mutableBoundVars);
+			Map<String, Set<Value>> finiteValuesForStep = finiteBindingValuesForStep(finiteBindingValues,
+					boundVarsBefore);
+			Optional<FactorCostEstimate> factorCost = estimateFactorCost(factor,
+					JoinFactorCostModel.CostContext.forOptimization(boundVarsBefore, prefixRows, Double.NaN, true,
+							true, finiteValuesForStep, prefixFactors));
+			if (factorCost.isEmpty()) {
+				return Optional.empty();
+			}
+			FactorCostEstimate estimate = factorCost.get();
+			double factorOutputRows = normalizedPlanRows(estimate.getOutputRows(), prefixRows);
+			double stepWorkRows = normalizedPlanRows(estimate.getWorkRows(), factorOutputRows);
+			double prefixOutputRows = factorOutputRows;
+			Map<String, String> stringMetrics = new LinkedHashMap<>(estimate.getStringMetrics());
+			Map<String, Double> doubleMetrics = new LinkedHashMap<>(estimate.getDoubleMetrics());
+			List<Integer> appliedFilterIndexes = new ArrayList<>();
+
+			mutableBoundVars.addAll(plannerBindingNames(factor.getBindingNames()));
+			Set<String> boundVarsAfter = Set.copyOf(mutableBoundVars);
+			List<TupleExpr> filterPrefixFactors = new ArrayList<>(prefixFactors.size() + 1);
+			filterPrefixFactors.addAll(prefixFactors);
+			filterPrefixFactors.add(factor);
+			if (appliedFilters != null) {
+				for (int i = 0; i < deferredFilters.size(); i++) {
+					if (!appliedFilters[i]) {
+						FilterConstraint filter = deferredFilters.get(i);
+						if (filter != null && boundVarsAfter.containsAll(filter.getRequiredVars())) {
+							FilterCostApplication filterCost = applyOrderedCostFilter(filter, boundVarsAfter,
+									prefixOutputRows, filterPrefixFactors);
+							prefixOutputRows = filterCost.outputRows();
+							stepWorkRows += filterCost.workRows();
+							stringMetrics.putAll(filterCost.stringMetrics());
+							doubleMetrics.putAll(filterCost.doubleMetrics());
+							appliedFilterIndexes.add(i);
+							appliedFilters[i] = true;
+						}
+					}
+				}
+			}
+
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorOutputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, prefixOutputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, stepWorkRows);
+			steps.add(new JoinOrderPlanner.PlanStep(boundVarsBefore, factorOutputRows, prefixOutputRows,
+					stepWorkRows, stringMetrics, doubleMetrics, appliedFilterIndexes));
+			totalWorkRows += stepWorkRows;
+			addFiniteBindingValues(finiteBindingValues, factor);
+			prefixFactors.add(factor);
+			prefixRows = prefixOutputRows;
+
+			String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (sketchEstimateSource == null && source != null && source.contains("omni")) {
+				sketchEstimateSource = source;
+			}
+			Double stepConfidence = doubleMetrics.get(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE);
+			if (stepConfidence != null && Double.isFinite(stepConfidence)) {
+				confidence = Math.max(confidence, Math.clamp(stepConfidence, 0.0d, 1.0d));
+			}
+		}
+
+		Map<String, String> summaryStringMetrics = new LinkedHashMap<>();
+		summaryStringMetrics.put(TelemetryMetricNames.PLANNER_ID, LMDB_ORDERED_COST_PLANNER_ID);
+		summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+				"costModel=lmdb, joinOrder=fixed");
+		summaryStringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, LMDB_ORDERED_COST_PLANNER_ID);
+		if (sketchEstimateSource != null) {
+			summaryStringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, sketchEstimateSource);
+		}
+		Map<String, Double> summaryDoubleMetrics = new LinkedHashMap<>();
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, prefixRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, prefixRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWorkRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, totalWorkRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, confidence);
+		summaryDoubleMetrics.put(PLANNED_SKETCH_CONFIDENCE, confidence);
+		summaryDoubleMetrics.put(PLANNED_COST_CONFIDENCE, confidence);
+		diagnostics.add("input: algorithm=" + algorithm + " initiallyBoundVars=" + currentBoundVars
+				+ " plannedBoundVars=" + mutableBoundVars);
+		return Optional.of(new JoinOrderPlan(expressions, prefixRows, totalWorkRows, diagnostics,
+				summaryStringMetrics, summaryDoubleMetrics, steps));
+	}
+
+	private FilterCostApplication applyOrderedCostFilter(FilterConstraint filter, Set<String> boundVarsBefore,
+			double inputRows, List<TupleExpr> prefixFactors) {
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(boundVarsBefore,
+				inputRows, Double.NaN, true, true, Map.of(), prefixFactors);
+		Optional<JoinFactorCostModel.FilterCostEstimate> estimate = estimateFilterCost(filter, context);
+		if (estimate.isPresent()) {
+			JoinFactorCostModel.FilterCostEstimate filterEstimate = estimate.get();
+			double outputRows = normalizedPlanRows(filterEstimate.outputRows(), inputRows);
+			return new FilterCostApplication(normalizedPlanRows(filterEstimate.workRows(), 0.0d), outputRows,
+					filterEstimate.stringMetrics(), filterEstimate.doubleMetrics());
+		}
+		double passRatio = filter.getEstimatedPassRatio();
+		if (!Double.isFinite(passRatio) || passRatio < 0.0d || passRatio > 1.0d) {
+			passRatio = 1.0d;
+		}
+		double outputRows = normalizedPlanRows(inputRows * passRatio, inputRows);
+		double workRows = filter.getConditionCost() == JoinOrderPlanner.FILTER_COST_EXPENSIVE
+				? normalizedPlanRows(inputRows, 0.0d)
+				: 0.0d;
+		Map<String, String> stringMetrics = filter.getSelectivitySource() == null
+				? Map.of()
+				: Map.of(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, filter.getSelectivitySource());
+		Map<String, Double> doubleMetrics = Map.of(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
+		return new FilterCostApplication(workRows, outputRows, stringMetrics, doubleMetrics);
+	}
+
+	private double normalizedPlanRows(double value, double fallback) {
+		return isFiniteNonNegative(value) ? value : fallback;
+	}
+
+	private record FilterCostApplication(double workRows, double outputRows, Map<String, String> stringMetrics,
+			Map<String, Double> doubleMetrics) {
 	}
 
 	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
@@ -2187,9 +2118,8 @@ class LmdbEvaluationStatistics
 					double factorOutputRows = step.getFactorOutputRows();
 					double prefixOutputRows = step.getPrefixOutputRows();
 					double stepWorkRows = step.getStepWorkRows();
-					// The stateful transition planner owns row and work flow. This enrichment pass may add access-path
-					// diagnostics, but must not replace the selected PlanState/cardinality result with a scalar
-					// factor re-estimate.
+					// The join-order planner owns row and work flow. This enrichment pass may add access-path
+					// diagnostics, but must not replace the selected cardinality result with a scalar re-estimate.
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorOutputRows);
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, prefixOutputRows);
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
@@ -2228,7 +2158,7 @@ class LmdbEvaluationStatistics
 		}
 
 		Map<String, String> summaryStringMetrics = new HashMap<>(plan.getSummaryStringMetrics());
-		summaryStringMetrics.put(TelemetryMetricNames.PLANNER_ID, "lmdb-sketch");
+		summaryStringMetrics.put(TelemetryMetricNames.PLANNER_ID, LMDB_ORDERED_COST_PLANNER_ID);
 		summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 				"costModel=lmdb, accessPathSelection=per-step");
 		Map<String, Double> summaryDoubleMetrics = new HashMap<>(plan.getSummaryDoubleMetrics());
@@ -8073,7 +8003,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private boolean shouldForceExactBoundJoinProductSurface(double prefixRows) {
-		return isPositiveFinite(prefixRows) && prefixRows <= BOUNDED_GREEDY_MAX_WORK_ROWS;
+		return isPositiveFinite(prefixRows) && prefixRows <= EXACT_BOUND_JOIN_PRODUCT_MAX_PREFIX_ROWS;
 	}
 
 	private FiniteBranchSurfaceEstimate duplicateCorrectionPrefixSurfaceEstimate(List<TupleExpr> factors,
@@ -10173,8 +10103,9 @@ class LmdbEvaluationStatistics
 		if (request == null) {
 			return chooseAccessPath(accessShape, factorRows);
 		}
-		int lookupComponentMask = request.lookupComponentMask() & lookupComponentMaskWithConstants(accessShape,
-				accessShape.pattern());
+		int availableLookupComponentMask = lookupComponentMaskWithConstants(accessShape, accessShape.pattern());
+		int lookupComponentMask = request.lookupComponentMask() & availableLookupComponentMask;
+		int requestedMissingLookupComponentMask = request.missingLookupComponentMask() & availableLookupComponentMask;
 		if (lookupComponentMask == 0) {
 			double rowsBefore = accessShape.estimateAccessRows(0);
 			if (!isFiniteNonNegative(rowsBefore)) {
@@ -10182,63 +10113,66 @@ class LmdbEvaluationStatistics
 			}
 			return isFiniteNonNegative(rowsBefore) && isFiniteNonNegative(factorRows)
 					? new AccessPathEstimate(rowsBefore, rowsBefore, rowsBefore, "", 0, 0, false, 0,
-							request.missingLookupComponentMask(), 1)
+							requestedMissingLookupComponentMask, 1)
 					: null;
 		}
-		double rowsBefore = accessShape.estimateAccessRows(lookupComponentMask);
-		if (!isFiniteNonNegative(rowsBefore)) {
+		if (tripleStore == null) {
 			return null;
 		}
-		if (request.missingLookupComponentMask() != 0) {
-			double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
-			if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
-				rowsBefore = rowsBeforeLowerBound;
-			}
-		}
-		boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, lookupComponentMask)
-				&& isFiniteNonNegative(accessShape.filterMultiplier())
-				&& accessShape.filterMultiplier() < 1.0d;
-		double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
-		if (!isFiniteNonNegative(rowsAfter)) {
-			return null;
-		}
-		TripleStore.IndexAccessPath indexAccessPath = requestedIndexAccessPath(lookupComponentMask);
-		int prefixComponentMask = indexAccessPath == null ? lookupComponentMask : indexAccessPath.prefixComponentMask();
-		int prefixLength = indexAccessPath == null ? 0 : indexAccessPath.prefixLength();
-		String indexFieldSequence = indexAccessPath == null ? "" : indexAccessPath.indexFieldSequence();
-		boolean directLookup = request.directLookup()
-				&& isExactDirectLookup(prefixComponentMask, lookupComponentMask, rowsBefore);
-		boolean exactStatementDirectLookup = directLookup
-				&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
-		double plannedRowsBefore = exactStatementDirectLookup
-				? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
-				: rowsBefore;
-		double plannedRowsAfter = exactStatementDirectLookup
-				? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
-				: rowsAfter;
-		double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
-		if (!isFiniteNonNegative(workRows)) {
-			return null;
-		}
-		return new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter, indexFieldSequence,
-				prefixLength, prefixComponentMask, directLookup, lookupComponentMask,
-				request.missingLookupComponentMask(), 1);
-	}
-
-	private TripleStore.IndexAccessPath requestedIndexAccessPath(int lookupComponentMask) {
-		if (tripleStore == null || lookupComponentMask == 0) {
-			return null;
-		}
-		TripleStore.IndexAccessPath best = null;
-		for (TripleStore.IndexAccessPath candidate : tripleStore.indexAccessPaths(lookupComponentMask)) {
-			if ((candidate.prefixComponentMask() & lookupComponentMask) != lookupComponentMask) {
+		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupComponentMask);
+		int candidateCount = candidates.size();
+		AccessPathEstimate bestEstimate = null;
+		for (TripleStore.IndexAccessPath candidate : candidates) {
+			int prefixComponentMask = candidate.prefixComponentMask() & lookupComponentMask;
+			double rowsBefore = accessShape.estimateAccessRows(prefixComponentMask);
+			if (!isFiniteNonNegative(rowsBefore)) {
 				continue;
 			}
-			if (best == null || candidate.prefixLength() > best.prefixLength()) {
-				best = candidate;
+			int coveredLookupComponentMask = lookupComponentMask & prefixComponentMask;
+			int missingLookupComponentMask = requestedMissingLookupComponentMask
+					| (lookupComponentMask & ~prefixComponentMask);
+			if (missingLookupComponentMask != 0) {
+				double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
+				if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
+					rowsBefore = rowsBeforeLowerBound;
+				}
+			}
+			boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, prefixComponentMask)
+					&& isFiniteNonNegative(accessShape.filterMultiplier())
+					&& accessShape.filterMultiplier() < 1.0d;
+			double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
+			if (!isFiniteNonNegative(rowsAfter)) {
+				continue;
+			}
+			boolean directLookup = request.directLookup()
+					&& isExactDirectLookup(prefixComponentMask, lookupComponentMask, rowsBefore);
+			boolean exactStatementDirectLookup = directLookup
+					&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
+			double plannedRowsBefore = exactStatementDirectLookup
+					? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsBefore;
+			double plannedRowsAfter = exactStatementDirectLookup
+					? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsAfter;
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter) : rowsBefore;
+			if (!isFiniteNonNegative(workRows)) {
+				continue;
+			}
+			AccessPathEstimate estimate = new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter,
+					candidate.indexFieldSequence(), candidate.prefixLength(), prefixComponentMask, directLookup,
+					coveredLookupComponentMask, missingLookupComponentMask, candidateCount);
+			if (bestEstimate == null || compareAccessPathEstimate(estimate, bestEstimate) < 0) {
+				bestEstimate = estimate;
 			}
 		}
-		return best;
+		if (bestEstimate != null) {
+			return bestEstimate;
+		}
+		int missingLookupComponentMask = requestedMissingLookupComponentMask | lookupComponentMask;
+		return isFiniteNonNegative(factorRows)
+				? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false, 0,
+						missingLookupComponentMask, candidateCount)
+				: null;
 	}
 
 	private double rowsBeforeFilterLowerBound(double factorRows, double filterMultiplier) {

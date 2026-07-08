@@ -69,19 +69,6 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void legacyOpaqueJoinProviderCanStillBeEnabledExplicitly() {
-		String previous = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, "true");
-		try {
-			List<String> rules = applicableRuleIds(connectedJoinIsland());
-
-			assertTrue(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
-			assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
-		} finally {
-			restoreLegacyOpaqueJoinProviderProperty(previous);
-		}
-	}
-
-	@Test
 	void propertyPathUsesLmdbPathImplementationAndGenericFallback() {
 		List<String> rules = applicableRuleIds(propertyPathFactor());
 
@@ -262,14 +249,6 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		assertTrue(userAnchorIndex < nameAnchorIndex && nameAnchorIndex < nameLookupIndex,
 				() -> "A small finite anchor should be counted before the expensive bound bridge lookup: "
 						+ orderedFactors);
-	}
-
-	private static void restoreLegacyOpaqueJoinProviderProperty(String previous) {
-		if (previous == null) {
-			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
-		} else {
-			System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previous);
-		}
 	}
 
 	private static List<String> applicableRuleIds(TupleExpr tupleExpr) {

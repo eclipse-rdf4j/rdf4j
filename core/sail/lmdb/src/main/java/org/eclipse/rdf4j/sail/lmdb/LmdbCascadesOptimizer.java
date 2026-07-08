@@ -263,60 +263,17 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (!policy.enabled() || tupleExpr == null || preserveSerializableObservationOrder) {
 			return emptyStandardPlanCandidate();
 		}
-		TupleExpr capturedSketchInputPlan = LmdbStandardPlanBaselineOptimizer.consumeSketchInputBaseline(tupleExpr);
 		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.consumeBaseline(tupleExpr);
 		if (capturedPlan != null) {
-			return standardPlanCandidate(capturedPlan, capturedSketchInputPlan, dataset, bindings,
-					"lmdb-no-cascades");
+			return new StandardPlanCandidate(capturedPlan, "lmdb-no-cascades");
 		}
 		try {
 			TupleExpr standardPlan = tupleExpr.clone();
 			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			return standardPlanCandidate(standardPlan, capturedSketchInputPlan, dataset, bindings,
-					"current-lmdb-no-cascades");
+			return new StandardPlanCandidate(standardPlan, "current-lmdb-no-cascades");
 		} catch (RuntimeException e) {
 			return emptyStandardPlanCandidate();
 		}
-	}
-
-	private StandardPlanCandidate standardPlanCandidate(TupleExpr standardPlan, TupleExpr sketchInputPlan,
-			Dataset dataset, BindingSet bindings, String origin) {
-		TupleExpr sketchCandidateInput = sketchInputPlan == null ? standardPlan : sketchInputPlan;
-		StandardPlanCandidate sketchCandidate = sketchRefinedStandardPlanCandidate(sketchCandidateInput, dataset,
-				bindings);
-		if (sketchCandidate.isPresent()) {
-			return sketchCandidate;
-		}
-		return new StandardPlanCandidate(standardPlan, origin);
-	}
-
-	private StandardPlanCandidate sketchRefinedStandardPlanCandidate(TupleExpr standardPlan, Dataset dataset,
-			BindingSet bindings) {
-		if (standardPlan == null || statistics == null
-				|| !Boolean.getBoolean(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY)
-				|| Boolean.getBoolean(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY)) {
-			return emptyStandardPlanCandidate();
-		}
-		try {
-			TupleExpr sketchPlan = standardPlan.clone();
-			new ParentReferenceCleaner().optimize(sketchPlan, dataset, bindings);
-			new LmdbSketchJoinOptimizer(statistics, trackResultSize).optimize(sketchPlan, dataset, bindings);
-			new ParentReferenceCleaner().optimize(sketchPlan, dataset, bindings);
-			return containsPlannerId(sketchPlan, "lmdb-sketch")
-					? new StandardPlanCandidate(sketchPlan, "lmdb-sketch-baseline")
-					: emptyStandardPlanCandidate();
-		} catch (RuntimeException e) {
-			return emptyStandardPlanCandidate();
-		}
-	}
-
-	private boolean containsPlannerId(TupleExpr tupleExpr, String plannerId) {
-		if (tupleExpr == null || plannerId == null || plannerId.isBlank()) {
-			return false;
-		}
-		PlannerIdFinder finder = new PlannerIdFinder(plannerId);
-		tupleExpr.visit(finder);
-		return finder.found;
 	}
 
 	private boolean needsPreSearchStandardPlan(Mode mode, boolean budgetedSearch, StandardPlanPolicy policy) {
@@ -1884,28 +1841,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 		boolean replacesAlgebra() {
 			return replacesAlgebra;
-		}
-	}
-
-	private static final class PlannerIdFinder extends AbstractQueryModelVisitor<RuntimeException> {
-		private final String plannerId;
-		private boolean found;
-
-		private PlannerIdFinder(String plannerId) {
-			this.plannerId = plannerId;
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (found) {
-				return;
-			}
-			if (node instanceof TupleExpr tupleExpr
-					&& plannerId.equals(tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID))) {
-				found = true;
-				return;
-			}
-			super.meetNode(node);
 		}
 	}
 
