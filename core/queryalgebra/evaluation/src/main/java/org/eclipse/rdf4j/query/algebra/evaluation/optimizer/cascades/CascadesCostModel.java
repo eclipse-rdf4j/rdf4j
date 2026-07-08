@@ -630,7 +630,7 @@ public interface CascadesCostModel {
 					PhysicalProperties inputProperties = inputWinners.get(i).deliveredProperties();
 					inputBoundVars.addAll(externallyRequiredInputBoundVars(tupleExpr, i,
 							inputProperties.inputBoundVars()));
-					delivered = delivered.mergedWith(inputProperties.withInputBoundVars(Set.of()));
+					delivered = delivered.mergedWith(propagatedInputProperties(tupleExpr, inputProperties));
 				}
 			}
 			if (tupleExpr != null) {
@@ -650,6 +650,17 @@ public interface CascadesCostModel {
 					.mergedWith(declaredBindingProfile);
 			return delivered.withInputBoundVars(inputBoundVars)
 					.withBindingProfile(outputProfile);
+		}
+
+		private PhysicalProperties propagatedInputProperties(TupleExpr tupleExpr, PhysicalProperties inputProperties) {
+			PhysicalProperties propagated = inputProperties == null
+					? PhysicalProperties.ANY
+					: inputProperties.withInputBoundVars(Set.of());
+			if (tupleExpr instanceof Join) {
+				return propagated.withOrdering(List.of())
+						.withDistinctVars(Set.of());
+			}
+			return propagated;
 		}
 
 		private BindingProfile outputBindingProfile(MemoExpr expression, OptimizationGoal goal,
