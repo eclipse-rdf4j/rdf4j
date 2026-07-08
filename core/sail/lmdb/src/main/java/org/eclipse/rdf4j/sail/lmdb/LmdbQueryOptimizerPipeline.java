@@ -36,8 +36,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOpti
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
-	static final String LEGACY_SKETCH_OPTIMIZER_PROPERTY = "rdf4j.optimizer.lmdb.legacySketchOptimizer";
-
 	private static boolean assertsEnabled = false;
 
 	static {
@@ -101,10 +99,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(new LmdbProjectionPushdownOptimizer());
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
-		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
-			optimizers.add(new LmdbStandardPlanBaselineOptimizer(
-					LmdbStandardPlanBaselineOptimizer.Kind.SKETCH_INPUT));
-		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());
@@ -115,15 +109,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
-		boolean legacySketchOptimizer = Boolean.getBoolean(LEGACY_SKETCH_OPTIMIZER_PROPERTY);
-		if (legacySketchOptimizer) {
-			optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
-		}
 		optimizers.add(ORDER_LIMIT_OPTIMIZER);
-		if (!legacySketchOptimizer) {
-			optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
-					Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));
-		}
+		optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
+				Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

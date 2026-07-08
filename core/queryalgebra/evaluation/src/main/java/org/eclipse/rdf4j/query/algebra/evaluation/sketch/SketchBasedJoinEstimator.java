@@ -587,6 +587,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final double POSITIVE_RARE_OVERLAP_FANOUT_FALLBACK_MIN = 2.0d;
 	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
+	private static final double SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS = 64.0d;
 	private static final int JOIN_SKETCH_ROWS = 5;
 	private static final int JOIN_SKETCH_LIGHT_BUCKETS = 32;
 	private static final int JOIN_SKETCH_MID_BUCKETS = 16;
@@ -8050,10 +8051,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return s + ' ' + p + ' ' + o + ' ' + c;
 	}
 
-	/* ────────────────────────────────────────────────────────────── */
-	/* OPTIONAL optimiser helper (unchanged API) */
-	/* ────────────────────────────────────────────────────────────── */
-
 	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm) {
 		return planJoinOrder(args, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP);
@@ -8097,111 +8094,92 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				Objects.requireNonNull(factorCostModel, "factorCostModel"), deferredFilters);
 	}
 
-	private Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
-			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
-			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		if (!isReady() || orderedArgs == null || orderedArgs.isEmpty()) {
-			return Optional.empty();
-		}
-		SketchJoinOrderPlanner planner = factorCostModel == null
-				? SketchJoinOrderPlanner.fixedOrder(this, workAdjuster, orderedArgs, initiallyBoundVars,
-						deferredFilters)
-				: SketchJoinOrderPlanner.fixedOrder(this, factorCostModel, orderedArgs, initiallyBoundVars,
-						deferredFilters);
-		return planner.estimateFixedOrder(algorithm).plan();
-	}
-
 	private JoinOrderPlanner.PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		boolean ready = isReady();
-		if (!ready && factorCostModel == null) {
-			recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_NOT_READY);
-			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
-					SketchPlannerPath.ROBUST_NOT_READY.name(),
-					null, List.of("rejected: sketch estimator not ready"));
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimateJoinOrder(args, initiallyBoundVars, algorithm,
+				workAdjuster, factorCostModel, deferredFilters);
+		if (plan.isEmpty()) {
+			SketchPlannerPath path = isReady() || factorCostModel != null ? SketchPlannerPath.UNSUPPORTED_SHAPE
+					: SketchPlannerPath.ROBUST_NOT_READY;
+			recordJoinOrderPlannerPath(path);
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm, path.name(), null,
+					List.of("rejected: fixed-order estimate unavailable"));
 		}
-		if (args == null || args.isEmpty()) {
-			recordJoinOrderPlannerPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
-			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
-					SketchPlannerPath.UNSUPPORTED_SHAPE.name(),
-					null, List.of("rejected: empty join segment"));
-		}
-
-		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
-		List<TupleExpr> expressions = List.copyOf(args);
-		List<String> inputDiagnostics = List.of("input: algorithm=" + algorithm + " initiallyBoundVars=" + bound
-				+ " originalOrder=" + SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedOrder="
-				+ SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedBoundVars=" + bound
-				+ (ready ? "" : " sketchReady=false factorCostModelFallback=true"));
-		if (logger.isDebugEnabled()) {
-			logger.debug(
-					"Sketch join planner input: algorithm={} initiallyBoundVars={} originalOrder={} plannedOrder={} plannedBoundVars={}",
-					algorithm, bound, SketchJoinOrderPlanner.describeExprOrder(expressions),
-					SketchJoinOrderPlanner.describeExprOrder(expressions), bound);
-		}
-
-		SketchJoinOrderPlanner planner = factorCostModel == null
-				? new SketchJoinOrderPlanner(this, workAdjuster, expressions, bound, deferredFilters, 1.0d)
-				: new SketchJoinOrderPlanner(this, factorCostModel, expressions, bound, deferredFilters, 1.0d);
-		SketchJoinOrderPlanner.PlanOutcome outcome = planner.plan(algorithm);
-		recordJoinOrderPlannerPath(outcome.path());
-		if (outcome.plan().isEmpty()) {
-			List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + outcome.diagnostics().size());
-			diagnostics.addAll(inputDiagnostics);
-			diagnostics.addAll(outcome.diagnostics());
-			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm, outcome.path().name(),
-					outcome.rejectedFactor(), diagnostics);
-		}
-		JoinOrderPlanner.JoinOrderPlan plan = refineJoinOrderPlanCardinality(outcome.plan().get());
-		plan = prependJoinPlannerInputDiagnostics(plan, inputDiagnostics);
-		return JoinOrderPlanner.PlanningAttempt.planned(plan, "sketch", algorithm, outcome.path().name(),
-				plan.getDiagnostics());
+		recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_USED);
+		return JoinOrderPlanner.PlanningAttempt.planned(plan.get(), "sketch", algorithm,
+				SketchPlannerPath.ROBUST_USED.name(), plan.get().getDiagnostics());
 	}
 
-	private JoinOrderPlanner.JoinOrderPlan refineJoinOrderPlanCardinality(JoinOrderPlanner.JoinOrderPlan plan) {
-		TuplePlanEstimate finitePatternRows = estimateBindingSetAssignmentPatternRows(plan.getOrderedArgs());
-		if (finitePatternRows == null) {
-			return plan;
+	private Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
+			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
+			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		if ((factorCostModel == null && !isReady()) || orderedArgs == null || orderedArgs.isEmpty()) {
+			return Optional.empty();
 		}
-		double finalRows = normalizeRows(finitePatternRows.outputRows);
-		Map<String, Double> summaryDoubleMetrics = new HashMap<>(plan.getSummaryDoubleMetrics());
-		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, finalRows);
-		double existingCostFinalRows = summaryDoubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
-				finalRows);
-		boolean nonExactZeroWithCostFloor = finalRows == 0.0d && existingCostFinalRows > 0.0d;
-		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
-				nonExactZeroWithCostFloor ? existingCostFinalRows : finalRows);
-		if (nonExactZeroWithCostFloor) {
-			summaryDoubleMetrics.compute(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
-					(name, confidence) -> capNonExactZeroConfidence(confidence));
-			summaryDoubleMetrics.compute(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE,
-					(name, confidence) -> capNonExactZeroConfidence(confidence));
-			summaryDoubleMetrics.compute(SketchJoinOrderPlanner.PLANNED_COST_CONFIDENCE,
-					(name, confidence) -> capNonExactZeroConfidence(confidence));
+		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
+				: Set.copyOf(initiallyBoundVars);
+		List<TupleExpr> expressions = List.copyOf(orderedArgs);
+		Set<String> mutableBound = new LinkedHashSet<>(bound);
+		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(expressions.size());
+		double prefixRows = 1.0d;
+		double totalWorkRows = 0.0d;
+		String estimateSource = null;
+		for (TupleExpr expression : expressions) {
+			Set<String> boundBefore = Set.copyOf(mutableBound);
+			double factorRows;
+			double stepWorkRows;
+			Map<String, String> stringMetrics = new LinkedHashMap<>();
+			Map<String, Double> doubleMetrics = new LinkedHashMap<>();
+			if (factorCostModel != null) {
+				Optional<JoinFactorCostModel.FactorCostEstimate> factorEstimate = factorCostModel.estimateFactorCost(
+						expression, JoinFactorCostModel.CostContext.forOptimization(boundBefore, prefixRows,
+								Double.NaN, true, true, Map.of(), expressions.subList(0, steps.size())));
+				if (factorEstimate.isEmpty()) {
+					return Optional.empty();
+				}
+				JoinFactorCostModel.FactorCostEstimate estimate = factorEstimate.get();
+				factorRows = finiteNonNegative(estimate.getOutputRows(), prefixRows);
+				stepWorkRows = finiteNonNegative(estimate.getWorkRows(), factorRows);
+				stringMetrics.putAll(estimate.getStringMetrics());
+				doubleMetrics.putAll(estimate.getDoubleMetrics());
+			} else {
+				TuplePlanEstimate estimate = estimateTupleExprPlan(expression, boundBefore);
+				if (estimate == null || !Double.isFinite(estimate.outputRows) || estimate.outputRows < 0.0d) {
+					return Optional.empty();
+				}
+				factorRows = normalizeRows(estimate.outputRows);
+				stepWorkRows = factorRows;
+				stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "sketch-fixed-order");
+			}
+			mutableBound.addAll(expression.getBindingNames());
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, factorRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, stepWorkRows);
+			steps.add(new JoinOrderPlanner.PlanStep(boundBefore, factorRows, factorRows, stepWorkRows,
+					stringMetrics, doubleMetrics));
+			totalWorkRows += stepWorkRows;
+			prefixRows = factorRows;
+			String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (estimateSource == null && source != null) {
+				estimateSource = source;
+			}
 		}
-		return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), finalRows, plan.getEstimatedTotalWork(),
-				plan.getDiagnostics(), plan.getSummaryStringMetrics(), summaryDoubleMetrics, plan.getSteps());
+		Map<String, String> summaryStringMetrics = new LinkedHashMap<>();
+		summaryStringMetrics.put("plannedSketchStrategy", sketchStrategy.configValue());
+		summaryStringMetrics.put("plannedSketchEstimateSource",
+				estimateSource == null ? "sketch-fixed-order" : estimateSource);
+		Map<String, Double> summaryDoubleMetrics = new LinkedHashMap<>();
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, prefixRows);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWorkRows);
+		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(expressions, prefixRows, totalWorkRows,
+				List.of("input: algorithm=" + algorithm + " initiallyBoundVars=" + bound),
+				summaryStringMetrics, summaryDoubleMetrics, steps));
 	}
 
-	private static double capNonExactZeroConfidence(Double confidence) {
-		if (confidence == null || !Double.isFinite(confidence)) {
-			return 0.25d;
-		}
-		return Math.min(confidence, 0.25d);
-	}
-
-	private JoinOrderPlanner.JoinOrderPlan prependJoinPlannerInputDiagnostics(JoinOrderPlanner.JoinOrderPlan plan,
-			List<String> inputDiagnostics) {
-		if (inputDiagnostics.isEmpty()) {
-			return plan;
-		}
-		List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + plan.getDiagnostics().size());
-		diagnostics.addAll(inputDiagnostics);
-		diagnostics.addAll(plan.getDiagnostics());
-		return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(),
-				plan.getEstimatedTotalWork(), diagnostics, plan.getSummaryStringMetrics(),
-				plan.getSummaryDoubleMetrics(), plan.getSteps());
+	private static double finiteNonNegative(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 
 	SketchPlannerPath lastJoinOrderPlannerPath() {
@@ -8398,7 +8376,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double rows = 0.0d;
 		for (BindingSet ignored : bindingSets) {
 			rows++;
-			if (rows > SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
+			if (rows > SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
 				return false;
 			}
 		}
@@ -8585,7 +8563,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		List<BindingSet> filteredRows = new ArrayList<>();
 		for (BindingSet bindingSet : bindingSets) {
 			rows++;
-			if (rows > SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
+			if (rows > SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
 				return null;
 			}
 			Boolean result = evaluateFiniteFilter(condition, bindingSet);
@@ -10983,7 +10961,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (bindingSets == null) {
 			return true;
 		}
-		long rowBudget = Math.max((long) SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS,
+		long rowBudget = Math.max((long) SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS,
 				zeroIntersectionRowBudget);
 		long rows = 0L;
 		for (BindingSet ignored : bindingSets) {
@@ -11129,17 +11107,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
 			return normalizeRows(omniConnected.calibratedRows());
 		}
-		JoinOrderPlanner.Algorithm algorithm = tupleExprs
-				.size() <= SketchJoinOrderPlanner.MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS
-						? JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
-						: JoinOrderPlanner.Algorithm.GREEDY;
-		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(this, JoinOrderWorkAdjuster.NO_OP,
-				tupleExprs, bound)
-						.plan(algorithm);
-		recordRobustCardinalityPath(outcome.path());
-		return outcome.plan()
-				.map(JoinOrderPlanner.JoinOrderPlan::getEstimatedFinalRows)
-				.orElse(-1.0d);
+		TuplePlanEstimate orderedEstimate = orderedTupleExprCardinality(tupleExprs);
+		if (orderedEstimate != null && Double.isFinite(orderedEstimate.outputRows)
+				&& orderedEstimate.outputRows >= 0.0d) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(orderedEstimate.outputRows);
+		}
+		recordRobustCardinalityPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
+		return -1.0d;
 	}
 
 	@Override

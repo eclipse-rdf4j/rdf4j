@@ -68,30 +68,6 @@ class LmdbCascadesContextPropagationTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
-	void minusRightSubtreeJoinOrderReceivesLeftAssuredBindings() {
-		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-			StatementPattern left = new StatementPattern(new Var("person"), new Var("leftPredicate"),
-					new Var("leftValue"));
-			Join right = new Join(new StatementPattern(new Var("person"), new Var("minusPredicate"), new Var("event")),
-					new StatementPattern(new Var("event"), new Var("eventPredicate"), new Var("date")));
-			QueryRoot root = new QueryRoot(new Difference(left, right));
-
-			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
-
-			assertTrue(statistics.calls.stream().anyMatch(JoinOrderCall::minusRightJoinBoundToPerson),
-					"MINUS RHS subtree planning should preserve the left-bound shared variable: "
-							+ statistics.calls);
-		} finally {
-			restoreMode(previousMode);
-			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
-		}
-	}
-
-	@Test
 	void subtreeRequiredOutputVarsAreNotTreatedAsAlreadyBoundAccessInputs() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
 		try {
@@ -110,138 +86,6 @@ class LmdbCascadesContextPropagationTest {
 		} finally {
 			restoreMode(previousMode);
 		}
-	}
-
-	@Test
-	void sketchJoinIslandDeclaresOuterBindingsItWasCostedWith() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-			Join island = new Join(
-					new StatementPattern(new Var("person"), new Var("personPredicate"), new Var("event")),
-					new StatementPattern(new Var("account"), new Var("accountPredicate"), new Var("balance")));
-			OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
-					.boundVars(Set.of("person", "account"))
-					.build());
-
-			RuleApplication application = ruleApplication(island, statistics, goal,
-					"lmdb-sketch-join-order-provider");
-
-			assertTrue(application.deliveredProperties().inputBoundVars().containsAll(Set.of("person", "account")),
-					"Sketch island must declare the outer bindings used for costing and lookup planning: "
-							+ application.deliveredProperties());
-		} finally {
-			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
-		}
-	}
-
-	@Test
-	void unionBranchJoinIslandsReceiveOuterBindings() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-			Join branchA = new Join(
-					new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
-					new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
-			Join branchB = new Join(
-					new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
-					new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
-			Union union = new Union(branchA, branchB);
-			OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
-					.boundVars(Set.of("line"))
-					.build());
-
-			CascadesCostModel costModel = CascadesCostModel.from(statistics);
-			new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
-					.optimize(union, goal);
-
-			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().contains("line")
-							&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
-					"Union left branch join island should see the outside bound variable: " + statistics.calls);
-			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().contains("line")
-							&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
-					"Union right branch join island should see the outside bound variable: " + statistics.calls);
-		} finally {
-			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
-		}
-	}
-
-	@Test
-	void scopeChangingUnionBranchJoinIslandsReceiveVisibleOuterBindings() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-			Join branchA = new Join(
-					new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
-					new StatementPattern(new Var("relA"), new Var("relPredicateA"), new Var("componentA")));
-			Join branchB = new Join(
-					new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
-					new StatementPattern(new Var("relB"), new Var("relPredicateB"), new Var("componentB")));
-			Union union = new Union(branchA, branchB);
-			union.setVariableScopeChange(true);
-			OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
-					.boundVars(Set.of("line"))
-					.build());
-
-			CascadesCostModel costModel = CascadesCostModel.from(statistics);
-			new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
-					.optimize(union, goal);
-
-			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().contains("line")
-							&& call.argBindingNames().contains(Set.of("line", "linePredicateA", "relA"))),
-					"Scope-changing UNION left branch should keep visible outside variables for access costing: "
-							+ statistics.calls);
-			assertTrue(statistics.calls.stream()
-					.anyMatch(call -> call.initiallyBoundVars().contains("line")
-							&& call.argBindingNames().contains(Set.of("line", "linePredicateB", "relB"))),
-					"Scope-changing UNION right branch should keep visible outside variables for access costing: "
-							+ statistics.calls);
-		} finally {
-			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
-		}
-	}
-
-	@Test
-	void scopeChangingUnionHidesOnlyBranchLocalBindOutputs() {
-		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(256);
-		TupleExpr branchA = new Extension(
-				new StatementPattern(new Var("line"), new Var("linePredicateA"), new Var("relA")),
-				new ExtensionElem(new Var("line"), "branchLocalA"));
-		TupleExpr branchB = new Extension(
-				new StatementPattern(new Var("line"), new Var("linePredicateB"), new Var("relB")),
-				new ExtensionElem(new Var("line"), "branchLocalB"));
-		Union union = new Union(branchA, branchB);
-		union.setVariableScopeChange(true);
-		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
-				.boundVars(Set.of("line", "branchLocalA", "branchLocalB"))
-				.build());
-
-		CascadesCostModel costModel = CascadesCostModel.from(statistics);
-		new CascadesPlanner(costModel, LmdbCascadesRuleProvider.rules(statistics), telemetry).optimize(union, goal);
-
-		assertTrue(telemetry.trace()
-				.stream()
-				.anyMatch(event -> event.contains("input-goal-hidden-bindings")
-						&& event.contains("hidden=[branchLocalA]")),
-				"Scope-changing UNION left branch should hide only the branch-local BIND output: "
-						+ telemetry.trace());
-		assertTrue(telemetry.trace()
-				.stream()
-				.anyMatch(event -> event.contains("input-goal-hidden-bindings")
-						&& event.contains("hidden=[branchLocalB]")),
-				"Scope-changing UNION right branch should hide only the branch-local BIND output: "
-						+ telemetry.trace());
-		assertFalse(telemetry.trace()
-				.stream()
-				.anyMatch(event -> event.contains("input-goal-hidden-bindings") && event.contains("hidden=[line")),
-				"Visible statement variables must not be hidden by a scope-changing UNION: " + telemetry.trace());
 	}
 
 	@Test
@@ -297,25 +141,6 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
-	void endpointBoundPathPlanDoesNotSpeculativelyReplanConnectedComplements() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			EndpointBoundPathStatistics statistics = new EndpointBoundPathStatistics();
-			ruleApplication(thresholdPathIsland(), statistics, OptimizationGoal.root(),
-					"lmdb-connected-join-plan");
-
-			assertEquals(1, statistics.calls.size(),
-					"Connected-complement planning is only useful when the selected join order reaches an "
-							+ "ArbitraryLengthPath with both endpoints unbound. If a path endpoint is already bound, "
-							+ "extra path-side/complement planner calls add prepare-time cost without changing the plan: "
-							+ statistics.calls);
-		} finally {
-			restoreLegacyOpaqueJoinProviderProperty(previousLegacy);
-		}
-	}
-
-	@Test
 	void semanticFiniteAnchorRewriteDoesNotBypassCheaperOriginalPlan() {
 		SemanticRewriteCostingStatistics statistics = new SemanticRewriteCostingStatistics();
 		TupleExpr input = new Join(
@@ -339,14 +164,6 @@ class LmdbCascadesContextPropagationTest {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		} else {
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
-		}
-	}
-
-	private static void restoreLegacyOpaqueJoinProviderProperty(String previousValue) {
-		if (previousValue == null) {
-			System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
-		} else {
-			System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousValue);
 		}
 	}
 

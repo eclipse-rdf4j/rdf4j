@@ -58,11 +58,11 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	private static Path dataDir;
 
 	private Path themeDir;
-	private BenchmarkJoinEstimatorSupport.ScopedSystemProperties legacyOptimizerMode;
+	private BenchmarkJoinEstimatorSupport.ScopedSystemProperties standardOptimizerMode;
 
 	@BeforeAll
 	void prepareEngineeringThemeStore() throws Exception {
-		legacyOptimizerMode = BenchmarkJoinEstimatorSupport.enableLegacySketchOptimizer();
+		standardOptimizerMode = BenchmarkJoinEstimatorSupport.forceStandardOptimizerMode();
 		themeDir = prepareThemeStore(dataDir, Theme.ENGINEERING);
 	}
 
@@ -73,8 +73,8 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 			}
 		} finally {
-			if (legacyOptimizerMode != null) {
-				legacyOptimizerMode.close();
+			if (standardOptimizerMode != null) {
+				standardOptimizerMode.close();
 			}
 		}
 	}

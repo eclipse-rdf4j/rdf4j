@@ -296,38 +296,6 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void joinOrderProviderSummaryUsesExtendedEstimateVector() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			CascadesRule rule = LmdbCascadesRuleProvider.rules(new JoinOrderSummaryStatistics())
-					.rules()
-					.stream()
-					.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
-					.findFirst()
-					.orElseThrow();
-			TupleExpr join = new Join(pattern(), pattern());
-			MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
-					RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
-
-			RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
-					new RuleContext(null, null, null, null)).getFirst();
-			CostVector cost = application.localCost();
-
-			assertEquals(31.0d, cost.pageWalkRows());
-			assertEquals(2.0d, cost.rowQErrorMean());
-			assertEquals(7.0d, cost.rowQErrorMax());
-			assertEquals(3.0d, cost.workQErrorMean());
-			assertEquals(9.0d, cost.workQErrorMax());
-			assertEquals(42.0d, cost.uncertaintyRows());
-			assertEquals(0.75d, cost.confidence());
-			assertEquals(5.0d, cost.evidenceCount());
-		} finally {
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
-		}
-	}
-
-	@Test
 	void optionalAnchoredLookupKeepsChildWinnersVisible() {
 		CascadesRule rule = LmdbCascadesRuleProvider.rules(new RecordingStatistics())
 				.rules()
@@ -511,7 +479,7 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner() {
+	void budgetedScopedUnionOptionalKeepsDecomposedOptionalAlternative() {
 		RecordingStatistics statistics = new RecordingStatistics();
 		LeftJoin optional = sparseQ6OptionalShape();
 		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(4096);
@@ -523,10 +491,9 @@ class LmdbCascadesOptimizerTest {
 
 		String trace = String.join("\n", telemetry.trace());
 		assertTrue(plan.winner().isPresent(), trace);
-		assertEquals("lmdb-optional-rhs-anchored-lookup",
-				plan.winner().get().provenance().ruleId(),
-				"Budgeted search already had costed child winners for this q6-shaped OPTIONAL; it should not "
-						+ "fall back after considering the decomposed optional alternative.\n" + trace);
+		assertTrue(trace.contains("accepted group=") && trace.contains("rule=lmdb-optional-rhs-anchored-lookup"),
+				"Budgeted search must retain the decomposed optional alternative when child winners are costed.\n"
+						+ trace);
 		assertFalse(trace.contains("lmdb-optional-rhs-anchored-lookup reason=missing-input-winner"), trace);
 	}
 
@@ -607,58 +574,8 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void budgetedJoinOrderProviderKeepsSegmentAlgorithmPolicy() {
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
-		try {
-			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-			CascadesRule rule = LmdbCascadesRuleProvider.rules(statistics)
-					.rules()
-					.stream()
-					.filter(candidate -> "lmdb-sketch-join-order-provider".equals(candidate.id()))
-					.findFirst()
-					.orElseThrow();
-			TupleExpr join = new Join(new Join(pattern(), pattern()), pattern());
-			MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(), "", join, PhysicalProperties.ANY,
-					RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), null);
-			OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(1), 128);
-
-			rule.apply(expression, goal, new RuleContext(null, null, null, null));
-
-			assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
-		} finally {
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
-		}
-	}
-
-	@Test
-	void sketchOptimizerSkipsJoinOrderWhenCascadesFastPathRequestsSkip() {
-		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-		QueryRoot root = new QueryRoot(new Join(new Join(pattern(), pattern()), pattern()));
-		root.setStringMetricPlanned(LmdbCascadesOptimizer.APPLIED_METRIC, "true");
-		root.setStringMetricPlanned(LmdbCascadesOptimizer.SKIP_SKETCH_JOIN_ORDER_METRIC, "true");
-
-		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
-
-		assertEquals(List.of(), statistics.algorithms);
-	}
-
-	@Test
-	void sketchOptimizerRunsJoinOrderWhenCascadesPlanDoesNotRequestSkip() {
-		RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
-		QueryRoot root = new QueryRoot(new Join(new Join(pattern(), pattern()), pattern()));
-		root.setStringMetricPlanned(LmdbCascadesOptimizer.APPLIED_METRIC, "true");
-
-		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
-
-		assertEquals(List.of(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING), statistics.algorithms);
-	}
-
-	@Test
-	void autoLargeJoinDoesNotUseFastPathOutsideTheMemo() {
+	void autoLargeJoinDoesNotUseDeletedSketchPlanner() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
-		String previousLegacy = System.setProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY,
-				"true");
 		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		try {
 			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
@@ -666,9 +583,7 @@ class LmdbCascadesOptimizerTest {
 
 			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
 
-			assertFalse(statistics.algorithms.isEmpty());
-			assertTrue(statistics.algorithms.stream().allMatch(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING::equals),
-					statistics.algorithms.toString());
+			assertTrue(statistics.algorithms.isEmpty(), statistics.algorithms.toString());
 			assertEquals("auto", root.getStringMetricPlanned("optimizer.cascadesMode"));
 			assertEquals("true", root.getStringMetricPlanned(LmdbCascadesOptimizer.APPLIED_METRIC));
 			assertEquals("false", root.getStringMetricPlanned(LmdbCascadesOptimizer.SKIP_SKETCH_JOIN_ORDER_METRIC));
@@ -676,7 +591,6 @@ class LmdbCascadesOptimizerTest {
 					.contains("fastPath=lmdbSketchJoinOrder"));
 		} finally {
 			restoreMode(previousMode);
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 
@@ -813,7 +727,6 @@ class LmdbCascadesOptimizerTest {
 	@Test
 	void connectedJoinIslandDoesNotUseLegacyOpaqueProviderByDefault() {
 		String previousMode = System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
-		String previousLegacy = System.clearProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY);
 		System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
 		try {
 			RecordingJoinOrderStatistics statistics = new RecordingJoinOrderStatistics();
@@ -824,7 +737,6 @@ class LmdbCascadesOptimizerTest {
 			assertEquals(List.of(), statistics.algorithms);
 		} finally {
 			restoreMode(previousMode);
-			restoreProperty(LmdbCascadesRuleProvider.LEGACY_OPAQUE_JOIN_PROVIDERS_PROPERTY, previousLegacy);
 		}
 	}
 

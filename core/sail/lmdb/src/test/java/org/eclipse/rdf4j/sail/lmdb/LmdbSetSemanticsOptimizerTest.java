@@ -251,7 +251,7 @@ class LmdbSetSemanticsOptimizerTest {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics()).getOptimizers()) {
-			if (optimizer instanceof LmdbSketchJoinOptimizer) {
+			if (optimizer instanceof LmdbCascadesOptimizer) {
 				break;
 			}
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());

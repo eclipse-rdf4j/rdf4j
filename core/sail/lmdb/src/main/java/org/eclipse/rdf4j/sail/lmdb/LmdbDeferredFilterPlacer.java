@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -60,13 +61,23 @@ final class LmdbDeferredFilterPlacer {
 		BUSHY
 	}
 
-	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
-	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
-	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
+	interface BranchOptimizer {
+		TupleExpr optimize(TupleExpr tupleExpr, Set<String> boundVars);
+	}
 
-	LmdbDeferredFilterPlacer(LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer,
-			LmdbUnionFilterDistributor.JoinFactory joinFactory,
-			LmdbUnionFilterDistributor.FilterWrapper filterWrapper) {
+	interface JoinFactory {
+		Join create(TupleExpr left, TupleExpr right);
+	}
+
+	interface FilterWrapper {
+		TupleExpr wrap(TupleExpr root, List<DeferredFilter> filters, String placement);
+	}
+
+	private final BranchOptimizer factorOptimizer;
+	private final JoinFactory joinFactory;
+	private final FilterWrapper filterWrapper;
+
+	LmdbDeferredFilterPlacer(BranchOptimizer factorOptimizer, JoinFactory joinFactory, FilterWrapper filterWrapper) {
 		this.factorOptimizer = factorOptimizer;
 		this.joinFactory = joinFactory;
 		this.filterWrapper = filterWrapper;

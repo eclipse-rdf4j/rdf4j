@@ -209,18 +209,15 @@ class LmdbOptimizerPipelineTest {
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
-		int sketchInputBaselineIndex = indexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
 		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
 		int handoffBaselineIndex = lastIndexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
-		assertTrue(sketchInputBaselineIndex >= 0);
 		assertTrue(filterSimplifierIndex >= 0);
 		assertTrue(handoffBaselineIndex >= 0);
 		assertTrue(cascadesIndex >= 0);
 		assertTrue(filterIndex < cascadesIndex);
-		assertTrue(sketchInputBaselineIndex < filterSimplifierIndex);
 		assertTrue(filterSimplifierIndex < handoffBaselineIndex);
 		assertTrue(handoffBaselineIndex < cascadesIndex);
 		assertTrue(indexOf(optimizers, CompareOptimizer.class) < cascadesIndex);
@@ -250,30 +247,7 @@ class LmdbOptimizerPipelineTest {
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
 		assertEquals(List.of(OrderLimitOptimizer.class, LmdbCascadesExplainFinalizer.class),
 				nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
-		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
-	}
-
-	@Test
-	void lmdbPipelineCanEnableLegacySketchOptimizerExplicitly() {
-		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
-		try {
-			TripleSource tripleSource = new EmptyTripleSource();
-			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-			List<QueryOptimizer> optimizers = optimizers(
-					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
-
-			int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
-			int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
-
-			assertTrue(cascadesIndex >= 0);
-			assertTrue(sketchIndex >= 0);
-			assertTrue(cascadesIndex < sketchIndex);
-			assertEquals(List.of(LmdbSketchJoinOptimizer.class, OrderLimitOptimizer.class),
-					nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
-		} finally {
-			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
-		}
 	}
 
 	@Test
@@ -370,7 +344,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPreSketchPipelineRetainsSmallLiteralFilterEvidence() {
+	void lmdbPreCascadesPipelineRetainsSmallLiteralFilterEvidence() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
@@ -379,7 +353,7 @@ class LmdbOptimizerPipelineTest {
 
 		assertEngineeringNameEvidence(tupleExpr, "initial parse");
 		for (QueryOptimizer optimizer : optimizers) {
-			if (optimizer instanceof LmdbSketchJoinOptimizer) {
+			if (optimizer instanceof LmdbCascadesOptimizer) {
 				break;
 			}
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
@@ -388,7 +362,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPreSketchFilterOptimizerDoesNotAskSketchStatsForBroadFilterTelemetry() {
+	void lmdbPreCascadesFilterOptimizerDoesNotAskSketchStatsForBroadFilterTelemetry() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
@@ -402,11 +376,11 @@ class LmdbOptimizerPipelineTest {
 				return;
 			}
 		}
-		fail("LMDB pipeline should include a pre-sketch FilterOptimizer");
+		fail("LMDB pipeline should include a pre-Cascades FilterOptimizer");
 	}
 
 	@Test
-	void lmdbSketchPipelineRetainsSmallLiteralFilterEvidenceAfterPlanning() {
+	void lmdbPipelineRetainsSmallLiteralFilterEvidenceAfterPlanning() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
@@ -417,11 +391,11 @@ class LmdbOptimizerPipelineTest {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		assertEngineeringNameEvidence(tupleExpr, "LMDB sketch planning");
+		assertEngineeringNameEvidence(tupleExpr, "LMDB planning");
 	}
 
 	@Test
-	void lmdbSketchPipelineDoesNotSplitPrefixFilterOntoBindingAssignmentOnlyRoot() {
+	void lmdbPipelineDoesNotSplitPrefixFilterOntoBindingAssignmentOnlyRoot() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		TupleExpr tupleExpr = parseTupleExpr("""
@@ -1151,60 +1125,6 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbSketchEnrichmentKeepsNonExactFiniteAnchorZeroCostFloor(@TempDir File dataDir) throws Exception {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		IRI codePredicate = vf.createIRI("urn:omni:pipeline:finite-zero:code");
-		IRI bridgePredicate = vf.createIRI("urn:omni:pipeline:finite-zero:bridge");
-		SimpleSketchStatementSource sketchSource = new SimpleSketchStatementSource();
-		for (int i = 0; i < 8; i++) {
-			Resource entity = vf.createIRI("urn:omni:pipeline:finite-zero:entity:" + i);
-			sketchSource.add(vf.createStatement(entity, codePredicate,
-					vf.createLiteral("present-code-" + i)));
-			sketchSource.add(vf.createStatement(entity, bridgePredicate,
-					vf.createIRI("urn:omni:pipeline:finite-zero:tail:" + i)));
-		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(sketchSource,
-				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
-						.withThrottleEveryN(1)
-						.withThrottleMillis(0));
-		estimator.rebuild();
-		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
-		try {
-			BindingSetAssignment codeValues = singleValueAssignment("code", vf.createLiteral("missing-code"));
-			StatementPattern codePattern = new StatementPattern(Var.of("entity"),
-					Var.of("codePredicate", codePredicate), Var.of("code"));
-			StatementPattern bridgePattern = new StatementPattern(Var.of("entity"),
-					Var.of("bridgePredicate", bridgePredicate), Var.of("tail"));
-			JoinOrderPlanner planner = (JoinOrderPlanner) new LmdbEvaluationStatistics(valueStore, null, estimator,
-					null, null);
-			JoinOrderPlanner.JoinOrderPlan plan = planner
-					.estimateJoinOrder(List.of(codeValues, codePattern, bridgePattern), Set.of(),
-							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
-					.orElseThrow();
-
-			assertEquals(0.0d, plan.getEstimatedFinalRows(), 0.0d,
-					"Cardinality display should keep the non-exact zero");
-			assertEquals(0.0d, plan.getSummaryDoubleMetrics()
-					.get(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
-					"Summary cardinality rows should remain the estimated zero");
-			assertEquals(1.0d, plan.getSummaryDoubleMetrics()
-					.get(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS), 0.0d,
-					"LMDB access enrichment must preserve the non-exact zero planning floor");
-			assertTrue(plan.getSummaryDoubleMetrics()
-					.get(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE) <= 0.25d,
-					"Non-exact zero cost floors should remain low confidence: " + plan.getSummaryDoubleMetrics());
-			assertTrue(plan.getSteps()
-					.stream()
-					.filter(step -> step.getBoundVarsBefore().contains("entity"))
-					.anyMatch(step -> step.getStepWorkRows() > 0.0d),
-					"A non-exact zero prefix must not make connected downstream work free. plan=" + plan);
-		} finally {
-			valueStore.close();
-		}
-	}
-
-	@Test
 	void lmdbCascadesCostsFiniteCodeTypeRewriteForDistinctAggregateUnion() {
 		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
 		TripleSource tripleSource = new EmptyTripleSource();
@@ -1248,7 +1168,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbSketchPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
+	void lmdbPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		TupleExpr tupleExpr = parseTupleExpr("""
@@ -1270,32 +1190,27 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbSketchPipelineRemovesProjectionDeadOptionalUnderDistinct() {
-		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
-		try {
-			TripleSource tripleSource = new EmptyTripleSource();
-			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-			TupleExpr tupleExpr = parseTupleExpr("""
-					PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-					SELECT DISTINCT ?p WHERE {
-					  ?a a foaf:Person ;
-					     ?p ?o .
-					  OPTIONAL {
-					    ?o a ?type .
-					  }
-					}
-					""");
+	void lmdbPipelineRemovesProjectionDeadOptionalUnderDistinct() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+				SELECT DISTINCT ?p WHERE {
+				  ?a a foaf:Person ;
+				     ?p ?o .
+				  OPTIONAL {
+				    ?o a ?type .
+				  }
+				}
+				""");
 
-			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
-					new EvaluationStatistics())
-							.getOptimizers()) {
-				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
-			}
-
-			assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
-		} finally {
-			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
+
+		assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
 	}
 
 	@Test

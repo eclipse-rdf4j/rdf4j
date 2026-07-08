@@ -53,7 +53,6 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
 	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
-	private static final String LEGACY_SKETCH_OPTIMIZER_PROPERTY = "rdf4j.optimizer.lmdb.legacySketchOptimizer";
 	private static final String CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	private static final Method GET_BACKING_STORE = reflectMethod(LmdbStore.class, "getBackingStore");
 
@@ -168,17 +167,15 @@ public final class BenchmarkJoinEstimatorSupport {
 				Duration.ofNanos(QUERY_REGRESSION_PASS_TIMEOUT_NANOS), assertion::assertPasses);
 	}
 
-	public static ScopedSystemProperties enableLegacySketchOptimizer() {
+	public static ScopedSystemProperties forceStandardOptimizerMode() {
 		ScopedSystemProperties scope = new ScopedSystemProperties(
-				LEGACY_SKETCH_OPTIMIZER_PROPERTY,
 				CASCADES_MODE_PROPERTY);
-		System.setProperty(LEGACY_SKETCH_OPTIMIZER_PROPERTY, "true");
 		System.setProperty(CASCADES_MODE_PROPERTY, "off");
 		return scope;
 	}
 
-	public static void withLegacySketchOptimizer(QueryRegressionAssertion assertion) throws Exception {
-		try (ScopedSystemProperties ignored = enableLegacySketchOptimizer()) {
+	public static void withStandardOptimizerMode(QueryRegressionAssertion assertion) throws Exception {
+		try (ScopedSystemProperties ignored = forceStandardOptimizerMode()) {
 			assertion.assertPasses();
 		}
 	}

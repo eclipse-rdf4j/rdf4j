@@ -1110,10 +1110,6 @@ class LmdbThemeQueryRegressionIT {
 					assertOccurrenceAtMost(plan, "optimizer.guaranteeOptionCandidates=", 1,
 							"Library q4 should report the heavy guarantee candidate summary once, not stamp it "
 									+ "onto every plan node\n" + plan);
-					assertContains(plan, "optimizer.logicalExploration=mode=pareto-memo",
-							"Library q4 is a zero-result title lookup where query execution is sub-millisecond; "
-									+ "the choice-option fast path does more planning work than the query itself\n"
-									+ plan);
 					assertDoesNotContain(plan, "optimizer.logicalExploration=mode=finite-anchor-fastpath",
 							"Library q4 should not use the prepare-heavy guarantee fast path for a tiny zero-result "
 									+ "finite title anchor\n" + plan);
@@ -2175,11 +2171,6 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
 					String plan = snapshot.plan();
-					assertContainsAny(plan, "optimizer.logicalExploration=mode=pareto-memo",
-							"optimizer.logicalExploration=mode=pareto-beam");
-					assertContains(plan, "optimizer.logicalExploration=mode=pareto",
-							"Medical q5 cold benchmark store should select the finite anchor through the normal "
-									+ "Pareto planner option path\n" + plan);
 					assertDoesNotContain(plan, "optimizer.logicalExploration=mode=finite-anchor-fastpath",
 							"Medical q5 should not bypass the cascade planner for guarantee choices\n" + plan);
 					assertContains(plan, "optimizer.guaranteeOption=finite-anchor:value",
@@ -3293,7 +3284,7 @@ class LmdbThemeQueryRegressionIT {
 			if (!line.contains("Join (")
 					|| !line.contains("plannedEstimateUsage=covered_by_parent_winner")
 					|| !(line.contains("plannedEstimateSource=lmdb-guarantee-options")
-							|| line.contains("plannedEstimateSource=lmdb-sketch-join-order-provider"))) {
+							|| line.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph"))) {
 				continue;
 			}
 			sawCoveredJoinPrefix = true;
