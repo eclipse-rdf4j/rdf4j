@@ -16,8 +16,8 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 22:26Z) Ran the required root offline clean install; the reactor completed with `BUILD SUCCESS` in 34.293 seconds.
 - [x] (2026-07-09 22:28Z) Committed the verified adaptive aligned-write and batch-value-resolution increment as `9516353b92 GH-0000 Speed up adaptive LMDB loading`.
 - [x] (2026-07-09 22:33Z) Captured and archived two fresh paired macOS JMH baselines plus a generated comparison under `profiles/lmdb-load-10x/baseline-macos`.
-- [ ] Capture macOS async-profiler wall, CPU, and allocation profiles for `NONE` and `READ_COMMITTED` with `automaticEvaluationStrategy=false`.
-- [ ] Capture Linux Java 26 Docker JFR CPU-time profiles for both isolation modes with the exact same benchmark shape.
+- [x] (2026-07-09 22:45Z) Captured macOS async-profiler wall, CPU, and allocation profiles for `NONE` and `READ_COMMITTED` with `automaticEvaluationStrategy=false`.
+- [x] (2026-07-09 22:57Z) Captured end-anchored Linux Java 26 Docker JFR CPU-time profiles for both isolation modes and summarized their hot methods and lost samples.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -42,6 +42,15 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: Pooled allocation is approximately 358.45 MB/op for `NONE` and 472.91 MB/op for `READ_COMMITTED`; GC consumed only 3-71 ms per five-iteration fork.
   Evidence: `profiles/lmdb-load-10x/baseline-macos/run-1.json` and `run-2.json`.
 
+- Observation: Native LMDB calls dominate CPU on both macOS and Linux. The three Linux wrappers `mdb_get`, `mdb_put`, and `mdb_cursor_put` account for 52.41% of `NONE` and 50.48% of `READ_COMMITTED` CPU-time samples.
+  Evidence: `profiles/lmdb-load-10x/docker-jfr/none-exact.jfr`, `read-committed-exact.jfr`, and `profiles/lmdb-load-10x/profiling-summary.md`.
+
+- Observation: READ_COMMITTED has a distinct scalar value-resolution and allocation penalty. Its profile includes `ValueStore.getId`, and allocation has much larger `DirectByteBuffer`, `MDBVal`, `LinkedHashMap.Entry`, and `GenericStatement` shares than `NONE`.
+  Evidence: the async-profiler CPU and allocation flat reports under `profiles/lmdb-load-10x/async-profiler`.
+
+- Observation: The Docker benchmark selector is a regex. Passing an unanchored method name also selects `loadDatagovFileSingleTransaction6Indexes` and can overwrite a shared JFR output.
+  Evidence: the first NONE Docker run began the six-index fork after completing the intended fork. It was interrupted and its `none.jfr` artifact is marked invalid; exact evidence uses `none-exact.jfr`.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -62,6 +71,14 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Commit each benchmark-confirmed increment separately with the `GH-0000` prefix because no issue number is available and the current branch has no `GH-XXXX` prefix.
   Rationale: Small commits preserve bisectability and comply with the user's explicit request for commits at every progress point.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: End-anchor every Docker and macOS benchmark method regex with `$`.
+  Rationale: The benchmark class has a six-index sibling whose name starts with the requested method name. Unanchored selectors invalidate timing and profile artifacts.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: Test a transaction-owned value-ID dictionary before micro-optimizing encoding loops.
+  Rationale: Cross-platform profiles put more than half of sampled CPU in LMDB get/put wrappers. The existing 128-entry value cache and 32-entry namespace-ID cache cannot retain a bulk transaction's working set, so repeated values can cross the native boundary again after eviction. Reducing native operation count has greater Amdahl upside than optimizing sub-2% Java leaves.
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -145,6 +162,8 @@ Initial failing and passing TDD evidence for adaptive aligned writes is stored i
 
 The first performance checkpoint is commit `9516353b92`. Immediately before that commit, the two focused tests for batched `NONE` approvals and single-transaction batch value storage passed with zero failures.
 
+The raw macOS async-profiler artifacts, exact Linux JFR recordings, and a concise interpretation are stored under `profiles/lmdb-load-10x/async-profiler`, `profiles/lmdb-load-10x/docker-jfr`, and `profiles/lmdb-load-10x/profiling-summary.md`. The unanchored `profiles/lmdb-load-10x/docker-jfr/none.jfr` is invalid and is intentionally excluded from evidence commits.
+
 Fresh pooled baseline summary:
 
     NONE            780.972 ms/op   358449634.800 B/op
@@ -166,3 +185,5 @@ Revision note (2026-07-09 22:27Z): Created the initial self-contained plan after
 Revision note (2026-07-09 22:28Z): Recorded the first committed checkpoint and its focused green verification so future benchmark and profile artifacts have an exact code revision.
 
 Revision note (2026-07-09 22:33Z): Replaced the earlier single-run thresholds with stricter pooled thresholds from two fresh same-code baselines and recorded durable artifact paths and observed host drift.
+
+Revision note (2026-07-09 22:58Z): Recorded the complete macOS and Linux profile matrix, the selector-anchor correction, cross-platform hotspot agreement, lost-sample confidence limits, and the first operation-count optimization hypothesis.
