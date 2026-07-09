@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -118,5 +119,54 @@ class OmniSketchSurfaceEstimateTest {
 		assertEquals(0.25d, composed.samplingProbability(), 0.0d);
 		assertEquals("SAMPLE_LOSS", composed.fallbackReason());
 		assertEquals(4.0d, composed.minimumDetectableRows(), 0.0d);
+	}
+
+	@Test
+	void bindingEvidenceClampsDistinctRowsToZeroRows() {
+		OmniSketchBindingEvidence evidence = new OmniSketchBindingEvidence("x", 0.0d, 5.0d, 3, null,
+				OmniWitnessSet.SourceKind.BASE, "STATEMENT", "subject");
+
+		assertEquals(0.0d, evidence.distinctRows(), 0.0d,
+				"zero rows cannot have a distinct value; the old max(1, rows) floor leaked a phantom row");
+	}
+
+	@Test
+	void rebaseRecomputesBoundsWorkAndExactZero() {
+		OmniSketchSurfaceEstimate estimate = new OmniSketchSurfaceEstimate(10.0d, 5.0d, 20.0d, 30.0d,
+				0.8d, 0.25d, false, "none", 0.0d, "omni-join-estimator", "bridge-chain", "lmdbValueId",
+				Map.of(), Map.of(), Map.of(), List.of());
+
+		OmniSketchSurfaceEstimate rebased = estimate.rebase(20.0d, 0.5d, "baseline-rescue", "BASELINE_RESCUE");
+
+		assertEquals(20.0d, rebased.selectedRows(), 0.0d);
+		assertEquals(10.0d, rebased.lowerBoundRows(), 0.0d);
+		assertEquals(40.0d, rebased.upperBoundRows(), 0.0d);
+		assertEquals(60.0d, rebased.workRows(), 0.0d);
+		assertEquals(0.5d, rebased.confidence(), 0.0d);
+		assertEquals("baseline-rescue", rebased.source());
+		assertEquals("BASELINE_RESCUE", rebased.fallbackReason());
+		assertEquals(20.0d, rebased.minimumDetectableRows(), 0.0d);
+		assertFalse(rebased.exactZero());
+		assertEquals(0.25d, rebased.samplingProbability(), 0.0d);
+	}
+
+	@Test
+	void rebaseFromZeroRowsRebuildsBoundsAndWork() {
+		OmniSketchSurfaceEstimate zero = new OmniSketchSurfaceEstimate(0.0d, 0.0d, 0.0d, 0.0d,
+				0.9d, 1.0d, true, "none", 0.0d, "omni-join-estimator", "bridge-chain", "lmdbValueId",
+				Map.of(), Map.of(), Map.of(), List.of());
+
+		OmniSketchSurfaceEstimate rescued = zero.rebase(8.0d, 0.25d, "baseline-rescue", "BASELINE_RESCUE");
+
+		assertEquals(8.0d, rescued.selectedRows(), 0.0d);
+		assertEquals(0.0d, rescued.lowerBoundRows(), 0.0d);
+		assertEquals(32.0d, rescued.upperBoundRows(), 0.0d,
+				"a zero-row estimate has no bound ratios; rebase widens to rows times the default q-error");
+		assertEquals(8.0d, rescued.workRows(), 0.0d);
+		assertFalse(rescued.exactZero(), "a rescued non-zero estimate is no longer exact zero");
+		assertEquals(8.0d, rescued.minimumDetectableRows(), 0.0d);
+
+		OmniSketchSurfaceEstimate stillZero = zero.rebase(0.0d, 0.9d, "omni-join-estimator", "none");
+		assertTrue(stillZero.exactZero(), "rows zero rebased onto exact-zero evidence stays exact");
 	}
 }

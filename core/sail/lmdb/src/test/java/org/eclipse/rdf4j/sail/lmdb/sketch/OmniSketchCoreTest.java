@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.MemorySegment;
+import java.time.Duration;
 import java.util.List;
 
 import org.eclipse.rdf4j.sail.lmdb.sketch.omni.CompactOmniSketch;
@@ -125,6 +127,75 @@ class OmniSketchCoreTest {
 
 		assertEquals(1_000L, result.getTotalUpdates());
 		assertBetween(150.0d, 250.0d, result.getEstimate(3L));
+	}
+
+	@Test
+	void duplicateUpdatesDoNotInflateDistinctEstimate() {
+		UpdateOmniSketch sketch = newSketch(128, 4, 64);
+		for (int i = 0; i < 500; i++) {
+			sketch.update(i % 5, i);
+			sketch.update(i % 5, i);
+		}
+
+		assertBetween(70.0d, 130.0d, sketch.getEstimate(3L));
+	}
+
+	@Test
+	void kmvDistinctEstimateSurvivesDuplicatesAndSerialization() {
+		UpdateOmniSketch sketch = newSketch(128, 4, 64);
+		for (int i = 0; i < 10_000; i++) {
+			sketch.update(7L, i);
+			sketch.update(7L, i);
+		}
+
+		double live = sketch.getEstimate(7L);
+		assertBetween(7_000.0d, 13_000.0d, live);
+
+		byte[] bytes = sketch.compact().toByteArray();
+		assertEquals(live, OmniSketch.heapify(bytes).getEstimate(7L), 0.0d);
+		assertEquals(live, OmniSketch.wrap(MemorySegment.ofArray(bytes)).getEstimate(7L), 0.0d);
+	}
+
+	@Test
+	void duplicateInPredicateValuesDoNotInflateEstimate() {
+		UpdateOmniSketch sketch = newSketch(128, 4, 64);
+		for (int i = 0; i < 1_000; i++) {
+			sketch.update(i % 10, i);
+		}
+
+		double deduplicated = sketch.estimate(OmniSketchPredicate.anyOfLongs(1L, 2L)).getEstimate();
+
+		assertEquals(deduplicated,
+				sketch.estimate(OmniSketchPredicate.anyOfLongs(1L, 1L, 2L, 2L)).getEstimate(), 0.0d);
+		assertEquals(deduplicated,
+				sketch.estimate(OmniSketchPredicate.in(List.of(1L, 1L, 2L, 2L))).getEstimate(), 0.0d);
+	}
+
+	@Test
+	void duplicateStringAndHashPredicateValuesDoNotInflateEstimate() {
+		UpdateOmniSketch sketch = newSketch(128, 4, 64);
+		for (int i = 0; i < 1_000; i++) {
+			sketch.update(i % 2 == 0 ? "even" : "odd", i);
+		}
+
+		assertEquals(sketch.estimate(OmniSketchPredicate.anyOfStrings("even")).getEstimate(),
+				sketch.estimate(OmniSketchPredicate.anyOfStrings("even", "even")).getEstimate(), 0.0d);
+	}
+
+	@Test
+	void inPredicateFactoriesDeduplicateValues() {
+		assertEquals(2, OmniSketchPredicate.in(List.of("a", "a", "b")).size());
+		assertEquals(2, OmniSketchPredicate.anyOfLongs(1L, 1L, 2L).size());
+		assertEquals(1, OmniSketchPredicate.anyOfStrings("even", "even").size());
+		assertEquals(1, OmniSketchPredicate.anyOfHashes(42L, 42L).size());
+	}
+
+	@Test
+	void longRangeEndingAtMaxValueTerminates() {
+		OmniSketchPredicate predicate = assertTimeoutPreemptively(Duration.ofSeconds(2),
+				() -> OmniSketchPredicate.longRange(Long.MAX_VALUE - 5L, Long.MAX_VALUE));
+
+		assertEquals(6, predicate.size());
 	}
 
 	private static UpdateOmniSketch newSketch(int width, int rows, int nominalEntries) {

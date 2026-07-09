@@ -47,13 +47,13 @@ public final class OmniSketchProbeResult {
 	}
 
 	static OmniSketchProbeResult fromSummary(OmniSketchSummary summary) {
-		if (summary == null || summary.count() <= 0L) {
+		if (summary == null || summary.distinctEstimate() <= 0.0d) {
 			return new OmniSketchProbeResult(0.0d, 0L, 1.0d, 0, new long[0], 0L, 0L, 0.0d, false);
 		}
-		double population = Math.max(summary.count(), summary.maxCount());
-		double probability = population <= 0.0d ? 1.0d : Math.min(1.0d, summary.retained() / population);
-		double minimumDetectable = probability > 0.0d ? 1.0d / probability : summary.count();
-		return new OmniSketchProbeResult(summary.count(), summary.count(), probability, summary.retained(),
+		double estimate = summary.distinctEstimate();
+		double probability = summary.samplingProbability();
+		double minimumDetectable = probability > 0.0d ? 1.0d / probability : estimate;
+		return new OmniSketchProbeResult(estimate, summary.count(), probability, summary.retained(),
 				summary.hashes(), summary.minCount(), summary.maxCount(), minimumDetectable, false);
 	}
 

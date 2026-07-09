@@ -36,36 +36,43 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Internal query summary used to combine dimensions. */
-record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEntries, long minCount, long maxCount) {
+record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEntries, long minCount, long maxCount,
+		double samplingProbability) {
 	OmniSketchSummary(final long count, final long[] hashes, final int retained, final int nominalEntries,
-			final long minCount, final long maxCount) {
+			final long minCount, final long maxCount, final double samplingProbability) {
 		this.count = Math.max(0L, count);
 		this.hashes = hashes;
 		this.retained = Math.max(0, retained);
 		this.nominalEntries = Math.max(0, nominalEntries);
 		this.minCount = Math.max(0L, minCount);
 		this.maxCount = Math.max(0L, maxCount);
+		this.samplingProbability = Math.max(0.0d, Math.min(1.0d, samplingProbability));
 	}
 
 	OmniSketchEstimate asEstimate() {
-		final double samplingProbability = count <= 0 ? 1.0 : Math.min(1.0, retained / (double) count);
-		return OmniSketchEstimate.of(count, samplingProbability, retained, retained, minCount, maxCount, this);
+		final double estimate = distinctEstimate();
+		return OmniSketchEstimate.of(estimate, samplingProbability, retained, retained, minCount, maxCount, this);
+	}
+
+	double distinctEstimate() {
+		return count;
 	}
 
 	static OmniSketchSummary fromCells(final List<OmniSketchCell> cells, final int nominalEntries) {
 		if (cells.isEmpty()) {
-			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L, 1.0d);
 		}
 		return fromCells(cells.toArray(OmniSketchCell[]::new), cells.size(), nominalEntries);
 	}
 
 	static OmniSketchSummary fromCells(final OmniSketchCell[] cells, final int cellCount, final int nominalEntries) {
 		if (cells == null || cellCount <= 0) {
-			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L, 1.0d);
 		}
 		long minCount = Long.MAX_VALUE;
 		long maxCount = 0L;
-		OmniSketchCell maxCell = cells[0];
+		double minEstimate = Double.POSITIVE_INFINITY;
+		double probability = 1.0d;
 		final long[][] sampleLists = new long[cellCount][];
 		final int[] sampleLengths = new int[cellCount];
 		int samples = 0;
@@ -76,53 +83,58 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 			}
 			final long count = cell.getCount();
 			minCount = Math.min(minCount, count);
-			if (count >= maxCount) {
-				maxCount = count;
-				maxCell = cell;
-			}
+			maxCount = Math.max(maxCount, count);
 			sampleLists[samples] = cell.hashesArray();
 			sampleLengths[samples] = cell.getRetainedEntries();
+			double cellProbability = sampleProbability(sampleLists[samples], sampleLengths[samples], nominalEntries,
+					count);
+			probability = Math.min(probability, cellProbability);
+			minEstimate = Math.min(minEstimate,
+					estimateDistinct(sampleLists[samples], sampleLengths[samples], nominalEntries, count));
 			samples++;
 		}
 		if (samples == 0) {
-			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L, 1.0d);
 		}
 		final long[] intersection = intersectSamples(sampleLists, sampleLengths, samples, nominalEntries);
-		final int referenceSampleCount = maxCell.getRetainedEntries();
 		final long estimate;
 		if (maxCount == 0L || minCount == 0L) {
 			estimate = 0L;
-		} else if (referenceSampleCount == 0) {
+		} else if (!Double.isFinite(minEstimate)) {
 			estimate = minCount;
 		} else {
-			final double raw = (double) maxCount * ((double) intersection.length / (double) referenceSampleCount);
-			estimate = Math.min(minCount, Math.max(0L, Math.round(raw)));
+			estimate = roundedEstimate(minEstimate);
 		}
-		return new OmniSketchSummary(estimate, intersection, intersection.length, nominalEntries, minCount, maxCount);
+		return new OmniSketchSummary(estimate, intersection, intersection.length, nominalEntries, minCount, maxCount,
+				probability);
 	}
 
 	static OmniSketchSummary union(final List<OmniSketchSummary> summaries, final int nominalEntries) {
 		if (summaries.isEmpty()) {
-			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L);
+			return new OmniSketchSummary(0L, new long[0], 0, nominalEntries, 0L, 0L, 1.0d);
 		}
-		long count = 0L;
 		long minCount = 0L;
 		long maxCount = 0L;
+		double probability = 1.0d;
 		long[] merged = new long[0];
 		int mergedLen = 0;
 		for (final OmniSketchSummary summary : summaries) {
-			count += summary.count;
 			minCount += summary.minCount;
 			maxCount += summary.maxCount;
+			probability = Math.min(probability, summary.samplingProbability);
 			merged = OmniSketchCell.mergeSamples(merged, mergedLen, summary.hashes, summary.retained, nominalEntries);
 			mergedLen = merged.length;
 		}
-		return new OmniSketchSummary(count, merged, mergedLen, nominalEntries, minCount, maxCount);
+		double unionEstimate = mergedLen >= nominalEntries
+				? estimateDistinct(merged, mergedLen, nominalEntries, minCount)
+				: probability >= 1.0d ? mergedLen : mergedLen / Math.max(probability, Double.MIN_NORMAL);
+		return new OmniSketchSummary(roundedEstimate(unionEstimate), merged, mergedLen, nominalEntries, minCount,
+				maxCount, probability);
 	}
 
 	static OmniSketchEstimate intersectionEstimate(final List<OmniSketchSummary> summaries) {
 		if (summaries.isEmpty()) {
-			final OmniSketchSummary empty = new OmniSketchSummary(0L, new long[0], 0, 0, 0L, 0L);
+			final OmniSketchSummary empty = new OmniSketchSummary(0L, new long[0], 0, 0, 0L, 0L, 1.0d);
 			return OmniSketchEstimate.of(0.0, 1.0, 0, 0, 0L, 0L, empty);
 		}
 		long minCount = Long.MAX_VALUE;
@@ -160,7 +172,7 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 			estimate = Math.min(minCount, maxCount * (intersection.length / (double) maxSummary.retained));
 		}
 		final OmniSketchSummary resultSummary = new OmniSketchSummary(Math.round(estimate), intersection,
-				intersection.length, nominalEntries, minCount, maxCount);
+				intersection.length, nominalEntries, minCount, maxCount, samplingProbability);
 		return OmniSketchEstimate.of(estimate, samplingProbability, intersection.length, intersection.length, minCount,
 				maxCount, resultSummary);
 	}
@@ -198,6 +210,38 @@ record OmniSketchSummary(long count, long[] hashes, int retained, int nominalEnt
 			currentLen = current.length;
 		}
 		return current;
+	}
+
+	static double estimateDistinct(final long[] sample, final int retained, final int nominalEntries,
+			final long noSampleFallback) {
+		if (retained <= 0) {
+			return Math.max(0L, noSampleFallback);
+		}
+		if (retained < nominalEntries) {
+			return retained;
+		}
+		double theta = theta(sample[retained - 1]);
+		return retained == 1 ? 1.0d / theta : (retained - 1.0d) / theta;
+	}
+
+	static double sampleProbability(final long[] sample, final int retained, final int nominalEntries,
+			final long count) {
+		if (retained <= 0) {
+			return count <= 0L ? 1.0d : 0.0d;
+		}
+		return retained < nominalEntries ? 1.0d : theta(sample[retained - 1]);
+	}
+
+	private static double theta(final long hash) {
+		double unsigned = hash >= 0L ? hash : (double) (hash & Long.MAX_VALUE) + 0x1.0p63;
+		return Math.max(0x1.0p-64, (unsigned + 1.0d) * 0x1.0p-64);
+	}
+
+	private static long roundedEstimate(final double estimate) {
+		if (!Double.isFinite(estimate) || estimate >= Long.MAX_VALUE) {
+			return Long.MAX_VALUE;
+		}
+		return Math.max(0L, Math.round(estimate));
 	}
 
 	private static long[] intersectTwo(final long[] a, final int aLen, final long[] b, final int bLen,

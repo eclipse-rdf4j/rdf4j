@@ -84,11 +84,19 @@ final class OmniSketchHash {
 	}
 
 	static long hashIdentifier(final Object identifier, final long seed) {
-		return hashValue(identifier, seed ^ IDENTIFIER_SEED_XOR);
+		return mixIdentifierHash(hashValue(identifier, seed ^ IDENTIFIER_SEED_XOR));
 	}
 
 	static long hashIdentifier(final long identifier, final long seed) {
-		return hashLong(identifier, seed ^ IDENTIFIER_SEED_XOR);
+		return mixIdentifierHash(hashLong(identifier, seed ^ IDENTIFIER_SEED_XOR));
+	}
+
+	private static long mixIdentifierHash(long hash) {
+		hash ^= hash >>> 30;
+		hash *= 0xBF58476D1CE4E5B9L;
+		hash ^= hash >>> 27;
+		hash *= 0x94D049BB133111EBL;
+		return hash ^ (hash >>> 31);
 	}
 
 	static long hashLong(final long value, final long seed) {

@@ -471,6 +471,85 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void bucketCountOneRetainsWholeCohort() throws Exception {
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 8, 1, 0);
+		long value = OmniJoinEstimator.stableHash("cohort-full-value");
+		long witness = OmniJoinEstimator.stableHash("cohort-full-witness");
+		updateStaticWithSource(writer.relation(OmniRelation.STATEMENT), ATTR_P, value, witness, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		OmniWitnessSet live = writer.probeStatic(writer.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value))
+				.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		assertNotNull(live);
+		assertEquals(1.0d, live.samplingProbability(), 0.0d);
+		assertTrue(live.containsHash(witness));
+
+		OmniJoinEstimator reader = newCohortEstimator(64, 1, 8, 1, 0);
+		reader.loadFromByteArray(writer.toByteArray());
+		OmniWitnessSet reloaded = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value))
+				.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		assertNotNull(reloaded);
+		assertEquals(1.0d, reloaded.samplingProbability(), 0.0d);
+		assertTrue(reloaded.containsHash(witness));
+	}
+
+	@Test
+	void roleSpecificCohortOutranksSmallerVertexCohort() {
+		OmniWitnessSet subject = witnesses(OmniWitnessSet.SourceKind.SUBJECT_COHORT, 0.25d,
+				new long[] { 1L, 2L, 3L });
+		OmniWitnessSet vertex = witnesses(OmniWitnessSet.SourceKind.VERTEX_COHORT, 0.25d, new long[] { 9L });
+		OmniWitnessSet left = subject.withAlternativeCandidates(vertex);
+		OmniWitnessSet right = subject.withAlternativeCandidates(vertex);
+
+		OmniWitnessSet result = newEstimator(64, 1, 8).intersect(List.of(left, right));
+
+		assertEquals(OmniWitnessSet.SourceKind.SUBJECT_COHORT, result.sourceKind(),
+				"candidate quality must outrank the source label");
+		assertEquals(3, result.retainedWitnessCount());
+	}
+
+	@Test
+	void sampledPostingMassIsScaledExactlyOnceAcrossLiveByteAndMapped(
+			@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator writer = newEstimator(64, 1, 8);
+		long value = OmniJoinEstimator.stableHash("sampled-mass-value");
+		for (long witness = 1L; witness <= 100L; witness++) {
+			writer.relation(OmniRelation.STATEMENT)
+					.updateStatic(ATTR_P, value,
+							OmniJoinEstimator.stableHash("sampled-mass-witness:" + witness), 2.0d);
+		}
+
+		OmniWitnessSet live = writer.probeStatic(writer.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+
+		OmniJoinEstimator byteReader = newEstimator(64, 1, 8);
+		byteReader.loadFromByteArray(writer.toByteArray());
+		OmniWitnessSet bytes = byteReader.probeStatic(byteReader.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 17L);
+			OmniJoinEstimator mappedReader = newEstimator(64, 1, 8);
+			try {
+				mappedReader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+				OmniWitnessSet mapped = mappedReader.probeStatic(mappedReader.relation(OmniRelation.STATEMENT), ATTR_P,
+						OmniJoinEstimator.Predicate.equalHash(value));
+
+				assertEquals(bytes.estimatedRows(), live.estimatedRows(), 0.0d);
+				assertEquals(bytes.estimatedRows(), mapped.estimatedRows(), 0.0d);
+				assertEquals(bytes.samplingProbability(), live.samplingProbability(), 0.0d);
+				assertEquals(bytes.samplingProbability(), mapped.samplingProbability(), 0.0d);
+				assertEquals(bytes.retainedWitnessCount(), live.retainedWitnessCount());
+				assertEquals(bytes.retainedWitnessCount(), mapped.retainedWitnessCount());
+			} finally {
+				mappedReader.clear();
+			}
+		}
+	}
+
+	@Test
 	void cohortWitnessesSurviveByteArrayRoundTrip() throws Exception {
 		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
@@ -783,6 +862,15 @@ class OmniJoinEstimatorTest {
 
 	private static OmniWitnessSet.SourceKind vertexCohortSourceKind() {
 		return Enum.valueOf(OmniWitnessSet.SourceKind.class, "VERTEX_COHORT");
+	}
+
+	private static OmniWitnessSet witnesses(OmniWitnessSet.SourceKind sourceKind, double samplingProbability,
+			long[] hashes) {
+		double[] weights = new double[hashes.length];
+		java.util.Arrays.fill(weights, 1.0d);
+		return OmniWitnessSet.fromSortedUnsigned(hashes.clone(), weights, hashes.length, samplingProbability, 1.0d,
+				OmniWitnessSet.FallbackReason.NONE, 0.0d)
+				.withSourceKind(sourceKind);
 	}
 
 	private static double error(double estimate, double actual) {

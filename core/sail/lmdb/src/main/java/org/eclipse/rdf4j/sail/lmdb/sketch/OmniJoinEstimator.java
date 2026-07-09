@@ -94,7 +94,7 @@ final class OmniJoinEstimator {
 				: Math.max(0, omniWitnessCohortBucketIndex) % this.omniWitnessCohortBucketCount;
 		this.omniWitnessCohortSamplingProbability = this.omniWitnessCohortBucketCount > 0
 				? 1.0d / this.omniWitnessCohortBucketCount
-				: 1.0d;
+				: 0.0d;
 	}
 
 	Relation relation(OmniRelation relation) {
@@ -709,44 +709,23 @@ final class OmniJoinEstimator {
 		if (current == null || current.estimatedRows() <= 0.0d) {
 			return true;
 		}
-		if (current.sourceKind() == OmniWitnessSet.SourceKind.BASE && candidate.sourceKind().isCohort()) {
-			if (candidate.fallbackReason() != OmniWitnessSet.FallbackReason.NONE
-					|| candidate.retainedWitnessCount() == 0) {
-				return false;
-			}
-			if (current.fallbackReason() == OmniWitnessSet.FallbackReason.NONE) {
-				return candidate.retainedWitnessCount() > current.retainedWitnessCount();
-			}
-			return current.fallbackReason() == OmniWitnessSet.FallbackReason.SAMPLE_LOSS;
-		}
-		if (candidate.sourceKind() == OmniWitnessSet.SourceKind.VERTEX_COHORT
-				&& current.sourceKind().isCohort()
-				&& current.sourceKind() != OmniWitnessSet.SourceKind.VERTEX_COHORT
-				&& candidate.fallbackReason() == OmniWitnessSet.FallbackReason.NONE
-				&& candidate.retainedWitnessCount() > 0) {
-			return true;
-		}
-		if (current.sourceKind() == OmniWitnessSet.SourceKind.VERTEX_COHORT
-				&& candidate.sourceKind().isCohort()
-				&& candidate.sourceKind() != OmniWitnessSet.SourceKind.VERTEX_COHORT
-				&& current.fallbackReason() == OmniWitnessSet.FallbackReason.NONE
-				&& current.retainedWitnessCount() > 0) {
-			return false;
-		}
-		if (candidate.fallbackReason() == OmniWitnessSet.FallbackReason.NONE
-				&& current.fallbackReason() != OmniWitnessSet.FallbackReason.NONE) {
-			return true;
-		}
-		if (candidate.retainedWitnessCount() > 0 && current.retainedWitnessCount() == 0) {
-			return true;
-		}
-		if (candidate.fallbackReason() != current.fallbackReason()) {
-			return false;
+		boolean candidateFallback = candidate.fallbackReason() != OmniWitnessSet.FallbackReason.NONE;
+		boolean currentFallback = current.fallbackReason() != OmniWitnessSet.FallbackReason.NONE;
+		if (candidateFallback != currentFallback) {
+			return !candidateFallback;
 		}
 		if (candidate.retainedWitnessCount() != current.retainedWitnessCount()) {
 			return candidate.retainedWitnessCount() > current.retainedWitnessCount();
 		}
-		return candidate.confidence() > current.confidence();
+		int probability = Double.compare(candidate.samplingProbability(), current.samplingProbability());
+		if (probability != 0) {
+			return probability > 0;
+		}
+		int confidence = Double.compare(candidate.confidence(), current.confidence());
+		if (confidence != 0) {
+			return confidence > 0;
+		}
+		return candidate.sourceKind().ordinal() < current.sourceKind().ordinal();
 	}
 
 	private static int requireRetainedLimit(int maxRetainedWitnesses) {
@@ -916,7 +895,7 @@ final class OmniJoinEstimator {
 					fallbackReason, minimumDetectableRows);
 		}
 		int initialCapacity = estimatedMergeOutputCapacity(sources, activeCount, maxRetainedWitnesses);
-		double knownTotalWeight = knownTotalWeight(sources, activeCount);
+		double retainedMass = retainedMass(sources, activeCount);
 		SortedWitnessAccumulator output = new SortedWitnessAccumulator(initialCapacity, maxRetainedWitnesses);
 		boolean complete = mergeActiveSortedSources(sources, activeCount, output);
 		if (!complete) {
@@ -926,7 +905,7 @@ final class OmniJoinEstimator {
 				&& fallbackReason == OmniWitnessSet.FallbackReason.NONE
 						? Math.max(minimumDetectableRows, 1.0d)
 						: minimumDetectableRows;
-		double totalWeight = Double.isFinite(knownTotalWeight) ? knownTotalWeight : output.totalWeight();
+		double totalWeight = Double.isFinite(retainedMass) ? retainedMass : output.totalWeight();
 		return output.toWitnessSet(probability, confidence, fallbackReason, effectiveMinimumDetectableRows,
 				totalWeight);
 	}
@@ -964,14 +943,14 @@ final class OmniJoinEstimator {
 		return capacity;
 	}
 
-	private static double knownTotalWeight(SortedCursorSource[] sources, int activeCount) {
+	private static double retainedMass(SortedCursorSource[] sources, int activeCount) {
 		double totalWeight = 0.0d;
 		for (int i = 0; i < activeCount; i++) {
 			SortedCursorSource source = sources[i];
-			if (!source.hasKnownTotalWeight()) {
+			if (!source.hasRetainedMass()) {
 				return Double.NaN;
 			}
-			totalWeight += source.knownTotalWeight();
+			totalWeight += source.retainedMass();
 		}
 		return totalWeight;
 	}
@@ -1317,7 +1296,7 @@ final class OmniJoinEstimator {
 		private final WitnessCursor cursor;
 		private final double multiplier;
 		private final boolean returnFalse;
-		private final double knownTotalWeight;
+		private final double retainedMass;
 		private long hash;
 		private double weight;
 
@@ -1325,13 +1304,13 @@ final class OmniJoinEstimator {
 			this(cursor, multiplier, Double.NaN);
 		}
 
-		private SortedCursorSource(WitnessCursor cursor, double multiplier, double knownTotalWeight) {
+		private SortedCursorSource(WitnessCursor cursor, double multiplier, double retainedMass) {
 			this.cursor = cursor == null ? WitnessCursor.empty() : cursor;
 			this.multiplier = multiplier;
 			this.returnFalse = !Double.isFinite(multiplier) || multiplier <= 0.0d;
-			double scaledTotalWeight = knownTotalWeight * multiplier;
-			this.knownTotalWeight = !returnFalse && Double.isFinite(scaledTotalWeight) && scaledTotalWeight >= 0.0d
-					? scaledTotalWeight
+			double scaledRetainedMass = retainedMass * multiplier;
+			this.retainedMass = !returnFalse && Double.isFinite(scaledRetainedMass) && scaledRetainedMass >= 0.0d
+					? scaledRetainedMass
 					: Double.NaN;
 		}
 
@@ -1350,12 +1329,12 @@ final class OmniJoinEstimator {
 			return false;
 		}
 
-		private boolean hasKnownTotalWeight() {
-			return Double.isFinite(knownTotalWeight) && knownTotalWeight >= 0.0d;
+		private boolean hasRetainedMass() {
+			return Double.isFinite(retainedMass) && retainedMass >= 0.0d;
 		}
 
-		private double knownTotalWeight() {
-			return hasKnownTotalWeight() ? knownTotalWeight : 0.0d;
+		private double retainedMass() {
+			return hasRetainedMass() ? retainedMass : 0.0d;
 		}
 
 		private int estimatedOutputSize() {
@@ -1874,7 +1853,7 @@ final class OmniJoinEstimator {
 			compactThreshold = Math.max(16, effectiveNominalEntries * 2);
 			this.exactSmallPostings = exactSmallPostings;
 			this.compactLargePostings = compactLargePostings;
-			this.cohortSamplingProbability = cohortSamplingProbability > 0.0d && cohortSamplingProbability < 1.0d
+			this.cohortSamplingProbability = cohortSamplingProbability > 0.0d && cohortSamplingProbability <= 1.0d
 					? cohortSamplingProbability
 					: 0.0d;
 			this.sketch = OmniSketch.builder()
@@ -2429,22 +2408,11 @@ final class OmniJoinEstimator {
 		}
 
 		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe) {
-			return effectiveSamplingProbability(valueHash, probe, retainedWeightForValue(valueHash, probe));
-		}
-
-		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe,
-				double retainedWeight) {
 			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
 			if (mappedValue != null && !hasOverlayWeights(valueHash)) {
 				double samplingProbability = mappedValue.samplingProbability();
 				if (Double.isFinite(samplingProbability) && samplingProbability > 0.0d) {
-					return Math.min(1.0d, samplingProbability);
-				}
-			}
-			double totalWeight = totalWeightByValueHash.get(valueHash);
-			if (Double.isFinite(totalWeight) && totalWeight > 0.0d) {
-				if (Double.isFinite(retainedWeight) && retainedWeight > 0.0d) {
-					return Math.min(1.0d, retainedWeight / totalWeight);
+					return canonicalSamplingProbability(samplingProbability);
 				}
 			}
 			if (probe == null) {
@@ -2453,7 +2421,11 @@ final class OmniJoinEstimator {
 			if (probe.getRetainedEntries() < sketch.getNominalEntries()) {
 				return 1.0d;
 			}
-			return probe.getSamplingProbability();
+			return canonicalSamplingProbability(probe.getSamplingProbability());
+		}
+
+		private static double canonicalSamplingProbability(double samplingProbability) {
+			return (double) (float) Math.max(0.0d, Math.min(1.0d, samplingProbability));
 		}
 
 		private double minimumDetectableEstimate(long valueHash, OmniSketchProbeResult probe) {
@@ -2515,10 +2487,7 @@ final class OmniJoinEstimator {
 			Long2DoubleOpenHashMap weights = weightsForRead(valueHash);
 			boolean hasOverlayWeights = hadOverlayWeights || hasOverlayWeights(valueHash);
 			double overlayWeight = Double.NaN;
-			double trackedTotalWeight = totalWeightByValueHash.get(valueHash);
-			if (Double.isFinite(trackedTotalWeight) && trackedTotalWeight > 0.0d) {
-				overlayWeight = trackedTotalWeight;
-			} else if (weights != null) {
+			if (weights != null) {
 				overlayWeight = positiveWeightSum(weights);
 			}
 			if (Double.isFinite(mappedWeight) && mappedWeight >= 0.0d) {
@@ -2880,7 +2849,7 @@ final class OmniJoinEstimator {
 			}
 			sortByUnsignedHash(witnessHashes, weights);
 			OmniSketchProbeResult probe = snapshotWeights.probe();
-			double samplingProbability = effectiveSamplingProbability(valueHash, probe, retainedWeight);
+			double samplingProbability = effectiveSamplingProbability(valueHash, probe);
 			return ValuePostings.wrap(valueHash, witnessHashes, weights,
 					(float) samplingProbability,
 					minimumDetectableEstimate(valueHash, probe, samplingProbability));

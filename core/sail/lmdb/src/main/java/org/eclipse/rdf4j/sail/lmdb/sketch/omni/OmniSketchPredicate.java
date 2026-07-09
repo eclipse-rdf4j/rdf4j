@@ -31,8 +31,10 @@
 package org.eclipse.rdf4j.sail.lmdb.sketch.omni;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -51,8 +53,8 @@ public final class OmniSketchPredicate {
 
 	private OmniSketchPredicate(final boolean all, final List<Object> values, final long[] preHashedValues) {
 		this.all = all;
-		this.values = Collections.unmodifiableList(values);
-		this.preHashedValues = preHashedValues == null ? null : preHashedValues.clone();
+		this.values = Collections.unmodifiableList(new ArrayList<>(new LinkedHashSet<>(values)));
+		this.preHashedValues = preHashedValues == null ? null : deduplicateHashes(preHashedValues);
 		if (!all && this.values.isEmpty() && (this.preHashedValues == null || this.preHashedValues.length == 0)) {
 			throw new SketchesArgumentException("An OmniSketch predicate must contain at least one value");
 		}
@@ -138,13 +140,19 @@ public final class OmniSketchPredicate {
 		if (inclusiveUpper < inclusiveLower) {
 			throw new SketchesArgumentException("inclusiveUpper must be >= inclusiveLower");
 		}
-		final long size = inclusiveUpper - inclusiveLower + 1L;
-		if (size <= 0L || size > MAX_EXPANDED_LONG_RANGE) {
+		final long size;
+		try {
+			size = Math.addExact(Math.subtractExact(inclusiveUpper, inclusiveLower), 1L);
+		} catch (ArithmeticException e) {
+			throw new SketchesArgumentException(
+					"longRange expands at most " + MAX_EXPANDED_LONG_RANGE + " values");
+		}
+		if (size > MAX_EXPANDED_LONG_RANGE) {
 			throw new SketchesArgumentException("longRange expands at most " + MAX_EXPANDED_LONG_RANGE + " values");
 		}
 		final List<Object> values = new ArrayList<>((int) size);
-		for (long value = inclusiveLower; value <= inclusiveUpper; value++) {
-			values.add(value);
+		for (long offset = 0L; offset < size; offset++) {
+			values.add(inclusiveLower + offset);
 		}
 		return new OmniSketchPredicate(false, values, null);
 	}
@@ -161,7 +169,22 @@ public final class OmniSketchPredicate {
 		for (int i = 0; i < values.size(); i++) {
 			hashes[i] = OmniSketchHash.hashValue(values.get(i), seed);
 		}
-		return hashes;
+		return deduplicateHashes(hashes);
+	}
+
+	private static long[] deduplicateHashes(final long[] input) {
+		if (input.length < 2) {
+			return input.clone();
+		}
+		long[] sorted = input.clone();
+		Arrays.sort(sorted);
+		int unique = 1;
+		for (int i = 1; i < sorted.length; i++) {
+			if (sorted[i] != sorted[unique - 1]) {
+				sorted[unique++] = sorted[i];
+			}
+		}
+		return unique == sorted.length ? sorted : Arrays.copyOf(sorted, unique);
 	}
 
 	/** Returns the number of literal or pre-hashed values in this predicate. */

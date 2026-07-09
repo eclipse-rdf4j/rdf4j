@@ -158,7 +158,10 @@ final class OmniSketchCell {
 
 	OmniSketchSummary toSummary() {
 		flushStaging();
-		return new OmniSketchSummary(count, Arrays.copyOf(hashes, retained), retained, nominalEntries, count, count);
+		long[] sample = Arrays.copyOf(hashes, retained);
+		double estimate = OmniSketchSummary.estimateDistinct(sample, retained, nominalEntries, count);
+		double probability = OmniSketchSummary.sampleProbability(sample, retained, nominalEntries, count);
+		return new OmniSketchSummary(Math.round(estimate), sample, retained, nominalEntries, count, count, probability);
 	}
 
 	static long[] mergeSamples(final long[] a, final int aLen, final long[] b, final int bLen, final int limit) {

@@ -55,11 +55,35 @@ public record OmniSketchSurfaceEstimate(double selectedRows, double lowerBoundRo
 		return samplingProbability;
 	}
 
-	public OmniSketchSurfaceEstimate withSelectedRows(double rows, double confidence, String source,
-			String fallbackReason) {
-		return new OmniSketchSurfaceEstimate(rows, lowerBoundRows, upperBoundRows, workRows, confidence,
-				samplingProbability, exactZero, fallbackReason, minimumDetectableRows, source, surfaceKind,
-				predicateKeyKind, stringMetrics, doubleMetrics, bindings, steps);
+	public OmniSketchSurfaceEstimate rebase(double rows, double confidence, String source, String fallbackReason) {
+		double normalizedRows = finiteNonNegative(rows);
+		double rebasedLowerBoundRows;
+		double rebasedUpperBoundRows;
+		double rebasedWorkRows;
+		if (selectedRows > 0.0d) {
+			double scale = normalizedRows / selectedRows;
+			rebasedLowerBoundRows = lowerBoundRows * scale;
+			rebasedUpperBoundRows = upperBoundRows * scale;
+			rebasedWorkRows = workRows * scale;
+		} else if (normalizedRows > 0.0d) {
+			rebasedLowerBoundRows = 0.0d;
+			rebasedUpperBoundRows = normalizedRows * 4.0d;
+			rebasedWorkRows = normalizedRows;
+		} else {
+			rebasedLowerBoundRows = 0.0d;
+			rebasedUpperBoundRows = 0.0d;
+			rebasedWorkRows = 0.0d;
+		}
+		String normalizedFallbackReason = normalize(fallbackReason, "none");
+		double rebasedMinimumDetectableRows = minimumDetectableRows;
+		if (!"none".equalsIgnoreCase(normalizedFallbackReason)
+				&& !OmniWitnessSet.FallbackReason.NONE.name().equalsIgnoreCase(normalizedFallbackReason)) {
+			rebasedMinimumDetectableRows = Math.max(rebasedMinimumDetectableRows, normalizedRows);
+		}
+		return new OmniSketchSurfaceEstimate(normalizedRows, rebasedLowerBoundRows, rebasedUpperBoundRows,
+				rebasedWorkRows, confidence, samplingProbability, normalizedRows == 0.0d && exactZero,
+				normalizedFallbackReason, rebasedMinimumDetectableRows, source, surfaceKind, predicateKeyKind,
+				stringMetrics, doubleMetrics, bindings, steps);
 	}
 
 	public Map<String, String> toStringMetrics() {

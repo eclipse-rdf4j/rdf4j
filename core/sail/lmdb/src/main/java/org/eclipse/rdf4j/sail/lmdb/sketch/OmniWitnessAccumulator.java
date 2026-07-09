@@ -12,8 +12,11 @@
 
 package org.eclipse.rdf4j.sail.lmdb.sketch;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.PriorityQueue;
 
 final class OmniWitnessAccumulator {
@@ -52,6 +55,16 @@ final class OmniWitnessAccumulator {
 		if (witnessSets == null || witnessSets.isEmpty()) {
 			return OmniWitnessSet.empty();
 		}
+		EnumMap<OmniWitnessSet.SourceKind, List<OmniWitnessSet>> candidatesByKind = candidatesByKind(witnessSets);
+		List<OmniWitnessSet> perKindResults = new ArrayList<>(candidatesByKind.size());
+		for (Map.Entry<OmniWitnessSet.SourceKind, List<OmniWitnessSet>> entry : candidatesByKind.entrySet()) {
+			perKindResults.add(maxUnionSameKind(entry.getKey(), entry.getValue()));
+		}
+		return rankedWithAlternatives(perKindResults);
+	}
+
+	private static OmniWitnessSet maxUnionSameKind(OmniWitnessSet.SourceKind sourceKind,
+			List<OmniWitnessSet> witnessSets) {
 		double probability = 1.0d;
 		double confidence = 1.0d;
 		double minimumDetectableRows = 0.0d;
@@ -90,13 +103,27 @@ final class OmniWitnessAccumulator {
 			}
 			output.add(hash, weight);
 		}
-		return output.toWitnessSet(probability, confidence, fallbackReason, minimumDetectableRows);
+		return output.toWitnessSet(probability, confidence, fallbackReason, minimumDetectableRows)
+				.withSourceKind(sourceKind);
 	}
 
 	static OmniWitnessSet subtract(OmniWitnessSet input, OmniWitnessSet removals) {
-		if (input == null || input.isEmpty()) {
+		if (input == null) {
 			return OmniWitnessSet.empty();
 		}
+		List<OmniWitnessSet> perKindResults = new ArrayList<>(OmniWitnessSet.SourceKind.values().length);
+		for (OmniWitnessSet.SourceKind sourceKind : OmniWitnessSet.SourceKind.values()) {
+			OmniWitnessSet inputCandidate = input.candidateFor(sourceKind);
+			if (inputCandidate == null) {
+				continue;
+			}
+			OmniWitnessSet removalCandidate = removals == null ? null : removals.candidateFor(sourceKind);
+			perKindResults.add(subtractSameKind(inputCandidate, removalCandidate));
+		}
+		return rankedWithAlternatives(perKindResults);
+	}
+
+	private static OmniWitnessSet subtractSameKind(OmniWitnessSet input, OmniWitnessSet removals) {
 		double confidence = removals == null ? input.confidence() : Math.min(input.confidence(), removals.confidence());
 		OmniWitnessSet.FallbackReason fallbackReason = input.fallbackReason();
 		double minimumDetectableRows = input.minimumDetectableRows();
@@ -118,7 +145,67 @@ final class OmniWitnessAccumulator {
 				output.add(hash, input.weightAt(inputOffset));
 			}
 		}
-		return output.toWitnessSet(input.samplingProbability(), confidence, fallbackReason, minimumDetectableRows);
+		return output.toWitnessSet(input.samplingProbability(), confidence, fallbackReason, minimumDetectableRows)
+				.withSourceKind(input.sourceKind());
+	}
+
+	private static EnumMap<OmniWitnessSet.SourceKind, List<OmniWitnessSet>> candidatesByKind(
+			List<OmniWitnessSet> witnessSets) {
+		EnumMap<OmniWitnessSet.SourceKind, List<OmniWitnessSet>> candidatesByKind = new EnumMap<>(
+				OmniWitnessSet.SourceKind.class);
+		for (OmniWitnessSet witnessSet : witnessSets) {
+			if (witnessSet == null) {
+				continue;
+			}
+			for (OmniWitnessSet.SourceKind sourceKind : OmniWitnessSet.SourceKind.values()) {
+				OmniWitnessSet candidate = witnessSet.candidateFor(sourceKind);
+				if (candidate != null) {
+					candidatesByKind.computeIfAbsent(sourceKind, ignored -> new ArrayList<>()).add(candidate);
+				}
+			}
+		}
+		return candidatesByKind;
+	}
+
+	private static OmniWitnessSet rankedWithAlternatives(List<OmniWitnessSet> candidates) {
+		OmniWitnessSet best = null;
+		for (OmniWitnessSet candidate : candidates) {
+			if (candidate != null && (best == null || isBetterCandidate(candidate, best))) {
+				best = candidate;
+			}
+		}
+		if (best == null) {
+			return OmniWitnessSet.empty();
+		}
+		OmniWitnessSet[] alternatives = new OmniWitnessSet[candidates.size() - 1];
+		int offset = 0;
+		for (OmniWitnessSet candidate : candidates) {
+			if (candidate != null && candidate.sourceKind() != best.sourceKind()) {
+				alternatives[offset++] = candidate;
+			}
+		}
+		return best.withAlternativeCandidates(offset == alternatives.length ? alternatives
+				: Arrays.copyOf(alternatives, offset));
+	}
+
+	private static boolean isBetterCandidate(OmniWitnessSet candidate, OmniWitnessSet current) {
+		boolean candidateFallback = candidate.fallbackReason() != OmniWitnessSet.FallbackReason.NONE;
+		boolean currentFallback = current.fallbackReason() != OmniWitnessSet.FallbackReason.NONE;
+		if (candidateFallback != currentFallback) {
+			return !candidateFallback;
+		}
+		if (candidate.retainedWitnessCount() != current.retainedWitnessCount()) {
+			return candidate.retainedWitnessCount() > current.retainedWitnessCount();
+		}
+		int probability = Double.compare(candidate.samplingProbability(), current.samplingProbability());
+		if (probability != 0) {
+			return probability > 0;
+		}
+		int confidence = Double.compare(candidate.confidence(), current.confidence());
+		if (confidence != 0) {
+			return confidence > 0;
+		}
+		return candidate.sourceKind().ordinal() < current.sourceKind().ordinal();
 	}
 
 	void add(long hash, double weight) {

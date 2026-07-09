@@ -545,7 +545,7 @@ class LmdbEvaluationStatistics
 			rows = baselineRows;
 			confidence = Math.min(confidence, 0.25d);
 		}
-		return estimate.withSelectedRows(rows, confidence, estimate.source(), estimate.fallbackReason());
+		return estimate.rebase(rows, confidence, estimate.source(), estimate.fallbackReason());
 	}
 
 	private OmniSketchSurfaceEstimate reorderedOmniBridgeChainEvidence(List<TupleExpr> factors, Set<String> boundVars) {
@@ -6620,7 +6620,7 @@ class LmdbEvaluationStatistics
 				|| evidence.confidence() <= NON_EXACT_ZERO_SKETCH_CONFIDENCE) {
 			return evidence;
 		}
-		return evidence.withSelectedRows(evidence.calibratedRows(), NON_EXACT_ZERO_SKETCH_CONFIDENCE,
+		return evidence.rebase(evidence.calibratedRows(), NON_EXACT_ZERO_SKETCH_CONFIDENCE,
 				evidence.source(), fallbackSource);
 	}
 

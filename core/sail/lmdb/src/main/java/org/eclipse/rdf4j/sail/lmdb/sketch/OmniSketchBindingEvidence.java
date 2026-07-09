@@ -18,7 +18,7 @@ public record OmniSketchBindingEvidence(String bindingName, double rows, double 
 	public OmniSketchBindingEvidence {
 		bindingName = normalize(bindingName, "unknown");
 		rows = finiteNonNegative(rows);
-		distinctRows = Math.min(finiteNonNegative(distinctRows), Math.max(1.0d, rows));
+		distinctRows = Math.min(finiteNonNegative(distinctRows), rows);
 		witnessCount = Math.max(0, witnessCount);
 		sourceKind = sourceKind == null ? OmniWitnessSet.SourceKind.BASE : sourceKind;
 		relationProvenance = normalize(relationProvenance, "unknown");
