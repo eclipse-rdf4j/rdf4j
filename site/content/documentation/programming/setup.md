@@ -7,6 +7,20 @@ autonumbering: true
 This chapter gives you some pointers on how to install the RDF4J libraries and how to initialize your project.
 <!--more-->
 Before you can get started programming with RDF4J, you will need to set up your development environment, download the necessary, libraries, and so on.
+
+## Prerequisites
+
+### Java Version
+
+RDF4J requires a Java runtime environment. The minimum required Java version depends on the RDF4J version you are using:
+
+| RDF4J Version | Minimum Java Version | Jakarta EE / Javax       |
+|---------------|----------------------|--------------------------|
+| 6.x           | Java 25              | Jakarta EE (> EE 10)     |
+| 5.x           | Java 11              | Javax (Java EE)          |
+
+RDF4J 6.0 introduced a migration from the `javax` namespace to the `jakarta` namespace for the affected Jakarta EE (formerly Java EE) APIs, in line with the broader Java ecosystem move to Jakarta EE. If you are upgrading from RDF4J 5.x, update only those imports in your own code that refer to APIs that actually changed namespace; Java SE `javax.*` packages remain unchanged.
+ 
 ## Using Apache Maven
 
 By far the most flexible way to include RDF4J in your project, is to use Maven. Apache Maven is a software management tool that helps you by offering things like library version management and dependency management (which is very useful because it means that once you decide you need a particular RDF4J library, Maven automatically downloads all the libraries that your library of choice requires in turn). For details on how to start using Maven, take a look at the [Apache Maven website](http://maven.apache.org/). If you are familiar with Maven, here are a few pointers to help set up your maven project.
