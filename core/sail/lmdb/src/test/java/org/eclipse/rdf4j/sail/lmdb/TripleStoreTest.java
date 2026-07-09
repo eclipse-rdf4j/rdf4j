@@ -85,6 +85,27 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void alignedBatchReusesMainIndexWriteCursor() throws Exception {
+		long[] subj = { 1, 2, 3 };
+		long[] pred = { 4, 4, 4 };
+		long[] obj = { 5, 6, 7 };
+		long[] context = { 0, 0, 0 };
+
+		tripleStore.startTransaction();
+		try {
+			tripleStore.storeTriplesAligned(subj, pred, obj, context, subj.length, true);
+
+			Field cursorsField = TripleStore.class.getDeclaredField("explicitAlignedWriteCursors");
+			cursorsField.setAccessible(true);
+			long[] cursors = (long[]) cursorsField.get(tripleStore);
+			assertTrue("the main index should retain a write cursor for the transaction", cursors[0] != 0);
+			assertTrue("the secondary index should retain a write cursor for the transaction", cursors[1] != 0);
+		} finally {
+			tripleStore.rollback();
+		}
+	}
+
+	@Test
 	public void pooledCursorsSurviveTxnVersionBump() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, true);

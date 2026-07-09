@@ -21,6 +21,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 23:14Z) Added heap-scaled transaction-owned value and namespace ID dictionaries; focused tests and all 21 `ValueStoreTest` tests pass, time improved 4.27-7.25%, and allocation fell 33.89-39.63%.
 - [x] (2026-07-09 23:18Z) Re-profiled both isolation modes after transaction caching; native LMDB plus comparison work remains dominant and the primitive dictionary itself stays below 0.5% of CPU samples.
 - [x] (2026-07-09 23:30Z) Tested and rejected an empty-dictionary `MDB_NOOVERWRITE` direct-put path after two paired runs pooled to no improvement; removed all production/test changes and kept the evidence.
+- [x] (2026-07-09 23:39Z) Reused a transaction-retained ordinary cursor for main-index `MDB_NOOVERWRITE` writes; 35 focused/neighbor tests pass and two paired runs improved the prior checkpoint 5.58-7.53%.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -63,6 +64,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: Replacing empty-dictionary preflight gets with conditional puts does not materially improve this workload by itself.
   Evidence: two exact JDK 26 runs under `profiles/lmdb-load-10x/empty-store-direct-put` pooled to 746.536 ms/op for `NONE` and 777.875 ms/op for `READ_COMMITTED`, respectively 0.14% faster and 0.92% slower than the transaction-cache checkpoint. The production experiment was removed.
 
+- Observation: Retaining an ordinary cursor for main-index conditional writes provides a stable gain in both isolation modes without reducing allocation.
+  Evidence: two exact JDK 26 runs under `profiles/lmdb-load-10x/main-index-cursor` pooled to 705.864 ms/op for `NONE` and 712.789 ms/op for `READ_COMMITTED`, 5.58% and 7.53% faster than the transaction-cache checkpoint. `TripleStoreTest`, aligned sort/reset, and auto-grow tests all passed.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -99,6 +103,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject the empty-store direct-put fast path and preserve only its evidence.
   Rationale: The LMDB contract is valid and correctness tests passed, but the pooled paired result was flat for `NONE` and worse for `READ_COMMITTED`. Removing a dictionary get is insufficient while index puts dominate.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: Keep main-index cursor reuse as the second production performance increment.
+  Rationale: It preserves `MDB_NOOVERWRITE`, duplicate and promotion behavior, and fallback accounting while avoiding repeated root-level put setup. Two runs improved both requested modes and neighboring auto-grow tests passed.
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -213,3 +221,5 @@ Revision note (2026-07-09 23:14Z): Recorded the first post-profile optimization,
 Revision note (2026-07-09 23:18Z): Recorded fresh post-cache CPU profiles and confirmed that the next optimization still needs to reduce native B-tree work.
 
 Revision note (2026-07-09 23:30Z): Recorded and rejected the empty-dictionary conditional-put experiment after a confirmation run disproved the first run's apparent gain.
+
+Revision note (2026-07-09 23:39Z): Recorded the confirmed main-index cursor increment, its focused TDD evidence, neighboring fallback verification, and two paired JDK 26 results.

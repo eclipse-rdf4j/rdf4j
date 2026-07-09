@@ -115,7 +115,7 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
-	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
+	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -1749,7 +1749,7 @@ class TripleStore implements Closeable {
 		int addedCount = 0;
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR
+			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR
 					? stack.mallocPointer(1)
 					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -1760,6 +1760,9 @@ class TripleStore implements Closeable {
 			Arrays.fill(promotedFromImplicit, 0, count, false);
 			LongIntHashMap contextIncrements = alignedContextIncrements;
 			contextIncrements.clear();
+			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
+					? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
+					: 0;
 
 			for (int i = 0; i < count; i++) {
 				if (shouldFallBackFromAlignedWrite()) {
@@ -1771,7 +1774,9 @@ class TripleStore implements Closeable {
 				keyBuf.flip();
 				LmdbUtil.setMDBValData(keyVal, keyBuf);
 
-				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
+				int rc = REUSE_ALIGNED_WRITE_CURSOR
+						? mdb_cursor_put(mainWriteCursor, keyVal, dataVal, MDB_NOOVERWRITE)
+						: mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 				if (rc == MDB_MAP_FULL && autoGrow) {
 					remainingStart = i;
 					break;
@@ -1824,7 +1829,7 @@ class TripleStore implements Closeable {
 				}
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
 				currentFieldSeq = index.getFieldSeq();
-				long secondaryWriteCursor = REUSE_SECONDARY_WRITE_CURSOR && addedCount > 0
+				long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
 						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
 				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
@@ -1844,7 +1849,7 @@ class TripleStore implements Closeable {
 								addedIndexConsumer);
 						return;
 					}
-					if (REUSE_SECONDARY_WRITE_CURSOR) {
+					if (REUSE_ALIGNED_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
