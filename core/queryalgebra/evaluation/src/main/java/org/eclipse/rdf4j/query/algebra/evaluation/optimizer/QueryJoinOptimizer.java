@@ -17,7 +17,6 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -71,12 +70,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
-
-	private static final double CARDINALITY_FLOOR = 5.0;
-
-	private static final double MIN_BOUND_VAR_CARDINALITY_EXPONENT = 0.25;
-
-	private static final int MAX_FOREIGN_VAR_FREQ_BONUS = 8;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -178,11 +171,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			Set<String> origBoundVars = boundVars;
-			double origCurrentHighestCost = currentHighestCost;
 			try {
 				boundVars = new HashSet<>(boundVars);
-				currentHighestCost = 1;
-				Set<String> scopeStartBoundVars = new HashSet<>(boundVars);
 
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
@@ -209,14 +199,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityArgs.addAll(orderedExtensions);
 					priorityArgs.addAll(orderedSubselects);
 				}
-
-				// Singleton VALUES clauses are zero-expansion anchors. Multi-row VALUES clauses are cheap and often
-				// selective, but placing all of them first can destroy locality in the chosen join order. Order the
-				// real
-				// data-access expressions first, then insert each multi-row VALUES clause as close as possible to the
-				// first expression that can use its bindings.
-				List<TupleExpr> bindingSetAssignments = getBindingSetAssignments(joinArgs);
-				joinArgs.removeAll(bindingSetAssignments);
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
@@ -260,7 +242,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
 						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
-						updateCurrentHighestCost(tupleExpr);
+						this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
 
 						joinArgs.remove(tupleExpr);
 						orderedJoinArgs.addLast(tupleExpr);
@@ -273,13 +255,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
-					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs, scopeStartBoundVars);
-				}
-
-				if (!bindingSetAssignments.isEmpty()) {
-					priorityArgs = new ArrayList<>(priorityArgs);
-					orderedJoinArgs = placeBindingSetAssignments(priorityArgs, orderedJoinArgs, bindingSetAssignments,
-							scopeStartBoundVars);
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
 				}
 
 				// Build new join hierarchy
@@ -373,7 +349,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			} finally {
 				boundVars = origBoundVars;
-				currentHighestCost = origCurrentHighestCost;
 			}
 		}
 
@@ -403,7 +378,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * @param orderedJoinArgs
 		 * @return
 		 */
-		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs, Set<String> scopeStartBoundVars) {
+		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
 			Deque<TupleExpr> ret = new ArrayDeque<>();
@@ -428,7 +403,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			while (!tupleExprs.isEmpty()) {
 				if (ret.isEmpty()) {
-					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard, scopeStartBoundVars);
+					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
 					if (bestStart != null) {
 						tupleExprs.remove(bestStart);
 						ret.addLast(bestStart);
@@ -442,12 +417,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					continue;
 				}
 
-				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality. Prefer
-				// candidates
-				// connected to the already chosen prefix; a zero/low estimate for an unrelated cross product should not
-				// beat
-				// a genuinely connected join.
-				boolean connectedCandidateExists = hasSharedStatementPatternWithAny(tupleExprs, ret);
+				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				for (TupleExpr cand : tupleExprs) {
@@ -455,17 +425,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						continue;
 					}
 
-					boolean candConnected = hasSharedVariableWithAny(cand, ret);
-					if (connectedCandidateExists && !candConnected) {
-						continue;
-					}
-
 					// compute the minimum join‐cost between cand and anything in ret
 					for (TupleExpr prev : ret) {
 						if (!statementPatternWithMinimumOneConstant(prev)) {
-							continue;
-						}
-						if (connectedCandidateExists && !hasSharedVariable(prev, cand)) {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
@@ -489,22 +451,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
-				BiFunction<TupleExpr, TupleExpr, Double> getCard, Set<String> scopeStartBoundVars) {
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
 			List<TupleExpr> candidates = new ArrayList<>();
 			for (TupleExpr tupleExpr : tupleExprs) {
 				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
 					candidates.add(tupleExpr);
 				}
-			}
-
-			List<TupleExpr> runtimeBoundCandidates = getRuntimeBoundTupleExprs(candidates, scopeStartBoundVars);
-			boolean restrictedToRuntimeBoundCandidates = !runtimeBoundCandidates.isEmpty();
-			if (restrictedToRuntimeBoundCandidates) {
-				candidates = runtimeBoundCandidates;
-			}
-
-			if (candidates.size() == 1 && restrictedToRuntimeBoundCandidates) {
-				return candidates.getFirst();
 			}
 
 			if (candidates.size() < 2) {
@@ -526,14 +478,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			TupleExpr bestA = null;
 			TupleExpr bestB = null;
 			double bestCost = Double.MAX_VALUE;
-			boolean connectedPairExists = hasSharedPair(primary, candidates);
 
 			for (TupleExpr a : primary) {
 				for (TupleExpr b : candidates) {
 					if (a == b) {
-						continue;
-					}
-					if (connectedPairExists && !hasSharedVariable(a, b)) {
 						continue;
 					}
 
@@ -594,58 +542,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		}
 
-		private boolean hasSharedVariable(TupleExpr first, TupleExpr second) {
-			Set<String> secondBindingNames = second.getBindingNames();
-			return containsAnyNonConstant(first.getBindingNames(), secondBindingNames);
-		}
-
-		private boolean hasSharedVariable(TupleExpr tupleExpr, Set<String> bindingNames) {
-			return containsAnyNonConstant(tupleExpr.getBindingNames(), bindingNames);
-		}
-
-		private boolean hasSharedVariableWithAny(TupleExpr tupleExpr, Iterable<TupleExpr> tupleExprs) {
-			for (TupleExpr other : tupleExprs) {
-				if (hasSharedVariable(tupleExpr, other)) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		private boolean hasSharedStatementPatternWithAny(List<TupleExpr> candidates, Iterable<TupleExpr> tupleExprs) {
-			for (TupleExpr candidate : candidates) {
-				if (statementPatternWithMinimumOneConstant(candidate)
-						&& hasSharedVariableWithAny(candidate, tupleExprs)) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		private boolean hasSharedPair(List<TupleExpr> primary, List<TupleExpr> candidates) {
-			for (TupleExpr a : primary) {
-				for (TupleExpr b : candidates) {
-					if (a != b && hasSharedVariable(a, b)) {
-						return true;
-					}
-				}
-			}
-			return false;
-		}
-
-		private boolean containsAnyNonConstant(Set<String> firstBindingNames, Set<String> secondBindingNames) {
-			if (firstBindingNames.isEmpty() || secondBindingNames.isEmpty()) {
-				return false;
-			}
-
-			for (String firstBindingName : firstBindingNames) {
-				if (!firstBindingName.startsWith("_const_") && secondBindingNames.contains(firstBindingName)) {
-					return true;
-				}
-			}
-			return false;
-		}
-
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
 			if (tupleExpr instanceof Join join) {
 				getJoinArgs(join.getLeftArg(), joinArgs);
@@ -682,135 +578,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					return v + 1;
 				});
 			}
-		}
-
-		private List<TupleExpr> getBindingSetAssignments(List<TupleExpr> expressions) {
-			if (expressions.isEmpty()) {
-				return List.of();
-			}
-
-			List<TupleExpr> bindingSetAssignments = List.of();
-			for (TupleExpr expr : expressions) {
-				if (expr instanceof BindingSetAssignment) {
-					if (bindingSetAssignments.isEmpty()) {
-						bindingSetAssignments = List.of(expr);
-					} else {
-						if (bindingSetAssignments.size() == 1) {
-							bindingSetAssignments = new ArrayList<>(bindingSetAssignments);
-						}
-						bindingSetAssignments.add(expr);
-					}
-				}
-			}
-			return bindingSetAssignments;
-		}
-
-		private Deque<TupleExpr> placeBindingSetAssignments(List<TupleExpr> priorityArgs,
-				Deque<TupleExpr> orderedJoinArgs, List<TupleExpr> bindingSetAssignments,
-				Set<String> scopeStartBoundVars) {
-			List<TupleExpr> originalPriorityArgs = new ArrayList<>(priorityArgs);
-			List<TupleExpr> originalOrderedJoinArgs = new ArrayList<>(orderedJoinArgs);
-
-			if (originalPriorityArgs.isEmpty() && originalOrderedJoinArgs.isEmpty()) {
-				return new ArrayDeque<>(bindingSetAssignments);
-			}
-
-			Map<Integer, List<TupleExpr>> priorityInserts = new HashMap<>();
-			Map<Integer, List<TupleExpr>> orderedInserts = new HashMap<>();
-			List<TupleExpr> end = List.of();
-
-			for (TupleExpr bindingSetAssignment : bindingSetAssignments) {
-				if (isSingleBindingSetAssignment(bindingSetAssignment)) {
-					if (!originalPriorityArgs.isEmpty()) {
-						priorityInserts.computeIfAbsent(0, k -> new ArrayList<>()).add(bindingSetAssignment);
-					} else {
-						orderedInserts.computeIfAbsent(0, k -> new ArrayList<>()).add(bindingSetAssignment);
-					}
-					continue;
-				}
-
-				int firstUseIndex = getFirstUseIndex(bindingSetAssignment, originalPriorityArgs,
-						originalOrderedJoinArgs,
-						scopeStartBoundVars);
-				if (firstUseIndex < 0) {
-					if (end.isEmpty()) {
-						end = List.of(bindingSetAssignment);
-					} else {
-						if (end.size() == 1) {
-							end = new ArrayList<>(end);
-						}
-						end.add(bindingSetAssignment);
-					}
-				} else if (firstUseIndex < originalPriorityArgs.size()) {
-					priorityInserts.computeIfAbsent(firstUseIndex, k -> new ArrayList<>()).add(bindingSetAssignment);
-				} else {
-					int orderedIndex = firstUseIndex - originalPriorityArgs.size();
-					orderedInserts.computeIfAbsent(orderedIndex, k -> new ArrayList<>()).add(bindingSetAssignment);
-				}
-			}
-
-			priorityArgs.clear();
-			for (int i = 0; i < originalPriorityArgs.size(); i++) {
-				List<TupleExpr> insertBefore = priorityInserts.get(i);
-				if (insertBefore != null) {
-					priorityArgs.addAll(insertBefore);
-				}
-				priorityArgs.add(originalPriorityArgs.get(i));
-			}
-
-			Deque<TupleExpr> ordered = new ArrayDeque<>();
-			for (int i = 0; i < originalOrderedJoinArgs.size(); i++) {
-				List<TupleExpr> insertBefore = orderedInserts.get(i);
-				if (insertBefore != null) {
-					ordered.addAll(insertBefore);
-				}
-				ordered.addLast(originalOrderedJoinArgs.get(i));
-			}
-			ordered.addAll(end);
-
-			return ordered;
-		}
-
-		private boolean isSingleBindingSetAssignment(TupleExpr tupleExpr) {
-			if (!(tupleExpr instanceof BindingSetAssignment assignment) || assignment.getBindingSets() == null) {
-				return false;
-			}
-
-			Iterator<BindingSet> bindingSets = assignment.getBindingSets().iterator();
-			if (!bindingSets.hasNext()) {
-				return false;
-			}
-			bindingSets.next();
-			return !bindingSets.hasNext();
-		}
-
-		private int getFirstUseIndex(TupleExpr bindingSetAssignment, List<TupleExpr> priorityArgs,
-				List<TupleExpr> orderedJoinArgs, Set<String> scopeStartBoundVars) {
-			Set<String> bindingNames = bindingSetAssignment.getBindingNames();
-			if (bindingNames.isEmpty()) {
-				return -1;
-			}
-
-			if (containsAnyNonConstant(bindingNames, scopeStartBoundVars)) {
-				return 0;
-			}
-
-			int index = 0;
-			for (TupleExpr priorityArg : priorityArgs) {
-				if (containsAnyNonConstant(bindingNames, priorityArg.getBindingNames())) {
-					return index;
-				}
-				index++;
-			}
-
-			for (TupleExpr orderedJoinArg : orderedJoinArgs) {
-				if (containsAnyNonConstant(bindingNames, orderedJoinArg.getBindingNames())) {
-					return index;
-				}
-				index++;
-			}
-
-			return -1;
 		}
 
 		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
@@ -1009,19 +776,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
 				TupleExpr tupleExpr = expressions.getFirst();
-				tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+				if (tupleExpr.getCostEstimate() < 0) {
+					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+				}
 				return tupleExpr;
-			}
-
-			List<TupleExpr> candidateExpressions = getRuntimeBoundTupleExprs(expressions, varsMap);
-			if (candidateExpressions.isEmpty()) {
-				candidateExpressions = expressions;
 			}
 
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
 
-			for (TupleExpr tupleExpr : candidateExpressions) {
+			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
 
@@ -1041,177 +805,84 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return result;
 		}
 
-		private List<TupleExpr> getRuntimeBoundTupleExprs(List<TupleExpr> expressions,
-				Map<TupleExpr, List<Var>> varsMap) {
-			List<TupleExpr> result = List.of();
-			for (TupleExpr expression : expressions) {
-				if (hasRuntimeBoundVar(expression, varsMap.get(expression))) {
-					if (result.isEmpty()) {
-						result = List.of(expression);
-					} else {
-						if (result.size() == 1) {
-							result = new ArrayList<>(result);
-						}
-						result.add(expression);
-					}
-				}
-			}
-			return result;
-		}
-
-		private List<TupleExpr> getRuntimeBoundTupleExprs(List<TupleExpr> expressions, Set<String> runtimeBoundVars) {
-			List<TupleExpr> result = List.of();
-			for (TupleExpr expression : expressions) {
-				if (hasSharedVariable(expression, runtimeBoundVars)) {
-					if (result.isEmpty()) {
-						result = List.of(expression);
-					} else {
-						if (result.size() == 1) {
-							result = new ArrayList<>(result);
-						}
-						result.add(expression);
-					}
-				}
-			}
-			return result;
-		}
-
-		private boolean hasRuntimeBoundVar(TupleExpr tupleExpr, List<Var> vars) {
-			if (vars != null) {
-				for (Var var : vars) {
-					if (!var.hasValue() && var.getName() != null && boundVars.contains(var.getName())) {
-						return true;
-					}
-				}
-			}
-
-			return hasSharedVariable(tupleExpr, boundVars);
-		}
-
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 
-			// BindingSetAssignment represents VALUES. It is only forced to cost 0 when it filters/binds a variable that
-			// is already available from an outer scope. Otherwise, VALUES placement is handled after join ordering so
-			// several VALUES clauses do not all get pulled to the beginning of the query.
-			if (tupleExpr instanceof BindingSetAssignment && hasSharedVariable(tupleExpr, boundVars)) {
-				return 0;
-			}
+			// BindingSetAssignment has a typical constant cost. This cost is not based on statistics so is much more
+			// reliable. If the BindingSetAssignment binds to any of the other variables in the other tuple expressions
+			// to choose from, then the cost of the BindingSetAssignment should be set to 0 since it will always limit
+			// the upper bound of any other costs. This way the BindingSetAssignment will be chosen as the left
+			// argument.
+			if (tupleExpr instanceof BindingSetAssignment) {
 
-			double cost = getCardinalityCost(tupleExpr, cardinalityMap);
-			List<Var> vars = varsMap.get(tupleExpr);
+				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
 
-			if (vars == null || vars.isEmpty()) {
-				return cost;
-			}
-
-			// Compensate for variables that are bound earlier in the evaluation. Count variables, not positions:
-			// repeated
-			// occurrences such as ?x :p ?x should not be treated as two independent bound variables.
-			List<Var> unboundVars = getUnboundVars(vars);
-			List<Var> uniqueUnboundVars = getUniqueVars(unboundVars);
-			int nonConstantVarCount = countUniqueNonConstantVars(vars);
-
-			if (nonConstantVarCount > 0) {
-				int boundVarCount = nonConstantVarCount - uniqueUnboundVars.size();
-				if (boundVarCount == 0) {
-					// Cartesian product: make the penalty depend on the current prefix, not just on this pattern.
-					cost = cost * currentHighestCost;
-				} else {
-					// Bound variables make indexed lookups cheaper, but they should not erase the base cardinality
-					// entirely.
-					// In particular, the old exponent of 0 for fully-bound patterns collapsed every such pattern to
-					// cost 1
-					// regardless of whether its estimated cardinality was tiny or huge.
-					double exp = (double) uniqueUnboundVars.size() / nonConstantVarCount;
-					exp = Math.max(MIN_BOUND_VAR_CARDINALITY_EXPONENT, exp);
-					cost = Math.pow(cost, exp);
-				}
-			}
-
-			if (unboundVars.isEmpty()) {
-				// Prefer filters/lookups that use more already-bound variables, but only mildly.
-				if (nonConstantVarCount > 1) {
-					cost /= Math.sqrt(nonConstantVarCount);
-				}
-			} else {
-				// Prefer patterns that bind variables from other tuple expressions. Cap this syntactic bonus so it
-				// cannot
-				// dominate orders-of-magnitude differences in estimated cardinality.
-				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
-				if (foreignVarFreq > 0) {
-					cost /= 1 + Math.min(foreignVarFreq, MAX_FOREIGN_VAR_FREQ_BONUS);
-				}
-			}
-
-			return Math.max(1, cost);
-		}
-
-		private double getCardinalityCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap) {
-			double cardinality;
-			if (hasCachedCardinality(tupleExpr)) {
-				cardinality = ((AbstractQueryModelNode) tupleExpr).getCardinality();
-			} else {
-				Double cached = cardinalityMap.get(tupleExpr);
-				cardinality = cached != null ? cached : statistics.getCardinality(tupleExpr);
-			}
-
-			if (!Double.isFinite(cardinality) || cardinality < 0) {
-				cardinality = 0;
-			}
-
-			// Adding a small floor allows us to order tuple expressions based on bound variables even when statistics
-			// returns 0, which can happen for recently-added data or incomplete statistics.
-			return cardinality + CARDINALITY_FLOOR;
-		}
-
-		private void updateCurrentHighestCost(TupleExpr tupleExpr) {
-			double cost = tupleExpr.getCostEstimate();
-			double cardinality = tupleExpr.getResultSizeEstimate();
-
-			if (Double.isFinite(cardinality) && cardinality >= 0) {
-				cost = Math.max(cost, cardinality + CARDINALITY_FLOOR);
-			}
-
-			if (Double.isFinite(cost) && cost > currentHighestCost) {
-				currentHighestCost = cost;
-			}
-		}
-
-		private int countUniqueNonConstantVars(List<Var> vars) {
-			if (vars.isEmpty()) {
-				return 0;
-			}
-
-			Set<Var> uniqueVars = new HashSet<>();
-			for (Var var : vars) {
-				if (!var.hasValue()) {
-					uniqueVars.add(var);
-				}
-			}
-			return uniqueVars.size();
-		}
-
-		private List<Var> getUniqueVars(List<Var> vars) {
-			if (vars.size() < 2) {
-				return vars;
-			}
-
-			List<Var> ret = null;
-			Set<Var> seen = new HashSet<>();
-			for (Var var : vars) {
-				if (seen.add(var)) {
-					if (ret == null) {
-						ret = List.of(var);
-					} else {
-						if (ret.size() == 1) {
-							ret = new ArrayList<>(ret);
-						}
-						ret.add(var);
+				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
+					if (varsUsedInOtherExpressions.contains(Var.of(assuredBindingName))) {
+						return 0;
 					}
 				}
 			}
-			return ret != null ? ret : Collections.emptyList();
+
+			double cost;
+
+			if (hasCachedCardinality(tupleExpr)) {
+				cost = ((AbstractQueryModelNode) tupleExpr).getCardinality();
+			} else {
+				cost = cardinalityMap.get(tupleExpr);
+			}
+
+			// Adding 5 to the cost allows us to order tuple expressions based on which variables are already bound even
+			// if the statistics returns a cardinality of 0. This is useful for cases where the statistics are
+			// inaccurate, such as when querying the data added in the current transaction.
+			cost += 5;
+
+			List<Var> vars = varsMap.get(tupleExpr);
+
+			// Compensate for variables that are bound earlier in the evaluation
+			List<Var> unboundVars = getUnboundVars(vars);
+			int constantVars = countConstantVars(vars);
+
+			int nonConstantVarCount = vars.size() - constantVars;
+
+			if (nonConstantVarCount > 0) {
+				int boundVarCount = nonConstantVarCount - unboundVars.size();
+				if (boundVarCount == 0) {
+					// Cartesian Product!
+					cost = cost * currentHighestCost;
+				} else {
+					double exp = (double) unboundVars.size() / nonConstantVarCount;
+					cost = Math.pow(cost, exp);
+				}
+
+			}
+
+			if (unboundVars.isEmpty()) {
+				// Prefer patterns with more bound vars
+				if (nonConstantVarCount > 0) {
+					cost /= nonConstantVarCount;
+				}
+			} else {
+				// Prefer patterns that bind variables from other tuple expressions
+				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
+				if (foreignVarFreq > 0) {
+					cost /= 1 + foreignVarFreq;
+				}
+			}
+
+			return cost;
+		}
+
+		private int countConstantVars(List<Var> vars) {
+			int size = 0;
+
+			for (Var var : vars) {
+				if (var.hasValue()) {
+					size++;
+				}
+			}
+
+			return size;
 		}
 
 		protected List<Var> getUnboundVars(List<Var> vars) {
