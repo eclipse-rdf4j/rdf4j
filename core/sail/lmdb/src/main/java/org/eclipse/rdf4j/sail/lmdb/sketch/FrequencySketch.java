@@ -21,8 +21,8 @@ interface FrequencySketch {
 
 	double innerProduct(FrequencySketch other);
 
-	default JoinFrequencyEstimate estimateInnerProduct(FrequencySketch other) {
+	default OmniSketchSurfaceEstimate estimateInnerProduct(FrequencySketch other) {
 		double rows = innerProduct(other);
-		return new JoinFrequencyEstimate(rows, rows, 1.0d, "frequency-sketch-inner-product", 1.0d);
+		return OmniSketchSurfaceEstimate.scalar(rows, rows, 1.0d, "frequency-sketch-inner-product", 1.0d);
 	}
 }

@@ -68,6 +68,12 @@ class LmdbStoreConfigTest {
 	private static final IRI SKETCH_ESTIMATOR_STRATEGY = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorStrategy");
 
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketIndex");
+
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
 
@@ -136,6 +142,14 @@ class LmdbStoreConfigTest {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
 		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
+	}
+
+	@Test
+	void sketchEstimatorOmniWitnessCohortDefaultsToSixteenBucketSeven() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketCount")).isEqualTo(16);
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketIndex")).isEqualTo(7);
 	}
 
 	@Test
@@ -310,6 +324,30 @@ class LmdbStoreConfigTest {
 				Values.literal(bucketCount),
 				"getSketchEstimatorContextBucketCount",
 				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 16, 64 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorOmniWitnessCohortBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 7, 41 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketIndex(final int bucketIndex) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
+				Values.literal(bucketIndex),
+				"getSketchEstimatorOmniWitnessCohortBucketIndex",
+				bucketIndex,
 				true
 		);
 	}

@@ -637,6 +637,8 @@ class LmdbSailStore implements SailStore {
 		if (config.getSketchEstimatorContextBucketCount() >= 0) {
 			estimatorConfig.withContextBucketCount(config.getSketchEstimatorContextBucketCount());
 		}
+		estimatorConfig.withOmniWitnessCohortBucket(config.getSketchEstimatorOmniWitnessCohortBucketCount(),
+				config.getSketchEstimatorOmniWitnessCohortBucketIndex());
 		estimatorConfig.withContextPairSketchesEnabled(config.getSketchEstimatorContextPairSketchesEnabled());
 		return estimatorConfig;
 	}

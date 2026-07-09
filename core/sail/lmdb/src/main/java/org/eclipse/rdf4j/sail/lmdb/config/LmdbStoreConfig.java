@@ -72,6 +72,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
 
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = 16;
+
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = 7;
+
 	/**
 	 * The default namespace id cache size.
 	 */
@@ -118,6 +122,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int sketchEstimatorObjectBucketCount = -1;
 
 	private int sketchEstimatorContextBucketCount = -1;
+
+	private int sketchEstimatorOmniWitnessCohortBucketCount = -1;
+
+	private int sketchEstimatorOmniWitnessCohortBucketIndex = -1;
 
 	private boolean sketchEstimatorContextPairSketchesEnabled = false;
 
@@ -357,6 +365,33 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getSketchEstimatorOmniWitnessCohortBucketCount() {
+		return sketchEstimatorOmniWitnessCohortBucketCount >= 0 ? sketchEstimatorOmniWitnessCohortBucketCount
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketCount(
+			int sketchEstimatorOmniWitnessCohortBucketCount) {
+		this.sketchEstimatorOmniWitnessCohortBucketCount = Math.max(0,
+				sketchEstimatorOmniWitnessCohortBucketCount);
+		if (this.sketchEstimatorOmniWitnessCohortBucketCount == 0) {
+			this.sketchEstimatorOmniWitnessCohortBucketIndex = 0;
+		}
+		return this;
+	}
+
+	public int getSketchEstimatorOmniWitnessCohortBucketIndex() {
+		return sketchEstimatorOmniWitnessCohortBucketIndex >= 0 ? sketchEstimatorOmniWitnessCohortBucketIndex
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketIndex(
+			int sketchEstimatorOmniWitnessCohortBucketIndex) {
+		this.sketchEstimatorOmniWitnessCohortBucketIndex = getSketchEstimatorOmniWitnessCohortBucketCount() == 0 ? 0
+				: Math.max(0, sketchEstimatorOmniWitnessCohortBucketIndex);
+		return this;
+	}
+
 	public boolean getSketchEstimatorContextPairSketchesEnabled() {
 		return sketchEstimatorContextPairSketchesEnabled;
 	}
@@ -559,6 +594,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorContextBucketCount >= 0) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
 					vf.createLiteral(sketchEstimatorContextBucketCount));
+		}
+		if (sketchEstimatorOmniWitnessCohortBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketCount));
+		}
+		if (sketchEstimatorOmniWitnessCohortBucketIndex >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketIndex));
 		}
 		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
@@ -790,6 +833,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT, null))
 					.ifPresent(lit -> setSketchEstimatorContextBucketCount(parseInt(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketIndex(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX)));
 
 			Models.objectLiteral(m.getStatements(implNode,
 					LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED, null))

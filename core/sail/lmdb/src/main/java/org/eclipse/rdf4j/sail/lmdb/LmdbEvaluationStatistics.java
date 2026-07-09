@@ -104,10 +104,10 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.OmniBridgeProbeEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.OmniCorrelatedProbeEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.OmniFiniteFilterProbeEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimateProvider;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -154,10 +154,8 @@ class LmdbEvaluationStatistics
 	private static final String FINITE_ANCHOR_SKETCH_SOURCE = "lmdb-finite-anchor-sketch";
 	private static final String FINITE_ANCHOR_PAGE_WALK_SOURCE = "lmdb-finite-anchor-page-walk";
 	private static final String DECISION_PAGE_WALK_SOURCE = "lmdb-decision-page-walk";
-	private static final double COUNT_MIN_TRUSTED_CONFIDENCE = 0.75d;
+	private static final double OMNI_SURFACE_TRUSTED_CONFIDENCE = 0.75d;
 	private static final double NON_EXACT_ZERO_SKETCH_CONFIDENCE = 0.25d;
-	private static final double COUNT_MIN_MIN_CALIBRATION_FACTOR = 0.05d;
-	private static final double COUNT_MIN_MAX_CALIBRATION_FACTOR = 1.0d;
 	private static final String PLANNED_SKETCH_STRATEGY = "plannedSketchStrategy";
 	private static final String PLANNED_SKETCH_ESTIMATE_SOURCE = "plannedSketchEstimateSource";
 	private static final String PLANNED_SKETCH_PREDICATE_KEY_KIND = "plannedSketchPredicateKeyKind";
@@ -232,6 +230,7 @@ class LmdbEvaluationStatistics
 	private final boolean operatorFeedbackApplyEnabled;
 	private volatile boolean statementPatternCardinalityFailureLogged;
 	private final ThreadLocal<OptimizationCostScope> optimizationCostScope = new ThreadLocal<>();
+	private final ThreadLocal<LmdbOmniEvidenceStore> completedOmniEvidence = new ThreadLocal<>();
 
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
@@ -485,7 +484,7 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
 		}
-		JoinFrequencyEstimate joinSurfaceEvidence = multiPatternBridgeChainEvidence(orderedFactors,
+		OmniSketchSurfaceEstimate joinSurfaceEvidence = multiPatternBridgeChainEvidence(orderedFactors,
 				effectiveBoundVars, rows);
 		if (joinSurfaceEvidence == null) {
 			joinSurfaceEvidence = multiPatternJoinOrderEvidence(orderedFactors, effectiveBoundVars, rows);
@@ -495,6 +494,8 @@ class LmdbEvaluationStatistics
 		}
 		if (joinSurfaceEvidence != null && isFiniteNonNegative(joinSurfaceEvidence.calibratedRows())) {
 			rows = joinSurfaceEvidence.calibratedRows();
+			recordOmniSurface(null, "multi-pattern-join",
+					omniSurfaceListKey("multi-pattern-join", orderedFactors, null), joinSurfaceEvidence);
 		}
 		double workRows = 0.0d;
 		Set<String> currentBoundVars = effectiveBoundVars;
@@ -518,21 +519,19 @@ class LmdbEvaluationStatistics
 		if (joinSurfaceEvidence != null) {
 			source = joinSurfaceEvidence.source();
 			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.5d;
-			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
-			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
-			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+			metrics.putAll(joinSurfaceEvidence.toDoubleMetrics());
 		}
 		return Optional.of(new StatisticsEstimate(rows,
 				QErrorInterval.heuristic(rows, qError, source), workRows,
 				source, metrics));
 	}
 
-	private JoinFrequencyEstimate multiPatternBridgeChainEvidence(List<TupleExpr> orderedFactors,
+	private OmniSketchSurfaceEstimate multiPatternBridgeChainEvidence(List<TupleExpr> orderedFactors,
 			Set<String> boundVars, double baselineRows) {
 		if (sketchBasedJoinEstimator == null) {
 			return null;
 		}
-		JoinFrequencyEstimate estimate = sketchBasedJoinEstimator.estimateOmniBridgeChain(orderedFactors,
+		OmniSketchSurfaceEstimate estimate = sketchBasedJoinEstimator.estimateOmniBridgeChain(orderedFactors,
 				boundVars == null ? Set.of() : boundVars);
 		if (estimate == null) {
 			estimate = reorderedOmniBridgeChainEvidence(orderedFactors, boundVars == null ? Set.of() : boundVars);
@@ -546,10 +545,10 @@ class LmdbEvaluationStatistics
 			rows = baselineRows;
 			confidence = Math.min(confidence, 0.25d);
 		}
-		return new JoinFrequencyEstimate(rows, rows, confidence, estimate.source(), estimate.calibrationFactor());
+		return estimate.withSelectedRows(rows, confidence, estimate.source(), estimate.fallbackReason());
 	}
 
-	private JoinFrequencyEstimate reorderedOmniBridgeChainEvidence(List<TupleExpr> factors, Set<String> boundVars) {
+	private OmniSketchSurfaceEstimate reorderedOmniBridgeChainEvidence(List<TupleExpr> factors, Set<String> boundVars) {
 		if (sketchBasedJoinEstimator == null || factors == null || factors.size() < 3
 				|| factors.size() > OMNI_BRIDGE_CHAIN_REORDER_MAX_FACTORS || (boundVars != null
 						&& !boundVars.isEmpty())) {
@@ -566,8 +565,8 @@ class LmdbEvaluationStatistics
 		return reorderedOmniBridgeChainEvidence(factors, candidate, used, attempts);
 	}
 
-	private JoinFrequencyEstimate reorderedOmniBridgeChainEvidence(List<TupleExpr> factors, List<TupleExpr> candidate,
-			boolean[] used, int[] attempts) {
+	private OmniSketchSurfaceEstimate reorderedOmniBridgeChainEvidence(List<TupleExpr> factors,
+			List<TupleExpr> candidate, boolean[] used, int[] attempts) {
 		if (attempts[0] >= OMNI_BRIDGE_CHAIN_REORDER_MAX_CANDIDATES) {
 			return null;
 		}
@@ -581,7 +580,7 @@ class LmdbEvaluationStatistics
 			}
 			used[i] = true;
 			candidate.add(factors.get(i));
-			JoinFrequencyEstimate estimate = reorderedOmniBridgeChainEvidence(factors, candidate, used, attempts);
+			OmniSketchSurfaceEstimate estimate = reorderedOmniBridgeChainEvidence(factors, candidate, used, attempts);
 			if (estimate != null) {
 				return estimate;
 			}
@@ -591,13 +590,13 @@ class LmdbEvaluationStatistics
 		return null;
 	}
 
-	private JoinFrequencyEstimate multiPatternJoinSurfaceEvidence(List<TupleExpr> orderedFactors) {
+	private OmniSketchSurfaceEstimate multiPatternJoinSurfaceEvidence(List<TupleExpr> orderedFactors) {
 		if (sketchBasedJoinEstimator == null || orderedFactors == null || orderedFactors.size() < 2) {
 			return null;
 		}
-		JoinFrequencyEstimate bestEstimate = null;
+		OmniSketchSurfaceEstimate bestEstimate = null;
 		for (String joinVarName : repeatedBindingNames(orderedFactors)) {
-			JoinFrequencyEstimate estimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(orderedFactors,
+			OmniSketchSurfaceEstimate estimate = sketchBasedJoinEstimator.estimateOmniSurface(orderedFactors,
 					joinVarName);
 			if (estimate != null && isFiniteNonNegative(estimate.calibratedRows())) {
 				bestEstimate = betterMultiPatternJoinSurfaceEvidence(bestEstimate, estimate);
@@ -606,8 +605,8 @@ class LmdbEvaluationStatistics
 		return bestEstimate;
 	}
 
-	private JoinFrequencyEstimate betterMultiPatternJoinSurfaceEvidence(JoinFrequencyEstimate current,
-			JoinFrequencyEstimate candidate) {
+	private OmniSketchSurfaceEstimate betterMultiPatternJoinSurfaceEvidence(OmniSketchSurfaceEstimate current,
+			OmniSketchSurfaceEstimate candidate) {
 		if (candidate == null || !isFiniteNonNegative(candidate.calibratedRows())) {
 			return current;
 		}
@@ -622,7 +621,7 @@ class LmdbEvaluationStatistics
 		return candidate.calibratedRows() < current.calibratedRows() ? candidate : current;
 	}
 
-	private JoinFrequencyEstimate multiPatternJoinOrderEvidence(List<TupleExpr> orderedFactors,
+	private OmniSketchSurfaceEstimate multiPatternJoinOrderEvidence(List<TupleExpr> orderedFactors,
 			Set<String> boundVars, double baselineRows) {
 		if (sketchBasedJoinEstimator == null || orderedFactors == null || orderedFactors.size() < 2) {
 			return null;
@@ -660,7 +659,7 @@ class LmdbEvaluationStatistics
 			confidence = Math.min(confidence, 0.25d);
 		}
 		confidence = Math.min(1.0d, confidence);
-		return new JoinFrequencyEstimate(rows, rows, confidence, source, 1.0d);
+		return OmniSketchSurfaceEstimate.scalar(rows, rows, confidence, source, 1.0d, "join-order");
 	}
 
 	private static List<String> repeatedBindingNames(List<TupleExpr> orderedFactors) {
@@ -702,7 +701,7 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		List<TupleExpr> factors = List.of(left, right);
-		JoinFrequencyEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+		OmniSketchSurfaceEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateOmniSurface(factors,
 				joinVar);
 		double rows = Double.NaN;
 		String source = "lmdb-join-frequency-inner-product";
@@ -711,6 +710,8 @@ class LmdbEvaluationStatistics
 			rows = joinSurfaceEvidence.calibratedRows();
 			source = joinSurfaceEvidence.source();
 			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.0d;
+			recordOmniSurface(null, "join-frequency-inner-product",
+					omniSurfaceListKey("join-frequency-inner-product", factors, joinVar), joinSurfaceEvidence);
 		}
 		Join join = new Join(left.clone(), right.clone());
 		if (!isFiniteNonNegative(rows)) {
@@ -734,9 +735,7 @@ class LmdbEvaluationStatistics
 		metrics.put("plannedJoinVarDistinctRight", rightDistinct);
 		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		if (joinSurfaceEvidence != null) {
-			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
-			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
-			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+			metrics.putAll(joinSurfaceEvidence.toDoubleMetrics());
 		}
 		return Optional.of(new StatisticsEstimate(rows,
 				QErrorInterval.heuristic(rows, qError, source),
@@ -750,7 +749,7 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		List<TupleExpr> factors = new ArrayList<>(pathPatterns);
-		JoinFrequencyEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+		OmniSketchSurfaceEstimate joinSurfaceEvidence = sketchBasedJoinEstimator.estimateOmniSurface(factors,
 				bridgeVar);
 		double rows = sketchBasedJoinEstimator.cardinality(factors);
 		String source = "lmdb-bridge-path";
@@ -759,6 +758,8 @@ class LmdbEvaluationStatistics
 			rows = joinSurfaceEvidence.calibratedRows();
 			source = joinSurfaceEvidence.source();
 			qError = joinSurfaceEvidence.confidence() >= 0.75d ? 1.5d : 2.5d;
+			recordOmniSurface(null, "bridge-path", omniSurfaceListKey("bridge-path", factors, bridgeVar),
+					joinSurfaceEvidence);
 		}
 		if (!isFiniteNonNegative(rows)) {
 			return Optional.empty();
@@ -775,15 +776,13 @@ class LmdbEvaluationStatistics
 		metrics.put("plannedBridgeVariableDistinctRows", bridgeDistinct);
 		metrics.put("plannedBridgePatternCount", (double) pathPatterns.size());
 		if (joinSurfaceEvidence != null) {
-			metrics.put("plannedOmniJoinSurfaceRows", joinSurfaceEvidence.calibratedRows());
-			metrics.put("plannedOmniJoinSurfaceUpperBoundRows", joinSurfaceEvidence.upperBoundRows());
-			metrics.put("plannedOmniJoinSurfaceConfidence", joinSurfaceEvidence.confidence());
+			metrics.putAll(joinSurfaceEvidence.toDoubleMetrics());
 		}
 		return Optional.of(new StatisticsEstimate(rows, QErrorInterval.heuristic(rows, qError, source),
 				workRows, source, metrics));
 	}
 
-	private static boolean isOmniJoinEvidence(JoinFrequencyEstimate estimate) {
+	private static boolean isOmniJoinEvidence(OmniSketchSurfaceEstimate estimate) {
 		return estimate != null && estimate.source() != null && estimate.source().contains("omni");
 	}
 
@@ -850,12 +849,18 @@ class LmdbEvaluationStatistics
 		if (subjectVarName == null) {
 			return Optional.empty();
 		}
-		JoinFrequencyEstimate subjectStar = sketchBasedJoinEstimator.estimateSubjectStarJoinSurface(starPatterns,
+		OmniSketchSurfaceEstimate subjectStar = sketchBasedJoinEstimator.estimateSubjectStarOmniSurface(starPatterns,
 				subjectVarName);
 		if (subjectStar == null || !isFiniteNonNegative(subjectStar.calibratedRows())) {
 			return Optional.empty();
 		}
 		double joinedRows = subjectStar.calibratedRows();
+		if (joinedRows == 0.0d && !subjectStar.exactZero()) {
+			traceStarMultiPredicateScan("star-multi-predicate-reject", starPatterns, boundVars,
+					"reason=non-exact-zero-omni-subject-star, method=" + subjectStar.source()
+							+ ", fallbackReason=" + subjectStar.fallbackReason());
+			return Optional.empty();
+		}
 		double surfaceRows = Math.max(subjectStar.upperBoundRows(), joinedRows);
 		double independentWorkRows = 0.0d;
 		boolean independentWorkRowsComplete = true;
@@ -881,6 +886,9 @@ class LmdbEvaluationStatistics
 		metrics.put("plannedOmniSubjectStarRows", joinedRows);
 		metrics.put("plannedOmniSubjectStarUpperBoundRows", subjectStar.upperBoundRows());
 		metrics.put("plannedOmniSubjectStarConfidence", subjectStar.confidence());
+		metrics.putAll(subjectStar.toDoubleMetrics());
+		recordOmniSurface(null, "subject-star",
+				omniSurfaceListKey("subject-star", new ArrayList<>(starPatterns), subjectVarName), subjectStar);
 		if (!independentWorkRowsComplete) {
 			metrics.put("plannedOmniSubjectStarIndependentWorkFallback", 1.0d);
 		}
@@ -1018,6 +1026,7 @@ class LmdbEvaluationStatistics
 		if (omniEstimate.isEmpty()) {
 			return Optional.empty();
 		}
+		recordFilterOmniSurface(input, condition, "finite-filter-probe", omniEstimate.get().omniSurface());
 		StatisticsEstimate finiteEstimate = finiteOmniFilterStatisticsEstimate(inputEstimate, omniEstimate.get());
 		ValueExpr residualCondition = omniEstimate.get().residualCondition();
 		if (residualCondition == null) {
@@ -1070,6 +1079,9 @@ class LmdbEvaluationStatistics
 		metrics.put("plannedOmniFilterProbeKeyWidth", (double) omniEstimate.keyWidth());
 		metrics.put("plannedOmniFilterProbeAttributeCount", (double) omniEstimate.attributeCount());
 		metrics.put("plannedOmniFilterSketchZero", outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : 0.0d);
+		if (omniEstimate.omniSurface() != null) {
+			metrics.putAll(omniEstimate.omniSurface().toDoubleMetrics());
+		}
 		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
@@ -1082,6 +1094,17 @@ class LmdbEvaluationStatistics
 		double qError = omniEstimate.confidence() >= 0.75d ? 1.5d : 4.0d;
 		QErrorInterval interval = QErrorInterval.heuristic(outputRows, qError, omniEstimate.source());
 		return new StatisticsEstimate(outputRows, interval, workRows, omniEstimate.source(), metrics, bag);
+	}
+
+	private void recordFilterOmniSurface(TupleExpr input, ValueExpr condition, String keyKind,
+			OmniSketchSurfaceEstimate omniSurface) {
+		if (input == null || condition == null || omniSurface == null) {
+			return;
+		}
+		Filter filter = new Filter(input.clone(), condition.clone());
+		Object fingerprint = factorFingerprint(filter);
+		recordOmniSurface(input, keyKind, fingerprint, omniSurface);
+		recordOmniSurface(null, "factor", fingerprint, omniSurface);
 	}
 
 	private Optional<StatisticsEstimate> correlatedAntiExistsFilterEstimate(TupleExpr input, ValueExpr condition,
@@ -1808,6 +1831,7 @@ class LmdbEvaluationStatistics
 				: sketchBasedJoinEstimator.beginQueryOptimizationScope();
 		OptimizationCostScope costScope = optimizationCostScope.get();
 		if (costScope == null) {
+			completedOmniEvidence.remove();
 			costScope = new OptimizationCostScope();
 			optimizationCostScope.set(costScope);
 		}
@@ -1828,6 +1852,7 @@ class LmdbEvaluationStatistics
 		}
 		costScope.depth--;
 		if (costScope.depth <= 0) {
+			completedOmniEvidence.set(costScope.omniEvidence);
 			optimizationCostScope.remove();
 		}
 	}
@@ -1849,6 +1874,92 @@ class LmdbEvaluationStatistics
 		if (costScope != null && key != null && value != null) {
 			costScope.plannerCache.put(key, value);
 		}
+	}
+
+	Optional<OmniSketchSurfaceEstimate> optimizationScopedOmniEvidence(TupleExpr tupleExpr) {
+		LmdbOmniEvidenceStore store = optimizationScopedOmniEvidenceStore();
+		if (store == null || tupleExpr == null) {
+			return Optional.empty();
+		}
+		Optional<OmniSketchSurfaceEstimate> evidence = store.get(tupleExpr);
+		if (evidence.isPresent()) {
+			return evidence;
+		}
+		evidence = store.get("factor", factorFingerprint(tupleExpr));
+		if (evidence.isPresent()) {
+			return evidence;
+		}
+		List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(tupleExpr);
+		if (factors.size() < 2) {
+			return Optional.empty();
+		}
+		evidence = recoverListOmniEvidence(store, tupleExpr, "multi-pattern-join", factors, null);
+		if (evidence.isPresent()) {
+			return evidence;
+		}
+		Set<String> sharedBindings = new LinkedHashSet<>(factors.getFirst().getBindingNames());
+		for (int index = 1; index < factors.size(); index++) {
+			sharedBindings.retainAll(factors.get(index).getBindingNames());
+		}
+		for (String sharedBinding : sharedBindings) {
+			if (factors.size() == 2) {
+				evidence = recoverListOmniEvidence(store, tupleExpr, "join-frequency-inner-product", factors,
+						sharedBinding);
+				if (evidence.isPresent()) {
+					return evidence;
+				}
+			}
+			evidence = recoverListOmniEvidence(store, tupleExpr, "bridge-path", factors, sharedBinding);
+			if (evidence.isPresent()) {
+				return evidence;
+			}
+		}
+		String subjectBinding = commonSubjectBinding(factors);
+		return subjectBinding == null
+				? Optional.empty()
+				: recoverListOmniEvidence(store, tupleExpr, "subject-star", factors, subjectBinding);
+	}
+
+	private Optional<OmniSketchSurfaceEstimate> recoverListOmniEvidence(LmdbOmniEvidenceStore store,
+			TupleExpr tupleExpr, String keyKind, List<? extends TupleExpr> factors, String joinVarName) {
+		Object key = omniSurfaceListKey(keyKind, factors, joinVarName);
+		Optional<OmniSketchSurfaceEstimate> evidence = store.get(keyKind, key);
+		if (evidence.isEmpty()) {
+			return Optional.empty();
+		}
+		String fingerprint = store.put(tupleExpr, keyKind, key, evidence.get());
+		if (fingerprint != null) {
+			tupleExpr.setStringMetricPlanned(LmdbOmniEvidenceStore.PLANNED_OMNI_EVIDENCE_FINGERPRINT, fingerprint);
+		}
+		return evidence;
+	}
+
+	private String commonSubjectBinding(List<? extends TupleExpr> factors) {
+		String subjectBinding = null;
+		for (TupleExpr factor : factors) {
+			if (!(factor instanceof StatementPattern pattern)) {
+				return null;
+			}
+			Var subject = pattern.getSubjectVar();
+			if (subject == null || subject.hasValue() || subject.getName() == null) {
+				return null;
+			}
+			if (subjectBinding == null) {
+				subjectBinding = subject.getName();
+			} else if (!subjectBinding.equals(subject.getName())) {
+				return null;
+			}
+		}
+		return subjectBinding;
+	}
+
+	LmdbOmniEvidenceStore optimizationScopedOmniEvidenceStore() {
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		return costScope == null ? completedOmniEvidence.get() : costScope.omniEvidence;
+	}
+
+	void clearCompletedOmniEvidence() {
+		completedOmniEvidence.remove();
 	}
 
 	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
@@ -2522,6 +2633,39 @@ class LmdbEvaluationStatistics
 		return estimate;
 	}
 
+	private String recordOmniSurface(TupleExpr tupleExpr, String keyKind, Object key,
+			OmniSketchSurfaceEstimate omniSurface) {
+		OptimizationCostScope scope = optimizationCostScope.get();
+		if (scope == null || omniSurface == null) {
+			return null;
+		}
+		return scope.omniEvidence.put(tupleExpr, keyKind, key, omniSurface);
+	}
+
+	private void attachOmniSurfaceMetrics(TupleExpr tupleExpr, Map<String, String> stringMetrics,
+			Map<String, Double> doubleMetrics, String keyKind, Object key, OmniSketchSurfaceEstimate omniSurface) {
+		if (omniSurface == null) {
+			return;
+		}
+		if (stringMetrics != null) {
+			String fingerprint = recordOmniSurface(tupleExpr, keyKind, key, omniSurface);
+			if (fingerprint != null) {
+				stringMetrics.put(LmdbOmniEvidenceStore.PLANNED_OMNI_EVIDENCE_FINGERPRINT, fingerprint);
+			}
+			stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, omniSurface.source());
+			stringMetrics.putAll(omniSurface.toStringMetrics());
+		} else {
+			recordOmniSurface(tupleExpr, keyKind, key, omniSurface);
+		}
+		if (doubleMetrics != null) {
+			doubleMetrics.put(PLANNED_SKETCH_UPPER_BOUND_ROWS, omniSurface.upperBoundRows());
+			doubleMetrics.put(PLANNED_SKETCH_CALIBRATED_ROWS, omniSurface.calibratedRows());
+			doubleMetrics.put(PLANNED_SKETCH_CALIBRATION_FACTOR, omniSurface.calibrationFactor());
+			doubleMetrics.put(PLANNED_SKETCH_CONFIDENCE, omniSurface.confidence());
+			doubleMetrics.putAll(omniSurface.toDoubleMetrics());
+		}
+	}
+
 	private Optional<FactorCostEstimate> fuseOperatorFeedbackEstimate(TupleExpr factor,
 			JoinFactorCostModel.CostContext context, FactorCostEstimate baseEstimate) {
 		if (operatorFeedbackStats == null || factor == null || baseEstimate == null) {
@@ -2831,10 +2975,7 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(leftWorkRows)) {
 			leftWorkRows = leftRows;
 		}
-		double outputRows = estimateFactorOutputRows(join, context.getCurrentlyBoundVars());
-		if (!isFiniteNonNegative(outputRows)) {
-			outputRows = Math.max(1.0d, Math.min(leftRows, rightRows));
-		}
+		double outputRows = rightRows;
 		double workRows = leftWorkRows + Math.max(rightWorkRows, rightRows);
 		if (!isFiniteNonNegative(workRows)) {
 			return Optional.empty();
@@ -3996,11 +4137,11 @@ class LmdbEvaluationStatistics
 		}
 		Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator
 				.estimateOmniCorrelatedSemiProbe(filter.getArg(), semiProbe, sharedBindings, inputRows);
-		return omniEstimate.map(estimate -> correlatedExistsOmniFactorCost(input, estimate, sharedBindings,
+		return omniEstimate.map(estimate -> correlatedExistsOmniFactorCost(filter, input, estimate, sharedBindings,
 				collectMetrics));
 	}
 
-	private FactorCostEstimate correlatedExistsOmniFactorCost(FactorCostEstimate input,
+	private FactorCostEstimate correlatedExistsOmniFactorCost(Filter factor, FactorCostEstimate input,
 			OmniCorrelatedProbeEstimate omniEstimate, Set<String> sharedBindings, boolean collectMetrics) {
 		double inputRows = input.getOutputRows();
 		double inputWorkRows = input.getWorkRows();
@@ -4044,9 +4185,20 @@ class LmdbEvaluationStatistics
 					: 0.0d);
 			doubleMetrics = mutableDoubles;
 		}
+		if (collectMetrics) {
+			attachOmniSurfaceMetrics(factor, stringMetrics, doubleMetrics,
+					"correlated-semi-probe", factorFingerprint(factor), omniEstimate.omniSurface());
+		} else {
+			recordOmniSurface(factor, "correlated-semi-probe", factorFingerprint(factor), omniEstimate.omniSurface());
+		}
 		FactorCostEstimate semiFilterEstimate = new FactorCostEstimate(workRows, outputRows, stringMetrics,
 				doubleMetrics, input.hasPhysicalAccessPath(), input.isDirectLookup(), input.getLookupComponentMask(),
 				input.getMissingLookupComponentMask(), input.getAccessRowsBeforeFilter(), false, false);
+		if (omniEstimate.omniSurface() != null) {
+			return semiFilterEstimate.withBag(omniEstimate.omniSurface()
+					.toBagEstimate(sharedBindings)
+					.withWorkRows(workRows, omniEstimate.source()));
+		}
 		return preserveBagEstimate(input, semiFilterEstimate);
 	}
 
@@ -4081,7 +4233,7 @@ class LmdbEvaluationStatistics
 			Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator
 					.estimateOmniCorrelatedAntiProbe(filter.getArg(), antiProbe, sharedBindings, inputRows);
 			if (omniEstimate.isPresent()) {
-				return Optional.of(correlatedAntiExistsOmniFactorCost(input, omniEstimate.get(), sharedBindings,
+				return Optional.of(correlatedAntiExistsOmniFactorCost(filter, input, omniEstimate.get(), sharedBindings,
 						collectMetrics));
 			}
 		}
@@ -4178,7 +4330,7 @@ class LmdbEvaluationStatistics
 		return Optional.of(preserveBagEstimate(input, antiFilterEstimate));
 	}
 
-	private FactorCostEstimate correlatedAntiExistsOmniFactorCost(FactorCostEstimate input,
+	private FactorCostEstimate correlatedAntiExistsOmniFactorCost(Filter factor, FactorCostEstimate input,
 			OmniCorrelatedProbeEstimate omniEstimate, Set<String> sharedBindings, boolean collectMetrics) {
 		double inputRows = input.getOutputRows();
 		double inputWorkRows = input.getWorkRows();
@@ -4225,9 +4377,20 @@ class LmdbEvaluationStatistics
 					: 0.0d);
 			doubleMetrics = mutableDoubles;
 		}
+		if (collectMetrics) {
+			attachOmniSurfaceMetrics(factor, stringMetrics, doubleMetrics,
+					"correlated-anti-probe", factorFingerprint(factor), omniEstimate.omniSurface());
+		} else {
+			recordOmniSurface(factor, "correlated-anti-probe", factorFingerprint(factor), omniEstimate.omniSurface());
+		}
 		FactorCostEstimate antiFilterEstimate = new FactorCostEstimate(workRows, outputRows, stringMetrics,
 				doubleMetrics, input.hasPhysicalAccessPath(), input.isDirectLookup(), input.getLookupComponentMask(),
 				input.getMissingLookupComponentMask(), input.getAccessRowsBeforeFilter(), false, false);
+		if (omniEstimate.omniSurface() != null) {
+			return antiFilterEstimate.withBag(omniEstimate.omniSurface()
+					.toBagEstimate(sharedBindings)
+					.withWorkRows(workRows, omniEstimate.source()));
+		}
 		return preserveBagEstimate(input, antiFilterEstimate);
 	}
 
@@ -4560,6 +4723,33 @@ class LmdbEvaluationStatistics
 		}
 		// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
 		return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
+	}
+
+	private List<Object> omniSurfaceListKey(String surfaceKind, List<? extends TupleExpr> factors,
+			String joinVarName) {
+		List<Object> key = new ArrayList<>();
+		key.add(surfaceKind);
+		key.add(joinVarName == null ? "" : joinVarName);
+		if (factors != null) {
+			for (TupleExpr factor : factors) {
+				key.add(factorFingerprint(factor));
+			}
+		}
+		return List.copyOf(key);
+	}
+
+	private List<Object> omniSurfacePrefixFactorKey(String surfaceKind, List<? extends TupleExpr> prefixFactors,
+			TupleExpr factor, String joinVarName) {
+		List<Object> key = new ArrayList<>();
+		key.add(surfaceKind);
+		key.add(joinVarName == null ? "" : joinVarName);
+		if (prefixFactors != null) {
+			for (TupleExpr prefixFactor : prefixFactors) {
+				key.add(factorFingerprint(prefixFactor));
+			}
+		}
+		key.add(factorFingerprint(factor));
+		return List.copyOf(key);
 	}
 
 	private boolean hasFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
@@ -5010,7 +5200,10 @@ class LmdbEvaluationStatistics
 		if (isPositiveFinite(productEstimate.prefixSurfaceRows())) {
 			doubleMetrics.put("plannedDistinctLookupBindings", productEstimate.prefixSurfaceRows());
 		}
-		addCountMinSurfaceTelemetry(stringMetrics, doubleMetrics, productEstimate, outputRows, repeatedInvocations);
+		addOmniSurfaceTelemetry(factor, context == null ? null
+				: omniSurfacePrefixFactorKey("bound-product", context.getPrefixFactors(), factor,
+						productEstimate.joinVarName()),
+				stringMetrics, doubleMetrics, productEstimate, outputRows, repeatedInvocations);
 		double lookupDomainAverageOutputRows = Math.max(repeatedInvocations, outputRows);
 		if (isPositiveFinite(lookupDomainAverageOutputRows)) {
 			doubleMetrics.put("plannedLookupDomainAverageOutputRows", lookupDomainAverageOutputRows);
@@ -5124,10 +5317,11 @@ class LmdbEvaluationStatistics
 		return joinVarName;
 	}
 
-	private void addCountMinSurfaceTelemetry(Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
+	private void addOmniSurfaceTelemetry(TupleExpr tupleExpr, Object evidenceKey, Map<String, String> stringMetrics,
+			Map<String, Double> doubleMetrics,
 			BoundJoinProductEstimate productEstimate, double outputRows, double repeatedInvocations) {
-		JoinFrequencyEstimate countMinEvidence = productEstimate == null ? null : productEstimate.countMinEvidence();
-		if (countMinEvidence == null) {
+		OmniSketchSurfaceEstimate omniSurface = productEstimate == null ? null : productEstimate.omniSurface();
+		if (omniSurface == null) {
 			return;
 		}
 		if (sketchBasedJoinEstimator != null) {
@@ -5136,19 +5330,15 @@ class LmdbEvaluationStatistics
 				stringMetrics.put(PLANNED_SKETCH_STRATEGY, sketchStrategy.configValue());
 			}
 		}
-		stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, countMinEvidence.source());
+		attachOmniSurfaceMetrics(tupleExpr, stringMetrics, doubleMetrics, "bound-product", evidenceKey, omniSurface);
 		if (productEstimate.sketchPredicateKeyKind() != null && !productEstimate.sketchPredicateKeyKind().isBlank()) {
 			stringMetrics.put(PLANNED_SKETCH_PREDICATE_KEY_KIND, productEstimate.sketchPredicateKeyKind());
 		}
-		if (trustedCountMinSurface(countMinEvidence) && !productEstimate.exactRows()) {
-			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, countMinEvidence.source());
+		if (trustedOmniSurface(omniSurface) && !productEstimate.exactRows()) {
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, omniSurface.source());
 		}
-		doubleMetrics.put(PLANNED_SKETCH_UPPER_BOUND_ROWS, countMinEvidence.upperBoundRows());
-		doubleMetrics.put(PLANNED_SKETCH_CALIBRATED_ROWS, countMinEvidence.calibratedRows());
-		doubleMetrics.put(PLANNED_SKETCH_CALIBRATION_FACTOR, countMinEvidence.calibrationFactor());
-		doubleMetrics.put(PLANNED_SKETCH_CONFIDENCE, countMinEvidence.confidence());
-		double scaledUpperRows = scaledCountMinBoundJoinRows(productEstimate, repeatedInvocations,
-				countMinEvidence.upperBoundRows());
+		double scaledUpperRows = scaledOmniBoundJoinRows(productEstimate, repeatedInvocations,
+				omniSurface.upperBoundRows());
 		if (isFiniteNonNegative(scaledUpperRows)) {
 			double upperRows = Math.max(outputRows, scaledUpperRows);
 			double existingUpper = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER,
@@ -5161,8 +5351,8 @@ class LmdbEvaluationStatistics
 			doubleMetrics.merge(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows, Math::max);
 			doubleMetrics.merge(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, uncertaintyRows, Math::max);
 		}
-		double scaledCalibratedRows = scaledCountMinBoundJoinRows(productEstimate, repeatedInvocations,
-				countMinEvidence.calibratedRows());
+		double scaledCalibratedRows = scaledOmniBoundJoinRows(productEstimate, repeatedInvocations,
+				omniSurface.calibratedRows());
 		if (isFiniteNonNegative(scaledCalibratedRows)) {
 			double lowerRows = Math.min(outputRows, scaledCalibratedRows);
 			double existingLower = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_LOWER,
@@ -5170,13 +5360,14 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_LOWER,
 					isFiniteNonNegative(existingLower) ? Math.min(existingLower, lowerRows) : lowerRows);
 		}
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, countMinEvidence.confidence());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, omniSurface.confidence());
 	}
 
-	private void addFiniteDerivedSurfaceSketchTelemetry(Map<String, String> stringMetrics,
+	private void addFiniteDerivedSurfaceSketchTelemetry(TupleExpr tupleExpr, Object evidenceKey,
+			Map<String, String> stringMetrics,
 			Map<String, Double> doubleMetrics, FiniteDerivedSurfaceEstimate surfaceEstimate) {
-		JoinFrequencyEstimate countMinEvidence = surfaceEstimate == null ? null : surfaceEstimate.countMinEvidence();
-		if (countMinEvidence == null) {
+		OmniSketchSurfaceEstimate omniSurface = surfaceEstimate == null ? null : surfaceEstimate.omniSurface();
+		if (omniSurface == null) {
 			return;
 		}
 		if (sketchBasedJoinEstimator != null) {
@@ -5185,19 +5376,11 @@ class LmdbEvaluationStatistics
 				stringMetrics.put(PLANNED_SKETCH_STRATEGY, sketchStrategy.configValue());
 			}
 		}
-		stringMetrics.put(PLANNED_SKETCH_ESTIMATE_SOURCE, countMinEvidence.source());
-		doubleMetrics.put(PLANNED_SKETCH_UPPER_BOUND_ROWS, countMinEvidence.upperBoundRows());
-		doubleMetrics.put(PLANNED_SKETCH_CALIBRATED_ROWS, countMinEvidence.calibratedRows());
-		doubleMetrics.put(PLANNED_SKETCH_CALIBRATION_FACTOR, countMinEvidence.calibrationFactor());
-		doubleMetrics.put(PLANNED_SKETCH_CONFIDENCE, countMinEvidence.confidence());
-		if (isOmniJoinEvidence(countMinEvidence)) {
-			doubleMetrics.put("plannedOmniJoinSurfaceRows", countMinEvidence.calibratedRows());
-			doubleMetrics.put("plannedOmniJoinSurfaceUpperBoundRows", countMinEvidence.upperBoundRows());
-			doubleMetrics.put("plannedOmniJoinSurfaceConfidence", countMinEvidence.confidence());
-		}
+		attachOmniSurfaceMetrics(tupleExpr, stringMetrics, doubleMetrics, "finite-derived-surface", evidenceKey,
+				omniSurface);
 	}
 
-	private double scaledCountMinBoundJoinRows(BoundJoinProductEstimate productEstimate, double repeatedInvocations,
+	private double scaledOmniBoundJoinRows(BoundJoinProductEstimate productEstimate, double repeatedInvocations,
 			double surfaceRows) {
 		if (productEstimate == null || !isPositiveFinite(repeatedInvocations)
 				|| !isPositiveFinite(productEstimate.prefixSurfaceRows()) || !isFiniteNonNegative(surfaceRows)) {
@@ -6034,7 +6217,10 @@ class LmdbEvaluationStatistics
 					componentMaskString(accessPathEstimate.missingLookupComponentMask()));
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, bestSurfaceEstimate.estimateSource());
-		addFiniteDerivedSurfaceSketchTelemetry(stringMetrics, doubleMetrics, bestSurfaceEstimate);
+		addFiniteDerivedSurfaceSketchTelemetry(factor,
+				omniSurfacePrefixFactorKey("finite-derived-surface", prefixFactors, surfaceFactor,
+						bestSurfaceEstimate.finiteVarName()),
+				stringMetrics, doubleMetrics, bestSurfaceEstimate);
 		doubleMetrics.put("plannedSurfaceRows", bestSurfaceRows);
 		if (bestSurfaceRows != uncappedSurfaceRows) {
 			doubleMetrics.put("plannedUncappedSurfaceRows", uncappedSurfaceRows);
@@ -6325,7 +6511,7 @@ class LmdbEvaluationStatistics
 		if (estimate == null || !isFiniteNonNegative(estimate.surfaceRows())) {
 			return false;
 		}
-		return estimate.surfaceRows() > 0.0d || estimate.exactRows() || estimate.countMinEvidence() != null;
+		return estimate.surfaceRows() > 0.0d || estimate.exactRows() || estimate.omniSurface() != null;
 	}
 
 	private FiniteDerivedSurfaceEstimate exactFiniteAnchorSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
@@ -6389,37 +6575,27 @@ class LmdbEvaluationStatistics
 		}
 		double bestRows = Double.NaN;
 		String bestJoinVarName = null;
-		JoinFrequencyEstimate bestEvidence = null;
+		OmniSketchSurfaceEstimate bestEvidence = null;
 		for (String sharedBindingName : sharedBindingNames) {
-			JoinFrequencyEstimate evidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors, factor,
+			OmniSketchSurfaceEstimate evidence = sketchBasedJoinEstimator.estimateOmniSurface(prefixFactors, factor,
 					sharedBindingName);
-			double rows = Double.NaN;
-			boolean evidenceRows = false;
-			if (evidence != null && isFiniteNonNegative(evidence.calibratedRows())) {
-				rows = evidence.calibratedRows();
-				evidenceRows = true;
-			}
-			if (!isFiniteNonNegative(rows)) {
-				rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor,
-						sharedBindingName);
-			}
+			double rows = evidence != null && isFiniteNonNegative(evidence.calibratedRows())
+					? evidence.calibratedRows()
+					: Double.NaN;
 			if (isFiniteNonNegative(rows) && (!isFiniteNonNegative(bestRows) || rows < bestRows)) {
 				bestRows = rows;
 				bestJoinVarName = sharedBindingName;
-				bestEvidence = evidenceRows ? evidence : null;
+				bestEvidence = evidence;
 			}
 		}
 		if (!isFiniteNonNegative(bestRows) || bestJoinVarName == null) {
 			return null;
 		}
-		JoinFrequencyEstimate prefixEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
+		OmniSketchSurfaceEstimate prefixEvidence = sketchBasedJoinEstimator.estimateOmniSurface(prefixFactors,
 				bestJoinVarName);
 		double prefixRows = prefixEvidence != null && isFiniteNonNegative(prefixEvidence.calibratedRows())
 				? prefixEvidence.calibratedRows()
 				: Double.NaN;
-		if (!isFiniteNonNegative(prefixRows)) {
-			prefixRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, bestJoinVarName);
-		}
 		if (!isFiniteNonNegative(prefixRows)) {
 			prefixRows = estimateFiniteBranchRows(prefixFactors);
 		}
@@ -6432,7 +6608,7 @@ class LmdbEvaluationStatistics
 				estimateSource, bestEvidence);
 	}
 
-	private JoinFrequencyEstimate nonExactZeroSketchEvidence(JoinFrequencyEstimate evidence, double rows,
+	private OmniSketchSurfaceEstimate nonExactZeroSketchEvidence(OmniSketchSurfaceEstimate evidence, double rows,
 			String fallbackSource) {
 		if (!isFiniteNonNegative(rows) || rows != 0.0d) {
 			return evidence;
@@ -6444,8 +6620,8 @@ class LmdbEvaluationStatistics
 				|| evidence.confidence() <= NON_EXACT_ZERO_SKETCH_CONFIDENCE) {
 			return evidence;
 		}
-		return new JoinFrequencyEstimate(evidence.upperBoundRows(), evidence.calibratedRows(),
-				NON_EXACT_ZERO_SKETCH_CONFIDENCE, evidence.source(), evidence.calibrationFactor());
+		return evidence.withSelectedRows(evidence.calibratedRows(), NON_EXACT_ZERO_SKETCH_CONFIDENCE,
+				evidence.source(), fallbackSource);
 	}
 
 	private boolean hasFiniteAnchorFactor(List<TupleExpr> factors) {
@@ -6980,25 +7156,22 @@ class LmdbEvaluationStatistics
 			if (isFiniteNonNegative(finiteRows)) {
 				traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
 						Double.NaN, Double.NaN, Double.NaN, finiteRows);
-				JoinFrequencyEstimate sketchEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+				OmniSketchSurfaceEstimate sketchEvidence = sketchBasedJoinEstimator.estimateOmniSurface(factors,
 						joinVarName);
 				return new FiniteBranchSurfaceEstimate(finiteRows, true, sketchEvidence);
 			}
 		}
-		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(factors,
+		OmniSketchSurfaceEstimate omniSurface = sketchBasedJoinEstimator.estimateOmniSurface(factors,
 				joinVarName);
 		double sketchRows;
 		double sketchUpperBoundRows;
-		if (countMinEstimate == null) {
-			sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
-			sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(factors,
-					joinVarName);
-			countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(factors, joinVarName);
+		if (omniSurface == null) {
+			sketchRows = Double.NaN;
+			sketchUpperBoundRows = Double.NaN;
 		} else {
-			sketchRows = countMinEstimate.calibratedRows();
-			sketchUpperBoundRows = countMinEstimate.upperBoundRows();
+			sketchRows = omniSurface.calibratedRows();
+			sketchUpperBoundRows = omniSurface.upperBoundRows();
 		}
-		CountMinSurfaceCacheKey countMinCacheKey = CountMinSurfaceCacheKey.of(factors, joinVarName);
 
 		countFallbackJoinSurfaceCall();
 		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(factors,
@@ -7014,20 +7187,19 @@ class LmdbEvaluationStatistics
 		} else {
 			traceExactEstimateSkip("surface-list-skip-exact", null, null, joinVarName, cheapRows);
 		}
-		countMinEstimate = calibrateCountMinSurface(countMinCacheKey, countMinEstimate, exactRows);
 		double selectedRows = selectJoinSurfaceRows(sketchRows, sketchUpperBoundRows, exactRows, pairwiseFallbackRows,
-				countMinEstimate);
+				omniSurface);
 		if (isFiniteNonNegative(selectedRows)) {
 			traceJoinSurfaceSelection("surface-list", null, joinVarName, sketchRows, sketchUpperBoundRows, exactRows,
 					pairwiseFallbackRows, Double.NaN, selectedRows);
-			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows), countMinEstimate);
+			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows), omniSurface);
 		}
 
 		double fallbackRows = sketchRows;
 		traceJoinSurfaceSelection("surface-list-fallback", null, joinVarName, sketchRows, sketchUpperBoundRows,
 				exactRows,
 				pairwiseFallbackRows, fallbackRows, fallbackRows);
-		return new FiniteBranchSurfaceEstimate(fallbackRows, false, countMinEstimate);
+		return new FiniteBranchSurfaceEstimate(fallbackRows, false, omniSurface);
 	}
 
 	double estimateBoundJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
@@ -7085,27 +7257,23 @@ class LmdbEvaluationStatistics
 			if (isFiniteNonNegative(finiteRows)) {
 				traceJoinSurfaceSelection("surface-prefix-factor-finite", factor, joinVarName, Double.NaN, finiteRows,
 						Double.NaN, Double.NaN, Double.NaN, finiteRows);
-				JoinFrequencyEstimate sketchEvidence = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
+				OmniSketchSurfaceEstimate sketchEvidence = sketchBasedJoinEstimator.estimateOmniSurface(prefixFactors,
 						factor, joinVarName);
 				return new FiniteBranchSurfaceEstimate(finiteRows, true, sketchEvidence);
 			}
 		}
 		countSketchJoinSurfaceCall();
-		JoinFrequencyEstimate countMinEstimate = sketchBasedJoinEstimator.estimateSketchJoinSurface(prefixFactors,
+		OmniSketchSurfaceEstimate omniSurface = sketchBasedJoinEstimator.estimateOmniSurface(prefixFactors,
 				factor, joinVarName);
 		double sketchRows;
 		double sketchUpperBoundRows;
-		if (countMinEstimate == null) {
-			sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
-			sketchUpperBoundRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceUpperBoundRows(prefixFactors,
-					factor, joinVarName);
-			countMinEstimate = sketchBasedJoinEstimator.estimateCountMinJoinSurface(prefixFactors, factor,
-					joinVarName);
+		if (omniSurface == null) {
+			sketchRows = Double.NaN;
+			sketchUpperBoundRows = Double.NaN;
 		} else {
-			sketchRows = countMinEstimate.calibratedRows();
-			sketchUpperBoundRows = countMinEstimate.upperBoundRows();
+			sketchRows = omniSurface.calibratedRows();
+			sketchUpperBoundRows = omniSurface.upperBoundRows();
 		}
-		CountMinSurfaceCacheKey countMinCacheKey = CountMinSurfaceCacheKey.of(prefixFactors, factor, joinVarName);
 
 		countFallbackJoinSurfaceCall();
 		double pairwiseFallbackRows = sketchBasedJoinEstimator.estimatePairwiseJoinSurfaceFallbackRows(prefixFactors,
@@ -7122,19 +7290,18 @@ class LmdbEvaluationStatistics
 		} else {
 			traceExactEstimateSkip("surface-prefix-factor-skip-exact", factor, null, joinVarName, cheapRows);
 		}
-		countMinEstimate = calibrateCountMinSurface(countMinCacheKey, countMinEstimate, exactRows);
 		double selectedRows = selectJoinSurfaceRows(sketchRows, sketchUpperBoundRows, exactRows, pairwiseFallbackRows,
-				countMinEstimate);
+				omniSurface);
 		if (isFiniteNonNegative(selectedRows)) {
 			traceJoinSurfaceSelection("surface-prefix-factor", factor, joinVarName, sketchRows, sketchUpperBoundRows,
 					exactRows, pairwiseFallbackRows, Double.NaN, selectedRows);
-			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows), countMinEstimate);
+			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows), omniSurface);
 		}
 
 		double fallbackRows = sketchRows;
 		traceJoinSurfaceSelection("surface-prefix-factor-fallback", factor, joinVarName, sketchRows,
 				sketchUpperBoundRows, exactRows, pairwiseFallbackRows, fallbackRows, fallbackRows);
-		return new FiniteBranchSurfaceEstimate(fallbackRows, false, countMinEstimate);
+		return new FiniteBranchSurfaceEstimate(fallbackRows, false, omniSurface);
 	}
 
 	private double selectJoinSurfaceRows(double sketchRows, double sketchUpperBoundRows, double exactRows,
@@ -7143,12 +7310,12 @@ class LmdbEvaluationStatistics
 	}
 
 	private double selectJoinSurfaceRows(double sketchRows, double sketchUpperBoundRows, double exactRows,
-			double pairwiseFallbackRows, JoinFrequencyEstimate countMinEstimate) {
+			double pairwiseFallbackRows, OmniSketchSurfaceEstimate omniSurface) {
 		if (isFiniteNonNegative(exactRows)) {
 			return exactRows;
 		}
-		if (trustedCountMinSurface(countMinEstimate)) {
-			double calibratedRows = countMinEstimate.calibratedRows();
+		if (trustedOmniSurface(omniSurface)) {
+			double calibratedRows = omniSurface.calibratedRows();
 			if (isFiniteNonNegative(calibratedRows)) {
 				return calibratedRows;
 			}
@@ -7176,40 +7343,10 @@ class LmdbEvaluationStatistics
 		return isFiniteNonNegative(sketchEvidenceRows) ? sketchEvidenceRows : Double.NaN;
 	}
 
-	private JoinFrequencyEstimate calibrateCountMinSurface(CountMinSurfaceCacheKey cacheKey,
-			JoinFrequencyEstimate countMinEstimate, double exactRows) {
-		if (countMinEstimate == null) {
-			return null;
-		}
-		if (isFiniteNonNegative(exactRows) && isPositiveFinite(countMinEstimate.upperBoundRows())) {
-			double factor = Math.clamp(exactRows / countMinEstimate.upperBoundRows(),
-					COUNT_MIN_MIN_CALIBRATION_FACTOR, COUNT_MIN_MAX_CALIBRATION_FACTOR);
-			JoinFrequencyEstimate calibrated = new JoinFrequencyEstimate(countMinEstimate.upperBoundRows(),
-					countMinEstimate.upperBoundRows() * factor, COUNT_MIN_TRUSTED_CONFIDENCE,
-					countMinEstimate.source(), factor);
-			OptimizationCostScope scope = optimizationCostScope.get();
-			if (scope != null && cacheKey != null) {
-				scope.countMinSurfaceCalibrationCache.put(cacheKey,
-						new CountMinSurfaceCalibration(factor, COUNT_MIN_TRUSTED_CONFIDENCE));
-			}
-			return calibrated;
-		}
-		OptimizationCostScope scope = optimizationCostScope.get();
-		CountMinSurfaceCalibration cached = scope == null || cacheKey == null
-				? null
-				: scope.countMinSurfaceCalibrationCache.get(cacheKey);
-		if (cached == null) {
-			return countMinEstimate;
-		}
-		return new JoinFrequencyEstimate(countMinEstimate.upperBoundRows(),
-				countMinEstimate.upperBoundRows() * cached.factor(), cached.confidence(), countMinEstimate.source(),
-				cached.factor());
-	}
-
-	private boolean trustedCountMinSurface(JoinFrequencyEstimate countMinEstimate) {
-		return countMinEstimate != null
-				&& countMinEstimate.confidence() >= COUNT_MIN_TRUSTED_CONFIDENCE
-				&& isFiniteNonNegative(countMinEstimate.calibratedRows());
+	private boolean trustedOmniSurface(OmniSketchSurfaceEstimate omniSurface) {
+		return omniSurface != null
+				&& omniSurface.confidence() >= OMNI_SURFACE_TRUSTED_CONFIDENCE
+				&& isFiniteNonNegative(omniSurface.calibratedRows());
 	}
 
 	private double sketchEvidenceRows(double sketchRows, double sketchUpperBoundRows, double pairwiseFallbackRows) {
@@ -7286,10 +7423,19 @@ class LmdbEvaluationStatistics
 		if (!collectBridgeProductFactors(rightArg, rightFactors) || rightFactors.size() != 1) {
 			return null;
 		}
-		return duplicateCorrectedBoundJoinRows(normalizedLeftFactors.factors(), rightFactors.getFirst(),
+		TupleExpr rightFactor = rightFactors.getFirst();
+		BoundJoinProductEstimate estimate = duplicateCorrectedBoundJoinRows(normalizedLeftFactors.factors(),
+				rightFactor,
 				alignedKnownPrefixRows("bound-product-prefix-lossy", rightFactors.getFirst(), knownLeftRows,
 						normalizedLeftFactors),
 				allowExactSurfaces);
+		if (estimate != null && estimate.omniSurface() != null) {
+			recordOmniSurface(rightArg, "bound-product",
+					omniSurfacePrefixFactorKey("bound-product", normalizedLeftFactors.factors(), rightFactor,
+							estimate.joinVarName()),
+					estimate.omniSurface());
+		}
+		return estimate;
 	}
 
 	OptionalBridgeProductEstimate estimateOptionalBridgeProduct(TupleExpr leftArg, TupleExpr rightArg) {
@@ -7318,6 +7464,12 @@ class LmdbEvaluationStatistics
 		OptionalBridgeProductEstimate multiBridgeEstimate = estimateMultiBridgeOptionalProduct(leftFactors,
 				rightFactors, leftBindingNames, alignedKnownLeftRows, finiteBindingValues);
 		if (multiBridgeEstimate != null) {
+			if (multiBridgeEstimate.omniSurface() != null) {
+				recordOmniSurface(rightArg, "optional-bridge",
+						omniSurfacePrefixFactorKey("optional-bridge", leftFactors, rightArg,
+								multiBridgeEstimate.joinVarName()),
+						multiBridgeEstimate.omniSurface());
+			}
 			return multiBridgeEstimate;
 		}
 
@@ -7384,10 +7536,15 @@ class LmdbEvaluationStatistics
 			OptionalBridgeProductEstimate estimate = new OptionalBridgeProductEstimate(bridgeProductRows,
 					prefixBridge.rows(), prefixBridge.prefixRows(), prefixBridge.prefixSurfaceRows(),
 					prefixBridge.prefixBridgeSurfaceRows(), continuationRows, bridgeRightRows, bridgeRows, source,
-					prefixBridge.joinVarName());
+					prefixBridge.joinVarName(), prefixBridge.omniSurface());
 			if (bestEstimate == null || bridgeProductRows > bestEstimate.productRows()) {
 				bestEstimate = estimate;
 			}
+		}
+		if (bestEstimate != null && bestEstimate.omniSurface() != null) {
+			recordOmniSurface(rightArg, "optional-bridge",
+					omniSurfacePrefixFactorKey("optional-bridge", leftFactors, rightArg, bestEstimate.joinVarName()),
+					bestEstimate.omniSurface());
 		}
 		return bestEstimate;
 	}
@@ -7454,9 +7611,13 @@ class LmdbEvaluationStatistics
 		double combinedRows = prefixRows;
 		double duplicateMultiplier = 1.0d;
 		double minimumPrefixSurfaceRows = Double.NaN;
+		List<OmniSketchSurfaceEstimate> selectedOmniSurfaces = new ArrayList<>();
 		for (BridgeCandidate bridgeCandidate : bridgeCandidates) {
 			selectedBridges.add(bridgeCandidate.bridge());
 			PrefixBridgeEstimate prefixBridge = bridgeCandidate.prefixBridge();
+			if (prefixBridge.omniSurface() != null) {
+				selectedOmniSurfaces.add(prefixBridge.omniSurface());
+			}
 			Set<String> bridgeBindingNames = plannerBindingNames(bridgeCandidate.bridge().getBindingNames());
 			boundNames.addAll(bridgeBindingNames);
 			double fanout = multiBridgePerRowFanout(bridgeCandidate.bridge(), prefixBridge, leftBindingNames);
@@ -7522,9 +7683,12 @@ class LmdbEvaluationStatistics
 
 		List<TupleExpr> remainingFactors = factorsWithoutIdentities(rightFactors, selectedBridges);
 		if (remainingFactors.isEmpty()) {
+			OmniSketchSurfaceEstimate combinedOmniSurface = OmniSketchSurfaceEstimate.compose(selectedOmniSurfaces,
+					combinedRows, combinedRows, "optional-multi-bridge", "optional-multi-bridge");
 			return new OptionalBridgeProductEstimate(combinedRows, combinedRows, prefixRows,
 					minimumPrefixSurfaceRows, distinctBridgeSurfaceRows(combinedRows, duplicateMultiplier),
-					combinedRows, Double.NaN, Double.NaN, "multi-bridge-product", joinVarName(bridgeJoinVarNames));
+					combinedRows, Double.NaN, Double.NaN, "multi-bridge-product", joinVarName(bridgeJoinVarNames),
+					combinedOmniSurface);
 		}
 		if (!factorsReachableFromBindings(boundNames, remainingFactors)) {
 			if (estimateTraceEnabled()) {
@@ -7557,8 +7721,11 @@ class LmdbEvaluationStatistics
 			}
 			return null;
 		}
+		OmniSketchSurfaceEstimate combinedOmniSurface = OmniSketchSurfaceEstimate.compose(selectedOmniSurfaces,
+				productRows, Math.max(combinedRows, productRows), "optional-multi-bridge", "optional-multi-bridge");
 		return new OptionalBridgeProductEstimate(productRows, combinedRows, prefixRows, minimumPrefixSurfaceRows,
-				bridgeSurfaceRows, productRows, rightRows, bridgeSurfaceRows, source, joinVarName(bridgeJoinVarNames));
+				bridgeSurfaceRows, productRows, rightRows, bridgeSurfaceRows, source, joinVarName(bridgeJoinVarNames),
+				combinedOmniSurface);
 	}
 
 	/**
@@ -7941,6 +8108,15 @@ class LmdbEvaluationStatistics
 			double prefixRightSurfaceRows = prefixRightSurface.rows();
 			traceBoundJoinProductCandidate(rightFactor, "full-prefix", sharedBindingName, prefixRows,
 					prefixSurfaceRows, prefixRightSurfaceRows);
+			if (!isPositiveFinite(prefixRightSurfaceRows) && !prefixRightSurface.exactRows()) {
+				double averagePrefixRightSurfaceRows = domainAverageBridgeRightSurfaceRows(rightFactor,
+						sharedBindingName, prefixSurfaceRows);
+				if (isPositiveFinite(averagePrefixRightSurfaceRows)) {
+					traceBoundJoinProductCandidate(rightFactor, "full-prefix-domain-average", sharedBindingName,
+							prefixRows, prefixSurfaceRows, averagePrefixRightSurfaceRows);
+					prefixRightSurfaceRows = averagePrefixRightSurfaceRows;
+				}
+			}
 			if (!isPositiveFinite(prefixSurfaceRows) || !isPositiveFinite(prefixRightSurfaceRows)) {
 				continue;
 			}
@@ -7951,7 +8127,7 @@ class LmdbEvaluationStatistics
 			BoundJoinProductEstimate estimate = new BoundJoinProductEstimate(rows, prefixRows, prefixSurfaceRows,
 					prefixRightSurfaceRows, sharedBindingName,
 					prefixSurface.exactRows() && prefixRightSurface.exactRows(),
-					prefixRightSurface.countMinEvidence());
+					prefixRightSurface.omniSurface());
 			fullPrefixEstimate = selectFullPrefixBoundJoinEstimate(fullPrefixEstimate, estimate,
 					rightIntroducesNoNewBindings);
 		}
@@ -7965,7 +8141,7 @@ class LmdbEvaluationStatistics
 		if (bestEstimate != null && rightIntroducesNoNewBindings && bestEstimate.productRows() > prefixRows) {
 			bestEstimate = new BoundJoinProductEstimate(prefixRows, bestEstimate.prefixRows(),
 					bestEstimate.prefixSurfaceRows(), bestEstimate.prefixRightSurfaceRows(),
-					bestEstimate.joinVarName(), bestEstimate.exactRows(), bestEstimate.countMinEvidence(),
+					bestEstimate.joinVarName(), bestEstimate.exactRows(), bestEstimate.omniSurface(),
 					bestEstimate.surfaceSource(), bestEstimate.sketchPredicateKeyKind());
 		}
 		return bestEstimate;
@@ -7983,16 +8159,11 @@ class LmdbEvaluationStatistics
 			return null;
 		}
 		OmniBridgeProbeEstimate probe = bridgeProbe.get();
-		JoinFrequencyEstimate evidence = new JoinFrequencyEstimate(
-				Math.max(probe.probeRows(), probe.outputRows()),
-				probe.outputRows(),
-				probe.confidence(),
-				probe.source(),
-				1.0d);
 		traceBoundJoinProductCandidate(rightFactor, probe.source(), probe.inputBindingName(), prefixRows,
 				probe.inputRows(), probe.outputRows());
 		return new BoundJoinProductEstimate(probe.outputRows(), prefixRows, probe.inputRows(), probe.outputRows(),
-				probe.inputBindingName(), probe.exactZero(), evidence, probe.source(), probe.predicateKeyKind());
+				probe.inputBindingName(), probe.exactZero(), probe.omniSurface(), probe.source(),
+				probe.predicateKeyKind());
 	}
 
 	private boolean shouldForceExactBoundJoinProductSurface(double prefixRows) {
@@ -8031,8 +8202,8 @@ class LmdbEvaluationStatistics
 
 	private boolean usesOmniJoinEstimatorSurface(FiniteBranchSurfaceEstimate estimate) {
 		return estimate != null
-				&& estimate.countMinEvidence() != null
-				&& "omni-join-estimator".equals(estimate.countMinEvidence().source());
+				&& estimate.omniSurface() != null
+				&& "omni-join-estimator".equals(estimate.omniSurface().source());
 	}
 
 	private BoundJoinProductEstimate selectFullPrefixBoundJoinEstimate(BoundJoinProductEstimate current,
@@ -8132,7 +8303,7 @@ class LmdbEvaluationStatistics
 				}
 				BoundJoinProductEstimate estimate = new BoundJoinProductEstimate(rows, prefixRows,
 						bridgeDenominatorRows, bridgeRightSurfaceRows, sharedBindingName, false,
-						bridgeRightSurface.countMinEvidence());
+						bridgeRightSurface.omniSurface());
 				if (bestEstimate == null || rows > bestEstimate.productRows()) {
 					bestEstimate = estimate;
 				}
@@ -8397,8 +8568,9 @@ class LmdbEvaluationStatistics
 				if (!isPositiveFinite(bridgeDenominatorRows)) {
 					bridgeDenominatorRows = bridgeFactorRows(leftFactor);
 				}
-				double bridgeRightSurfaceRows = finiteBranchSurfaceRows(List.of(leftFactor), bridge,
-						sharedBindingName);
+				FiniteBranchSurfaceEstimate bridgeRightSurface = finiteBranchSurfaceEstimate(List.of(leftFactor),
+						bridge, sharedBindingName, false);
+				double bridgeRightSurfaceRows = bridgeRightSurface.rows();
 				traceBoundJoinProductCandidate(bridge, "prefix-single-bridge", sharedBindingName, prefixRows,
 						bridgeDenominatorRows, bridgeRightSurfaceRows);
 				if (!isPositiveFinite(bridgeDenominatorRows) || !isPositiveFinite(bridgeRightSurfaceRows)) {
@@ -8409,7 +8581,7 @@ class LmdbEvaluationStatistics
 					continue;
 				}
 				PrefixBridgeEstimate estimate = new PrefixBridgeEstimate(rows, prefixRows, bridgeDenominatorRows,
-						bridgeRightSurfaceRows, sharedBindingName);
+						bridgeRightSurfaceRows, sharedBindingName, bridgeRightSurface.omniSurface());
 				if (bestEstimate == null || rows > bestEstimate.rows()) {
 					bestEstimate = estimate;
 				}
@@ -8442,7 +8614,9 @@ class LmdbEvaluationStatistics
 			FiniteBranchSurfaceEstimate prefixSurface = duplicateCorrectionPrefixSurfaceEstimate(leftFactors,
 					sharedBindingName, shouldForceExactBoundJoinProductSurface(prefixRows));
 			double prefixSurfaceRows = prefixSurface.rows();
-			double prefixBridgeSurfaceRows = finiteBranchSurfaceRows(leftFactors, bridge, sharedBindingName);
+			FiniteBranchSurfaceEstimate prefixBridgeSurface = finiteBranchSurfaceEstimate(leftFactors, bridge,
+					sharedBindingName, false);
+			double prefixBridgeSurfaceRows = prefixBridgeSurface.rows();
 			if (!isPositiveFinite(prefixSurfaceRows) || !isPositiveFinite(prefixBridgeSurfaceRows)) {
 				continue;
 			}
@@ -8451,7 +8625,7 @@ class LmdbEvaluationStatistics
 				continue;
 			}
 			PrefixBridgeEstimate estimate = new PrefixBridgeEstimate(rows, prefixRows, prefixSurfaceRows,
-					prefixBridgeSurfaceRows, sharedBindingName);
+					prefixBridgeSurfaceRows, sharedBindingName, prefixBridgeSurface.omniSurface());
 			if (bestEstimate == null || rows > bestEstimate.rows()) {
 				bestEstimate = estimate;
 			}
@@ -10234,6 +10408,7 @@ class LmdbEvaluationStatistics
 	private static final class OptimizationCostScope {
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
 		private final Map<Object, Object> plannerCache = new HashMap<>();
+		private final LmdbOmniEvidenceStore omniEvidence = new LmdbOmniEvidenceStore();
 		private final Map<TupleExpr, SetFactorCostCacheEntry> setFactorCostCache = new IdentityHashMap<>();
 		private final Map<TupleExpr, MaskFactorCostCacheEntry> maskFactorCostCache = new IdentityHashMap<>();
 		private final Map<TupleExpr, Object> factorFingerprintCache = new IdentityHashMap<>();
@@ -10242,7 +10417,6 @@ class LmdbEvaluationStatistics
 		private final Map<FiniteBranchRowsCacheKey, Optional<ConnectedBranchEstimate>> connectedFiniteBranchEstimateCache = new HashMap<>();
 		private final Map<FiniteBranchSurfaceCacheKey, FiniteBranchSurfaceEstimate> finiteBranchSurfaceCache = new HashMap<>();
 		private final Map<FiniteBranchFactorSurfaceCacheKey, FiniteBranchSurfaceEstimate> finiteBranchFactorSurfaceCache = new HashMap<>();
-		private final Map<CountMinSurfaceCacheKey, CountMinSurfaceCalibration> countMinSurfaceCalibrationCache = new HashMap<>();
 		private final Map<IRI, Optional<RdfTermDomain>> predicateObjectDomainCache = new HashMap<>();
 		private long finiteDerivedSurfaceCacheHits;
 		private long finiteDerivedSurfaceCacheMisses;

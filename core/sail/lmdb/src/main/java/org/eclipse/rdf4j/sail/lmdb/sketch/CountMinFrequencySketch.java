@@ -86,7 +86,7 @@ final class CountMinFrequencySketch implements FrequencySketch, DistributionSket
 	}
 
 	@Override
-	public JoinFrequencyEstimate estimateInnerProduct(FrequencySketch other) {
+	public OmniSketchSurfaceEstimate estimateInnerProduct(FrequencySketch other) {
 		if (!(other instanceof CountMinFrequencySketch that)) {
 			throw new IllegalArgumentException("Count-Min inner product requires another Count-Min sketch");
 		}
@@ -94,8 +94,8 @@ final class CountMinFrequencySketch implements FrequencySketch, DistributionSket
 			throw new IllegalArgumentException("Count-Min sketches are not compatible");
 		}
 		double upperBoundRows = computeUpperBoundInnerProduct(that);
-		return new JoinFrequencyEstimate(upperBoundRows, upperBoundRows, UNCALIBRATED_CONFIDENCE, ESTIMATE_SOURCE,
-				1.0d);
+		return OmniSketchSurfaceEstimate.scalar(upperBoundRows, upperBoundRows, UNCALIBRATED_CONFIDENCE,
+				ESTIMATE_SOURCE, 1.0d);
 	}
 
 	@Override

@@ -25,15 +25,23 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 final class LmdbPlannedRuntimeMetrics {
 	private final IdentityHashMap<TupleExpr, StepEstimate> estimatesByOriginal;
 	private final IdentityHashMap<TupleExpr, StepEstimate> estimatesByClone = new IdentityHashMap<>();
+	private final LmdbOmniEvidenceStore omniEvidenceStore;
 
-	private LmdbPlannedRuntimeMetrics(IdentityHashMap<TupleExpr, StepEstimate> estimatesByOriginal) {
+	private LmdbPlannedRuntimeMetrics(IdentityHashMap<TupleExpr, StepEstimate> estimatesByOriginal,
+			LmdbOmniEvidenceStore omniEvidenceStore) {
 		this.estimatesByOriginal = estimatesByOriginal;
+		this.omniEvidenceStore = omniEvidenceStore;
 	}
 
 	static LmdbPlannedRuntimeMetrics forPlan(JoinOrderPlanner.JoinOrderPlan plan,
 			List<TupleExpr> materializationOrder) {
+		return forPlan(plan, materializationOrder, null);
+	}
+
+	static LmdbPlannedRuntimeMetrics forPlan(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> materializationOrder, LmdbOmniEvidenceStore omniEvidenceStore) {
 		if (plan == null || plan.getSteps().size() != plan.getOrderedArgs().size()) {
-			return new LmdbPlannedRuntimeMetrics(new IdentityHashMap<>());
+			return new LmdbPlannedRuntimeMetrics(new IdentityHashMap<>(), omniEvidenceStore);
 		}
 		IdentityHashMap<TupleExpr, JoinOrderPlanner.PlanStep> plannedStepsByFactor = new IdentityHashMap<>();
 		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
@@ -55,7 +63,7 @@ final class LmdbPlannedRuntimeMetrics {
 			}
 			estimatesByOriginal.put(factor, new StepEstimate(i, step, cumulativeWorkRows));
 		}
-		return new LmdbPlannedRuntimeMetrics(estimatesByOriginal);
+		return new LmdbPlannedRuntimeMetrics(estimatesByOriginal, omniEvidenceStore);
 	}
 
 	TupleExpr cloneFactor(TupleExpr factor) {
@@ -64,6 +72,7 @@ final class LmdbPlannedRuntimeMetrics {
 		if (estimate != null) {
 			estimatesByClone.put(clone, estimate);
 			stampFactorMetrics(clone, estimate.step());
+			attachOmniEvidence(clone);
 		}
 		return clone;
 	}
@@ -73,6 +82,7 @@ final class LmdbPlannedRuntimeMetrics {
 		StepEstimate estimate = estimateForSubtree(right);
 		if (estimate != null) {
 			stampPrefixMetrics(join, estimate);
+			attachOmniEvidence(join);
 		}
 		return join;
 	}
@@ -138,6 +148,7 @@ final class LmdbPlannedRuntimeMetrics {
 
 	private void stampPrefixMetrics(Join join, StepEstimate estimate) {
 		JoinOrderPlanner.PlanStep step = estimate.step();
+		stampOmniMetrics(join, step);
 		if (LmdbJoinPlanSupport.isFiniteNonNegative(step.getPrefixOutputRows())) {
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, step.getPrefixOutputRows());
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, step.getPrefixOutputRows());
@@ -145,6 +156,25 @@ final class LmdbPlannedRuntimeMetrics {
 		if (LmdbJoinPlanSupport.isFiniteNonNegative(estimate.cumulativeWorkRows())) {
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.cumulativeWorkRows());
 			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, estimate.cumulativeWorkRows());
+		}
+	}
+
+	private void stampOmniMetrics(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step) {
+		for (Map.Entry<String, String> entry : step.getStringMetrics().entrySet()) {
+			if (entry.getKey().startsWith("plannedOmni")) {
+				tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, Double> entry : step.getDoubleMetrics().entrySet()) {
+			if (entry.getKey().startsWith("plannedOmni")) {
+				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
+	}
+
+	private void attachOmniEvidence(TupleExpr tupleExpr) {
+		if (omniEvidenceStore != null) {
+			omniEvidenceStore.attachFromMetrics(tupleExpr);
 		}
 	}
 

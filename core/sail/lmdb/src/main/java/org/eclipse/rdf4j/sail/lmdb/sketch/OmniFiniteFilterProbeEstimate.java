@@ -17,5 +17,5 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 public record OmniFiniteFilterProbeEstimate(double inputRows, double outputRows, double probeRows,
 		int inputWitnesses, int probeWitnesses, int matchedWitnesses, int valueCount, int attributeCount,
 		double samplingProbability, double confidence, int keyWidth, String source, boolean exactZero,
-		String fallbackReason, ValueExpr residualCondition) {
+		String fallbackReason, ValueExpr residualCondition, OmniSketchSurfaceEstimate omniSurface) {
 }

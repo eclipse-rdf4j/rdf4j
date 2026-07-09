@@ -22,20 +22,32 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 	private final int rows;
 	private final int nominalEntries;
 	private final long seed;
+	private final int omniWitnessCohortBucketCount;
+	private final int omniWitnessCohortBucketIndex;
 	private final long generation;
-	private final Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> attributes;
+	private final Map<OmniWitnessSet.SourceKind, Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>>> attributes;
 
 	MappedOmniJoinSnapshot(Arena arena, int width, int rows, int nominalEntries, long seed, long generation,
+			List<AttributeRef> attributes) {
+		this(arena, width, rows, nominalEntries, seed, 0, 0, generation, attributes);
+	}
+
+	MappedOmniJoinSnapshot(Arena arena, int width, int rows, int nominalEntries, long seed,
+			int omniWitnessCohortBucketCount, int omniWitnessCohortBucketIndex, long generation,
 			List<AttributeRef> attributes) {
 		this.arena = arena;
 		this.width = width;
 		this.rows = rows;
 		this.nominalEntries = nominalEntries;
 		this.seed = seed;
+		this.omniWitnessCohortBucketCount = Math.max(0, omniWitnessCohortBucketCount);
+		this.omniWitnessCohortBucketIndex = this.omniWitnessCohortBucketCount == 0 ? 0
+				: Math.max(0, omniWitnessCohortBucketIndex) % this.omniWitnessCohortBucketCount;
 		this.generation = generation;
 		this.attributes = attributes.stream()
-				.collect(java.util.stream.Collectors.groupingBy(AttributeRef::relation,
-						java.util.stream.Collectors.toMap(AttributeRef::attribute, AttributeRef::index)));
+				.collect(java.util.stream.Collectors.groupingBy(AttributeRef::sourceKind,
+						java.util.stream.Collectors.groupingBy(AttributeRef::relation,
+								java.util.stream.Collectors.toMap(AttributeRef::attribute, AttributeRef::index))));
 	}
 
 	int width() {
@@ -54,12 +66,25 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 		return seed;
 	}
 
+	int omniWitnessCohortBucketCount() {
+		return omniWitnessCohortBucketCount;
+	}
+
+	int omniWitnessCohortBucketIndex() {
+		return omniWitnessCohortBucketIndex;
+	}
+
 	long generation() {
 		return generation;
 	}
 
 	Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> attributes() {
-		return attributes;
+		return attributes(OmniWitnessSet.SourceKind.BASE);
+	}
+
+	Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> attributes(OmniWitnessSet.SourceKind sourceKind) {
+		Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> bySource = attributes.get(sourceKind);
+		return bySource == null ? Map.of() : bySource;
 	}
 
 	@Override
@@ -67,6 +92,11 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 		arena.close();
 	}
 
-	record AttributeRef(OmniRelation relation, OmniAttributeRef attribute, MappedWitnessIndex index) {
+	record AttributeRef(OmniRelation relation, OmniAttributeRef attribute, MappedWitnessIndex index,
+			OmniWitnessSet.SourceKind sourceKind) {
+
+		AttributeRef(OmniRelation relation, OmniAttributeRef attribute, MappedWitnessIndex index) {
+			this(relation, attribute, index, OmniWitnessSet.SourceKind.BASE);
+		}
 	}
 }

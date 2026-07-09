@@ -30,7 +30,7 @@ import java.util.List;
 final class OmniWitnessPersistenceStore implements AutoCloseable {
 
 	private static final int MANIFEST_MAGIC = 0x4f57494d;
-	private static final int MANIFEST_VERSION = 3;
+	private static final int MANIFEST_VERSION = 5;
 
 	private final Path directory;
 
@@ -57,14 +57,15 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			long offset = 0L;
 			for (OmniJoinEstimator.AttributeSnapshot attribute : attributes) {
 				long length = OmniWitnessSnapshotWriter.writeAttribute(channel, attribute);
-				manifestAttributes.add(new ManifestAttribute(attribute.relation(), attribute.attribute(), offset,
-						length));
+				manifestAttributes.add(new ManifestAttribute(attribute.sourceKind(), attribute.relation(),
+						attribute.attribute(), offset, length));
 				offset += length;
 			}
 		}
 		Files.move(tmpDataPath, dataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 		writeManifest(slot, generation, estimator.width(), estimator.rows(), estimator.nominalEntries(),
-				estimator.seed(), manifestAttributes);
+				estimator.seed(), estimator.omniWitnessCohortBucketCount(), estimator.omniWitnessCohortBucketIndex(),
+				manifestAttributes);
 	}
 
 	MappedOmniJoinSnapshot openSnapshot(byte slot) throws IOException {
@@ -86,10 +87,11 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 		for (ManifestAttribute attribute : manifest.attributes) {
 			MemorySegment segment = data.asSlice(attribute.offset, attribute.length);
 			attributes.add(new MappedOmniJoinSnapshot.AttributeRef(attribute.relation, attribute.attribute,
-					MappedWitnessIndex.wrap(segment)));
+					MappedWitnessIndex.wrap(segment), attribute.sourceKind));
 		}
 		return new MappedOmniJoinSnapshot(arena, manifest.width, manifest.rows, manifest.nominalEntries,
-				manifest.seed, manifest.generation, attributes);
+				manifest.seed, manifest.omniWitnessCohortBucketCount, manifest.omniWitnessCohortBucketIndex,
+				manifest.generation, attributes);
 	}
 
 	@Override
@@ -98,7 +100,8 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 	}
 
 	private void writeManifest(byte slot, long generation, int width, int rows, int nominalEntries, long seed,
-			List<ManifestAttribute> attributes) throws IOException {
+			int omniWitnessCohortBucketCount, int omniWitnessCohortBucketIndex, List<ManifestAttribute> attributes)
+			throws IOException {
 		Path tmp = manifestPath().resolveSibling("manifest.tmp");
 		try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(tmp,
 				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)))) {
@@ -110,8 +113,11 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			out.writeInt(rows);
 			out.writeInt(nominalEntries);
 			out.writeLong(seed);
+			out.writeInt(omniWitnessCohortBucketCount);
+			out.writeInt(omniWitnessCohortBucketIndex);
 			out.writeInt(attributes.size());
 			for (ManifestAttribute attribute : attributes) {
+				out.writeByte(attribute.sourceKind.ordinal());
 				out.writeByte(attribute.relation.id());
 				attribute.attribute.writeTo(out);
 				out.writeLong(attribute.offset);
@@ -137,17 +143,29 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 			int rows = in.readInt();
 			int nominalEntries = in.readInt();
 			long seed = in.readLong();
+			int omniWitnessCohortBucketCount = in.readInt();
+			int omniWitnessCohortBucketIndex = in.readInt();
 			int attributeCount = in.readInt();
 			if (attributeCount < 0) {
 				throw new IOException("Negative Omni witness attribute count: " + attributeCount);
 			}
 			List<ManifestAttribute> attributes = new ArrayList<>(attributeCount);
 			for (int i = 0; i < attributeCount; i++) {
-				attributes.add(new ManifestAttribute(OmniRelation.fromId(in.readUnsignedByte()),
+				OmniWitnessSet.SourceKind sourceKind = sourceKindFromOrdinal(in.readUnsignedByte());
+				attributes.add(new ManifestAttribute(sourceKind, OmniRelation.fromId(in.readUnsignedByte()),
 						OmniAttributeRef.readFrom(in), in.readLong(), in.readLong()));
 			}
-			return new Manifest(slot, generation, width, rows, nominalEntries, seed, attributes);
+			return new Manifest(slot, generation, width, rows, nominalEntries, seed, omniWitnessCohortBucketCount,
+					omniWitnessCohortBucketIndex, attributes);
 		}
+	}
+
+	private static OmniWitnessSet.SourceKind sourceKindFromOrdinal(int ordinal) throws IOException {
+		OmniWitnessSet.SourceKind[] values = OmniWitnessSet.SourceKind.values();
+		if (ordinal < 0 || ordinal >= values.length) {
+			throw new IOException("Unsupported Omni witness source kind: " + ordinal);
+		}
+		return values[ordinal];
 	}
 
 	private Path manifestPath() {
@@ -164,9 +182,11 @@ final class OmniWitnessPersistenceStore implements AutoCloseable {
 	}
 
 	private record Manifest(byte slot, long generation, int width, int rows, int nominalEntries, long seed,
+			int omniWitnessCohortBucketCount, int omniWitnessCohortBucketIndex,
 			List<ManifestAttribute> attributes) {
 	}
 
-	private record ManifestAttribute(OmniRelation relation, OmniAttributeRef attribute, long offset, long length) {
+	private record ManifestAttribute(OmniWitnessSet.SourceKind sourceKind, OmniRelation relation,
+			OmniAttributeRef attribute, long offset, long length) {
 	}
 }

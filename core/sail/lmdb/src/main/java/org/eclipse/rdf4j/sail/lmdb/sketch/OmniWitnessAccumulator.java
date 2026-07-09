@@ -151,8 +151,12 @@ final class OmniWitnessAccumulator {
 		if (metadata == null) {
 			return toWitnessSet(1.0d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 0.0d);
 		}
-		return toWitnessSet(metadata.samplingProbability(), metadata.confidence(), metadata.fallbackReason(),
-				metadata.minimumDetectableRows());
+		OmniWitnessSet output = toWitnessSet(metadata.samplingProbability(), metadata.confidence(),
+				metadata.fallbackReason(), metadata.minimumDetectableRows()).withSourceKind(metadata.sourceKind());
+		return output.withAlternativeCandidates(metadata.candidateFor(OmniWitnessSet.SourceKind.BASE),
+				metadata.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT),
+				metadata.candidateFor(OmniWitnessSet.SourceKind.OBJECT_COHORT),
+				metadata.candidateFor(OmniWitnessSet.SourceKind.VERTEX_COHORT));
 	}
 
 	OmniWitnessSet toWitnessSet(double samplingProbability, double confidence,

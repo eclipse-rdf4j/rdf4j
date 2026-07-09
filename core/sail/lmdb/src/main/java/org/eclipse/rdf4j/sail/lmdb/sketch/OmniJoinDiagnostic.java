@@ -19,6 +19,7 @@ record OmniJoinDiagnostic(double rows, double confidence, double samplingProbabi
 }
 
 record OmniJoinDiagnosticStep(int step, String inputBindingName, String outputBindingName, String direction,
-		double rows, int retainedWitnesses, double samplingProbability, double confidence, String fallbackReason) {
+		double rows, int retainedWitnesses, double samplingProbability, double confidence, String fallbackReason,
+		String sourceKind) {
 
 }

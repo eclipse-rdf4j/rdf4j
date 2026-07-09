@@ -112,7 +112,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchKeyProvider;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
@@ -1262,12 +1262,14 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(accessShape.estimateAccessRows(anyInt())).thenReturn(5.0d);
 		when(estimator.factorOutputRowsForCosting(any(), any(Set.class))).thenReturn(120_000_000.0d);
 		when(estimator.accessShapeForJoinOrdering(any(), any(Set.class))).thenReturn(accessShape);
-		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
+		when(estimator.estimateOmniSurface(prefixFactors, "org"))
+				.thenReturn(omniSurface(300.0d, 300.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, "org")).thenReturn(-1.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
 				.thenReturn(Double.NaN);
 		when(estimator.estimateJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(12_000.0d);
+		when(estimator.estimateOmniSurface(prefixFactors, orgEmployee, "org"))
+				.thenReturn(omniSurface(12_000.0d, 12_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(-1.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
 				.thenReturn(Double.NaN);
@@ -1565,7 +1567,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("department"));
 		List<TupleExpr> factors = List.of(personOrg, orgDepartment);
 
-		when(estimator.estimateSketchJoinSurfaceRows(factors, "org")).thenReturn(3_000.0d);
+		when(estimator.estimateOmniSurface(factors, "org"))
+				.thenReturn(omniSurface(3_000.0d, 3_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(factors, "org")).thenReturn(4_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
@@ -1597,8 +1600,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		List<TupleExpr> factors = List.of(prescribedDrug, billedDrug);
 		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(100.0d);
 		when(estimator.orderedCardinality(factors)).thenReturn(42.0d);
-		when(estimator.estimateSketchJoinSurface(factors, "encounter"))
-				.thenReturn(new JoinFrequencyEstimate(42.0d, 42.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "encounter"))
+				.thenReturn(omniSurface(42.0d, 42.0d, 0.90d, "omni-join-estimator", 1.0d));
 
 		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
 
@@ -1624,10 +1627,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		List<TupleExpr> factors = List.of(left, right);
 		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(10_000.0d);
 		when(estimator.orderedCardinality(factors)).thenReturn(10_000.0d);
-		when(estimator.estimateSketchJoinSurface(factors, "a"))
-				.thenReturn(new JoinFrequencyEstimate(9_000.0d, 9_000.0d, 0.50d, "count-min", 1.0d));
-		when(estimator.estimateSketchJoinSurface(factors, "b"))
-				.thenReturn(new JoinFrequencyEstimate(21.0d, 21.0d, 0.95d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "a"))
+				.thenReturn(omniSurface(9_000.0d, 9_000.0d, 0.50d, "fallback", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "b"))
+				.thenReturn(omniSurface(21.0d, 21.0d, 0.95d, "omni-join-estimator", 1.0d));
 
 		StatisticsEstimate estimate = statistics.multiPatternJoin(factors, Set.of()).orElseThrow();
 
@@ -1655,8 +1658,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.cardinality(factors)).thenReturn(1_000.0d);
 		when(estimator.estimateJoinVarDistinctRows(encounterCondition, "condition")).thenReturn(800.0d);
 		when(estimator.estimateJoinVarDistinctRows(conditionCode, "condition")).thenReturn(40.0d);
-		when(estimator.estimateSketchJoinSurface(factors, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(32.0d, 32.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "condition"))
+				.thenReturn(omniSurface(32.0d, 32.0d, 0.90d, "omni-join-estimator", 1.0d));
 
 		StatisticsEstimate estimate = statistics.bridgePath(pathPatterns, "condition", Set.of()).orElseThrow();
 
@@ -1682,8 +1685,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("codeValue"));
 		List<TupleExpr> factors = List.of(encounterCondition, conditionCode);
 		when(estimator.factorOutputRowsForCosting(any(TupleExpr.class), any(Set.class))).thenReturn(1_000.0d);
-		when(estimator.estimateSketchJoinSurface(factors, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(44.0d, 44.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "condition"))
+				.thenReturn(omniSurface(44.0d, 44.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimateJoinVarDistinctRows(encounterCondition, "condition")).thenReturn(800.0d);
 		when(estimator.estimateJoinVarDistinctRows(conditionCode, "condition")).thenReturn(40.0d);
 
@@ -1954,8 +1957,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 96.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.countMinEvidence());
-		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertNotNull(estimate.omniSurface());
+		assertEquals("per-predicate-omni", estimate.omniSurface().source());
 		assertEquals("per-predicate-omni", estimate.surfaceSource());
 		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 96.0d,
@@ -1999,8 +2002,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.estimateBoundJoinProduct(List.of(encounterType), encounterCondition, 48.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.countMinEvidence());
-		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertNotNull(estimate.omniSurface());
+		assertEquals("per-predicate-omni", estimate.omniSurface().source());
 		assertEquals("lmdbValueId", estimate.sketchPredicateKeyKind());
 	}
 
@@ -2042,8 +2045,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.estimateBoundJoinProduct(List.of(conditionCode), encounterCondition, 24.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.countMinEvidence());
-		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertNotNull(estimate.omniSurface());
+		assertEquals("per-predicate-omni", estimate.omniSurface().source());
 		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 24.0d,
 				() -> "Finite anchor should walk back through the bridge, estimate=" + estimate);
@@ -2092,8 +2095,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.estimateBoundJoinProduct(List.of(encounterType, encounterDate), encounterCondition, 32.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.countMinEvidence());
-		assertEquals("per-predicate-omni", estimate.countMinEvidence().source());
+		assertNotNull(estimate.omniSurface());
+		assertEquals("per-predicate-omni", estimate.omniSurface().source());
 		assertEquals("iriString", estimate.sketchPredicateKeyKind());
 		assertTrue(estimate.productRows() >= 32.0d,
 				() -> "Subject-star prefix witnesses should feed the bridge probe, estimate=" + estimate);
@@ -2176,8 +2179,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("recordedOn", vf.createIRI("urn:test:recordedOn")),
 				Var.of("date", vf.createLiteral("2024-01-01")));
 		List<StatementPattern> patterns = List.of(typePattern, datePattern);
-		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
-				.thenReturn(new JoinFrequencyEstimate(48.0d, 48.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateSubjectStarOmniSurface(patterns, "encounter"))
+				.thenReturn(omniSurface(48.0d, 48.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
 				.thenReturn(512.0d);
 
@@ -2203,8 +2206,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("handledBy", vf.createIRI("urn:test:handledBy")),
 				Var.of("practitioner"));
 		List<StatementPattern> patterns = List.of(typePattern, practitionerPattern);
-		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
-				.thenReturn(new JoinFrequencyEstimate(55.0d, 37.0d, 0.85d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateSubjectStarOmniSurface(patterns, "encounter"))
+				.thenReturn(omniSurface(55.0d, 37.0d, 0.85d, "omni-join-estimator", 1.0d));
 		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
 				.thenReturn(Double.NaN);
 
@@ -2231,8 +2234,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("handledBy", vf.createIRI("urn:test:handledBy")),
 				Var.of("practitioner"));
 		List<StatementPattern> patterns = List.of(typePattern, practitionerPattern);
-		when(estimator.estimateSubjectStarJoinSurface(patterns, "encounter"))
-				.thenReturn(new JoinFrequencyEstimate(24.0d, 18.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateSubjectStarOmniSurface(patterns, "encounter"))
+				.thenReturn(omniSurface(24.0d, 18.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
 				.thenReturn(512.0d);
 
@@ -2241,7 +2244,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertEquals("omni-join-estimator", estimate.method());
 		assertEquals(18.0d, estimate.rows(), 0.0d);
 		assertEquals(24.0d, estimate.workRows(), 0.0d);
-		verify(estimator, times(1)).estimateSubjectStarJoinSurface(patterns, "encounter");
+		verify(estimator, times(1)).estimateSubjectStarOmniSurface(patterns, "encounter");
 	}
 
 	@Test
@@ -2261,7 +2264,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("department"));
 		List<TupleExpr> factors = List.of(personOrg, orgDepartment);
 
-		when(estimator.estimateSketchJoinSurfaceRows(factors, "org")).thenReturn(4_000.0d);
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(factors, "org")).thenReturn(120_000_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
@@ -2291,8 +2293,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("department"));
 		List<TupleExpr> factors = List.of(personOrg, orgDepartment);
 
-		when(estimator.estimateSketchJoinSurface(factors, "org"))
-				.thenReturn(new JoinFrequencyEstimate(17.0d, 17.0d, 0.75d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(factors, "org"))
+				.thenReturn(omniSurface(17.0d, 17.0d, 0.75d, "omni-join-estimator", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(factors, "org")).thenReturn(120_000_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
@@ -2353,16 +2355,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.thenReturn(10.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
 				.thenReturn(25.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(1_000.0d);
-		when(estimator.estimateSketchJoinSurfaceUpperBoundRows(any(List.class), any(String.class)))
-				.thenReturn(1_000.0d);
+		when(estimator.estimateOmniSurface(any(List.class), any(String.class)))
+				.thenReturn(omniSurface(1_000.0d, 1_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(String.class)))
 				.thenReturn(1_000.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
-				.thenReturn(2_000.0d);
-		when(estimator.estimateSketchJoinSurfaceUpperBoundRows(any(List.class), any(TupleExpr.class),
-				any(String.class)))
-						.thenReturn(2_000.0d);
+		when(estimator.estimateOmniSurface(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(omniSurface(2_000.0d, 2_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(TupleExpr.class),
 				any(String.class)))
 						.thenReturn(2_000.0d);
@@ -2413,18 +2411,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.thenReturn(100_000.0d);
 		when(estimator.accessShapeForJoinOrdering(encounterCondition, Set.of("condition")))
 				.thenReturn(accessShape);
-		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
-				.thenReturn(32.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "condition")).thenReturn(16.0d);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
 				.thenReturn(Double.NaN);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, "condition")).thenReturn(Double.NaN);
-		when(estimator.estimateSketchJoinSurface(prefixFactors, encounterCondition, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(32.0d, 32.0d, 0.90d,
-						"omni-join-estimator", 1.0d));
-		when(estimator.estimateSketchJoinSurface(prefixFactors, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(16.0d, 16.0d, 0.90d,
-						"omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(omniSurface(32.0d, 32.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(prefixFactors, "condition"))
+				.thenReturn(omniSurface(16.0d, 16.0d, 0.90d, "omni-join-estimator", 1.0d));
 		Map<String, Set<Value>> finiteValues = Map.of("value", Set.of(vf.createLiteral("DX-200")));
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
@@ -2483,10 +2476,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, encounterCondition, "condition"))
 				.thenReturn(Double.NaN);
 		when(estimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, "condition")).thenReturn(Double.NaN);
-		when(estimator.estimateSketchJoinSurface(prefixFactors, encounterCondition, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(0.0d, 0.0d, 0.90d, "omni-join-estimator", 1.0d));
-		when(estimator.estimateSketchJoinSurface(prefixFactors, "condition"))
-				.thenReturn(new JoinFrequencyEstimate(1.0d, 1.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(prefixFactors, encounterCondition, "condition"))
+				.thenReturn(omniSurface(0.0d, 0.0d, 0.90d, "omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(prefixFactors, "condition"))
+				.thenReturn(omniSurface(1.0d, 1.0d, 0.90d, "omni-join-estimator", 1.0d));
 		Map<String, Set<Value>> finiteValues = Map.of("value", Set.of(vf.createLiteral("DX-999")));
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
@@ -2531,14 +2524,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		List<TupleExpr> prefixFactors = List.of(orgDepartment, departmentOffer);
 		List<TupleExpr> clonedPrefixFactors = List.of(orgDepartment.clone(), departmentOffer.clone());
 
-		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(120_000_000.0d);
+		when(estimator.estimateOmniSurface(any(List.class), any(String.class)))
+				.thenReturn(omniSurface(120_000_000.0d, 120_000_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
 				.thenReturn(Double.NaN);
 		when(estimator.estimateExactJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(Double.NaN);
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(String.class)))
 				.thenReturn(120_000_000.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
-				.thenReturn(240_000_000.0d);
+		when(estimator.estimateOmniSurface(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(omniSurface(240_000_000.0d, 240_000_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
 				.thenReturn(Double.NaN);
 		when(estimator.estimateExactJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
@@ -2555,10 +2549,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					statistics.estimateBoundJoinSurfaceRows(clonedPrefixFactors, orgEmployee.clone(), "org"));
 		}
 
-		verify(estimator, times(1)).estimateSketchJoinSurfaceRows(any(List.class), any(String.class));
+		verify(estimator, times(1)).estimateOmniSurface(any(List.class), any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
 		verify(estimator, times(1)).estimatePairwiseJoinSurfaceFallbackRows(any(List.class), any(String.class));
-		verify(estimator, times(1)).estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class),
+		verify(estimator, times(1)).estimateOmniSurface(any(List.class), any(TupleExpr.class),
 				any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(TupleExpr.class),
 				any(String.class));
@@ -2921,9 +2915,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), "org"))
+				.thenReturn(omniSurface(960_000.0d, 960_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), "org")).thenReturn(200.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), employee, "org"))
+				.thenReturn(omniSurface(15_000.0d, 15_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), employee, "org"))
 				.thenReturn(15_000.0d);
 		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(200.0d);
@@ -2995,9 +2991,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.accessShapeForJoinOrdering(optional, Set.of())).thenReturn(null);
 		when(estimator.accessShapeForJoinOrdering(memberOf, Set.of())).thenReturn(leftShape);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(rightShape);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), "org"))
+				.thenReturn(omniSurface(960_000.0d, 960_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), "org")).thenReturn(200.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), employee, "org")).thenReturn(15_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), employee, "org"))
+				.thenReturn(omniSurface(15_000.0d, 15_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), employee, "org"))
 				.thenReturn(15_000.0d);
 		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(200.0d);
@@ -3093,10 +3091,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.thenReturn(continuationShape);
 		when(estimator.cardinality(List.of(memberOf))).thenReturn(160_000.0d);
 		when(estimator.orderedCardinality(List.of(memberOf))).thenReturn(160_000.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), "org")).thenReturn(960_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), "org"))
+				.thenReturn(omniSurface(960_000.0d, 960_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), "org")).thenReturn(200.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(memberOf), orgDepartment, "org"))
-				.thenReturn(15_000.0d);
+		when(estimator.estimateOmniSurface(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(omniSurface(15_000.0d, 15_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), orgDepartment, "org"))
 				.thenReturn(15_000.0d);
 
@@ -3121,14 +3120,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("org"),
 				Var.of("p2", vf.createIRI("urn:test:omni:department")),
 				Var.of("dept"));
-		when(estimator.estimateSketchJoinSurface(List.of(memberOf), "org"))
-				.thenReturn(new JoinFrequencyEstimate(960_000.0d, 960_000.0d, 0.90d,
-						"omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(List.of(memberOf), "org"))
+				.thenReturn(omniSurface(960_000.0d, 960_000.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), "org"))
 				.thenReturn(200.0d);
-		when(estimator.estimateSketchJoinSurface(List.of(memberOf), orgDepartment, "org"))
-				.thenReturn(new JoinFrequencyEstimate(15_000.0d, 15_000.0d, 0.90d,
-						"omni-join-estimator", 1.0d));
+		when(estimator.estimateOmniSurface(List.of(memberOf), orgDepartment, "org"))
+				.thenReturn(omniSurface(15_000.0d, 15_000.0d, 0.90d, "omni-join-estimator", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(memberOf), orgDepartment, "org"))
 				.thenReturn(15_000.0d);
 		when(estimator.cardinality(List.of(memberOf))).thenReturn(160_000.0d);
@@ -3138,7 +3135,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.estimateBoundJoinProduct(List.of(memberOf), orgDepartment, 160_000.0d, false);
 
 		assertNotNull(estimate);
-		assertEquals("omni-join-estimator", estimate.countMinEvidence().source());
+		assertEquals("omni-join-estimator", estimate.omniSurface().source());
 		assertEquals(960_000.0d, estimate.prefixSurfaceRows(), 0.0d);
 		assertEquals(2_500.0d, estimate.productRows(), 0.0d);
 	}
@@ -3592,9 +3589,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.factorOutputRowsForCosting(employee, Set.of("org"))).thenReturn(1.0d);
 		when(estimator.accessShapeForJoinOrdering(employee, Set.of("org"))).thenReturn(accessShape);
 		when(estimator.estimateJoinVarDistinctRows(employee, "org")).thenReturn(4_000.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(orgAnchor), "org")).thenReturn(4_000.0d);
+		when(estimator.estimateOmniSurface(List.of(orgAnchor), "org"))
+				.thenReturn(omniSurface(4_000.0d, 4_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(orgAnchor), "org")).thenReturn(4_000.0d);
-		when(estimator.estimateSketchJoinSurfaceRows(List.of(orgAnchor), employee, "org")).thenReturn(4_000.0d);
+		when(estimator.estimateOmniSurface(List.of(orgAnchor), employee, "org"))
+				.thenReturn(omniSurface(4_000.0d, 4_000.0d, 0.65d, "tuple-sketch-summary", 1.0d));
 		when(estimator.estimatePairwiseJoinSurfaceFallbackRows(List.of(orgAnchor), employee, "org"))
 				.thenReturn(4_000.0d);
 
@@ -4621,14 +4620,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 
 		@Override
-		public double estimateSketchJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
-			return sketchRows;
-		}
-
-		@Override
-		public double estimateSketchJoinSurfaceUpperBoundRows(List<TupleExpr> factors, String joinVarName) {
+		public OmniSketchSurfaceEstimate estimateOmniSurface(List<TupleExpr> factors, String joinVarName) {
 			sketchUpperBoundCalls++;
-			return sketchUpperBoundRows;
+			return omniSurface(sketchUpperBoundRows, sketchRows, 0.65d, "tuple-sketch-summary", 1.0d);
 		}
 
 		@Override
@@ -5009,6 +5003,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(null);
+	}
+
+	private static OmniSketchSurfaceEstimate omniSurface(double upperBoundRows, double selectedRows,
+			double confidence, String source, double samplingProbability) {
+		return OmniSketchSurfaceEstimate.scalar(upperBoundRows, selectedRows, confidence, source,
+				samplingProbability);
 	}
 
 	private static final class AntiExistsProbeStatistics extends LmdbEvaluationStatistics {

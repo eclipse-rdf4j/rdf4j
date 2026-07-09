@@ -206,7 +206,7 @@ final class LmdbHypergraphJoinPlanner {
 		private final JoinFactorCostModel costModel;
 		private final EvaluationStatistics fallbackStatistics;
 		private final EstimationTier tier;
-		private final Map<Long, Double> lookupCostCache = new HashMap<>();
+		private final Map<LookupKey, LookupProbe> lookupProbeCache = new HashMap<>();
 
 		private ProbingCostModel(List<TupleExpr> factors, List<Set<String>> factorJoinVars, Set<String> initial,
 				LmdbCascadesConnectedJoinPlanner.Step[] seedSteps, JoinFactorCostModel costModel,
@@ -232,10 +232,12 @@ final class LmdbHypergraphJoinPlanner {
 
 		@Override
 		public double nestedLoopLookupCost(int nodeIdx, long boundNodes, double outerRows) {
-			// One cache slot per (inner node, outer node set): outerRows is a function of boundNodes, and with at
-			// most 20 factors the packing below is collision-free.
-			long key = ((long) nodeIdx << 32) | boundNodes;
-			Double cached = lookupCostCache.get(key);
+			return nestedLoopLookupProbe(nodeIdx, boundNodes, outerRows).workRows();
+		}
+
+		private LookupProbe nestedLoopLookupProbe(int nodeIdx, long boundNodes, double outerRows) {
+			LookupKey key = new LookupKey(nodeIdx, boundNodes, Double.doubleToLongBits(outerRows));
+			LookupProbe cached = lookupProbeCache.get(key);
 			if (cached != null) {
 				return cached;
 			}
@@ -249,10 +251,18 @@ final class LmdbHypergraphJoinPlanner {
 			LmdbCascadesConnectedJoinPlanner.Step step = LmdbCascadesConnectedJoinPlanner.estimateStep(factors,
 					nodeIdx, boundVars, Math.max(outerRows, MIN_ROWS), true, prefixFactors, costModel,
 					fallbackStatistics, tier);
-			double cost = step == null ? Double.NaN : Math.max(step.workRows(), MIN_ROWS);
-			lookupCostCache.put(key, cost);
-			return cost;
+			LookupProbe probe = step == null
+					? new LookupProbe(null, Double.NaN, Double.NaN)
+					: new LookupProbe(step, step.outputRows(), Math.max(step.workRows(), MIN_ROWS));
+			lookupProbeCache.put(key, probe);
+			return probe;
 		}
+	}
+
+	private record LookupKey(int nodeIdx, long boundNodes, long outerRowsBits) {
+	}
+
+	private record LookupProbe(LmdbCascadesConnectedJoinPlanner.Step step, double outputRows, double workRows) {
 	}
 
 	private static LmdbCascadesConnectedJoinPlanner.Plan toPlan(JoinPlan winner, List<TupleExpr> factors,
@@ -267,8 +277,8 @@ final class LmdbHypergraphJoinPlanner {
 			confidence = Math.min(confidence, step.confidence());
 			evidenceCount += step.evidenceCount();
 		}
-		double rows = winner.rows();
 		ExportedPlan exportedPlan = toTupleExpr(winner, factors, seedSteps, costModel);
+		double rows = exportedPlan.rows();
 		double workRows = exportedPlan.workRows();
 		CostVector cost = new CostVector(rows, workRows, 0.0d, 0.0d, 0.0d, rowQErrorMax, rowQErrorMax, workQErrorMax,
 				workQErrorMax, Math.max(0.0d, rows * Math.max(rowQErrorMax - 1.0d, 0.0d)), confidence, evidenceCount);
@@ -295,48 +305,116 @@ final class LmdbHypergraphJoinPlanner {
 		return new LmdbCascadesConnectedJoinPlanner.Plan(tupleExpr, cost, estimate, factorCount, ALGORITHM, 0);
 	}
 
-	private record ExportedPlan(TupleExpr tupleExpr, double workRows) {
+	private record ExportedPlan(TupleExpr tupleExpr, double rows, double workRows) {
 	}
 
 	private static ExportedPlan toTupleExpr(JoinPlan plan, List<TupleExpr> factors,
 			LmdbCascadesConnectedJoinPlanner.Step[] seedSteps, ProbingCostModel costModel) {
 		if (plan.kind() == JoinPlan.Kind.SCAN) {
-			return scanTupleExpr(plan, factors, seedSteps[plan.scanNode()].workRows(), plan.cost());
+			return scanTupleExpr(plan, factors, seedSteps[plan.scanNode()], plan.rows(),
+					seedSteps[plan.scanNode()].workRows(), plan.cost());
 		}
 		ExportedPlan left = toTupleExpr(plan.left(), factors, seedSteps, costModel);
 		ExportedPlan right;
+		double rows = plan.rows();
 		double workRows;
+		String rowRepairReason = null;
+		double lookupRows = Double.NaN;
 		if (plan.kind() == JoinPlan.Kind.NESTED_LOOP) {
-			double lookupWorkRows = costModel.nestedLoopLookupCost(plan.right().scanNode(), plan.left().nodes(),
-					plan.left().rows());
-			right = scanTupleExpr(plan.right(), factors, lookupWorkRows, lookupWorkRows);
+			LookupProbe lookupProbe = costModel.nestedLoopLookupProbe(plan.right().scanNode(), plan.left().nodes(),
+					left.rows());
+			double lookupWorkRows = finiteNonNegative(lookupProbe.workRows(), MIN_ROWS);
+			lookupRows = finiteNonNegative(lookupProbe.outputRows(), Double.NaN);
+			if (Double.isFinite(lookupRows)) {
+				rows = Math.max(rows, lookupRows);
+			}
+			TupleExpr rightFactor = factors.get(plan.right().scanNode());
+			if (rows > 0.0d && finitePositive(left.rows()) && rows < left.rows()
+					&& sharesRuntimeBindings(left.tupleExpr(), rightFactor)) {
+				rows = left.rows();
+				rowRepairReason = "shared-binding-nested-lookup-floor";
+			}
+			LmdbCascadesConnectedJoinPlanner.Step rightStep = lookupProbe.step() == null
+					? seedSteps[plan.right().scanNode()]
+					: lookupProbe.step();
+			double rightRows = Double.isFinite(lookupRows) ? lookupRows : plan.right().rows();
+			right = scanTupleExpr(plan.right(), factors, rightStep, rightRows, lookupWorkRows,
+					lookupWorkRows);
 			workRows = left.workRows() + lookupWorkRows;
 		} else {
 			right = toTupleExpr(plan.right(), factors, seedSteps, costModel);
 			workRows = left.workRows() + right.workRows();
 		}
 		Join join = new Join(left.tupleExpr(), right.tupleExpr());
+		copyOmniEvidenceMetrics(join, right.tupleExpr());
+		if (join.getStringMetricPlanned(LmdbOmniEvidenceStore.PLANNED_OMNI_EVIDENCE_FINGERPRINT) == null) {
+			copyOmniEvidenceMetrics(join, left.tupleExpr());
+		}
 		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
 		join.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ALGORITHM, PLANNER_ALGORITHM_METRIC_VALUE);
-		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plan.rows());
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
 		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 		join.setDoubleMetricPlanned(DPHYP_RANK_COST_METRIC, plan.cost());
+		if (Double.isFinite(lookupRows)) {
+			join.setDoubleMetricPlanned("optimizer.dphypNestedLookupRows", lookupRows);
+		}
+		if (rowRepairReason != null) {
+			join.setStringMetricPlanned("optimizer.dphypRowRepair", rowRepairReason);
+		}
 		if (plan.kind() == JoinPlan.Kind.HASH_JOIN) {
 			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
 		}
-		return new ExportedPlan(join, workRows);
+		return new ExportedPlan(join, rows, workRows);
 	}
 
-	private static ExportedPlan scanTupleExpr(JoinPlan plan, List<TupleExpr> factors, double workRows,
-			double rankCost) {
+	private static void copyOmniEvidenceMetrics(TupleExpr target, TupleExpr source) {
+		if (target == null || source == null) {
+			return;
+		}
+		for (Map.Entry<String, String> entry : source.getStringMetricsPlanned().entrySet()) {
+			if (entry.getKey().startsWith("plannedOmni")) {
+				target.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, Double> entry : source.getDoubleMetricsPlanned().entrySet()) {
+			if (entry.getKey().startsWith("plannedOmni")) {
+				target.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
+	}
+
+	private static ExportedPlan scanTupleExpr(JoinPlan plan, List<TupleExpr> factors,
+			LmdbCascadesConnectedJoinPlanner.Step step, double rows, double workRows, double rankCost) {
 		TupleExpr clone = factors.get(plan.scanNode()).clone();
+		if (step != null) {
+			for (Map.Entry<String, String> entry : step.stringMetrics().entrySet()) {
+				clone.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : step.doubleMetrics().entrySet()) {
+				clone.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
 		clone.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
-		clone.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plan.rows());
+		clone.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
 		clone.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 		clone.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 		clone.setDoubleMetricPlanned(DPHYP_RANK_COST_METRIC, rankCost);
-		return new ExportedPlan(clone, workRows);
+		return new ExportedPlan(clone, rows, workRows);
+	}
+
+	private static double finiteNonNegative(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	}
+
+	private static boolean finitePositive(double value) {
+		return Double.isFinite(value) && value > 0.0d;
+	}
+
+	private static boolean sharesRuntimeBindings(TupleExpr left, TupleExpr right) {
+		Set<String> shared = new HashSet<>(LmdbJoinPlanSupport.runtimeBindingNames(left));
+		shared.retainAll(LmdbJoinPlanSupport.runtimeBindingNames(right));
+		return !shared.isEmpty();
 	}
 
 	private static void traceDecline(LmdbCascadesConnectedJoinPlanner.Trace trace, String reason) {

@@ -14,5 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 public record OmniBridgeProbeEstimate(double inputRows, double outputRows, double probeRows, int inputWitnesses,
 		int outputWitnesses, double samplingProbability, double confidence, String source, boolean exactZero,
-		String fallbackReason, String inputBindingName, String outputBindingName, String predicateKeyKind) {
+		String fallbackReason, String inputBindingName, String outputBindingName, String predicateKeyKind,
+		OmniSketchSurfaceEstimate omniSurface) {
 }

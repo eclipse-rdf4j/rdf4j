@@ -101,20 +101,6 @@ record FiniteBranchFactorSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors,
 	}
 }
 
-record CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-		String joinVarName) {
-
-	static CountMinSurfaceCacheKey of(List<TupleExpr> factors, String joinVarName) {
-		return new CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), null, joinVarName);
-	}
-
-	static CountMinSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-			String joinVarName) {
-		return new CountMinSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-				FactorCostCacheKey.factorFingerprint(factor), joinVarName);
-	}
-}
-
 record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
 
 	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors) {

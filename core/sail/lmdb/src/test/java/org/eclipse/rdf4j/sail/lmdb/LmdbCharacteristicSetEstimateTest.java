@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.junit.jupiter.api.Test;
@@ -80,25 +79,25 @@ class LmdbCharacteristicSetEstimateTest {
 						"  ?s <urn:star:p3> ?c .",
 						"}")).explain(Explanation.Level.Optimized);
 
-				Join starJoin = findCharacteristicSetJoin((TupleExpr) explanation.tupleExpr());
+				Join starJoin = findStarMultiPredicateScanJoin((TupleExpr) explanation.tupleExpr());
 
 				assertNotNull(starJoin, explanation::toString);
 				LmdbStarJoinScanSupport.Plan starPlan = LmdbStarJoinScanSupport.plan(starJoin)
 						.orElseThrow(() -> new AssertionError(explanation.toString()));
 				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 						.getEvaluationStatistics();
-				CharacteristicSetEstimate estimate = statistics.estimateSubjectStar(starPlan.patterns(), Set.of())
-						.orElseThrow();
-				assertEquals(FULL_STAR_COUNT, estimate.rows(), FULL_STAR_COUNT * 0.25d,
-						() -> estimate + "\n" + explanation);
-				assertEquals(0L, estimate.scannedRows(), "characteristic-set star estimate must not scan statements");
 				StatisticsEstimate starScanEstimate = statistics.starMultiPredicateScan(starPlan.patterns(), Set.of())
 						.orElseThrow();
 				assertEquals(FULL_STAR_COUNT, starScanEstimate.rows(), FULL_STAR_COUNT * 0.25d,
 						() -> starScanEstimate + "\n" + explanation);
-				assertEquals("lmdb-characteristic-set",
+				assertEquals("omni-join-estimator", starScanEstimate.method(), () -> starScanEstimate + "\n"
+						+ explanation);
+				assertEquals("omni-join-estimator",
 						starJoin.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
 						explanation::toString);
+				assertEquals(FULL_STAR_COUNT,
+						starJoin.getDoubleMetricPlanned("plannedOmniSubjectStarRows"),
+						FULL_STAR_COUNT * 0.25d, explanation::toString);
 				assertEquals(FULL_STAR_COUNT,
 						starJoin.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
 						FULL_STAR_COUNT * 0.25d, explanation::toString);
@@ -217,13 +216,13 @@ class LmdbCharacteristicSetEstimateTest {
 		}
 	}
 
-	private static Join findCharacteristicSetJoin(TupleExpr tupleExpr) {
+	private static Join findStarMultiPredicateScanJoin(TupleExpr tupleExpr) {
 		AtomicReference<Join> result = new AtomicReference<>();
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
-				String proof = node.getStringMetricPlanned("optimizer.rewriteProof");
-				if (proof != null && proof.contains("CHARACTERISTIC_SET_STAR_ESTIMATE")) {
+				String accessMode = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+				if (LmdbStarJoinScanSupport.ACCESS_MODE.equals(accessMode)) {
 					result.compareAndSet(null, node);
 				}
 				super.meet(node);

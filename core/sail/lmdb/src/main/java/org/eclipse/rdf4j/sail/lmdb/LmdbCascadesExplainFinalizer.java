@@ -17,8 +17,13 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -45,6 +50,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	private static final String FALLBACK_USAGE = "fallback_no_winner";
 	private static final String DECISION_DRIVEN_ESTIMATE_SOURCE = "lmdb-decision-driven-estimate";
 	private static final String INNER_BOUND_LOOKUP_ESTIMATE_SOURCE = "lmdb-inner-bound-lookup";
+	private static final String STANDARD_PLAN_ESTIMATE_SOURCE = "standard-pipeline-baseline";
 	private static final CostVector FALLBACK_COST = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d,
 			4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
@@ -64,14 +70,20 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		if (fallbackAnnotationsEnabled) {
-			CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
-					this::fallbackCost);
-			annotateDisconnectedCartesianFallback(tupleExpr);
+		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(statistics);
+		try {
+			if (fallbackAnnotationsEnabled) {
+				CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
+						this::fallbackCost);
+				annotateDisconnectedCartesianFallback(tupleExpr);
+			}
+			capRepeatedDirectLookupJoinRows(tupleExpr);
+			repairStandardBaselineRows(tupleExpr);
+			promoteDistinctCursorSkipRuntimeHints(tupleExpr);
+			annotateCostFeedback(tupleExpr);
+		} finally {
+			services.ifPresent(LmdbPlannerServices::clearCompletedOmniEvidence);
 		}
-		capRepeatedDirectLookupJoinRows(tupleExpr);
-		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
-		annotateCostFeedback(tupleExpr);
 	}
 
 	private void annotateCostFeedback(TupleExpr tupleExpr) {
@@ -91,6 +103,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private void annotateCostFeedbackNode(LmdbPlannerServices services, TupleExpr tupleExpr) {
+		annotateOmniEvidence(services, tupleExpr);
 		annotateLearnedEvidence(services, tupleExpr);
 		annotateLearnedEvidenceExplain(services, tupleExpr);
 		if (!services.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
@@ -117,6 +130,20 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD;
 		tupleExpr.setCostFeedbackReportQErrorThreshold(reportQErrorThreshold(tupleExpr, baseThreshold));
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
+	}
+
+	private static void annotateOmniEvidence(LmdbPlannerServices services, TupleExpr tupleExpr) {
+		if (services == null || tupleExpr == null) {
+			return;
+		}
+		services.optimizationScopedOmniEvidence(tupleExpr).ifPresent(evidence -> {
+			for (var entry : evidence.toStringMetrics().entrySet()) {
+				tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (var entry : evidence.toDoubleMetrics().entrySet()) {
+				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		});
 	}
 
 	private static void annotateLearnedEvidence(LmdbPlannerServices services, TupleExpr tupleExpr) {
@@ -248,21 +275,290 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 				"direct_lookup_rows_already_repeated");
 	}
 
+	private static void repairStandardBaselineRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(QueryRoot node) {
+				super.meet(node);
+				repairStandardQueryRootRows(node);
+			}
+
+			@Override
+			public void meet(Projection node) {
+				super.meet(node);
+				repairStandardProjectionRows(node);
+			}
+
+			@Override
+			public void meet(Extension node) {
+				super.meet(node);
+				repairStandardExtensionRows(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				super.meet(node);
+				repairStandardFilterRows(node);
+			}
+
+			@Override
+			public void meet(Group node) {
+				super.meet(node);
+				repairStandardGroupRows(node);
+			}
+
+			@Override
+			public void meet(Join node) {
+				super.meet(node);
+				repairStandardJoinRows(node);
+			}
+		});
+	}
+
+	private static void repairStandardQueryRootRows(QueryRoot queryRoot) {
+		if (!standardBaseline(queryRoot)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(queryRoot.getArg());
+		if (isPositiveFinite(childRows)) {
+			raisePlannedRows(queryRoot, childRows, "root_child_plan");
+		}
+	}
+
+	private static void repairStandardProjectionRows(Projection projection) {
+		if (!standardBaseline(projection)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(projection.getArg());
+		repairRowPreservingRows(projection, childRows, "row_preserving_projection");
+	}
+
+	private static void repairStandardExtensionRows(Extension extension) {
+		if (!standardBaseline(extension)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(extension.getArg());
+		repairRowPreservingRows(extension, childRows, "row_preserving_extension");
+	}
+
+	private static void repairStandardFilterRows(Filter filter) {
+		if (!standardBaseline(filter)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(filter.getArg());
+		double currentRows = plannedRowsOrResult(filter);
+		double metricRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
+				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
+			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
+			filter.setResultSizeEstimate(repairedRows);
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
+			filter.setStringMetricPlanned("optimizer.standardPlanRowRepair",
+					repairedRows == childRows ? "filter_child_upper_bound" : "filter_scalar_metric_repair");
+		}
+	}
+
+	private static void repairStandardGroupRows(Group group) {
+		if (!standardBaseline(group)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(group.getArg());
+		double inputRows = standardGroupInputRows(group.getArg());
+		if (isPositiveFinite(inputRows) && (!isPositiveFinite(childRows) || inputRows < childRows)) {
+			childRows = inputRows;
+		}
+		double duplicateInputRows = duplicateGroupInputRows(group);
+		if (isPositiveFinite(duplicateInputRows) && (!isPositiveFinite(childRows) || duplicateInputRows < childRows)) {
+			childRows = duplicateInputRows;
+		}
+		double currentRows = plannedRowsOrResult(group);
+		double metricRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
+				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
+			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
+			group.setResultSizeEstimate(repairedRows);
+			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
+			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
+			group.setStringMetricPlanned("optimizer.standardPlanRowRepair",
+					repairedRows == childRows ? "group_child_upper_bound" : "group_scalar_metric_repair");
+		}
+	}
+
+	private static double standardGroupInputRows(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Join join && standardBaseline(join)
+				&& sharesBindings(join.getLeftArg(), join.getRightArg())) {
+			return minPositive(plannedRowsOrResult(join.getLeftArg()), plannedRowsOrResult(join.getRightArg()));
+		}
+		return Double.NaN;
+	}
+
+	private static double minPositive(double left, double right) {
+		boolean leftValid = isPositiveFinite(left);
+		boolean rightValid = isPositiveFinite(right);
+		if (leftValid && rightValid) {
+			return Math.min(left, right);
+		}
+		return leftValid ? left : right;
+	}
+
+	private static double duplicateGroupInputRows(Group group) {
+		if (group == null || !group.getGroupElements().isEmpty()) {
+			return Double.NaN;
+		}
+		double[] minRows = { Double.NaN };
+		group.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					double rows = plannedScalarRows(tuple);
+					if (isPositiveFinite(rows) && (!isPositiveFinite(minRows[0]) || rows < minRows[0])) {
+						minRows[0] = rows;
+					}
+				}
+				node.visitChildren(this);
+			}
+		});
+		return minRows[0];
+	}
+
+	private static double plannedScalarRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		return isPositiveFinite(rows) ? rows : Double.NaN;
+	}
+
+	private static void repairRowPreservingRows(TupleExpr tupleExpr, double childRows, String reason) {
+		if (!isPositiveFinite(childRows)) {
+			return;
+		}
+		double currentRows = plannedRowsOrResult(tupleExpr);
+		double metricRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (!isPositiveFinite(currentRows) || currentRows > childRows || !isPositiveFinite(metricRows)
+				|| !isPositiveFinite(finalRows)) {
+			tupleExpr.setResultSizeEstimate(childRows);
+			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, childRows);
+			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, childRows);
+			tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
+		}
+	}
+
+	private static void repairStandardJoinRows(Join join) {
+		if (!standardBaseline(join) || !sharesBindings(join.getLeftArg(), join.getRightArg())) {
+			return;
+		}
+		double leftRows = plannedRowsOrResult(join.getLeftArg());
+		if (isPositiveFinite(leftRows)) {
+			raisePlannedRows(join, leftRows, "shared_binding_prefix_lower_bound");
+		}
+	}
+
+	private static boolean standardBaseline(TupleExpr tupleExpr) {
+		return tupleExpr != null
+				&& STANDARD_PLAN_ESTIMATE_SOURCE.equals(
+						tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private static boolean sharesBindings(TupleExpr left, TupleExpr right) {
+		if (left == null || right == null) {
+			return false;
+		}
+		Set<String> shared = new HashSet<>(left.getBindingNames());
+		shared.retainAll(right.getBindingNames());
+		return !shared.isEmpty();
+	}
+
+	private static double plannedRowsOrResult(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getResultSizeEstimate();
+		return isPositiveFinite(rows) ? rows : Double.NaN;
+	}
+
+	private static void raisePlannedRows(TupleExpr tupleExpr, double rows, String reason) {
+		double currentRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(currentRows) && currentRows >= rows) {
+			return;
+		}
+		tupleExpr.setResultSizeEstimate(rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+		tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
+	}
+
 	private static boolean isFiniteNonNegative(double value) {
 		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	private CostVector fallbackCost(TupleExpr tupleExpr) {
-		if (costModel == null || tupleExpr == null) {
+		if (tupleExpr == null) {
 			return FALLBACK_COST;
+		}
+		double rows = firstPositive(plannedRowsOrNaN(tupleExpr), statisticsRows(tupleExpr));
+		double workRows = firstPositive(plannedWorkRowsOrNaN(tupleExpr), rows);
+		try {
+			LogicalProperties properties = costModel == null ? null : costModel.logicalProperties(tupleExpr);
+			if (!isPositiveFinite(rows) && properties != null) {
+				rows = properties.estimatedRows();
+			}
+			if (!isPositiveFinite(rows)) {
+				rows = 1.0d;
+			}
+			if (!isPositiveFinite(workRows)) {
+				workRows = Math.max(1.0d, rows);
+			}
+			if (properties == null) {
+				return CostVector.ofRowsAndWork(rows, workRows, null);
+			}
+			return CostVector.ofRowsAndWork(rows, workRows, properties.qErrorInterval());
+		} catch (RuntimeException ignored) {
+			if (isPositiveFinite(rows)) {
+				double normalizedWorkRows = isPositiveFinite(workRows) ? workRows : Math.max(1.0d, rows);
+				return CostVector.ofRowsAndWork(rows, normalizedWorkRows, null);
+			}
+			return FALLBACK_COST;
+		}
+	}
+
+	private double statisticsRows(TupleExpr tupleExpr) {
+		if (statistics == null || tupleExpr == null) {
+			return Double.NaN;
 		}
 		try {
-			LogicalProperties properties = costModel.logicalProperties(tupleExpr);
-			double rows = properties.estimatedRows();
-			return CostVector.ofRowsAndWork(rows, Math.max(1.0d, rows), properties.qErrorInterval());
+			double rows = statistics.getCardinality(tupleExpr);
+			return isPositiveFinite(rows) ? rows : Double.NaN;
 		} catch (RuntimeException ignored) {
-			return FALLBACK_COST;
+			return Double.NaN;
 		}
+	}
+
+	private static double firstPositive(double preferred, double fallback) {
+		return isPositiveFinite(preferred) ? preferred : fallback;
+	}
+
+	private static boolean isPositiveFinite(double value) {
+		return Double.isFinite(value) && value > 0.0d;
 	}
 
 	private void annotateDisconnectedCartesianFallback(TupleExpr tupleExpr) {

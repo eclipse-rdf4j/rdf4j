@@ -66,6 +66,7 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 			return List.of();
 		}
 		Join alternative = (Join) expression.tupleExpr().clone();
+		stampInnerBoundLookupMetrics(alternative, estimate.get());
 		stampNestedAccessPathMetrics(alternative, rootCostContext(goal));
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(alternative.getBindingNames())
@@ -83,6 +84,18 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 		CostVector cost = decomposedInnerJoinOperatorCost(estimate.get());
 		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
 				"lmdb-inner-join-bound-lookup", snapshot(estimate.get(), cost)));
+	}
+
+	private void stampInnerBoundLookupMetrics(Join join, JoinFactorCostModel.FactorCostEstimate estimate) {
+		stampAccessPathMetrics(join, estimate);
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-inner-bound-lookup");
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.getOutputRows());
+		join.setResultSizeEstimate(estimate.getOutputRows());
+		join.setCostEstimate(estimate.getWorkRows());
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.getWorkRows());
+		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, estimate.getWorkRows());
 	}
 
 	private CostVector decomposedInnerJoinOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {

@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
-import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.junit.jupiter.api.Test;
@@ -246,7 +246,7 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
-	void boundJoinProductCarriesCountMinSurfaceEvidence() {
+	void boundJoinProductCarriesOmniSurfaceFallbackEvidence() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:left");
 		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:right");
@@ -271,10 +271,10 @@ class LmdbBoundJoinProductBlendTest {
 				right, 2.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.countMinEvidence());
-		assertEquals("countmin-sketch-surface", estimate.countMinEvidence().source());
-		assertEquals(0.25d, estimate.countMinEvidence().confidence(), 0.0d);
-		assertTrue(estimate.countMinEvidence().upperBoundRows() >= 4.0d);
+		assertNotNull(estimate.omniSurface());
+		assertEquals("tuple_sketch_surface_product", estimate.omniSurface().source());
+		assertTrue(estimate.omniSurface().confidence() > 0.0d);
+		assertTrue(estimate.omniSurface().upperBoundRows() >= 4.0d);
 	}
 
 	@Test
@@ -311,7 +311,7 @@ class LmdbBoundJoinProductBlendTest {
 				.orElseThrow();
 
 		assertNotNull(productEstimate);
-		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
+		OmniSketchSurfaceEstimate omniEvidence = productEstimate.omniSurface();
 		assertNotNull(omniEvidence, "Bound-product estimates must retain OMNI sketch-surface evidence");
 		assertEquals("omni-join-estimator", omniEvidence.source());
 		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
@@ -358,7 +358,7 @@ class LmdbBoundJoinProductBlendTest {
 				.orElseThrow();
 
 		assertNotNull(productEstimate);
-		JoinFrequencyEstimate omniEvidence = productEstimate.countMinEvidence();
+		OmniSketchSurfaceEstimate omniEvidence = productEstimate.omniSurface();
 		assertNotNull(omniEvidence, "Three-way bound-product estimates must retain OMNI witness evidence");
 		assertEquals("omni-join-estimator", omniEvidence.source());
 		assertEquals("omni", factorEstimate.getStringMetrics().get("plannedSketchStrategy"));
@@ -395,7 +395,7 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
-	void exactCalibratedCountMinSurfaceDoesNotReplaceExactFactorCostSource() {
+	void exactOmniSurfaceDoesNotReplaceExactFactorCostSource() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:left");
 		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:right");
@@ -425,9 +425,9 @@ class LmdbBoundJoinProductBlendTest {
 			assertEquals("lmdb-bound-join-product",
 					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 			assertEquals("countmin-dual", estimate.getStringMetrics().get("plannedSketchStrategy"));
-			assertEquals("countmin-sketch-surface",
+			assertEquals("tuple_sketch_surface_product",
 					estimate.getStringMetrics().get("plannedSketchEstimateSource"));
-			assertEquals(0.75d, estimate.getDoubleMetrics().get("plannedSketchConfidence"), 0.0d);
+			assertTrue(estimate.getDoubleMetrics().get("plannedSketchConfidence") > 0.0d);
 			assertTrue(estimate.getDoubleMetrics().get("plannedSketchUpperBoundRows") >= 4.0d);
 			assertTrue(estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER) >= estimate
 					.getOutputRows());

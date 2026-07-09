@@ -729,8 +729,8 @@ class CascadesRuleEngineTest {
 	@Test
 	void filterValuesAnchorTurnsSafeOrEqualityIntoValuesJoin() {
 		ValueExpr condition = new Or(
-				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("MED-1000")), Compare.CompareOp.EQ),
-				new Compare(new ValueConstant(VF.createLiteral("MED-1001")), new Var("o"), Compare.CompareOp.EQ));
+				new Compare(new Var("o"), new ValueConstant(VF.createIRI("urn:med:1000")), Compare.CompareOp.EQ),
+				new Compare(new ValueConstant(VF.createIRI("urn:med:1001")), new Var("o"), Compare.CompareOp.EQ));
 		Filter filter = new Filter(pattern("s", "p", "o"), condition);
 
 		List<RuleApplication> applications = apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter);
@@ -805,8 +805,10 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
-	void filterValuesAnchorKeepsLiteralObjectFilterLocal() {
+	void filterValuesAnchorKeepsLiteralObjectFiltersLocal() {
 		Filter filter = new Filter(pattern("s", "p", "o"), literalListMember("o", "Book 1", "Book 2"));
+		Filter equalityFilter = new Filter(pattern("s", "p", "o"),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("Book 1")), Compare.CompareOp.EQ));
 
 		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), filter).isEmpty(),
 				"Literal object-position filters need statement-local costing before finite anchor materialization");
@@ -814,6 +816,12 @@ class CascadesRuleEngineTest {
 				"Literal object-position conjuncts need statement-local costing before finite anchor materialization");
 		assertFalse(standardRulesContainValuesAnchor(filter, "o"),
 				"Compiled standard rules must also keep literal object-position filters local for costing");
+		assertTrue(apply(new FilterCascadesRules.FilterValuesAnchorRule(), equalityFilter).isEmpty(),
+				"Literal object-position equality needs statement-local costing before anchor materialization");
+		assertTrue(apply(new FilterCascadesRules.FilterConjunctValuesAnchorRule(), equalityFilter).isEmpty(),
+				"Literal object-position equality conjuncts need statement-local costing before anchor materialization");
+		assertFalse(standardRulesContainValuesAnchor(equalityFilter, "o"),
+				"Compiled standard rules must also keep literal object-position equality local for costing");
 	}
 
 	@Test

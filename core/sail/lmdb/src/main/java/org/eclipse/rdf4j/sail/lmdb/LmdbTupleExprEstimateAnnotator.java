@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -1465,6 +1466,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			node.setStringMetricPlanned("plannedBoundJoinProductJoinVar", estimate.joinVarName());
 			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
 		}
+		stampOmniSurfaceEstimate(node, estimate.omniSurface());
 	}
 
 	private boolean hasSelectedPlannerOperatorFeedback(QueryModelNode node) {
@@ -1497,6 +1499,42 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
 			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
+		}
+		stampOmniSurfaceEstimate(node, estimate.omniSurface());
+	}
+
+	private void stampOmniSurfaceEstimate(QueryModelNode node, OmniSketchSurfaceEstimate omniSurface) {
+		if (node == null || omniSurface == null) {
+			return;
+		}
+		for (Map.Entry<String, String> entry : omniSurface.toStringMetrics().entrySet()) {
+			node.setStringMetricPlanned(entry.getKey(), entry.getValue());
+		}
+		for (Map.Entry<String, Double> entry : omniSurface.toDoubleMetrics().entrySet()) {
+			node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+		}
+		if (lmdbPlannerServices.isPresent() && node instanceof TupleExpr tupleExpr) {
+			LmdbOmniEvidenceStore store = lmdbPlannerServices.get().optimizationScopedOmniEvidenceStore();
+			if (store != null) {
+				String fingerprint = store.put(tupleExpr, "annotator", tupleExpr, omniSurface);
+				if (fingerprint != null) {
+					node.setStringMetricPlanned(LmdbOmniEvidenceStore.PLANNED_OMNI_EVIDENCE_FINGERPRINT,
+							fingerprint);
+				}
+			}
+			lmdbPlannerServices.get()
+					.optimizationScopedOmniEvidence(tupleExpr)
+					.ifPresent(evidence -> {
+						if (evidence == omniSurface) {
+							return;
+						}
+						for (Map.Entry<String, String> entry : evidence.toStringMetrics().entrySet()) {
+							node.setStringMetricPlanned(entry.getKey(), entry.getValue());
+						}
+						for (Map.Entry<String, Double> entry : evidence.toDoubleMetrics().entrySet()) {
+							node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+						}
+					});
 		}
 	}
 

@@ -40,12 +40,37 @@ final class PredicateSketchFamily {
 		return estimator.probePredicateRetainedAtMost(relation, predicateKey, predicate, maxRetainedWitnesses);
 	}
 
-	OmniWitnessSet follow(OmniWitnessSet input, OmniJoinEstimator.Relation relation, int maxRetainedWitnesses) {
+	OmniWitnessSet probeValuesBase(OmniJoinEstimator.Relation relation, long valueHash, int maxRetainedWitnesses) {
+		OmniJoinEstimator.Predicate predicate = OmniJoinEstimator.Predicate.equalHash(valueHash);
 		if (contextKey != null) {
-			return estimator.probeJoinPredicateContextRetainedAtMost(input, relation, predicateKey, contextKey,
+			return estimator.probePredicateContextBaseRetainedAtMost(relation, predicateKey, contextKey, predicate,
+					maxRetainedWitnesses);
+		}
+		return estimator.probePredicateBaseRetainedAtMost(relation, predicateKey, predicate, maxRetainedWitnesses);
+	}
+
+	OmniWitnessSet follow(OmniWitnessSet input, OmniJoinEstimator.Relation relation, int maxRetainedWitnesses) {
+		if (input == null) {
+			return followBase(input, relation, maxRetainedWitnesses);
+		}
+		OmniWitnessSet followed;
+		if (contextKey != null) {
+			followed = estimator.probeJoinPredicateContextBridgeRetainedAtMost(input, relation, predicateKey,
+					contextKey,
+					OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
+		} else {
+			followed = estimator.probeJoinPredicateBridgeRetainedAtMost(input, relation, predicateKey,
 					OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
 		}
-		return estimator.probeJoinPredicateRetainedAtMost(input, relation, predicateKey,
+		return followed;
+	}
+
+	OmniWitnessSet followBase(OmniWitnessSet input, OmniJoinEstimator.Relation relation, int maxRetainedWitnesses) {
+		if (contextKey != null) {
+			return estimator.probeJoinPredicateContextBaseRetainedAtMost(input, relation, predicateKey, contextKey,
+					OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
+		}
+		return estimator.probeJoinPredicateBaseRetainedAtMost(input, relation, predicateKey,
 				OmniJoinEstimator.OutputIdentifier.RECORD, maxRetainedWitnesses);
 	}
 }

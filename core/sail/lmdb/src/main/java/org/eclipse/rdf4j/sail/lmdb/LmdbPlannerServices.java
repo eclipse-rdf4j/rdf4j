@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 
 final class LmdbPlannerServices {
@@ -112,6 +113,18 @@ final class LmdbPlannerServices {
 
 	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
 		return statistics.optimizationScopedFactorFingerprint(factor);
+	}
+
+	Optional<OmniSketchSurfaceEstimate> optimizationScopedOmniEvidence(TupleExpr tupleExpr) {
+		return statistics.optimizationScopedOmniEvidence(tupleExpr);
+	}
+
+	LmdbOmniEvidenceStore optimizationScopedOmniEvidenceStore() {
+		return statistics.optimizationScopedOmniEvidenceStore();
+	}
+
+	void clearCompletedOmniEvidence() {
+		statistics.clearCompletedOmniEvidence();
 	}
 
 	boolean hasOptimizationScopedPlannerCache() {

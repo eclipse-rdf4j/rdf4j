@@ -59,6 +59,10 @@ class SketchBasedJoinEstimatorConfigTest {
 	private static final String CONTEXT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX + "contextBucketCount";
 	private static final String CONTEXT_PAIR_SKETCHES_ENABLED_PROPERTY = PROPERTY_PREFIX + "contextPairSketchesEnabled";
 	private static final String SKETCH_STRATEGY_PROPERTY = PROPERTY_PREFIX + "sketchStrategy";
+	private static final String OMNI_WITNESS_COHORT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX
+			+ "omniWitnessCohortBucketCount";
+	private static final String OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY = PROPERTY_PREFIX
+			+ "omniWitnessCohortBucketIndex";
 
 	private StubSketchStatementSource store;
 	private Resource s1;
@@ -244,7 +248,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void countMinDualExposesJoinEvidenceWithoutChangingDefaultEstimatePath() throws Exception {
+	void countMinDualExposesCardinalitySideStateWithoutJoinPlanning() throws Exception {
 		StubSketchStatementSource localStore = new StubSketchStatementSource();
 		Value object = VF.createIRI("urn:o:shared");
 		localStore.add(st(s1, p1, object));
@@ -257,14 +261,9 @@ class SketchBasedJoinEstimatorConfigTest {
 
 		rebuild(estimator);
 
-		Object estimate = invokeCountMinJoinEvidence(estimator, SketchBasedJoinEstimator.Component.O,
-				SketchBasedJoinEstimator.Component.P, p1.stringValue(), SketchBasedJoinEstimator.Component.P,
-				p1.stringValue());
+		double estimate = estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 
-		assertEquals("countmin-sketch-surface", invokeString(estimate, "source"));
-		assertEquals(invokeDouble(estimate, "upperBoundRows"), invokeDouble(estimate, "calibratedRows"), 0.0d);
-		assertTrue(invokeDouble(estimate, "upperBoundRows") >= 4.0d);
-		assertTrue(invokeDouble(estimate, "confidence") < 0.5d);
+		assertEquals(2.0d, estimate, 0.0d);
 	}
 
 	@Test
@@ -561,6 +560,48 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
+	void omniWitnessCohortDefaultsAndBuilderMethods() throws Exception {
+		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
+		assertEquals(16, intField(defaults, "omniWitnessCohortBucketCount"));
+		assertEquals(7, intField(defaults, "omniWitnessCohortBucketIndex"));
+
+		SketchBasedJoinEstimator.Config configured = SketchBasedJoinEstimator.Config.defaults();
+		assertSame(configured,
+				invokeConfig(configured, "withOmniWitnessCohortBucketCount", int.class, 32));
+		assertSame(configured,
+				invokeConfig(configured, "withOmniWitnessCohortBucketIndex", int.class, 19));
+		assertEquals(32, intField(configured, "omniWitnessCohortBucketCount"));
+		assertEquals(19, intField(configured, "omniWitnessCohortBucketIndex"));
+
+		SketchBasedJoinEstimator.Config normalized = SketchBasedJoinEstimator.Config.defaults();
+		invokeConfig(normalized, "withOmniWitnessCohortBucketCount", int.class, -1);
+		invokeConfig(normalized, "withOmniWitnessCohortBucketIndex", int.class, -3);
+		assertEquals(0, intField(normalized, "omniWitnessCohortBucketCount"));
+		assertEquals(0, intField(normalized, "omniWitnessCohortBucketIndex"));
+	}
+
+	@Test
+	void systemPropertyOverridesForOmniWitnessCohortSettings() throws Exception {
+		PropertyState properties = PropertyState.capture(OMNI_WITNESS_COHORT_BUCKET_COUNT_PROPERTY,
+				OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY);
+		try {
+			System.setProperty(OMNI_WITNESS_COHORT_BUCKET_COUNT_PROPERTY, "64");
+			System.setProperty(OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY, "41");
+
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withNominalEntries(128)
+							.withThrottleEveryN(1)
+							.withThrottleMillis(0));
+
+			assertEquals(64, intField(estimator, "omniWitnessCohortBucketCount"));
+			assertEquals(41, intField(estimator, "omniWitnessCohortBucketIndex"));
+		} finally {
+			properties.restore();
+		}
+	}
+
+	@Test
 	void legacySystemPropertyPrefixesRemainFallbacks() throws Exception {
 		String name = "subjectBucketCount";
 		String current = PROPERTY_PREFIX + name;
@@ -827,16 +868,6 @@ class SketchBasedJoinEstimatorConfigTest {
 		}
 		Map<?, ?> relations = (Map<?, ?>) objectField(omniJoinEstimator, "relations");
 		return relations.size();
-	}
-
-	private static Object invokeCountMinJoinEvidence(SketchBasedJoinEstimator estimator,
-			SketchBasedJoinEstimator.Component join, SketchBasedJoinEstimator.Component a, String av,
-			SketchBasedJoinEstimator.Component b, String bv) throws Exception {
-		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("estimateCountMinJoinOn",
-				SketchBasedJoinEstimator.Component.class, SketchBasedJoinEstimator.Component.class, String.class,
-				SketchBasedJoinEstimator.Component.class, String.class);
-		method.setAccessible(true);
-		return method.invoke(estimator, join, a, av, b, bv);
 	}
 
 	private static double invokeDouble(Object target, String methodName) throws Exception {

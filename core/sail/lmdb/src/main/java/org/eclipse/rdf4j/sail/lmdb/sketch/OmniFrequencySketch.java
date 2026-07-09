@@ -107,8 +107,7 @@ final class OmniFrequencySketch implements FrequencySketch {
 		return supportSample.retainedDistinctIntersection(other.supportSample);
 	}
 
-	@SuppressWarnings("unused")
-	private OmniSketchEstimate intersectionEstimate(OmniFrequencySketch other) {
+	OmniSketchEstimate intersectionEstimate(OmniFrequencySketch other) {
 		return OmniSketches.intersection(
 				List.of(sketch, other.sketch),
 				List.of(OmniSketchPredicate.all(), OmniSketchPredicate.all()));

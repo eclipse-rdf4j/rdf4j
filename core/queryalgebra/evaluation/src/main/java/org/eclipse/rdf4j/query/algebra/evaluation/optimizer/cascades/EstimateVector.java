@@ -104,7 +104,7 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 		double confidence = firstMetric(metrics, interval.confidence(), VECTOR_CONFIDENCE,
 				"plannedOperatorFeedbackConfidence", "plannedCardinalityConfidence", "plannedFilterConfidence");
 		double uncertaintyRows = firstMetric(metrics, interval.uncertaintyRows(), VECTOR_UNCERTAINTY_ROWS,
-				"plannedOperatorFeedbackUncertaintyRows");
+				"plannedOperatorFeedbackUncertaintyRows", "plannedUncertaintyRows");
 		return new EstimateVector(estimate.rows(), interval.lowerRows(), interval.upperRows(), estimate.workRows(),
 				firstMetric(metrics, 0.0d, "plannedMemoryRows"),
 				firstMetric(metrics, 0.0d, "plannedSeeks"),
@@ -112,7 +112,7 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 						"plannedBoundLookupPageWalkRawRows"),
 				rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, uncertaintyRows, confidence,
 				firstMetric(metrics, 0.0d, VECTOR_EVIDENCE_COUNT, "plannedOperatorFeedbackEvidence",
-						"plannedFilterEvidenceCount", "sampleCountActual"),
+						"plannedOmniEvidenceCount", "plannedFilterEvidenceCount", "sampleCountActual"),
 				estimate.method(), metrics);
 	}
 

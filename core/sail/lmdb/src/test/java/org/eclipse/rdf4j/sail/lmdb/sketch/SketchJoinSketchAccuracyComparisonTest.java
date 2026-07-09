@@ -59,7 +59,7 @@ class SketchJoinSketchAccuracyComparisonTest {
 		long truth = exactInnerProduct(bindingsFor(statements, left, List.of("encounter", "drug")),
 				bindingsFor(statements, right, List.of("encounter", "drug")));
 
-		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, right), "encounter");
+		OmniSketchSurfaceEstimate estimate = estimator.estimateOmniSurface(List.of(left, right), "encounter");
 
 		assertEquals("omni", estimator.getSketchStrategy().configValue());
 		assertNotNull(estimate, "OMNI should expose sketch join-surface evidence");
@@ -93,7 +93,7 @@ class SketchJoinSketchAccuracyComparisonTest {
 				bindingsFor(statements, middle, keyVars),
 				bindingsFor(statements, right, keyVars)));
 
-		JoinFrequencyEstimate estimate = estimator.estimateSketchJoinSurface(List.of(left, middle, right),
+		OmniSketchSurfaceEstimate estimate = estimator.estimateOmniSurface(List.of(left, middle, right),
 				"encounter");
 
 		assertNotNull(estimate, "OMNI should expose multi-way composite-key witness evidence");
@@ -155,7 +155,7 @@ class SketchJoinSketchAccuracyComparisonTest {
 		StatementPattern datePattern = new StatementPattern(Var.of("encounter"),
 				Var.of("recordedOn", recordedOn), Var.of("date", january));
 
-		JoinFrequencyEstimate estimate = estimator.estimateSubjectStarJoinSurface(List.of(typePattern, datePattern),
+		OmniSketchSurfaceEstimate estimate = estimator.estimateSubjectStarOmniSurface(List.of(typePattern, datePattern),
 				"encounter");
 
 		assertNotNull(estimate, "OMNI should expose subject-star witness evidence");
@@ -182,7 +182,7 @@ class SketchJoinSketchAccuracyComparisonTest {
 		StatementPattern left = new StatementPattern(Var.of("entity"), Var.of("p1"), Var.of("left", enabled));
 		StatementPattern right = new StatementPattern(Var.of("entity"), Var.of("p2"), Var.of("right", flagged));
 
-		JoinFrequencyEstimate estimate = estimator.estimateSubjectStarJoinSurface(List.of(left, right), "entity");
+		OmniSketchSurfaceEstimate estimate = estimator.estimateSubjectStarOmniSurface(List.of(left, right), "entity");
 
 		assertEquals(null, estimate, "Object-only subject-star surfaces are intentionally not materialized");
 	}

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.sail.lmdb.sketch.JoinFrequencyEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 
 record FilterCostApplication(double workRows, double outputRows, Map<String, String> stringMetrics,
 		Map<String, Double> doubleMetrics) {
@@ -56,9 +56,6 @@ record PatternIds(long subjectId, long predicateId, long objectId, long contextI
 	}
 }
 
-record CountMinSurfaceCalibration(double factor, double confidence) {
-}
-
 record AccessPathEstimate(double workRowsPerInvocation, double rowsBeforeFilterAtAccess,
 		double rowsAfterFilterAtAccess, String indexFieldSequence, int prefixLength, int prefixComponentMask,
 		boolean directLookup, int lookupComponentMask, int missingLookupComponentMask, int candidateCount) {
@@ -66,7 +63,7 @@ record AccessPathEstimate(double workRowsPerInvocation, double rowsBeforeFilterA
 
 record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
 		boolean exactRows, String finiteVarName, String estimateSource,
-		JoinFrequencyEstimate countMinEvidence) {
+		OmniSketchSurfaceEstimate omniSurface) {
 
 	FiniteDerivedSurfaceEstimate {
 		if (estimateSource == null || estimateSource.isBlank()) {
@@ -87,7 +84,7 @@ record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int b
 }
 
 record FiniteBranchSurfaceEstimate(double rows, boolean exactRows,
-		JoinFrequencyEstimate countMinEvidence) {
+		OmniSketchSurfaceEstimate omniSurface) {
 
 	FiniteBranchSurfaceEstimate(double rows, boolean exactRows) {
 		this(rows, exactRows, null);
@@ -107,7 +104,12 @@ record BridgeProductPrefixFactors(List<TupleExpr> factors, boolean preservesKnow
 }
 
 record PrefixBridgeEstimate(double rows, double prefixRows, double prefixSurfaceRows,
-		double prefixBridgeSurfaceRows, String joinVarName) {
+		double prefixBridgeSurfaceRows, String joinVarName, OmniSketchSurfaceEstimate omniSurface) {
+
+	PrefixBridgeEstimate(double rows, double prefixRows, double prefixSurfaceRows,
+			double prefixBridgeSurfaceRows, String joinVarName) {
+		this(rows, prefixRows, prefixSurfaceRows, prefixBridgeSurfaceRows, joinVarName, null);
+	}
 }
 
 record BridgeCandidate(StatementPattern bridge, PrefixBridgeEstimate prefixBridge) {

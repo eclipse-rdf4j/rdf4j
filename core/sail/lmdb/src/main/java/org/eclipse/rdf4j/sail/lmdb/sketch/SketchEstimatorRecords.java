@@ -84,12 +84,10 @@ record BindingSketchResult(FastAgmsBindingSummary sketch, EnumSet<Pair> usedPair
 record PairSketchCandidate(Pair pair, FastAgmsBindingSummary sketch) {
 }
 
-record CountMinSurfaceInput(Component joinComponent, Component fixedComponent, String fixedValue) {
-}
-
 record OmniOrderedJoinStep(Map<String, OmniWitnessSet> outputWitnesses, double rows,
 		double confidence, double samplingProbability, double rowMultiplier, String inputBindingName,
-		String outputBindingName, String direction, int retainedWitnessCount, String fallbackReason) {
+		String outputBindingName, String direction, int retainedWitnessCount, String fallbackReason,
+		String sourceKind) {
 }
 
 record OmniSubjectStarInput(byte attribute, long valueHash) {
@@ -110,7 +108,9 @@ record FiniteOmniFilterBinding(Component component, long valueHash) {
 record FiniteOmniTupleAlternative(List<Component> components, long valueHash, boolean residualRequired) {
 }
 
-record OmniJoinStats(double sharedIdentifiers, double leftIdentifiers, double rightIdentifiers) {
+record OmniJoinStats(double sharedIdentifiers, double leftIdentifiers, double rightIdentifiers,
+		double lowerBoundRows, double upperBoundRows, double samplingProbability, int retainedEntries,
+		int sampleIntersectionSize) {
 }
 
 record StateComponents<T> (T S, T P, T O, T C) {

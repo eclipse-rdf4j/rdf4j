@@ -732,6 +732,9 @@ public interface JoinFactorCostModel {
 		private static double uncertaintyRows(Map<String, Double> metrics, double rows, double rowQErrorMax,
 				double workQErrorMax, double confidence, boolean exactOutputRows) {
 			Double explicit = metrics.get("plannedOperatorFeedbackUncertaintyRows");
+			if (explicit == null) {
+				explicit = metrics.get(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS);
+			}
 			if (explicit != null && Double.isFinite(explicit) && explicit >= 0.0d) {
 				return explicit;
 			}
@@ -781,6 +784,7 @@ public interface JoinFactorCostModel {
 
 		private static double evidenceCount(Map<String, Double> metrics) {
 			return firstMetric(metrics, 0.0d, "plannedOperatorFeedbackEvidence",
+					"plannedOmniEvidenceCount",
 					TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
 					TelemetryMetricNames.SAMPLE_COUNT_ACTUAL);
 		}

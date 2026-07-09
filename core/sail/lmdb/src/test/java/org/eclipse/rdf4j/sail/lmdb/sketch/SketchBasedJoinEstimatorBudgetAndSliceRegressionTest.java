@@ -129,9 +129,9 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern hasObservationPattern = new StatementPattern(Var.of("enc"),
 				Var.of("hasObservation", hasObservation), Var.of("obs"));
 
-		double prefixRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), "obs");
-		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), hasObservationPattern,
-				"obs");
+		double prefixRows = estimator.estimateOmniSurface(List.of(valuePattern), "obs").calibratedRows();
+		double surfaceRows = estimator.estimateOmniSurface(List.of(valuePattern), hasObservationPattern, "obs")
+				.calibratedRows();
 
 		assertTrue(prefixRows > 0.0d, "Expected sketch-only prefix surface rows");
 		assertTrue(surfaceRows > 0.0d, "Expected sketch-only join surface rows");
@@ -158,7 +158,8 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
 				Var.of("shared"));
 
-		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern), rightPattern, "shared");
+		double surfaceRows = estimator.estimateOmniSurface(List.of(leftPattern), rightPattern, "shared")
+				.calibratedRows();
 
 		assertTrue(surfaceRows > 0.0d,
 				"Sketch-only surface costing should use the one-sigma upper bound before returning zero");
@@ -188,8 +189,8 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
 				Var.of("shared"));
 
-		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern, middlePattern), rightPattern,
-				"shared");
+		double surfaceRows = estimator.estimateOmniSurface(List.of(leftPattern, middlePattern), rightPattern, "shared")
+				.calibratedRows();
 
 		assertTrue(surfaceRows > 0.0d,
 				"Sketch-only surface costing should not collapse an upper-bound-only prefix back to zero");

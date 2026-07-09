@@ -200,7 +200,13 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private static TupleExpr leftDeepJoin(JoinOrderPlanner.JoinOrderPlan plan, List<TupleExpr> orderedArgs) {
-		LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(plan, orderedArgs);
+		return leftDeepJoin(plan, orderedArgs, null);
+	}
+
+	private static TupleExpr leftDeepJoin(JoinOrderPlanner.JoinOrderPlan plan, List<TupleExpr> orderedArgs,
+			LmdbOmniEvidenceStore omniEvidenceStore) {
+		LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(plan, orderedArgs,
+				omniEvidenceStore);
 		TupleExpr root = runtimeMetrics.cloneFactor(orderedArgs.getFirst());
 		for (int i = 1; i < orderedArgs.size(); i++) {
 			root = runtimeMetrics.createJoin(root, runtimeMetrics.cloneFactor(orderedArgs.get(i)));
@@ -209,7 +215,13 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private static TupleExpr rightDeepJoin(JoinOrderPlanner.JoinOrderPlan plan, List<TupleExpr> orderedArgs) {
-		LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(plan, orderedArgs);
+		return rightDeepJoin(plan, orderedArgs, null);
+	}
+
+	private static TupleExpr rightDeepJoin(JoinOrderPlanner.JoinOrderPlan plan, List<TupleExpr> orderedArgs,
+			LmdbOmniEvidenceStore omniEvidenceStore) {
+		LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(plan, orderedArgs,
+				omniEvidenceStore);
 		TupleExpr root = runtimeMetrics.cloneFactor(orderedArgs.getLast());
 		for (int i = orderedArgs.size() - 2; i >= 0; i--) {
 			root = runtimeMetrics.createJoin(runtimeMetrics.cloneFactor(orderedArgs.get(i)), root);
@@ -2759,7 +2771,11 @@ final class LmdbCascadesRuleProvider {
 					selected.filters().size(), orderedArgs);
 			filterPlacementSteps = forceCorrelatedNotExistsFiniteBindingPlacement(selected.filters(), orderedArgs,
 					filterPlacementSteps);
-			LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(selected.plan(), orderedArgs);
+			LmdbOmniEvidenceStore evidenceStore = LmdbPlannerServices.from(statistics)
+					.map(LmdbPlannerServices::optimizationScopedOmniEvidenceStore)
+					.orElse(null);
+			LmdbPlannedRuntimeMetrics runtimeMetrics = LmdbPlannedRuntimeMetrics.forPlan(selected.plan(), orderedArgs,
+					evidenceStore);
 			return new LmdbDeferredFilterPlacer(
 					(tupleExpr, standaloneBoundVars) -> runtimeMetrics.cloneFactor(tupleExpr),
 					runtimeMetrics::createJoin, this::wrapFilters)

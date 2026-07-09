@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -549,10 +550,48 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (path(factor)) {
 			stringMetrics.put("optimizer.pathEndpointMode", pathEndpointMode(factor, boundVars));
 		}
+		TupleExpr plannedFactor = plannedRowPreservingFactor(factor, boundVars, costModel, fallbackStatistics,
+				estimationTier);
 		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, stringMetrics,
 				doubleMetrics, factorEstimate.getEstimateVector().rowQErrorMax(),
 				factorEstimate.getEstimateVector().workQErrorMax(), factorEstimate.getEstimateVector().confidence(),
-				factorEstimate.getEstimateVector().evidenceCount(), disconnected);
+				factorEstimate.getEstimateVector().evidenceCount(), disconnected, plannedFactor);
+	}
+
+	private static TupleExpr plannedRowPreservingFactor(TupleExpr factor, Set<String> boundVars,
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
+		TupleExpr arg = rowPreservingJoinArg(factor);
+		if (arg == null || costModel == null) {
+			return null;
+		}
+		Optional<Plan> plannedArg = plan(arg, boundVars, costModel, fallbackStatistics,
+				estimationTier == null ? EstimationTier.STANDARD : estimationTier);
+		if (plannedArg.isEmpty()) {
+			return null;
+		}
+		if (factor instanceof Projection projection) {
+			Projection clone = projection.clone();
+			clone.setArg(plannedArg.get().tupleExpr());
+			clone.setStringMetricPlanned("optimizer.rowPreservingPhysicalChild", ESTIMATE_SOURCE);
+			return clone;
+		}
+		if (factor instanceof Extension extension) {
+			Extension clone = extension.clone();
+			clone.setArg(plannedArg.get().tupleExpr());
+			clone.setStringMetricPlanned("optimizer.rowPreservingPhysicalChild", ESTIMATE_SOURCE);
+			return clone;
+		}
+		return null;
+	}
+
+	private static TupleExpr rowPreservingJoinArg(TupleExpr factor) {
+		if (factor instanceof Projection projection && projection.getArg()instanceof Join join) {
+			return join;
+		}
+		if (factor instanceof Extension extension && extension.getArg()instanceof Join join) {
+			return join;
+		}
+		return null;
 	}
 
 	private static PendingDirectAlternative cheaperPendingDirectEndpointAlternative(List<TupleExpr> factors,
@@ -1597,7 +1636,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		private TupleExpr cloneFactor(TupleExpr factor, Step step) {
-			TupleExpr clone = factor.clone();
+			TupleExpr clone = step != null && step.plannedFactor() != null ? step.plannedFactor().clone()
+					: factor.clone();
 			if (step != null) {
 				stampFactor(clone, step);
 			}
@@ -1667,6 +1707,16 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 
 		private void stampPrefix(Join join, Step step, int prefixFactorCount) {
+			for (Map.Entry<String, String> entry : step.stringMetrics().entrySet()) {
+				if (entry.getKey().startsWith("plannedOmni")) {
+					join.setStringMetricPlanned(entry.getKey(), entry.getValue());
+				}
+			}
+			for (Map.Entry<String, Double> entry : step.doubleMetrics().entrySet()) {
+				if (entry.getKey().startsWith("plannedOmni")) {
+					join.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+				}
+			}
 			join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
 			join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
@@ -1782,7 +1832,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	record Step(int factorIndex, Set<String> boundVarsBefore, double workRows, double outputRows,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics, double rowQErrorMax,
-			double workQErrorMax, double confidence, double evidenceCount, boolean disconnected)
+			double workQErrorMax, double confidence, double evidenceCount, boolean disconnected,
+			TupleExpr plannedFactor)
 			implements Comparable<Step> {
 
 		Step {

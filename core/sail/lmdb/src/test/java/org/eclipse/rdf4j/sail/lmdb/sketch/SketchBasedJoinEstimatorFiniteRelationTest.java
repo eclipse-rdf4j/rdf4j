@@ -58,8 +58,8 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
 				Var.of("branch"));
 
-		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName), locatedAtBranch,
-				"branch");
+		double rows = estimator.estimateOmniSurface(List.of(branchNames, branchName), locatedAtBranch, "branch")
+				.calibratedRows();
 
 		assertEquals(100.0d, rows, 0.0d,
 				"Finite branch-name anchors should cost the derived locatedAt fanout, not all branches");
@@ -82,8 +82,8 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
 				Var.of("branch"));
 
-		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName), locatedAtBranch,
-				"branch");
+		double rows = estimator.estimateOmniSurface(List.of(branchNames, branchName), locatedAtBranch, "branch")
+				.calibratedRows();
 
 		assertEquals(30.0d, rows, 0.0d,
 				"Duplicate finite anchor rows should multiply the downstream branch fanout");
@@ -120,8 +120,9 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern locatedAtBranch = new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt),
 				Var.of("branch"));
 
-		double rows = estimator.estimateSketchJoinSurfaceRows(List.of(branchNameZones, branchName, branchZone),
-				locatedAtBranch, "branch");
+		double rows = estimator
+				.estimateOmniSurface(List.of(branchNameZones, branchName, branchZone), locatedAtBranch, "branch")
+				.calibratedRows();
 
 		assertEquals(20.0d, rows, 0.0d,
 				"Tuple finite anchors should preserve row correlation and exclude mixed branch-name/zone matches");
@@ -144,11 +145,12 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 				Var.of("branch"));
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
-			double forward = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName),
-					locatedAtBranch, "branch");
+			double forward = estimator.estimateOmniSurface(List.of(branchNames, branchName), locatedAtBranch, "branch")
+					.calibratedRows();
 			int probesAfterForward = store.statementProbeCount();
-			double reordered = estimator.estimateSketchJoinSurfaceRows(List.of(branchName, branchNames),
-					locatedAtBranch, "branch");
+			double reordered = estimator
+					.estimateOmniSurface(List.of(branchName, branchNames), locatedAtBranch, "branch")
+					.calibratedRows();
 
 			assertEquals(forward, reordered, 0.0d);
 			assertEquals(probesAfterForward, store.statementProbeCount(),
@@ -177,11 +179,13 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 		StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("type", type), Var.of("kind"));
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
-			double first = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName, locatedAtBranch),
-					copyType, "copy");
+			double first = estimator
+					.estimateOmniSurface(List.of(branchNames, branchName, locatedAtBranch), copyType, "copy")
+					.calibratedRows();
 			int probesAfterFirst = store.statementProbeCount();
-			double second = estimator.estimateSketchJoinSurfaceRows(List.of(branchNames, branchName, locatedAtBranch),
-					copyType, "copy");
+			double second = estimator
+					.estimateOmniSurface(List.of(branchNames, branchName, locatedAtBranch), copyType, "copy")
+					.calibratedRows();
 
 			assertEquals(first, second, 0.0d);
 			assertEquals(probesAfterFirst, store.statementProbeCount(),
@@ -208,7 +212,7 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 				Var.of("next", VF.createIRI("urn:test:next")), Var.of("out"));
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
-			estimator.estimateSketchJoinSurfaceRows(List.of(anchor, repeatedValue), downstream, "same");
+			estimator.estimateOmniSurface(List.of(anchor, repeatedValue), downstream, "same");
 		}
 
 		assertTrue(store.statementRowsRead() <= 257,

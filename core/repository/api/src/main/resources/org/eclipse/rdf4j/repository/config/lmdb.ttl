@@ -57,6 +57,10 @@
          lmdb:sketchEstimatorObjectBucketCount {%Sketch estimator object bucket count|4096%} ;
          # @workbench.field len=16
          lmdb:sketchEstimatorContextBucketCount {%Sketch estimator context bucket count|16%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorOmniWitnessCohortBucketCount {%Sketch estimator OMNI witness cohort bucket count|16%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorOmniWitnessCohortBucketIndex {%Sketch estimator OMNI witness cohort bucket index|7%} ;
          lmdb:sketchEstimatorContextPairSketchesEnabled {%Sketch estimator context pair sketches enabled|false|true%} ;
          # @workbench.field len=16
          lmdb:sketchEstimatorThrottleEveryN {%Sketch estimator throttle every N|1048576%} ;

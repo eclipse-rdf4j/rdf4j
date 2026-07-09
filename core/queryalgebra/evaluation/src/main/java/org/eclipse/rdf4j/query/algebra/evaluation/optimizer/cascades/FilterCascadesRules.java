@@ -386,8 +386,7 @@ public final class FilterCascadesRules {
 		if (match == null || !bindingName.equals(unboundName(match.getObjectVar()))) {
 			return false;
 		}
-		return condition instanceof org.eclipse.rdf4j.query.algebra.ListMemberOperator
-				&& allAssignmentValuesAreLiterals(assignment, bindingName)
+		return allAssignmentValuesAreLiterals(assignment, bindingName)
 				|| factors.stream().filter(StatementPattern.class::isInstance).limit(2).count() >= 2;
 	}
 

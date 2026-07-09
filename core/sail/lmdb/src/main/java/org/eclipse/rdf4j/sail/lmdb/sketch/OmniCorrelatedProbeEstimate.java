@@ -14,5 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 public record OmniCorrelatedProbeEstimate(double inputRows, double outputRows, double matchedRows,
 		double probeRows, int inputWitnesses, int matchedWitnesses, double samplingProbability, double confidence,
-		int keyWidth, String source, boolean exactZero, String fallbackReason) {
+		int keyWidth, String source, boolean exactZero, String fallbackReason,
+		OmniSketchSurfaceEstimate omniSurface) {
 }

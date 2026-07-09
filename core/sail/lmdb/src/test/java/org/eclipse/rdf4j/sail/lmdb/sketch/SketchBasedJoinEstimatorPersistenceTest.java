@@ -270,12 +270,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		reader.configurePersistence(storeDirectory, true);
 		assertEquals(0, countMinSketchCount(reader), "Lazy startup should not heap-load Count-Min side state");
 
-		JoinFrequencyEstimate estimate = reader.estimateCountMinJoinOn(SketchBasedJoinEstimator.Component.O,
-				SketchBasedJoinEstimator.Component.P, p.stringValue(), SketchBasedJoinEstimator.Component.P,
-				p.stringValue());
+		double estimate = reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue());
 
-		assertNotNull(estimate, "Lazy COUNT_MIN_DUAL reads should restore persisted Count-Min side state");
-		assertTrue(estimate.upperBoundRows() >= 4.0d);
+		assertEquals(2.0d, estimate, 0.0d,
+				"Lazy COUNT_MIN_DUAL cardinality reads should restore persisted Count-Min side state");
 		assertTrue(countMinSketchCount(reader) > 0,
 				"Lazy COUNT_MIN_DUAL reads should restore persisted Count-Min side state");
 	}
@@ -398,7 +396,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				Var.of("prescribedDrug", prescribedDrug), Var.of("drug"));
 		StatementPattern right = new StatementPattern(Var.of("encounter"),
 				Var.of("billedDrug", billedDrug), Var.of("drug"));
-		JoinFrequencyEstimate writerEstimate = writer.estimateSketchJoinSurface(List.of(left, right), "encounter");
+		OmniSketchSurfaceEstimate writerEstimate = writer.estimateOmniSurface(List.of(left, right), "encounter");
 		assertNotNull(writerEstimate, "Writer should expose an Omni composite witness surface");
 		assertEquals("omni-join-estimator", writerEstimate.source());
 
@@ -409,7 +407,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
 		reader.configurePersistence(storeDirectory, true);
 
-		JoinFrequencyEstimate readerEstimate = reader.estimateSketchJoinSurface(List.of(left, right), "encounter");
+		OmniSketchSurfaceEstimate readerEstimate = reader.estimateOmniSurface(List.of(left, right), "encounter");
 
 		assertNotNull(readerEstimate, "Lazy OMNI read should restore persisted Omni join estimator side state");
 		assertEquals("omni-join-estimator", readerEstimate.source());

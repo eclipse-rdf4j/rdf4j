@@ -16,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
@@ -288,6 +290,260 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void sameSourceCohortWitnessesRecoverSparseOverlapSampleLoss() throws Exception {
+		OmniJoinEstimator baseEstimator = newEstimator(64, 1, 1);
+		OmniJoinEstimator.Relation baseLeft = baseEstimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation baseRight = baseEstimator.relation(OmniRelation.SUBJECT_STAR);
+		long value = OmniJoinEstimator.stableHash("cohort-shared-value");
+		populateSparseOverlap(baseLeft, baseRight, value);
+
+		OmniWitnessSet baseIntersection = baseEstimator.intersect(List.of(
+				baseEstimator.probeStatic(baseLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				baseEstimator.probeStatic(baseRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
+
+		assertEquals(OmniWitnessSet.FallbackReason.SAMPLE_LOSS, baseIntersection.fallbackReason());
+
+		OmniJoinEstimator cohortEstimator = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation cohortLeft = cohortEstimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation cohortRight = cohortEstimator.relation(OmniRelation.SUBJECT_STAR);
+		populateSparseOverlap(cohortLeft, cohortRight, value);
+		long cohortWitness = 95L;
+		updateStaticWithSource(cohortLeft, ATTR_P, value, cohortWitness, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		updateStaticWithSource(cohortRight, ATTR_P, value, cohortWitness, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		OmniWitnessSet cohortIntersection = cohortEstimator.intersect(List.of(
+				cohortEstimator.probeStatic(cohortLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				cohortEstimator.probeStatic(cohortRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
+
+		assertEquals(OmniWitnessSet.FallbackReason.NONE, cohortIntersection.fallbackReason());
+		assertEquals(0.25d, cohortIntersection.samplingProbability(), 0.0d);
+		assertTrue(cohortIntersection.containsHash(cohortWitness));
+		assertTrue(error(cohortEstimator.estimateRows(cohortIntersection),
+				11.0d) < error(baseEstimator.estimateRows(baseIntersection), 11.0d));
+	}
+
+	@Test
+	void vertexCohortWitnessesRecoverSparseOverlapSampleLoss() {
+		OmniWitnessSet.SourceKind vertex = vertexCohortSourceKind();
+		OmniJoinEstimator baseEstimator = newEstimator(64, 1, 1);
+		OmniJoinEstimator.Relation baseLeft = baseEstimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation baseRight = baseEstimator.relation(OmniRelation.SUBJECT_STAR);
+		long value = OmniJoinEstimator.stableHash("vertex-cohort-shared-value");
+		populateSparseOverlap(baseLeft, baseRight, value);
+
+		OmniWitnessSet baseIntersection = baseEstimator.intersect(List.of(
+				baseEstimator.probeStatic(baseLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				baseEstimator.probeStatic(baseRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
+
+		assertEquals(OmniWitnessSet.FallbackReason.SAMPLE_LOSS, baseIntersection.fallbackReason());
+
+		OmniJoinEstimator vertexEstimator = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation vertexLeft = vertexEstimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation vertexRight = vertexEstimator.relation(OmniRelation.SUBJECT_STAR);
+		populateSparseOverlap(vertexLeft, vertexRight, value);
+		long vertexWitness = 95L;
+		updateStaticWithSource(vertexLeft, ATTR_P, value, vertexWitness, 1.0d, vertex);
+		updateStaticWithSource(vertexRight, ATTR_P, value, vertexWitness, 1.0d, vertex);
+
+		OmniWitnessSet vertexIntersection = vertexEstimator.intersect(List.of(
+				vertexEstimator.probeStatic(vertexLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				vertexEstimator.probeStatic(vertexRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
+
+		assertEquals(OmniWitnessSet.FallbackReason.NONE, vertexIntersection.fallbackReason());
+		assertEquals(0.25d, vertexIntersection.samplingProbability(), 0.0d);
+		assertTrue(vertexIntersection.containsHash(vertexWitness));
+		assertTrue(error(vertexEstimator.estimateRows(vertexIntersection),
+				11.0d) < error(baseEstimator.estimateRows(baseIntersection), 11.0d));
+	}
+
+	@Test
+	void cohortJoinProbeUsesSameWitnessSourceAsInput() throws Exception {
+		OmniJoinEstimator estimator = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation left = estimator.relation(OmniRelation.STATEMENT);
+		OmniJoinEstimator.Relation right = estimator.relation(OmniRelation.TUPLE_SURFACE);
+		OmniJoinEstimator.Relation facts = estimator.relation(OmniRelation.SUBJECT_STAR);
+		long value = OmniJoinEstimator.stableHash("cohort-chained-value");
+		long joinKey = OmniJoinEstimator.stableHash("cohort-join-key");
+		long output = OmniJoinEstimator.stableHash("cohort-output");
+
+		populateSparseOverlap(left, right, value);
+		updateStaticWithSource(left, ATTR_P, value, joinKey, 1.0d,
+				OmniWitnessSet.SourceKind.OBJECT_COHORT);
+		updateStaticWithSource(right, ATTR_P, value, joinKey, 1.0d,
+				OmniWitnessSet.SourceKind.OBJECT_COHORT);
+		updateStaticWithSource(facts, ATTR_O, joinKey, output, 1.0d,
+				OmniWitnessSet.SourceKind.OBJECT_COHORT);
+
+		OmniWitnessSet input = estimator.intersect(List.of(
+				estimator.probeStatic(left, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
+				estimator.probeStatic(right, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value))));
+		OmniWitnessSet joined = estimator.probeJoinStatic(input, facts, ATTR_O,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+
+		assertEquals(OmniWitnessSet.FallbackReason.NONE, joined.fallbackReason());
+		assertEquals(0.25d, joined.samplingProbability(), 0.0d);
+		assertTrue(joined.containsHash(output));
+	}
+
+	@Test
+	void vertexCohortBridgeFollowPreservesRoleNeutralSource() {
+		OmniWitnessSet.SourceKind vertex = vertexCohortSourceKind();
+		OmniJoinEstimator estimator = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation edgeForward = estimator.relation(OmniRelation.EDGE_FORWARD);
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:cohort:bridge");
+		long bridgeValue = OmniJoinEstimator.stableHash("urn:cohort:bridge:value");
+		long nextValue = OmniJoinEstimator.stableHash("urn:cohort:bridge:next");
+		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(new long[] { bridgeValue },
+				new double[] { 3.0d }, 1, 0.25d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 4.0d)
+				.withSourceKind(vertex);
+		updatePredicateWithSource(edgeForward, predicateKey, bridgeValue, nextValue, 2.0d, vertex);
+
+		OmniWitnessSet output = estimator.probeJoinPredicate(input, edgeForward, predicateKey,
+				OmniJoinEstimator.OutputIdentifier.RECORD);
+
+		assertEquals(vertex, output.sourceKind());
+		assertEquals(0.25d, output.samplingProbability(), 0.0d);
+		assertTrue(output.containsHash(nextValue));
+		assertEquals(24.0d, estimator.estimateRows(output), 0.0d,
+				"Bridge output must retain incoming path weight and outgoing edge multiplicity");
+	}
+
+	@Test
+	void vertexCohortWitnessesSurviveByteArrayRoundTrip() throws Exception {
+		OmniWitnessSet.SourceKind vertex = vertexCohortSourceKind();
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("vertex-cohort-serialized-value");
+		long witness = OmniJoinEstimator.stableHash("vertex-cohort-serialized-witness");
+		updateStaticWithSource(relation, ATTR_P, value, witness, 1.0d, vertex);
+
+		OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 4, 1);
+		reader.loadFromByteArray(writer.toByteArray());
+		OmniWitnessSet witnesses = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+		OmniWitnessSet vertexCohort = witnesses.candidateFor(vertex);
+
+		assertNotNull(vertexCohort);
+		assertEquals(0.25d, vertexCohort.samplingProbability(), 0.0d);
+		assertTrue(vertexCohort.containsHash(witness));
+	}
+
+	@Test
+	void mappedSnapshotKeepsVertexCohortWitnesses(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		OmniWitnessSet.SourceKind vertex = vertexCohortSourceKind();
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("vertex-cohort-mapped-value");
+		long witness = OmniJoinEstimator.stableHash("vertex-cohort-mapped-witness");
+		updateStaticWithSource(relation, ATTR_P, value, witness, 1.0d, vertex);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 11L);
+
+			OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 4, 1);
+			reader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+			OmniWitnessSet witnesses = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+					OmniJoinEstimator.Predicate.equalHash(value));
+			OmniWitnessSet vertexCohort = witnesses.candidateFor(vertex);
+
+			assertNotNull(vertexCohort);
+			assertEquals(0.25d, vertexCohort.samplingProbability(), 0.0d);
+			assertTrue(vertexCohort.containsHash(witness));
+		}
+	}
+
+	@Test
+	void bucketCountZeroDisablesCohortWitnesses() {
+		OmniJoinEstimator estimator = newCohortEstimator(64, 1, 1, 0, 7);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("cohort-disabled-value");
+		long witness = OmniJoinEstimator.stableHash("cohort-disabled-witness");
+		updateStaticWithSource(relation, ATTR_P, value, witness, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		OmniWitnessSet witnesses = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+
+		assertNull(witnesses.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT));
+		assertTrue(witnesses.containsHash(witness));
+	}
+
+	@Test
+	void cohortWitnessesSurviveByteArrayRoundTrip() throws Exception {
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("cohort-serialized-value");
+		long witness = OmniJoinEstimator.stableHash("cohort-serialized-witness");
+		updateStaticWithSource(relation, ATTR_P, value, witness, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 4, 1);
+		reader.loadFromByteArray(writer.toByteArray());
+		OmniWitnessSet witnesses = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value));
+		OmniWitnessSet subjectCohort = witnesses.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		assertEquals(0.25d, subjectCohort.samplingProbability(), 0.0d);
+		assertTrue(subjectCohort.containsHash(witness));
+	}
+
+	@Test
+	void byteArrayRoundTripRejectsMismatchedCohortBuckets() {
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		updateStaticWithSource(relation, ATTR_P, OmniJoinEstimator.stableHash("cohort-byte-mismatch-value"),
+				OmniJoinEstimator.stableHash("cohort-byte-mismatch-witness"), 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 4, 2);
+
+		assertThrows(IOException.class, () -> reader.loadFromByteArray(writer.toByteArray()));
+	}
+
+	@Test
+	void mappedSnapshotKeepsCohortWitnesses(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("cohort-mapped-value");
+		long witness = OmniJoinEstimator.stableHash("cohort-mapped-witness");
+		updateStaticWithSource(relation, ATTR_P, value, witness, 1.0d,
+				OmniWitnessSet.SourceKind.OBJECT_COHORT);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 9L);
+
+			OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 4, 1);
+			reader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+			OmniWitnessSet witnesses = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+					OmniJoinEstimator.Predicate.equalHash(value));
+			OmniWitnessSet objectCohort = witnesses.candidateFor(OmniWitnessSet.SourceKind.OBJECT_COHORT);
+
+			assertEquals(0.25d, objectCohort.samplingProbability(), 0.0d);
+			assertTrue(objectCohort.containsHash(witness));
+		}
+	}
+
+	@Test
+	void mappedSnapshotRejectsMismatchedCohortBuckets(@org.junit.jupiter.api.io.TempDir Path tempDir)
+			throws Exception {
+		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
+		updateStaticWithSource(relation, ATTR_P, OmniJoinEstimator.stableHash("cohort-mismatch-value"),
+				OmniJoinEstimator.stableHash("cohort-mismatch-witness"), 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 10L);
+
+			OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 8, 1);
+
+			assertThrows(IOException.class, () -> reader.loadMappedSnapshot(store.openSnapshot((byte) 0)));
+		}
+	}
+
+	@Test
 	void serializedPayloadKeepsOnlySampledWitnessWeights() throws Exception {
 		OmniJoinEstimator estimator = newEstimator(64, 1, 8);
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
@@ -498,6 +754,39 @@ class OmniJoinEstimatorTest {
 
 	private static OmniJoinEstimator newEstimator(int width, int rows, int nominalEntries) {
 		return new OmniJoinEstimator(width, rows, nominalEntries, SEED);
+	}
+
+	private static OmniJoinEstimator newCohortEstimator(int width, int rows, int nominalEntries,
+			int cohortBucketCount, int cohortBucketIndex) {
+		return new OmniJoinEstimator(width, rows, nominalEntries, SEED, cohortBucketCount, cohortBucketIndex);
+	}
+
+	private static void populateSparseOverlap(OmniJoinEstimator.Relation left, OmniJoinEstimator.Relation right,
+			long value) {
+		for (long id = 1; id <= 100; id++) {
+			left.updateStatic(ATTR_P, value, id, 1.0d);
+		}
+		for (long id = 90; id <= 190; id++) {
+			right.updateStatic(ATTR_P, value, id, 1.0d);
+		}
+	}
+
+	private static void updateStaticWithSource(OmniJoinEstimator.Relation relation, byte attribute, long valueHash,
+			long witnessHash, double weight, OmniWitnessSet.SourceKind sourceKind) {
+		relation.updateStatic(attribute, valueHash, witnessHash, weight, sourceKind);
+	}
+
+	private static void updatePredicateWithSource(OmniJoinEstimator.Relation relation, SketchTermKey predicateKey,
+			long valueHash, long witnessHash, double weight, OmniWitnessSet.SourceKind sourceKind) {
+		relation.updatePredicate(predicateKey, valueHash, witnessHash, weight, sourceKind);
+	}
+
+	private static OmniWitnessSet.SourceKind vertexCohortSourceKind() {
+		return Enum.valueOf(OmniWitnessSet.SourceKind.class, "VERTEX_COHORT");
+	}
+
+	private static double error(double estimate, double actual) {
+		return Math.abs(estimate - actual);
 	}
 
 	private static Object staticAttributeIndex(OmniJoinEstimator.Relation relation, byte attribute) throws Exception {

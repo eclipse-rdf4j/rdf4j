@@ -555,7 +555,7 @@ public final class RuleDsl {
 		if (search.matchCount != 1 || !search.objectMatch) {
 			return false;
 		}
-		return expression instanceof ScalarExpr.In && values.stream().allMatch(Literal.class::isInstance)
+		return values.stream().allMatch(Literal.class::isInstance)
 				|| search.statementPatternCount >= 2;
 	}
 

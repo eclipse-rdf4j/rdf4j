@@ -111,6 +111,10 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT;
 
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
@@ -163,6 +167,10 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
 		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");
 		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketIndex");
 		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
 				"sketchEstimatorContextPairSketchesEnabled");
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");

@@ -378,6 +378,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return Double.isFinite(workRows) && workRows >= 0.0d && workRows < Double.MAX_VALUE;
 	}
 
+	private boolean isPositiveFinite(double value) {
+		return Double.isFinite(value) && value > 0.0d;
+	}
+
 	private CostVector cascadesWorkBound(double standardWorkRows) {
 		if (!isComparableWorkRows(standardWorkRows)) {
 			return CostVector.INFINITE;
@@ -1434,18 +1438,21 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return;
 		}
 		TupleExpr replacement = standardPlan.tupleExpr();
+		CostVector rootCost = standardPlan.cost();
 		if (standardPlanFullAnnotationsEnabled()) {
 			annotateStandardPlanWinnerTree(replacement, standardPlan);
 		} else {
 			annotateStandardPlanWinnerOwnershipTree(replacement, standardPlan.origin());
-		}
-		replaceRootIfSafe(tupleExpr, replacement);
-		if (standardPlanFullAnnotationsEnabled() && tupleExpr != replacement) {
-			CostVector cost = standardPlan.cost();
-			if (cost != null && !CostVector.INFINITE.equals(cost)) {
-				annotateStandardPlanNode(tupleExpr, cost, standardPlan.origin());
+			if (rootCost != null && !CostVector.INFINITE.equals(rootCost)) {
+				annotateStandardPlanNode(replacement, rootCost, standardPlan.origin());
 			}
 		}
+		replaceRootIfSafe(tupleExpr, replacement);
+		if (tupleExpr != replacement && rootCost != null && !CostVector.INFINITE.equals(rootCost)) {
+			annotateStandardPlanNode(tupleExpr, rootCost, standardPlan.origin());
+		}
+		repairStandardPlanRows(replacement);
+		repairStandardPlanRows(tupleExpr);
 	}
 
 	private void annotateStandardPlanWinnerTree(TupleExpr tupleExpr, StandardPlanCandidate standardPlan) {
@@ -1518,6 +1525,238 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		tupleExpr.setDoubleMetricPlanned("plannedCostRowQErrorMax", cost.rowQErrorMax());
 		tupleExpr.setDoubleMetricPlanned("plannedCostWorkQErrorMax", cost.workQErrorMax());
 		tupleExpr.setDoubleMetricPlanned("plannedCascadesEvidenceCount", cost.evidenceCount());
+	}
+
+	private void repairStandardPlanRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(QueryRoot node) {
+				super.meet(node);
+				repairStandardQueryRootRows(node);
+			}
+
+			@Override
+			public void meet(Projection node) {
+				super.meet(node);
+				repairStandardProjectionRows(node);
+			}
+
+			@Override
+			public void meet(Extension node) {
+				super.meet(node);
+				repairStandardExtensionRows(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				super.meet(node);
+				repairStandardFilterRows(node);
+			}
+
+			@Override
+			public void meet(Group node) {
+				super.meet(node);
+				repairStandardGroupRows(node);
+			}
+
+			@Override
+			public void meet(Join node) {
+				super.meet(node);
+				repairStandardJoinRows(node);
+			}
+		});
+	}
+
+	private void repairStandardQueryRootRows(QueryRoot queryRoot) {
+		if (!standardPlanNode(queryRoot)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(queryRoot.getArg());
+		if (isPositiveFinite(childRows)) {
+			raisePlannedRows(queryRoot, childRows, "root_child_plan");
+		}
+	}
+
+	private void repairStandardProjectionRows(Projection projection) {
+		if (!standardPlanNode(projection)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(projection.getArg());
+		repairRowPreservingRows(projection, childRows, "row_preserving_projection");
+	}
+
+	private void repairStandardExtensionRows(Extension extension) {
+		if (!standardPlanNode(extension)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(extension.getArg());
+		repairRowPreservingRows(extension, childRows, "row_preserving_extension");
+	}
+
+	private void repairStandardFilterRows(Filter filter) {
+		if (!standardPlanNode(filter)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(filter.getArg());
+		double currentRows = plannedRowsOrResult(filter);
+		double metricRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
+				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
+			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
+			filter.setResultSizeEstimate(repairedRows);
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
+			filter.setStringMetricPlanned("optimizer.standardPlanRowRepair",
+					repairedRows == childRows ? "filter_child_upper_bound" : "filter_scalar_metric_repair");
+		}
+	}
+
+	private void repairStandardGroupRows(Group group) {
+		if (!standardPlanNode(group)) {
+			return;
+		}
+		double childRows = plannedRowsOrResult(group.getArg());
+		double inputRows = standardGroupInputRows(group.getArg());
+		if (isPositiveFinite(inputRows) && (!isPositiveFinite(childRows) || inputRows < childRows)) {
+			childRows = inputRows;
+		}
+		double duplicateInputRows = duplicateGroupInputRows(group);
+		if (isPositiveFinite(duplicateInputRows) && (!isPositiveFinite(childRows) || duplicateInputRows < childRows)) {
+			childRows = duplicateInputRows;
+		}
+		double currentRows = plannedRowsOrResult(group);
+		double metricRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
+				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
+			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
+			group.setResultSizeEstimate(repairedRows);
+			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
+			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
+			group.setStringMetricPlanned("optimizer.standardPlanRowRepair",
+					repairedRows == childRows ? "group_child_upper_bound" : "group_scalar_metric_repair");
+		}
+	}
+
+	private double standardGroupInputRows(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Join join && standardPlanNode(join)
+				&& sharesBindings(join.getLeftArg(), join.getRightArg())) {
+			return minPositive(plannedRowsOrResult(join.getLeftArg()), plannedRowsOrResult(join.getRightArg()));
+		}
+		return Double.NaN;
+	}
+
+	private double minPositive(double left, double right) {
+		boolean leftValid = isPositiveFinite(left);
+		boolean rightValid = isPositiveFinite(right);
+		if (leftValid && rightValid) {
+			return Math.min(left, right);
+		}
+		return leftValid ? left : right;
+	}
+
+	private double duplicateGroupInputRows(Group group) {
+		if (group == null || !group.getGroupElements().isEmpty()) {
+			return Double.NaN;
+		}
+		double[] minRows = { Double.NaN };
+		group.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					double rows = plannedScalarRows(tuple);
+					if (isPositiveFinite(rows) && (!isPositiveFinite(minRows[0]) || rows < minRows[0])) {
+						minRows[0] = rows;
+					}
+				}
+				node.visitChildren(this);
+			}
+		});
+		return minRows[0];
+	}
+
+	private double plannedScalarRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		return isPositiveFinite(rows) ? rows : Double.NaN;
+	}
+
+	private void repairRowPreservingRows(TupleExpr tupleExpr, double childRows, String reason) {
+		if (!isPositiveFinite(childRows)) {
+			return;
+		}
+		double currentRows = plannedRowsOrResult(tupleExpr);
+		double metricRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		double finalRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (!isPositiveFinite(currentRows) || currentRows > childRows || !isPositiveFinite(metricRows)
+				|| !isPositiveFinite(finalRows)) {
+			tupleExpr.setResultSizeEstimate(childRows);
+			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, childRows);
+			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, childRows);
+			tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
+		}
+	}
+
+	private void repairStandardJoinRows(Join join) {
+		if (!standardPlanNode(join) || !sharesBindings(join.getLeftArg(), join.getRightArg())) {
+			return;
+		}
+		double leftRows = plannedRowsOrResult(join.getLeftArg());
+		if (isPositiveFinite(leftRows)) {
+			raisePlannedRows(join, leftRows, "shared_binding_prefix_lower_bound");
+		}
+	}
+
+	private boolean standardPlanNode(TupleExpr tupleExpr) {
+		return tupleExpr != null
+				&& STANDARD_PLAN_SOURCE.equals(
+						tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private boolean sharesBindings(TupleExpr left, TupleExpr right) {
+		if (left == null || right == null) {
+			return false;
+		}
+		Set<String> shared = new HashSet<>(left.getBindingNames());
+		shared.retainAll(right.getBindingNames());
+		return !shared.isEmpty();
+	}
+
+	private double plannedRowsOrResult(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isPositiveFinite(rows)) {
+			return rows;
+		}
+		rows = tupleExpr.getResultSizeEstimate();
+		return isPositiveFinite(rows) ? rows : Double.NaN;
+	}
+
+	private void raisePlannedRows(TupleExpr tupleExpr, double rows, String reason) {
+		double currentRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isPositiveFinite(currentRows) && currentRows >= rows) {
+			return;
+		}
+		tupleExpr.setResultSizeEstimate(rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+		tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
 	}
 
 	private void replaceRootIfSafe(TupleExpr original, TupleExpr replacement) {
@@ -1808,6 +2047,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				}
 			} else if (tupleExpr instanceof UnaryTupleOperator unary) {
 				CostVector child = cost(unary.getArg());
+				if (tupleExpr instanceof Projection) {
+					rows = child.rows();
+				}
 				workRows = child.workRows() + Math.max(rows, child.rows());
 				memoryRows = child.memoryRows();
 			}
@@ -1816,6 +2058,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 
 		private double safeCardinality(TupleExpr tupleExpr) {
+			double plannedRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			if (isPositiveFinite(plannedRows)) {
+				return plannedRows;
+			}
 			try {
 				double cardinality = statistics == null ? 1.0d : statistics.getCardinality(tupleExpr);
 				return Double.isFinite(cardinality) && cardinality >= 0.0d ? Math.max(1.0d, cardinality) : 1.0d;

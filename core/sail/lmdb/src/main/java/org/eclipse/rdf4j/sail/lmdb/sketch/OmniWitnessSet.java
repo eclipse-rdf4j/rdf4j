@@ -29,7 +29,19 @@ final class OmniWitnessSet {
 		UNSUPPORTED
 	}
 
+	enum SourceKind {
+		BASE,
+		SUBJECT_COHORT,
+		OBJECT_COHORT,
+		VERTEX_COHORT;
+
+		boolean isCohort() {
+			return this != BASE;
+		}
+	}
+
 	private static final Comparator<Long> UNSIGNED_LONG_COMPARATOR = Long::compareUnsigned;
+	private static final OmniWitnessSet[] EMPTY_ALTERNATIVES = new OmniWitnessSet[0];
 
 	private final long[] hashes;
 	private final double[] weights;
@@ -38,9 +50,18 @@ final class OmniWitnessSet {
 	private final double confidence;
 	private final FallbackReason fallbackReason;
 	private final double minimumDetectableRows;
+	private final SourceKind sourceKind;
+	private final OmniWitnessSet[] alternatives;
 
 	private OmniWitnessSet(long[] hashes, double[] weights, double samplingProbability, double estimatedRows,
 			double confidence, FallbackReason fallbackReason, double minimumDetectableRows) {
+		this(hashes, weights, samplingProbability, estimatedRows, confidence, fallbackReason, minimumDetectableRows,
+				SourceKind.BASE, EMPTY_ALTERNATIVES);
+	}
+
+	private OmniWitnessSet(long[] hashes, double[] weights, double samplingProbability, double estimatedRows,
+			double confidence, FallbackReason fallbackReason, double minimumDetectableRows, SourceKind sourceKind,
+			OmniWitnessSet[] alternatives) {
 		this.hashes = hashes == null ? new long[0] : hashes;
 		this.weights = weights == null ? new double[0] : weights;
 		this.samplingProbability = clampProbability(samplingProbability);
@@ -48,6 +69,9 @@ final class OmniWitnessSet {
 		this.confidence = clampProbability(confidence);
 		this.fallbackReason = fallbackReason == null ? FallbackReason.NONE : fallbackReason;
 		this.minimumDetectableRows = Math.max(0.0d, minimumDetectableRows);
+		this.sourceKind = sourceKind == null ? SourceKind.BASE : sourceKind;
+		this.alternatives = alternatives == null || alternatives.length == 0 ? EMPTY_ALTERNATIVES
+				: alternatives.clone();
 	}
 
 	static Builder builder() {
@@ -213,9 +237,56 @@ final class OmniWitnessSet {
 		return minimumDetectableRows;
 	}
 
+	SourceKind sourceKind() {
+		return sourceKind;
+	}
+
+	OmniWitnessSet candidateFor(SourceKind kind) {
+		if (sourceKind == kind) {
+			return withoutAlternatives();
+		}
+		for (OmniWitnessSet alternative : alternatives) {
+			if (alternative != null && alternative.sourceKind == kind) {
+				return alternative.withoutAlternatives();
+			}
+		}
+		return null;
+	}
+
+	OmniWitnessSet withSourceKind(SourceKind sourceKind) {
+		return new OmniWitnessSet(hashes, weights, samplingProbability, estimatedRows, confidence, fallbackReason,
+				minimumDetectableRows, sourceKind, EMPTY_ALTERNATIVES);
+	}
+
+	OmniWitnessSet withAlternativeCandidates(OmniWitnessSet... candidates) {
+		if (candidates == null || candidates.length == 0) {
+			return this;
+		}
+		OmniWitnessSet[] filtered = new OmniWitnessSet[candidates.length];
+		int count = 0;
+		for (OmniWitnessSet candidate : candidates) {
+			if (candidate != null && candidate.sourceKind != sourceKind && candidate.estimatedRows() > 0.0d) {
+				filtered[count++] = candidate.withoutAlternatives();
+			}
+		}
+		if (count == 0) {
+			return this;
+		}
+		return new OmniWitnessSet(hashes, weights, samplingProbability, estimatedRows, confidence, fallbackReason,
+				minimumDetectableRows, sourceKind, Arrays.copyOf(filtered, count));
+	}
+
+	private OmniWitnessSet withoutAlternatives() {
+		if (alternatives.length == 0) {
+			return this;
+		}
+		return new OmniWitnessSet(hashes, weights, samplingProbability, estimatedRows, confidence, fallbackReason,
+				minimumDetectableRows, sourceKind, EMPTY_ALTERNATIVES);
+	}
+
 	OmniWitnessSet copy() {
 		return new OmniWitnessSet(hashes.clone(), weights.clone(), samplingProbability, estimatedRows, confidence,
-				fallbackReason, minimumDetectableRows);
+				fallbackReason, minimumDetectableRows, sourceKind, alternatives);
 	}
 
 	boolean isEmpty() {
@@ -320,7 +391,7 @@ final class OmniWitnessSet {
 	public String toString() {
 		return "OmniWitnessSet{" + "retained=" + hashes.length + ", samplingProbability=" + samplingProbability
 				+ ", estimatedRows=" + estimatedRows + ", confidence=" + confidence + ", fallbackReason="
-				+ fallbackReason + ", hashes=" + Arrays.toString(hashes) + '}';
+				+ fallbackReason + ", sourceKind=" + sourceKind + ", hashes=" + Arrays.toString(hashes) + '}';
 	}
 
 	static final class Builder {
