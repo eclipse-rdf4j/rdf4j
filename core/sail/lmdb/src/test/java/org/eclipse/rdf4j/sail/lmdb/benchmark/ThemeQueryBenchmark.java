@@ -70,10 +70,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Measurement(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -282,11 +282,12 @@ public class ThemeQueryBenchmark {
 
 		storeConfig = ConfigUtil.createConfig();
 		storeConfig.setIterationCacheSyncThreshold(0);
+		storeConfig.setSketchEstimatorEnabled(false);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
-		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;

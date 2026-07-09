@@ -53,7 +53,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int NAMESPACE_CACHE_SIZE = 64;
 
 	/**
-	 * The default size of aligned bulk write batches.
+	 * The default marker that enables adaptive aligned bulk write batches.
 	 */
 	public static final int BULK_OPERATION_SIZE = 256;
 
@@ -231,6 +231,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return bulkOperationSize >= 0 ? bulkOperationSize : BULK_OPERATION_SIZE;
 	}
 
+	/**
+	 * Enables adaptive aligned bulk writes when positive, or disables them when zero. Positive values are retained for
+	 * configuration compatibility; operation capacities are selected dynamically from the JVM maximum heap.
+	 */
 	public LmdbStoreConfig setBulkOperationSize(int bulkOperationSize) {
 		this.bulkOperationSize = bulkOperationSize;
 		return this;

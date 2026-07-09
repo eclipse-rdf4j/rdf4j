@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -78,11 +79,17 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	static final int INITIAL_BULK_OPERATION_CAPACITY = 256;
+	static final int MAX_BULK_OPERATION_CAPACITY = 64 * 1024;
+	static final int MAX_ALIGNED_WRITE_STATEMENTS = 128 * 1024;
+	private static final long HEAP_BYTES_PER_ALIGNED_WRITE_STATEMENT = 16L * 1024L;
 
 	private final TripleStore tripleStore;
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
+	private final AlignedWriteBudget alignedWriteBudget;
+	private int nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
 
 	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
@@ -167,11 +174,106 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void cancelQueuedOperations() {
+		Operation operation;
+		while ((operation = opQueue.remove()) != null) {
+			operation.cancel();
+		}
+	}
+
 	/**
 	 * An operation that can be executed asynchronously.
 	 */
 	interface Operation {
 		void execute() throws Exception;
+
+		default void cancel() {
+		}
+	}
+
+	static final class AlignedWriteBudget {
+		private final int statementLimit;
+		private int reservedStatements;
+
+		AlignedWriteBudget(int statementLimit) {
+			if (statementLimit < INITIAL_BULK_OPERATION_CAPACITY) {
+				throw new IllegalArgumentException("Aligned write statement limit is too small: " + statementLimit);
+			}
+			this.statementLimit = statementLimit;
+		}
+
+		synchronized void reserve(int statements) throws InterruptedException {
+			if (statements <= 0 || statements > statementLimit) {
+				throw new IllegalArgumentException("Invalid aligned write reservation: " + statements);
+			}
+			while (reservedStatements > statementLimit - statements) {
+				wait();
+			}
+			reservedStatements += statements;
+		}
+
+		synchronized boolean tryReserve(int statements) {
+			if (statements <= 0 || statements > statementLimit
+					|| reservedStatements > statementLimit - statements) {
+				return false;
+			}
+			reservedStatements += statements;
+			return true;
+		}
+
+		synchronized void release(int statements) {
+			if (statements <= 0 || statements > reservedStatements) {
+				throw new IllegalStateException("Invalid aligned write release: " + statements);
+			}
+			reservedStatements -= statements;
+			notifyAll();
+		}
+
+		int statementLimit() {
+			return statementLimit;
+		}
+
+		synchronized int reservedStatements() {
+			return reservedStatements;
+		}
+	}
+
+	static int calculateAlignedWriteStatementLimit(long maxMemoryBytes) {
+		long scaledLimit = maxMemoryBytes / HEAP_BYTES_PER_ALIGNED_WRITE_STATEMENT;
+		return (int) Math.max(INITIAL_BULK_OPERATION_CAPACITY,
+				Math.min(MAX_ALIGNED_WRITE_STATEMENTS, scaledLimit));
+	}
+
+	static int growBulkOperationCapacity(int currentCapacity, int statementLimit) {
+		int ceiling = Math.min(MAX_BULK_OPERATION_CAPACITY, statementLimit);
+		return Math.min(ceiling, Math.multiplyExact(currentCapacity, 2));
+	}
+
+	private BulkAddQuadsOperation newBulkAddQuadsOperation(boolean explicit) {
+		int capacity = Math.min(nextBulkOperationCapacity,
+				Math.min(MAX_BULK_OPERATION_CAPACITY, alignedWriteBudget.statementLimit()));
+		try {
+			alignedWriteBudget.reserve(capacity);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
+		}
+		try {
+			BulkAddQuadsOperation operation = new BulkAddQuadsOperation(explicit, capacity);
+			nextBulkOperationCapacity = growBulkOperationCapacity(capacity, alignedWriteBudget.statementLimit());
+			return operation;
+		} catch (RuntimeException | Error e) {
+			alignedWriteBudget.release(capacity);
+			throw e;
+		}
+	}
+
+	private void resetBulkOperationCapacity() {
+		nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
+	}
+
+	int reservedAlignedWriteStatements() {
+		return alignedWriteBudget.reservedStatements();
 	}
 
 	/**
@@ -226,12 +328,13 @@ class LmdbSailStore implements SailStore {
 		final Statement[] statements;
 		final boolean explicit;
 		final int capacity;
+		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
 		int size;
 
-		BulkAddQuadsOperation(boolean explicit) {
+		BulkAddQuadsOperation(boolean explicit, int capacity) {
 			this.explicit = explicit;
-			this.capacity = bulkOperationSize;
+			this.capacity = capacity;
 			this.subjects = new long[capacity];
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
@@ -257,30 +360,46 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
-			if (!explicit) {
-				mayHaveInferred = true;
-			}
-			if (!unusedIds.isEmpty()) {
-				for (int i = 0; i < size; i++) {
-					unusedIds.remove(subjects[i]);
-					unusedIds.remove(predicates[i]);
-					unusedIds.remove(objects[i]);
-					unusedIds.remove(contexts[i]);
+			try {
+				if (!explicit) {
+					mayHaveInferred = true;
 				}
-			}
-			if (size == 1) {
-				boolean added = tripleStore.storeTriple(subjects[0], predicates[0], objects[0], contexts[0], explicit);
-				if (added && explicit && estimatorCallback != null) {
-					estimatorCallback.accept(statements[0]);
+				if (!unusedIds.isEmpty()) {
+					for (int i = 0; i < size; i++) {
+						unusedIds.remove(subjects[i]);
+						unusedIds.remove(predicates[i]);
+						unusedIds.remove(objects[i]);
+						unusedIds.remove(contexts[i]);
+					}
 				}
-				return;
+				if (size == 1) {
+					boolean added = tripleStore.storeTriple(subjects[0], predicates[0], objects[0], contexts[0],
+							explicit);
+					if (added && explicit && estimatorCallback != null) {
+						estimatorCallback.accept(statements[0]);
+					}
+					return;
+				}
+				tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
+						statementIndex -> {
+							if (explicit && estimatorCallback != null) {
+								estimatorCallback.accept(statements[statementIndex]);
+							}
+						});
+			} finally {
+				releaseReservation();
 			}
-			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
-					statementIndex -> {
-						if (explicit && estimatorCallback != null) {
-							estimatorCallback.accept(statements[statementIndex]);
-						}
-					});
+		}
+
+		@Override
+		public void cancel() {
+			releaseReservation();
+		}
+
+		private void releaseReservation() {
+			if (reservationReleased.compareAndSet(false, true)) {
+				alignedWriteBudget.release(capacity);
+			}
 		}
 	}
 
@@ -319,6 +438,8 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.alignedWriteBudget = new AlignedWriteBudget(
+				calculateAlignedWriteStatementLimit(Runtime.getRuntime().maxMemory()));
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 				? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
@@ -479,11 +600,17 @@ class LmdbSailStore implements SailStore {
 				valueStore.rollback();
 			} finally {
 				if (multiThreadingActive) {
-					int spins = 0;
-					while (!opQueue.add(ROLLBACK_TRANSACTION)) {
-						if (tripleStoreException != null) {
-							throw wrapTripleStoreException();
-						} else {
+					if (tripleStoreException != null) {
+						cancelQueuedOperations();
+						tripleStore.rollback();
+					} else {
+						int spins = 0;
+						while (!opQueue.add(ROLLBACK_TRANSACTION)) {
+							if (tripleStoreException != null) {
+								cancelQueuedOperations();
+								tripleStore.rollback();
+								break;
+							}
 							idleSpin(spins++);
 						}
 					}
@@ -545,6 +672,7 @@ class LmdbSailStore implements SailStore {
 										Thread.currentThread().interrupt();
 										throw new InterruptedSailException(e);
 									}
+									cancelQueuedOperations();
 								} finally {
 									shutdownAndAwaitEstimatorPersistExecutor();
 									tripleStore.close();
@@ -972,10 +1100,14 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final boolean adaptiveBulkWrites;
+		private BulkAddQuadsOperation pendingBulkAdd;
 		private volatile boolean estimatorTouchedInTransaction;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
+			this.adaptiveBulkWrites = bulkOperationSize > 0 && sketchBasedJoinEstimator == null
+					&& IsolationLevels.NONE.isCompatibleWith(level);
 		}
 
 		private void queueEstimatorAdd(Statement st) {
@@ -1027,6 +1159,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
+			cancelPendingBulkAdd();
 			if (storeTxnStarted.get()) {
 				discardEstimatorUpdatesIfTouched();
 			}
@@ -1062,8 +1195,13 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
-			boolean activeTxn = storeTxnStarted.get();
+			boolean activeTxn = false;
 			try {
+				if (pendingBulkAdd != null && !storeTxnStarted.get()) {
+					startTransaction(true);
+				}
+				activeTxn = storeTxnStarted.get();
+				flushPendingBulkAdd();
 				if (multiThreadingActive) {
 					int spins = 0;
 					while (!opQueue.add(COMMIT_TRANSACTION)) {
@@ -1174,24 +1312,87 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			if (adaptiveBulkWrites) {
+				approveBuffered(subj, pred, obj, ctx);
+				return;
+			}
 			addStatement(subj, pred, obj, explicit, ctx);
+		}
+
+		private void approveBuffered(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+			sinkStoreAccessLock.lock();
+			try {
+				startTransaction(true);
+				if (pendingBulkAdd == null) {
+					pendingBulkAdd = newBulkAddQuadsOperation(explicit);
+					pendingBulkAdd.estimatorCallback = this::queueEstimatorAdd;
+				}
+				long subjectId = valueStore.storeValue(subj);
+				long predicateId = valueStore.storeValue(pred);
+				long objectId = valueStore.storeValue(obj);
+				long contextId = context == null ? 0 : valueStore.storeValue(context);
+				pendingBulkAdd.add(subjectId, predicateId, objectId, contextId);
+				pendingBulkAdd.statements[pendingBulkAdd.size - 1] = valueStore.createStatement(subj, pred, obj,
+						context);
+				if (pendingBulkAdd.isFull()) {
+					flushPendingBulkAdd();
+				}
+			} catch (IOException e) {
+				cancelPendingBulkAdd();
+				rollback();
+				discardEstimatorUpdatesIfTouched();
+				throw new SailException(e);
+			} catch (RuntimeException e) {
+				cancelPendingBulkAdd();
+				rollback();
+				discardEstimatorUpdatesIfTouched();
+				logger.error("Encountered an unexpected problem while buffering a statement", e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		private void flushPendingBulkAdd() throws IOException {
+			BulkAddQuadsOperation pending = pendingBulkAdd;
+			if (pending == null) {
+				return;
+			}
+			pendingBulkAdd = null;
+			try {
+				submitOperation(pending);
+			} catch (IOException | RuntimeException e) {
+				pending.cancel();
+				throw e;
+			}
+		}
+
+		private void cancelPendingBulkAdd() {
+			BulkAddQuadsOperation pending = pendingBulkAdd;
+			pendingBulkAdd = null;
+			if (pending != null) {
+				pending.cancel();
+			}
 		}
 
 		private void approveAllBulk(Set<Statement> approved, Set<Resource> approvedContexts) {
 			Statement last = null;
+			BulkAddQuadsOperation bulk = null;
 
 			sinkStoreAccessLock.lock();
 			try {
 				startTransaction(true);
+				flushPendingBulkAdd();
 
 				HashMap<IRI, Long> predicateCache = new HashMap<>();
 				HashMap<Resource, Long> contextCache = new HashMap<>();
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
-				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
-				bulk.estimatorCallback = this::queueEstimatorAdd;
-
 				for (Statement statement : approved) {
+					if (bulk == null) {
+						bulk = newBulkAddQuadsOperation(explicit);
+						bulk.estimatorCallback = this::queueEstimatorAdd;
+					}
 					last = statement;
 					Resource subj = statement.getSubject();
 					IRI pred = statement.getPredicate();
@@ -1242,15 +1443,18 @@ class LmdbSailStore implements SailStore {
 
 					if (bulk.isFull()) {
 						submitOperation(bulk);
-						bulk = new BulkAddQuadsOperation(explicit);
-						bulk.estimatorCallback = this::queueEstimatorAdd;
+						bulk = null;
 					}
 				}
 
-				if (!bulk.isEmpty()) {
+				if (bulk != null) {
 					submitOperation(bulk);
+					bulk = null;
 				}
 			} catch (IOException | RuntimeException e) {
+				if (bulk != null) {
+					bulk.cancel();
+				}
 				rollback();
 				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
@@ -1386,6 +1590,7 @@ class LmdbSailStore implements SailStore {
 		private void startTransaction(boolean preferThreading) throws SailException {
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.compareAndSet(false, true)) {
+					resetBulkOperationCapacity();
 					multiThreadingActive = preferThreading && enableMultiThreading;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;
@@ -1455,6 +1660,7 @@ class LmdbSailStore implements SailStore {
 										}
 									} catch (Throwable e) {
 										tripleStoreException = e;
+										cancelQueuedOperations();
 										synchronized (storeTxnStarted) {
 											running.set(false);
 										}
@@ -1508,12 +1714,19 @@ class LmdbSailStore implements SailStore {
 
 		private void submitOperation(Operation operation) throws IOException {
 			if (multiThreadingActive) {
+				if (tripleStoreException != null) {
+					throw wrapTripleStoreException();
+				}
 				int spins = 0;
 				while (!opQueue.add(operation)) {
 					if (tripleStoreException != null) {
 						throw wrapTripleStoreException();
 					}
 					idleSpin(spins++);
+				}
+				if (tripleStoreException != null) {
+					cancelQueuedOperations();
+					throw wrapTripleStoreException();
 				}
 			} else {
 				try {
@@ -1562,6 +1775,7 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTransaction(false);
+				flushPendingBulkAdd();
 				final long subjID;
 				if (subj != null) {
 					subjID = valueStore.getId(subj);

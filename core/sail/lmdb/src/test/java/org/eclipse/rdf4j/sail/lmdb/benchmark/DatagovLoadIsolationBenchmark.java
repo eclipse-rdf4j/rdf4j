@@ -54,22 +54,20 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
+	@Param({ "NONE", "READ_COMMITTED", })
+//	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
 	public IsolationLevels isolationLevel;
 
-	@Param({ "256" })
-	public int bulkOperationSize;
-
-	@Param({ "true" })
+	@Param({ "false", "true" })
 	public boolean automaticEvaluationStrategy;
 
 	private Model data;
@@ -163,11 +161,11 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private LmdbStoreConfig createBenchmarkConfig() {
-		return configure(ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize));
+		return configure(ConfigUtil.createConfig());
 	}
 
 	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
-		return configure(ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize));
+		return configure(ConfigUtil.createAllIndexesConfig());
 	}
 
 	private LmdbStoreConfig configure(LmdbStoreConfig config) {
