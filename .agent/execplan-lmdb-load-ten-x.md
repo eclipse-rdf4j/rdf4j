@@ -22,6 +22,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 23:18Z) Re-profiled both isolation modes after transaction caching; native LMDB plus comparison work remains dominant and the primitive dictionary itself stays below 0.5% of CPU samples.
 - [x] (2026-07-09 23:30Z) Tested and rejected an empty-dictionary `MDB_NOOVERWRITE` direct-put path after two paired runs pooled to no improvement; removed all production/test changes and kept the evidence.
 - [x] (2026-07-09 23:39Z) Reused a transaction-retained ordinary cursor for main-index `MDB_NOOVERWRITE` writes; 35 focused/neighbor tests pass and two paired runs improved the prior checkpoint 5.58-7.53%.
+- [x] (2026-07-09 23:48Z) Tested and rejected four-field secondary radix sorting after it regressed both modes by 8.20-10.50%; removed production/test changes and kept the evidence.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -67,6 +68,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: Retaining an ordinary cursor for main-index conditional writes provides a stable gain in both isolation modes without reducing allocation.
   Evidence: two exact JDK 26 runs under `profiles/lmdb-load-10x/main-index-cursor` pooled to 705.864 ms/op for `NONE` and 712.789 ms/op for `READ_COMMITTED`, 5.58% and 7.53% faster than the transaction-cache checkpoint. `TripleStoreTest`, aligned sort/reset, and auto-grow tests all passed.
 
+- Observation: Fully sorting every secondary key is substantially slower than sorting only the leading field.
+  Evidence: `profiles/lmdb-load-10x/full-secondary-sort/run-1-jdk26.json` measures 779.954 ms/op for `NONE` and 771.224 ms/op for `READ_COMMITTED`, regressions of 10.50% and 8.20% from the main-cursor checkpoint despite stable iterations. The production experiment was removed.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -107,6 +111,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Keep main-index cursor reuse as the second production performance increment.
   Rationale: It preserves `MDB_NOOVERWRITE`, duplicate and promotion behavior, and fallback accounting while avoiding repeated root-level put setup. Two runs improved both requested modes and neighboring auto-grow tests passed.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: Reject full four-field secondary sorting and retain the existing leading-field sort.
+  Rationale: Extra Java radix passes dominate any saved native comparison or page-locality work. The regression is large and symmetric enough that another run would not change the decision.
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -223,3 +231,5 @@ Revision note (2026-07-09 23:18Z): Recorded fresh post-cache CPU profiles and co
 Revision note (2026-07-09 23:30Z): Recorded and rejected the empty-dictionary conditional-put experiment after a confirmation run disproved the first run's apparent gain.
 
 Revision note (2026-07-09 23:39Z): Recorded the confirmed main-index cursor increment, its focused TDD evidence, neighboring fallback verification, and two paired JDK 26 results.
+
+Revision note (2026-07-09 23:48Z): Recorded and rejected full secondary-key sorting after its first paired run produced a clear two-mode regression.
