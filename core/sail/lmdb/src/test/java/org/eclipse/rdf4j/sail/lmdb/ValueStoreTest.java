@@ -118,6 +118,62 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void transactionRetainsResolvedValueIdsAfterRegularCacheEviction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "transaction-value-cache"),
+				new LmdbStoreConfig());
+		try {
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Value firstValue = valueFactory.createBNode("transaction-repeated-value");
+
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(firstValue);
+			countingValueStore.clearCaches();
+			int lookupsBeforeRepeat = countingValueStore.readTransactionCount;
+
+			long repeatedId = countingValueStore
+					.storeValue(valueFactory.createBNode("transaction-repeated-value"));
+
+			assertEquals(firstId, repeatedId);
+			assertEquals("an active transaction should retain the resolved ID", lookupsBeforeRepeat,
+					countingValueStore.readTransactionCount);
+			countingValueStore.commit();
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void transactionRetainsNamespaceIdsAfterRegularCacheEviction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(
+				new File(dataDir, "transaction-namespace-cache"), new LmdbStoreConfig());
+		try {
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			String namespace = "urn:transaction:shared-namespace:";
+
+			countingValueStore.startTransaction(true);
+			countingValueStore.storeValue(valueFactory.createIRI(namespace, "first"));
+			countingValueStore.clearCaches();
+			int lookupsBeforeSecondIri = countingValueStore.readTransactionCount;
+
+			countingValueStore.storeValue(valueFactory.createIRI(namespace, "second"));
+
+			assertEquals("only the new IRI should require a native lookup", lookupsBeforeSecondIri + 1,
+					countingValueStore.readTransactionCount);
+			countingValueStore.commit();
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void transactionValueCacheLimitScalesWithHeap() {
+		assertEquals(4 * 1024, ValueStore.calculateTransactionValueCacheLimit(1));
+		assertEquals(128 * 1024, ValueStore.calculateTransactionValueCacheLimit(512L * 1024 * 1024));
+		assertEquals(512 * 1024, ValueStore.calculateTransactionValueCacheLimit(2L * 1024 * 1024 * 1024));
+		assertEquals(1024 * 1024, ValueStore.calculateTransactionValueCacheLimit(Long.MAX_VALUE));
+	}
+
+	@Test
 	public void testDisableInlineLiteralsUsesStoredIds() throws Exception {
 		valueStore.close();
 

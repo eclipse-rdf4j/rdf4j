@@ -18,6 +18,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 22:33Z) Captured and archived two fresh paired macOS JMH baselines plus a generated comparison under `profiles/lmdb-load-10x/baseline-macos`.
 - [x] (2026-07-09 22:45Z) Captured macOS async-profiler wall, CPU, and allocation profiles for `NONE` and `READ_COMMITTED` with `automaticEvaluationStrategy=false`.
 - [x] (2026-07-09 22:57Z) Captured end-anchored Linux Java 26 Docker JFR CPU-time profiles for both isolation modes and summarized their hot methods and lost samples.
+- [x] (2026-07-09 23:14Z) Added heap-scaled transaction-owned value and namespace ID dictionaries; focused tests and all 21 `ValueStoreTest` tests pass, time improved 4.27-7.25%, and allocation fell 33.89-39.63%.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -51,6 +52,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: The Docker benchmark selector is a regex. Passing an unanchored method name also selects `loadDatagovFileSingleTransaction6Indexes` and can overwrite a shared JFR output.
   Evidence: the first NONE Docker run began the six-index fork after completing the intended fork. It was interrupted and its `none.jfr` artifact is marked invalid; exact evidence uses `none-exact.jfr`.
 
+- Observation: Retaining resolved value and namespace IDs for the active transaction materially reduces allocation but only modestly improves elapsed time, confirming that ordinary LMDB writes remain the dominant bound.
+  Evidence: `profiles/lmdb-load-10x/transaction-cache/run-2-jdk26.json` measures `NONE` at 747.595 ms/op and 236,969,122 B/op and `READ_COMMITTED` at 770.796 ms/op and 285,498,796 B/op. Relative to the pooled baseline, time improves 4.27% and 7.25%, while allocation falls 33.89% and 39.63%.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -79,6 +83,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Test a transaction-owned value-ID dictionary before micro-optimizing encoding loops.
   Rationale: Cross-platform profiles put more than half of sampled CPU in LMDB get/put wrappers. The existing 128-entry value cache and 32-entry namespace-ID cache cannot retain a bulk transaction's working set, so repeated values can cross the native boundary again after eviction. Reducing native operation count has greater Amdahl upside than optimizing sub-2% Java leaves.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: Keep the transaction-owned dictionaries as the first measured increment and re-profile before the next change.
+  Rationale: The exact JDK 26 paired run improved both requested isolation modes and removed 121-187 MB of allocation per operation. The remaining 747-771 ms is too large for Java allocation tuning to reach the target, so the next candidate must reduce native write count or comparison work.
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -187,3 +195,5 @@ Revision note (2026-07-09 22:28Z): Recorded the first committed checkpoint and i
 Revision note (2026-07-09 22:33Z): Replaced the earlier single-run thresholds with stricter pooled thresholds from two fresh same-code baselines and recorded durable artifact paths and observed host drift.
 
 Revision note (2026-07-09 22:58Z): Recorded the complete macOS and Linux profile matrix, the selector-anchor correction, cross-platform hotspot agreement, lost-sample confidence limits, and the first operation-count optimization hypothesis.
+
+Revision note (2026-07-09 23:14Z): Recorded the first post-profile optimization, its focused red/green evidence, complete value-store test result, and exact JDK 26 time/allocation improvement.

@@ -68,6 +68,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -131,6 +132,9 @@ class ValueStore extends AbstractValueFactory {
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = 16;
+	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
+	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
+	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
@@ -193,6 +197,10 @@ class ValueStore extends AbstractValueFactory {
 	 * namespace.
 	 */
 	private final ConcurrentCache<String, Long> namespaceIDCache;
+	private final ObjectLongHashMap<Value> transactionValueIds = new ObjectLongHashMap<>();
+	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
+	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
+			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	/**
@@ -1743,6 +1751,14 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		long transactionId = getTransactionValueId(value);
+		if (transactionId != LmdbValue.UNKNOWN_ID) {
+			if (isOwnValue) {
+				((LmdbValue) value).setInternalID(transactionId, revision);
+			}
+			return transactionId;
+		}
+
 		long stamp = revisionLock.readLock();
 		try {
 			// Check cache
@@ -1753,6 +1769,7 @@ class ValueStore extends AbstractValueFactory {
 
 			if (cachedID != null) {
 				long id = cachedID;
+				cacheTransactionValueId(value, id);
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
@@ -1798,6 +1815,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			if (id != LmdbValue.UNKNOWN_ID) {
+				cacheTransactionValueId(value, id);
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
@@ -1849,6 +1867,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 				ids[i] = id;
 				if (id != LmdbValue.UNKNOWN_ID) {
+					cacheTransactionValueId(value, id);
 					if (isOwnValue) {
 						((LmdbValue) value).setInternalID(id, revision);
 					}
@@ -1893,6 +1912,11 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		long transactionId = getTransactionValueId(value);
+		if (transactionId != LmdbValue.UNKNOWN_ID) {
+			return transactionId;
+		}
+
 		Long cachedID = valueIDCache.get(value);
 		if (cachedID == null) {
 			cachedID = commonVocabulary.get(value);
@@ -1919,6 +1943,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void cacheStoredId(Value value, long id, boolean isOwnValue) {
+		cacheTransactionValueId(value, id);
 		if (isOwnValue) {
 			LmdbValue lmdbValue = (LmdbValue) value;
 			lmdbValue.setInternalID(id, revision);
@@ -2225,6 +2250,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
+		clearTransactionValueCaches();
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -2258,6 +2284,14 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+		try {
+			endTransactionInternal(commit, autoGrow);
+		} finally {
+			clearTransactionValueCaches();
+		}
+	}
+
+	private void endTransactionInternal(boolean commit, boolean autoGrow) throws IOException {
 		if (writeTxn != 0) {
 			if (commit) {
 				if (!autoGrow) {
@@ -2682,8 +2716,18 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long getNamespaceID(String namespace, boolean create) throws IOException {
+		if (isWriteTransactionOwner()) {
+			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+			if (transactionId != LmdbValue.UNKNOWN_ID) {
+				return transactionId;
+			}
+		}
+
 		Long cacheID = namespaceIDCache.get(namespace);
 		if (cacheID != null) {
+			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
+				transactionNamespaceIds.put(namespace, cacheID);
+			}
 			return cacheID;
 		}
 
@@ -2694,10 +2738,41 @@ class ValueStore extends AbstractValueFactory {
 
 		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
+			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
+				transactionNamespaceIds.put(namespace, id);
+			}
 			namespaceIDCache.put(namespace, id);
 		}
 
 		return id;
+	}
+
+	static int calculateTransactionValueCacheLimit(long maxHeapBytes) {
+		long heapScaledLimit = maxHeapBytes / TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY;
+		return (int) Math.clamp(heapScaledLimit, MIN_TRANSACTION_VALUE_CACHE_SIZE,
+				MAX_TRANSACTION_VALUE_CACHE_SIZE);
+	}
+
+	private boolean isWriteTransactionOwner() {
+		return writeTxn != 0 && writeTxnOwner == Thread.currentThread();
+	}
+
+	private long getTransactionValueId(Value value) {
+		if (!isWriteTransactionOwner()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return transactionValueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+	}
+
+	private void cacheTransactionValueId(Value value, long id) {
+		if (isWriteTransactionOwner() && transactionValueIds.size() < transactionValueCacheLimit) {
+			transactionValueIds.put(value, id);
+		}
+	}
+
+	private void clearTransactionValueCaches() {
+		transactionValueIds.clear();
+		transactionNamespaceIds.clear();
 	}
 
 	/*-------------------------------------*
