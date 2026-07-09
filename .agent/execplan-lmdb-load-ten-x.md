@@ -6,7 +6,7 @@ This document must be maintained in accordance with `.agent/PLANS.md` from the r
 
 ## Purpose / Big Picture
 
-The goal is to make the LMDB store load the `datagovbe-valid.ttl.gz` benchmark dataset in one transaction at least ten times faster for both `NONE` and `READ_COMMITTED` isolation when `automaticEvaluationStrategy=false`. The current post-adaptive-write baseline on macOS JDK 26 with a 2 GiB heap is 802.295 ms/op for `NONE` and 1043.529 ms/op for `READ_COMMITTED`. Completion therefore requires repeatable average times at or below 80.23 ms/op and 104.35 ms/op respectively with the same benchmark, dataset, heap, indexes, durability semantics, and isolation settings. LMDB append flags, including `MDB_APPEND` and `MDB_APPENDDUP`, are forbidden.
+The goal is to make the LMDB store load the `datagovbe-valid.ttl.gz` benchmark dataset in one transaction at least ten times faster for both `NONE` and `READ_COMMITTED` isolation when `automaticEvaluationStrategy=false`. Two fresh post-adaptive-write baseline runs on macOS JDK 26 with a 2 GiB heap produced pooled means of 780.972 ms/op for `NONE` and 831.080 ms/op for `READ_COMMITTED`. Completion therefore requires repeatable average times at or below 78.10 ms/op and 83.11 ms/op respectively with the same benchmark, dataset, heap, indexes, durability semantics, and isolation settings. LMDB append flags, including `MDB_APPEND` and `MDB_APPENDDUP`, are forbidden.
 
 The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileSingleTransaction` for both isolation parameters. Correctness remains visible through focused ingestion tests, `RemoveAddTest`, `LmdbSailStoreTest`, and the complete `core/sail/lmdb` verification. Each independently measured improvement is committed before the next optimization begins.
 
@@ -15,11 +15,11 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 22:24Z) Activated the persistent 10x performance goal and selected the high-performance Java, macOS async-profiler, and Docker CPU-time JFR workflows.
 - [x] (2026-07-09 22:26Z) Ran the required root offline clean install; the reactor completed with `BUILD SUCCESS` in 34.293 seconds.
 - [x] (2026-07-09 22:28Z) Committed the verified adaptive aligned-write and batch-value-resolution increment as `9516353b92 GH-0000 Speed up adaptive LMDB loading`.
-- [ ] Capture a fresh paired macOS JMH baseline and archive result JSON and logs outside `target` so later builds cannot remove them.
+- [x] (2026-07-09 22:33Z) Captured and archived two fresh paired macOS JMH baselines plus a generated comparison under `profiles/lmdb-load-10x/baseline-macos`.
 - [ ] Capture macOS async-profiler wall, CPU, and allocation profiles for `NONE` and `READ_COMMITTED` with `automaticEvaluationStrategy=false`.
 - [ ] Capture Linux Java 26 Docker JFR CPU-time profiles for both isolation modes with the exact same benchmark shape.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
-- [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 80.23 ms/op` and `READ_COMMITTED <= 104.35 ms/op` without append mode.
+- [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
 
 ## Surprises & Discoveries
@@ -36,10 +36,16 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: The current branch has two unrelated LMDB module test failures before this 10x iteration begins.
   Evidence: `LmdbSailStoreTest.testExplainExecutedShowsIndexName` expects legacy explanation text, and `LmdbNativeFactorizedScanOnceTest.scanOnceModeStaysCorrectAndEngages` observes zero scan-once transitions. The previous full verify ran 1,456 tests with only those two failures.
 
+- Observation: Same-code host drift between two consecutive paired baselines was material even though each fork was internally stable.
+  Evidence: `NONE` moved from 804.502 to 757.442 ms/op and `READ_COMMITTED` moved from 876.109 to 786.051 ms/op. Within-run 99.9% errors were 21.417/43.914 ms for `NONE` and 239.381/32.299 ms for `READ_COMMITTED`.
+
+- Observation: Pooled allocation is approximately 358.45 MB/op for `NONE` and 472.91 MB/op for `READ_COMMITTED`; GC consumed only 3-71 ms per five-iteration fork.
+  Evidence: `profiles/lmdb-load-10x/baseline-macos/run-1.json` and `run-2.json`.
+
 ## Decision Log
 
-- Decision: Define 10x against the current same-machine paired post-adaptive-write baseline rather than an older pre-feature state.
-  Rationale: This is the strongest reproducible starting point and yields unambiguous acceptance thresholds for both isolation modes.
+- Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
+  Rationale: The pooled 780.972 and 831.080 ms/op baselines are the strongest reproducible starting point and yield stricter, unambiguous thresholds of 78.10 and 83.11 ms/op.
   Date/Author: 2026-07-09 / Codex.
 
 - Decision: Keep the dataset, two default triple indexes, transaction boundary, 2 GiB heap, G1 collector, and automatic evaluation setting fixed throughout optimization comparisons.
@@ -60,7 +66,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 ## Outcomes & Retrospective
 
-The 10x optimization loop is active. The first checkpoint will preserve the already tested adaptive write and batch dictionary work. No claim of 10x completion is made until both isolation thresholds pass repeated paired JMH runs and the correctness suite remains unchanged apart from the two documented pre-existing failures.
+The 10x optimization loop is active. Commit `9516353b92` preserves the tested adaptive write and batch dictionary work, and the durable two-run baseline fixes the comparison point. No claim of 10x completion is made until both isolation thresholds pass repeated paired JMH runs and the correctness suite remains unchanged apart from the two documented pre-existing failures.
 
 ## Context and Orientation
 
@@ -68,7 +74,7 @@ The relevant Maven module is `core/sail/lmdb`. `core/sail/lmdb/src/test/java/org
 
 `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java` connects RDF4J's transaction sink to the LMDB value and triple stores. Its `LmdbSailSink` receives statements, manages transaction ordering, creates `BulkAddQuadsOperation` instances, and optionally executes them on worker threads. A reservation budget bounds the total statement capacity of pending, queued, and executing operations.
 
-`core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java` maps RDF values such as IRIs, blank nodes, and literals to numeric IDs. The current uncommitted increment adds sorted batched ID lookup and creation so a chunk shares one LMDB transaction and reusable native carriers.
+`core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java` maps RDF values such as IRIs, blank nodes, and literals to numeric IDs. Commit `9516353b92` adds sorted batched ID lookup and creation so a chunk shares one LMDB transaction and reusable native carriers.
 
 `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java` writes numeric subject, predicate, object, and context IDs into the configured LMDB indexes. `storeTriplesAligned` sorts aligned primitive arrays into each index's key order before ordinary LMDB writes. "Aligned" means that the same array position across the four arrays describes one statement; it does not mean LMDB append mode.
 
@@ -76,9 +82,9 @@ The relevant Maven module is `core/sail/lmdb`. `core/sail/lmdb/src/test/java/org
 
 ## Plan of Work
 
-First, preserve the existing adaptive aligned-write increment. Re-run the smallest focused tests that cover batched `NONE` approvals and batched value storage, stage only the four known LMDB files, and commit them. Do not stage unrelated untracked ExecPlans or configuration artifacts. Then add and commit this ExecPlan as the performance campaign record.
+The first completed milestone preserved the adaptive aligned-write increment. The smallest focused tests covering batched `NONE` approvals and batched value storage passed, the four intended LMDB files were committed as `9516353b92`, and this ExecPlan was committed separately as `f80c490c2f`. Unrelated untracked ExecPlans and configuration artifacts were not staged.
 
-Second, establish a durable baseline. Use the exact benchmark method ending in `$` so the six-index sibling method is not selected. Run both isolation values together with five one-second warmups, five one-second measurements, one fork, JDK 26, G1, and a fixed 2 GiB heap. Enable the JMH GC profiler. Copy the JSON and complete output into a new tracked-or-ignored `profiles/lmdb-load-10x/baseline-macos` artifact directory outside Maven `target`; update this plan with the exact paths and scores.
+The second completed milestone established a durable baseline. The exact benchmark method ending in `$` excluded the six-index sibling. Both isolation values ran together twice with five one-second warmups, five one-second measurements, one fork, JDK 26, G1, a fixed 2 GiB heap, and the JMH GC profiler. JSON, complete output, and a generated comparison are stored under `profiles/lmdb-load-10x/baseline-macos`.
 
 Third, profile before modifying production. Use the RDF4J async-profiler benchmark wrapper in dry-run mode, then capture `slow`, `cpu`, and `alloc` profiles separately for `NONE` and `READ_COMMITTED`. Use a flat CPU output in addition to flamegraphs so hot methods can be ranked numerically. Record profile paths, the dominant thread, top inclusive and self-cost stacks, allocation leaders, and any native LMDB or filesystem cost. If wall time is dominated by deletion or repository lifecycle rather than ingestion, add a benchmark-only phase timer or sibling diagnostic benchmark; do not change the acceptance benchmark.
 
@@ -121,7 +127,7 @@ Before every commit, run `git diff --check`, inspect `git status --short`, stage
 
 ## Validation and Acceptance
 
-The performance goal passes only when two independent final paired JMH runs show average time at or below 80.23 ms/op for `NONE` and 104.35 ms/op for `READ_COMMITTED`, with `automaticEvaluationStrategy=false`, JDK 26, G1, 2 GiB heap, the default two LMDB triple indexes, one transaction, and no append flags. Report iteration values as well as averages so an outlier cannot hide instability. Allocation should not regress materially unless CPU and wall evidence prove a favorable tradeoff within the 2 GiB budget.
+The performance goal passes only when two independent final paired JMH runs show average time at or below 78.10 ms/op for `NONE` and 83.11 ms/op for `READ_COMMITTED`, with `automaticEvaluationStrategy=false`, JDK 26, G1, 2 GiB heap, the default two LMDB triple indexes, one transaction, and no append flags. Report iteration values as well as averages so an outlier cannot hide instability. Allocation should not regress materially unless CPU and wall evidence prove a favorable tradeoff within the 2 GiB budget.
 
 Correctness requires the focused batching, duplicate, estimator, rollback, worker failure, and add/remove ordering tests to pass. `RemoveAddTest` must pass. Full module verification must introduce no new failure beyond the two documented branch failures. Search the final diff and relevant source for `MDB_APPEND` and `MDB_APPENDDUP`; neither may be added or activated.
 
@@ -135,19 +141,19 @@ If a candidate optimization regresses performance, keep the benchmark/profile ev
 
 ## Artifacts and Notes
 
-Initial failing and passing TDD evidence for adaptive aligned writes is stored in `initial-evidence.txt`. The last complete LMDB verify log before this plan is `logs/mvnf/20260709-222105-verify.log`. The paired post-chunk benchmark JSON is `core/sail/lmdb/target/datagov-none-vs-read-committed-false-chunked.json`; it must be copied to the durable profile directory before any clean build removes it.
+Initial failing and passing TDD evidence for adaptive aligned writes is stored in `initial-evidence.txt`. The last complete LMDB verify log before this plan is `logs/mvnf/20260709-222105-verify.log`. The earlier target-local benchmark was removed by the mandatory clean build. Its durable replacement artifacts are `profiles/lmdb-load-10x/baseline-macos/run-1.json`, `run-1.log`, `run-2.json`, `run-2.log`, and `comparison.md`.
 
 The first performance checkpoint is commit `9516353b92`. Immediately before that commit, the two focused tests for batched `NONE` approvals and single-transaction batch value storage passed with zero failures.
 
-Expected baseline summary:
+Fresh pooled baseline summary:
 
-    NONE            802.295 ms/op   351585522.400 B/op
-    READ_COMMITTED  1043.529 ms/op  483288824.000 B/op
+    NONE            780.972 ms/op   358449634.800 B/op
+    READ_COMMITTED  831.080 ms/op   472907787.600 B/op
 
 Target summary:
 
-    NONE            <= 80.23 ms/op
-    READ_COMMITTED  <= 104.35 ms/op
+    NONE            <= 78.10 ms/op
+    READ_COMMITTED  <= 83.11 ms/op
 
 ## Interfaces and Dependencies
 
@@ -158,3 +164,5 @@ The key internal interfaces are `LmdbSailStore.LmdbSailSink`, `LmdbSailStore.Bul
 Revision note (2026-07-09 22:27Z): Created the initial self-contained plan after activating the 10x goal, reading all selected skill instructions, confirming async-profiler availability, and completing the mandatory root build. The plan fixes the workload and acceptance thresholds before further optimization.
 
 Revision note (2026-07-09 22:28Z): Recorded the first committed checkpoint and its focused green verification so future benchmark and profile artifacts have an exact code revision.
+
+Revision note (2026-07-09 22:33Z): Replaced the earlier single-run thresholds with stricter pooled thresholds from two fresh same-code baselines and recorded durable artifact paths and observed host drift.
