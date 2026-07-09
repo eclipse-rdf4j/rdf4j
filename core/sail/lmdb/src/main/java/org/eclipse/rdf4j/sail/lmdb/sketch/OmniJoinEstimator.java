@@ -48,7 +48,7 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 7;
+	private static final int SERIAL_VERSION = 8;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	private static final int PROBE_CACHE_SIZE = 1024;
 	private static final int MAPPED_VALUE_RECORD_CACHE_SIZE = 4096;

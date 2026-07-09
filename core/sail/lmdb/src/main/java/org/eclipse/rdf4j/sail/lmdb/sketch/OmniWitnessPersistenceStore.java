@@ -30,7 +30,7 @@ import java.util.List;
 final class OmniWitnessPersistenceStore implements AutoCloseable {
 
 	private static final int MANIFEST_MAGIC = 0x4f57494d;
-	private static final int MANIFEST_VERSION = 6;
+	private static final int MANIFEST_VERSION = 7;
 
 	private final Path directory;
 

@@ -814,18 +814,21 @@ class OmniJoinEstimatorTest {
 
 	@Test
 	void predicateAndPredicateContextAttributesPersistSeparately() throws Exception {
-		OmniJoinEstimator writer = newEstimator(64, 4, 64);
+		OmniJoinEstimator writer = newCohortEstimator(64, 4, 64, 1, 0);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.EDGE_FORWARD);
 		SketchTermKey predicateKey = SketchTermKey.iriString("urn:p");
 		SketchTermKey contextKey = SketchTermKey.iriString("urn:g");
 		long subjectHash = OmniJoinEstimator.stableHash("urn:s");
 		long objectHash = OmniJoinEstimator.stableHash("urn:o");
 		long contextualObjectHash = OmniJoinEstimator.stableHash("urn:o:contextual");
+		long cohortObjectHash = OmniJoinEstimator.stableHash("urn:o:contextual-cohort");
 
 		relation.updatePredicate(predicateKey, subjectHash, objectHash, 1.0d);
 		relation.updatePredicateContext(predicateKey, contextKey, subjectHash, contextualObjectHash, 1.0d);
+		relation.updatePredicateContext(predicateKey, contextKey, subjectHash, cohortObjectHash, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
 
-		OmniJoinEstimator reader = newEstimator(64, 4, 64);
+		OmniJoinEstimator reader = newCohortEstimator(64, 4, 64, 1, 0);
 		reader.loadFromByteArray(writer.toByteArray());
 		OmniJoinEstimator.Relation loadedRelation = reader.relation(OmniRelation.EDGE_FORWARD);
 
@@ -838,6 +841,45 @@ class OmniJoinEstimatorTest {
 		assertFalse(predicateOnly.containsHash(contextualObjectHash));
 		assertTrue(predicateAndContext.containsHash(contextualObjectHash));
 		assertFalse(predicateAndContext.containsHash(objectHash));
+		OmniWitnessSet cohort = predicateAndContext.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		assertNotNull(cohort);
+		assertEquals(1.0d, cohort.samplingProbability(), 0.0d);
+		assertTrue(cohort.containsHash(cohortObjectHash));
+	}
+
+	@Test
+	void mappedSnapshotKeepsPredicateContextCohortWitnesses(@org.junit.jupiter.api.io.TempDir Path tempDir)
+			throws Exception {
+		OmniJoinEstimator writer = newCohortEstimator(64, 4, 64, 1, 0);
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:mapped:p");
+		SketchTermKey contextKey = SketchTermKey.iriString("urn:mapped:g");
+		long subjectHash = OmniJoinEstimator.stableHash("urn:mapped:s");
+		long cohortObjectHash = OmniJoinEstimator.stableHash("urn:mapped:o");
+		writer.relation(OmniRelation.EDGE_FORWARD)
+				.updatePredicateContext(predicateKey, contextKey, subjectHash, cohortObjectHash, 1.0d,
+						OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 9L);
+			MappedOmniJoinSnapshot snapshot = store.openSnapshot((byte) 0);
+			OmniJoinEstimator reader = newCohortEstimator(64, 4, 64, 1, 0);
+			try {
+				reader.loadMappedSnapshot(snapshot);
+				snapshot = null;
+				OmniWitnessSet witnesses = reader.probePredicateContext(
+						reader.relation(OmniRelation.EDGE_FORWARD), predicateKey, contextKey,
+						OmniJoinEstimator.Predicate.equalHash(subjectHash));
+				OmniWitnessSet cohort = witnesses.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+				assertNotNull(cohort);
+				assertEquals(1.0d, cohort.samplingProbability(), 0.0d);
+				assertTrue(cohort.containsHash(cohortObjectHash));
+			} finally {
+				reader.clear();
+				if (snapshot != null) {
+					snapshot.close();
+				}
+			}
+		}
 	}
 
 	@Test

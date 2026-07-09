@@ -423,6 +423,23 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertNotNull(readerEstimate, "Lazy OMNI read should restore persisted Omni join estimator side state");
 		assertEquals("omni-join-estimator", readerEstimate.source());
 		assertEquals(writerEstimate.calibratedRows(), readerEstimate.calibratedRows(), 0.0d);
+		assertEquals(writerEstimate.samplingProbability(), readerEstimate.samplingProbability(), 0.0d);
+		assertEquals(writerEstimate.bindings().keySet(), readerEstimate.bindings().keySet());
+		for (String bindingName : writerEstimate.bindings().keySet()) {
+			OmniSketchBindingEvidence writerBinding = writerEstimate.bindings().get(bindingName);
+			OmniSketchBindingEvidence readerBinding = readerEstimate.bindings().get(bindingName);
+			assertEquals(writerBinding.sourceKind(), readerBinding.sourceKind());
+			assertEquals(writerBinding.rows(), readerBinding.rows(), 0.0d);
+			assertEquals(writerBinding.witnessCount(), readerBinding.witnessCount());
+		}
+		assertEquals(writerEstimate.steps()
+				.stream()
+				.map(OmniSketchStepEvidence::operatorKind)
+				.toList(),
+				readerEstimate.steps()
+						.stream()
+						.map(OmniSketchStepEvidence::operatorKind)
+						.toList());
 	}
 
 	@Test

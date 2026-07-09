@@ -3253,11 +3253,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			long ho = valueFingerprint(o);
 			long hc = valueFingerprint(c);
 			long sig = quadFingerprint(hs, hp, ho, hc);
-			long thetaHs = thetaHash(hs);
-			long thetaHp = thetaHash(hp);
-			long thetaHo = thetaHash(ho);
-			long thetaHc = thetaHash(hc);
-			long thetaSig = thetaHash(sig);
+			long thetaHs = omniRuntime ? omniHash(hs) : thetaHash(hs);
+			long thetaHp = omniRuntime ? omniHash(hp) : thetaHash(hp);
+			long thetaHo = omniRuntime ? omniHash(ho) : thetaHash(ho);
+			long thetaHc = omniRuntime ? omniHash(hc) : thetaHash(hc);
+			long thetaSig = omniRuntime ? omniHash(sig) : thetaHash(sig);
 			long spKey = omniRuntime ? 0L : pairKey(si, pi);
 			long scKey = omniRuntime ? 0L : pairKey(si, ci);
 			long poKey = omniRuntime ? 0L : pairKey(pi, oi);
@@ -8156,6 +8156,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return MurmurHash3.hash(value, TUPLE_UPDATE_SEED)[0] >>> 1;
 	}
 
+	private static long omniHash(long value) {
+		return MurmurHash3.hash(value, TUPLE_UPDATE_SEED)[0];
+	}
+
 	private static long mix64(long value) {
 		long z = value;
 		z = (z ^ (z >>> 30)) * MIX64_C1;
@@ -8168,7 +8172,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private static long omniValueHash(String value) {
-		return thetaHash(valueFingerprint(value));
+		return omniHash(valueFingerprint(value));
 	}
 
 	private static long omniCompositeValueHash(long[] componentHashes, Component... components) {

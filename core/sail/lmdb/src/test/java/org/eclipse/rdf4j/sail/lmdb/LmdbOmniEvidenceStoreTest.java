@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,6 +59,8 @@ class LmdbOmniEvidenceStoreTest {
 
 		assertEquals("bridge-chain", pattern.getStringMetricPlanned("plannedOmniSurfaceKind"));
 		assertEquals(12.0d, pattern.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows"), 0.0d);
+		assertNull(statistics.optimizationScopedOmniEvidenceStore(),
+				"Explain finalization must clear completed evidence only after annotating the plan");
 	}
 
 	private static OmniSketchSurfaceEstimate evidence() {

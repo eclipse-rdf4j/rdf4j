@@ -172,6 +172,25 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 				"rule=lmdb-finite-filter-values-rewrite"), diagnosticPlan);
 	}
 
+	@Test
+	void cascadesRewritesSafeInFilterInsideCorrelatedExistsToValues() {
+		TupleExpr tupleExpr = optimizeWithCascades(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc ex:code ?code .
+				  FILTER EXISTS {
+				    ?enc ex:status ?status .
+				    FILTER (?status IN ("closed", "cancelled"))
+				  }
+				}
+				""");
+		String diagnosticPlan = tupleExpr.toString();
+
+		assertBindingSetAssignment(tupleExpr, Set.of("status"), 2);
+		assertFalse(containsListMemberOperator(tupleExpr), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"rule=lmdb-finite-filter-values-rewrite"), diagnosticPlan);
+	}
+
 	static Stream<Arguments> valuesRewriteQueries() {
 		return Stream.of(
 				arguments("single variable literal equality OR", """

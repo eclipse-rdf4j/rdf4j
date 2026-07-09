@@ -111,6 +111,30 @@ class LmdbStoreSketchEstimatorConfigTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 16 })
+	void omniWitnessCohortConfigIsAppliedToBackingEstimator(int bucketCount, @TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
+				.setSketchEstimatorStrategy("omni")
+				.setSketchEstimatorOmniWitnessCohortBucketCount(bucketCount)
+				.setSketchEstimatorOmniWitnessCohortBucketIndex(7)
+				.setSketchEstimatorOmniWitnessCohortMaxEntries(1_234);
+
+		LmdbSailStore backingStore = new LmdbSailStore(dataDir, new StoreProperties(), config, true);
+		try {
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+
+			assertThat(intField(estimator, "omniWitnessCohortBucketCount")).isEqualTo(bucketCount);
+			assertThat(intField(estimator, "omniWitnessCohortBucketIndex"))
+					.isEqualTo(bucketCount <= 1 ? 0 : 7);
+			assertThat(intField(estimator, "omniWitnessCohortMaxEntries")).isEqualTo(1_234);
+		} finally {
+			backingStore.close();
+		}
+	}
+
 	@Test
 	void sketchEstimatorEnablesPageWalkFallbackWithoutSampling(@TempDir File dataDir) throws Exception {
 		LmdbSailStore backingStore = new LmdbSailStore(dataDir, new StoreProperties(), new LmdbStoreConfig(), true);

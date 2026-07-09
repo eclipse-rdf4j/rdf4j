@@ -282,6 +282,15 @@ class SketchBasedJoinEstimatorConfigTest {
 		assertTrue(Double.isNaN(estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,
 				p1.stringValue(), o1.stringValue(), null)),
 				"Stale OMNI pattern estimates must not fall through to empty legacy sketches");
+
+		localStore.remove(first);
+		rebuild(estimator);
+
+		assertTrue(estimator.isReady(), "A full rebuild after the delete must restore corrected OMNI readiness");
+		assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d);
+		assertEquals(1.0d, estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Component.P, p1.stringValue(),
+				SketchBasedJoinEstimator.Component.O, o1.stringValue()), 0.0d);
 	}
 
 	@Test

@@ -40,6 +40,10 @@ class StubSketchStatementSource implements SketchStatementSource {
 		data.addAll(sts);
 	}
 
+	public void remove(Statement st) {
+		data.remove(st);
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {

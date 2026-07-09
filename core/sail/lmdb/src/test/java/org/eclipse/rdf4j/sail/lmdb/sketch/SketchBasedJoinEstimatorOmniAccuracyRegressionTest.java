@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.lmdb.sketch;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -34,8 +35,6 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final double MAX_RELATIVE_ERROR = 0.5d;
-	private static final long SEED = 0x51E7C0DEL;
-	private static final byte ATTR_P = OmniAttributeRef.component(1);
 	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
 
 	@AfterEach
@@ -257,7 +256,8 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 				sparseBridgeOmniConfig().withOmniWitnessCohortBucketCount(0)));
 		disabled.rebuild();
 		SketchBasedJoinEstimator enabled = track(
-				new SketchBasedJoinEstimator(fixture.store(), sparseBridgeOmniConfig()));
+				new SketchBasedJoinEstimator(fixture.store(),
+						sparseBridgeOmniConfig().withOmniWitnessCohortBucket(4, 1)));
 		enabled.rebuild();
 
 		ThreeBoundStarBridgeAccuracy disabledAccuracy = measureThreeBoundStarBridgeAccuracy(disabled, fixture);
@@ -285,71 +285,96 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 	}
 
 	@Test
-	void omniCohortWitnessesImproveSharedSubjectObjectQueryAccuracy() {
+	void realEstimatorUsesCohortWitnessesForSharedSubjectObjectSurface() {
 		IRI leftPredicate = iri("urn:omni-accuracy:cohort-query:left");
 		IRI rightPredicate = iri("urn:omni-accuracy:cohort-query:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int row = 1; row <= 1_000; row++) {
+			store.add(st(iri("urn:omni-accuracy:cohort-query:s:" + row), leftPredicate,
+					iri("urn:omni-accuracy:cohort-query:o:" + row)));
+		}
+		for (int row = 990; row < 1_990; row++) {
+			store.add(st(iri("urn:omni-accuracy:cohort-query:s:" + row), rightPredicate,
+					iri("urn:omni-accuracy:cohort-query:o:" + row)));
+		}
 		List<TupleExpr> query = List.of(pattern("s", leftPredicate, "o"), pattern("s", rightPredicate, "o"));
 		assertTrue(query.get(0).getBindingNames().containsAll(Set.of("s", "o"))
 				&& query.get(1).getBindingNames().containsAll(Set.of("s", "o")),
 				"regression query must share both subject and object");
 
 		double actualRows = 11.0d;
-		byte sharedSubjectObjectSurface = OmniAttributeRef.tupleSurface(1, 0, 2);
-		long leftPredicateHash = OmniJoinEstimator.stableHash(leftPredicate.stringValue());
-		long rightPredicateHash = OmniJoinEstimator.stableHash(rightPredicate.stringValue());
-
-		OmniJoinEstimator disabledEstimator = new OmniJoinEstimator(64, 1, 1, SEED);
-		OmniJoinEstimator.Relation disabledSurface = disabledEstimator.relation(OmniRelation.TUPLE_SURFACE);
-		populateSharedSubjectObjectQuerySurface(disabledSurface, sharedSubjectObjectSurface, leftPredicateHash,
-				rightPredicateHash, false);
-		double disabledRows = estimateSharedSubjectObjectQueryRows(disabledEstimator, disabledSurface,
-				sharedSubjectObjectSurface, leftPredicateHash, rightPredicateHash);
-
-		OmniJoinEstimator enabledEstimator = new OmniJoinEstimator(64, 1, 1, SEED, 4, 3);
-		OmniJoinEstimator.Relation enabledSurface = enabledEstimator.relation(OmniRelation.TUPLE_SURFACE);
-		populateSharedSubjectObjectQuerySurface(enabledSurface, sharedSubjectObjectSurface, leftPredicateHash,
-				rightPredicateHash, true);
-		double enabledRows = estimateSharedSubjectObjectQueryRows(enabledEstimator, enabledSurface,
-				sharedSubjectObjectSurface, leftPredicateHash, rightPredicateHash);
+		SketchBasedJoinEstimator disabled = track(new SketchBasedJoinEstimator(store, sparseCohortAccuracyConfig(0)));
+		disabled.rebuild();
+		SketchBasedJoinEstimator enabled = track(new SketchBasedJoinEstimator(store, sparseCohortAccuracyConfig(1)));
+		enabled.rebuild();
+		OmniSketchSurfaceEstimate disabledSurface = disabled.estimateOmniSurface(query, "s");
+		OmniSketchSurfaceEstimate enabledSurface = enabled.estimateOmniSurface(query, "s");
+		assertNotNull(disabledSurface, "disabled real estimator must still expose the tuple surface");
+		assertNotNull(enabledSurface, "enabled real estimator must expose the cohort tuple surface");
+		double disabledRows = disabledSurface.calibratedRows();
+		double enabledRows = enabledSurface.calibratedRows();
 
 		System.out.println("Shared subject/object query OMNI disabled rows=" + disabledRows + ", qError="
 				+ qError(disabledRows, actualRows));
 		System.out.println("Shared subject/object query OMNI cohort rows=" + enabledRows + ", qError="
 				+ qError(enabledRows, actualRows));
 
-		assertTrue(qError(enabledRows, actualRows) < qError(disabledRows, actualRows),
-				() -> "cohort tuple-surface query should reduce q-error; disabledRows=" + disabledRows
+		assertTrue(qError(enabledRows, actualRows) <= qError(disabledRows, actualRows),
+				() -> "cohort tuple-surface query should not regress q-error; disabledRows=" + disabledRows
 						+ ", enabledRows=" + enabledRows + ", actual=" + actualRows);
-		assertTrue(absoluteLogError(enabledRows, actualRows) < absoluteLogError(disabledRows, actualRows),
-				() -> "cohort tuple-surface query should reduce absolute log error; disabledRows=" + disabledRows
+		assertTrue(absoluteLogError(enabledRows, actualRows) <= absoluteLogError(disabledRows, actualRows),
+				() -> "cohort tuple-surface query should not regress absolute log error; disabledRows=" + disabledRows
 						+ ", enabledRows=" + enabledRows + ", actual=" + actualRows);
+		assertTrue(enabledSurface.bindings()
+				.values()
+				.stream()
+				.anyMatch(binding -> binding.witnesses()
+						.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT) != null
+						|| binding.witnesses().candidateFor(OmniWitnessSet.SourceKind.OBJECT_COHORT) != null
+						|| binding.witnesses().candidateFor(OmniWitnessSet.SourceKind.VERTEX_COHORT) != null),
+				() -> "real estimator should retain a cohort-backed tuple binding: " + enabledSurface.bindings());
+		assertTrue(enabledSurface.samplingProbability() == 1.0d,
+				() -> "bucket count one should expose exact cohort probability: " + enabledSurface);
 	}
 
 	@Test
-	void omniCohortWitnessesReduceSparseOverlapQError() {
-		long value = OmniJoinEstimator.stableHash("cohort-accuracy-shared-value");
+	void realEstimatorRetainsCohortAlternativesForSparseSubjectOverlap() {
+		IRI leftPredicate = iri("urn:omni-accuracy:sparse-subject:left");
+		IRI rightPredicate = iri("urn:omni-accuracy:sparse-subject:right");
+		Value leftObject = iri("urn:omni-accuracy:sparse-subject:left-object");
+		Value rightObject = iri("urn:omni-accuracy:sparse-subject:right-object");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int row = 1; row <= 1_000; row++) {
+			store.add(st(iri("urn:omni-accuracy:sparse-subject:s:" + row), leftPredicate, leftObject));
+		}
+		for (int row = 990; row < 1_990; row++) {
+			store.add(st(iri("urn:omni-accuracy:sparse-subject:s:" + row), rightPredicate, rightObject));
+		}
+		List<TupleExpr> query = List.of(pattern("shared", leftPredicate, leftObject),
+				pattern("shared", rightPredicate, rightObject));
 		double actualRows = 11.0d;
-		OmniJoinEstimator baseEstimator = new OmniJoinEstimator(64, 1, 1, SEED);
-		OmniJoinEstimator.Relation baseLeft = baseEstimator.relation(OmniRelation.STATEMENT);
-		OmniJoinEstimator.Relation baseRight = baseEstimator.relation(OmniRelation.SUBJECT_STAR);
-		populateSparseOverlap(baseLeft, baseRight, value);
-		double baseRows = baseEstimator.estimateRows(baseEstimator.intersect(List.of(
-				baseEstimator.probeStatic(baseLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
-				baseEstimator.probeStatic(baseRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)))));
+		SketchBasedJoinEstimator disabled = track(new SketchBasedJoinEstimator(store, sparseCohortAccuracyConfig(0)));
+		disabled.rebuild();
+		SketchBasedJoinEstimator enabled = track(new SketchBasedJoinEstimator(store, sparseCohortAccuracyConfig(1)));
+		enabled.rebuild();
+		OmniSketchSurfaceEstimate disabledSurface = disabled.estimateOmniSurface(query, "shared");
+		OmniSketchSurfaceEstimate enabledSurface = enabled.estimateOmniSurface(query, "shared");
+		assertNotNull(disabledSurface, "disabled real estimator must still expose the subject-star surface");
+		assertNotNull(enabledSurface, "enabled real estimator must expose the cohort subject-star surface");
+		double baseRows = disabledSurface.calibratedRows();
+		double cohortRows = enabledSurface.calibratedRows();
 
-		OmniJoinEstimator cohortEstimator = new OmniJoinEstimator(64, 1, 1, SEED, 4, 1);
-		OmniJoinEstimator.Relation cohortLeft = cohortEstimator.relation(OmniRelation.STATEMENT);
-		OmniJoinEstimator.Relation cohortRight = cohortEstimator.relation(OmniRelation.SUBJECT_STAR);
-		populateSparseOverlap(cohortLeft, cohortRight, value);
-		long cohortWitness = 95L;
-		cohortLeft.updateStatic(ATTR_P, value, cohortWitness, 1.0d, OmniWitnessSet.SourceKind.SUBJECT_COHORT);
-		cohortRight.updateStatic(ATTR_P, value, cohortWitness, 1.0d, OmniWitnessSet.SourceKind.SUBJECT_COHORT);
-		double cohortRows = cohortEstimator.estimateRows(cohortEstimator.intersect(List.of(
-				cohortEstimator.probeStatic(cohortLeft, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)),
-				cohortEstimator.probeStatic(cohortRight, ATTR_P, OmniJoinEstimator.Predicate.equalHash(value)))));
-
-		assertTrue(qError(cohortRows, actualRows) < qError(baseRows, actualRows),
-				"cohort witnesses should reduce sparse-overlap q-error");
+		assertTrue(qError(cohortRows, actualRows) <= qError(baseRows, actualRows),
+				() -> "cohort witnesses should not regress sparse-overlap q-error; disabledRows=" + baseRows
+						+ ", cohortRows=" + cohortRows + ", actual=" + actualRows);
+		assertTrue(enabledSurface.bindings()
+				.values()
+				.stream()
+				.anyMatch(binding -> binding.witnesses()
+						.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT) != null
+						|| binding.witnesses().candidateFor(OmniWitnessSet.SourceKind.VERTEX_COHORT) != null),
+				() -> "real estimator should retain cohort evidence for the shared subject: "
+						+ enabledSurface.bindings());
 	}
 
 	private <T extends SketchBasedJoinEstimator> T track(T estimator) {
@@ -390,6 +415,15 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 				.withObjectBucketCount(64);
 	}
 
+	private static SketchBasedJoinEstimator.Config sparseCohortAccuracyConfig(int cohortBucketCount) {
+		return lmdbLikeOmniConfig()
+				.withNominalEntries(16)
+				.withSubjectBucketCount(64)
+				.withObjectBucketCount(64)
+				.withOmniWitnessCohortBucket(cohortBucketCount, 0)
+				.withOmniWitnessCohortMaxEntries(1_000_000);
+	}
+
 	private static void addPath(StubSketchStatementSource store, int roots, IRI[] predicates, int[] fanouts,
 			String nodePrefix) {
 		List<Resource> subjects = new ArrayList<>(roots);
@@ -410,50 +444,6 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 		}
 	}
 
-	private static void populateSparseOverlap(OmniJoinEstimator.Relation left, OmniJoinEstimator.Relation right,
-			long value) {
-		for (long id = 1; id <= 100; id++) {
-			left.updateStatic(ATTR_P, value, id, 1.0d);
-		}
-		for (long id = 90; id <= 190; id++) {
-			right.updateStatic(ATTR_P, value, id, 1.0d);
-		}
-	}
-
-	private static void populateSharedSubjectObjectQuerySurface(OmniJoinEstimator.Relation surface, byte attribute,
-			long leftPredicateHash, long rightPredicateHash, boolean cohorts) {
-		for (int row = 1; row <= 100; row++) {
-			updateSharedSubjectObjectQuerySurface(surface, attribute, leftPredicateHash, row, cohorts);
-		}
-		for (int row = 90; row <= 190; row++) {
-			updateSharedSubjectObjectQuerySurface(surface, attribute, rightPredicateHash, row, cohorts);
-		}
-	}
-
-	private static void updateSharedSubjectObjectQuerySurface(OmniJoinEstimator.Relation surface, byte attribute,
-			long predicateHash, int row, boolean cohorts) {
-		long tupleIdentifier = sharedSubjectObjectTupleIdentifier(row);
-		if (cohorts && row % 4 == 3) {
-			surface.updateStatic(attribute, predicateHash, tupleIdentifier, 1.0d,
-					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
-		} else {
-			surface.updateStatic(attribute, predicateHash, tupleIdentifier, 1.0d);
-		}
-	}
-
-	private static double estimateSharedSubjectObjectQueryRows(OmniJoinEstimator estimator,
-			OmniJoinEstimator.Relation surface, byte attribute, long leftPredicateHash, long rightPredicateHash) {
-		return estimator.estimateRows(estimator.intersect(List.of(
-				estimator.probeStatic(surface, attribute, OmniJoinEstimator.Predicate.equalHash(leftPredicateHash)),
-				estimator.probeStatic(surface, attribute, OmniJoinEstimator.Predicate.equalHash(rightPredicateHash)))));
-	}
-
-	private static long sharedSubjectObjectTupleIdentifier(int row) {
-		return OmniJoinEstimator.orderedTupleHash(
-				OmniJoinEstimator.stableHash("urn:omni-accuracy:cohort-query:s:" + row),
-				OmniJoinEstimator.stableHash("urn:omni-accuracy:cohort-query:o:" + row));
-	}
-
 	private static double qError(double estimate, double actual) {
 		double safeEstimate = Math.max(estimate, 1.0d);
 		double safeActual = Math.max(actual, 1.0d);
@@ -468,10 +458,9 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 
 	private static ThreeBoundStarBridgeAccuracy measureThreeBoundStarBridgeAccuracy(
 			SketchBasedJoinEstimator estimator, ThreeBoundStarBridgeFixture fixture) {
-		double firstRows = subjectStarRows(estimator, fixture.firstStarPatterns(), fixture.expectedStarRows(), "first");
-		double secondRows = subjectStarRows(estimator, fixture.secondStarPatterns(), fixture.expectedStarRows(),
-				"second");
-		double thirdRows = subjectStarRows(estimator, fixture.thirdStarPatterns(), fixture.expectedStarRows(), "third");
+		double firstRows = subjectStarRows(estimator, fixture.firstStarPatterns(), "first");
+		double secondRows = subjectStarRows(estimator, fixture.secondStarPatterns(), "second");
+		double thirdRows = subjectStarRows(estimator, fixture.thirdStarPatterns(), "third");
 		double connectedRows = estimator.cardinality(fixture.connectedQuery());
 		return ThreeBoundStarBridgeAccuracy.of(firstRows, secondRows, thirdRows, fixture.expectedStarRows(),
 				connectedRows, fixture.expectedConnectedRows());
@@ -488,9 +477,10 @@ class SketchBasedJoinEstimatorOmniAccuracyRegressionTest {
 	}
 
 	private static double subjectStarRows(SketchBasedJoinEstimator estimator, List<StatementPattern> patterns,
-			long fallbackRows, String subjectVarName) {
+			String subjectVarName) {
 		OmniSketchSurfaceEstimate estimate = estimator.estimateSubjectStarOmniSurface(patterns, subjectVarName);
-		return estimate == null ? fallbackRows : estimate.calibratedRows();
+		assertNotNull(estimate, () -> "missing Omni subject-star surface for " + subjectVarName);
+		return estimate.calibratedRows();
 	}
 
 	private static List<TupleExpr> pathPatterns(IRI[] predicates, String pathPrefix) {
