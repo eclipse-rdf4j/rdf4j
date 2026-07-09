@@ -133,7 +133,8 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void explicitNoSketchAutomaticStoreUsesLmdbPipelineWithoutEstimator(@TempDir File dataDir) throws Exception {
+	void explicitNoSketchAutomaticStoreUsesNativeEvaluationWithLmdbPipelineBeforeJoinEstimation(@TempDir File dataDir)
+			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc").setSketchEstimatorEnabled(false));
 		store.init();
 		try {
