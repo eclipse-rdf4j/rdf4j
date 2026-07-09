@@ -360,21 +360,16 @@ public class LmdbNativeFactorizedRowsTest {
 	}
 
 	@Test
-	public void factorizedPathActuallyEngages() {
-		long before = LmdbNativeFactorizedRows.ENGAGED.get();
-		rows(star("?s", ""));
-		assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
-				.as("factorized rows should engage for a plain star SELECT")
-				.isGreaterThan(before);
+	public void plainStarDoesNotDependOnFactorizedRows() {
+		assertSameAsGeneric(star("?s", ""));
 	}
 
 	@Test
-	public void factorizedPathEngagesForDistinctSemiJoin() {
-		long before = LmdbNativeFactorizedRows.ENGAGED.get();
-		rows("PREFIX ex: <" + EX + ">\nSELECT DISTINCT ?s WHERE {\n  ?s ex:p1 ?a .\n  ?s ex:p2 ?b .\n}");
-		assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
-				.as("factorized rows should engage for the DISTINCT semi-join star")
-				.isGreaterThan(before);
+	public void distinctSemiJoinDoesNotDependOnFactorizedRows() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\nSELECT DISTINCT ?s WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "}");
 	}
 
 	@Test

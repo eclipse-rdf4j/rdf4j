@@ -90,6 +90,21 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
+	public void executedAndTelemetryExplanationsShowNativePhysicalPlan() {
+		for (Explanation.Level level : Stream.of(Explanation.Level.Executed, Explanation.Level.Telemetry).toList()) {
+			Explanation explanation = explain(level, aggregateQuery());
+
+			assertNativeMarker(explanation, "aggregate", level.name());
+			assertThat(explanation.toString())
+					.as(level.name() + " explanation should show the native physical plan that was executed")
+					.contains("nativePhysicalPlan=");
+			assertThat(explanation.toJson())
+					.as(level.name() + " JSON explanation should show the native physical plan that was executed")
+					.contains("\"nativePhysicalPlan\"");
+		}
+	}
+
+	@Test
 	public void disabledNativeEngineSuppressesNativeExplanationMarker() {
 		String previous = System.getProperty(NATIVE_FLAG);
 		try {

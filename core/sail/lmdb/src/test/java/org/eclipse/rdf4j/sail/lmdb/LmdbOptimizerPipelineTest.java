@@ -133,7 +133,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void explicitNoSketchAutomaticStoreUsesNativeEvaluationWithLmdbPipelineBeforeJoinEstimation(@TempDir File dataDir)
+	void explicitNoSketchAutomaticStoreUsesNativeEvaluationWithStandardPipeline(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc").setSketchEstimatorEnabled(false));
 		store.init();
@@ -147,15 +147,15 @@ class LmdbOptimizerPipelineTest {
 
 			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
 			assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
-			assertTrue(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
-			assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 		} finally {
 			store.shutDown();
 		}
 	}
 
 	@Test
-	void longLivedConnectionsUseLmdbPipelineBeforeAndAfterSketchesReady(@TempDir File dataDir) throws Exception {
+	void longLivedConnectionsUseStandardPipelineUntilSketchesReady(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
@@ -165,8 +165,8 @@ class LmdbOptimizerPipelineTest {
 					.getEvaluationStatistics());
 			List<QueryOptimizer> initialOptimizers = optimizers(initialStrategy);
 			assertInstanceOf(LmdbNativeEvaluationStrategy.class, initialStrategy);
-			assertTrue(initialOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
-			assertFalse(initialOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertTrue(initialOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+			assertFalse(initialOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();

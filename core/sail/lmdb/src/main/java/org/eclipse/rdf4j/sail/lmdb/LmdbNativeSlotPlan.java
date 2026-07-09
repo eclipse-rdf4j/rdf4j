@@ -16,8 +16,6 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.*;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -101,10 +99,6 @@ interface SlotPlan {
 		return Double.POSITIVE_INFINITY;
 	}
 
-	default int boundScore(RowState row) {
-		return 0;
-	}
-
 	static SlotPlan empty() {
 		return EmptyPlan.INSTANCE;
 	}
@@ -117,40 +111,7 @@ interface SlotPlan {
 		if (left == EmptyPlan.INSTANCE || right == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
-		if (canReorder(left) && canReorder(right)) {
-			ArrayList<SlotPlan> children = new ArrayList<>();
-			ArrayList<MaskedFilter> filters = new ArrayList<>();
-			collectReorderable(left, children, filters);
-			collectReorderable(right, children, filters);
-			return new MultiJoinPlan(children.toArray(SlotPlan[]::new),
-					filters.toArray(MaskedFilter[]::new));
-		}
 		return new JoinPlan(left, right);
-	}
-
-	static boolean canReorder(SlotPlan plan) {
-		if (plan instanceof FilterPlan) {
-			// a filter with a complete placement mask commutes with the surrounding inner joins, so it does
-			// not have to freeze the join order
-			FilterPlan filterPlan = (FilterPlan) plan;
-			return filterPlan.filterMask >= 0L && canReorder(filterPlan.arg);
-		}
-		return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan
-				|| plan instanceof PathPlan || plan instanceof MultiJoinPlan;
-	}
-
-	static void collectReorderable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {
-		if (plan instanceof MultiJoinPlan) {
-			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
-			children.addAll(Arrays.asList(multiJoin.children));
-			filters.addAll(Arrays.asList(multiJoin.filters));
-		} else if (plan instanceof FilterPlan) {
-			FilterPlan filterPlan = (FilterPlan) plan;
-			collectReorderable(filterPlan.arg, children, filters);
-			filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
-		} else {
-			children.add(plan);
-		}
 	}
 
 	static SlotPlan leftJoin(SlotPlan left, SlotPlan right) {

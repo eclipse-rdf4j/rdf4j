@@ -31,8 +31,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * Intra-query morsel parallelism for native COUNT-style aggregation. The root scan of the derived join order is split
- * into morsels (batches of raw quads) by the query thread and consumed by worker threads that each run the identical
+ * Intra-query morsel parallelism for native COUNT-style aggregation. The root scan of the ordered physical plan is
+ * split into morsels (batches of raw quads) by the query thread and consumed by worker threads that each run the same
  * join pipeline — against their own read-only LMDB transaction pinned to the same committed snapshot (see
  * {@link NativeLmdbQuerySource#openParallelSources}) — and aggregate into thread-local group tables that are merged at
  * the end. Aggregation roots partition perfectly: any subset of root rows joins and counts independently, and COUNT

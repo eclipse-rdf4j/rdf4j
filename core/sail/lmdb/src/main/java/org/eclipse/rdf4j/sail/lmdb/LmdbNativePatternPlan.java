@@ -291,13 +291,7 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	boolean termRuntimeBound(Term term, long[] slots) {
-		return term.slot >= 0 && slots[term.slot] != UNKNOWN && slots[term.slot] != SYNTHETIC_BOUND;
-	}
-
-	@Override
-	public int boundScore(RowState row) {
-		return boundTermScore(s, row.slots) + boundTermScore(p, row.slots) + boundTermScore(o, row.slots)
-				+ boundTermScore(c, row.slots);
+		return term.slot >= 0 && slots[term.slot] != UNKNOWN;
 	}
 
 	long multiplyEstimate(long left, long right) {
@@ -312,27 +306,14 @@ final class PatternPlan implements SlotPlan {
 		if (term.isConstant()) {
 			return 1L;
 		}
-		if (term.slot >= 0 && slots[term.slot] != UNKNOWN && slots[term.slot] != SYNTHETIC_BOUND) {
+		if (term.slot >= 0 && slots[term.slot] != UNKNOWN) {
 			return 1L;
-		}
-		if (term.slot >= 0 && slots[term.slot] == SYNTHETIC_BOUND) {
-			return 8L;
 		}
 		return switch (field) {
 		case PREDICATE -> 64L;
 		case CONTEXT -> 256L;
 		case SUBJECT, OBJECT -> 4_096L;
 		};
-	}
-
-	int boundTermScore(Term term, long[] slots) {
-		if (term.isConstant()) {
-			return 4;
-		}
-		if (term.slot >= 0 && slots[term.slot] != UNKNOWN) {
-			return 3;
-		}
-		return 0;
 	}
 
 	PatternCursor openAsExistenceCheck(NativeLmdbQuerySource source, long subj, long pred, long obj,

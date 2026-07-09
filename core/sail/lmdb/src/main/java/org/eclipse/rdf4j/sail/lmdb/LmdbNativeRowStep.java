@@ -140,7 +140,7 @@ final class FilteringIteration implements CloseableIteration<BindingSet> {
 	}
 }
 
-final class NativeRowsStep implements QueryEvaluationStep {
+final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
 	final NativeSlotLayout layout;
@@ -228,6 +228,29 @@ final class NativeRowsStep implements QueryEvaluationStep {
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
 		return genericStep;
+	}
+
+	@Override
+	public String nativePhysicalPlan() {
+		StringBuilder sb = new StringBuilder("NativeRows(arg=")
+				.append(LmdbNativeExplain.describe(arg, layout))
+				.append(", sourceSlots=")
+				.append(Arrays.toString(sourceSlots))
+				.append(", distinct=")
+				.append(distinct)
+				.append(", orderSlots=")
+				.append(Arrays.toString(orderSlots))
+				.append(", offset=")
+				.append(offset)
+				.append(", limit=")
+				.append(limit);
+		if (prefixRunPlan != null) {
+			sb.append(", prefixRun=index(")
+					.append(prefixRunPlan.index().getName(false))
+					.append("), prefixLength=")
+					.append(prefixRunPlan.prefixLength());
+		}
+		return sb.append(")").toString();
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base) {

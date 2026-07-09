@@ -129,7 +129,7 @@ final class MultiValuePatternPlan implements SlotPlan {
 		}
 		if (constrainedSlot >= 0) {
 			long bound = row.slots[constrainedSlot];
-			if (bound != UNKNOWN && bound != SYNTHETIC_BOUND) {
+			if (bound != UNKNOWN) {
 				for (int i = 0; i < constants.length; i++) {
 					if (constants[i] == bound) {
 						return alternatives[i].open(row);
@@ -144,7 +144,7 @@ final class MultiValuePatternPlan implements SlotPlan {
 	boolean shouldUseFallback(RowState row) {
 		if (constrainedSlot >= 0) {
 			long constrained = row.slots[constrainedSlot];
-			if (constrained != UNKNOWN && constrained != SYNTHETIC_BOUND) {
+			if (constrained != UNKNOWN) {
 				return true;
 			}
 		}
@@ -163,7 +163,7 @@ final class MultiValuePatternPlan implements SlotPlan {
 		}
 		if (constrainedSlot >= 0) {
 			long bound = row.slots[constrainedSlot];
-			if (bound != UNKNOWN && bound != SYNTHETIC_BOUND) {
+			if (bound != UNKNOWN) {
 				for (int i = 0; i < constants.length; i++) {
 					if (constants[i] == bound) {
 						return alternatives[i].estimate(row);
@@ -175,14 +175,6 @@ final class MultiValuePatternPlan implements SlotPlan {
 		return Double.isFinite(staticEstimate) ? Math.max(1D, staticEstimate) : alternatives.length * 64D;
 	}
 
-	@Override
-	public int boundScore(RowState row) {
-		int best = Integer.MIN_VALUE;
-		for (PatternPlan alternative : alternatives) {
-			best = Math.max(best, alternative.boundScore(row));
-		}
-		return best == Integer.MIN_VALUE ? 0 : best;
-	}
 }
 
 final class MultiValuePatternCursor implements RowCursor {

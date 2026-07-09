@@ -81,10 +81,10 @@ final class LmdbNativeFactorizedRows {
 	}
 
 	/**
-	 * Plans the factorized shape over the derived join order, or returns null when a gate fails and the enumerating
-	 * cursor chain must run instead. Gates: every ordered child is a plain {@link PatternPlan}; tail branches have no
-	 * repeated variable; at least one tail branch exists. Patterns whose fresh slots are consumed by a later pattern's
-	 * probe or by a filter of another depth stay in the flat prefix.
+	 * Plans the factorized shape over the ordered physical children, or returns null when a gate fails and the
+	 * enumerating cursor chain must run instead. Gates: every ordered child is a plain {@link PatternPlan}; tail
+	 * branches have no repeated variable; at least one tail branch exists. Patterns whose fresh slots are consumed by a
+	 * later pattern's probe or by a filter of another depth stay in the flat prefix.
 	 */
 	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
 			long seedMask, int[] sourceSlots, boolean distinct) {

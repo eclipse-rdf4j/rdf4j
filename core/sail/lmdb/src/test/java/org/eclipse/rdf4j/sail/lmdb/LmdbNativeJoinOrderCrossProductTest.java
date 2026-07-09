@@ -12,26 +12,46 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.NativeLmdbQuerySource.UNKNOWN_ID;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 /**
- * Cross-product guard for the native join orderer: once at least one pattern is placed, a pattern that shares no
- * variable with the bound slots must not be chosen while a connected pattern remains, no matter how well its constants
- * score. Without the guard, {@code ?x rdf:type :Hub} (two constants, score 8) outranks {@code ?s :knows ?o} probing on
- * the already-bound {@code ?s} (score 7), materializing the full Person x Hub cross product.
+ * Order-preservation guards for the native LMDB engine. Logical join order belongs to the RDF4J optimizers; the native
+ * engine may only refine physical access inside that order.
  */
 public class LmdbNativeJoinOrderCrossProductTest {
 
-	private static final long TYPE = 100L;
-	private static final long PERSON = 101L;
-	private static final long HUB = 102L;
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
 	private static final long KNOWS = 103L;
+	private static final long EDGE = 104L;
+	private static final IRI EDGE_IRI = VF.createIRI("urn:test:edge");
 
 	// slots: 0 = ?s, 1 = ?o, 2 = ?x
 	private static final int S = 0;
@@ -52,51 +72,139 @@ public class LmdbNativeJoinOrderCrossProductTest {
 	}
 
 	@Test
-	public void connectedPatternBeatsDisconnectedConstantRichPattern() {
-		PatternPlan person = pattern(Term.slot(S), Term.constant(TYPE), Term.constant(PERSON), 10D);
-		PatternPlan hub = pattern(Term.slot(X), Term.constant(TYPE), Term.constant(HUB), 10D);
+	public void slotPlanJoinKeepsValuesBeforeBroadPattern() {
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { S }, new long[] { 11L }) });
 		PatternPlan knows = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 1_000D);
-		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { person, hub, knows }, new MaskedFilter[0]);
 
-		SlotPlan[] order = join.chooseOrder(emptyRow());
+		SlotPlan join = SlotPlan.join(values, knows);
 
-		assertThat(order[0]).isSameAs(person);
-		assertThat(order[1])
-				.as("the pattern probing the bound ?s must run before the disconnected Hub scan")
-				.isSameAs(knows);
-		assertThat(order[2]).isSameAs(hub);
+		assertThat(join).isInstanceOf(JoinPlan.class);
+		JoinPlan ordered = (JoinPlan) join;
+		assertThat(ordered.left).isSameAs(values);
+		assertThat(ordered.right).isSameAs(knows);
 	}
 
 	@Test
-	public void fullyConstantExistenceCheckStaysEligibleEarly() {
-		// a pattern with no variable slots cannot open a cross-product dimension: it stays a plain
-		// score-based pick (and its score 12 beats everything, gating the whole join)
-		PatternPlan existence = pattern(Term.constant(55L), Term.constant(TYPE), Term.constant(HUB), 1D);
-		PatternPlan person = pattern(Term.slot(S), Term.constant(TYPE), Term.constant(PERSON), 10D);
+	public void multiJoinDerivedPlanKeepsChildrenInCompilerOrder() {
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { S }, new long[] { 11L }) });
 		PatternPlan knows = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 1_000D);
-		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { person, knows, existence }, new MaskedFilter[0]);
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { values, knows }, new MaskedFilter[0]);
 
-		SlotPlan[] order = join.chooseOrder(emptyRow());
+		SlotPlan[] order = join.derivedPlan(emptyRow()).order;
 
-		assertThat(order[0]).isSameAs(existence);
-		assertThat(order[1]).isSameAs(person);
-		assertThat(order[2]).isSameAs(knows);
+		assertThat(order)
+				.as("native physical helpers must not reorder compiler-provided join children")
+				.containsExactly(values, knows);
 	}
 
 	@Test
-	public void seededBindingMakesPatternConnectedAtDepthZero() {
-		// with ?x externally bound, the Hub pattern is connected from the start and keeps its
-		// boundness-first pick; the guard must not demote it
-		PatternPlan person = pattern(Term.slot(S), Term.constant(TYPE), Term.constant(PERSON), 10D);
-		PatternPlan hub = pattern(Term.slot(X), Term.constant(TYPE), Term.constant(HUB), 10D);
-		PatternPlan knows = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 1_000D);
-		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { person, hub, knows }, new MaskedFilter[0]);
+	public void rowCompilerOpensPatternsInAlgebraOrder() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		StatementPattern broadFirst = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		StatementPattern constantPredicateSecond = new StatementPattern(Var.of("s"), Var.of("edge", EDGE_IRI, true),
+				Var.of("x"));
 
-		RowState row = emptyRow();
-		row.bind(X, 77L);
+		QueryEvaluationStep step = LmdbNativeQueryCompiler.tryCompile(new Join(broadFirst, constantPredicateSecond),
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
 
-		SlotPlan[] order = join.chooseOrder(row);
+		assertThat(step).isNotNull();
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+		}
+		assertThat(source.calls)
+				.as("the first native scan must be the first algebra pattern, even when a later pattern scores better")
+				.first()
+				.isEqualTo(new PatternCall(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID));
+	}
 
-		assertThat(order[0]).isSameAs(hub);
+	private static final class RecordingNativeSource implements NativeLmdbQuerySource {
+		final List<PatternCall> calls = new ArrayList<>();
+
+		@Override
+		public long idOf(Value value) {
+			return EDGE_IRI.equals(value) ? EDGE : UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return VF.createIRI("urn:test:id:" + id);
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			calls.add(new PatternCall(subj, pred, obj, context));
+			long effectiveSubj = subj == UNKNOWN ? 11L : subj;
+			long effectivePred = pred == UNKNOWN ? 12L : pred;
+			long effectiveObj = obj == UNKNOWN ? 13L : obj;
+			long effectiveContext = context == UNKNOWN ? 0L : context;
+			return new SingleRecordIterator(
+					new long[] { effectiveSubj, effectivePred, effectiveObj, effectiveContext });
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return 1L;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return true;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return pred == EDGE ? 1_000D : 1D;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+	}
+
+	private static final class SingleRecordIterator implements RecordIterator {
+		private final long[] record;
+		private boolean consumed;
+
+		private SingleRecordIterator(long[] record) {
+			this.record = record;
+		}
+
+		@Override
+		public long[] next() {
+			if (consumed) {
+				return null;
+			}
+			consumed = true;
+			return record;
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private record PatternCall(long subj, long pred, long obj, long context) {
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return EMPTY_ITERATION;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
 	}
 }

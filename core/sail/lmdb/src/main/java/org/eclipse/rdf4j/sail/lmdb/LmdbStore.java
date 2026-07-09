@@ -490,17 +490,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private LmdbNativeEvaluationStrategyFactory getAutomaticNativeEvaluationStrategyFactory() {
 		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
 		if (nativeEvalStratFactory == null) {
-			nativeEvalStratFactory = new LmdbNativeEvaluationStrategyFactory(getFederatedServiceResolver(),
-					lmdbPipelineBeforeJoinEstimation());
+			nativeEvalStratFactory = new LmdbNativeEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
 		if (optimizerPipeline != null) {
 			nativeEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
 		}
 		return nativeEvalStratFactory;
-	}
-
-	private boolean lmdbPipelineBeforeJoinEstimation() {
-		return config.getSketchEstimatorEnabled() != null;
 	}
 
 	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {

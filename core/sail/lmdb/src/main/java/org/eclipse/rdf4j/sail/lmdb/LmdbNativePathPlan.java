@@ -84,31 +84,13 @@ final class PathPlan implements SlotPlan {
 
 	@Override
 	public double estimate(RowState row) {
-		// must not perform I/O (called while ordering joins); mirror PatternPlan's shape
+		// must not perform I/O; physical gates use this to decide whether a fast path is worthwhile
 		boolean subjKnown = subjConst != UNKNOWN || (subjSlot >= 0 && row.slots[subjSlot] != UNKNOWN);
 		boolean objKnown = objConst != UNKNOWN || (objSlot >= 0 && row.slots[objSlot] != UNKNOWN);
 		if (subjKnown || objKnown) {
 			return 64D;
 		}
 		return Double.isFinite(staticEstimate) ? staticEstimate * 4D : Double.POSITIVE_INFINITY;
-	}
-
-	@Override
-	public int boundScore(RowState row) {
-		int score = 4; // constant predicate
-		score += endpointScore(subjSlot, subjConst, row);
-		score += endpointScore(objSlot, objConst, row);
-		return score;
-	}
-
-	static int endpointScore(int slot, long constant, RowState row) {
-		if (constant != UNKNOWN) {
-			return 4;
-		}
-		if (slot >= 0 && row.slots[slot] != UNKNOWN) {
-			return 3;
-		}
-		return 0;
 	}
 
 	@Override

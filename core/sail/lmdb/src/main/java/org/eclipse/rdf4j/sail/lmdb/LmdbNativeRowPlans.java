@@ -412,20 +412,6 @@ final class ValuesPlan implements SlotPlan {
 	public double estimate(RowState row) {
 		return rows.length;
 	}
-
-	@Override
-	public int boundScore(RowState row) {
-		int score = 0;
-		long mask = producedMask;
-		while (mask != 0L) {
-			int slot = Long.numberOfTrailingZeros(mask);
-			if (row.slots[slot] != UNKNOWN) {
-				score += 2;
-			}
-			mask &= mask - 1;
-		}
-		return score;
-	}
 }
 
 final class ValuesCursor implements RowCursor {

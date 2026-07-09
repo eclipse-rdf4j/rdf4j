@@ -80,7 +80,7 @@ final class LmdbNativeQueryCompiler {
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		QueryEvaluationStep step = compile(expr, context, strategy, source);
 		if (step != null) {
-			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP);
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(step));
 		}
 		return step;
 	}
@@ -91,8 +91,15 @@ final class LmdbNativeQueryCompiler {
 		if (step == null) {
 			return false;
 		}
-		LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP);
+		LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(step));
 		return true;
+	}
+
+	private static String physicalPlan(QueryEvaluationStep step) {
+		if (step instanceof LmdbNativePhysicalPlan) {
+			return ((LmdbNativePhysicalPlan) step).nativePhysicalPlan();
+		}
+		return null;
 	}
 
 	private static QueryEvaluationStep compile(TupleExpr expr, QueryEvaluationContext context,
@@ -582,16 +589,6 @@ final class LmdbNativeQueryCompiler {
 			}
 			return UNKNOWN;
 		}
-
-		private int boundScore(boolean[] bound) {
-			if (isConstant()) {
-				return 2;
-			}
-			if (slot >= 0 && bound[slot]) {
-				return 1;
-			}
-			return 0;
-		}
 	}
 
 	private static final class ContextConstraint {
@@ -662,10 +659,6 @@ final class LmdbNativeQueryCompiler {
 				mask |= 1L << c.slot;
 			}
 			this.producedMask = mask;
-		}
-
-		private int score(boolean[] bound) {
-			return s.boundScore(bound) + p.boundScore(bound) + o.boundScore(bound) + c.boundScore(bound);
 		}
 
 		private PatternCursor open(NativeLmdbQuerySource source, long[] slots) throws IOException {
@@ -1085,7 +1078,7 @@ final class LmdbNativeQueryCompiler {
 		}
 	}
 
-	private static final class NativePlan implements QueryEvaluationStep {
+	private static final class NativePlan implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private static final NativePlan EMPTY = new NativePlan(null, new NativePattern[0], NativeSlotLayout.empty(),
 				new NativeFilter[0]);
 
@@ -1096,10 +1089,10 @@ final class LmdbNativeQueryCompiler {
 		private final NativeSlotLayout layout;
 		private final NativeFilter[] filters;
 		/**
-		 * The chosen pattern order and per-depth filter assignment depend only on which slots are seeded by the
-		 * incoming binding set. Correlated evaluation re-runs evaluate() once per outer row with the same seed shape,
-		 * so the derived plan is memoized per seed mask (copy-on-write; benign under concurrent evaluate since equal
-		 * masks derive equal plans).
+		 * Pattern order is the compiler-collected algebra order. Per-depth filter assignment depends only on which
+		 * slots are seeded by the incoming binding set. Correlated evaluation re-runs evaluate() once per outer row
+		 * with the same seed shape, so the derived plan is memoized per seed mask (copy-on-write; benign under
+		 * concurrent evaluate since equal masks derive equal plans).
 		 */
 		private volatile DerivedPlanCache derivedCache = DerivedPlanCache.EMPTY;
 
@@ -1132,6 +1125,54 @@ final class LmdbNativeQueryCompiler {
 			if (cache.size() < DERIVED_CACHE_CAPACITY && cache.get(seedMask) == null) {
 				derivedCache = cache.with(seedMask, derived);
 			}
+		}
+
+		@Override
+		public String nativePhysicalPlan() {
+			StringBuilder sb = new StringBuilder("NativeBGP(order=[");
+			for (int i = 0; i < patterns.length; i++) {
+				if (i > 0) {
+					sb.append(" -> ");
+				}
+				sb.append(describe(patterns[i]));
+			}
+			return sb.append("], filters=").append(filters.length).append(")").toString();
+		}
+
+		private String describe(NativePattern pattern) {
+			return "Pattern(s=" + term(pattern.s) + ", p=" + term(pattern.p) + ", o=" + term(pattern.o)
+					+ ", c=" + term(pattern.c) + ", contexts=" + contexts(pattern.contexts) + ")";
+		}
+
+		private String term(Term term) {
+			if (term.isConstant() && term.hasSlot()) {
+				return slot(term.slot) + "=const(" + term.constant + ")";
+			}
+			if (term.isConstant()) {
+				return "const(" + term.constant + ")";
+			}
+			if (term.hasSlot()) {
+				return slot(term.slot);
+			}
+			return "*";
+		}
+
+		private String slot(int slot) {
+			String[] names = layout.slotNames();
+			if (slot >= 0 && slot < names.length) {
+				return "?" + names[slot] + "#" + slot;
+			}
+			return "#" + slot;
+		}
+
+		private String contexts(ContextConstraint contexts) {
+			if (contexts.isEmpty()) {
+				return "empty";
+			}
+			if (!contexts.isFixed()) {
+				return "any";
+			}
+			return "fixed(" + contexts.ids.length + ")";
 		}
 	}
 
@@ -1321,71 +1362,8 @@ final class LmdbNativeQueryCompiler {
 		}
 
 		private DerivedPlan derive(long seedMask) {
-			NativePattern[] order = chooseOrder(seedMask);
+			NativePattern[] order = allPatterns.clone();
 			return new DerivedPlan(order, assignFilters(order, seedMask));
-		}
-
-		private NativePattern[] chooseOrder(long seedMask) {
-			NativePattern[] order = new NativePattern[allPatterns.length];
-			boolean[] used = new boolean[allPatterns.length];
-			boolean[] bound = new boolean[slotNames.length];
-			for (int i = 0; i < slotNames.length; i++) {
-				bound[i] = (seedMask & (1L << i)) != 0L;
-			}
-
-			long boundMask = seedMask;
-			for (int depth = 0; depth < order.length; depth++) {
-				int best = -1;
-				int bestScore = Integer.MIN_VALUE;
-				long bestEstimate = Long.MAX_VALUE;
-				boolean bestConnected = false;
-				for (int i = 0; i < allPatterns.length; i++) {
-					if (used[i]) {
-						continue;
-					}
-					NativePattern pattern = allPatterns[i];
-					// cross-product guard: prefer patterns sharing a variable with the bound slots; a
-					// pattern producing no slots is at most an existence check and stays eligible
-					boolean connected = pattern.producedMask == 0L || (pattern.producedMask & boundMask) != 0L;
-					if (bestConnected && !connected) {
-						continue;
-					}
-					int score = pattern.score(bound);
-					long estimate = normalizedEstimate(pattern.staticEstimate);
-					if ((connected && !bestConnected)
-							|| score > bestScore || (score == bestScore && estimate < bestEstimate)) {
-						bestScore = score;
-						bestEstimate = estimate;
-						best = i;
-						bestConnected = connected;
-					}
-				}
-				used[best] = true;
-				NativePattern chosen = allPatterns[best];
-				order[depth] = chosen;
-				boundMask |= chosen.producedMask;
-				markProduced(bound, chosen);
-			}
-			return order;
-		}
-
-		private static long normalizedEstimate(double estimate) {
-			if (!Double.isFinite(estimate) || estimate < 0D) {
-				return Long.MAX_VALUE >>> 16;
-			}
-			if (estimate > (Long.MAX_VALUE >>> 16)) {
-				return Long.MAX_VALUE >>> 16;
-			}
-			return Math.max(1L, (long) estimate);
-		}
-
-		private void markProduced(boolean[] bound, NativePattern pattern) {
-			long mask = pattern.producedMask;
-			while (mask != 0) {
-				int slot = Long.numberOfTrailingZeros(mask);
-				bound[slot] = true;
-				mask &= mask - 1;
-			}
 		}
 
 		private NativeFilter[][] assignFilters(NativePattern[] order, long seedMask) {

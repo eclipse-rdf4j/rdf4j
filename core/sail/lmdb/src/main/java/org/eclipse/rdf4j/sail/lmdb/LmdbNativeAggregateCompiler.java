@@ -36,7 +36,6 @@ final class LmdbNativeAggregateCompiler {
 
 	static final long UNKNOWN = NativeLmdbQuerySource.UNKNOWN_ID;
 	static final long NULL_CONTEXT_ID = 0L;
-	static final long SYNTHETIC_BOUND = Long.MIN_VALUE + 17L;
 	/**
 	 * Plan-local ids for VALUES constants that do not exist in the value store. A term absent from the store can never
 	 * match a stored statement, so index probes seeing such an id yield nothing; materialization resolves them through
@@ -70,7 +69,7 @@ final class LmdbNativeAggregateCompiler {
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source);
 		if (result.step != null) {
-			LmdbNativeExplain.mark(expr, result.kind);
+			LmdbNativeExplain.mark(expr, result.kind, result.physicalPlan);
 			COMPILED.incrementAndGet();
 		}
 		return result.step;
@@ -82,7 +81,7 @@ final class LmdbNativeAggregateCompiler {
 		if (result.step == null) {
 			return false;
 		}
-		LmdbNativeExplain.mark(expr, result.kind);
+		LmdbNativeExplain.mark(expr, result.kind, result.physicalPlan);
 		return true;
 	}
 
@@ -100,10 +99,17 @@ final class LmdbNativeAggregateCompiler {
 		} else {
 			step = compiler.compileRowRoot(expr);
 		}
-		return new CompileResult(step, kind);
+		return new CompileResult(step, kind, physicalPlan(step));
 	}
 
-	private record CompileResult(QueryEvaluationStep step, String kind) {
+	private static String physicalPlan(QueryEvaluationStep step) {
+		if (step instanceof LmdbNativePhysicalPlan) {
+			return ((LmdbNativePhysicalPlan) step).nativePhysicalPlan();
+		}
+		return null;
+	}
+
+	private record CompileResult(QueryEvaluationStep step, String kind, String physicalPlan) {
 	}
 
 	static boolean validValueForField(Value value, NativePatternField field) {

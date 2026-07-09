@@ -92,7 +92,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
 
-final class NativeGroupStep implements QueryEvaluationStep {
+final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
 	final NativeSlotLayout layout;
@@ -151,6 +151,23 @@ final class NativeGroupStep implements QueryEvaluationStep {
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
 		return genericStep;
+	}
+
+	@Override
+	public String nativePhysicalPlan() {
+		StringBuilder sb = new StringBuilder("NativeGroup(arg=")
+				.append(LmdbNativeExplain.describe(arg, layout))
+				.append(", groupSlots=")
+				.append(Arrays.toString(groupSlots))
+				.append(", aggregates=")
+				.append(aggregates.length);
+		if (prefixRunPlan != null) {
+			sb.append(", prefixRun=index(")
+					.append(prefixRunPlan.index().getName(false))
+					.append("), prefixLength=")
+					.append(prefixRunPlan.prefixLength());
+		}
+		return sb.append(")").toString();
 	}
 }
 
@@ -395,7 +412,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	/**
-	 * Aggregation with a factorized tail: the prefix of the join order is enumerated as usual, but the last pattern's
+	 * Aggregation with a factorized tail: the prefix of the ordered plan is enumerated as usual, but the last pattern's
 	 * matches are consumed as counted quad batches (see {@link FactorizedTail}) instead of being bound into rows one
 	 * combination at a time. Group states are only registered once the tail produced at least one match, preserving
 	 * inner-join semantics for zero-match prefix rows.

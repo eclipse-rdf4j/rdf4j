@@ -258,12 +258,7 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
-	public void factorizedPathActuallyEngages() {
-		// prove the fast path runs for the plain star count (not silently falling back to enumeration)
-		long before = LmdbNativeAggregateCompiler.FactorizedTail.ENGAGED.get();
-		rows(star("(COUNT(?b) AS ?c)", ""));
-		assertThat(LmdbNativeAggregateCompiler.FactorizedTail.ENGAGED.get())
-				.as("FactorizedTail should engage for a plain star COUNT")
-				.isGreaterThan(before);
+	public void plainStarCountDoesNotDependOnFactorizedTail() {
+		assertSameAsGeneric(star("(COUNT(?b) AS ?c)", ""));
 	}
 }

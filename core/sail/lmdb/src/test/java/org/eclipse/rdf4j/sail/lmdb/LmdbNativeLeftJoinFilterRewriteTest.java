@@ -158,7 +158,7 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 	/**
 	 * A null-rejecting filter over an OPTIONAL is exactly an inner join ({@code Filter(c, LeftJoin(L, R)) ==
 	 * Filter(c, Join(L, R))} when c is false or errors whenever R's own variables are unbound). Compiling it that way
-	 * lets the join order seed from the selective name pattern instead of enumerating every triangle first.
+	 * keeps the optimizer-owned algebra shape available to the native compiler without paying OPTIONAL semantics.
 	 */
 	@Test
 	public void nameFilteredTriangleCompilesAsInnerJoin() {

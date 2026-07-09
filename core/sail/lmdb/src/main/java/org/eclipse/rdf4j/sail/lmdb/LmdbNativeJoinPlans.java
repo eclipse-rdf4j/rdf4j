@@ -98,13 +98,9 @@ final class MultiJoinPlan implements SlotPlan {
 	final SlotPlan[] children;
 	final MaskedFilter[] filters;
 	final long producedMask;
-	final boolean orderCacheable;
 	/**
-	 * Memoized join orders keyed by the bound-slot mask at open time. Correlated opens (per outer row of a join, EXISTS
-	 * or MINUS) present the same one or two masks over and over, while chooseOrder is O(k²) with virtual estimate()
-	 * recursion and allocations. Copy-on-write: a lost race just recomputes an identical order. Only used when every
-	 * child is a plain statement pattern, because other child plans (VALUES-backed patterns in particular) can have
-	 * estimates that depend on the bound slot values rather than just the bound mask.
+	 * Memoized ordered physical plans keyed by the bound-slot mask at open time. Child order is always the compiler
+	 * order; only filter depth depends on the entry mask. Copy-on-write: a lost race just recomputes an identical plan.
 	 */
 	volatile OrderCache orderCache;
 
@@ -112,13 +108,10 @@ final class MultiJoinPlan implements SlotPlan {
 		this.children = children;
 		this.filters = filters;
 		long mask = 0L;
-		boolean cacheable = true;
 		for (SlotPlan child : children) {
 			mask |= child.producedMask();
-			cacheable &= child instanceof PatternPlan;
 		}
 		this.producedMask = mask;
-		this.orderCacheable = cacheable;
 		this.orderCache = OrderCache.EMPTY;
 	}
 
@@ -140,21 +133,18 @@ final class MultiJoinPlan implements SlotPlan {
 		return openChain(derivedPlan(row), children.length, row);
 	}
 
-	/** The join order and filter placement for the given entry row, memoized per bound-slot mask. */
+	/** The ordered physical children and filter placement for the given entry row, memoized per bound-slot mask. */
 	OrderedPlan derivedPlan(RowState row) {
-		if (orderCacheable) {
-			long mask = row.boundMask();
-			OrderedPlan plan = orderCache.get(mask);
-			if (plan == null) {
-				plan = derive(row, mask);
-				OrderCache cache = orderCache;
-				if (cache.size() < ORDER_CACHE_CAPACITY) {
-					orderCache = cache.with(mask, plan);
-				}
+		long mask = row.boundMask();
+		OrderedPlan plan = orderCache.get(mask);
+		if (plan == null) {
+			plan = derive(mask);
+			OrderCache cache = orderCache;
+			if (cache.size() < ORDER_CACHE_CAPACITY) {
+				orderCache = cache.with(mask, plan);
 			}
-			return plan;
 		}
-		return derive(row, row.boundMask());
+		return plan;
 	}
 
 	/**
@@ -201,11 +191,11 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
-	 * Chooses the join order and attaches each filter at the earliest depth at which all slots in its mask are bound;
-	 * filters whose mask is never fully covered run at the top, which matches their original placement.
+	 * Keeps the compiler-provided child order and attaches each filter at the earliest depth at which all slots in its
+	 * mask are bound; filters whose mask is never fully covered run at the top, which matches their original placement.
 	 */
-	OrderedPlan derive(RowState row, long initialBoundMask) {
-		SlotPlan[] ordered = chooseOrder(row);
+	OrderedPlan derive(long initialBoundMask) {
+		SlotPlan[] ordered = children.clone();
 		int[] filterDepth = new int[filters.length];
 		if (filters.length > 0) {
 			int last = ordered.length - 1;
@@ -245,67 +235,6 @@ final class MultiJoinPlan implements SlotPlan {
 			}
 		}
 		return estimate;
-	}
-
-	SlotPlan[] chooseOrder(RowState row) {
-		SlotPlan[] ordered = new SlotPlan[children.length];
-		boolean[] used = new boolean[children.length];
-		long syntheticMask = 0L;
-		long bound = row.boundMask();
-		for (int depth = 0; depth < ordered.length; depth++) {
-			int best = -1;
-			int bestScore = Integer.MIN_VALUE;
-			long bestEstimate = Long.MAX_VALUE;
-			boolean bestConnected = false;
-			for (int i = 0; i < children.length; i++) {
-				if (used[i]) {
-					continue;
-				}
-				SlotPlan child = children[i];
-				// cross-product guard: a child sharing no variable with the bound slots multiplies the
-				// intermediate result by its full match count, so connected children win outright; a
-				// child producing no slots is at most an existence check and cannot open a cross product
-				long produced = child.producedMask();
-				boolean connected = produced == 0L || (produced & bound) != 0L;
-				if (bestConnected && !connected) {
-					continue;
-				}
-				int score = child.boundScore(row);
-				long estimate = normalizedEstimate(child.estimate(row));
-				if ((connected && !bestConnected)
-						|| score > bestScore || (score == bestScore && estimate < bestEstimate)) {
-					best = i;
-					bestScore = score;
-					bestEstimate = estimate;
-					bestConnected = connected;
-				}
-			}
-			used[best] = true;
-			ordered[depth] = children[best];
-			bound |= children[best].producedMask();
-			syntheticMask |= bindSyntheticProducedSlots(row, children[best]);
-		}
-		// The synthetic binding above only affects order choice. It must not leak into execution.
-		while (syntheticMask != 0L) {
-			int slot = Long.numberOfTrailingZeros(syntheticMask);
-			row.slots[slot] = UNKNOWN;
-			syntheticMask &= syntheticMask - 1;
-		}
-		return ordered;
-	}
-
-	long bindSyntheticProducedSlots(RowState row, SlotPlan child) {
-		long produced = child.producedMask();
-		long marked = 0L;
-		while (produced != 0L) {
-			int slot = Long.numberOfTrailingZeros(produced);
-			if (row.slots[slot] == UNKNOWN) {
-				row.slots[slot] = SYNTHETIC_BOUND;
-				marked |= 1L << slot;
-			}
-			produced &= produced - 1;
-		}
-		return marked;
 	}
 
 	static final class OrderedPlan {

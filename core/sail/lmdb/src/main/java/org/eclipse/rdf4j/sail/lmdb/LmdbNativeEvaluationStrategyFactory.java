@@ -23,15 +23,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 
 final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
 
-	private final boolean lmdbPipelineBeforeJoinEstimation;
-
 	LmdbNativeEvaluationStrategyFactory(FederatedServiceResolver resolver) {
-		this(resolver, false);
-	}
-
-	LmdbNativeEvaluationStrategyFactory(FederatedServiceResolver resolver, boolean lmdbPipelineBeforeJoinEstimation) {
 		super(resolver);
-		this.lmdbPipelineBeforeJoinEstimation = lmdbPipelineBeforeJoinEstimation;
 	}
 
 	@Override
@@ -51,8 +44,7 @@ final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategy
 
 	private QueryOptimizerPipeline automaticPipeline(StrictEvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		if (evaluationStatistics.supportsJoinEstimation()
-				|| lmdbPipelineBeforeJoinEstimation && evaluationStatistics instanceof LmdbEvaluationStatistics) {
+		if (evaluationStatistics.supportsJoinEstimation()) {
 			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 		}
 		return new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);

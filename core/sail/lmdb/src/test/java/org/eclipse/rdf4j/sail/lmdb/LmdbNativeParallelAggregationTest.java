@@ -30,11 +30,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Differential tests for intra-query morsel parallelism on native COUNT aggregation: every query is evaluated three
- * ways — parallel native (threshold lowered so small stores engage), sequential native
- * ({@code rdf4j.lmdb.parallel.enabled=false}), and the generic evaluator
- * ({@code rdf4j.lmdb.nativeQueryEngine.enabled=false}) — and all results must match. The star dataset includes a hub
- * with a zero-match branch, duplicate values across hubs, and a named-graph triple.
+ * Differential tests for intra-query morsel parallelism on native COUNT aggregation: queries are evaluated three ways —
+ * native with parallel execution enabled, sequential native ({@code rdf4j.lmdb.parallel.enabled=false}), and the
+ * generic evaluator ({@code rdf4j.lmdb.nativeQueryEngine.enabled=false}) — and all results must match. Single-pattern
+ * aggregation also proves that the order-preserving parallel path still engages. The star dataset includes a hub with a
+ * zero-match branch, duplicate values across hubs, and a named-graph triple.
  */
 public class LmdbNativeParallelAggregationTest {
 
@@ -112,6 +112,14 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	private void assertAllThreeAgree(String query) {
+		List<String> parallelRows = rows(query);
+		List<String> sequentialRows = rowsWithProperty(PARALLEL_FLAG, "false", query);
+		List<String> genericRows = rowsWithProperty(NATIVE_FLAG, "false", query);
+		assertThat(parallelRows).as("parallel-enabled vs sequential native for:\n" + query).isEqualTo(sequentialRows);
+		assertThat(parallelRows).as("parallel-enabled vs generic for:\n" + query).isEqualTo(genericRows);
+	}
+
+	private void assertParallelEngagesAndAllThreeAgree(String query) {
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		List<String> parallelRows = rows(query);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
@@ -164,7 +172,7 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void singlePatternCount() {
-		assertAllThreeAgree("PREFIX ex: <" + EX + ">\n"
+		assertParallelEngagesAndAllThreeAgree("PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }");
 	}
 
