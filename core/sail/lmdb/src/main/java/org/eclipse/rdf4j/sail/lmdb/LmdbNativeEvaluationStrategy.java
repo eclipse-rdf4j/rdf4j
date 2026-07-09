@@ -64,15 +64,7 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		// per-node execution tracking (explain executed / monitoring) needs each algebra node to report
-		// actuals such as resultSizeActual and the LMDB index used; the native plan executes the whole
-		// fragment in one opaque step and cannot annotate individual nodes, so tracking queries run on
-		// the generic evaluator
 		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
-			if (isTrackResultSize() || isTrackTime()) {
-				annotateNativeExplainPlan(expr, context);
-				return super.precompile(expr, context);
-			}
 
 			QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
 					nativeSource);
