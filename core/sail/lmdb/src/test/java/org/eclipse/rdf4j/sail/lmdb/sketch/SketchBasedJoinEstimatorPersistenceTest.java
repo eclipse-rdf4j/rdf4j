@@ -312,7 +312,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI);
 		SketchBasedJoinEstimator writer = track(new SketchBasedJoinEstimator(sourceStore, config));
 		writer.rebuild();
-		assertEquals(0, omniSketchCount(writer), "OMNI writer should not build legacy OmniFrequencySketch side state");
 		assertTrue(omniJoinEstimatorRelationCount(writer) > 0, "OMNI writer should build join-estimator side state");
 
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
@@ -332,13 +331,11 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(), config));
 		reader.configurePersistence(storeDirectory, true);
-		assertEquals(0, omniSketchCount(reader), "Lazy startup should not heap-load Omni side state");
 
 		assertEquals(1.0d,
 				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
 						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
 				0.0d);
-		assertEquals(0, omniSketchCount(reader), "Lazy OMNI reads should not restore legacy OmniFrequencySketch state");
 		assertTrue(omniJoinEstimatorRelationCount(reader) > 0,
 				"Lazy OMNI reads should restore persisted Omni join-estimator side state");
 		MappedWitnessIndex mappedIndex = firstMappedOmniWitnessIndex(reader);
@@ -1740,21 +1737,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Field sketchesField = countMinSketches.getClass().getDeclaredField("sketches");
 		sketchesField.setAccessible(true);
 		Object[] sketches = (Object[]) sketchesField.get(countMinSketches);
-		int count = 0;
-		for (Object sketch : sketches) {
-			if (sketch != null) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Object current = privateFieldValue(estimator, "current");
-		Object omniSketches = privateFieldValue(current, "omniSketches");
-		Field sketchesField = omniSketches.getClass().getDeclaredField("sketches");
-		sketchesField.setAccessible(true);
-		Object[] sketches = (Object[]) sketchesField.get(omniSketches);
 		int count = 0;
 		for (Object sketch : sketches) {
 			if (sketch != null) {

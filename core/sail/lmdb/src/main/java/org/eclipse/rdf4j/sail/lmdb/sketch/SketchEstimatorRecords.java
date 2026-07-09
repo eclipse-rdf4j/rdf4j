@@ -108,11 +108,6 @@ record FiniteOmniFilterBinding(Component component, long valueHash) {
 record FiniteOmniTupleAlternative(List<Component> components, long valueHash, boolean residualRequired) {
 }
 
-record OmniJoinStats(double sharedIdentifiers, double leftIdentifiers, double rightIdentifiers,
-		double lowerBoundRows, double upperBoundRows, double samplingProbability, int retainedEntries,
-		int sampleIntersectionSize) {
-}
-
 record StateComponents<T> (T S, T P, T O, T C) {
 	T get(Component component) {
 		return switch (component) {

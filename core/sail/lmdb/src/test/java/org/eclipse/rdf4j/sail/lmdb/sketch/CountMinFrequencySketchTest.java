@@ -32,7 +32,7 @@ class CountMinFrequencySketchTest {
 	private static final long SEED = 0x51E7C0DEL;
 
 	@Test
-	void pointEstimateAndInnerProductExposeConservativeUpperBound() throws Exception {
+	void pointEstimateAndInnerProductExposeConservativeCardinalityBound() throws Exception {
 		Object left = newSketch(4, 128, SEED);
 		Object right = newSketch(4, 128, SEED);
 		Map<Long, Long> leftCounts = new LinkedHashMap<>();
@@ -55,13 +55,10 @@ class CountMinFrequencySketchTest {
 
 		double exactInnerProduct = exactInnerProduct(leftCounts, rightCounts);
 		double upperBound = innerProduct(left, right);
-		Object estimate = estimateInnerProduct(left, right);
 
 		assertThat(upperBound).isGreaterThanOrEqualTo(exactInnerProduct);
-		assertThat(doubleValue(estimate, "upperBoundRows")).isEqualTo(upperBound);
-		assertThat(doubleValue(estimate, "calibratedRows")).isEqualTo(upperBound);
-		assertThat(doubleValue(estimate, "confidence")).isLessThan(0.5d);
-		assertThat(stringValue(estimate, "source")).isEqualTo("countmin-sketch-surface");
+		assertThrows(NoSuchMethodException.class,
+				() -> left.getClass().getDeclaredMethod("estimateInnerProduct", FrequencySketch.class));
 	}
 
 	@Test
@@ -150,12 +147,6 @@ class CountMinFrequencySketchTest {
 		return (double) method.invoke(left, right);
 	}
 
-	private static Object estimateInnerProduct(Object left, Object right) throws Exception {
-		Method method = left.getClass().getDeclaredMethod("estimateInnerProduct", FrequencySketch.class);
-		method.setAccessible(true);
-		return method.invoke(left, right);
-	}
-
 	private static byte[] toByteArray(Object sketch) throws Exception {
 		Method method = sketch.getClass().getDeclaredMethod("toByteArray");
 		method.setAccessible(true);
@@ -168,18 +159,6 @@ class CountMinFrequencySketchTest {
 		Method method = sketchClass.getDeclaredMethod("fromByteArray", byte[].class);
 		method.setAccessible(true);
 		return method.invoke(null, payload);
-	}
-
-	private static double doubleValue(Object record, String methodName) throws Exception {
-		Method method = record.getClass().getDeclaredMethod(methodName);
-		method.setAccessible(true);
-		return (double) method.invoke(record);
-	}
-
-	private static String stringValue(Object record, String methodName) throws Exception {
-		Method method = record.getClass().getDeclaredMethod(methodName);
-		method.setAccessible(true);
-		return (String) method.invoke(record);
 	}
 
 	private static double exactInnerProduct(Map<Long, Long> leftCounts, Map<Long, Long> rightCounts) {

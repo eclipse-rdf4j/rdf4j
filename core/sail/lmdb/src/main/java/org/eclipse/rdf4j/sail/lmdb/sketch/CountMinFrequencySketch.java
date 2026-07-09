@@ -29,11 +29,9 @@ final class CountMinFrequencySketch implements FrequencySketch, DistributionSket
 
 	static final int DEFAULT_ROWS = 4;
 	static final int DEFAULT_BUCKETS = 128;
-	static final String ESTIMATE_SOURCE = "countmin-sketch-surface";
 
 	private static final int SERIAL_MAGIC = 0x434d534b; // CMSK
 	private static final int SERIAL_VERSION = 1;
-	private static final double UNCALIBRATED_CONFIDENCE = 0.25d;
 
 	private final int rows;
 	private final int buckets;
@@ -82,20 +80,13 @@ final class CountMinFrequencySketch implements FrequencySketch, DistributionSket
 
 	@Override
 	public double innerProduct(FrequencySketch other) {
-		return estimateInnerProduct(other).upperBoundRows();
-	}
-
-	@Override
-	public OmniSketchSurfaceEstimate estimateInnerProduct(FrequencySketch other) {
 		if (!(other instanceof CountMinFrequencySketch that)) {
 			throw new IllegalArgumentException("Count-Min inner product requires another Count-Min sketch");
 		}
 		if (!compatible(that)) {
 			throw new IllegalArgumentException("Count-Min sketches are not compatible");
 		}
-		double upperBoundRows = computeUpperBoundInnerProduct(that);
-		return OmniSketchSurfaceEstimate.scalar(upperBoundRows, upperBoundRows, UNCALIBRATED_CONFIDENCE,
-				ESTIMATE_SOURCE, 1.0d);
+		return computeUpperBoundInnerProduct(that);
 	}
 
 	@Override

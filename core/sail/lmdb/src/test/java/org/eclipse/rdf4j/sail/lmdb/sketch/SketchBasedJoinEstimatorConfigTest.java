@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -169,6 +170,41 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
+	void countMinStrategiesRemainCardinalityOnlyWithoutOmniSurface() {
+		IRI p2 = VF.createIRI("urn:p2");
+		Value o2 = VF.createIRI("urn:o2");
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : List.of(
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN,
+				SketchBasedJoinEstimator.SketchStrategy.COUNT_MIN_DUAL)) {
+			StubSketchStatementSource localStore = new StubSketchStatementSource();
+			localStore.add(st(s1, p1, o1));
+			localStore.add(st(s1, p2, o2));
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(localStore,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withSketchStrategy(strategy)
+							.withThrottleEveryN(1)
+							.withThrottleMillis(0));
+			try {
+				rebuild(estimator);
+				StatementPattern left = new StatementPattern(Var.of("shared"), Var.of("p1", p1), Var.of("o1", o1));
+				StatementPattern right = new StatementPattern(Var.of("shared"), Var.of("p2", p2), Var.of("o2", o2));
+
+				assertTrue(estimator.estimateJoinSurfaceRows(List.of(left, right), "shared") >= 0.0d);
+				assertNull(estimator.estimateOmniSurface(List.of(left, right), "shared"),
+						strategy + " must not wrap generic cardinality evidence in an Omni carrier");
+			} finally {
+				estimator.close();
+			}
+		}
+	}
+
+	@Test
+	void legacyOmniFrequencySketchClassIsRemoved() {
+		assertThrows(ClassNotFoundException.class,
+				() -> Class.forName("org.eclipse.rdf4j.sail.lmdb.sketch.OmniFrequencySketch"));
+	}
+
+	@Test
 	void omniStrategyAllocatesOmniJoinEstimatorSideState() throws Exception {
 		SketchBasedJoinEstimator.SketchStrategy strategy = SketchBasedJoinEstimator.SketchStrategy
 				.fromConfigValue("omni", SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS);
@@ -184,7 +220,6 @@ class SketchBasedJoinEstimatorConfigTest {
 		rebuild(estimator);
 
 		assertEquals("omni", estimator.getSketchStrategy().configValue());
-		assertEquals(0, omniSketchCount(estimator), "OMNI should not allocate legacy OmniFrequencySketch state");
 		assertTrue(omniJoinEstimatorRelationCount(estimator) > 0,
 				"OMNI should allocate Omni join-estimator state");
 	}
@@ -848,19 +883,6 @@ class SketchBasedJoinEstimatorConfigTest {
 		Object state = objectField(estimator, "current");
 		Object countMinSketches = objectField(state, "countMinSketches");
 		Object[] sketches = (Object[]) objectField(countMinSketches, "sketches");
-		int count = 0;
-		for (Object sketch : sketches) {
-			if (sketch != null) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private static int omniSketchCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Object state = objectField(estimator, "current");
-		Object omniSketches = objectField(state, "omniSketches");
-		Object[] sketches = (Object[]) objectField(omniSketches, "sketches");
 		int count = 0;
 		for (Object sketch : sketches) {
 			if (sketch != null) {
