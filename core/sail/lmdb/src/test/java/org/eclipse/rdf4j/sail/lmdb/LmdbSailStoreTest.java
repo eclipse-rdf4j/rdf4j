@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
@@ -404,7 +405,7 @@ public class LmdbSailStoreTest {
 			sink.flush();
 
 			verify(tripleStoreSpy, times(1)).storeTriplesAligned(any(long[].class), any(long[].class),
-					any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+					any(long[].class), any(long[].class), anyInt(), anyBoolean(), nullable(IntConsumer.class));
 			verify(tripleStoreSpy, never()).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
@@ -418,6 +419,16 @@ public class LmdbSailStoreTest {
 		assertEquals(64 * 1024, LmdbSailStore.calculateAlignedWriteStatementLimit(1024L * 1024 * 1024));
 		assertEquals(128 * 1024, LmdbSailStore.calculateAlignedWriteStatementLimit(2L * 1024 * 1024 * 1024));
 		assertEquals(128 * 1024, LmdbSailStore.calculateAlignedWriteStatementLimit(Long.MAX_VALUE));
+	}
+
+	@Test
+	void valueResolutionChunksStayCacheSized() throws Exception {
+		Method method = LmdbSailStore.class.getDeclaredMethod("valueResolutionChunkCapacity", int.class);
+		method.setAccessible(true);
+
+		assertEquals(256, method.invoke(null, 256));
+		assertEquals(1024, method.invoke(null, 1024));
+		assertEquals(1024, method.invoke(null, 64 * 1024));
 	}
 
 	@Test
@@ -498,7 +509,7 @@ public class LmdbSailStoreTest {
 			}
 
 			verify(tripleStoreSpy, times(3)).storeTriplesAligned(subjects.capture(), any(long[].class),
-					any(long[].class), any(long[].class), counts.capture(), anyBoolean(), any(IntConsumer.class));
+					any(long[].class), any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
 			assertEquals(256, subjects.getAllValues().get(0).length);
 			assertEquals(512, subjects.getAllValues().get(1).length);
 			assertEquals(1024, subjects.getAllValues().get(2).length);
@@ -517,7 +528,7 @@ public class LmdbSailStoreTest {
 			}
 
 			verify(tripleStoreSpy).storeTriplesAligned(subjects.capture(), any(long[].class), any(long[].class),
-					any(long[].class), counts.capture(), anyBoolean(), any(IntConsumer.class));
+					any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
 			assertEquals(256, subjects.getValue().length);
 			assertEquals(Integer.valueOf(2), counts.getValue());
 			assertEquals(0, backingStore.reservedAlignedWriteStatements());
@@ -612,7 +623,7 @@ public class LmdbSailStoreTest {
 			throw new IOException("expected asynchronous aligned write failure");
 		}).when(tripleStoreSpy)
 				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
-						anyInt(), anyBoolean(), any(IntConsumer.class));
+						anyInt(), anyBoolean(), nullable(IntConsumer.class));
 
 		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
@@ -705,7 +716,7 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy).storeTriplesAligned(subjects.capture(), any(long[].class), any(long[].class),
-						any(long[].class), counts.capture(), anyBoolean(), any(IntConsumer.class));
+						any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
 				assertEquals(256, subjects.getValue().length);
 				assertEquals(Integer.valueOf(5), counts.getValue());
 				verify(tripleStoreSpy, never()).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());

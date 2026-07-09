@@ -1341,6 +1341,238 @@ class ValueStore extends AbstractValueFactory {
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
+	private void findIds(byte[][] data, int[] indexes, long[] ids, int count) throws IOException {
+		int[] order = count > 1 ? sortedStoreOrder(data, count) : null;
+		if (writeTxn == 0) {
+			writeTransaction((stack, txn) -> {
+				findIds(data, indexes, ids, count, order, stack, txn);
+				return null;
+			});
+			return;
+		}
+		readTransaction(env, (stack, txn) -> {
+			findIds(data, indexes, ids, count, order, stack, txn);
+			return null;
+		});
+	}
+
+	private void findIds(byte[][] data, int[] indexes, long[] ids, int count, int[] order, MemoryStack stack, long txn)
+			throws IOException {
+		BatchIdStorer storer = new BatchIdStorer(stack, txn);
+		for (int i = 0; i < count; i++) {
+			int dataIndex = order == null ? i : order[i];
+			ids[indexes[dataIndex]] = storer.findId(data[dataIndex]);
+		}
+	}
+
+	private int[] sortedStoreOrder(byte[][] data, int count) {
+		int[] order = new int[count];
+		long[] primaryStoreKeys = new long[count];
+		long[] secondaryStoreKeys = new long[count];
+		for (int i = 0; i < count; i++) {
+			order[i] = i;
+			primaryStoreKeys[i] = primaryStoreSortKey(data[i]);
+			secondaryStoreKeys[i] = secondaryStoreSortKey(data[i]);
+		}
+		int[] scratchOrder = new int[count];
+		long[] scratchKeys = new long[count];
+		int[] counts = new int[256];
+		int[] offsets = new int[256];
+		LeadingFieldSorters.lsdRadixSort(order, secondaryStoreKeys, count, scratchOrder, scratchKeys, counts,
+				offsets);
+		for (int i = 0; i < count; i++) {
+			primaryStoreKeys[i] = primaryStoreSortKey(data[order[i]]);
+		}
+		LeadingFieldSorters.lsdRadixSort(order, primaryStoreKeys, count, scratchOrder, scratchKeys, counts, offsets);
+		return order;
+	}
+
+	private long primaryStoreSortKey(byte[] data) {
+		if (data.length <= MAX_KEY_SIZE) {
+			return leadingStoreKey(data, 0);
+		}
+		return ((long) HASH_KEY << 56) | hash(data);
+	}
+
+	private long secondaryStoreSortKey(byte[] data) {
+		if (data.length <= MAX_KEY_SIZE) {
+			return leadingStoreKey(data, Long.BYTES);
+		}
+		return 0;
+	}
+
+	private long leadingStoreKey(byte[] data, int offset) {
+		if (offset >= data.length) {
+			return 0;
+		}
+		long key = 0;
+		int length = Math.min(data.length - offset, Long.BYTES);
+		for (int i = 0; i < length; i++) {
+			key = (key << Byte.SIZE) | (data[offset + i] & 0xFFL);
+		}
+		return key << ((Long.BYTES - length) * Byte.SIZE);
+	}
+
+	private final class BatchIdStorer {
+
+		private final MemoryStack stack;
+		private final long txn;
+		private final MDBVal dataVal;
+		private final MDBVal idVal;
+		private final MDBVal hashVal;
+		private final ByteBuffer idBuffer;
+		private final ByteBuffer hashBuffer;
+
+		private BatchIdStorer(MemoryStack stack, long txn) {
+			this.stack = stack;
+			this.txn = txn;
+			dataVal = MDBVal.calloc(stack);
+			idVal = MDBVal.calloc(stack);
+			hashVal = MDBVal.calloc(stack);
+			idBuffer = idBuffer(stack);
+			hashBuffer = stack.malloc(2 + 2 * Long.BYTES + 2);
+		}
+
+		private long findId(byte[] data) throws IOException {
+			stack.push();
+			try {
+				if (data.length <= MAX_KEY_SIZE) {
+					return findSmallId(data);
+				}
+				return findLargeId(data);
+			} finally {
+				stack.pop();
+			}
+		}
+
+		private long findSmallId(byte[] data) throws IOException {
+			dataVal.mv_data(stack.bytes(data));
+			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				return data2id(idVal.mv_data());
+			}
+
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			idVal.mv_data(id2data(idBuffer, newId).flip());
+			long activeWriteTxn = currentWriteTxn(txn);
+			E(mdb_put(activeWriteTxn, dbi, dataVal, idVal, 0));
+			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, 0));
+			incrementRefCount(stack, activeWriteTxn, data);
+			return newId;
+		}
+
+		private long findLargeId(byte[] data) throws IOException {
+			long dataHash = hash(data);
+			hashBuffer.clear();
+			hashBuffer.put(HASH_KEY);
+			Varint.writeUnsigned(hashBuffer, dataHash);
+			int hashLength = hashBuffer.position();
+			hashBuffer.flip();
+			hashVal.mv_data(hashBuffer);
+
+			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+				idVal.mv_data(dataVal.mv_data());
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), data)) {
+					return data2id(idVal.mv_data());
+				}
+			} else {
+				return storeFirstLargeId(data);
+			}
+
+			hashBuffer.put(0, HASHID_KEY);
+			hashVal.mv_data(hashBuffer);
+
+			long cursor = 0;
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
+					do {
+						if (compareRegion(hashVal.mv_data(), 0, hashBuffer, 0, hashLength) != 0) {
+							break;
+						}
+
+						ByteBuffer hashIdBb = hashVal.mv_data();
+						hashIdBb.position(hashLength);
+						idVal.mv_data(hashIdBb);
+						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+								&& bufferEquals(dataVal.mv_data(), data)) {
+							return data2id(hashIdBb);
+						}
+					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+
+			return storeHashCollisionId(data, hashLength);
+		}
+
+		private long storeFirstLargeId(byte[] data) throws IOException {
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			idVal.mv_data(id2data(idBuffer, newId).flip());
+			dataVal.mv_size(data.length);
+			long activeWriteTxn = currentWriteTxn(txn);
+			E(mdb_put(activeWriteTxn, dbi, hashVal, idVal, 0));
+			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(data);
+			incrementRefCount(stack, activeWriteTxn, data);
+			return newId;
+		}
+
+		private long storeHashCollisionId(byte[] data, int hashLength) throws IOException {
+			resizeMap(txn, 1 + Long.BYTES + hashBuffer.capacity() + 2L * data.length);
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			ByteBuffer idBb = id2data(idBuffer, newId).flip();
+			idVal.mv_data(idBb);
+
+			hashBuffer.limit(hashBuffer.capacity());
+			hashBuffer.position(hashLength);
+			hashBuffer.put(idBb);
+			idBb.rewind();
+			hashBuffer.flip();
+			hashVal.mv_data(hashBuffer);
+
+			long activeWriteTxn = currentWriteTxn(txn);
+			dataVal.mv_data(stack.bytes());
+			E(mdb_put(activeWriteTxn, dbi, hashVal, dataVal, 0));
+
+			dataVal.mv_size(data.length);
+			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(data);
+			incrementRefCount(stack, activeWriteTxn, data);
+			return newId;
+		}
+	}
+
+	private long currentWriteTxn(long fallbackTxn) {
+		return writeTxn != 0 ? writeTxn : fallbackTxn;
+	}
+
+	private boolean bufferEquals(ByteBuffer buffer, byte[] data) {
+		if (buffer.remaining() != data.length) {
+			return false;
+		}
+		int position = buffer.position();
+		for (int i = 0; i < data.length; i++) {
+			if (buffer.get(position + i) != data[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			final var index = tripleTermCspoIndex;
@@ -1591,6 +1823,118 @@ class ValueStore extends AbstractValueFactory {
 			revisionLock.unlockRead(stamp);
 		}
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	void storeValues(Value[] values, long[] ids, int count) throws IOException {
+		if (count == 0) {
+			return;
+		}
+
+		byte[][] unresolvedData = null;
+		int[] unresolvedIndexes = null;
+		int unresolvedCount = 0;
+		boolean[] cacheAfterLookup = new boolean[count];
+		boolean[] ownValues = new boolean[count];
+
+		long stamp = revisionLock.readLock();
+		try {
+			for (int i = 0; i < count; i++) {
+				Value value = values[i];
+				boolean isOwnValue = isOwnValue(value);
+				ownValues[i] = isOwnValue;
+
+				long id = getKnownOrInlineId(value, isOwnValue);
+				if (id == LmdbValue.UNKNOWN_ID && value.isTripleTerm()) {
+					id = getId(value, true);
+				}
+				ids[i] = id;
+				if (id != LmdbValue.UNKNOWN_ID) {
+					if (isOwnValue) {
+						((LmdbValue) value).setInternalID(id, revision);
+					}
+					continue;
+				}
+
+				byte[] data = value2data(value, true);
+				if (data != null) {
+					if (unresolvedData == null) {
+						unresolvedData = new byte[count][];
+						unresolvedIndexes = new int[count];
+					}
+					unresolvedData[unresolvedCount] = data;
+					unresolvedIndexes[unresolvedCount] = i;
+					unresolvedCount++;
+					cacheAfterLookup[i] = true;
+				}
+			}
+
+			if (unresolvedCount > 0) {
+				findIds(unresolvedData, unresolvedIndexes, ids, unresolvedCount);
+			}
+
+			for (int i = 0; i < count; i++) {
+				if (cacheAfterLookup[i] && ids[i] != LmdbValue.UNKNOWN_ID) {
+					cacheStoredId(values[i], ids[i], ownValues[i]);
+				}
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
+
+	private long getKnownOrInlineId(Value value, boolean isOwnValue) {
+		if (isOwnValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			if (revisionIsCurrent(lmdbValue)) {
+				long id = lmdbValue.getInternalID();
+				if (id != LmdbValue.UNKNOWN_ID) {
+					return id;
+				}
+			}
+		}
+
+		Long cachedID = valueIDCache.get(value);
+		if (cachedID == null) {
+			cachedID = commonVocabulary.get(value);
+		}
+		if (cachedID != null) {
+			return cachedID;
+		}
+
+		if (inlineLiterals && value instanceof Literal) {
+			try {
+				long packedId = Values.packLiteral((Literal) value);
+				if (packedId != 0L) {
+					Literal unpacked = Values.unpackLiteral(packedId, this);
+					if (unpacked.equals(value)) {
+						return packedId;
+					}
+				}
+			} catch (IllegalArgumentException e) {
+				// ignore, invalid literal
+			}
+		}
+
+		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private void cacheStoredId(Value value, long id, boolean isOwnValue) {
+		if (isOwnValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			lmdbValue.setInternalID(id, revision);
+			valueIDCache.put(lmdbValue, id);
+		} else {
+			LmdbValue nv = getLmdbValue(value);
+			nv.setInternalID(id, revision);
+
+			if (nv.isIRI() && isCommonVocabulary((IRI) nv)) {
+				commonVocabulary.put(value, id);
+			}
+			valueIDCache.put(nv, id);
+		}
+		if (!ValueIds.isInlined(id)) {
+			storeHashIfAbsent(id, value);
+		}
 	}
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
