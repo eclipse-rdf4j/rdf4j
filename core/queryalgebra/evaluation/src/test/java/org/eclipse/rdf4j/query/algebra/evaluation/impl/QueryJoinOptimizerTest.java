@@ -233,7 +233,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.map(QueryJoinOptimizerTest::joinArgKey)
 				.collect(Collectors.toList());
 
-		assertThat(order).containsExactly("ex:pUnrelated", "values:target", "ex:pConsumer");
+		assertThat(order).containsExactly("values:target", "ex:pConsumer", "ex:pUnrelated");
 	}
 
 	@Test

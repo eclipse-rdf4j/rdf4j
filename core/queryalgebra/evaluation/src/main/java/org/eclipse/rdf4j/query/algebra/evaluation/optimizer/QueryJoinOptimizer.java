@@ -842,8 +842,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		/**
 		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This method
-		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
-		 * bound in other tuple expressions over variables with a fixed value.
+		 * selects the cheapest tuple expression that uses an existing binding, if one exists, and otherwise selects the
+		 * cheapest tuple expression overall.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
@@ -857,16 +857,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
+			boolean resultUsesExistingBinding = false;
 
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
+				boolean usesExistingBinding = usesExistingBinding(tupleExpr, varsMap.get(tupleExpr));
 
-				if (cost < lowestCost || result == null) {
+				if (result == null
+						|| (usesExistingBinding && !resultUsesExistingBinding)
+						|| (usesExistingBinding == resultUsesExistingBinding && cost < lowestCost)) {
 					// More specific path expression found
 					lowestCost = cost;
 					result = tupleExpr;
-					if (cost == 0) {
+					resultUsesExistingBinding = usesExistingBinding;
+					if (cost == 0 && (usesExistingBinding || boundVars.isEmpty())) {
 						break;
 					}
 				}
@@ -876,6 +881,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			result.setCostEstimate(lowestCost);
 
 			return result;
+		}
+
+		private boolean usesExistingBinding(TupleExpr tupleExpr, List<Var> vars) {
+			if (vars != null && !vars.isEmpty()) {
+				for (Var var : vars) {
+					if (!var.hasValue() && var.getName() != null && boundVars.contains(var.getName())) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			for (String bindingName : tupleExpr.getBindingNames()) {
+				if (boundVars.contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
