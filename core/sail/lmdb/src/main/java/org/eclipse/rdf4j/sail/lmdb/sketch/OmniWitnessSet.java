@@ -30,10 +30,29 @@ final class OmniWitnessSet {
 	}
 
 	enum SourceKind {
-		BASE,
-		SUBJECT_COHORT,
-		OBJECT_COHORT,
-		VERTEX_COHORT;
+		BASE(1),
+		SUBJECT_COHORT(2),
+		OBJECT_COHORT(3),
+		VERTEX_COHORT(4);
+
+		private final int persistenceId;
+
+		SourceKind(int persistenceId) {
+			this.persistenceId = persistenceId;
+		}
+
+		int persistenceId() {
+			return persistenceId;
+		}
+
+		static SourceKind fromPersistenceId(int persistenceId) {
+			for (SourceKind sourceKind : values()) {
+				if (sourceKind.persistenceId == persistenceId) {
+					return sourceKind;
+				}
+			}
+			throw new IllegalArgumentException("Unsupported Omni witness source kind: " + persistenceId);
+		}
 
 		boolean isCohort() {
 			return this != BASE;

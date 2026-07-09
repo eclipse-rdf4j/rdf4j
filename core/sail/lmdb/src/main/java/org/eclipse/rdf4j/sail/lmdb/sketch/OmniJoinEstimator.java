@@ -48,7 +48,7 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 6;
+	private static final int SERIAL_VERSION = 7;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	private static final int PROBE_CACHE_SIZE = 1024;
 	private static final int MAPPED_VALUE_RECORD_CACHE_SIZE = 4096;
@@ -73,6 +73,8 @@ final class OmniJoinEstimator {
 	private final int omniWitnessCohortBucketCount;
 	private final int omniWitnessCohortBucketIndex;
 	private final double omniWitnessCohortSamplingProbability;
+	private final int omniWitnessCohortMaxEntries;
+	private final OmniCohortRetentionController cohortRetentionController;
 	private final Map<OmniRelation, Relation> relations = new EnumMap<>(OmniRelation.class);
 	private MappedOmniJoinSnapshot mappedSnapshot;
 
@@ -82,6 +84,11 @@ final class OmniJoinEstimator {
 
 	OmniJoinEstimator(int width, int rows, int nominalEntries, long seed, int omniWitnessCohortBucketCount,
 			int omniWitnessCohortBucketIndex) {
+		this(width, rows, nominalEntries, seed, omniWitnessCohortBucketCount, omniWitnessCohortBucketIndex, 1_000_000);
+	}
+
+	OmniJoinEstimator(int width, int rows, int nominalEntries, long seed, int omniWitnessCohortBucketCount,
+			int omniWitnessCohortBucketIndex, int omniWitnessCohortMaxEntries) {
 		if (width < 2 || rows <= 0 || nominalEntries < 0) {
 			throw new IllegalArgumentException("invalid Omni join estimator configuration");
 		}
@@ -95,11 +102,15 @@ final class OmniJoinEstimator {
 		this.omniWitnessCohortSamplingProbability = this.omniWitnessCohortBucketCount > 0
 				? 1.0d / this.omniWitnessCohortBucketCount
 				: 0.0d;
+		this.omniWitnessCohortMaxEntries = Math.max(1, omniWitnessCohortMaxEntries);
+		this.cohortRetentionController = new OmniCohortRetentionController(this.omniWitnessCohortBucketCount,
+				this.omniWitnessCohortMaxEntries);
 	}
 
 	Relation relation(OmniRelation relation) {
 		return relations.computeIfAbsent(Objects.requireNonNull(relation, "relation"),
-				key -> new Relation(key, width, rows, nominalEntries, seed, omniWitnessCohortSamplingProbability));
+				key -> new Relation(key, width, rows, nominalEntries, seed, omniWitnessCohortSamplingProbability,
+						cohortRetentionController, this::pruneCohort));
 	}
 
 	int width() {
@@ -126,6 +137,30 @@ final class OmniJoinEstimator {
 		return omniWitnessCohortBucketIndex;
 	}
 
+	int omniWitnessCohortMaxEntries() {
+		return omniWitnessCohortMaxEntries;
+	}
+
+	long retainedCohortPostingCount() {
+		return cohortRetentionController.totalRetained();
+	}
+
+	long cohortBudgetFallbackCount() {
+		return cohortRetentionController.cohortBudgetFallbackCount();
+	}
+
+	int cohortSamplingExponent(OmniWitnessSet.SourceKind sourceKind) {
+		return cohortRetentionController.exponent(sourceKind);
+	}
+
+	private long pruneCohort(OmniWitnessSet.SourceKind sourceKind) {
+		long removed = 0L;
+		for (Relation relation : relations.values()) {
+			removed += relation.pruneCohort(sourceKind);
+		}
+		return removed;
+	}
+
 	boolean hasOmniWitnessCohorts() {
 		return omniWitnessCohortBucketCount > 0;
 	}
@@ -133,6 +168,7 @@ final class OmniJoinEstimator {
 	void clear() {
 		closeMappedSnapshot();
 		relations.clear();
+		cohortRetentionController.reset();
 	}
 
 	List<AttributeSnapshot> snapshotAttributes() {
@@ -174,6 +210,10 @@ final class OmniJoinEstimator {
 			out.writeLong(seed);
 			out.writeInt(omniWitnessCohortBucketCount);
 			out.writeInt(omniWitnessCohortBucketIndex);
+			out.writeInt(omniWitnessCohortMaxEntries);
+			for (OmniWitnessSet.SourceKind sourceKind : COHORT_SOURCE_KINDS) {
+				out.writeInt(cohortRetentionController.exponent(sourceKind));
+			}
 			out.writeInt(relations.size());
 			for (Map.Entry<OmniRelation, Relation> relationEntry : relations.entrySet()) {
 				out.writeByte(relationEntry.getKey().id());
@@ -266,12 +306,23 @@ final class OmniJoinEstimator {
 			long storedSeed = in.readLong();
 			int storedCohortBucketCount = in.readInt();
 			int storedCohortBucketIndex = in.readInt();
+			int storedCohortMaxEntries = in.readInt();
+			int storedSubjectCohortExponent = in.readInt();
+			int storedObjectCohortExponent = in.readInt();
+			int storedVertexCohortExponent = in.readInt();
 			if (storedWidth != width || storedRows != rows || storedNominalEntries != nominalEntries
 					|| storedSeed != seed || storedCohortBucketCount != omniWitnessCohortBucketCount
-					|| storedCohortBucketIndex != omniWitnessCohortBucketIndex) {
+					|| storedCohortBucketIndex != omniWitnessCohortBucketIndex
+					|| storedCohortMaxEntries != omniWitnessCohortMaxEntries) {
 				throw new IOException("Omni join estimator payload configuration mismatch");
 			}
 			clear();
+			cohortRetentionController.restoreExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT,
+					storedSubjectCohortExponent);
+			cohortRetentionController.restoreExponent(OmniWitnessSet.SourceKind.OBJECT_COHORT,
+					storedObjectCohortExponent);
+			cohortRetentionController.restoreExponent(OmniWitnessSet.SourceKind.VERTEX_COHORT,
+					storedVertexCohortExponent);
 			int relationCount = readCount(in, "relation");
 			for (int relationIndex = 0; relationIndex < relationCount; relationIndex++) {
 				Relation relation = relation(OmniRelation.fromId(in.readUnsignedByte()));
@@ -308,6 +359,10 @@ final class OmniJoinEstimator {
 			if (in.available() != 0) {
 				throw new IOException("Omni join estimator payload has trailing bytes: " + in.available());
 			}
+			if (cohortRetentionController.totalRetained() > omniWitnessCohortMaxEntries) {
+				clear();
+				throw new IOException("Omni join estimator payload exceeds the configured cohort entry cap");
+			}
 		}
 	}
 
@@ -319,10 +374,15 @@ final class OmniJoinEstimator {
 		if (snapshot.width() != width || snapshot.rows() != rows || snapshot.nominalEntries() != nominalEntries
 				|| snapshot.seed() != seed
 				|| snapshot.omniWitnessCohortBucketCount() != omniWitnessCohortBucketCount
-				|| snapshot.omniWitnessCohortBucketIndex() != omniWitnessCohortBucketIndex) {
+				|| snapshot.omniWitnessCohortBucketIndex() != omniWitnessCohortBucketIndex
+				|| snapshot.omniWitnessCohortMaxEntries() != omniWitnessCohortMaxEntries) {
+			snapshot.close();
 			throw new IOException("Omni witness snapshot configuration mismatch");
 		}
 		clear();
+		for (OmniWitnessSet.SourceKind sourceKind : COHORT_SOURCE_KINDS) {
+			cohortRetentionController.restoreExponent(sourceKind, snapshot.cohortExponent(sourceKind));
+		}
 		mappedSnapshot = snapshot;
 		for (OmniWitnessSet.SourceKind sourceKind : OmniWitnessSet.SourceKind.values()) {
 			for (Map.Entry<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>> relationEntry : snapshot
@@ -336,10 +396,17 @@ final class OmniJoinEstimator {
 					if (sourceKind == OmniWitnessSet.SourceKind.BASE) {
 						index.loadMappedBase(attributeEntry.getValue());
 					} else {
-						index.loadMappedCohort(sourceKind, attributeEntry.getValue());
+						MappedWitnessIndex mappedCohort = attributeEntry.getValue();
+						index.loadMappedCohort(sourceKind, mappedCohort,
+								snapshot.cohortExponent(sourceKind));
+						cohortRetentionController.addMappedPostings(sourceKind, mappedCohort.postingCount());
 					}
 				}
 			}
+		}
+		if (cohortRetentionController.totalRetained() > omniWitnessCohortMaxEntries) {
+			clear();
+			throw new IOException("Omni witness snapshot exceeds the configured cohort entry cap");
 		}
 	}
 
@@ -441,8 +508,8 @@ final class OmniJoinEstimator {
 				if (cohortSource != null) {
 					sources[sourceCount++] = cohortSource;
 					sawPopulation = true;
-					probability = Math.min(probability, index.cohortSamplingProbability());
-					minDetectable = Math.max(minDetectable, index.cohortMinimumDetectableEstimate());
+					probability = Math.min(probability, index.cohortSamplingProbability(sourceKind));
+					minDetectable = Math.max(minDetectable, index.cohortMinimumDetectableEstimate(sourceKind));
 				}
 				continue;
 			}
@@ -622,9 +689,10 @@ final class OmniJoinEstimator {
 			if (sourceKind.isCohort()) {
 				SortedCursorSource cohortSource = index.cohortWitnessSource(joinValueHash, sourceKind, inputWeight);
 				if (!cohortProbabilityApplied) {
-					outputProbability = cohortJoinProbability(outputProbability, index.cohortSamplingProbability(),
+					outputProbability = cohortJoinProbability(outputProbability,
+							index.cohortSamplingProbability(sourceKind),
 							independentCohortOutput);
-					minDetectable = Math.max(minDetectable, index.cohortMinimumDetectableEstimate());
+					minDetectable = Math.max(minDetectable, index.cohortMinimumDetectableEstimate(sourceKind));
 					cohortProbabilityApplied = true;
 				}
 				if (cohortSource != null) {
@@ -1402,6 +1470,44 @@ final class OmniJoinEstimator {
 		}
 	}
 
+	private static final class CohortFilteringWitnessCursor implements WitnessCursor {
+		private final WitnessCursor cursor;
+		private final OmniCohortRetentionController retentionController;
+		private final OmniWitnessSet.SourceKind sourceKind;
+
+		private CohortFilteringWitnessCursor(WitnessCursor cursor,
+				OmniCohortRetentionController retentionController, OmniWitnessSet.SourceKind sourceKind) {
+			this.cursor = cursor;
+			this.retentionController = retentionController;
+			this.sourceKind = sourceKind;
+		}
+
+		@Override
+		public boolean next() {
+			while (cursor.next()) {
+				if (retentionController.retain(sourceKind, cursor.witnessHash())) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public long witnessHash() {
+			return cursor.witnessHash();
+		}
+
+		@Override
+		public double weight() {
+			return cursor.weight();
+		}
+
+		@Override
+		public int estimatedRemaining() {
+			return cursor.estimatedRemaining();
+		}
+	}
+
 	private static final class SortedWitnessAccumulator {
 		private long[] hashes;
 		private double[] weights;
@@ -1535,18 +1641,23 @@ final class OmniJoinEstimator {
 		private final int nominalEntries;
 		private final long seed;
 		private final double cohortSamplingProbability;
+		private final OmniCohortRetentionController cohortRetentionController;
+		private final OmniCohortRetentionController.Pruner cohortPruner;
 		private final AttributeIndex[] staticAttributes = new AttributeIndex[OmniAttributeRef.STATIC_COUNT];
 		private final Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex> predicateAttributes = new Object2ObjectOpenHashMap<>();
 		private final Object2ObjectOpenHashMap<SketchTermKey, Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex>> predicateContextAttributes = new Object2ObjectOpenHashMap<>();
 
 		private Relation(OmniRelation name, int width, int rows, int nominalEntries, long seed,
-				double cohortSamplingProbability) {
+				double cohortSamplingProbability, OmniCohortRetentionController cohortRetentionController,
+				OmniCohortRetentionController.Pruner cohortPruner) {
 			this.name = name;
 			this.width = width;
 			this.rows = rows;
 			this.nominalEntries = nominalEntries;
 			this.seed = seed;
 			this.cohortSamplingProbability = cohortSamplingProbability;
+			this.cohortRetentionController = cohortRetentionController;
+			this.cohortPruner = cohortPruner;
 		}
 
 		void updateStatic(byte attributeId, long valueHash, long identifierHash, double estimatedMultiplicity) {
@@ -1681,7 +1792,8 @@ final class OmniJoinEstimator {
 			if (index == null) {
 				OmniAttributeRef attribute = OmniAttributeRef.staticAttribute(attributeId);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
-						compactLargePostings(attribute), cohortSamplingProbability);
+						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
+						cohortPruner);
 				staticAttributes[offset] = index;
 			}
 			return index;
@@ -1693,7 +1805,8 @@ final class OmniJoinEstimator {
 			if (index == null) {
 				OmniAttributeRef attribute = OmniAttributeRef.predicate(predicateKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
-						compactLargePostings(attribute), cohortSamplingProbability);
+						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
+						cohortPruner);
 				predicateAttributes.put(predicateKey, index);
 			}
 			return index;
@@ -1712,10 +1825,19 @@ final class OmniJoinEstimator {
 			if (index == null) {
 				OmniAttributeRef attribute = OmniAttributeRef.predicateContext(predicateKey, contextKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
-						compactLargePostings(attribute), cohortSamplingProbability);
+						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
+						cohortPruner);
 				byContext.put(contextKey, index);
 			}
 			return index;
+		}
+
+		private long pruneCohort(OmniWitnessSet.SourceKind sourceKind) {
+			long removed = 0L;
+			for (AttributeEntry entry : attributeEntries()) {
+				removed += entry.index().pruneCohort(sourceKind);
+			}
+			return removed;
 		}
 
 		private boolean exactPostings(OmniAttributeRef attribute) {
@@ -1827,6 +1949,8 @@ final class OmniJoinEstimator {
 		private final boolean exactSmallPostings;
 		private final boolean compactLargePostings;
 		private final double cohortSamplingProbability;
+		private final OmniCohortRetentionController cohortRetentionController;
+		private final OmniCohortRetentionController.Pruner cohortPruner;
 		private volatile long probeCacheEpoch = 1L;
 		private long[] probeCacheKeys;
 		private long[] probeCacheEpochs;
@@ -1838,6 +1962,12 @@ final class OmniJoinEstimator {
 		private MappedWitnessIndex mappedSubjectCohort;
 		private MappedWitnessIndex mappedObjectCohort;
 		private MappedWitnessIndex mappedVertexCohort;
+		private int mappedSubjectCohortExponent;
+		private int mappedObjectCohortExponent;
+		private int mappedVertexCohortExponent;
+		private long mappedSubjectCohortRetainedCount;
+		private long mappedObjectCohortRetainedCount;
+		private long mappedVertexCohortRetainedCount;
 		private long[] mappedValueRecordCacheKeys;
 		private boolean[] mappedValueRecordCachePopulated;
 		private MappedWitnessIndex.ValueRecord[] mappedValueRecordCacheValues;
@@ -1848,7 +1978,9 @@ final class OmniJoinEstimator {
 		private long distinctValueCount;
 
 		private AttributeIndex(int width, int rows, int nominalEntries, long seed, boolean exactSmallPostings,
-				boolean compactLargePostings, double cohortSamplingProbability) {
+				boolean compactLargePostings, double cohortSamplingProbability,
+				OmniCohortRetentionController cohortRetentionController,
+				OmniCohortRetentionController.Pruner cohortPruner) {
 			int effectiveNominalEntries = Math.max(1, nominalEntries);
 			compactThreshold = Math.max(16, effectiveNominalEntries * 2);
 			this.exactSmallPostings = exactSmallPostings;
@@ -1856,6 +1988,8 @@ final class OmniJoinEstimator {
 			this.cohortSamplingProbability = cohortSamplingProbability > 0.0d && cohortSamplingProbability <= 1.0d
 					? cohortSamplingProbability
 					: 0.0d;
+			this.cohortRetentionController = cohortRetentionController;
+			this.cohortPruner = cohortPruner;
 			this.sketch = OmniSketch.builder()
 					.setWidth(width)
 					.setNumRows(rows)
@@ -1965,8 +2099,14 @@ final class OmniJoinEstimator {
 			if (cohortSamplingProbability <= 0.0d || sourceKind == null || !sourceKind.isCohort()) {
 				return;
 			}
+			if (cohortRetentionController != null && !cohortRetentionController.retain(sourceKind, identifierHash)) {
+				return;
+			}
 			ValueWeights weights = cohortWeightsForWrite(sourceKind, valueHash);
-			weights.addTo(identifierHash, estimatedMultiplicity);
+			double previous = weights.addTo(identifierHash, estimatedMultiplicity);
+			if (previous == 0.0d && cohortRetentionController != null) {
+				cohortRetentionController.onPostingRetained(sourceKind, cohortPruner);
+			}
 		}
 
 		private void updateTotalOnly(long valueHash, double estimatedMultiplicity) {
@@ -2032,18 +2172,25 @@ final class OmniJoinEstimator {
 			clearWitnessCache();
 		}
 
-		private void loadMappedCohort(OmniWitnessSet.SourceKind sourceKind, MappedWitnessIndex mappedCohort) {
+		private void loadMappedCohort(OmniWitnessSet.SourceKind sourceKind, MappedWitnessIndex mappedCohort,
+				int snapshotExponent) {
 			switch (sourceKind) {
 			case SUBJECT_COHORT -> {
 				mappedSubjectCohort = mappedCohort;
+				mappedSubjectCohortExponent = snapshotExponent;
+				mappedSubjectCohortRetainedCount = mappedCohort == null ? 0L : mappedCohort.postingCount();
 				subjectCohortWeightsByValueHash = null;
 			}
 			case OBJECT_COHORT -> {
 				mappedObjectCohort = mappedCohort;
+				mappedObjectCohortExponent = snapshotExponent;
+				mappedObjectCohortRetainedCount = mappedCohort == null ? 0L : mappedCohort.postingCount();
 				objectCohortWeightsByValueHash = null;
 			}
 			case VERTEX_COHORT -> {
 				mappedVertexCohort = mappedCohort;
+				mappedVertexCohortExponent = snapshotExponent;
+				mappedVertexCohortRetainedCount = mappedCohort == null ? 0L : mappedCohort.postingCount();
 				vertexCohortWeightsByValueHash = null;
 			}
 			case BASE -> throw new IllegalArgumentException("Base source is not a cohort");
@@ -2062,6 +2209,7 @@ final class OmniJoinEstimator {
 			if (postings == null || postings.isEmpty()) {
 				return;
 			}
+			long restoredPostings = 0L;
 			for (ValuePostings posting : postings) {
 				ValueWeights weights = cohortWeightsForWrite(sourceKind, posting.valueHash());
 				long[] witnessHashes = posting.witnessHashes();
@@ -2069,10 +2217,13 @@ final class OmniJoinEstimator {
 				for (int i = 0; i < witnessHashes.length; i++) {
 					double weight = postingWeights[i];
 					if (Double.isFinite(weight) && weight > 0.0d) {
-						weights.addTo(witnessHashes[i], weight);
+						if (weights.addTo(witnessHashes[i], weight) == 0.0d) {
+							restoredPostings++;
+						}
 					}
 				}
 			}
+			cohortRetentionController.addMappedPostings(sourceKind, restoredPostings);
 		}
 
 		private long distinctValueCount() {
@@ -2229,12 +2380,14 @@ final class OmniJoinEstimator {
 							|| vertexCohortWeightsByValueHash != null && !vertexCohortWeightsByValueHash.isEmpty());
 		}
 
-		private double cohortSamplingProbability() {
-			return cohortSamplingProbability;
+		private double cohortSamplingProbability(OmniWitnessSet.SourceKind sourceKind) {
+			return cohortRetentionController == null ? cohortSamplingProbability
+					: cohortRetentionController.effectiveProbability(sourceKind);
 		}
 
-		private double cohortMinimumDetectableEstimate() {
-			return cohortSamplingProbability > 0.0d ? 1.0d / cohortSamplingProbability : 0.0d;
+		private double cohortMinimumDetectableEstimate(OmniWitnessSet.SourceKind sourceKind) {
+			double probability = cohortSamplingProbability(sourceKind);
+			return probability > 0.0d ? 1.0d / probability : 0.0d;
 		}
 
 		private SortedCursorSource cohortWitnessSource(long valueHash, OmniWitnessSet.SourceKind sourceKind,
@@ -2251,6 +2404,9 @@ final class OmniJoinEstimator {
 			MappedWitnessIndex mapped = mappedCohort(sourceKind);
 			MappedWitnessIndex.ValueRecord mappedRecord = mapped == null ? null : mapped.valueRecord(valueHash);
 			WitnessCursor mappedCursor = mappedRecord == null ? null : mappedRecord.cursor();
+			if (mappedCursor != null && hasAdditionalMappedCohortExponent(sourceKind)) {
+				mappedCursor = new CohortFilteringWitnessCursor(mappedCursor, cohortRetentionController, sourceKind);
+			}
 			ValueWeights weights = cohortWeightsForRead(sourceKind, valueHash);
 			WitnessCursor overlayCursor = weights == null || weights.isEmpty() ? null
 					: toExactValuePostings(valueHash, weights).cursor();
@@ -2272,9 +2428,12 @@ final class OmniJoinEstimator {
 			MappedWitnessIndex mapped = mappedCohort(sourceKind);
 			if (mapped != null) {
 				MappedWitnessIndex.ValueRecord record = mapped.valueRecord(valueHash);
-				if (record != null && Double.isFinite(record.postingWeight()) && record.postingWeight() >= 0.0d) {
-					weight += record.postingWeight();
-					known = true;
+				if (record != null) {
+					double mappedWeight = mappedCohortPostingWeight(record, sourceKind);
+					if (Double.isFinite(mappedWeight) && mappedWeight >= 0.0d) {
+						weight += mappedWeight;
+						known = true;
+					}
 				}
 			}
 			ValueWeights weights = cohortWeightsForRead(sourceKind, valueHash);
@@ -2283,6 +2442,36 @@ final class OmniJoinEstimator {
 				known = true;
 			}
 			return known ? weight : Double.NaN;
+		}
+
+		private double mappedCohortPostingWeight(MappedWitnessIndex.ValueRecord record,
+				OmniWitnessSet.SourceKind sourceKind) {
+			if (!hasAdditionalMappedCohortExponent(sourceKind)) {
+				return record.postingWeight();
+			}
+			double weight = 0.0d;
+			WitnessCursor cursor = new CohortFilteringWitnessCursor(record.cursor(), cohortRetentionController,
+					sourceKind);
+			while (cursor.next()) {
+				double current = cursor.weight();
+				if (Double.isFinite(current) && current > 0.0d) {
+					weight += current;
+				}
+			}
+			return weight;
+		}
+
+		private boolean hasAdditionalMappedCohortExponent(OmniWitnessSet.SourceKind sourceKind) {
+			return cohortRetentionController.exponent(sourceKind) > mappedCohortExponent(sourceKind);
+		}
+
+		private int mappedCohortExponent(OmniWitnessSet.SourceKind sourceKind) {
+			return switch (sourceKind) {
+			case SUBJECT_COHORT -> mappedSubjectCohortExponent;
+			case OBJECT_COHORT -> mappedObjectCohortExponent;
+			case VERTEX_COHORT -> mappedVertexCohortExponent;
+			case BASE -> 0;
+			};
 		}
 
 		private MappedWitnessIndex mappedCohort(OmniWitnessSet.SourceKind sourceKind) {
@@ -2332,6 +2521,67 @@ final class OmniJoinEstimator {
 			case BASE -> null;
 			};
 			return weightsByValueHash == null ? null : weightsByValueHash.get(valueHash);
+		}
+
+		private long pruneCohort(OmniWitnessSet.SourceKind sourceKind) {
+			Long2ObjectOpenHashMap<ValueWeights> weightsByValueHash = switch (sourceKind) {
+			case SUBJECT_COHORT -> subjectCohortWeightsByValueHash;
+			case OBJECT_COHORT -> objectCohortWeightsByValueHash;
+			case VERTEX_COHORT -> vertexCohortWeightsByValueHash;
+			case BASE -> null;
+			};
+			long removed = 0L;
+			if (weightsByValueHash != null && !weightsByValueHash.isEmpty()) {
+				ObjectIterator<Long2ObjectMap.Entry<ValueWeights>> values = weightsByValueHash.long2ObjectEntrySet()
+						.iterator();
+				while (values.hasNext()) {
+					ValueWeights weights = values.next().getValue();
+					ObjectIterator<Long2DoubleMap.Entry> witnesses = weights.long2DoubleEntrySet().iterator();
+					while (witnesses.hasNext()) {
+						Long2DoubleMap.Entry witness = witnesses.next();
+						if (!cohortRetentionController.retain(sourceKind, witness.getLongKey())) {
+							witnesses.remove();
+							removed++;
+						}
+					}
+					if (weights.isEmpty()) {
+						values.remove();
+					}
+				}
+			}
+			MappedWitnessIndex mapped = mappedCohort(sourceKind);
+			if (mapped != null && hasAdditionalMappedCohortExponent(sourceKind)) {
+				long[] surviving = new long[1];
+				mapped.forEach((valueHash, cursor) -> {
+					while (cursor.next()) {
+						if (cohortRetentionController.retain(sourceKind, cursor.witnessHash())) {
+							surviving[0]++;
+						}
+					}
+				});
+				long previouslyRetained = mappedCohortRetainedCount(sourceKind);
+				removed += Math.max(0L, previouslyRetained - surviving[0]);
+				setMappedCohortRetainedCount(sourceKind, surviving[0]);
+			}
+			return removed;
+		}
+
+		private long mappedCohortRetainedCount(OmniWitnessSet.SourceKind sourceKind) {
+			return switch (sourceKind) {
+			case SUBJECT_COHORT -> mappedSubjectCohortRetainedCount;
+			case OBJECT_COHORT -> mappedObjectCohortRetainedCount;
+			case VERTEX_COHORT -> mappedVertexCohortRetainedCount;
+			case BASE -> 0L;
+			};
+		}
+
+		private void setMappedCohortRetainedCount(OmniWitnessSet.SourceKind sourceKind, long count) {
+			switch (sourceKind) {
+			case SUBJECT_COHORT -> mappedSubjectCohortRetainedCount = count;
+			case OBJECT_COHORT -> mappedObjectCohortRetainedCount = count;
+			case VERTEX_COHORT -> mappedVertexCohortRetainedCount = count;
+			case BASE -> throw new IllegalArgumentException("Base source is not a cohort");
+			}
 		}
 
 		private boolean hasExactPostingGuarantee(long valueHash) {
@@ -2702,7 +2952,8 @@ final class OmniJoinEstimator {
 			if (mapped != null) {
 				mapped.forEach((valueHash, cursor) -> {
 					emittedValues.add(valueHash);
-					ValuePostings valuePostings = toExactValuePostings(valueHash, cursor);
+					ValuePostings valuePostings = toExactValuePostings(valueHash,
+							cohortCursor(valueHash, sourceKind));
 					if (valuePostings.witnessHashes().length > 0) {
 						postings.add(valuePostings);
 					}

@@ -63,6 +63,8 @@ class SketchBasedJoinEstimatorConfigTest {
 			+ "omniWitnessCohortBucketCount";
 	private static final String OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY = PROPERTY_PREFIX
 			+ "omniWitnessCohortBucketIndex";
+	private static final String OMNI_WITNESS_COHORT_MAX_ENTRIES_PROPERTY = PROPERTY_PREFIX
+			+ "omniWitnessCohortMaxEntries";
 
 	private StubSketchStatementSource store;
 	private Resource s1;
@@ -564,29 +566,36 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
 		assertEquals(16, intField(defaults, "omniWitnessCohortBucketCount"));
 		assertEquals(7, intField(defaults, "omniWitnessCohortBucketIndex"));
+		assertEquals(1_000_000, intField(defaults, "omniWitnessCohortMaxEntries"));
 
 		SketchBasedJoinEstimator.Config configured = SketchBasedJoinEstimator.Config.defaults();
 		assertSame(configured,
 				invokeConfig(configured, "withOmniWitnessCohortBucketCount", int.class, 32));
 		assertSame(configured,
 				invokeConfig(configured, "withOmniWitnessCohortBucketIndex", int.class, 19));
+		assertSame(configured,
+				invokeConfig(configured, "withOmniWitnessCohortMaxEntries", int.class, 2048));
 		assertEquals(32, intField(configured, "omniWitnessCohortBucketCount"));
 		assertEquals(19, intField(configured, "omniWitnessCohortBucketIndex"));
+		assertEquals(2048, intField(configured, "omniWitnessCohortMaxEntries"));
 
 		SketchBasedJoinEstimator.Config normalized = SketchBasedJoinEstimator.Config.defaults();
 		invokeConfig(normalized, "withOmniWitnessCohortBucketCount", int.class, -1);
 		invokeConfig(normalized, "withOmniWitnessCohortBucketIndex", int.class, -3);
+		invokeConfig(normalized, "withOmniWitnessCohortMaxEntries", int.class, 0);
 		assertEquals(0, intField(normalized, "omniWitnessCohortBucketCount"));
 		assertEquals(0, intField(normalized, "omniWitnessCohortBucketIndex"));
+		assertEquals(1, intField(normalized, "omniWitnessCohortMaxEntries"));
 	}
 
 	@Test
 	void systemPropertyOverridesForOmniWitnessCohortSettings() throws Exception {
 		PropertyState properties = PropertyState.capture(OMNI_WITNESS_COHORT_BUCKET_COUNT_PROPERTY,
-				OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY);
+				OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY, OMNI_WITNESS_COHORT_MAX_ENTRIES_PROPERTY);
 		try {
 			System.setProperty(OMNI_WITNESS_COHORT_BUCKET_COUNT_PROPERTY, "64");
 			System.setProperty(OMNI_WITNESS_COHORT_BUCKET_INDEX_PROPERTY, "41");
+			System.setProperty(OMNI_WITNESS_COHORT_MAX_ENTRIES_PROPERTY, "4096");
 
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults()
@@ -596,6 +605,7 @@ class SketchBasedJoinEstimatorConfigTest {
 
 			assertEquals(64, intField(estimator, "omniWitnessCohortBucketCount"));
 			assertEquals(41, intField(estimator, "omniWitnessCohortBucketIndex"));
+			assertEquals(4096, intField(estimator, "omniWitnessCohortMaxEntries"));
 		} finally {
 			properties.restore();
 		}

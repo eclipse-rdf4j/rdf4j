@@ -64,6 +64,10 @@ final class MappedWitnessIndex implements WitnessIndex {
 		return valueCount;
 	}
 
+	int postingCount() {
+		return segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES * 8L);
+	}
+
 	@Override
 	public WitnessCursor cursor(long valueHash) {
 		ValueRecord record = valueRecord(valueHash);

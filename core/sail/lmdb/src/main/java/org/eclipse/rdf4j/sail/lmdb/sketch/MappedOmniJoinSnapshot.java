@@ -24,6 +24,10 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 	private final long seed;
 	private final int omniWitnessCohortBucketCount;
 	private final int omniWitnessCohortBucketIndex;
+	private final int omniWitnessCohortMaxEntries;
+	private final int subjectCohortExponent;
+	private final int objectCohortExponent;
+	private final int vertexCohortExponent;
 	private final long generation;
 	private final Map<OmniWitnessSet.SourceKind, Map<OmniRelation, Map<OmniAttributeRef, MappedWitnessIndex>>> attributes;
 
@@ -35,6 +39,14 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 	MappedOmniJoinSnapshot(Arena arena, int width, int rows, int nominalEntries, long seed,
 			int omniWitnessCohortBucketCount, int omniWitnessCohortBucketIndex, long generation,
 			List<AttributeRef> attributes) {
+		this(arena, width, rows, nominalEntries, seed, omniWitnessCohortBucketCount, omniWitnessCohortBucketIndex,
+				1_000_000, 0, 0, 0, generation, attributes);
+	}
+
+	MappedOmniJoinSnapshot(Arena arena, int width, int rows, int nominalEntries, long seed,
+			int omniWitnessCohortBucketCount, int omniWitnessCohortBucketIndex, int omniWitnessCohortMaxEntries,
+			int subjectCohortExponent, int objectCohortExponent, int vertexCohortExponent, long generation,
+			List<AttributeRef> attributes) {
 		this.arena = arena;
 		this.width = width;
 		this.rows = rows;
@@ -43,6 +55,10 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 		this.omniWitnessCohortBucketCount = Math.max(0, omniWitnessCohortBucketCount);
 		this.omniWitnessCohortBucketIndex = this.omniWitnessCohortBucketCount == 0 ? 0
 				: Math.max(0, omniWitnessCohortBucketIndex) % this.omniWitnessCohortBucketCount;
+		this.omniWitnessCohortMaxEntries = Math.max(1, omniWitnessCohortMaxEntries);
+		this.subjectCohortExponent = Math.max(0, subjectCohortExponent);
+		this.objectCohortExponent = Math.max(0, objectCohortExponent);
+		this.vertexCohortExponent = Math.max(0, vertexCohortExponent);
 		this.generation = generation;
 		this.attributes = attributes.stream()
 				.collect(java.util.stream.Collectors.groupingBy(AttributeRef::sourceKind,
@@ -72,6 +88,19 @@ final class MappedOmniJoinSnapshot implements AutoCloseable {
 
 	int omniWitnessCohortBucketIndex() {
 		return omniWitnessCohortBucketIndex;
+	}
+
+	int omniWitnessCohortMaxEntries() {
+		return omniWitnessCohortMaxEntries;
+	}
+
+	int cohortExponent(OmniWitnessSet.SourceKind sourceKind) {
+		return switch (sourceKind) {
+		case SUBJECT_COHORT -> subjectCohortExponent;
+		case OBJECT_COHORT -> objectCohortExponent;
+		case VERTEX_COHORT -> vertexCohortExponent;
+		case BASE -> 0;
+		};
 	}
 
 	long generation() {

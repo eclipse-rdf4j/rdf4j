@@ -138,6 +138,20 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void mutationArrivingDuringPersistenceRemainsDirtyAfterCapturedVersionCompletes() {
+		PersistenceMutationCycle cycle = new PersistenceMutationCycle();
+		cycle.mutationEnqueued();
+		long capturedVersion = cycle.captureTargetVersion();
+
+		cycle.mutationEnqueued();
+		cycle.markPersistedThrough(capturedVersion);
+
+		assertTrue(cycle.hasUnpersistedMutations());
+		cycle.markPersistedThrough(cycle.captureTargetVersion());
+		assertFalse(cycle.hasUnpersistedMutations());
+	}
+
+	@Test
 	void persistCreatesDirectoryStoreLayoutAndMetadata(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:layout:s");
 		IRI p = VF.createIRI("urn:layout:p");

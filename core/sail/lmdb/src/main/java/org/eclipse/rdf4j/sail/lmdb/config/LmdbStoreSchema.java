@@ -114,6 +114,7 @@ public class LmdbStoreSchema {
 	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
 
 	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
 
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
 
@@ -171,6 +172,8 @@ public class LmdbStoreSchema {
 				"sketchEstimatorOmniWitnessCohortBucketCount");
 		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = factory.createIRI(NAMESPACE,
 				"sketchEstimatorOmniWitnessCohortBucketIndex");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortMaxEntries");
 		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
 				"sketchEstimatorContextPairSketchesEnabled");
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");

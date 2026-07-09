@@ -74,6 +74,9 @@ class LmdbStoreConfigTest {
 	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketIndex");
 
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortMaxEntries");
+
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
 
@@ -150,6 +153,7 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketCount")).isEqualTo(16);
 		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketIndex")).isEqualTo(7);
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortMaxEntries")).isEqualTo(1_000_000);
 	}
 
 	@Test
@@ -350,6 +354,17 @@ class LmdbStoreConfigTest {
 				bucketIndex,
 				true
 		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 1024, 1_000_000 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortMaxEntries(final int maxEntries) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
+				Values.literal(maxEntries),
+				"getSketchEstimatorOmniWitnessCohortMaxEntries",
+				maxEntries,
+				true);
 	}
 
 	@ParameterizedTest

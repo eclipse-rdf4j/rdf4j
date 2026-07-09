@@ -75,6 +75,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = 16;
 
 	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = 7;
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = 1_000_000;
 
 	/**
 	 * The default namespace id cache size.
@@ -126,6 +127,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int sketchEstimatorOmniWitnessCohortBucketCount = -1;
 
 	private int sketchEstimatorOmniWitnessCohortBucketIndex = -1;
+	private int sketchEstimatorOmniWitnessCohortMaxEntries = -1;
 
 	private boolean sketchEstimatorContextPairSketchesEnabled = false;
 
@@ -392,6 +394,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getSketchEstimatorOmniWitnessCohortMaxEntries() {
+		return sketchEstimatorOmniWitnessCohortMaxEntries >= 1 ? sketchEstimatorOmniWitnessCohortMaxEntries
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortMaxEntries(int maxEntries) {
+		this.sketchEstimatorOmniWitnessCohortMaxEntries = Math.max(1, maxEntries);
+		return this;
+	}
+
 	public boolean getSketchEstimatorContextPairSketchesEnabled() {
 		return sketchEstimatorContextPairSketchesEnabled;
 	}
@@ -602,6 +614,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorOmniWitnessCohortBucketIndex >= 0) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
 					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketIndex));
+		}
+		if (sketchEstimatorOmniWitnessCohortMaxEntries >= 1) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortMaxEntries));
 		}
 		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
@@ -843,6 +859,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX, null))
 					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketIndex(parseInt(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortMaxEntries(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES)));
 
 			Models.objectLiteral(m.getStatements(implNode,
 					LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED, null))

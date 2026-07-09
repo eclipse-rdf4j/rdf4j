@@ -510,6 +510,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private final boolean contextPairSketchesEnabled;
 	private final int omniWitnessCohortBucketCount;
 	private final int omniWitnessCohortBucketIndex;
+	private final int omniWitnessCohortMaxEntries;
 	private final long throttleEveryN;
 	private final long throttleMillis;
 	private final long refreshSleepMillis;
@@ -600,6 +601,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final int OMNI_JOIN_ESTIMATOR_NOMINAL_ENTRIES = 2048;
 	private static final int DEFAULT_OMNI_WITNESS_COHORT_BUCKET_COUNT = 16;
 	private static final int DEFAULT_OMNI_WITNESS_COHORT_BUCKET_INDEX = 7;
+	private static final int DEFAULT_OMNI_WITNESS_COHORT_MAX_ENTRIES = 1_000_000;
 	private static final long OMNI_SUBJECT_WITNESS_COHORT_SEED = 0x6a09e667f3bcc909L;
 	private static final long OMNI_OBJECT_WITNESS_COHORT_SEED = 0xbb67ae8584caa73bL;
 	private static final long OMNI_VERTEX_WITNESS_COHORT_SEED = 0x3c6ef372fe94f82bL;
@@ -1732,6 +1734,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
+	private final PersistenceMutationCycle persistenceMutationCycle = new PersistenceMutationCycle();
 	/** True when persisted index metadata changed and index rewrite is pending. */
 	private final AtomicBoolean indexDirty = new AtomicBoolean(false);
 	private final Map<EstimateCacheKey, EstimateCacheEntry> estimateCache = new ConcurrentHashMap<>();
@@ -1837,6 +1840,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		boolean contextPairSketches = cfg.contextPairSketchesEnabled;
 		int witnessCohortBuckets = cfg.omniWitnessCohortBucketCount;
 		int witnessCohortIndex = cfg.omniWitnessCohortBucketIndex;
+		int witnessCohortMaxEntries = cfg.omniWitnessCohortMaxEntries;
 		SketchStrategy configuredSketchStrategy = cfg.sketchStrategy;
 		long thrEvery = cfg.throttleEveryN;
 		long thrMs = cfg.throttleMillis;
@@ -1871,6 +1875,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		contextPairSketches = propBool("contextPairSketchesEnabled", contextPairSketches);
 		witnessCohortBuckets = propInt("omniWitnessCohortBucketCount", witnessCohortBuckets);
 		witnessCohortIndex = propInt("omniWitnessCohortBucketIndex", witnessCohortIndex);
+		witnessCohortMaxEntries = propInt("omniWitnessCohortMaxEntries", witnessCohortMaxEntries);
 		configuredSketchStrategy = SketchStrategy.fromConfigValue(propValue("sketchStrategy"),
 				configuredSketchStrategy);
 		configuredSketchStrategy = SketchStrategy.runtimeStrategy(configuredSketchStrategy);
@@ -1918,6 +1923,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		zeroIntersectionSampleSize = Math.max(0, zeroIntersectionSampleSize);
 		witnessCohortBuckets = Math.max(0, witnessCohortBuckets);
 		witnessCohortIndex = witnessCohortBuckets == 0 ? 0 : Math.max(0, witnessCohortIndex);
+		witnessCohortMaxEntries = Math.max(1, witnessCohortMaxEntries);
 		queueInitialLimit = Math.clamp(queueInitialLimit, 1, INCREMENTAL_QUEUE_MAX_LIMIT);
 		queueIdleResetMillis = Math.max(1L, queueIdleResetMillis);
 		queueEstimatedStatementBytes = Math.max(1L, queueEstimatedStatementBytes);
@@ -1940,6 +1946,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.omniWitnessCohortBucketCount = witnessCohortBuckets;
 		this.omniWitnessCohortBucketIndex = witnessCohortBuckets == 0 ? 0
 				: witnessCohortIndex % witnessCohortBuckets;
+		this.omniWitnessCohortMaxEntries = witnessCohortMaxEntries;
 		this.throttleEveryN = thrEvery;
 		this.throttleMillis = thrMs;
 		this.refreshSleepMillis = refreshMs;
@@ -1967,10 +1974,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.churnSampler = new SketchChurnSampler();
 		this.bufA = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, omniWitnessCohortBucketCount,
-				omniWitnessCohortBucketIndex);
+				omniWitnessCohortBucketIndex, omniWitnessCohortMaxEntries);
 		this.bufB = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, omniWitnessCohortBucketCount,
-				omniWitnessCohortBucketIndex);
+				omniWitnessCohortBucketIndex, omniWitnessCohortMaxEntries);
 		this.current = usingA ? bufA : bufB;
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
@@ -2904,7 +2911,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					currentSize -> storeSizeAfterRebuild(rebuiltRows, sizeBeforeRebuild, currentSize));
 			sketchesLoaded = true;
 			clearRebuildRequiredIfUnchanged(requestVersion);
-			dirty.set(true);
+			markPersistenceMutation();
 			indexDirty.set(true);
 			usingA = !usingA;
 			synchronized (sketchCacheLock) {
@@ -2993,7 +3000,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		seenTriples = approxStoreSize.incrementAndGet();
 		enqueueIncrementalStatement(st, false);
-		dirty.set(true);
+		markPersistenceMutation();
 	}
 
 	public void addStatements(List<? extends Statement> statements) {
@@ -3010,7 +3017,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		seenTriples = approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, statements.size(), 0L));
 		enqueueIncrementalStatements(statements, false);
-		dirty.set(true);
+		markPersistenceMutation();
 	}
 
 	public void addStatement(Resource s, IRI p, Value o, Resource c) {
@@ -3059,7 +3066,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
 		enqueueIncrementalStatement(st, true);
-		dirty.set(true);
+		markPersistenceMutation();
 	}
 
 	public void deleteStatements(List<? extends Statement> statements) {
@@ -3080,6 +3087,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - statements.size()));
 		enqueueIncrementalStatements(statements, true);
+		markPersistenceMutation();
+	}
+
+	private void markPersistenceMutation() {
+		persistenceMutationCycle.mutationEnqueued();
 		dirty.set(true);
 	}
 
@@ -3114,6 +3126,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void invalidatePersistedSketchSnapshotAfterOmniDelete() {
+		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
 		clearPersistedSketchDirectory();
@@ -7437,6 +7450,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		final SketchStrategy sketchStrategy;
 		final int omniWitnessCohortBucketCount;
 		final int omniWitnessCohortBucketIndex;
+		final int omniWitnessCohortMaxEntries;
 
 		/* live (add) sketches */
 		final StateComponents<AtomicReferenceArray<FastAgmsBindingSummary>> globalComponents;
@@ -7457,7 +7471,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
 				boolean contextPairSketchesEnabled, SketchStrategy sketchStrategy, int omniWitnessCohortBucketCount,
-				int omniWitnessCohortBucketIndex) {
+				int omniWitnessCohortBucketIndex, int omniWitnessCohortMaxEntries) {
 			logger.info(
 					"Initializing state: k={}, subjectBuckets={}, predicateBuckets={}, objectBuckets={}, contextBuckets={}, contextPairSketchesEnabled={}, omniWitnessCohortBucketCount={}, omniWitnessCohortBucketIndex={}",
 					k, subjectBuckets, predicateBuckets, objectBuckets, contextBuckets, contextPairSketchesEnabled,
@@ -7471,12 +7485,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			this.omniWitnessCohortBucketCount = Math.max(0, omniWitnessCohortBucketCount);
 			this.omniWitnessCohortBucketIndex = this.omniWitnessCohortBucketCount == 0 ? 0
 					: Math.max(0, omniWitnessCohortBucketIndex) % this.omniWitnessCohortBucketCount;
+			this.omniWitnessCohortMaxEntries = Math.max(1, omniWitnessCohortMaxEntries);
 			FastAgmsBindingSummary emptySketch = newSk(k, sketchStrategy);
 			this.maxSketchBytes = emptySketch.getMaxBytes();
 			this.omniJoinEstimator = sketchStrategy == SketchStrategy.OMNI
 					? new OmniJoinEstimator(OMNI_JOIN_ESTIMATOR_WIDTH, OMNI_JOIN_ESTIMATOR_ROWS,
 							OMNI_JOIN_ESTIMATOR_NOMINAL_ENTRIES, OMNI_SKETCH_SEED,
-							this.omniWitnessCohortBucketCount, this.omniWitnessCohortBucketIndex)
+							this.omniWitnessCohortBucketCount, this.omniWitnessCohortBucketIndex,
+							this.omniWitnessCohortMaxEntries)
 					: null;
 
 			globalComponents = new StateComponents<>(
@@ -15949,6 +15965,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
+		long targetMutationVersion = persistenceMutationCycle.captureTargetVersion();
 		flushPendingIncremental();
 		SketchEstimatorPersistenceStore store;
 		try {
@@ -15963,7 +15980,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if ((rebuildEpoch.get() & 1L) != 0L || rebuildRequired.get()) {
 			return false;
 		}
-		if (!dirty.get() && !indexDirty.get()) {
+		if (!hasPersistenceWork()) {
 			return false;
 		}
 		try {
@@ -15974,21 +15991,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return false;
 		}
 		synchronized (persistLock) {
-			if (!dirty.get() && !indexDirty.get()) {
+			if (!hasPersistenceWork()) {
 				return false;
 			}
 			try {
 				store.flush();
 				writeDirectoryIndexes(store);
 				store.writeMetadata(newDirectoryMetadata(store));
+				persistenceMutationCycle.markPersistedThrough(targetMutationVersion);
 				indexDirty.set(false);
-				refreshDirtyFlagFromCacheDirectory();
+				boolean cacheDirty = refreshDirtyFlagFromCacheDirectory();
+				dirty.set(cacheDirty || persistenceMutationCycle.hasUnpersistedMutations());
 				return true;
 			} catch (Throwable t) {
 				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
 				return false;
 			}
 		}
+	}
+
+	private boolean hasPersistenceWork() {
+		return dirty.get() || indexDirty.get() || persistenceMutationCycle.hasUnpersistedMutations();
 	}
 
 	/**
@@ -16006,6 +16029,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		unloadInternal(true);
 		clearSlotPersistence((byte) 0);
 		clearSlotPersistence((byte) 1);
+		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
 	}
@@ -16080,6 +16104,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				loadDirectoryStore(true);
 				sketchesLoaded = true;
 				clearRebuildRequiredIfUnchanged(requestVersion);
+				persistenceMutationCycle.markCurrentPersisted();
 				dirty.set(false);
 				indexDirty.set(false);
 				notifyReadyWaiters();
@@ -16193,6 +16218,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		lastRebuildPublishMs = metadata.lastPublishTime;
 		churnSampler.reset();
 		sketchesLoaded = markLoaded;
+		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
 		notifyReadyWaiters();
@@ -17251,6 +17277,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		int contextBucketCount = 16;
 		int omniWitnessCohortBucketCount = DEFAULT_OMNI_WITNESS_COHORT_BUCKET_COUNT;
 		int omniWitnessCohortBucketIndex = DEFAULT_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+		int omniWitnessCohortMaxEntries = DEFAULT_OMNI_WITNESS_COHORT_MAX_ENTRIES;
 
 		// rebuild throttling
 		long throttleEveryN = Integer.MAX_VALUE;
@@ -17331,6 +17358,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		public Config withOmniWitnessCohortBucket(int count, int index) {
 			return withOmniWitnessCohortBucketCount(count)
 					.withOmniWitnessCohortBucketIndex(index);
+		}
+
+		public Config withOmniWitnessCohortMaxEntries(int maxEntries) {
+			this.omniWitnessCohortMaxEntries = Math.max(1, maxEntries);
+			return this;
 		}
 
 		public Config withContextPairSketchesEnabled(boolean enabled) {

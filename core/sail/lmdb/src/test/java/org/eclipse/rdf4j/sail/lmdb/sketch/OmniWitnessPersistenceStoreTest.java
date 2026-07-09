@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
@@ -249,6 +251,66 @@ class OmniWitnessPersistenceStoreTest {
 
 		assertDoesNotThrow(() -> Class.forName(packageName + ".MappedWitnessIndex"));
 		assertDoesNotThrow(() -> Class.forName(packageName + ".OmniWitnessSnapshotWriter"));
+	}
+
+	@Test
+	void sourceKindsUseStablePersistenceIds() {
+		assertEquals(1, OmniWitnessSet.SourceKind.BASE.persistenceId());
+		assertEquals(2, OmniWitnessSet.SourceKind.SUBJECT_COHORT.persistenceId());
+		assertEquals(3, OmniWitnessSet.SourceKind.OBJECT_COHORT.persistenceId());
+		assertEquals(4, OmniWitnessSet.SourceKind.VERTEX_COHORT.persistenceId());
+	}
+
+	@Test
+	void publishingNewGenerationDeletesObsoleteGeneration(@TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 1, 8, SEED);
+		estimator.relation(OmniRelation.STATEMENT)
+				.updateStatic(OmniAttributeRef.component(1),
+						OmniJoinEstimator.stableHash("generation-value"),
+						OmniJoinEstimator.stableHash("generation-witness"),
+						1.0d);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, estimator, 1L);
+			store.writeSnapshot((byte) 0, estimator, 2L);
+		}
+
+		assertTrue(Files.notExists(generationDataPath(tempDir, 1L)));
+		assertTrue(Files.isRegularFile(generationDataPath(tempDir, 2L)));
+	}
+
+	@Test
+	void mappedManifestPreservesCohortCapAndAdaptiveExponent(@TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 1, 8, SEED, 4, 1, 8);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long value = OmniJoinEstimator.stableHash("bounded-manifest-value");
+		for (int i = 0; i < 128; i++) {
+			relation.updateStatic(OmniAttributeRef.component(1), value,
+					OmniJoinEstimator.stableHash("bounded-manifest-witness:" + i), 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		}
+		int expectedExponent = estimator.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		assertTrue(expectedExponent > 0);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir);
+				MappedOmniJoinSnapshot snapshot = writeAndOpen(store, estimator)) {
+			assertEquals(8, snapshot.omniWitnessCohortMaxEntries());
+			assertEquals(expectedExponent, snapshot.cohortExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT));
+		}
+	}
+
+	@Test
+	void attributeLayoutRejectsPostingOffsetsOutsideThirtyTwoBits() {
+		IOException failure = assertThrows(IOException.class,
+				() -> OmniWitnessSnapshotWriter.checkedLayout(0, 1, Integer.MAX_VALUE));
+
+		assertTrue(failure.getMessage().contains("32-bit"));
+	}
+
+	private static MappedOmniJoinSnapshot writeAndOpen(OmniWitnessPersistenceStore store,
+			OmniJoinEstimator estimator) throws IOException {
+		store.writeSnapshot((byte) 0, estimator, 1L);
+		return store.openSnapshot((byte) 0);
 	}
 
 	private static Path generationDataPath(Path tempDir, long generation) {

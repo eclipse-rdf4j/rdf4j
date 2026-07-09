@@ -496,6 +496,61 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void cohortRetentionCapThinsLargestSourceAndAdjustsProbability() {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 1, 8, SEED, 4, 1, 8);
+		long value = OmniJoinEstimator.stableHash("bounded-cohort-value");
+		for (int i = 0; i < 100; i++) {
+			updateStaticWithSource(estimator.relation(OmniRelation.STATEMENT), ATTR_P, value,
+					OmniJoinEstimator.stableHash("bounded-cohort-witness:" + i), 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		}
+
+		OmniWitnessSet cohort = estimator.probeStatic(estimator.relation(OmniRelation.STATEMENT), ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(value))
+				.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+		assertTrue(estimator.retainedCohortPostingCount() <= 8);
+		assertNotNull(cohort);
+		assertTrue(cohort.retainedWitnessCount() <= 8);
+		assertTrue(cohort.samplingProbability() < 0.25d,
+				"adaptive thinning must be reflected in the effective cohort probability");
+	}
+
+	@Test
+	void cohortBudgetFallbackMetricCountsSourceDisableAfterExponentSaturation() {
+		OmniCohortRetentionController controller = new OmniCohortRetentionController(1, 1);
+		controller.onPostingRetained(OmniWitnessSet.SourceKind.SUBJECT_COHORT,
+				sourceKind -> controller.effectiveProbability(sourceKind) == 0.0d ? 2L : 0L);
+		controller.onPostingRetained(OmniWitnessSet.SourceKind.SUBJECT_COHORT,
+				sourceKind -> controller.effectiveProbability(sourceKind) == 0.0d ? 2L : 0L);
+
+		assertEquals(1L, controller.cohortBudgetFallbackCount());
+		assertEquals(0.0d, controller.effectiveProbability(OmniWitnessSet.SourceKind.SUBJECT_COHORT), 0.0d);
+		assertTrue(controller.totalRetained() <= 1L);
+	}
+
+	@Test
+	void byteSnapshotPreservesCohortCapAndAdaptiveExponent() throws Exception {
+		OmniJoinEstimator writer = new OmniJoinEstimator(64, 1, 8, SEED, 4, 1, 8);
+		long value = OmniJoinEstimator.stableHash("bounded-byte-value");
+		for (int i = 0; i < 128; i++) {
+			updateStaticWithSource(writer.relation(OmniRelation.STATEMENT), ATTR_P, value,
+					OmniJoinEstimator.stableHash("bounded-byte-witness:" + i), 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		}
+		int expectedExponent = writer.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		assertTrue(expectedExponent > 0);
+
+		OmniJoinEstimator reader = new OmniJoinEstimator(64, 1, 8, SEED, 4, 1, 8);
+		reader.loadFromByteArray(writer.toByteArray());
+
+		assertEquals(expectedExponent,
+				reader.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT));
+		assertEquals(writer.retainedCohortPostingCount(), reader.retainedCohortPostingCount());
+		assertTrue(reader.retainedCohortPostingCount() <= 8);
+	}
+
+	@Test
 	void roleSpecificCohortOutranksSmallerVertexCohort() {
 		OmniWitnessSet subject = witnesses(OmniWitnessSet.SourceKind.SUBJECT_COHORT, 0.25d,
 				new long[] { 1L, 2L, 3L });
@@ -605,6 +660,81 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void mappedCohortAppliesAdditionalLiveSamplingExponent(
+			@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		int cap = 64;
+		long value = OmniJoinEstimator.stableHash("mapped-rebalance-value");
+		OmniJoinEstimator writer = new OmniJoinEstimator(64, 1, 8, SEED, 1, 0, cap);
+		for (int i = 0; i < cap; i++) {
+			updateStaticWithSource(writer.relation(OmniRelation.STATEMENT), ATTR_P, value,
+					OmniJoinEstimator.stableHash("mapped-rebalance-witness:" + i), 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		}
+		assertEquals(0, writer.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT));
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 21L);
+			OmniJoinEstimator reader = new OmniJoinEstimator(64, 1, 8, SEED, 1, 0, cap);
+			try {
+				reader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+				OmniCohortRetentionController exponentOne = new OmniCohortRetentionController(1, cap);
+				exponentOne.restoreExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT, 1);
+				long rejectedAtExponentOne = 0L;
+				while (exponentOne.retain(OmniWitnessSet.SourceKind.SUBJECT_COHORT, rejectedAtExponentOne)) {
+					rejectedAtExponentOne++;
+				}
+				updateStaticWithSource(reader.relation(OmniRelation.STATEMENT), ATTR_P, value,
+						rejectedAtExponentOne, 1.0d, OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+
+				assertEquals(1, reader.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT));
+				OmniWitnessSet cohort = reader.probeStatic(reader.relation(OmniRelation.STATEMENT), ATTR_P,
+						OmniJoinEstimator.Predicate.equalHash(value))
+						.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+				assertNotNull(cohort);
+				assertTrue(cohort.retainedWitnessCount() < cap,
+						"the mapped generation must apply the exponent added by the live overlay");
+				assertEquals(0.5d, cohort.samplingProbability(), 0.0d);
+			} finally {
+				reader.clear();
+			}
+		}
+	}
+
+	@Test
+	void secondMappedCheckpointMergesCohortOverlayForExistingValue(
+			@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		long value = OmniJoinEstimator.stableHash("cohort-overlay-value");
+		long first = OmniJoinEstimator.stableHash("cohort-overlay-first");
+		long second = OmniJoinEstimator.stableHash("cohort-overlay-second");
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			OmniJoinEstimator initial = newCohortEstimator(64, 1, 8, 4, 1);
+			updateStaticWithSource(initial.relation(OmniRelation.STATEMENT), ATTR_P, value, first, 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+			store.writeSnapshot((byte) 0, initial, 1L);
+
+			OmniJoinEstimator overlay = newCohortEstimator(64, 1, 8, 4, 1);
+			overlay.loadMappedSnapshot(store.openSnapshot((byte) 0));
+			updateStaticWithSource(overlay.relation(OmniRelation.STATEMENT), ATTR_P, value, second, 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+			store.writeSnapshot((byte) 0, overlay, 2L);
+			overlay.clear();
+
+			OmniJoinEstimator reloaded = newCohortEstimator(64, 1, 8, 4, 1);
+			try {
+				reloaded.loadMappedSnapshot(store.openSnapshot((byte) 0));
+				OmniWitnessSet cohort = reloaded.probeStatic(reloaded.relation(OmniRelation.STATEMENT), ATTR_P,
+						OmniJoinEstimator.Predicate.equalHash(value))
+						.candidateFor(OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+				assertNotNull(cohort);
+				assertTrue(cohort.containsHash(first));
+				assertTrue(cohort.containsHash(second));
+			} finally {
+				reloaded.clear();
+			}
+		}
+	}
+
+	@Test
 	void mappedSnapshotRejectsMismatchedCohortBuckets(@org.junit.jupiter.api.io.TempDir Path tempDir)
 			throws Exception {
 		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
@@ -618,7 +748,13 @@ class OmniJoinEstimatorTest {
 
 			OmniJoinEstimator reader = newCohortEstimator(64, 1, 1, 8, 1);
 
-			assertThrows(IOException.class, () -> reader.loadMappedSnapshot(store.openSnapshot((byte) 0)));
+			MappedOmniJoinSnapshot snapshot = store.openSnapshot((byte) 0);
+			MappedWitnessIndex mapped = snapshot.attributes(OmniWitnessSet.SourceKind.SUBJECT_COHORT)
+					.get(OmniRelation.STATEMENT)
+					.get(OmniAttributeRef.staticAttribute(ATTR_P));
+			assertThrows(IOException.class, () -> reader.loadMappedSnapshot(snapshot));
+			assertThrows(IllegalStateException.class, () -> mapped.cursor(0L).next(),
+					"a rejected mapped snapshot must close its arena");
 		}
 	}
 

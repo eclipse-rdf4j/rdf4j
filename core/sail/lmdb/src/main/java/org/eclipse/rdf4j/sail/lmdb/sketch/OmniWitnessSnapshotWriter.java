@@ -33,27 +33,59 @@ final class OmniWitnessSnapshotWriter {
 		List<OmniJoinEstimator.ValuePostings> values = new ArrayList<>(attribute.values());
 		values.sort((left, right) -> Long.compareUnsigned(left.valueHash(), right.valueHash()));
 		int valueCount = values.size();
-		int tableSize = OmniWitnessLayout.hashTableSize(valueCount);
-		int postingCount = 0;
+		long postingCount = 0L;
 		for (OmniJoinEstimator.ValuePostings value : values) {
-			postingCount += value.witnessHashes().length;
+			try {
+				postingCount = Math.addExact(postingCount, value.witnessHashes().length);
+			} catch (ArithmeticException e) {
+				throw new IOException("Omni witness posting count exceeds the supported layout", e);
+			}
 		}
 
 		CompactOmniSketch compactSketch = attribute.sketch();
 		byte[] sketchBytes = compactSketch.toByteArray();
-		int sketchOffset = OmniWitnessLayout.ATTRIBUTE_HEADER_BYTES;
-		int hashTableOffset = sketchOffset + sketchBytes.length;
-		int valueRecordOffset = hashTableOffset + tableSize * OmniWitnessLayout.VALUE_HASH_SLOT_BYTES;
-		int postingOffset = valueRecordOffset + valueCount * OmniWitnessLayout.VALUE_RECORD_BYTES;
-		int totalBytes = postingOffset + postingCount * OmniWitnessLayout.POSTING_ENTRY_BYTES;
+		Layout layout = checkedLayout(sketchBytes.length, valueCount, postingCount);
 
-		writeHeader(channel, sketchBytes.length, valueCount, tableSize, hashTableOffset, valueRecordOffset,
-				postingOffset, postingCount);
+		writeHeader(channel, sketchBytes.length, valueCount, layout.tableSize(), layout.hashTableOffset(),
+				layout.valueRecordOffset(), layout.postingOffset(), layout.postingCount());
 		writeFully(channel, ByteBuffer.wrap(sketchBytes));
-		writeHashTable(channel, values, tableSize);
-		writeValueRecords(channel, values, postingOffset);
+		writeHashTable(channel, values, layout.tableSize());
+		writeValueRecords(channel, values, layout.postingOffset());
 		writePostings(channel, values);
-		return totalBytes;
+		return layout.totalBytes();
+	}
+
+	static Layout checkedLayout(int sketchLength, int valueCount, long postingCount) throws IOException {
+		if (sketchLength < 0 || valueCount < 0 || postingCount < 0L) {
+			throw new IOException("Negative Omni witness attribute layout component");
+		}
+		try {
+			long tableSize = 0L;
+			if (valueCount > 0) {
+				long requiredSlots = Math.multiplyExact((long) valueCount, 2L);
+				tableSize = 1L;
+				while (tableSize < requiredSlots) {
+					tableSize = Math.multiplyExact(tableSize, 2L);
+				}
+			}
+			long hashTableOffset = Math.addExact((long) OmniWitnessLayout.ATTRIBUTE_HEADER_BYTES, sketchLength);
+			long valueRecordOffset = Math.addExact(hashTableOffset,
+					Math.multiplyExact(tableSize, OmniWitnessLayout.VALUE_HASH_SLOT_BYTES));
+			long postingOffset = Math.addExact(valueRecordOffset,
+					Math.multiplyExact((long) valueCount, OmniWitnessLayout.VALUE_RECORD_BYTES));
+			long totalBytes = Math.addExact(postingOffset,
+					Math.multiplyExact(postingCount, OmniWitnessLayout.POSTING_ENTRY_BYTES));
+			if (tableSize > Integer.MAX_VALUE || hashTableOffset > Integer.MAX_VALUE
+					|| valueRecordOffset > Integer.MAX_VALUE || postingOffset > Integer.MAX_VALUE
+					|| postingCount > Integer.MAX_VALUE || totalBytes > Integer.MAX_VALUE) {
+				throw new IOException("Omni witness attribute cannot fit the current 32-bit layout: values="
+						+ valueCount + ", postings=" + postingCount + ", bytes=" + totalBytes);
+			}
+			return new Layout((int) tableSize, (int) hashTableOffset, (int) valueRecordOffset,
+					(int) postingOffset, (int) postingCount, (int) totalBytes);
+		} catch (ArithmeticException e) {
+			throw new IOException("Omni witness attribute cannot fit the current 32-bit layout", e);
+		}
 	}
 
 	private static void writeHeader(FileChannel channel, int sketchLength, int valueCount, int tableSize,
@@ -159,5 +191,9 @@ final class OmniWitnessSnapshotWriter {
 		while (buffer.hasRemaining()) {
 			channel.write(buffer);
 		}
+	}
+
+	record Layout(int tableSize, int hashTableOffset, int valueRecordOffset, int postingOffset, int postingCount,
+			int totalBytes) {
 	}
 }
