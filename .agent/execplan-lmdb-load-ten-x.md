@@ -19,6 +19,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 22:45Z) Captured macOS async-profiler wall, CPU, and allocation profiles for `NONE` and `READ_COMMITTED` with `automaticEvaluationStrategy=false`.
 - [x] (2026-07-09 22:57Z) Captured end-anchored Linux Java 26 Docker JFR CPU-time profiles for both isolation modes and summarized their hot methods and lost samples.
 - [x] (2026-07-09 23:14Z) Added heap-scaled transaction-owned value and namespace ID dictionaries; focused tests and all 21 `ValueStoreTest` tests pass, time improved 4.27-7.25%, and allocation fell 33.89-39.63%.
+- [x] (2026-07-09 23:18Z) Re-profiled both isolation modes after transaction caching; native LMDB plus comparison work remains dominant and the primitive dictionary itself stays below 0.5% of CPU samples.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -54,6 +55,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Retaining resolved value and namespace IDs for the active transaction materially reduces allocation but only modestly improves elapsed time, confirming that ordinary LMDB writes remain the dominant bound.
   Evidence: `profiles/lmdb-load-10x/transaction-cache/run-2-jdk26.json` measures `NONE` at 747.595 ms/op and 236,969,122 B/op and `READ_COMMITTED` at 770.796 ms/op and 285,498,796 B/op. Relative to the pooled baseline, time improves 4.27% and 7.25%, while allocation falls 33.89% and 39.63%.
+
+- Observation: After transaction caching, the cache implementation is cheap while native LMDB and key comparison remain dominant.
+  Evidence: the post-cache async-profiler captures under `profiles/lmdb-load-10x/transaction-cache` put `ObjectLongHashMap` probing at 0.35% for `NONE` and 0.14% for `READ_COMMITTED`, versus native LMDB at 29.37% and 23.57% and combined platform/stub `memcmp` at 9.45% and 9.16%.
 
 ## Decision Log
 
@@ -197,3 +201,5 @@ Revision note (2026-07-09 22:33Z): Replaced the earlier single-run thresholds wi
 Revision note (2026-07-09 22:58Z): Recorded the complete macOS and Linux profile matrix, the selector-anchor correction, cross-platform hotspot agreement, lost-sample confidence limits, and the first operation-count optimization hypothesis.
 
 Revision note (2026-07-09 23:14Z): Recorded the first post-profile optimization, its focused red/green evidence, complete value-store test result, and exact JDK 26 time/allocation improvement.
+
+Revision note (2026-07-09 23:18Z): Recorded fresh post-cache CPU profiles and confirmed that the next optimization still needs to reduce native B-tree work.
