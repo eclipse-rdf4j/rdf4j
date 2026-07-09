@@ -20,6 +20,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 22:57Z) Captured end-anchored Linux Java 26 Docker JFR CPU-time profiles for both isolation modes and summarized their hot methods and lost samples.
 - [x] (2026-07-09 23:14Z) Added heap-scaled transaction-owned value and namespace ID dictionaries; focused tests and all 21 `ValueStoreTest` tests pass, time improved 4.27-7.25%, and allocation fell 33.89-39.63%.
 - [x] (2026-07-09 23:18Z) Re-profiled both isolation modes after transaction caching; native LMDB plus comparison work remains dominant and the primitive dictionary itself stays below 0.5% of CPU samples.
+- [x] (2026-07-09 23:30Z) Tested and rejected an empty-dictionary `MDB_NOOVERWRITE` direct-put path after two paired runs pooled to no improvement; removed all production/test changes and kept the evidence.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -59,6 +60,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: After transaction caching, the cache implementation is cheap while native LMDB and key comparison remain dominant.
   Evidence: the post-cache async-profiler captures under `profiles/lmdb-load-10x/transaction-cache` put `ObjectLongHashMap` probing at 0.35% for `NONE` and 0.14% for `READ_COMMITTED`, versus native LMDB at 29.37% and 23.57% and combined platform/stub `memcmp` at 9.45% and 9.16%.
 
+- Observation: Replacing empty-dictionary preflight gets with conditional puts does not materially improve this workload by itself.
+  Evidence: two exact JDK 26 runs under `profiles/lmdb-load-10x/empty-store-direct-put` pooled to 746.536 ms/op for `NONE` and 777.875 ms/op for `READ_COMMITTED`, respectively 0.14% faster and 0.92% slower than the transaction-cache checkpoint. The production experiment was removed.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -91,6 +95,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Keep the transaction-owned dictionaries as the first measured increment and re-profile before the next change.
   Rationale: The exact JDK 26 paired run improved both requested isolation modes and removed 121-187 MB of allocation per operation. The remaining 747-771 ms is too large for Java allocation tuning to reach the target, so the next candidate must reduce native write count or comparison work.
+  Date/Author: 2026-07-09 / Codex.
+
+- Decision: Reject the empty-store direct-put fast path and preserve only its evidence.
+  Rationale: The LMDB contract is valid and correctness tests passed, but the pooled paired result was flat for `NONE` and worse for `READ_COMMITTED`. Removing a dictionary get is insufficient while index puts dominate.
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -203,3 +211,5 @@ Revision note (2026-07-09 22:58Z): Recorded the complete macOS and Linux profile
 Revision note (2026-07-09 23:14Z): Recorded the first post-profile optimization, its focused red/green evidence, complete value-store test result, and exact JDK 26 time/allocation improvement.
 
 Revision note (2026-07-09 23:18Z): Recorded fresh post-cache CPU profiles and confirmed that the next optimization still needs to reduce native B-tree work.
+
+Revision note (2026-07-09 23:30Z): Recorded and rejected the empty-dictionary conditional-put experiment after a confirmation run disproved the first run's apparent gain.
