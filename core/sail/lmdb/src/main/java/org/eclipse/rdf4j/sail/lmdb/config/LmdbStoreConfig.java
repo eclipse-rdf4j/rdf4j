@@ -303,6 +303,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return sketchEstimatorEnabled;
 	}
 
+	/**
+	 * Setting this to false also disables the lmdb optimizer pipeline. This is done on purpose and is not meant to just be a side effect.
+	 * @param sketchEstimatorEnabled
+	 * @return
+	 */
 	public LmdbStoreConfig setSketchEstimatorEnabled(Boolean sketchEstimatorEnabled) {
 		this.sketchEstimatorEnabled = sketchEstimatorEnabled;
 		return this;
