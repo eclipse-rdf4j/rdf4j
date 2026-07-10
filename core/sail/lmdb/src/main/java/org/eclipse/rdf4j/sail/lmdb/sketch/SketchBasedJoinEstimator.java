@@ -11381,7 +11381,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private TuplePlanEstimate orderedTupleExprCardinality(List<TupleExpr> tupleExprs) {
-		if (tupleExprs.isEmpty() || hasLateBindingSetAssignment(tupleExprs)) {
+		if (tupleExprs.isEmpty()) {
 			return null;
 		}
 
@@ -11414,15 +11414,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			estimate = joinedPlanEstimate(step);
 		}
 		return estimate;
-	}
-
-	private boolean hasLateBindingSetAssignment(List<TupleExpr> tupleExprs) {
-		for (int i = 1; i < tupleExprs.size(); i++) {
-			if (tupleExprs.get(i) instanceof BindingSetAssignment) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private TupleExpr leftDeepJoinTree(List<TupleExpr> tupleExprs) {

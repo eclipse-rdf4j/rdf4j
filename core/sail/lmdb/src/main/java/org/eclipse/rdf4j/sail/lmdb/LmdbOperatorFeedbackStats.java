@@ -422,6 +422,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr tupleExpr) {
+		if (shadowByOperator.isEmpty() && planCandidates.isEmpty()) {
+			return Optional.empty();
+		}
 		OperatorKey key = planShadowKeyFor(tupleExpr);
 		ShadowOperatorCounts actualCounts = key == null ? null : shadowByOperator.get(key);
 		PlanCandidateCounts candidateCounts = key == null ? null : planCandidates.get(key);
@@ -446,6 +449,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	public synchronized LeoPlanRanking rankPlanCandidates(List<LeoPlanCandidate> candidates) {
 		if (candidates == null || candidates.isEmpty()) {
 			return LeoPlanRanking.empty();
+		}
+		if (shadowByOperator.isEmpty() && planCandidates.isEmpty()) {
+			return LeoPlanRanking.byCost(candidates, "lmdb-plan-ranking-no-evidence");
 		}
 		List<LeoPlanRanking.ScoredCandidate> scored = new ArrayList<>(candidates.size());
 		for (LeoPlanCandidate candidate : candidates) {

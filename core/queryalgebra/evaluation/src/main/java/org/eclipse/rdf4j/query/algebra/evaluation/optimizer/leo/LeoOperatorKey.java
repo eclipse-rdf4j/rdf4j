@@ -136,13 +136,19 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 	private static final class Canonicalizer {
 		private final Map<String, Integer> variableOrdinals = new HashMap<>();
 		private final ConstantMode constantMode;
+		private final boolean allowJoinPermutations;
 
 		private Canonicalizer() {
 			this(ConstantMode.EXACT);
 		}
 
 		private Canonicalizer(ConstantMode constantMode) {
+			this(constantMode, true);
+		}
+
+		private Canonicalizer(ConstantMode constantMode, boolean allowJoinPermutations) {
 			this.constantMode = constantMode == null ? ConstantMode.EXACT : constantMode;
+			this.allowJoinPermutations = allowJoinPermutations;
 		}
 
 		String fingerprint(TupleExpr tupleExpr) {
@@ -207,10 +213,10 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		private String canonicalJoinSurface(Join join) {
 			List<TupleExpr> factors = new ArrayList<>();
 			addJoinFactors(join, factors);
-			if (factorial(factors.size()) > MAX_CANONICAL_JOIN_PERMUTATIONS) {
+			if (!allowJoinPermutations || factorial(factors.size()) > MAX_CANONICAL_JOIN_PERMUTATIONS) {
 				List<String> factorKeys = new ArrayList<>(factors.size());
 				for (TupleExpr factor : factors) {
-					factorKeys.add(new Canonicalizer(constantMode).fingerprint(factor));
+					factorKeys.add(new Canonicalizer(constantMode, false).fingerprint(factor));
 				}
 				Collections.sort(factorKeys);
 				return String.join(";", factorKeys);
@@ -228,7 +234,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		private void addJoinPermutations(List<TupleExpr> factors, List<Integer> order, int offset,
 				List<String> candidates) {
 			if (offset == order.size()) {
-				Canonicalizer candidateCanonicalizer = new Canonicalizer(constantMode);
+				Canonicalizer candidateCanonicalizer = new Canonicalizer(constantMode, false);
 				List<String> keys = new ArrayList<>(order.size());
 				for (Integer index : order) {
 					keys.add(candidateCanonicalizer.fingerprint(factors.get(index)));
@@ -253,9 +259,9 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		}
 
 		private String canonicalUnion(Union union) {
-			Canonicalizer leftFirst = new Canonicalizer(constantMode);
+			Canonicalizer leftFirst = new Canonicalizer(constantMode, allowJoinPermutations);
 			String first = leftFirst.fingerprint(union.getLeftArg()) + ";" + leftFirst.fingerprint(union.getRightArg());
-			Canonicalizer rightFirst = new Canonicalizer(constantMode);
+			Canonicalizer rightFirst = new Canonicalizer(constantMode, allowJoinPermutations);
 			String second = rightFirst.fingerprint(union.getRightArg()) + ";"
 					+ rightFirst.fingerprint(union.getLeftArg());
 			return first.compareTo(second) <= 0 ? first : second;
