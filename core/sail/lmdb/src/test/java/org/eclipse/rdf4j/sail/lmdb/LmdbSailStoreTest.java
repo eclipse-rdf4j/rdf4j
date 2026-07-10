@@ -385,6 +385,22 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void iterableApproveAllUsesLmdbBulkPathDirectly() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+
+		try (SailSink sink = spy(backingStore.getExplicitSailSource().sink(IsolationLevels.NONE))) {
+			Iterable<? extends Statement> statements = sampleStatements(5);
+			sink.approveAll(statements);
+			sink.flush();
+
+			verify(sink, never()).approve(any(Resource.class), any(IRI.class), any(Value.class),
+					nullable(Resource.class));
+		}
+	}
+
+	@Test
 	void noneIsolationBatchesIndividualApprovals() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();

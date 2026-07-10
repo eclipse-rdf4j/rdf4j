@@ -29,6 +29,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 00:40Z) Tested and rejected collision-aware partitioning by `Value.hashCode()`; 2,517 collision buckets plus `DynamicModel` upgrade costs made it slower than equality-map resolution.
 - [x] (2026-07-10 00:53Z) Tested and rejected map-backed canonical term identities; all model tests passed, but paired loading regressed 9.34% for `NONE` and 27.95% for `READ_COMMITTED`.
 - [x] (2026-07-10 01:08Z) Added and tested a repository-to-sink bulk-ingestion conduit; it is neutral for `NONE`, reduces current-host `READ_COMMITTED` by about 30 ms, and enables an LMDB-specific compact numeric batch next.
+- [x] (2026-07-10 01:49Z) Specialized the iterable conduit in `LmdbSailSink`; two paired runs pooled to 683.717 ms/op for `NONE` and 719.733 ms/op for `READ_COMMITTED`.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -98,6 +99,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: A single iterable call can cross the repository and Sail layers without changing duplicate, context, listener, ordering, or metrics semantics; holding the `Changeset` lock across that iterable removes a visible READ_COMMITTED cost but does not materially alter NONE.
   Evidence: all 10 `SailRepositoryConnectionTest` and 8 `ChangesetTest` tests pass. Short paired runs under `profiles/lmdb-load-10x/bulk-conduit` measure READ_COMMITTED at 772.575 ms/op before and 742.816 ms/op after the one-lock change, while NONE remains in the current-host 756-772 ms range.
 
+- Observation: Bypassing scalar `LmdbSailSink.approve` materially improves NONE and preserves the current READ_COMMITTED checkpoint, but the remaining cost is still dominated below the Sail API.
+  Evidence: two paired JDK 26 runs under `profiles/lmdb-load-10x/lmdb-iterable-direct` pool to 683.717 ms/op for NONE and 719.733 ms/op for READ_COMMITTED, 12.45% and 13.40% below the original durable baseline. The focused Mockito test proves zero scalar `approve` calls, and five neighboring bulk tests pass.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -166,6 +170,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Keep the default-method bulk-ingestion conduit as an architectural checkpoint and specialize it in LMDB before drawing an end-to-end performance conclusion.
   Rationale: The conduit preserves compatibility and semantics for every existing Sail while eliminating hundreds of thousands of repository/Sail calls for stores that specialize it. Its generic one-lock path helps READ_COMMITTED, and its larger value is that LMDB can now consume one batch without rebuilding a `Changeset` statement model first.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Keep the direct LMDB iterable specialization and re-profile before changing value or index layout.
+  Rationale: The same-code paired runs retain a substantial NONE improvement and the pooled result improves both modes against the durable baseline. Scalar repository/Sail dispatch is now absent from NONE, making the next profiles more representative of the remaining value resolution and native index costs.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective

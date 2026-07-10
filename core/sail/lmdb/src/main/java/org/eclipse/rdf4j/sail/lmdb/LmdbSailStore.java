@@ -1467,9 +1467,10 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private void approveAllBulk(Set<Statement> approved, Set<Resource> approvedContexts) {
+		private long approveAllBulk(Iterable<? extends Statement> approved, Resource... overrideContexts) {
 			Statement last = null;
 			BulkAddQuadsOperation bulk = null;
+			long approvedCount = 0;
 
 			sinkStoreAccessLock.lock();
 			try {
@@ -1481,21 +1482,22 @@ class LmdbSailStore implements SailStore {
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
 				for (Statement statement : approved) {
-					if (bulk == null) {
-						bulk = newBulkAddQuadsOperation(explicit);
-						configureBulkEstimator(bulk);
-					}
-					last = statement;
-					Resource subj = statement.getSubject();
-					IRI pred = statement.getPredicate();
-					Value obj = statement.getObject();
-					Resource context = statement.getContext();
+					int contextCount = overrideContexts.length == 0 ? 1 : overrideContexts.length;
+					for (int contextIndex = 0; contextIndex < contextCount; contextIndex++) {
+						if (bulk == null) {
+							bulk = newBulkAddQuadsOperation(explicit);
+							configureBulkEstimator(bulk);
+						}
+						last = statement;
+						Resource subj = statement.getSubject();
+						IRI pred = statement.getPredicate();
+						Value obj = statement.getObject();
+						Resource context = overrideContexts.length == 0
+								? statement.getContext()
+								: overrideContexts[contextIndex];
 
-					if (previousSubject != null) {
-						if (subj == previousSubject) {
-							bulk.add(previousSubjectId, 0, 0, 0);
-						} else {
-							if (previousSubject.equals(subj)) {
+						if (previousSubject != null) {
+							if (subj == previousSubject || previousSubject.equals(subj)) {
 								bulk.add(previousSubjectId, 0, 0, 0);
 							} else {
 								long subjectId = valueStore.storeValue(subj);
@@ -1503,41 +1505,42 @@ class LmdbSailStore implements SailStore {
 								previousSubjectId = subjectId;
 								bulk.add(subjectId, 0, 0, 0);
 							}
+						} else {
+							long subjectId = valueStore.storeValue(subj);
+							previousSubject = subj;
+							previousSubjectId = subjectId;
+							bulk.add(subjectId, 0, 0, 0);
 						}
-					} else {
-						long subjectId = valueStore.storeValue(subj);
-						previousSubject = subj;
-						previousSubjectId = subjectId;
-						bulk.add(subjectId, 0, 0, 0);
-					}
 
-					int batchIndex = bulk.size - 1;
-					if (bulk.statements != null) {
-						bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
-					}
-
-					Long predicateId = predicateCache.get(pred);
-					if (predicateId == null) {
-						predicateId = valueStore.storeValue(pred);
-						predicateCache.put(pred, predicateId);
-					}
-					bulk.predicates[batchIndex] = predicateId;
-
-					bulk.objects[batchIndex] = valueStore.storeValue(obj);
-					if (context == null) {
-						bulk.contexts[batchIndex] = 0;
-					} else {
-						Long contextId = contextCache.get(context);
-						if (contextId == null) {
-							contextId = valueStore.storeValue(context);
-							contextCache.put(context, contextId);
+						int batchIndex = bulk.size - 1;
+						if (bulk.statements != null) {
+							bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
 						}
-						bulk.contexts[batchIndex] = contextId;
-					}
 
-					if (bulk.isFull()) {
-						submitOperation(bulk);
-						bulk = null;
+						Long predicateId = predicateCache.get(pred);
+						if (predicateId == null) {
+							predicateId = valueStore.storeValue(pred);
+							predicateCache.put(pred, predicateId);
+						}
+						bulk.predicates[batchIndex] = predicateId;
+
+						bulk.objects[batchIndex] = valueStore.storeValue(obj);
+						if (context == null) {
+							bulk.contexts[batchIndex] = 0;
+						} else {
+							Long contextId = contextCache.get(context);
+							if (contextId == null) {
+								contextId = valueStore.storeValue(context);
+								contextCache.put(context, contextId);
+							}
+							bulk.contexts[batchIndex] = contextId;
+						}
+
+						approvedCount++;
+						if (bulk.isFull()) {
+							submitOperation(bulk);
+							bulk = null;
+						}
 					}
 				}
 
@@ -1545,6 +1548,7 @@ class LmdbSailStore implements SailStore {
 					submitOperation(bulk);
 					bulk = null;
 				}
+				return approvedCount;
 			} catch (IOException | RuntimeException e) {
 				if (bulk != null) {
 					bulk.cancel();
@@ -1574,9 +1578,18 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		@Override
+		public long approveAll(Iterable<? extends Statement> approved, Resource... contexts) {
+			if (bulkOperationSize > 0) {
+				return approveAllBulk(approved, contexts);
+			}
+			return SailSink.super.approveAll(approved, contexts);
+		}
+
+		@Override
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
 			if (bulkOperationSize > 0) {
-				approveAllBulk(approved, approvedContexts);
+				approveAllBulk(approved);
 				return;
 			}
 
