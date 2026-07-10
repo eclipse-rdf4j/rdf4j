@@ -411,8 +411,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			}
 			CascadesPlan childPlan = planner.optimize(candidate.tupleExpr(), freshSubtreeGoal(goal,
 					candidate.boundVars(), candidate.tupleExpr().getBindingNames()));
-			boolean repairEmergencyDescendants = childPlan.approximate()
-					&& hasEmergencyFallbackProvenance(childPlan);
 			SubtreeReplacement subtreeReplacement = semanticFallbackRepair(candidate.tupleExpr(),
 					childPlan.tupleExpr().orElse(null));
 			TupleExpr replacement = subtreeReplacement.tupleExpr();
@@ -429,8 +427,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			if (subtreeReplacement.semanticRepair()) {
 				optimizeSubtrees(replacement, planner, goal);
 				annotateSemanticFallbackRepair((Group) replacement);
-			} else if (repairEmergencyDescendants) {
-				optimizeSubtrees(replacement, planner, goal);
 			}
 		}
 	}
