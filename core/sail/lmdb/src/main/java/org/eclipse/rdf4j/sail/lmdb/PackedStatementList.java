@@ -42,6 +42,7 @@ final class PackedStatementList extends AbstractList<Statement> implements Rando
 	static PackedStatementList copyOf(Iterable<? extends Statement> statements, int expectedSize,
 			Consumer<Resource> contextConsumer) {
 		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedSize / 2));
+		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
 		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedSize / 2));
 		values.add(null);
 		int[] quads = new int[Math.multiplyExact(expectedSize, 4)];
@@ -55,13 +56,13 @@ final class PackedStatementList extends AbstractList<Statement> implements Rando
 			IRI predicate = statement.getPredicate();
 			Value object = statement.getObject();
 			Resource context = statement.getContext();
-			quads[offset] = valueId(subject, valueIds, values);
-			quads[offset + 1] = valueId(predicate, valueIds, values);
-			quads[offset + 2] = valueId(object, valueIds, values);
+			quads[offset] = valueId(subject, valueIds, identityValueIds, values);
+			quads[offset + 1] = valueId(predicate, valueIds, identityValueIds, values);
+			quads[offset + 2] = valueId(object, valueIds, identityValueIds, values);
 			if (context == null) {
 				quads[offset + 3] = 0;
 			} else {
-				quads[offset + 3] = valueId(context, valueIds, values);
+				quads[offset + 3] = valueId(context, valueIds, identityValueIds, values);
 			}
 			contextConsumer.accept(context);
 			count++;
@@ -69,18 +70,26 @@ final class PackedStatementList extends AbstractList<Statement> implements Rando
 		return new PackedStatementList(values.toArray(Value[]::new), Arrays.copyOf(quads, count * 4), valueIds);
 	}
 
-	private static int valueId(Value value, ObjectIntHashMap<Value> valueIds, ArrayList<Value> values) {
-		int existing = valueIds.get(value);
+	private static int valueId(Value value, ObjectIntHashMap<Value> valueIds,
+			IdentityValueIntCache identityValueIds, ArrayList<Value> values) {
+		int identitySlot = identityValueIds.slot(value);
+		int existing = identityValueIds.get(value, identitySlot);
 		if (existing != 0) {
 			return existing;
 		}
+		existing = valueIds.get(value);
+		if (existing != 0) {
+			identityValueIds.put(value, existing, identitySlot);
+			return existing;
+		}
 		if (value instanceof TripleTerm triple) {
-			valueId(triple.getSubject(), valueIds, values);
-			valueId(triple.getPredicate(), valueIds, values);
-			valueId(triple.getObject(), valueIds, values);
+			valueId(triple.getSubject(), valueIds, identityValueIds, values);
+			valueId(triple.getPredicate(), valueIds, identityValueIds, values);
+			valueId(triple.getObject(), valueIds, identityValueIds, values);
 		}
 		int id = values.size();
 		valueIds.put(value, id);
+		identityValueIds.put(value, id, identitySlot);
 		values.add(value);
 		return id;
 	}

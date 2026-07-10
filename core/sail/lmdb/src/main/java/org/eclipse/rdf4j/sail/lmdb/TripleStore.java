@@ -1903,6 +1903,7 @@ class TripleStore implements Closeable {
 			return packed.size();
 		}
 		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount / 2));
+		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
 		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
 		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
 		int count = 0;
@@ -1911,10 +1912,10 @@ class TripleStore implements Closeable {
 			if (offset == quads.length) {
 				quads = Arrays.copyOf(quads, Math.multiplyExact(quads.length, 2));
 			}
-			quads[offset] = packedValueId(statement.getSubject(), valueIds, values);
-			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, values);
-			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, values);
-			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, values);
+			quads[offset] = packedValueId(statement.getSubject(), valueIds, identityValueIds, values);
+			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, identityValueIds, values);
+			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, identityValueIds, values);
+			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, identityValueIds, values);
 			count++;
 		}
 		writePackedValues(values, valueIds::get, 0);
@@ -1925,21 +1926,29 @@ class TripleStore implements Closeable {
 		return count;
 	}
 
-	private int packedValueId(Value value, ObjectIntHashMap<Value> valueIds, ArrayList<Value> values) {
+	private int packedValueId(Value value, ObjectIntHashMap<Value> valueIds,
+			IdentityValueIntCache identityValueIds, ArrayList<Value> values) {
 		if (value == null) {
 			return 0;
 		}
-		int existing = valueIds.get(value);
+		int identitySlot = identityValueIds.slot(value);
+		int existing = identityValueIds.get(value, identitySlot);
 		if (existing != 0) {
 			return existing;
 		}
+		existing = valueIds.get(value);
+		if (existing != 0) {
+			identityValueIds.put(value, existing, identitySlot);
+			return existing;
+		}
 		if (value instanceof TripleTerm triple) {
-			packedValueId(triple.getSubject(), valueIds, values);
-			packedValueId(triple.getPredicate(), valueIds, values);
-			packedValueId(triple.getObject(), valueIds, values);
+			packedValueId(triple.getSubject(), valueIds, identityValueIds, values);
+			packedValueId(triple.getPredicate(), valueIds, identityValueIds, values);
+			packedValueId(triple.getObject(), valueIds, identityValueIds, values);
 		}
 		int id = values.size() + 1;
 		valueIds.put(value, id);
+		identityValueIds.put(value, id, identitySlot);
 		values.add(value);
 		return id;
 	}

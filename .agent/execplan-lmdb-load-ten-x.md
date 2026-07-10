@@ -400,3 +400,15 @@ Revision note (2026-07-10 05:50Z): Recorded the retained primitive object-to-int
 Revision note (2026-07-10 05:54Z): Recorded and removed the correctness-tested adjacent identity cache after its exact paired regression.
 
 Revision note (2026-07-10 05:58Z): Recorded and removed the contiguous collector experiment after allocation-neutral regressions in both isolation modes.
+
+Revision note (2026-07-10 06:19Z): Retained transaction-owned packed statement preparation so READ_COMMITTED scans and hashes the approved iterable once. The focused one-pass regression test and packed semantic matrix passed; the exact result moved READ_COMMITTED from 145.334 to 116.535 ms/op.
+
+Revision note (2026-07-10 06:43Z): Retained single-probe primitive-map insertion, rejected cached-hash tables, neutral fused map operations, and 1 MiB packed-value blocks, and preserved every negative exact JMH result in its own commit.
+
+Revision note (2026-07-10 06:50Z): Retained map-backed DynamicModel term canonicalization after a red/green identity test and all 27 DynamicModel tests passed. The exact paired result was 86.061 ms/op for NONE and 81.981 ms/op for READ_COMMITTED.
+
+Revision note (2026-07-10 07:05Z): A bounded 16,384-slot identity front cache displaced semantic string equality from the packed preparation hotspot. Computing its direct-mapped slot once produced clean-host exact mode-specific results of 72.232 ms/op for NONE and 76.170 ms/op for READ_COMMITTED, both beyond the tenfold targets. The semantic map remains the fallback for collisions and equal-but-distinct values.
+
+Revision note (2026-07-10 07:07Z): Identified and stopped an abandoned DatagovJavaFloorProbe from this investigation. Its fixed 1,048,576-entry identity table had filled and entered an infinite linear-probe loop, consuming one core for nearly five hours and contaminating several intermediate measurements. Concurrent 16 GiB Maven reactors were also identified as the cause of later paired-run outliers; contaminated files are explicitly excluded from acceptance evidence.
+
+Revision note (2026-07-10 07:15Z): The identity-cache semantic fallback test, four focused packed load/rollback tests, and RemoveAddTest passed. Full module verification ran 1,357 tests with only the two documented branch failures and no new errors. Two independent idle-host paired JMH confirmations and the required Git commit remain pending because the environment approval service temporarily rejected escalated Git/JMH operations after exhausting its approval quota.
