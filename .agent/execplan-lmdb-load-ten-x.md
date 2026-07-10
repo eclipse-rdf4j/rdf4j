@@ -35,6 +35,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 03:45Z) Added append-free packed statement blocks for fresh default-evaluator loads, scoped them away from automatic/native evaluation, and reduced the Docker checkpoint to 428.029/493.600 ms/op.
 - [x] (2026-07-10 04:53Z) Replaced global value IDs with a packed local value dictionary and fixed NONE namespace ordering; nine focused tests pass and forked Java 26 reaches 98.847/152.981 ms/op.
 - [x] (2026-07-10 05:14Z) Halved fresh packed quad records with 32-bit local IDs; a candidate-control-candidate JDK 26 sequence improves pooled time 10.14%/3.73% and removes about 12.69 MB/op.
+- [x] (2026-07-10 05:23Z) Tested and rejected direct manual UTF-8 encoding into reserved LMDB buffers; it removed about 65 MB/op but regressed elapsed time 33-52 ms.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -121,6 +122,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Local quad IDs fit in 32 bits and the smaller representation improves both memory traffic and current-host elapsed time despite substantial host drift.
   Evidence: the candidate-control-candidate sequence under `profiles/lmdb-load-10x/packed-int-ids` pools to 110.889/163.734 ms/op for NONE/READ_COMMITTED versus the intervening 123.404/170.083 ms/op 64-bit control, while both candidate runs consistently remove about 12.69 MB/op.
+
+- Observation: Avoiding encoded value arrays is not useful when it replaces HotSpot's optimized UTF-8 implementation with two Java character scans and byte-at-a-time direct-buffer stores.
+  Evidence: `profiles/lmdb-load-10x/direct-packed-encoding/candidate.json` drops allocation from 94,965,668/119,524,052 B/op to 29,846,125/54,397,857 B/op, yet regresses NONE/READ_COMMITTED from 102.174/157.360 ms/op to 155.472/206.957 ms/op.
 
 ## Decision Log
 
@@ -210,6 +214,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Encode fresh-load local quad IDs as four 32-bit integers while retaining the 64-bit legacy packed record format.
   Rationale: Dictionary IDs are already Java `int` indices. The candidate halves packed quad bytes, removes roughly 12.69 MB/op of allocation, and wins a bracketing same-host throughput comparison in both isolation modes without changing LMDB flags.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject the manual direct UTF-8 encoder and retain `String.getBytes(UTF_8)` for packed values.
+  Rationale: Allocation fell by about 65 MB/op, but the exact paired result regressed both requested isolation modes by far more than host noise. Any follow-up must preserve JDK bulk encoding or specialize only a proven ASCII representation.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -340,3 +348,5 @@ Revision note (2026-07-10 00:40Z): Recorded and rejected the public-hash/distinc
 Revision note (2026-07-10 00:53Z): Recorded the TDD-verified but benchmark-rejected map-backed canonical-term experiment and removed its production/test changes.
 
 Revision note (2026-07-10 05:14Z): Recorded the retained 32-bit local-ID format, its candidate-control-candidate measurements, and its allocation and storage reductions.
+
+Revision note (2026-07-10 05:23Z): Recorded and removed the correctness-tested direct UTF-8 encoder after allocation gains failed to translate into elapsed-time gains.
