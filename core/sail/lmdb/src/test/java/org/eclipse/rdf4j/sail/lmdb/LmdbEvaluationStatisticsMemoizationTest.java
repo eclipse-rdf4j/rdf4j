@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -112,6 +113,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchBindingEvidence;
 import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchKeyProvider;
@@ -2191,6 +2193,37 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void starMultiPredicateScanRetainsOmniSubjectBindingEvidence() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+				mock(TripleStore.class), estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern typePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("type", vf.createIRI("urn:test:type")),
+				Var.of("class", vf.createIRI("urn:test:Encounter")));
+		StatementPattern datePattern = new StatementPattern(
+				Var.of("encounter"),
+				Var.of("recordedOn", vf.createIRI("urn:test:recordedOn")),
+				Var.of("date", vf.createLiteral("2024-01-01")));
+		List<StatementPattern> patterns = List.of(typePattern, datePattern);
+		OmniSketchBindingEvidence subjectEvidence = new OmniSketchBindingEvidence("encounter", 48.0d, 12.0d,
+				0, null, null, "subject-star-stats", "anchor-distinct");
+		OmniSketchSurfaceEstimate surface = new OmniSketchSurfaceEstimate(48.0d, 32.0d, 64.0d, 48.0d,
+				0.90d, 1.0d, false, "stats-fallback", 1.0d, "omni-subject-star-stats-fallback",
+				"subject-star", "hashed", Map.of(), Map.of(), Map.of("encounter", subjectEvidence), List.of());
+		when(estimator.estimateSubjectStarOmniSurface(patterns, "encounter")).thenReturn(surface);
+		when(estimator.estimateCount(any(SketchBasedJoinEstimator.Component.class), any(), any(), any(), any()))
+				.thenReturn(512.0d);
+
+		StatisticsEstimate estimate = statistics.starMultiPredicateScan(patterns, Set.of()).orElseThrow();
+
+		assertEquals(48.0d, estimate.bag().variable("encounter").boundRows(), 0.0d);
+		assertEquals(12.0d, estimate.bag().variable("encounter").distinctRows(), 0.0d);
+	}
+
+	@Test
 	void starMultiPredicateScanUsesOmniWhenIndependentCountsAreMissing() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
@@ -4233,17 +4266,23 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			}
 			List<?> requests = peekBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore));
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
-			assertNotNull(recordedOnFilter,
-					() -> "Expected the object-position filter to remain local\n" + optimizedText);
-			var optimizedFiniteProbe = backingStore.getSketchBasedJoinEstimator()
-					.estimateOmniFiniteFilterProbe(recordedOnFilter.getArg(), recordedOnFilter.getCondition(), 40.0d)
-					.orElseThrow();
-			assertEquals(8.0d, optimizedFiniteProbe.outputRows(), 0.0d);
+			assertTrue(recordedOnFilter == null,
+					() -> "Expected post-costing finite-anchor rewrite to consume the local filter\n" + optimizedText);
+			BindingSetAssignment dateAnchor = findFiniteAnchorAssignment(optimized, "date");
+			assertNotNull(dateAnchor, () -> "Expected a finite date anchor after local costing\n" + optimizedText);
+			assertEquals(2, bindingSetCount(dateAnchor));
+			assertEquals("finite-anchor:date", dateAnchor.getStringMetricPlanned("optimizer.guaranteeOption"));
+			assertTrue(dateAnchor.getStringMetricPlanned("optimizer.cascadesProofs")
+					.contains("filterInValuesEquivalent"));
+			TupleExpr finiteSurface = findFiniteAnchorSurface(optimized, "date");
+			assertNotNull(finiteSurface, () -> "Expected finite-anchor Omni evidence\n" + optimizedText);
+			assertEquals(directFiniteProbe.outputRows(),
+					finiteSurface.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows"), 0.0d);
 			assertTrue(requests.isEmpty(),
 					"Finite Omni probes should not queue redundant raw sampling; requests=" + requests);
-			assertEquals("finite-filter-probe", recordedOnFilter.getStringMetricPlanned("plannedOmniSurfaceKind"));
-			assertEquals(0.0d, recordedOnFilter.getDoubleMetricPlanned("plannedOmniExactZero"), 0.0d);
-			assertTrue(recordedOnFilter.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows") > 0.0d,
+			assertEquals("finite-anchor-exact", finiteSurface.getStringMetricPlanned("plannedOmniSource"));
+			assertEquals(0.0d, finiteSurface.getDoubleMetricPlanned("plannedOmniExactZero"), 0.0d);
+			assertTrue(finiteSurface.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows") > 0.0d,
 					() -> "Expected positive finite Omni rows\n" + optimizedText);
 			assertFalse(optimizedText.contains("Filter (filterSelectivitySource=unknown)"),
 					"Finite Omni evidence should prevent an unknown filter estimate\n" + optimizedText);
@@ -4874,6 +4913,48 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			}
 		});
 		return filters.isEmpty() ? null : filters.getFirst();
+	}
+
+	private static BindingSetAssignment findFiniteAnchorAssignment(TupleExpr tupleExpr, String bindingName) {
+		List<BindingSetAssignment> assignments = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (assignments.isEmpty() && node.getBindingNames().contains(bindingName)
+						&& ("finite-anchor:" + bindingName)
+								.equals(node.getStringMetricPlanned("optimizer.guaranteeOption"))) {
+					assignments.add(node);
+				}
+			}
+		});
+		return assignments.isEmpty() ? null : assignments.getFirst();
+	}
+
+	private static TupleExpr findFiniteAnchorSurface(TupleExpr tupleExpr, String bindingName) {
+		TupleExpr[] found = new TupleExpr[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (found[0] == null && node instanceof TupleExpr candidate) {
+					String proofs = candidate.getStringMetricPlanned("optimizer.cascadesProofs");
+					double rows = candidate.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows");
+					if (proofs != null && proofs.contains("selected=finite-anchor:" + bindingName)
+							&& Double.isFinite(rows) && rows > 0.0d) {
+						found[0] = candidate;
+					}
+				}
+				node.visitChildren(this);
+			}
+		});
+		return found[0];
+	}
+
+	private static int bindingSetCount(BindingSetAssignment assignment) {
+		int count = 0;
+		for (Object ignored : assignment.getBindingSets()) {
+			count++;
+		}
+		return count;
 	}
 
 	private static Filter recordedOnLocalFilter() {

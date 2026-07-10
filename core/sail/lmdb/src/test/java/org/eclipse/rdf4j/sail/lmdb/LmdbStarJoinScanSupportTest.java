@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -22,6 +25,19 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.junit.jupiter.api.Test;
 
 class LmdbStarJoinScanSupportTest {
@@ -63,8 +79,40 @@ class LmdbStarJoinScanSupportTest {
 		assertTrue(LmdbStarJoinScanSupport.plan(join).isEmpty());
 	}
 
+	@Test
+	void starMultiPredicateRuleDeliversSubjectDistinctEvidence() {
+		TupleExpr join = new Join(constantPredicatePattern("s", "urn:p1", "o1"),
+				constantPredicatePattern("s", "urn:p2", "o2"));
+		StarStatistics statistics = new StarStatistics();
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(join);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+
+		RuleApplication application = new LmdbStarMultiPredicateScanRule(statistics)
+				.apply(expression, OptimizationGoal.root(),
+						new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null))
+				.getFirst();
+
+		VariableEstimate subject = application.deliveredProperties().bindingProfile().variables().get("s");
+		assertNotNull(subject, "The opaque star winner must expose its Omni subject evidence to parent operators");
+		assertEquals(12.0d, subject.distinctRows(), 0.0d);
+	}
+
 	private static StatementPattern constantPredicatePattern(String subject, String predicateIri, String object) {
 		return new StatementPattern(new Var(subject),
 				new Var("p", SimpleValueFactory.getInstance().createIRI(predicateIri)), new Var(object));
+	}
+
+	private static final class StarStatistics extends EvaluationStatistics implements RdfStatisticsProvider {
+		@Override
+		public Optional<StatisticsEstimate> starMultiPredicateScan(List<StatementPattern> starPatterns,
+				Set<String> boundVars) {
+			BagEstimate bag = BagEstimate.heuristic(48.0d, "omni-subject-star")
+					.withVariable("s", VariableEstimate.bound(48.0d, 12.0d));
+			return Optional.of(new StatisticsEstimate(48.0d,
+					QErrorInterval.heuristic(48.0d, 1.5d, "omni-subject-star"), 48.0d,
+					"omni-subject-star", Map.of(), bag));
+		}
 	}
 }

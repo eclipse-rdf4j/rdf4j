@@ -50,6 +50,8 @@ Timestamps are UTC.
 - [x] (2026-07-10 05:45Z) Acceptance gates currently green: selective chain end, flagged q10, sparse-prefix q-error (3), finite-IN Cascades rewrites (17), optimizer pipeline (38), formatter, copyright check (only the five preexisting tool-POM findings), and `git diff --check`.
 - [x] (2026-07-10 06:25Z) Triaged the third module verify (2079 tests, 6 failures, 0 errors). Restored safe post-costing finite-anchor rewrites, allowed bounded disconnected assignments to accumulate before their bridge, preserved explicit correlated NOT EXISTS, and made property-path dominance/costing respect the actual prefix. The four finite-anchor selectors, social q4, and the AAS constant-root selector are focused-green.
 - [x] (2026-07-10 06:36Z) Reconciled the q10/self-edge boundary by using Cascades provenance: only a self-edge anti-filter produced by `minus-alternatives-anti-exists-pushed` is restored to a materialized `Difference`; explicit SPARQL NOT EXISTS remains correlated. The q10, social q4, finite-rewrite (17), filter-local (40), connected-admissibility (15), selective-chain, and cost-tie selectors are green.
+- [x] (2026-07-10 06:58Z) Fourth module verify reached 1359 unit tests before the shared 4 GiB fork exhausted heap in `LmdbSparsePrefixCostTest`; two assertions were red first: a memoization test still expected the pre-rewrite local-filter final shape, and a subselect GROUP retained 25,100 rows against its 25,000-row bound. Complete evidence is in `logs/mvnf/20260710-063953-verify.log` and `initial-evidence.txt`.
+- [x] (2026-07-10 08:12Z) Closed both pre-OOM assertions without weakening them. Subject-star fallback estimates now retain subject distinct evidence through the LMDB statistics bag, star physical properties, and opaque cost-model boundary. A no-choice guarantee rule no longer displaces a genuine connected-hypergraph subquery winner. `QueryBenchmarkTest` (16), memoization (100), Cascades cost model (50), optimizer (52), star support (5), surface retention (11), and context propagation (4) are focused-green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -126,6 +128,8 @@ Timestamps are UTC.
   Evidence: AAS red `logs/mvnf/20260710-060643-verify.log`; focused green `logs/mvnf/20260710-062615-verify.log`.
 - Observation: Self-edge shape alone cannot decide between a correlated anti-probe and a materialized anti-join. Social q4 contains an explicit `FILTER NOT EXISTS` that must remain correlated, while highly-connected q10 contains a Cascades anti-filter alternative generated from an original MINUS that must be restored to `Difference`. The winning filter retains the originating rule in `optimizer.cascadesProofs`, providing a semantic discriminator without query-specific matching.
   Evidence: q10 red after blanket preservation `logs/mvnf/20260710-062834-verify.log`; q10 green `20260710-063055-verify.log`; explicit social q4 green `20260710-063200-verify.log`.
+- Observation: Once subject-star distinct evidence reached parent costing, `lmdb-guarantee-options` could beat the connected-hypergraph rule while reporting `generated=0, selected=original`. With a real LMDB predicate-domain provider, that is not a guarantee alternative at all; it duplicates ordinary join ordering and can hide the required Cascades owner. Synthetic statistics without a domain provider still use the rule as a deferred-filter planning fallback, and `empty-filter:` remains a semantic competitor.
+  Evidence: focused subselect red `logs/mvnf/20260710-075727-verify.log`; context guard red `20260710-080740-verify.log`; focused and class greens `20260710-080949-verify.log`, `20260710-081044-verify.log`, and `20260710-081129-verify.log`.
 
 ## Decision Log
 
@@ -197,6 +201,12 @@ Timestamps are UTC.
   Date/Author: 2026-07-10 / Codex.
 - Decision: Restore a self-edge anti-filter to materialized `Difference` only when its Cascades proof contains `minus-alternatives-anti-exists-pushed`; otherwise retain and place the explicit NOT EXISTS filter at its earliest assured prefix.
   Rationale: Provenance distinguishes an implementation alternative of original MINUS semantics from user-authored correlated NOT EXISTS. Shape-based conversion conflated them and made the q10 and social q4 contracts mutually exclusive.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: A physical rule that owns an opaque unary/binary subtree is authoritative for binding evidence it explicitly declares; ordinary memo expressions continue to prefer profiles inferred from their input winners.
+  Rationale: Star scans need their subject-distinct Omni bag at the GROUP boundary, but global declared-profile precedence changes unrelated physical winner selection. Opaque ownership is the narrow boundary at which the rule has replaced the child graph and must supply its own evidence.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: `lmdb-guarantee-options` declines a real LMDB domain-provider segment when analysis has neither an empty-set result nor a choice option; it retains the existing fallback behavior for synthetic/non-domain statistics.
+  Rationale: `generated=0, selected=original` is a duplicate legacy join planner in production and can displace the connected-hypergraph owner, while test and extension statistics without domain analysis still require deferred-filter planning.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective

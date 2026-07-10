@@ -646,10 +646,19 @@ public interface CascadesCostModel {
 					delivered = delivered.withOrdering(ordering);
 				}
 			}
-			BindingProfile outputProfile = outputBindingProfile(expression, goal, inputWinners)
-					.mergedWith(declaredBindingProfile);
+			BindingProfile inferredBindingProfile = outputBindingProfile(expression, goal, inputWinners);
+			BindingProfile outputProfile = ownsOpaqueSubtree(expression, tupleExpr) && !declaredBindingProfile.isAny()
+					? declaredBindingProfile.mergedWith(inferredBindingProfile)
+					: inferredBindingProfile.mergedWith(declaredBindingProfile);
 			return delivered.withInputBoundVars(inputBoundVars)
 					.withBindingProfile(outputProfile);
+		}
+
+		private boolean ownsOpaqueSubtree(MemoExpr expression, TupleExpr tupleExpr) {
+			return expression != null
+					&& expression.physical()
+					&& expression.inputGroupIds().isEmpty()
+					&& (tupleExpr instanceof UnaryTupleOperator || tupleExpr instanceof BinaryTupleOperator);
 		}
 
 		private PhysicalProperties propagatedInputProperties(TupleExpr tupleExpr, PhysicalProperties inputProperties) {

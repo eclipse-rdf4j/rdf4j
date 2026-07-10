@@ -2195,6 +2195,11 @@ final class LmdbCascadesRuleProvider {
 					&& !analysis.emptySetOption().get().startsWith("empty-filter:")) {
 				return List.of(emptySetApplication(expression, goal, analysis.emptySetOption().get()));
 			}
+			if (!analysis.hasChoiceOptions()
+					&& analysis.emptySetOption().isEmpty()
+					&& statistics instanceof LmdbPredicateObjectDomainSource) {
+				return List.of();
+			}
 
 			JoinOrderPlanner.Algorithm algorithm = algorithm(goal, segment.factors().size());
 			Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();

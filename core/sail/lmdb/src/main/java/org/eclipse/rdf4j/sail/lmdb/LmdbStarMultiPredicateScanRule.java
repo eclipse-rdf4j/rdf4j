@@ -18,6 +18,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
@@ -58,22 +59,24 @@ final class LmdbStarMultiPredicateScanRule extends LmdbRule {
 		if (estimate.isEmpty()) {
 			return List.of();
 		}
+		StatisticsEstimate starEstimate = estimate.get();
 		TupleExpr alternative = expression.tupleExpr().clone();
-		LmdbStarJoinScanSupport.annotate(alternative, plan.get(), estimate.get());
+		LmdbStarJoinScanSupport.annotate(alternative, plan.get(), starEstimate);
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(alternative.getBindingNames())
 				.accessPath(LmdbStarJoinScanSupport.ACCESS_MODE)
 				.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
 				.materialization(PhysicalProperties.Materialization.STREAMING)
 				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+				.bindingProfile(BindingProfile.fromEstimate(alternative, starEstimate))
 				.build();
-		CostVector cost = estimate.get().vector().toCostVector();
+		CostVector cost = starEstimate.vector().toCostVector();
 		RuleProof proof = proof(semanticScope(goal),
 				Set.of("subject=" + plan.get().subjectName(),
 						"predicates=" + plan.get().predicateValues().size(),
 						"batchedPredicateScan", "independentScansCompared"),
 				"LMDB can evaluate a constant-predicate subject star by scanning the subject/predicate range once");
 		return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost, proof,
-				"lmdb-star-scan", snapshot(estimate.get(), cost, estimate.get().method())));
+				"lmdb-star-scan", snapshot(starEstimate, cost, starEstimate.method())));
 	}
 }

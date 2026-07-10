@@ -899,9 +899,16 @@ class LmdbEvaluationStatistics
 						+ ", batchedWork=" + estimateTraceRows(batchedWorkRows)
 						+ ", method=" + subjectStar.source());
 		double qError = subjectStar.confidence() >= 0.75d ? 1.5d : 3.0d;
+		Set<String> bindingNames = new LinkedHashSet<>();
+		for (StatementPattern pattern : starPatterns) {
+			bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
+		}
+		BagEstimate bagEstimate = subjectStar.toBagEstimate(bindingNames)
+				.withWorkRows(batchedWorkRows, subjectStar.source())
+				.withMetrics(metrics);
 		return Optional.of(new StatisticsEstimate(joinedRows,
 				QErrorInterval.heuristic(joinedRows, qError, subjectStar.source()),
-				batchedWorkRows, subjectStar.source(), metrics));
+				batchedWorkRows, subjectStar.source(), metrics, bagEstimate));
 	}
 
 	private String commonSubjectVarName(List<StatementPattern> starPatterns) {

@@ -46,6 +46,8 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 	private static final IRI EDGE_COPY = VF.createIRI("urn:omni-retention:edge-copy");
 	private static final IRI FLAG = VF.createIRI("urn:omni-retention:flag");
 	private static final IRI STATUS = VF.createIRI("urn:omni-retention:status");
+	private static final IRI STAR_LEFT = VF.createIRI("urn:omni-retention:star-left");
+	private static final IRI STAR_RIGHT = VF.createIRI("urn:omni-retention:star-right");
 	private static final IRI GRAPH = VF.createIRI("urn:omni-retention:graph");
 	private static final Value ACTIVE = VF.createLiteral("active");
 	private static final Value CLOSED = VF.createLiteral("closed");
@@ -112,6 +114,36 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 
 		assertCompleteSurface(subjectStar, "root", "subject-star");
 		assertEquals(64.0d, subjectStar.selectedRows(), 0.0d);
+	}
+
+	@Test
+	void subjectStarStatsFallbackRetainsAnchorDistinctBindingEvidence() {
+		StubSketchStatementSource fallbackStore = new StubSketchStatementSource();
+		Resource shared = VF.createIRI("urn:omni-retention:fallback-shared:999999");
+		fallbackStore.add(VF.createStatement(shared, STAR_LEFT, ACTIVE));
+		fallbackStore.add(VF.createStatement(shared, STAR_RIGHT, ACTIVE));
+		for (int index = 0; index < 10_000; index++) {
+			fallbackStore.add(VF.createStatement(VF.createIRI("urn:omni-retention:fallback-left:" + index),
+					STAR_LEFT, ACTIVE));
+			fallbackStore.add(VF.createStatement(VF.createIRI("urn:omni-retention:fallback-right:" + index),
+					STAR_RIGHT, ACTIVE));
+		}
+		SketchBasedJoinEstimator fallbackEstimator = track(new SketchBasedJoinEstimator(fallbackStore,
+				omniConfig().withNominalEntries(1).withOmniWitnessCohortBucketCount(0)));
+		fallbackEstimator.rebuild();
+
+		OmniSketchSurfaceEstimate surface = fallbackEstimator.estimateSubjectStarOmniSurface(
+				List.of(fixedObjectPattern("root", STAR_LEFT, ACTIVE),
+						fixedObjectPattern("root", STAR_RIGHT, ACTIVE)),
+				"root");
+
+		assertNotNull(surface);
+		assertEquals("omni-subject-star-stats-fallback", surface.source());
+		OmniSketchBindingEvidence root = surface.bindings().get("root");
+		assertNotNull(root, () -> "fallback dropped subject distinct evidence: " + surface);
+		double anchorDistinct = surface.doubleMetrics().get("plannedOmniSubjectStarAnchorDistinct");
+		assertEquals(anchorDistinct, root.distinctRows(), 0.0d);
+		assertEquals(anchorDistinct, surface.toBagEstimate(Set.of("root")).variable("root").distinctRows(), 0.0d);
 	}
 
 	@Test

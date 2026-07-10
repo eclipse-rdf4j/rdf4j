@@ -234,6 +234,28 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void opaquePhysicalBindingProfileOverridesInferredScalarProfile() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		Join opaqueJoin = new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2"));
+		BagEstimate declaredBag = BagEstimate.heuristic(48.0d, "declared-physical")
+				.withVariable("s", VariableEstimate.bound(48.0d, 12.0d));
+		PhysicalProperties declared = PhysicalProperties.builder()
+				.boundVars(opaqueJoin.getBindingNames())
+				.bindingProfile(BindingProfile.fromBag(opaqueJoin, declaredBag, Map.of()))
+				.build();
+		MemoExpr physicalLeaf = new MemoExpr(10, 0, "Join", List.of(), "test", opaqueJoin,
+				declared, RuleKind.IMPLEMENTATION,
+				CostVector.ofRowsAndWork(48.0d, 48.0d,
+						QErrorInterval.heuristic(48.0d, 1.5d, "declared-physical")),
+				List.of(), "declared-profile-leaf");
+
+		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, OptimizationGoal.root(), List.of());
+
+		assertEquals(12.0d, delivered.bindingProfile().variables().get("s").distinctRows(), 0.0d,
+				"An opaque rule's declared profile is authoritative over scalar inference for the same binding");
+	}
+
+	@Test
 	void feedbackCorrectionPreservesJoinedSketchProfile() {
 		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
 		CascadesCostModel model = model(provider);

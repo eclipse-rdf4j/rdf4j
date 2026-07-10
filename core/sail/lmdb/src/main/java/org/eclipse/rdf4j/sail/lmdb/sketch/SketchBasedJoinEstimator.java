@@ -5433,13 +5433,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (!Double.isFinite(rows) || rows <= 0.0d) {
 			return null;
 		}
+		OmniSketchBindingEvidence subjectBinding = new OmniSketchBindingEvidence(subjectVarName, rows, minDistinct, 0,
+				null, OmniWitnessSet.SourceKind.BASE, "subject-star-stats", "anchor-distinct");
 		return new OmniSketchSurfaceEstimate(rows, rows, rows, rows, 0.55d, 1.0d, false, fallbackReason, 0.0d,
 				"omni-subject-star-stats-fallback", "subject-star", "omni-subject-star", Map.of(),
 				Map.of("plannedOmniSubjectStarAnchorDistinct", minDistinct,
 						"plannedOmniSubjectStarFallbackFanoutCount", (double) fanoutCount,
 						"plannedOmniSubjectStarFanoutProduct", fanoutProduct,
 						"plannedOmniSubjectStarCohortCompleteness", cohortCompleteness),
-				Map.of(), List.of());
+				Map.of(subjectVarName, subjectBinding), List.of());
 	}
 
 	private OmniSketchSurfaceEstimate exactSubjectStarFallbackSurface(List<TupleExpr> factors, String fallbackReason,
