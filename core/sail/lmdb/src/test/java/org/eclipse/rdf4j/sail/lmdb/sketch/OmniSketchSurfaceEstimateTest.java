@@ -169,4 +169,34 @@ class OmniSketchSurfaceEstimateTest {
 		OmniSketchSurfaceEstimate stillZero = zero.rebase(0.0d, 0.9d, "omni-join-estimator", "none");
 		assertTrue(stillZero.exactZero(), "rows zero rebased onto exact-zero evidence stays exact");
 	}
+
+	@Test
+	void exactRebaseCollapsesUncertaintyAndClampsBindingEvidence() {
+		OmniWitnessSet witnesses = OmniWitnessSet.fromSortedUnsigned(new long[] { 7L, 11L },
+				new double[] { 3.0d, 5.0d }, 2, 0.25d, 0.80d,
+				OmniWitnessSet.FallbackReason.SAMPLE_LOSS, 16.0d);
+		OmniSketchBindingEvidence binding = new OmniSketchBindingEvidence("branch", 10.0d, 6.0d, 2,
+				witnesses, OmniWitnessSet.SourceKind.BASE, "STATEMENT", "subject");
+		OmniSketchSurfaceEstimate estimate = new OmniSketchSurfaceEstimate(10.0d, 5.0d, 20.0d, 30.0d,
+				0.8d, 0.25d, false, "SAMPLE_LOSS", 16.0d, "omni-join-estimator", "bridge-chain",
+				"lmdbValueId", Map.of(), Map.of(), Map.of("branch", binding), List.of());
+
+		OmniSketchSurfaceEstimate rebased = estimate.rebaseExact(4.0d, "finite-anchor-exact");
+
+		assertEquals(4.0d, rebased.selectedRows(), 0.0d);
+		assertEquals(4.0d, rebased.lowerBoundRows(), 0.0d);
+		assertEquals(4.0d, rebased.upperBoundRows(), 0.0d);
+		assertEquals(4.0d, rebased.workRows(), 0.0d);
+		assertEquals(1.0d, rebased.confidence(), 0.0d);
+		assertEquals(1.0d, rebased.samplingProbability(), 0.0d);
+		assertEquals("none", rebased.fallbackReason());
+		assertEquals(0.0d, rebased.minimumDetectableRows(), 0.0d);
+		assertEquals("finite-anchor-exact", rebased.source());
+		assertFalse(rebased.exactZero());
+		assertSame(witnesses, rebased.bindings().get("branch").witnesses());
+		assertEquals(4.0d, rebased.bindings().get("branch").rows(), 0.0d);
+		assertEquals(4.0d, rebased.bindings().get("branch").distinctRows(), 0.0d);
+
+		assertTrue(estimate.rebaseExact(0.0d, "finite-anchor-exact").exactZero());
+	}
 }

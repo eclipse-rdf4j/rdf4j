@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -110,7 +111,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 	}
 
 	@Test
-	void sketchOnlyJoinSurfaceRowsDoNotOpenStatementSourceAfterRebuild() {
+	void countMinJoinEstimateDoesNotOpenStatementSourceAfterRebuild() {
 		IRI value = VF.createIRI("urn:value");
 		IRI hasObservation = VF.createIRI("urn:hasObservation");
 		FailOnReadSketchStatementSource store = new FailOnReadSketchStatementSource();
@@ -129,9 +130,10 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern hasObservationPattern = new StatementPattern(Var.of("enc"),
 				Var.of("hasObservation", hasObservation), Var.of("obs"));
 
-		double prefixRows = estimator.estimateOmniSurface(List.of(valuePattern), "obs").calibratedRows();
-		double surfaceRows = estimator.estimateOmniSurface(List.of(valuePattern), hasObservationPattern, "obs")
-				.calibratedRows();
+		double prefixRows = estimator.planEstimateForJoinOrdering(valuePattern, Set.of()).outputRows();
+		double surfaceRows = estimator
+				.planEstimateForJoinOrdering(new Join(valuePattern, hasObservationPattern), Set.of())
+				.outputRows();
 
 		assertTrue(prefixRows > 0.0d, "Expected sketch-only prefix surface rows");
 		assertTrue(surfaceRows > 0.0d, "Expected sketch-only join surface rows");
@@ -140,7 +142,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 	}
 
 	@Test
-	void sketchOnlyJoinSurfaceUsesOneSigmaUpperBoundWhenIntersectionPointIsZero() {
+	void countMinJoinEstimateUsesOneSigmaUpperBoundWhenIntersectionPointIsZero() {
 		IRI left = VF.createIRI("urn:upper-bound-surface:left");
 		IRI right = VF.createIRI("urn:upper-bound-surface:right");
 		StubSketchStatementSource store = new StubSketchStatementSource();
@@ -158,15 +160,15 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
 				Var.of("shared"));
 
-		double surfaceRows = estimator.estimateOmniSurface(List.of(leftPattern), rightPattern, "shared")
-				.calibratedRows();
+		double surfaceRows = estimator.planEstimateForJoinOrdering(new Join(leftPattern, rightPattern), Set.of())
+				.outputRows();
 
 		assertTrue(surfaceRows > 0.0d,
 				"Sketch-only surface costing should use the one-sigma upper bound before returning zero");
 	}
 
 	@Test
-	void sketchOnlyMultiFactorJoinSurfaceCarriesOneSigmaUpperBoundForward() {
+	void countMinMultiFactorJoinEstimateCarriesOneSigmaUpperBoundForward() {
 		IRI left = VF.createIRI("urn:upper-bound-multi-surface:left");
 		IRI middle = VF.createIRI("urn:upper-bound-multi-surface:middle");
 		IRI right = VF.createIRI("urn:upper-bound-multi-surface:right");
@@ -189,8 +191,9 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
 				Var.of("shared"));
 
-		double surfaceRows = estimator.estimateOmniSurface(List.of(leftPattern, middlePattern), rightPattern, "shared")
-				.calibratedRows();
+		double surfaceRows = estimator
+				.planEstimateForJoinOrdering(new Join(new Join(leftPattern, middlePattern), rightPattern), Set.of())
+				.outputRows();
 
 		assertTrue(surfaceRows > 0.0d,
 				"Sketch-only surface costing should not collapse an upper-bound-only prefix back to zero");

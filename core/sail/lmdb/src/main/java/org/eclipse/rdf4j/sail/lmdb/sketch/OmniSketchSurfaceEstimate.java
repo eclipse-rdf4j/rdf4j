@@ -86,6 +86,21 @@ public record OmniSketchSurfaceEstimate(double selectedRows, double lowerBoundRo
 				stringMetrics, doubleMetrics, bindings, steps);
 	}
 
+	public OmniSketchSurfaceEstimate rebaseExact(double rows, String source) {
+		double normalizedRows = finiteNonNegative(rows);
+		Map<String, OmniSketchBindingEvidence> rebasedBindings = new LinkedHashMap<>();
+		for (Map.Entry<String, OmniSketchBindingEvidence> entry : bindings.entrySet()) {
+			OmniSketchBindingEvidence binding = entry.getValue();
+			double bindingRows = Math.min(binding.rows(), normalizedRows);
+			rebasedBindings.put(entry.getKey(), new OmniSketchBindingEvidence(binding.bindingName(), bindingRows,
+					Math.min(binding.distinctRows(), bindingRows), binding.witnessCount(), binding.witnesses(),
+					binding.sourceKind(), binding.relationProvenance(), binding.attributeProvenance()));
+		}
+		return new OmniSketchSurfaceEstimate(normalizedRows, normalizedRows, normalizedRows, normalizedRows, 1.0d,
+				1.0d, normalizedRows == 0.0d, "none", 0.0d, source, surfaceKind, predicateKeyKind, stringMetrics,
+				doubleMetrics, rebasedBindings, steps);
+	}
+
 	public Map<String, String> toStringMetrics() {
 		Map<String, String> metrics = new LinkedHashMap<>();
 		metrics.put("plannedOmniSurfaceKind", surfaceKind);

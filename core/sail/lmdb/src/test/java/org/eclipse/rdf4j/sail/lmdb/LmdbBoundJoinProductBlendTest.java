@@ -246,7 +246,7 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
-	void boundJoinProductCarriesOmniSurfaceFallbackEvidence() {
+	void countMinBoundJoinProductRemainsCardinalityOnly() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:left");
 		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb:right");
@@ -271,10 +271,9 @@ class LmdbBoundJoinProductBlendTest {
 				right, 2.0d, false);
 
 		assertNotNull(estimate);
-		assertNotNull(estimate.omniSurface());
-		assertEquals("tuple_sketch_surface_product", estimate.omniSurface().source());
-		assertTrue(estimate.omniSurface().confidence() > 0.0d);
-		assertTrue(estimate.omniSurface().upperBoundRows() >= 4.0d);
+		assertEquals(4.0d, estimate.productRows(), 0.0d);
+		assertNull(estimate.omniSurface(),
+				"Count-Min cardinality estimates must not be wrapped in an Omni witness carrier");
 	}
 
 	@Test
@@ -395,7 +394,7 @@ class LmdbBoundJoinProductBlendTest {
 	}
 
 	@Test
-	void exactOmniSurfaceDoesNotReplaceExactFactorCostSource() {
+	void countMinFactorCostRetainsGenericSourceWithoutOmniTelemetry() {
 		SimpleSketchStatementSource source = new SimpleSketchStatementSource();
 		IRI leftPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:left");
 		IRI rightPredicate = SimpleValueFactory.getInstance().createIRI("urn:count-min:lmdb-cost:right");
@@ -424,13 +423,11 @@ class LmdbBoundJoinProductBlendTest {
 
 			assertEquals("lmdb-bound-join-product",
 					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-			assertEquals("countmin-dual", estimate.getStringMetrics().get("plannedSketchStrategy"));
-			assertEquals("tuple_sketch_surface_product",
-					estimate.getStringMetrics().get("plannedSketchEstimateSource"));
-			assertTrue(estimate.getDoubleMetrics().get("plannedSketchConfidence") > 0.0d);
-			assertTrue(estimate.getDoubleMetrics().get("plannedSketchUpperBoundRows") >= 4.0d);
-			assertTrue(estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER) >= estimate
-					.getOutputRows());
+			assertNull(estimate.getStringMetrics().get("plannedSketchStrategy"));
+			assertNull(estimate.getStringMetrics().get("plannedSketchEstimateSource"));
+			assertNull(estimate.getDoubleMetrics().get("plannedSketchConfidence"));
+			assertNull(estimate.getDoubleMetrics().get("plannedSketchUpperBoundRows"));
+			assertEquals(4.0d, estimate.getOutputRows(), 0.0d);
 		}
 	}
 

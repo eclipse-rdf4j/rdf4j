@@ -13608,7 +13608,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (sketchStrategy != SketchStrategy.OMNI) {
 			return null;
 		}
+		Double finiteAnchorRows = finiteAnchorPrefixJoinSurfaceRows(prefixFactors, factor, joinVarName);
 		OmniSketchSurfaceEstimate omniEstimate = estimateOmniJoinSurface(prefixFactors, factor, joinVarName);
+		if (finiteAnchorRows != null) {
+			return exactFiniteAnchorSurface(omniEstimate, finiteAnchorRows);
+		}
 		if (omniEstimate != null) {
 			return omniEstimate;
 		}
@@ -13750,12 +13754,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (sketchStrategy != SketchStrategy.OMNI) {
 			return null;
 		}
+		Double finiteAnchorRows = finiteAnchorPrefixSurfaceRows(factors, joinVarName);
 		OmniSketchSurfaceEstimate omniEstimate = estimateOmniJoinSurface(factors, joinVarName);
+		if (finiteAnchorRows != null) {
+			return exactFiniteAnchorSurface(omniEstimate, finiteAnchorRows);
+		}
 		if (omniEstimate != null) {
 			return omniEstimate;
 		}
 		return sketchSurfaceEstimate(estimateSketchJoinSurfaceStats(factors, joinVarName),
 				"tuple_sketch_surface_prefix");
+	}
+
+	private OmniSketchSurfaceEstimate exactFiniteAnchorSurface(OmniSketchSurfaceEstimate omniEstimate,
+			double rows) {
+		if (omniEstimate != null) {
+			return omniEstimate.rebaseExact(rows, "finite-anchor-exact");
+		}
+		return OmniSketchSurfaceEstimate.scalar(rows, rows, 1.0d, "finite-anchor-exact", 1.0d,
+				"finite-anchor-exact").rebaseExact(rows, "finite-anchor-exact");
 	}
 
 	public double estimateExactJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
