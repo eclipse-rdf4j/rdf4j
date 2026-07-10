@@ -24,6 +24,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-09 23:39Z) Reused a transaction-retained ordinary cursor for main-index `MDB_NOOVERWRITE` writes; 35 focused/neighbor tests pass and two paired runs improved the prior checkpoint 5.58-7.53%.
 - [x] (2026-07-09 23:48Z) Tested and rejected four-field secondary radix sorting after it regressed both modes by 8.20-10.50%; removed production/test changes and kept the evidence.
 - [x] (2026-07-10 00:06Z) Probed an append-free `MDB_DUPSORT | MDB_DUPFIXED` index layout with grouped `MDB_MULTIPLE` writes; pure two-index insertion improved 3.28x, from 701.436 ms to 213.872 ms.
+- [x] (2026-07-10 00:18Z) Swept duplicate bucket shapes and all four benchmark indexes; fixed duplicates bottomed out at 139.411 ms, while page-sized immutable packed blocks reduced four-index insertion to 39.476 ms.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -75,6 +76,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: LMDB's fixed-duplicate bulk-write primitive substantially lowers the native two-index insertion floor without append mode, but exact leading-field grouping alone does not reach the end-to-end 10x threshold.
   Evidence: the scratch probe recorded in `profiles/lmdb-load-10x/mdb-multiple-probe/README.md` improved the mean of three pure insertion rounds from 701.436 ms to 213.872 ms (3.280x) by replacing approximately 1.23 million ordinary cursor puts with 66,507 grouped `MDB_MULTIPLE` calls.
 
+- Observation: Fixed-duplicate insertion has a U-shaped bucket-size curve and remains too slow with all four benchmark indexes, whereas writing sorted immutable blocks moves the four-index native floor below half of the end-to-end target.
+  Evidence: the expanded probe in `profiles/lmdb-load-10x/mdb-multiple-probe/README.md` measures four-index `MDB_MULTIPLE` insertion at 139.411 ms with 16,384 buckets per index. Four ordinary databases containing 2,048 packed sorted blocks per index complete in 39.476 ms, including fixed-width encoding and transaction commit. `MDB_WRITEMAP` did not materially improve the multi-value result.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -123,6 +127,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Continue structural duplicate-index experiments before committing an on-disk format change.
   Rationale: The 3.280x low-level result proves that native call coalescing is material, while its remaining 213.872 ms floor is still above both full-benchmark acceptance thresholds. Varying block-group granularity can determine whether a query-compatible blocked duplicate layout has enough remaining upside to justify a migration and read-path refactor.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject a fixed-duplicate production conversion and pursue immutable packed index segments instead.
+  Rationale: Even at its optimal bucket shape the four-index fixed-duplicate layout takes 139.411 ms before value resolution or repository lifecycle work. Packed blocks reduce that same synthetic four-index phase to 39.476 ms without append flags or `MDB_WRITEMAP`, leaving enough theoretical budget to target the full benchmark while retaining sorted searchable records.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -243,3 +251,5 @@ Revision note (2026-07-09 23:39Z): Recorded the confirmed main-index cursor incr
 Revision note (2026-07-09 23:48Z): Recorded and rejected full secondary-key sorting after its first paired run produced a clear two-mode regression.
 
 Revision note (2026-07-10 00:06Z): Recorded the append-free `MDB_MULTIPLE` structural probe, its 3.280x pure insertion gain, and the decision to test block grouping before changing the persisted index format.
+
+Revision note (2026-07-10 00:18Z): Recorded the bucket-shape sweep, the four-index fixed-duplicate floor, the rejected `MDB_WRITEMAP` probe, and the 39.476 ms immutable packed-block result that motivates the next design milestone.
