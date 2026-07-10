@@ -63,6 +63,63 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void collidingValueProbeScalesRetainedMassToPopulationRows() {
+		OmniJoinEstimator estimator = newEstimator(8, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long targetValue = OmniJoinEstimator.stableHash("target-value");
+		for (long id = 1; id <= 10_000; id++) {
+			relation.updateStatic(ATTR_P, targetValue, id, 1.0d);
+		}
+		for (int noise = 0; noise < 256; noise++) {
+			long noiseValue = OmniJoinEstimator.stableHash("noise-value:" + noise);
+			long firstNoiseId = 20_000L + noise * 1_000L;
+			for (long id = firstNoiseId; id < firstNoiseId + 1_000L; id++) {
+				relation.updateStatic(ATTR_P, noiseValue, id, 1.0d);
+			}
+		}
+
+		OmniWitnessSet witnesses = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(targetValue));
+
+		assertTrue(witnesses.samplingProbability() < 1.0d,
+				"A per-value intersection below nominal capacity is still sampled when colliding cells are saturated");
+		assertTrue(estimator.estimateRows(witnesses) >= 5_000.0d,
+				"Retained sample mass must be scaled back to target population rows");
+	}
+
+	@Test
+	void collidingAttributeIntersectionScalesRetainedMassToPopulationRows() {
+		OmniJoinEstimator estimator = newEstimator(8, 4, 64);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
+		long predicateValue = OmniJoinEstimator.stableHash("target-predicate");
+		long objectValue = OmniJoinEstimator.stableHash("target-object");
+		for (long id = 1; id <= 10_000; id++) {
+			relation.updateStatic(ATTR_P, predicateValue, id, 1.0d);
+			relation.updateStatic(ATTR_O, objectValue, id, 1.0d);
+		}
+		for (int noise = 0; noise < 256; noise++) {
+			long predicateNoise = OmniJoinEstimator.stableHash("predicate-noise:" + noise);
+			long objectNoise = OmniJoinEstimator.stableHash("object-noise:" + noise);
+			long firstNoiseId = 20_000L + noise * 1_000L;
+			for (long id = firstNoiseId; id < firstNoiseId + 1_000L; id++) {
+				relation.updateStatic(ATTR_P, predicateNoise, id, 1.0d);
+				relation.updateStatic(ATTR_O, objectNoise, id + 100_000L, 1.0d);
+			}
+		}
+
+		OmniWitnessSet predicateWitnesses = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(predicateValue));
+		OmniWitnessSet objectWitnesses = estimator.probeStatic(relation, ATTR_O,
+				OmniJoinEstimator.Predicate.equalHash(objectValue));
+		OmniWitnessSet intersection = estimator.intersect(List.of(predicateWitnesses, objectWitnesses));
+
+		assertTrue(intersection.samplingProbability() < 1.0d,
+				"Coordinated attribute samples remain sampled when per-attribute cells have different collisions");
+		assertTrue(estimator.estimateRows(intersection) >= 5_000.0d,
+				"Attribute intersection retained mass must be scaled back to population rows");
+	}
+
+	@Test
 	void weightedIntersectionMultipliesRdfBagMultiplicitiesPerSharedWitness() {
 		long shared = OmniJoinEstimator.stableHash("join-key:shared");
 		long leftOnly = OmniJoinEstimator.stableHash("join-key:left");
@@ -517,6 +574,34 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void adaptiveCohortRetainsCompatibleNestedIntersectionAcrossAttributes() {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 4, 64, SEED, 16, 7, 1_000);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.SUBJECT_STAR);
+		long leftValue = OmniJoinEstimator.stableHash("nested-cohort-left");
+		long rightValue = OmniJoinEstimator.stableHash("nested-cohort-right");
+		for (long witness = 1L; witness <= 5_000L; witness++) {
+			updateStaticWithSource(relation, ATTR_P, leftValue, witness, 1.0d,
+					OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+			if (witness <= 1_000L) {
+				updateStaticWithSource(relation, ATTR_O, rightValue, witness, 1.0d,
+						OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+			}
+		}
+
+		OmniWitnessSet left = estimator.probeStatic(relation, ATTR_P,
+				OmniJoinEstimator.Predicate.equalHash(leftValue));
+		OmniWitnessSet right = estimator.probeStatic(relation, ATTR_O,
+				OmniJoinEstimator.Predicate.equalHash(rightValue));
+		OmniWitnessSet intersection = estimator.intersect(List.of(left, right));
+
+		assertTrue(estimator.cohortSamplingExponent(OmniWitnessSet.SourceKind.SUBJECT_COHORT) > 0);
+		assertTrue(estimator.retainedCohortPostingCount() <= 1_000);
+		assertEquals(OmniWitnessSet.SourceKind.SUBJECT_COHORT, intersection.sourceKind());
+		assertFalse(intersection.isEmpty(),
+				"adaptive thinning must use one compatible hash decision across attributes");
+	}
+
+	@Test
 	void cohortBudgetFallbackMetricCountsSourceDisableAfterExponentSaturation() {
 		OmniCohortRetentionController controller = new OmniCohortRetentionController(1, 1);
 		controller.onPostingRetained(OmniWitnessSet.SourceKind.SUBJECT_COHORT,
@@ -591,7 +676,6 @@ class OmniJoinEstimatorTest {
 				mappedReader.loadMappedSnapshot(store.openSnapshot((byte) 0));
 				OmniWitnessSet mapped = mappedReader.probeStatic(mappedReader.relation(OmniRelation.STATEMENT), ATTR_P,
 						OmniJoinEstimator.Predicate.equalHash(value));
-
 				assertEquals(bytes.estimatedRows(), live.estimatedRows(), 0.0d);
 				assertEquals(bytes.estimatedRows(), mapped.estimatedRows(), 0.0d);
 				assertEquals(bytes.samplingProbability(), live.samplingProbability(), 0.0d);

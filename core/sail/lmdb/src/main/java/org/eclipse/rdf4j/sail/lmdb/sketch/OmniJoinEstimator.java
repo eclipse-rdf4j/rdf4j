@@ -48,7 +48,7 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 8;
+	private static final int SERIAL_VERSION = 9;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	private static final int PROBE_CACHE_SIZE = 1024;
 	private static final int MAPPED_VALUE_RECORD_CACHE_SIZE = 4096;
@@ -232,6 +232,7 @@ final class OmniJoinEstimator {
 					for (Long2ObjectMap.Entry<ValueWeights> valueEntry : weightsByValueHash
 							.long2ObjectEntrySet()) {
 						out.writeLong(valueEntry.getLongKey());
+						out.writeDouble(index.totalWeight(valueEntry.getLongKey()));
 						Long2DoubleOpenHashMap weights = valueEntry.getValue();
 						out.writeInt(weights.size());
 						for (Long2DoubleMap.Entry weightEntry : weights.long2DoubleEntrySet()) {
@@ -337,10 +338,16 @@ final class OmniJoinEstimator {
 					index.loadSketch(sketchPayload);
 					int valueCount = readCount(in, "value");
 					long[] valueHashes = new long[valueCount];
+					double[] populationRows = new double[valueCount];
 					int[] witnessOffsets = new int[valueCount];
 					int[] witnessCounts = new int[valueCount];
 					for (int valueIndex = 0; valueIndex < valueCount; valueIndex++) {
 						valueHashes[valueIndex] = in.readLong();
+						populationRows[valueIndex] = in.readDouble();
+						if (!Double.isFinite(populationRows[valueIndex]) || populationRows[valueIndex] < 0.0d) {
+							throw new IOException("Invalid Omni join estimator population rows: "
+									+ populationRows[valueIndex]);
+						}
 						int witnessCount = readCount(in, "witness");
 						witnessCounts[valueIndex] = witnessCount;
 						witnessOffsets[valueIndex] = payload.length - in.available();
@@ -350,7 +357,7 @@ final class OmniJoinEstimator {
 						}
 						in.skipNBytes(witnessBytes);
 					}
-					index.loadLazyWeights(payload, valueHashes, witnessOffsets, witnessCounts);
+					index.loadLazyWeights(payload, valueHashes, populationRows, witnessOffsets, witnessCounts);
 					for (OmniWitnessSet.SourceKind sourceKind : COHORT_SOURCE_KINDS) {
 						index.loadCohortWeights(sourceKind, readValuePostings(in));
 					}
@@ -2197,10 +2204,18 @@ final class OmniJoinEstimator {
 			}
 		}
 
-		private void loadLazyWeights(byte[] payload, long[] valueHashes, int[] witnessOffsets, int[] witnessCounts) {
+		private void loadLazyWeights(byte[] payload, long[] valueHashes, double[] populationRows,
+				int[] witnessOffsets, int[] witnessCounts) {
 			weightsByValueHash = null;
 			lazyWeights = valueHashes.length == 0 ? null
 					: new LazyWeightPayload(payload, valueHashes, witnessOffsets, witnessCounts);
+			totalWeightByValueHash.clear();
+			for (int i = 0; i < valueHashes.length; i++) {
+				double rows = populationRows[i];
+				if (rows > 0.0d) {
+					totalWeightByValueHash.put(valueHashes[i], rows);
+				}
+			}
 			distinctValueCount = valueHashes.length;
 			clearWitnessCache();
 		}
@@ -2369,7 +2384,7 @@ final class OmniJoinEstimator {
 		private SortedCursorSource retainedWitnessSource(long valueHash, OmniSketchProbeResult probe,
 				double multiplier) {
 			WitnessCursor cursor = retainedWitnessCursor(valueHash, probe);
-			return cursor == null ? null : new SortedCursorSource(cursor, multiplier, knownPostingWeight(valueHash));
+			return cursor == null ? null : new SortedCursorSource(cursor, multiplier);
 		}
 
 		private boolean hasCohorts() {
@@ -2658,12 +2673,22 @@ final class OmniJoinEstimator {
 		}
 
 		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe) {
+			return effectiveSamplingProbability(valueHash, probe, retainedWeightForValue(valueHash, probe));
+		}
+
+		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe,
+				double retainedWeight) {
 			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
 			if (mappedValue != null && !hasOverlayWeights(valueHash)) {
 				double samplingProbability = mappedValue.samplingProbability();
 				if (Double.isFinite(samplingProbability) && samplingProbability > 0.0d) {
 					return canonicalSamplingProbability(samplingProbability);
 				}
+			}
+			double populationRows = totalWeightByValueHash.get(valueHash);
+			if (Double.isFinite(populationRows) && populationRows > 0.0d
+					&& Double.isFinite(retainedWeight) && retainedWeight > 0.0d) {
+				return canonicalSamplingProbability(retainedWeight / populationRows);
 			}
 			if (probe == null) {
 				return 1.0d;
@@ -2828,6 +2853,9 @@ final class OmniJoinEstimator {
 		}
 
 		private double retainedWeightForValue(long valueHash, OmniSketchProbeResult probe) {
+			if (lazyWeights != null) {
+				weightsForRead(valueHash);
+			}
 			if (probe != null && !hasExactPostingGuarantee(valueHash)) {
 				long[] retainedHashes = probe.getIdentifierHashesUnsafe();
 				if (retainedHashes.length == 0) {
@@ -3100,7 +3128,7 @@ final class OmniJoinEstimator {
 			}
 			sortByUnsignedHash(witnessHashes, weights);
 			OmniSketchProbeResult probe = snapshotWeights.probe();
-			double samplingProbability = effectiveSamplingProbability(valueHash, probe);
+			double samplingProbability = effectiveSamplingProbability(valueHash, probe, retainedWeight);
 			return ValuePostings.wrap(valueHash, witnessHashes, weights,
 					(float) samplingProbability,
 					minimumDetectableEstimate(valueHash, probe, samplingProbability));

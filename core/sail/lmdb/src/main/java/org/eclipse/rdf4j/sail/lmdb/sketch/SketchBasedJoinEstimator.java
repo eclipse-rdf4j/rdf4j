@@ -4940,7 +4940,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private double estimateOmniPairJoinRows(State state, Component join, Pair leftPair, String leftXValue,
 			String leftYValue, Pair rightPair, String rightXValue, String rightYValue) {
 		if (state == null || state.omniJoinEstimator == null || state.omniJoinEstimatorHasDeletes
-				|| join != Component.S) {
+				|| join != Component.S || !pairEnabled(leftPair) || !pairEnabled(rightPair)) {
 			return Double.NaN;
 		}
 		OmniSubjectStarInput leftInput = omniSubjectStarInput(leftPair, leftXValue, leftYValue);
@@ -4956,24 +4956,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		OmniWitnessSet right = estimator.probeStaticRetainedAtMost(subjectStar, rightInput.attribute(),
 				OmniJoinEstimator.Predicate.equalHash(rightInput.valueHash()),
 				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
-		OmniWitnessSet baseLeft = estimator.probeStaticBaseRetainedAtMost(subjectStar, leftInput.attribute(),
-				OmniJoinEstimator.Predicate.equalHash(leftInput.valueHash()),
-				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
-		OmniWitnessSet baseRight = estimator.probeStaticBaseRetainedAtMost(subjectStar, rightInput.attribute(),
-				OmniJoinEstimator.Predicate.equalHash(rightInput.valueHash()),
-				OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES);
-		OmniWitnessSet intersection = preferRetainedBaseWitness(estimator.intersectBase(List.of(baseLeft, baseRight)),
-				estimator.intersect(List.of(left, right)));
+		OmniWitnessSet intersection = estimator.intersect(List.of(left, right));
 		double rows = estimator.estimateRows(intersection);
 		return Double.isFinite(rows) ? normalizeRows(rows) : Double.NaN;
-	}
-
-	private OmniWitnessSet preferRetainedBaseWitness(OmniWitnessSet base, OmniWitnessSet candidate) {
-		if (base != null && !base.isEmpty() && base.retainedWitnessCount() > 0
-				&& base.fallbackReason() == OmniWitnessSet.FallbackReason.NONE) {
-			return base;
-		}
-		return candidate == null ? base : candidate;
 	}
 
 	private OmniSubjectStarInput omniSubjectStarInput(Pair pair, String xValue, String yValue) {
@@ -6452,6 +6437,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		List<Component> boundComponents = new ArrayList<>(3);
 		for (Component component : List.of(Component.P, Component.O, Component.C)) {
+			if (component == Component.C && !contextPairSketchesEnabled) {
+				continue;
+			}
 			if (hasBoundValue(varForComponent(pattern, component))) {
 				boundComponents.add(component);
 			}
@@ -6549,17 +6537,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			OmniJoinEstimator estimator = snap.omniJoinEstimator;
 			OmniJoinEstimator.Relation subjectStar = estimator.relation(OMNI_RELATION_SUBJECT_STAR);
 			List<OmniWitnessSet> witnessSets = new ArrayList<>(inputs.size());
-			List<OmniWitnessSet> baseWitnessSets = new ArrayList<>(inputs.size());
 			for (OmniSubjectStarInput input : inputs) {
 				witnessSets.add(estimator.probeStaticRetainedAtMost(subjectStar, input.attribute(),
 						OmniJoinEstimator.Predicate.equalHash(input.valueHash()),
 						OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES));
-				baseWitnessSets.add(estimator.probeStaticBaseRetainedAtMost(subjectStar, input.attribute(),
-						OmniJoinEstimator.Predicate.equalHash(input.valueHash()),
-						OMNI_PLANNING_PROBE_MAX_RETAINED_WITNESSES));
 			}
-			return preferRetainedBaseWitness(estimator.intersectBase(baseWitnessSets),
-					estimator.intersect(witnessSets));
+			return estimator.intersect(witnessSets);
 		}
 	}
 

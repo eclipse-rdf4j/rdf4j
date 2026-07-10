@@ -44,6 +44,7 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 	private static final IRI EDGE_COPY = VF.createIRI("urn:omni-retention:edge-copy");
 	private static final IRI FLAG = VF.createIRI("urn:omni-retention:flag");
 	private static final IRI STATUS = VF.createIRI("urn:omni-retention:status");
+	private static final IRI GRAPH = VF.createIRI("urn:omni-retention:graph");
 	private static final Value ACTIVE = VF.createLiteral("active");
 	private static final Value CLOSED = VF.createLiteral("closed");
 
@@ -88,6 +89,27 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 
 		assertCompleteSurface(subjectStar, "root", "subject-star");
 		assertCompleteSurface(bridgeChain, "middle", "bridge-chain");
+	}
+
+	@Test
+	void subjectStarDropsUnavailableContextDimensionWithoutDroppingOmniEvidence() {
+		StubSketchStatementSource contextStore = new StubSketchStatementSource();
+		for (int index = 0; index < 64; index++) {
+			Resource root = VF.createIRI("urn:omni-retention:context-root:" + index);
+			contextStore.add(VF.createStatement(root, TYPE, ENTITY, GRAPH));
+			contextStore.add(VF.createStatement(root, STATUS, ACTIVE, GRAPH));
+		}
+		SketchBasedJoinEstimator contextEstimator = track(new SketchBasedJoinEstimator(contextStore,
+				omniConfig().withoutContextPairSketches()));
+		contextEstimator.rebuild();
+		StatementPattern rootType = fixedObjectPattern("root", TYPE, ENTITY, GRAPH);
+		StatementPattern rootStatus = fixedObjectPattern("root", STATUS, ACTIVE, GRAPH);
+
+		OmniSketchSurfaceEstimate subjectStar = contextEstimator.estimateSubjectStarOmniSurface(
+				List.of(rootType, rootStatus), "root");
+
+		assertCompleteSurface(subjectStar, "root", "subject-star");
+		assertEquals(64.0d, subjectStar.selectedRows(), 0.0d);
 	}
 
 	@Test
@@ -220,6 +242,12 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 
 	private static StatementPattern fixedObjectPattern(String subjectName, IRI predicate, Value object) {
 		return new StatementPattern(new Var(subjectName), new Var("predicate", predicate), new Var("object", object));
+	}
+
+	private static StatementPattern fixedObjectPattern(String subjectName, IRI predicate, Value object,
+			Resource context) {
+		return new StatementPattern(new Var(subjectName), new Var("predicate", predicate), new Var("object", object),
+				new Var("context", context));
 	}
 
 	private static SketchBasedJoinEstimator.Config omniConfig() {

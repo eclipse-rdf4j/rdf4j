@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -286,11 +287,28 @@ class SketchEstimatorThemeJoinAccuracyIT {
 		double pairJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
 				SketchBasedJoinEstimator.Pair.PO, leftPredicate, leftObject, SketchBasedJoinEstimator.Pair.PO,
 				rightPredicate, rightObject);
+		StatementPattern leftPattern = new StatementPattern(Var.of("subject"), Var.of("leftPredicate",
+				scenario.left.predicate()), Var.of("leftObject", scenario.left.object()),
+				Var.of("context", THEME_GRAPH));
+		StatementPattern rightPattern = new StatementPattern(Var.of("subject"), Var.of("rightPredicate",
+				scenario.right.predicate()), Var.of("rightObject", scenario.right.object()),
+				Var.of("context", THEME_GRAPH));
+		OmniSketchSurfaceEstimate surface = estimator.estimateOmniSurface(List.of(leftPattern, rightPattern),
+				"subject");
 
 		System.out.println("Diagnostics leftEstimate=" + leftEstimate + ", rightEstimate=" + rightEstimate
 				+ ", pairJoinEstimate(POxPO)=" + pairJoinEstimate);
 		System.out.println("Diagnostics leftPairs po=" + poLeft + ", pc=" + pcLeft + ", oc=" + ocLeft);
 		System.out.println("Diagnostics rightPairs po=" + poRight + ", pc=" + pcRight + ", oc=" + ocRight);
+		System.out.println("Diagnostics omniSurface=" + (surface == null ? "null"
+				: "rows=" + surface.selectedRows() + ", probability=" + surface.samplingProbability()
+						+ ", source=" + surface.source() + ", fallback=" + surface.fallbackReason()
+						+ ", witnesses=" + surface.bindings()
+								.values()
+								.stream()
+								.mapToInt(binding -> binding.witnessCount())
+								.max()
+								.orElse(0)));
 	}
 
 	private static void printDirectPairCounts(SailRepository repository, JoinScenario scenario) {
