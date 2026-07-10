@@ -34,6 +34,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 03:12Z) Tested and rejected operation-wide hash-sorted value resolution after it regressed NONE 41.36% and READ_COMMITTED 44.12%; removed all production/test changes.
 - [x] (2026-07-10 03:45Z) Added append-free packed statement blocks for fresh default-evaluator loads, scoped them away from automatic/native evaluation, and reduced the Docker checkpoint to 428.029/493.600 ms/op.
 - [x] (2026-07-10 04:53Z) Replaced global value IDs with a packed local value dictionary and fixed NONE namespace ordering; nine focused tests pass and forked Java 26 reaches 98.847/152.981 ms/op.
+- [x] (2026-07-10 05:14Z) Halved fresh packed quad records with 32-bit local IDs; a candidate-control-candidate JDK 26 sequence improves pooled time 10.14%/3.73% and removes about 12.69 MB/op.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -117,6 +118,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Preserving packed triples across namespace-only transactions makes NONE substantially faster than READ_COMMITTED, while allocation remains the dominant Java-side difference.
   Evidence: `profiles/lmdb-load-10x/packed-value-dictionary/forked-paired-after-namespace-fix.json` measures NONE at 98.847 ms/op and 107,660,034 B/op and READ_COMMITTED at 152.981 ms/op and 132,219,959 B/op, 7.90x and 5.43x faster than the durable baselines.
+
+- Observation: Local quad IDs fit in 32 bits and the smaller representation improves both memory traffic and current-host elapsed time despite substantial host drift.
+  Evidence: the candidate-control-candidate sequence under `profiles/lmdb-load-10x/packed-int-ids` pools to 110.889/163.734 ms/op for NONE/READ_COMMITTED versus the intervening 123.404/170.083 ms/op 64-bit control, while both candidate runs consistently remove about 12.69 MB/op.
 
 ## Decision Log
 
@@ -202,6 +206,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Keep the packed local value dictionary and preserve it across namespace-only transactions.
   Rationale: It reduces NONE to 98.847 ms/op and READ_COMMITTED to 152.981 ms/op without append flags. Namespace changes do not mutate triple/value identity, while any subsequent data mutation in the same store transaction still forces materialization before writing.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Encode fresh-load local quad IDs as four 32-bit integers while retaining the 64-bit legacy packed record format.
+  Rationale: Dictionary IDs are already Java `int` indices. The candidate halves packed quad bytes, removes roughly 12.69 MB/op of allocation, and wins a bracketing same-host throughput comparison in both isolation modes without changing LMDB flags.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -330,3 +338,5 @@ Revision note (2026-07-10 00:31Z): Added fresh two-isolation async-profiler call
 Revision note (2026-07-10 00:40Z): Recorded and rejected the public-hash/distinct-view resolver after collision counts and model-upgrade timings disproved its expected advantage.
 
 Revision note (2026-07-10 00:53Z): Recorded the TDD-verified but benchmark-rejected map-backed canonical-term experiment and removed its production/test changes.
+
+Revision note (2026-07-10 05:14Z): Recorded the retained 32-bit local-ID format, its candidate-control-candidate measurements, and its allocation and storage reductions.

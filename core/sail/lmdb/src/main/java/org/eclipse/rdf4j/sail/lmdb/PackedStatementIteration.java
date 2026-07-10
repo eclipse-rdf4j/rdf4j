@@ -40,7 +40,7 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 final class PackedStatementIteration implements CloseableIteration<Statement> {
 
-	private static final int RECORD_BYTES = 4 * Long.BYTES;
+	private static final int RECORD_BYTES = 4 * Integer.BYTES;
 	private final Txn txn;
 	private final StampedLongAdderLockManager lockManager;
 	private final ValueFactory valueFactory;
@@ -142,10 +142,10 @@ final class PackedStatementIteration implements CloseableIteration<Statement> {
 
 	private Statement findNext() throws IOException {
 		while (ensureQuad()) {
-			int subjectId = Math.toIntExact(quadBlock.getLong());
-			int predicateId = Math.toIntExact(quadBlock.getLong());
-			int objectId = Math.toIntExact(quadBlock.getLong());
-			int contextId = Math.toIntExact(quadBlock.getLong());
+			int subjectId = quadBlock.getInt();
+			int predicateId = quadBlock.getInt();
+			int objectId = quadBlock.getInt();
+			int contextId = quadBlock.getInt();
 			ensureValues(Math.max(Math.max(subjectId, predicateId), Math.max(objectId, contextId)));
 			Resource subject = (Resource) values[subjectId];
 			IRI predicate = (IRI) values[predicateId];

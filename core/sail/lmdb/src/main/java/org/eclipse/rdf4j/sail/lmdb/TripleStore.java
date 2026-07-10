@@ -82,6 +82,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.ToIntFunction;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -129,6 +130,7 @@ class TripleStore implements Closeable {
 	static final int PACKED_BULK_MIN_STATEMENTS = 10_000;
 	private static final int PACKED_BLOCK_STATEMENTS = 512;
 	private static final int PACKED_RECORD_BYTES = 4 * Long.BYTES;
+	private static final int PACKED_LOCAL_RECORD_BYTES = 4 * Integer.BYTES;
 	private static final int PACKED_VALUE_BLOCK_BYTES = 64 * 1024;
 	private static final long PACKED_COUNT_KEY = 0;
 	/*-----------*
@@ -1893,7 +1895,7 @@ class TripleStore implements Closeable {
 		}
 		HashMap<Value, Integer> valueIds = new HashMap<>(Math.max(16, expectedCount / 2));
 		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
-		long[] quads = new long[Math.multiplyExact(expectedCount, 4)];
+		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
 		int count = 0;
 		for (Statement statement : statements) {
 			int offset = Math.multiplyExact(count, 4);
@@ -1935,8 +1937,9 @@ class TripleStore implements Closeable {
 
 	private void writePackedValues(ArrayList<Value> values, HashMap<Value, Integer> valueIds) throws IOException {
 		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size());
+		ToIntFunction<Value> lookupId = value -> valueIds.get(value);
 		for (Value value : values) {
-			encodedValues.add(PackedValueCodec.encode(value, nested -> valueIds.get(nested)));
+			encodedValues.add(PackedValueCodec.encode(value, lookupId));
 		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
@@ -1967,7 +1970,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void writePackedQuadIds(long[] quads, int count) throws IOException {
+	private void writePackedQuadIds(int[] quads, int count) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
 			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
@@ -1976,11 +1979,11 @@ class TripleStore implements Closeable {
 				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
 				keyBuffer.clear();
 				key.mv_data(keyBuffer.putLong(packedNextBlockId++).flip());
-				data.mv_size((long) blockCount * PACKED_RECORD_BYTES);
+				data.mv_size((long) blockCount * PACKED_LOCAL_RECORD_BYTES);
 				E(mdb_put(writeTxn, packedExplicitDbi, key, data, MDB_RESERVE));
 				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
 				for (int i = start * 4, end = (start + blockCount) * 4; i < end; i++) {
-					target.putLong(quads[i]);
+					target.putInt(quads[i]);
 				}
 			}
 		}
@@ -2060,17 +2063,23 @@ class TripleStore implements Closeable {
 				ByteBuffer key = packedKey.mv_data().order(ByteOrder.BIG_ENDIAN);
 				if (key.getLong(key.position()) != PACKED_COUNT_KEY) {
 					ByteBuffer records = packedValue.mv_data().order(ByteOrder.BIG_ENDIAN);
-					while (records.remaining() >= PACKED_RECORD_BYTES) {
-						long subj = records.getLong();
-						long pred = records.getLong();
-						long obj = records.getLong();
-						long context = records.getLong();
-						if (packedValues != null) {
-							subj = valueStore.storeValue(packedValues[Math.toIntExact(subj)]);
-							pred = valueStore.storeValue(packedValues[Math.toIntExact(pred)]);
-							obj = valueStore.storeValue(packedValues[Math.toIntExact(obj)]);
-							context = context == 0 ? 0
-									: valueStore.storeValue(packedValues[Math.toIntExact(context)]);
+					int recordBytes = packedValues == null ? PACKED_RECORD_BYTES : PACKED_LOCAL_RECORD_BYTES;
+					while (records.remaining() >= recordBytes) {
+						long subj;
+						long pred;
+						long obj;
+						long context;
+						if (packedValues == null) {
+							subj = records.getLong();
+							pred = records.getLong();
+							obj = records.getLong();
+							context = records.getLong();
+						} else {
+							subj = valueStore.storeValue(packedValues[records.getInt()]);
+							pred = valueStore.storeValue(packedValues[records.getInt()]);
+							obj = valueStore.storeValue(packedValues[records.getInt()]);
+							int contextId = records.getInt();
+							context = contextId == 0 ? 0 : valueStore.storeValue(packedValues[contextId]);
 						}
 						for (TripleIndex index : indexes) {
 							legacyKeyBuffer.clear();
