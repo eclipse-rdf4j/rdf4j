@@ -1,0 +1,31 @@
+--- Execution profile ---
+Total samples       : 3556
+
+       bytes  percent  samples  top
+  ----------  -------  -------  ---
+  3883582352   45.32%     1851  byte[]
+  1654652928   19.31%      789  java.nio.HeapCharBuffer
+  1416943344   16.53%      194  int[]
+   702545920    8.20%      335  char[]
+   276824816    3.23%       85  java.lang.Object[]
+   171966464    2.01%       82  java.lang.String
+   150996096    1.76%       72  long[]
+    50331648    0.59%       24  java.util.Optional
+    46137344    0.54%       22  org.eclipse.rdf4j.model.Value[]
+    46137344    0.54%       22  org.eclipse.rdf4j.common.net.ParsedIRI
+    39845888    0.46%       19  org.eclipse.rdf4j.sail.lmdb.model.LmdbValue[]
+    37748736    0.44%       18  java.util.LinkedHashMap$Entry
+    23068672    0.27%       11  org.eclipse.rdf4j.model.impl.SimpleIRI
+    16777216    0.20%        8  java.nio.HeapByteBuffer
+    14680064    0.17%        7  org.eclipse.rdf4j.model.impl.GenericStatement
+    10485760    0.12%        5  org.eclipse.rdf4j.model.impl.SimpleLiteral
+     6291488    0.07%        2  java.util.HashMap$Node[]
+     4194304    0.05%        2  java.lang.StringBuilder
+     2097152    0.02%        1  java.util.HashMap$Node
+     2097152    0.02%        1  java.util.HashMap
+     2097152    0.02%        1  java.nio.DirectByteBuffer
+     2097152    0.02%        1  org.eclipse.rdf4j.model.impl.SimpleBNode
+     2097152    0.02%        1  java.lang.classfile.constantpool.PoolEntry[]
+     2097152    0.02%        1  java.lang.Class
+     2097152    0.02%        1  org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters$CachingKeyWriter$Entry[]
+     2097152    0.02%        1  org.lwjgl.util.lmdb.MDBVal[]
