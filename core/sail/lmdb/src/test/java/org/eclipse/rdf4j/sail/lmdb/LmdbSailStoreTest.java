@@ -564,6 +564,26 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void automaticEvaluationKeepsLargeIterableOnLegacyIndexes() {
+		File automaticDir = new File(dataDir, "automatic-evaluation-packed");
+		LmdbStore store = new LmdbStore(automaticDir, new LmdbStoreConfig("spoc,posc"));
+		Repository repository = new SailRepository(store);
+		Set<Statement> statements = sampleStatements(10_000);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+				assertEquals(statements.size(), connection.size());
+			}
+			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void noneIsolationBatchesIndividualApprovals() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();

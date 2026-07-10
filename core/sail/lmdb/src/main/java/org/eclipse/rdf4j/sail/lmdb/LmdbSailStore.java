@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
@@ -90,6 +91,7 @@ class LmdbSailStore implements SailStore {
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
+	private final boolean packedBulkWritesEnabled;
 	private final AlignedWriteBudget alignedWriteBudget;
 	private int nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
 
@@ -462,6 +464,8 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.packedBulkWritesEnabled = DefaultEvaluationStrategyFactory.class.getName()
+				.equals(config.getEvaluationStrategyFactoryClassName());
 		this.alignedWriteBudget = new AlignedWriteBudget(
 				calculateAlignedWriteStatementLimit(Runtime.getRuntime().maxMemory()));
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
@@ -1483,8 +1487,9 @@ class LmdbSailStore implements SailStore {
 			Statement last = null;
 			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
-			boolean packedCandidate = explicit && sketchBasedJoinEstimator == null && overrideContexts.length == 0
-					&& approved instanceof Set<?> set && set.size() >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
+			boolean packedCandidate = packedBulkWritesEnabled && explicit && sketchBasedJoinEstimator == null
+					&& overrideContexts.length == 0 && approved instanceof Set<?> set
+					&& set.size() >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
 
 			sinkStoreAccessLock.lock();
 			try {
