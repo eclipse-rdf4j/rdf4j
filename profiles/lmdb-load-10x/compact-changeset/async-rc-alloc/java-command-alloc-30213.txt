@@ -1,0 +1,31 @@
+--- Execution profile ---
+Total samples       : 2325
+
+       bytes  percent  samples  top
+  ----------  -------  -------  ---
+  1761264192   34.84%      839  byte[]
+  1616904192   31.99%      771  java.nio.HeapCharBuffer
+   725614592   14.36%      346  char[]
+   240997440    4.77%       34  int[]
+   153092096    3.03%       73  java.lang.String
+   119537664    2.36%       57  java.util.HashMap$Node
+    75497472    1.49%       36  java.lang.Integer
+    68247000    1.35%       30  java.lang.Object[]
+    54526368    1.08%       26  long[]
+    39846160    0.79%       18  java.util.HashMap$Node[]
+    39845888    0.79%       19  org.eclipse.rdf4j.common.net.ParsedIRI
+    31457280    0.62%       15  java.util.LinkedHashMap$Entry
+    31457280    0.62%       15  org.eclipse.rdf4j.model.impl.SimpleIRI
+    23068672    0.46%       11  java.util.Optional
+    23068672    0.46%       11  org.eclipse.rdf4j.model.impl.GenericStatement
+    12582912    0.25%        6  org.eclipse.rdf4j.sail.lmdb.model.LmdbValue[]
+     6291456    0.12%        3  java.nio.HeapByteBuffer
+     6291456    0.12%        3  java.nio.DirectByteBuffer
+     6291456    0.12%        3  org.eclipse.rdf4j.model.Value[]
+     6291456    0.12%        3  org.eclipse.rdf4j.model.impl.SimpleLiteral
+     2097152    0.04%        1  java.util.ArrayList$Itr
+     2097152    0.04%        1  jdk.internal.classfile.impl.BufWriterImpl
+     2097152    0.04%        1  java.lang.Class
+     2097152    0.04%        1  org.eclipse.rdf4j.model.base.AbstractLiteral$TypedLiteral
+     2097152    0.04%        1  org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters$CachingKeyWriter$Entry[]
+     2097152    0.04%        1  sun.util.locale.InternalLocaleBuilder
