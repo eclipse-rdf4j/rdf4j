@@ -81,7 +81,7 @@ public class TransactionsPerSecondBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(forceSync));
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 		random = new Random(1337);
