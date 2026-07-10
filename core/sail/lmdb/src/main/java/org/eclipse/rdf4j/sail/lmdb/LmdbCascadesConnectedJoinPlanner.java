@@ -609,13 +609,16 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return null;
 		}
 		Set<String> boundEndpoints = boundPathEndpointNames(factors.get(factorIndex), currentPrefix.boundVars());
-		if (boundEndpoints.isEmpty()) {
+		Set<String> unboundEndpoints = unboundPathEndpointNames(factors.get(factorIndex), currentPrefix.boundVars());
+		if (boundEndpoints.isEmpty() && unboundEndpoints.isEmpty()) {
 			return null;
 		}
 		PendingDirectAlternative best = null;
 		for (int candidateIndex = 0; candidateIndex < factors.size(); candidateIndex++) {
+			TupleExpr candidateFactor = factors.get(candidateIndex);
 			if (candidateIndex == factorIndex || (prefixMask & (1 << candidateIndex)) != 0
-					|| !constantPredicateStatementOnAny(factors.get(candidateIndex), boundEndpoints)) {
+					|| !constantPredicateStatementOnAny(candidateFactor, boundEndpoints)
+							&& !selectiveConstantStatementOnAny(candidateFactor, unboundEndpoints)) {
 				continue;
 			}
 			Step directStep = estimateStep(factors, candidateIndex, currentPrefix.boundVars(), currentPrefix.rows(),
@@ -646,6 +649,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return boundEndpoints.isEmpty() ? Set.of() : Set.copyOf(boundEndpoints);
 	}
 
+	private static Set<String> unboundPathEndpointNames(TupleExpr tupleExpr, Set<String> boundVars) {
+		Set<String> endpoints = pathEndpointNames(tupleExpr);
+		Set<String> plannerBoundVars = plannerNames(boundVars);
+		if (endpoints.isEmpty()) {
+			return Set.of();
+		}
+		LinkedHashSet<String> unboundEndpoints = new LinkedHashSet<>();
+		for (String endpoint : endpoints) {
+			if (!plannerBoundVars.contains(endpoint)) {
+				unboundEndpoints.add(endpoint);
+			}
+		}
+		return unboundEndpoints.isEmpty() ? Set.of() : Set.copyOf(unboundEndpoints);
+	}
+
 	private static boolean constantPredicateStatementOnAny(TupleExpr tupleExpr, Set<String> names) {
 		if (!(tupleExpr instanceof StatementPattern pattern) || names == null || names.isEmpty()
 				|| pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()) {
@@ -654,6 +672,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 		String subjectName = plannerVarName(pattern.getSubjectVar());
 		String objectName = plannerVarName(pattern.getObjectVar());
 		return subjectName != null && names.contains(subjectName) || objectName != null && names.contains(objectName);
+	}
+
+	private static boolean selectiveConstantStatementOnAny(TupleExpr tupleExpr, Set<String> names) {
+		if (!(tupleExpr instanceof StatementPattern pattern) || names == null || names.isEmpty()
+				|| pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()) {
+			return false;
+		}
+		String subjectName = plannerVarName(pattern.getSubjectVar());
+		String objectName = plannerVarName(pattern.getObjectVar());
+		return subjectName != null && names.contains(subjectName) && constantTerm(pattern.getObjectVar())
+				|| objectName != null && names.contains(objectName) && constantTerm(pattern.getSubjectVar());
+	}
+
+	private static boolean constantTerm(Var var) {
+		return var != null && (var.hasValue() || var.isConstant());
 	}
 
 	private static String plannerVarName(Var var) {

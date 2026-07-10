@@ -2197,7 +2197,8 @@ final class LmdbCascadesRuleProvider {
 			}
 			if (!analysis.hasChoiceOptions()
 					&& analysis.emptySetOption().isEmpty()
-					&& statistics instanceof LmdbPredicateObjectDomainSource) {
+					&& statistics instanceof LmdbPredicateObjectDomainSource
+					&& deferredFilters.stream().noneMatch(filter -> filter.patternLocalBase != null)) {
 				return List.of();
 			}
 

@@ -52,6 +52,8 @@ Timestamps are UTC.
 - [x] (2026-07-10 06:36Z) Reconciled the q10/self-edge boundary by using Cascades provenance: only a self-edge anti-filter produced by `minus-alternatives-anti-exists-pushed` is restored to a materialized `Difference`; explicit SPARQL NOT EXISTS remains correlated. The q10, social q4, finite-rewrite (17), filter-local (40), connected-admissibility (15), selective-chain, and cost-tie selectors are green.
 - [x] (2026-07-10 06:58Z) Fourth module verify reached 1359 unit tests before the shared 4 GiB fork exhausted heap in `LmdbSparsePrefixCostTest`; two assertions were red first: a memoization test still expected the pre-rewrite local-filter final shape, and a subselect GROUP retained 25,100 rows against its 25,000-row bound. Complete evidence is in `logs/mvnf/20260710-063953-verify.log` and `initial-evidence.txt`.
 - [x] (2026-07-10 08:12Z) Closed both pre-OOM assertions without weakening them. Subject-star fallback estimates now retain subject distinct evidence through the LMDB statistics bag, star physical properties, and opaque cost-model boundary. A no-choice guarantee rule no longer displaces a genuine connected-hypergraph subquery winner. `QueryBenchmarkTest` (16), memoization (100), Cascades cost model (50), optimizer (52), star support (5), surface retention (11), and context propagation (4) are focused-green.
+- [x] (2026-07-10 08:20Z) Removed an attempted recursive emergency-descendant repair after live OOM diagnostics showed it repeatedly cloning `DeleteInsertTest` into roughly 150,000 joins. The subselect regression remains green without recursion; heap occupancy is bounded again.
+- [x] (2026-07-10 08:45Z) Fifth module verify completed without OOM: 2082 tests, 2 failures, 0 errors, 54 skipped. Both failures were exact AAS anchor-order assertions. No-choice guarantee ownership now remains available for factor-local filters, and path deferral checks local statements on a bound endpoint plus selective constant binders on the unbound endpoint. AAS hypergraph (3), AAS benchmarks (6), cost tie (1), connected admissibility (15), and subselect repair (1) are focused-green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -130,6 +132,8 @@ Timestamps are UTC.
   Evidence: q10 red after blanket preservation `logs/mvnf/20260710-062834-verify.log`; q10 green `20260710-063055-verify.log`; explicit social q4 green `20260710-063200-verify.log`.
 - Observation: Once subject-star distinct evidence reached parent costing, `lmdb-guarantee-options` could beat the connected-hypergraph rule while reporting `generated=0, selected=original`. With a real LMDB predicate-domain provider, that is not a guarantee alternative at all; it duplicates ordinary join ordering and can hide the required Cascades owner. Synthetic statistics without a domain provider still use the rule as a deferred-filter planning fallback, and `empty-filter:` remains a semantic competitor.
   Evidence: focused subselect red `logs/mvnf/20260710-075727-verify.log`; context guard red `20260710-080740-verify.log`; focused and class greens `20260710-080949-verify.log`, `20260710-081044-verify.log`, and `20260710-081129-verify.log`.
+- Observation: Path deferral originally searched only the endpoint already bound by the prefix. That misses an exact statement such as `?prop aas:idShort "ratedPower"` which can bind the opposite endpoint, and after that anchor is chosen it can also let the path leapfrog a cheaper local `?prop aas:value ?val` lookup. Searching both sides indiscriminately would regress broad AAS paths, so the unbound side is eligible only when the statement's opposite term is constant.
+  Evidence: full-module AAS reds `logs/mvnf/20260710-082145-verify.log`; intermediate single red `20260710-083610-verify.log`; focused green `20260710-083733-verify.log` and broader green `20260710-083925-verify.log`.
 
 ## Decision Log
 
@@ -205,8 +209,14 @@ Timestamps are UTC.
 - Decision: A physical rule that owns an opaque unary/binary subtree is authoritative for binding evidence it explicitly declares; ordinary memo expressions continue to prefer profiles inferred from their input winners.
   Rationale: Star scans need their subject-distinct Omni bag at the GROUP boundary, but global declared-profile precedence changes unrelated physical winner selection. Opaque ownership is the narrow boundary at which the rule has replaced the child graph and must supply its own evidence.
   Date/Author: 2026-07-10 / Codex.
-- Decision: `lmdb-guarantee-options` declines a real LMDB domain-provider segment when analysis has neither an empty-set result nor a choice option; it retains the existing fallback behavior for synthetic/non-domain statistics.
-  Rationale: `generated=0, selected=original` is a duplicate legacy join planner in production and can displace the connected-hypergraph owner, while test and extension statistics without domain analysis still require deferred-filter planning.
+- Decision: `lmdb-guarantee-options` may decline a real LMDB domain-provider segment when analysis has neither an empty-set result nor a choice option and every deferred filter is cross-factor; it retains factor-local and synthetic/non-domain fallback behavior.
+  Rationale: A cross-factor `generated=0, selected=original` candidate duplicates legacy join planning and can displace the connected-hypergraph owner, while local thresholds and test/extension statistics still contribute meaningful filter-aware ordering.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Keep a no-choice guarantee original-plan candidate when at least one deferred filter is factor-local; decline it only for cross-factor-only segments.
+  Rationale: Local thresholds contribute real placement/selectivity information for AAS paths, while cross-factor predicates such as `?type1 != ?type2` only duplicate legacy join ordering and can hide the connected owner.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Delay a one-ended path for a cheaper constant-predicate statement on its bound endpoint, or for a cheaper unbound-endpoint statement only when that statement has a constant opposite term.
+  Rationale: This prioritizes exact endpoint anchors and local lookups without forcing a broad far-end predicate scan ahead of a genuinely cheaper one-ended traversal.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
