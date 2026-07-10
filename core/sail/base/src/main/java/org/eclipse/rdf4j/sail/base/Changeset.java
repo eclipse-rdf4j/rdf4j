@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -510,20 +511,29 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private long approveCompactWithoutMaterialization(Iterable<? extends Statement> statements, int expectedSize) {
+		List<Statement> compact = bufferStatements(statements, expectedSize, this::recordApprovedContext);
+		compactApproved = compact;
+		approvedEmpty = compact.isEmpty();
+		return compact.size();
+	}
+
+	protected List<Statement> bufferStatements(Iterable<? extends Statement> statements, int expectedSize,
+			Consumer<Resource> contextConsumer) {
 		ArrayList<Statement> compact = new ArrayList<>(expectedSize);
 		for (Statement statement : statements) {
 			compact.add(statement);
-			Resource context = statement.getContext();
-			if (context != null) {
-				if (approvedContexts == null) {
-					approvedContexts = new HashSet<>();
-				}
-				approvedContexts.add(context);
-			}
+			contextConsumer.accept(statement.getContext());
 		}
-		compactApproved = Collections.unmodifiableList(compact);
-		approvedEmpty = compact.isEmpty();
-		return compact.size();
+		return Collections.unmodifiableList(compact);
+	}
+
+	private void recordApprovedContext(Resource context) {
+		if (context != null) {
+			if (approvedContexts == null) {
+				approvedContexts = new HashSet<>();
+			}
+			approvedContexts.add(context);
+		}
 	}
 
 	private void materializeApproved() {

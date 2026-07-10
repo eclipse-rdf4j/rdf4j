@@ -709,20 +709,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				@Override
 				public Statement next() {
 					Statement statement = delegate.next();
-					if (contexts.length == 0) {
-						Resource context = statement.getContext();
-						if (context == null) {
-							addStatementInternal(statement.getSubject(), statement.getPredicate(),
-									statement.getObject());
-						} else {
-							addStatementInternal(statement.getSubject(), statement.getPredicate(),
-									statement.getObject(),
-									context);
-						}
-					} else {
-						addStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-								contexts);
-					}
+					bulkStatementAdded(statement, contexts);
 					return statement;
 				}
 			};
@@ -743,6 +730,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				trackedStatements = trackedIterator::get;
 			}
 			return sink.approveAll(trackedStatements, contexts);
+		}
+	}
+
+	protected void bulkStatementAdded(Statement statement, Resource... contexts) throws SailException {
+		if (contexts.length == 0) {
+			Resource context = statement.getContext();
+			if (context == null) {
+				addStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject());
+			} else {
+				addStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), context);
+			}
+		} else {
+			addStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), contexts);
 		}
 	}
 

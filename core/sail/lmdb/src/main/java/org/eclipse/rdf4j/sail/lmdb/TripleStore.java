@@ -1894,6 +1894,14 @@ class TripleStore implements Closeable {
 		if (!packedWriteActive || packedTxnCount != 0) {
 			throw new IllegalStateException("Packed statement storage is not active for an empty transaction");
 		}
+		if (statements instanceof PackedStatementList packed) {
+			writePackedValues(Arrays.asList(packed.values()), packed.valueIdLookup(), 1);
+			writePackedQuadIds(packed.quads(), packed.size());
+			packedTxnCount = packed.size();
+			packedTxnValueCount = packed.values().length - 1;
+			logAddedStatements(packed.size());
+			return packed.size();
+		}
 		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount / 2));
 		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
 		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
@@ -1909,7 +1917,7 @@ class TripleStore implements Closeable {
 			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, values);
 			count++;
 		}
-		writePackedValues(values, valueIds);
+		writePackedValues(values, valueIds::get, 0);
 		writePackedQuadIds(quads, count);
 		packedTxnCount = count;
 		packedTxnValueCount = values.size();
@@ -1936,10 +1944,11 @@ class TripleStore implements Closeable {
 		return id;
 	}
 
-	private void writePackedValues(ArrayList<Value> values, ObjectIntHashMap<Value> valueIds) throws IOException {
-		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size());
-		ToIntFunction<Value> lookupId = value -> valueIds.get(value);
-		for (Value value : values) {
+	private void writePackedValues(List<Value> values, ToIntFunction<Value> lookupId, int firstValue)
+			throws IOException {
+		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size() - firstValue);
+		for (int i = firstValue; i < values.size(); i++) {
+			Value value = values.get(i);
 			encodedValues.add(PackedValueCodec.encode(value, lookupId));
 		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {

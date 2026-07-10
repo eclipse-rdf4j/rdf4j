@@ -461,9 +461,42 @@ public class LmdbSailStoreTest {
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(statements);
+				assertTrue(connection.hasStatement(F.createIRI("urn:bulk:subject:0"),
+						F.createIRI("urn:bulk:predicate:0"), F.createIRI("urn:bulk:object:0"), false,
+						F.createIRI("urn:bulk:context:0")));
 				connection.commit();
 			}
 
+			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void largeFreshReadCommittedIterableIsPreparedInOneStatementPass() throws Exception {
+		File packedDir = new File(dataDir, "packed-read-committed-single-pass");
+		StatementReadCounter reads = new StatementReadCounter();
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (Statement statement : sampleStatements(10_000)) {
+			statements.add(new CountingStatement(statement, reads));
+		}
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.add(statements);
+				connection.commit();
+			}
+
+			assertEquals(statements.size(), reads.subjects);
+			assertEquals(statements.size(), reads.predicates);
+			assertEquals(statements.size(), reads.objects);
+			assertEquals(statements.size(), reads.contexts);
 			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
 		} finally {
 			repository.shutDown();
@@ -1081,6 +1114,60 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:bulk:context:" + (i % 2))));
 		}
 		return statements;
+	}
+
+	private static final class StatementReadCounter {
+		private int subjects;
+		private int predicates;
+		private int objects;
+		private int contexts;
+	}
+
+	private static final class CountingStatement implements Statement {
+
+		private static final long serialVersionUID = 1L;
+
+		private final Statement delegate;
+		private final StatementReadCounter reads;
+
+		private CountingStatement(Statement delegate, StatementReadCounter reads) {
+			this.delegate = delegate;
+			this.reads = reads;
+		}
+
+		@Override
+		public Resource getSubject() {
+			reads.subjects++;
+			return delegate.getSubject();
+		}
+
+		@Override
+		public IRI getPredicate() {
+			reads.predicates++;
+			return delegate.getPredicate();
+		}
+
+		@Override
+		public Value getObject() {
+			reads.objects++;
+			return delegate.getObject();
+		}
+
+		@Override
+		public Resource getContext() {
+			reads.contexts++;
+			return delegate.getContext();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return delegate.equals(other instanceof CountingStatement counting ? counting.delegate : other);
+		}
+
+		@Override
+		public int hashCode() {
+			return delegate.hashCode();
+		}
 	}
 
 	@AfterEach

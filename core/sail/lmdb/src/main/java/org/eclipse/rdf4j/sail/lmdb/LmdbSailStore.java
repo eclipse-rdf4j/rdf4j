@@ -1109,6 +1109,16 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		protected List<Statement> bufferStatementsForBranch(Iterable<? extends Statement> statements, int expectedSize,
+				Consumer<Resource> contextConsumer) {
+			if (explicit && packedBulkWritesEnabled && sketchBasedJoinEstimator == null
+					&& expectedSize >= TripleStore.PACKED_BULK_MIN_STATEMENTS) {
+				return PackedStatementList.copyOf(statements, expectedSize, contextConsumer);
+			}
+			return super.bufferStatementsForBranch(statements, expectedSize, contextConsumer);
+		}
+
+		@Override
 		public SailSource fork() {
 			throw new UnsupportedOperationException("This store does not support multiple datasets");
 		}

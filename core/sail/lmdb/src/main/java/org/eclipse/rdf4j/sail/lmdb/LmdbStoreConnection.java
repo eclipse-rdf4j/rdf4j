@@ -121,6 +121,12 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	protected void bulkStatementAdded(Statement statement, Resource... contexts) {
+		// Bulk additions only need one transaction event; the sink consumes the statement fields.
+		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
