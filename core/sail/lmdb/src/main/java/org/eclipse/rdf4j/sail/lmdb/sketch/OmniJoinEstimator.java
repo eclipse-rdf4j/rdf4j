@@ -48,7 +48,7 @@ final class OmniJoinEstimator {
 	private static final long HASH_SEED = 0x9E3779B97F4A7C15L;
 	private static final long TUPLE_SEED = 0xD1B54A32D192ED03L;
 	private static final int SERIAL_MAGIC = 0x4f4a4553;
-	private static final int SERIAL_VERSION = 9;
+	private static final int SERIAL_VERSION = 10;
 	private static final int LAZY_WEIGHT_ENTRY_BYTES = Long.BYTES + Double.BYTES;
 	private static final int PROBE_CACHE_SIZE = 1024;
 	private static final int MAPPED_VALUE_RECORD_CACHE_SIZE = 4096;
@@ -75,6 +75,7 @@ final class OmniJoinEstimator {
 	private final double omniWitnessCohortSamplingProbability;
 	private final int omniWitnessCohortMaxEntries;
 	private final OmniCohortRetentionController cohortRetentionController;
+	private final OmniBasePostingRetentionController basePostingRetentionController;
 	private final Map<OmniRelation, Relation> relations = new EnumMap<>(OmniRelation.class);
 	private MappedOmniJoinSnapshot mappedSnapshot;
 
@@ -105,12 +106,14 @@ final class OmniJoinEstimator {
 		this.omniWitnessCohortMaxEntries = Math.max(1, omniWitnessCohortMaxEntries);
 		this.cohortRetentionController = new OmniCohortRetentionController(this.omniWitnessCohortBucketCount,
 				this.omniWitnessCohortMaxEntries);
+		this.basePostingRetentionController = new OmniBasePostingRetentionController(
+				this.omniWitnessCohortMaxEntries);
 	}
 
 	Relation relation(OmniRelation relation) {
 		return relations.computeIfAbsent(Objects.requireNonNull(relation, "relation"),
 				key -> new Relation(key, width, rows, nominalEntries, seed, omniWitnessCohortSamplingProbability,
-						cohortRetentionController, this::pruneCohort));
+						cohortRetentionController, this::pruneCohort, basePostingRetentionController));
 	}
 
 	int width() {
@@ -149,6 +152,10 @@ final class OmniJoinEstimator {
 		return cohortRetentionController.cohortBudgetFallbackCount();
 	}
 
+	long retainedExactBaseValuePostingCount() {
+		return basePostingRetentionController.retainedEntries();
+	}
+
 	int cohortSamplingExponent(OmniWitnessSet.SourceKind sourceKind) {
 		return cohortRetentionController.exponent(sourceKind);
 	}
@@ -169,6 +176,7 @@ final class OmniJoinEstimator {
 		closeMappedSnapshot();
 		relations.clear();
 		cohortRetentionController.reset();
+		basePostingRetentionController.reset();
 	}
 
 	synchronized List<AttributeSnapshot> snapshotAttributes() {
@@ -223,6 +231,7 @@ final class OmniJoinEstimator {
 				for (AttributeEntry attributeEntry : attributes) {
 					attributeEntry.attribute().writeTo(out);
 					AttributeIndex index = attributeEntry.index();
+					out.writeBoolean(index.exactPostingRetentionEnabled);
 					byte[] sketchPayload = index.sketch.compact().toByteArray();
 					out.writeInt(sketchPayload.length);
 					out.write(sketchPayload);
@@ -329,6 +338,7 @@ final class OmniJoinEstimator {
 				int attributeCount = readCount(in, "attribute");
 				for (int attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++) {
 					AttributeIndex index = relation.attribute(OmniAttributeRef.readFrom(in));
+					index.restoreExactPostingRetention(in.readBoolean());
 					int sketchPayloadLength = readCount(in, "attribute sketch payload");
 					byte[] sketchPayload = in.readNBytes(sketchPayloadLength);
 					if (sketchPayload.length != sketchPayloadLength) {
@@ -1649,13 +1659,15 @@ final class OmniJoinEstimator {
 		private final double cohortSamplingProbability;
 		private final OmniCohortRetentionController cohortRetentionController;
 		private final OmniCohortRetentionController.Pruner cohortPruner;
+		private final OmniBasePostingRetentionController basePostingRetentionController;
 		private final AttributeIndex[] staticAttributes = new AttributeIndex[OmniAttributeRef.STATIC_COUNT];
 		private final Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex> predicateAttributes = new Object2ObjectOpenHashMap<>();
 		private final Object2ObjectOpenHashMap<SketchTermKey, Object2ObjectOpenHashMap<SketchTermKey, AttributeIndex>> predicateContextAttributes = new Object2ObjectOpenHashMap<>();
 
 		private Relation(OmniRelation name, int width, int rows, int nominalEntries, long seed,
 				double cohortSamplingProbability, OmniCohortRetentionController cohortRetentionController,
-				OmniCohortRetentionController.Pruner cohortPruner) {
+				OmniCohortRetentionController.Pruner cohortPruner,
+				OmniBasePostingRetentionController basePostingRetentionController) {
 			this.name = name;
 			this.width = width;
 			this.rows = rows;
@@ -1664,6 +1676,7 @@ final class OmniJoinEstimator {
 			this.cohortSamplingProbability = cohortSamplingProbability;
 			this.cohortRetentionController = cohortRetentionController;
 			this.cohortPruner = cohortPruner;
+			this.basePostingRetentionController = basePostingRetentionController;
 		}
 
 		void updateStatic(byte attributeId, long valueHash, long identifierHash, double estimatedMultiplicity) {
@@ -1799,7 +1812,7 @@ final class OmniJoinEstimator {
 				OmniAttributeRef attribute = OmniAttributeRef.staticAttribute(attributeId);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
 						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
-						cohortPruner);
+						cohortPruner, basePostingRetentionController);
 				staticAttributes[offset] = index;
 			}
 			return index;
@@ -1812,7 +1825,7 @@ final class OmniJoinEstimator {
 				OmniAttributeRef attribute = OmniAttributeRef.predicate(predicateKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
 						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
-						cohortPruner);
+						cohortPruner, basePostingRetentionController);
 				predicateAttributes.put(predicateKey, index);
 			}
 			return index;
@@ -1832,7 +1845,7 @@ final class OmniJoinEstimator {
 				OmniAttributeRef attribute = OmniAttributeRef.predicateContext(predicateKey, contextKey);
 				index = new AttributeIndex(width, rows, nominalEntries, seed, exactPostings(attribute),
 						compactLargePostings(attribute), cohortSamplingProbability, cohortRetentionController,
-						cohortPruner);
+						cohortPruner, basePostingRetentionController);
 				byContext.put(contextKey, index);
 			}
 			return index;
@@ -1847,7 +1860,9 @@ final class OmniJoinEstimator {
 		}
 
 		private boolean exactPostings(OmniAttributeRef attribute) {
-			return isSubjectStarPredicateAttribute(attribute);
+			return name == OmniRelation.EDGE_FORWARD || name == OmniRelation.EDGE_REVERSE
+					|| isSubjectStarPredicateAttribute(attribute)
+					|| isSubjectStarCompositeAttribute(attribute);
 		}
 
 		private boolean compactLargePostings(OmniAttributeRef attribute) {
@@ -1858,6 +1873,18 @@ final class OmniJoinEstimator {
 			return name == OmniRelation.SUBJECT_STAR && attribute != null
 					&& attribute.kind() == OmniAttributeRef.KIND_STATIC
 					&& attribute.staticId() == OmniAttributeRef.component(1);
+		}
+
+		private boolean isSubjectStarCompositeAttribute(OmniAttributeRef attribute) {
+			if (name != OmniRelation.SUBJECT_STAR || attribute == null
+					|| attribute.kind() != OmniAttributeRef.KIND_STATIC) {
+				return false;
+			}
+			byte staticId = attribute.staticId();
+			return staticId == OmniAttributeRef.subjectStarPO()
+					|| staticId == OmniAttributeRef.subjectStarPC()
+					|| staticId == OmniAttributeRef.subjectStarOC()
+					|| staticId == OmniAttributeRef.subjectStarPOC();
 		}
 
 		private boolean hasAttributes() {
@@ -1929,7 +1956,7 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	private static final class AttributeIndex {
+	private static final class AttributeIndex implements OmniBasePostingRetentionController.CompactableIndex {
 		private final UpdateOmniSketch sketch;
 		private MappedWitnessIndex mappedBase;
 		private Long2ObjectOpenHashMap<ValueWeights> weightsByValueHash;
@@ -1943,6 +1970,9 @@ final class OmniJoinEstimator {
 		private final double cohortSamplingProbability;
 		private final OmniCohortRetentionController cohortRetentionController;
 		private final OmniCohortRetentionController.Pruner cohortPruner;
+		private final OmniBasePostingRetentionController basePostingRetentionController;
+		private boolean exactPostingRetentionEnabled;
+		private long exactValuePostingCount;
 		private volatile long probeCacheEpoch = 1L;
 		private long[] probeCacheKeys;
 		private long[] probeCacheEpochs;
@@ -1972,7 +2002,8 @@ final class OmniJoinEstimator {
 		private AttributeIndex(int width, int rows, int nominalEntries, long seed, boolean exactSmallPostings,
 				boolean compactLargePostings, double cohortSamplingProbability,
 				OmniCohortRetentionController cohortRetentionController,
-				OmniCohortRetentionController.Pruner cohortPruner) {
+				OmniCohortRetentionController.Pruner cohortPruner,
+				OmniBasePostingRetentionController basePostingRetentionController) {
 			int effectiveNominalEntries = Math.max(1, nominalEntries);
 			compactThreshold = Math.max(16, effectiveNominalEntries * 2);
 			this.exactSmallPostings = exactSmallPostings;
@@ -1982,12 +2013,17 @@ final class OmniJoinEstimator {
 					: 0.0d;
 			this.cohortRetentionController = cohortRetentionController;
 			this.cohortPruner = cohortPruner;
+			this.basePostingRetentionController = basePostingRetentionController;
+			this.exactPostingRetentionEnabled = exactSmallPostings;
 			this.sketch = OmniSketch.builder()
 					.setWidth(width)
 					.setNumRows(rows)
 					.setNominalEntries(effectiveNominalEntries)
 					.setSeed(seed)
 					.build();
+			if (exactSmallPostings && compactLargePostings && basePostingRetentionController != null) {
+				basePostingRetentionController.register(this);
+			}
 		}
 
 		private void updateHash(long valueHash, long identifierHash, double estimatedMultiplicity) {
@@ -2030,17 +2066,20 @@ final class OmniJoinEstimator {
 			invalidateWitnessCache(valueHash);
 			ValueWeights weights = weightsForRead(valueHash);
 			// only registered maps (never empty) carry the flag; an empty map is an unregistered lazy stub
-			boolean compacted = weights != null && !weights.isEmpty() ? weights.compacted
-					: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash);
+			boolean compacted = !exactPostingRetentionEnabled
+					|| (weights != null && !weights.isEmpty() ? weights.compacted
+							: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash));
+			boolean newExactValuePosting = false;
 			if (!wasTotalOnly && weights == null && !compacted
 					&& !totalWeightByValueHash.containsKey(valueHash)
 					&& mappedValueRecord(valueHash) == null) {
 				distinctValueCount++;
 			}
-			if (compacted || !exactSmallPostings) {
+			if (compacted || !exactPostingRetentionEnabled) {
+				ensureMappedPopulationRows(valueHash);
 				totalWeightByValueHash.addTo(valueHash, estimatedMultiplicity);
 			}
-			boolean mayInsert = retained || (exactSmallPostings && !compacted);
+			boolean mayInsert = retained || (exactPostingRetentionEnabled && !compacted);
 			if (weights == null || weights.isEmpty()) {
 				if (!mayInsert) {
 					return;
@@ -2055,6 +2094,7 @@ final class OmniJoinEstimator {
 				}
 				ensureWeightsByValueHash().put(valueHash, weights);
 				weights.put(identifierHash, estimatedMultiplicity);
+				newExactValuePosting = exactPostingRetentionEnabled && !compacted;
 			} else if (mayInsert) {
 				// stored weights are always positive, so a zero previous value means the identifier is new
 				double previous = weights.addTo(identifierHash, estimatedMultiplicity);
@@ -2071,11 +2111,12 @@ final class OmniJoinEstimator {
 				compactSampledWeightsIfOversized(valueHash, weights, compacted);
 				return;
 			}
-			if (compacted || !exactSmallPostings) {
+			if (compacted || !exactPostingRetentionEnabled) {
 				compactSampledWeightsIfOversized(valueHash, weights, compacted);
 				return;
 			}
 			if (compactLargePostings && weights.size() > compactThreshold) {
+				boolean countedExactValuePosting = exactValuePostingCount > 0L;
 				ensureTotalWeight(valueHash, weights);
 				ValueWeights current = compactWeightsForValue(valueHash, weights);
 				if (current != null) {
@@ -2083,6 +2124,15 @@ final class OmniJoinEstimator {
 				} else {
 					compactedValueHashes.add(valueHash);
 				}
+				if (countedExactValuePosting) {
+					exactValuePostingCount--;
+					basePostingRetentionController.onExactValuePostingRemoved();
+				}
+				return;
+			}
+			if (newExactValuePosting && compactLargePostings && basePostingRetentionController != null) {
+				exactValuePostingCount++;
+				basePostingRetentionController.onExactValuePostingRetained();
 			}
 		}
 
@@ -2147,8 +2197,18 @@ final class OmniJoinEstimator {
 			clearWitnessCache();
 		}
 
+		private void restoreExactPostingRetention(boolean enabled) throws IOException {
+			if (enabled && !exactSmallPostings) {
+				throw new IOException("Omni join estimator payload enables exact postings for a sampled attribute");
+			}
+			exactPostingRetentionEnabled = enabled && exactSmallPostings;
+		}
+
 		private void loadMappedBase(MappedWitnessIndex mappedBase) {
 			this.mappedBase = mappedBase;
+			if (exactSmallPostings && compactLargePostings && mappedBase != null && mappedBase.hasSampledValues()) {
+				exactPostingRetentionEnabled = false;
+			}
 			clearMappedValueRecordCache();
 			totalWeightByValueHash.clear();
 			totalOnlyValueHashes.clear();
@@ -2204,6 +2264,11 @@ final class OmniJoinEstimator {
 			distinctValueCount = valueHashes.length;
 			if (exactSmallPostings) {
 				materializeAllLazyWeights();
+				if (compactLargePostings && exactPostingRetentionEnabled
+						&& basePostingRetentionController != null && weightsByValueHash != null) {
+					exactValuePostingCount = weightsByValueHash.size();
+					basePostingRetentionController.onExactValuePostingsLoaded(exactValuePostingCount);
+				}
 			}
 			clearWitnessCache();
 		}
@@ -2256,6 +2321,39 @@ final class OmniJoinEstimator {
 			return current;
 		}
 
+		@Override
+		public long exactValuePostingCount() {
+			return exactValuePostingCount;
+		}
+
+		@Override
+		public long compactExactValuePostings() {
+			long relinquished = exactValuePostingCount;
+			if (relinquished <= 0L) {
+				return 0L;
+			}
+			exactPostingRetentionEnabled = false;
+			materializeAllLazyWeights();
+			if (weightsByValueHash != null && !weightsByValueHash.isEmpty()) {
+				long[] valueHashes = weightsByValueHash.keySet().toLongArray();
+				for (long valueHash : valueHashes) {
+					ValueWeights weights = weightsByValueHash.get(valueHash);
+					if (weights == null || weights.isEmpty() || weights.compacted) {
+						continue;
+					}
+					ensurePopulationRows(valueHash, weights);
+					ValueWeights current = compactWeightsForValue(valueHash, weights);
+					if (current != null) {
+						current.compacted = true;
+					} else {
+						compactedValueHashes.add(valueHash);
+					}
+				}
+			}
+			exactValuePostingCount = 0L;
+			return relinquished;
+		}
+
 		private void ensureTotalWeight(long valueHash, Long2DoubleOpenHashMap weights) {
 			double currentTotal = totalWeightByValueHash.get(valueHash);
 			if (Double.isFinite(currentTotal) && currentTotal > 0.0d) {
@@ -2267,9 +2365,38 @@ final class OmniJoinEstimator {
 			}
 		}
 
+		private void ensurePopulationRows(long valueHash, Long2DoubleOpenHashMap overlayWeights) {
+			double overlayRows = positiveWeightSum(overlayWeights);
+			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
+			double mappedRows = 0.0d;
+			if (mappedValue != null && mappedValue.postingWeight() > 0.0d
+					&& mappedValue.samplingProbability() > 0.0d) {
+				mappedRows = mappedValue.postingWeight() / mappedValue.samplingProbability();
+			}
+			double populationRows = overlayRows + mappedRows;
+			if (Double.isFinite(populationRows) && populationRows > 0.0d) {
+				totalWeightByValueHash.put(valueHash, populationRows);
+			}
+		}
+
+		private void ensureMappedPopulationRows(long valueHash) {
+			if (totalWeightByValueHash.containsKey(valueHash)) {
+				return;
+			}
+			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
+			if (mappedValue == null || mappedValue.postingWeight() <= 0.0d
+					|| mappedValue.samplingProbability() <= 0.0d) {
+				return;
+			}
+			double populationRows = mappedValue.postingWeight() / mappedValue.samplingProbability();
+			if (Double.isFinite(populationRows) && populationRows > 0.0d) {
+				totalWeightByValueHash.put(valueHash, populationRows);
+			}
+		}
+
 		private void compactSampledWeightsIfOversized(long valueHash, ValueWeights weights,
 				boolean compacted) {
-			if ((compacted || !exactSmallPostings) && sampledWeightsOversized(weights)) {
+			if ((compacted || !exactPostingRetentionEnabled) && sampledWeightsOversized(weights)) {
 				compactWeightsForValue(valueHash, weights);
 			}
 		}
@@ -2553,9 +2680,11 @@ final class OmniJoinEstimator {
 			}
 			boolean hasOverlayWeights = hasOverlayWeights(valueHash);
 			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
-			if (mappedValue != null && !hasOverlayWeights) {
+			if (mappedValue != null) {
 				double samplingProbability = mappedValue.samplingProbability();
-				return Double.isFinite(samplingProbability) && samplingProbability >= 1.0d;
+				if (!Double.isFinite(samplingProbability) || samplingProbability < 1.0d) {
+					return false;
+				}
 			}
 			return mappedBase == null || hasOverlayWeights;
 		}
@@ -2598,6 +2727,9 @@ final class OmniJoinEstimator {
 		}
 
 		private boolean isCompacted(long valueHash) {
+			if (!exactPostingRetentionEnabled) {
+				return true;
+			}
 			ValueWeights weights = weightsByValueHash == null ? null : weightsByValueHash.get(valueHash);
 			if (weights != null) {
 				return weights.compacted;
@@ -2627,7 +2759,7 @@ final class OmniJoinEstimator {
 		private double effectiveSamplingProbability(long valueHash, OmniSketchProbeResult probe,
 				double retainedWeight) {
 			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
-			if (mappedValue != null && !hasOverlayWeights(valueHash)) {
+			if (mappedValue != null && !hasOverlayPopulation(valueHash)) {
 				double samplingProbability = mappedValue.samplingProbability();
 				if (Double.isFinite(samplingProbability) && samplingProbability > 0.0d) {
 					return canonicalSamplingProbability(samplingProbability);
@@ -2658,7 +2790,7 @@ final class OmniJoinEstimator {
 		private double minimumDetectableEstimate(long valueHash, OmniSketchProbeResult probe,
 				double samplingProbability) {
 			MappedWitnessIndex.ValueRecord mappedValue = mappedValueRecord(valueHash);
-			if (mappedValue != null && !hasOverlayWeights(valueHash)) {
+			if (mappedValue != null && !hasOverlayPopulation(valueHash)) {
 				double minimumDetectableEstimate = mappedValue.minimumDetectableEstimate();
 				if (Double.isFinite(minimumDetectableEstimate) && minimumDetectableEstimate >= 0.0d) {
 					return minimumDetectableEstimate;
@@ -2724,6 +2856,10 @@ final class OmniJoinEstimator {
 
 		private boolean hasOverlayWeights(long valueHash) {
 			return weightsByValueHash != null && weightsByValueHash.containsKey(valueHash);
+		}
+
+		private boolean hasOverlayPopulation(long valueHash) {
+			return totalWeightByValueHash.containsKey(valueHash);
 		}
 
 		private WitnessCursor witnessCursor(long valueHash) {

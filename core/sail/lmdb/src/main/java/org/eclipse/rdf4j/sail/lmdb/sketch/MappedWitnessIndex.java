@@ -68,6 +68,16 @@ final class MappedWitnessIndex implements WitnessIndex {
 		return segment.get(OmniWitnessLayout.BE_INT, Integer.BYTES * 8L);
 	}
 
+	boolean hasSampledValues() {
+		for (int i = 0; i < valueCount; i++) {
+			double samplingProbability = readValueRecord(i).samplingProbability();
+			if (!Double.isFinite(samplingProbability) || samplingProbability < 1.0d) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public WitnessCursor cursor(long valueHash) {
 		ValueRecord record = valueRecord(valueHash);

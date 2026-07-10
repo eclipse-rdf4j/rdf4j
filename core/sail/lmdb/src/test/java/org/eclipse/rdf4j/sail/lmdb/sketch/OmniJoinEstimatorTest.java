@@ -909,16 +909,60 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
-	void sparseDirectedPostingsRetainOnlyKmvCandidates() throws Exception {
-		OmniJoinEstimator estimator = newEstimator(64, 1, 8);
+	void sparseDirectedPostingsRetainOnlyKmvCandidates(@org.junit.jupiter.api.io.TempDir Path tempDir)
+			throws Exception {
+		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 1, 64, SEED, 0, 0, 4_096);
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
 		SketchTermKey predicateKey = SketchTermKey.iriString("urn:predicate:sparse-directed");
+		long sharedValue = OmniJoinEstimator.stableHash("urn:value:exact-before-budget");
+		for (long id = 1; id <= 96; id++) {
+			relation.updatePredicate(predicateKey, sharedValue, id, 1.0d);
+		}
+		assertEquals(96, storedWitnessWeightCount(predicateAttributeIndex(relation, predicateKey), sharedValue),
+				"Directed postings below the local and global budgets must remain exact");
+
 		for (long id = 1; id <= 50_000; id++) {
 			relation.updatePredicate(predicateKey, id, id + 100_000L, 1.0d);
 		}
 
 		assertTrue(loadedWeightMapSize(predicateAttributeIndex(relation, predicateKey)) < 10_000,
 				"Sparse directed indexes must retain KMV candidates instead of one posting map per distinct key");
+		assertTrue(estimator.retainedExactBaseValuePostingCount() <= 4_096,
+				"The shared exact base-posting population must remain at or below its configured budget");
+
+		OmniWitnessSet live = estimator.probePredicate(relation, predicateKey,
+				OmniJoinEstimator.Predicate.equalHash(sharedValue));
+		OmniJoinEstimator byteReader = new OmniJoinEstimator(64, 1, 64, SEED, 0, 0, 4_096);
+		byteReader.loadFromByteArray(estimator.toByteArray());
+		OmniWitnessSet bytes = byteReader.probePredicate(byteReader.relation(OmniRelation.EDGE_FORWARD), predicateKey,
+				OmniJoinEstimator.Predicate.equalHash(sharedValue));
+		assertEquals(live.estimatedRows(), bytes.estimatedRows(), 0.0d,
+				"Adaptive base compaction must preserve population rows through a byte snapshot");
+		assertEquals(live.samplingProbability(), bytes.samplingProbability(), 0.0d,
+				"Adaptive base compaction must preserve sampling probability through a byte snapshot");
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, estimator, 31L);
+			OmniJoinEstimator mappedReader = new OmniJoinEstimator(64, 1, 64, SEED, 0, 0, 4_096);
+			try {
+				mappedReader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+				OmniJoinEstimator.Relation mappedRelation = mappedReader.relation(OmniRelation.EDGE_FORWARD);
+				for (long id = 200_000L; id < 200_100L; id++) {
+					relation.updatePredicate(predicateKey, sharedValue, id, 1.0d);
+					mappedRelation.updatePredicate(predicateKey, sharedValue, id, 1.0d);
+				}
+				OmniWitnessSet liveOverlay = estimator.probePredicate(relation, predicateKey,
+						OmniJoinEstimator.Predicate.equalHash(sharedValue));
+				OmniWitnessSet mappedOverlay = mappedReader.probePredicate(mappedRelation, predicateKey,
+						OmniJoinEstimator.Predicate.equalHash(sharedValue));
+				assertEquals(liveOverlay.estimatedRows(), mappedOverlay.estimatedRows(), 0.0d,
+						"Mapped overlays must retain the snapshot's adaptive base sampling mode");
+				assertEquals(liveOverlay.samplingProbability(), mappedOverlay.samplingProbability(), 0.0d,
+						"Mapped overlays must retain the snapshot's adaptive base sampling probability");
+			} finally {
+				mappedReader.clear();
+			}
+		}
 	}
 
 	@Test
