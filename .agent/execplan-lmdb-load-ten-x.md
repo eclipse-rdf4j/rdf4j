@@ -27,6 +27,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 00:18Z) Swept duplicate bucket shapes and all four benchmark indexes; fixed duplicates bottomed out at 139.411 ms, while page-sized immutable packed blocks reduced four-index insertion to 39.476 ms.
 - [x] (2026-07-10 00:31Z) Captured post-cursor async-profiler call stacks for both isolation modes and measured Java/lifecycle floors; triple indexes, value resolution, and Sail ingestion each require structural work.
 - [x] (2026-07-10 00:40Z) Tested and rejected collision-aware partitioning by `Value.hashCode()`; 2,517 collision buckets plus `DynamicModel` upgrade costs made it slower than equality-map resolution.
+- [x] (2026-07-10 00:53Z) Tested and rejected map-backed canonical term identities; all model tests passed, but paired loading regressed 9.34% for `NONE` and 27.95% for `READ_COMMITTED`.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -90,6 +91,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: The public 32-bit `Value.hashCode()` is not selective enough for equality-free bulk resolution, and obtaining distinct Model views changes iteration representation and cost.
   Evidence: the rejected probe documented in `profiles/lmdb-load-10x/main-index-cursor/call-stack-attribution.md` finds 2,517 collision hashes/2,659 colliding values and takes 219-236 ms in stable early rounds. `DynamicModel` upgrades to `LinkedHashModel`; although that canonicalizes identities, scans rise to 43-51 ms and identity resolution to 62-81 ms.
 
+- Observation: Canonical component identities do not help while every downstream LMDB layer still performs its own equality-based indexing.
+  Evidence: `profiles/lmdb-load-10x/canonical-dynamic-model/run-1-jdk26.json` measures 771.802 ms/op for `NONE` and 912.047 ms/op for `READ_COMMITTED`, 9.34% and 27.95% slower than the retained main-cursor checkpoint. All 27 model tests passed before the experiment was removed.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -150,6 +154,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject public-hash partitioning and forced `DynamicModel` upgrade; test canonical lightweight model terms instead.
   Rationale: The measured collision rate requires thousands of equality fallback buckets, while the only public distinct-term views force a representation whose iteration is more than twice as slow. Canonicalizing terms while retaining the original insertion-order map can make identity resolution correct without paying the indexed-model cost.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject model-only canonicalization and keep term representation outside the production LMDB change.
+  Rationale: Canonical identities are correct and fully tested but do not bypass the Sail changeset, operation-local maps, transaction value map, or LMDB dictionary. A useful bulk API must carry pre-resolved numeric IDs through those layers rather than merely changing object identity upstream.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -276,3 +284,5 @@ Revision note (2026-07-10 00:18Z): Recorded the bucket-shape sweep, the four-ind
 Revision note (2026-07-10 00:31Z): Added fresh two-isolation async-profiler call-stack attribution plus Java model/value and empty-lifecycle lower bounds, establishing that the next milestone must collapse all three ingestion layers together.
 
 Revision note (2026-07-10 00:40Z): Recorded and rejected the public-hash/distinct-view resolver after collision counts and model-upgrade timings disproved its expected advantage.
+
+Revision note (2026-07-10 00:53Z): Recorded the TDD-verified but benchmark-rejected map-backed canonical-term experiment and removed its production/test changes.
