@@ -682,7 +682,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return union != null
 				&& (union.isVariableScopeChange()
 						|| TupleExprs.isVariableScopeChange(union.getLeftArg())
-						|| TupleExprs.isVariableScopeChange(union.getRightArg()));
+						|| TupleExprs.isVariableScopeChange(union.getRightArg()))
+				&& branchLocalBindOrValuesNames(union.getLeftArg()).isEmpty()
+				&& branchLocalBindOrValuesNames(union.getRightArg()).isEmpty();
 	}
 
 	private static boolean duplicateInsensitiveAggregateGroup(Group group) {

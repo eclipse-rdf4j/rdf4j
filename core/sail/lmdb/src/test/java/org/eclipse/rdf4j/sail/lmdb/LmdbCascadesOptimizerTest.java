@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -775,6 +777,27 @@ class LmdbCascadesOptimizerTest {
 		assertTrue((Boolean) subplanCandidate.invoke(null, join),
 				"A join segment around branch-scoped UNION leaves must be replanned so later factors can consume "
 						+ "the UNION's assured bindings");
+	}
+
+	@Test
+	void subplanCandidateRejectsJoinAroundScopedUnionWithBranchLocalBindOutputs() throws Exception {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("work"), iri("reviewedAs"), new Var("review")),
+				new StatementPattern(new Var("page"), iri("eventFor"), new Var("event")));
+		Extension reviews = new Extension(
+				new StatementPattern(new Var("work"), iri("review"), new Var("review")),
+				new ExtensionElem(new Var("review"), "fanout"));
+		reviews.setVariableScopeChange(true);
+		Extension events = new Extension(
+				new StatementPattern(new Var("page"), iri("event"), new Var("event")),
+				new ExtensionElem(new Var("event"), "fanout"));
+		events.setVariableScopeChange(true);
+		Join join = new Join(prefix, new Union(reviews, events));
+
+		Method subplanCandidate = LmdbCascadesOptimizer.class.getDeclaredMethod("subplanCandidate", TupleExpr.class);
+		subplanCandidate.setAccessible(true);
+
+		assertFalse((Boolean) subplanCandidate.invoke(null, join),
+				"A scoped UNION that creates the same branch-local BIND output must retain its original scope");
 	}
 
 	@Test
