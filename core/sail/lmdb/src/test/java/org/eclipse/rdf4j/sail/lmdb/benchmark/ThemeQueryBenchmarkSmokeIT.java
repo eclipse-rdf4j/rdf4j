@@ -107,7 +107,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		ThemeQueryBenchmark first = new ThemeQueryBenchmark();
 		first.themeName = Theme.MEDICAL_RECORDS.name();
 		first.z_queryIndex = 0;
-		first.setup();
+		setupWithSketches(first);
 		try {
 			assertBenchmarkQueryCount(first, Theme.MEDICAL_RECORDS, 0);
 		} finally {
@@ -126,7 +126,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		ThemeQueryBenchmark second = new ThemeQueryBenchmark();
 		second.themeName = Theme.MEDICAL_RECORDS.name();
 		second.z_queryIndex = 1;
-		second.setup();
+		setupWithSketches(second);
 		try {
 			assertBenchmarkQueryCount(second, Theme.MEDICAL_RECORDS, 1);
 		} finally {
@@ -161,6 +161,20 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	private static void setupWithSketches(ThemeQueryBenchmark benchmark) throws Exception {
+		String previous = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY);
+		try {
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, Boolean.TRUE.toString());
+			benchmark.setup();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY);
+			} else {
+				System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, previous);
+			}
+		}
+	}
+
 	private static List<Path> persistedSketchFiles(Path store) throws Exception {
 		try (Stream<Path> paths = Files.find(store, 2,
 				(path, attributes) -> attributes.isRegularFile()
@@ -183,7 +197,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
 		benchmark.z_queryIndex = 2;
 
-		benchmark.setup();
+		setupWithSketches(benchmark);
 		try {
 			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
 					"Theme benchmark setup should wait for LMDB sketches before plan assertions");
@@ -208,7 +222,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
 		benchmark.z_queryIndex = 5;
 
-		benchmark.setup();
+		setupWithSketches(benchmark);
 		try {
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<TupleExpr> joinArgs = joinArgsWithLimitBindingSetAssignment(optimized);
@@ -230,7 +244,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.themeName = Theme.PHARMA.name();
 		benchmark.z_queryIndex = 5;
 
-		benchmark.setup();
+		setupWithSketches(benchmark);
 		try {
 			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
 					"Theme benchmark setup should wait for LMDB sketches before plan assertions");

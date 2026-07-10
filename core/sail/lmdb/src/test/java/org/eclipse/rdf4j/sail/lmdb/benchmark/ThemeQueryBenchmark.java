@@ -107,29 +107,29 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"0",
-			"1",
-			"2",
-			"3",
-			"4",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
 			"5",
-			"6",
-			"7",
-			"8",
-			"9",
-			"10",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
 			"PHARMA"
 	})
 	public String themeName;
@@ -277,7 +277,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	private boolean waitForSketchesEnabled() {
-		return Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"));
+		return Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "false"));
 	}
 
 	private void ensureSketchesAvailable(File storeDirectory) throws IOException {
