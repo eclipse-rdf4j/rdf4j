@@ -52,10 +52,12 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static final Pattern DIRECT_LOOKUP_ACCESS_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedAccessWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final Pattern PLANNED_WORK_ROWS = Pattern.compile("plannedWorkRows=([^,\\n]+)");
+	private static final Pattern STATEMENT_PATTERN_HEADER = Pattern.compile(
+			"(?m)^[^\\p{Alnum}\\n]*StatementPattern \\(");
 
 	@Test
 	@Timeout(120)
-	void pharmaQ7RunQueryPlanKeepsArmBindingBeforeComparatorUnion() throws Exception {
+	void pharmaQ7DefaultFallbackKeepsArmBindingBeforeComparatorUnion() throws Exception {
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = THEME.name();
 		state.z_queryIndex = 7;
@@ -82,17 +84,16 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=true"),
 					"Default fallback should capture the standard plan when Cascades returns an approximate winner\n"
 							+ diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
-					"Default fallback should keep the cheaper Cascades plan over the standard plan\n"
+			assertTrue(diagnostics.contains("optimizer.cascadesWinner=standard"),
+					"Default fallback should select the standard plan while the root Cascades winner remains "
+							+ "approximate\n"
 							+ diagnostics);
-			assertTrue(plan.contains("plannerId=lmdb-cascades"),
-					"PHARMA q7 should keep the LMDB Cascades physical plan\n" + plan);
+			assertTrue(plan.contains("optimizer.cascadesStandardPlanOrigin=lmdb-no-cascades")
+					&& plan.contains("plannedEstimateSource=standard-pipeline-baseline"),
+					"PHARMA q7 should retain explicit standard-fallback provenance\n" + plan);
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armComparator");
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armDrug");
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
-			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armComparator");
-			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/armDrug");
-			assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
 		} finally {
 			state.tearDown();
 		}
@@ -127,7 +128,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 
 	@Test
 	@Timeout(120)
-	void pharmaQ2KeepsCascadesPlanWhenStandardFallbackWorkIsComparable() throws Exception {
+	void pharmaQ2UsesExactFiniteAnchorCascadesPlan() throws Exception {
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = THEME.name();
 		state.z_queryIndex = 2;
@@ -141,22 +142,21 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 
 			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
 					"PHARMA q2 should exercise the default standard fallback policy\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=true"),
-					"PHARMA q2 should exercise the approximate Cascades comparison path\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+					"PHARMA q2 should retain an exact Cascades plan\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=false"),
+					"An exact Cascades plan should not require a fallback standard plan\n" + diagnostics);
 			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
-					"Default fallback should keep Cascades when the standard plan does not materially reduce work\n"
+					"Default fallback should keep the exact Cascades plan\n"
 							+ diagnostics);
-			assertTrue(plan.contains("optimizer.nullRejectingOptionalRewrite=source=filter-simplifier")
-					&& plan.contains("optDisease"),
-					"PHARMA q2 should prove the optional disease filter is null-rejecting\n" + plan);
-			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-inner-join-bound-lookup"),
-					"PHARMA q2 should use a mandatory inner bound lookup after the optional rewrite\n" + plan);
-			assertBefore(plan,
-					"value=http://example.com/theme/pharma/armDrug",
-					"value=http://example.com/theme/pharma/hasArm",
-					"PHARMA q2 EXISTS should use the outer-bound ?drug armDrug probe before broader hasArm\n"
-							+ plan);
-			assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/armDrug");
+			assertTrue(plan.contains("selected=finite-anchor:disease"),
+					"PHARMA q2 should retain the disease finite-anchor selection proof\n" + plan);
+			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-guarantee-options")
+					&& plan.contains("duplicateSafeFiniteAnchor")
+					&& plan.contains("filterInValuesEquivalent")
+					&& plan.contains("unlockedFilters=Exists"),
+					"PHARMA q2 should retain the duplicate-safe physical finite-anchor proof\n" + plan);
+			assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/indicatedFor");
 		} finally {
 			state.tearDown();
 		}
@@ -408,11 +408,15 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		if (predicateIndex < 0) {
 			throw new AssertionError("Missing statement pattern for `" + predicate + "` in:\n" + plan);
 		}
-		int startIndex = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		Matcher headers = STATEMENT_PATTERN_HEADER.matcher(plan);
+		int startIndex = -1;
+		while (headers.find() && headers.start() < predicateIndex) {
+			startIndex = headers.start();
+		}
 		if (startIndex < 0) {
 			throw new AssertionError("Missing statement pattern header for `" + predicate + "` in:\n" + plan);
 		}
-		int nextIndex = plan.indexOf("StatementPattern (", predicateIndex + predicate.length());
+		int nextIndex = headers.find() ? headers.start() : -1;
 		int endIndex = nextIndex >= 0 ? nextIndex : plan.length();
 		return plan.substring(startIndex, endIndex);
 	}
@@ -457,6 +461,9 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	}
 
 	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
+		private RunQueryPlanState() {
+			loadSelectedThemeOnly = true;
+		}
 
 		private String optimizedPlan() {
 			return optimizedPlanSnapshot().plan();

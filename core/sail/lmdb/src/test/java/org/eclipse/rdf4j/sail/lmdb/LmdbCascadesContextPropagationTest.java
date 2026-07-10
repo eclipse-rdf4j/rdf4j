@@ -141,6 +141,26 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
+	void scopedUnionSubplanAcceptsInputBoundSubject() {
+		RowPreservingAccessPathStatistics statistics = new RowPreservingAccessPathStatistics();
+		StatementPattern comparator = new StatementPattern(new Var("arm"), new Var("armComparator"),
+				new Var("comp"));
+		comparator.setVariableScopeChange(true);
+		StatementPattern drug = new StatementPattern(new Var("arm"), new Var("armDrug"), new Var("comp"));
+		drug.setVariableScopeChange(true);
+		Union scopedUnion = new Union(comparator, drug);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("arm")).build());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(statistics),
+				LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP).optimize(scopedUnion, goal);
+
+		assertFalse(plan.approximate(), () -> "An input-bound scoped UNION must have a costed physical winner: "
+				+ plan.diagnostics());
+		assertTrue(plan.tupleExpr().isPresent());
+	}
+
+	@Test
 	void semanticFiniteAnchorRewriteDoesNotBypassCheaperOriginalPlan() {
 		SemanticRewriteCostingStatistics statistics = new SemanticRewriteCostingStatistics();
 		TupleExpr input = new Join(

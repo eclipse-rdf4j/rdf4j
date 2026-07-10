@@ -60,6 +60,9 @@ class LmdbTrainOptimizedQueryRegressionIT {
 	}
 
 	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
+		private RunQueryPlanState() {
+			loadSelectedThemeOnly = true;
+		}
 
 		private String optimizedPlan() {
 			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {

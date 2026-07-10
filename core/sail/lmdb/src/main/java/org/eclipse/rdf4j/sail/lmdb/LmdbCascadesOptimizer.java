@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvena
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -655,10 +656,33 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr instanceof Difference) {
 			return LmdbJoinIslandConnectivity.minusJoinPrefixPushdownAvailable(tupleExpr);
 		}
+		if (tupleExpr instanceof Union union) {
+			return replannableScopedUnion(union);
+		}
 		if (tupleExpr instanceof Join join) {
-			return !containsJoinPlanningBarrier(tupleExpr) || scopedUnionDistributionOpportunity(join);
+			return !containsJoinPlanningBarrier(tupleExpr)
+					|| scopedUnionDistributionOpportunity(join)
+					|| containsReplannableScopedUnion(join);
 		}
 		return false;
+	}
+
+	private static boolean containsReplannableScopedUnion(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Union union) {
+			return replannableScopedUnion(union);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsReplannableScopedUnion(join.getLeftArg())
+					|| containsReplannableScopedUnion(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean replannableScopedUnion(Union union) {
+		return union != null
+				&& (union.isVariableScopeChange()
+						|| TupleExprs.isVariableScopeChange(union.getLeftArg())
+						|| TupleExprs.isVariableScopeChange(union.getRightArg()));
 	}
 
 	private static boolean duplicateInsensitiveAggregateGroup(Group group) {

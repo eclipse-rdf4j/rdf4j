@@ -18,11 +18,13 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -96,7 +98,8 @@ final class LmdbCorrelatedFilterPlacementOptimizer implements QueryOptimizer {
 	}
 
 	private static Placement place(TupleExpr tupleExpr, Filter filter, Set<String> requiredBindings) {
-		if (tupleExpr instanceof Filter wrapper && !wrapper.isVariableScopeChange()) {
+		if (tupleExpr instanceof Filter wrapper && !wrapper.isVariableScopeChange()
+				&& !selectiveLocalFilter(wrapper)) {
 			Placement nested = place(wrapper.getArg(), filter, requiredBindings);
 			if (nested.pushedBelowRoot()) {
 				wrapper.setArg(nested.tupleExpr());
@@ -125,6 +128,22 @@ final class LmdbCorrelatedFilterPlacementOptimizer implements QueryOptimizer {
 		}
 		filter.setArg(tupleExpr);
 		return new Placement(filter, false);
+	}
+
+	private static boolean selectiveLocalFilter(Filter filter) {
+		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+		if (anchor != null
+				&& !anchor.getBindingNames().isEmpty()
+				&& filter.getArg().getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+			return true;
+		}
+		if (!(filter.getCondition() instanceof ListMemberOperator)) {
+			return false;
+		}
+		Set<String> conditionBindings = new HashSet<>(VarNameCollector.process(filter.getCondition()));
+		conditionBindings.removeIf(name -> name == null || name.startsWith("_const_"));
+		return !conditionBindings.isEmpty()
+				&& filter.getArg().getAssuredBindingNames().containsAll(conditionBindings);
 	}
 
 	private static void flattenInnerJoin(TupleExpr tupleExpr, List<TupleExpr> factors) {

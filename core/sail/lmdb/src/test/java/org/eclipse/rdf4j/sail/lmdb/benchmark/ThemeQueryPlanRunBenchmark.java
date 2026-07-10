@@ -165,25 +165,34 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
-			theme = Theme.valueOf(themeName);
-			query = queryForVariant(theme, z_queryIndex, queryVariant);
-			expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
+			try {
+				theme = Theme.valueOf(themeName);
+				query = queryForVariant(theme, z_queryIndex, queryVariant);
+				expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+				expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
-			File storeDirectory = storeDirectory();
-			if (rebuildStoreBeforeSetup) {
-				FileUtils.deleteDirectory(storeDirectory);
-			}
-			if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
-				throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
-			}
+				File storeDirectory = storeDirectory();
+				if (rebuildStoreBeforeSetup) {
+					FileUtils.deleteDirectory(storeDirectory);
+				}
+				if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
+					throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
+				}
 
-			storeConfig = createStoreConfig();
-			store = new LmdbStore(storeDirectory, storeConfig);
-			repository = new SailRepository(store);
-			ensureDataLoadedAndValidated();
-			waitForSketchesIfEnabled();
-			connection = repository.getConnection();
+				storeConfig = createStoreConfig();
+				store = new LmdbStore(storeDirectory, storeConfig);
+				repository = new SailRepository(store);
+				ensureDataLoadedAndValidated();
+				waitForSketchesIfEnabled();
+				connection = repository.getConnection();
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					closeResources();
+				} catch (RuntimeException | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		@TearDown(Level.Trial)
@@ -191,17 +200,21 @@ public class ThemeQueryPlanRunBenchmark {
 			try {
 				printTelemetryPlanAtTrialTeardown();
 			} finally {
-				if (connection != null) {
-					connection.close();
-					connection = null;
-				}
-				if (repository != null) {
-					repository.shutDown();
-					repository = null;
-				}
-				store = null;
-				storeConfig = null;
+				closeResources();
 			}
+		}
+
+		private void closeResources() {
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+			store = null;
+			storeConfig = null;
 		}
 
 		private void ensureDataLoadedAndValidated() throws IOException {

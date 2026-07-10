@@ -758,6 +758,26 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void subplanCandidateAdmitsJoinAroundBranchScopedUnion() throws Exception {
+		TupleExpr prefix = new Join(new StatementPattern(new Var("trial"), iri("type"), iri("ClinicalTrial")),
+				new StatementPattern(new Var("trial"), iri("hasArm"), new Var("arm")));
+		StatementPattern comparator = new StatementPattern(new Var("arm"), iri("armComparator"), new Var("comp"));
+		comparator.setVariableScopeChange(true);
+		StatementPattern drug = new StatementPattern(new Var("arm"), iri("armDrug"), new Var("comp"));
+		drug.setVariableScopeChange(true);
+		Union scopedUnion = new Union(comparator, drug);
+		Join join = new Join(new Join(prefix, scopedUnion),
+				new StatementPattern(new Var("comp"), iri("name"), new Var("name")));
+
+		Method subplanCandidate = LmdbCascadesOptimizer.class.getDeclaredMethod("subplanCandidate", TupleExpr.class);
+		subplanCandidate.setAccessible(true);
+
+		assertTrue((Boolean) subplanCandidate.invoke(null, join),
+				"A join segment around branch-scoped UNION leaves must be replanned so later factors can consume "
+						+ "the UNION's assured bindings");
+	}
+
+	@Test
 	void emergencyFallbackCoverageDoesNotBlockSubtreePlanning() throws Exception {
 		TupleExpr tupleExpr = pattern();
 		tupleExpr.setStringMetricPlanned("optimizer.cascadesCoveredByWinner",
@@ -803,6 +823,32 @@ class LmdbCascadesOptimizerTest {
 
 		assertTrue(candidates.stream().anyMatch(candidate -> candidateTupleExpr(candidate) == scopedJoin),
 				"A non-fallback parent can still contain an emergency-fallback child that must be replanned");
+	}
+
+	@Test
+	void emergencyScopedUnionRetainsContextualPrefixBindings() throws Exception {
+		StatementPattern prefix = new StatementPattern(new Var("trial"), iri("hasArm"), new Var("arm"));
+		StatementPattern comparator = new StatementPattern(new Var("arm"), iri("armComparator"),
+				new Var("comparator"));
+		comparator.setVariableScopeChange(true);
+		StatementPattern drug = new StatementPattern(new Var("arm"), iri("armDrug"), new Var("comparator"));
+		drug.setVariableScopeChange(true);
+		Union scopedUnion = new Union(comparator, drug);
+		scopedUnion.setStringMetricPlanned("optimizer.cascadesRule", "existing-algebra-emergency-fallback");
+		Join plannedParent = new Join(prefix, scopedUnion);
+		plannedParent.setStringMetricPlanned("optimizer.cascadesRule", "generic-physical-implementation");
+		QueryRoot root = new QueryRoot(plannedParent);
+		List<Object> candidates = new ArrayList<>();
+
+		collectSubtreeCandidates(root, candidates);
+
+		Object candidate = candidates.stream()
+				.filter(value -> candidateTupleExpr(value) == scopedUnion)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"An emergency scoped UNION must remain eligible for contextual replanning"));
+		assertEquals(Set.of("arm"), candidateBoundVars(candidate),
+				"The left prefix must remain visible as an input-bound lookup key");
 	}
 
 	@Test
@@ -1215,6 +1261,17 @@ class LmdbCascadesOptimizerTest {
 			Method method = candidate.getClass().getDeclaredMethod("tupleExpr");
 			method.setAccessible(true);
 			return (TupleExpr) method.invoke(candidate);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Set<String> candidateBoundVars(Object candidate) {
+		try {
+			Method method = candidate.getClass().getDeclaredMethod("boundVars");
+			method.setAccessible(true);
+			return (Set<String>) method.invoke(candidate);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
 		}
