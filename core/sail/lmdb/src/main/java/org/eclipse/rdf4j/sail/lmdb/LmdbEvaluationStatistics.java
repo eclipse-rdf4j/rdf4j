@@ -217,6 +217,7 @@ class LmdbEvaluationStatistics
 			+ "sketchJoinSurfaceCalls";
 	private static final String FALLBACK_JOIN_SURFACE_CALLS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
 			+ "fallbackJoinSurfaceCalls";
+	private static final double MAX_CONDITIONED_PATH_TRAVERSAL_MULTIPLIER = 16.0d;
 
 	private final ValueStore valueStore;
 
@@ -2991,7 +2992,8 @@ class LmdbEvaluationStatistics
 		}
 		RequestedAccessPath requestedAccessPath = RequestedAccessPath.of(context);
 		Optional<FactorCostEstimate> prefixPathEstimate = estimatePropertyPathFactorCost(factor,
-				context.getCurrentlyBoundVars(), context.getPrefixFactors(), context.shouldCollectMetrics());
+				context.getCurrentlyBoundVars(), context.getPrefixFactors(), context.getOuterPrefixRows(),
+				context.shouldCollectMetrics());
 		if (prefixPathEstimate.isPresent()) {
 			return prefixPathEstimate;
 		}
@@ -4603,11 +4605,11 @@ class LmdbEvaluationStatistics
 
 	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,
 			boolean collectMetrics) {
-		return estimatePropertyPathFactorCost(factor, boundVars, List.of(), collectMetrics);
+		return estimatePropertyPathFactorCost(factor, boundVars, List.of(), Double.NaN, collectMetrics);
 	}
 
 	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,
-			List<TupleExpr> prefixFactors, boolean collectMetrics) {
+			List<TupleExpr> prefixFactors, double outerPrefixRows, boolean collectMetrics) {
 		Optional<PropertyPathEstimate> estimate = Optional.empty();
 		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
 		List<TupleExpr> effectivePrefixFactors = prefixFactors == null ? List.of() : prefixFactors;
@@ -4629,11 +4631,19 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = rows;
 		}
+		String endpointMode = propertyPathEndpointMode(factor, effectiveBoundVars);
+		if (!effectivePrefixFactors.isEmpty() && isPositiveFinite(outerPrefixRows)
+				&& !PATH_MODE_FULL_SCAN.equals(endpointMode)) {
+			double traversalCap = outerPrefixRows <= Double.MAX_VALUE / MAX_CONDITIONED_PATH_TRAVERSAL_MULTIPLIER
+					? outerPrefixRows * MAX_CONDITIONED_PATH_TRAVERSAL_MULTIPLIER
+					: Double.MAX_VALUE;
+			rows = Math.min(rows, traversalCap);
+			workRows = Math.max(rows, Math.min(workRows, traversalCap));
+		}
 
 		Map<String, String> stringMetrics = Map.of();
 		Map<String, Double> doubleMetrics = Map.of();
 		if (collectMetrics) {
-			String endpointMode = propertyPathEndpointMode(factor, effectiveBoundVars);
 			Map<String, String> mutableStringMetrics = new HashMap<>();
 			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path");
 			mutableStringMetrics.put("plannedPropertyPathMethod", pathEstimate.method());
@@ -4649,6 +4659,9 @@ class LmdbEvaluationStatistics
 			mutableDoubleMetrics.put("plannedPropertyPathDistinctSubjects", pathEstimate.distinctSubjects());
 			mutableDoubleMetrics.put("plannedPropertyPathDistinctObjects", pathEstimate.distinctObjects());
 			mutableDoubleMetrics.put("plannedPropertyPathAverageFanout", pathEstimate.averagePathFanout());
+			if (isPositiveFinite(outerPrefixRows)) {
+				mutableDoubleMetrics.put("plannedPropertyPathPrefixRows", outerPrefixRows);
+			}
 			mutableDoubleMetrics.put("plannedCardinalityQError", 3.0d);
 			stringMetrics = mutableStringMetrics;
 			doubleMetrics = mutableDoubleMetrics;

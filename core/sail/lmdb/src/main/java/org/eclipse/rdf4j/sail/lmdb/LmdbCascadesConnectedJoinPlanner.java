@@ -190,6 +190,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 			int mask = 1 << factorIndex;
 			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)),
 					initialMask.union(factorVarMasks.get(factorIndex)));
+			if (mask == fullMask) {
+				state = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
+						estimationTier);
+				if (state == null) {
+					continue;
+				}
+			}
 			List<State> incumbent = best[mask];
 			best[mask] = addBestState(incumbent, state);
 			if (trace.enabled()) {
@@ -277,6 +284,13 @@ final class LmdbCascadesConnectedJoinPlanner {
 					State next = state.append(mask | bit, factorIndex, step,
 							union(state.boundVars(), factorVars.get(factorIndex)),
 							state.boundMask().union(factorVarMasks.get(factorIndex)));
+					if (next.mask() == fullMask) {
+						next = appendZeroVarFactors(next, factors, zeroVarFactorIndices, costModel,
+								fallbackStatistics, estimationTier);
+						if (next == null) {
+							continue;
+						}
+					}
 					List<State> incumbent = best[next.mask()];
 					best[next.mask()] = addBestState(incumbent, next);
 					if (trace.enabled()) {
@@ -291,15 +305,9 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (trace.enabled()) {
 			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace, estimationTier);
 		}
-		State full = bestState(best[fullMask]);
-		if (full == null) {
-			trace.add("reject no-full-connected-state");
-			return Optional.empty();
-		}
-		State complete = appendZeroVarFactors(full, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
-				estimationTier);
+		State complete = bestState(best[fullMask]);
 		if (complete == null) {
-			trace.add("reject zero-var-append-failed order=" + full.order());
+			trace.add("reject no-full-connected-state");
 			return Optional.empty();
 		}
 		trace.add("final " + stateSummary(complete, factors));
@@ -681,6 +689,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 			for (State alternativePrefix : states(alternatives)) {
 				if (alternativePrefix == currentPrefix
 						|| (alternativePrefix.mask() & factorBit) != 0
+						|| (alternativePrefix.mask() & currentPrefix.mask()) != currentPrefix.mask()
 						|| !pathHasBoundEndpoint(factor, alternativePrefix.boundVars())) {
 					continue;
 				}

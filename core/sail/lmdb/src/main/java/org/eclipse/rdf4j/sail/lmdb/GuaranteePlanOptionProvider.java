@@ -223,9 +223,6 @@ final class GuaranteePlanOptionProvider {
 				GuaranteePlanOptionProvider::isPotentialAnchorValue);
 		BindingSetAssignment narrowedAnchor = narrowObjectAnchor(pattern, anchor, context);
 		if (narrowedAnchor != null) {
-			if (filter.hasMultipleStatementPatternsInScope() && !filter.isInsideExistsScope()) {
-				return null;
-			}
 			String bindingName = narrowedAnchor.getBindingNames().iterator().next();
 			return new AnchorOption(narrowedAnchor, bindingName, true, Set.of(),
 					semanticFilterInAnchor(filter.condition, pattern, context), pattern);

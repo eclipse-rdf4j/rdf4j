@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 
@@ -71,8 +72,9 @@ final class LmdbJoinOrderEnumerator {
 			boolean requireConnected = hasConnectedRemaining(factors, mask, boundVars);
 			for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
 				int factorBit = 1 << factorIndex;
-				if ((mask & factorBit) != 0
-						|| requireConnected && !connects(factors.get(factorIndex), boundVars)) {
+				if ((mask & factorBit) != 0 || requireConnected
+						&& !connects(factors.get(factorIndex), boundVars)
+						&& !isBoundedAnchor(factors.get(factorIndex))) {
 					continue;
 				}
 				List<Integer> indexes = append(prefixIndexes, factorIndex);
@@ -101,8 +103,9 @@ final class LmdbJoinOrderEnumerator {
 			boolean requireConnected = hasConnectedRemaining(factors, selected, boundVars);
 			Candidate best = null;
 			for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
-				if (selected[factorIndex]
-						|| requireConnected && !connects(factors.get(factorIndex), boundVars)) {
+				if (selected[factorIndex] || requireConnected
+						&& !connects(factors.get(factorIndex), boundVars)
+						&& !isBoundedAnchor(factors.get(factorIndex))) {
 					continue;
 				}
 				List<Integer> candidateIndexes = append(indexes, factorIndex);
@@ -160,6 +163,10 @@ final class LmdbJoinOrderEnumerator {
 			}
 		}
 		return false;
+	}
+
+	private static boolean isBoundedAnchor(TupleExpr factor) {
+		return factor instanceof BindingSetAssignment;
 	}
 
 	private static Set<String> boundVars(List<TupleExpr> factors, List<Integer> indexes,

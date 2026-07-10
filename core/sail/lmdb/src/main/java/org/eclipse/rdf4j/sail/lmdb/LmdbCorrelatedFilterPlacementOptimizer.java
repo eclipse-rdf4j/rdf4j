@@ -52,7 +52,7 @@ final class LmdbCorrelatedFilterPlacementOptimizer implements QueryOptimizer {
 		if (!(filter.getCondition()instanceof Not not) || !(not.getArg()instanceof Exists exists)) {
 			return;
 		}
-		if (isSelfEdgeExtension(exists.getSubQuery())) {
+		if (isMaterializedSelfEdgeAlternative(filter, exists.getSubQuery())) {
 			Difference materializedAnti = new Difference(filter.getArg().clone(), exists.getSubQuery().clone());
 			materializedAnti.setStringMetricPlanned("optimizer.semanticRewrite",
 					"lmdb-materialized-self-edge-anti-semi");
@@ -81,7 +81,11 @@ final class LmdbCorrelatedFilterPlacementOptimizer implements QueryOptimizer {
 		filter.replaceWith(placement.tupleExpr());
 	}
 
-	private static boolean isSelfEdgeExtension(TupleExpr tupleExpr) {
+	private static boolean isMaterializedSelfEdgeAlternative(Filter filter, TupleExpr tupleExpr) {
+		String proofs = filter.getStringMetricPlanned("optimizer.cascadesProofs");
+		if (proofs == null || !proofs.contains("rule=minus-alternatives-anti-exists-pushed")) {
+			return false;
+		}
 		if (!(tupleExpr instanceof Extension extension) || !(extension.getArg()instanceof StatementPattern pattern)) {
 			return false;
 		}

@@ -48,6 +48,8 @@ Timestamps are UTC.
 - [x] (2026-07-10 05:36Z) Closed the remaining contradictory-evidence and snapshot parity gaps. Heap serialization no longer mutates exact postings; exact postings load eagerly; live/byte/mapped intersections agree; positive sub-row finite filters are not rounded into exact zero; contradictory zero rebases are downgraded at the evidence-store boundary; and the misleading medical raw-sampling test now proves positive finite Omni evidence instead. Memoization (99), OmniJoinEstimator (43), and surface retention (10) are green.
 - [x] (2026-07-10 05:44Z) Reproduced the mapped-arena close race deterministically, serialized snapshot/clear ownership on the estimator lifecycle monitor (without taking the state monitor), and reran q10 with no `Already closed` persistence warning. The state-monitor nonblocking persistence regression remains green.
 - [x] (2026-07-10 05:45Z) Acceptance gates currently green: selective chain end, flagged q10, sparse-prefix q-error (3), finite-IN Cascades rewrites (17), optimizer pipeline (38), formatter, copyright check (only the five preexisting tool-POM findings), and `git diff --check`.
+- [x] (2026-07-10 06:25Z) Triaged the third module verify (2079 tests, 6 failures, 0 errors). Restored safe post-costing finite-anchor rewrites, allowed bounded disconnected assignments to accumulate before their bridge, preserved explicit correlated NOT EXISTS, and made property-path dominance/costing respect the actual prefix. The four finite-anchor selectors, social q4, and the AAS constant-root selector are focused-green.
+- [x] (2026-07-10 06:36Z) Reconciled the q10/self-edge boundary by using Cascades provenance: only a self-edge anti-filter produced by `minus-alternatives-anti-exists-pushed` is restored to a materialized `Difference`; explicit SPARQL NOT EXISTS remains correlated. The q10, social q4, finite-rewrite (17), filter-local (40), connected-admissibility (15), selective-chain, and cost-tie selectors are green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -120,6 +122,10 @@ Timestamps are UTC.
   Evidence: red `logs/mvnf/20260710-053206-verify.log`; green `logs/mvnf/20260710-053443-verify.log`.
 - Observation: The q10 persistence warning was a mapped-arena ownership race, not harmless shutdown noise. Snapshot traversal read `MappedWitnessIndex` without a lifecycle guard while `clear()` closed the shared arena. A dedicated estimator monitor serializes snapshot/byte traversal with clear/reload while leaving the separate state monitor available to ingestion and the existing nonblocking persistence contract.
   Evidence: q10 warning in `logs/mvnf/20260710-050029-verify.log`; deterministic red/green in `20260710-053958-verify.log` and `20260710-054050-verify.log`; warning-free q10 rerun `20260710-054315-verify.log`.
+- Observation: Re-estimating an arbitrary-length path from its factor list discarded the known prefix population and inverted plan quality: a 2,555-row constant-root prefix inflated to 29.84 billion path rows while a 50,200-row broad prefix costed at 12.4 billion. Passing the scalar prefix population and capping conditioned traversal at the estimator's existing 16x endpoint envelope restores monotonicity.
+  Evidence: AAS red `logs/mvnf/20260710-060643-verify.log`; focused green `logs/mvnf/20260710-062615-verify.log`.
+- Observation: Self-edge shape alone cannot decide between a correlated anti-probe and a materialized anti-join. Social q4 contains an explicit `FILTER NOT EXISTS` that must remain correlated, while highly-connected q10 contains a Cascades anti-filter alternative generated from an original MINUS that must be restored to `Difference`. The winning filter retains the originating rule in `optimizer.cascadesProofs`, providing a semantic discriminator without query-specific matching.
+  Evidence: q10 red after blanket preservation `logs/mvnf/20260710-062834-verify.log`; q10 green `20260710-063055-verify.log`; explicit social q4 green `20260710-063200-verify.log`.
 
 ## Decision Log
 
@@ -185,6 +191,12 @@ Timestamps are UTC.
   Date/Author: 2026-07-10 / Codex.
 - Decision: Treat an exact-zero surface with a positive execution step as contradictory evidence. At the evidence-store boundary, rebase it to the last positive step output, mark `contradictory-exact-zero`, and cap confidence at 0.25.
   Rationale: The sidecar can receive estimates from multiple memo binding contexts. A zero exact rebase must never erase direct positive witness evidence; explicit fallback rebasing preserves the witnesses while making the uncertainty honest.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: A connected-prefix path may be dominated only by an alternative whose factor mask is a superset of that prefix, and conditioned property-path rows are bounded by the known prefix population times the estimator's 16-step traversal envelope.
+  Rationale: Comparing unrelated subsets or rebuilding a path estimate without its prefix population made a narrower constant-root path look more expensive than a broad path. Both constraints preserve the information already established by the prefix.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Restore a self-edge anti-filter to materialized `Difference` only when its Cascades proof contains `minus-alternatives-anti-exists-pushed`; otherwise retain and place the explicit NOT EXISTS filter at its earliest assured prefix.
+  Rationale: Provenance distinguishes an implementation alternative of original MINUS semantics from user-authored correlated NOT EXISTS. Shape-based conversion conflated them and made the q10 and social q4 contracts mutually exclusive.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -449,3 +461,5 @@ Revision note (2026-07-09 22:10Z, Codex): Applied the three remaining Milestone 
 Revision note (2026-07-09 22:15Z, Codex): Marked Milestone 1 complete after all four focused selectors passed. Reason: the living plan now has a restartable boundary before cohort memory and persistence work.
 
 Revision note (2026-07-09 23:18Z, Codex): Marked Milestone 4 complete after the focused surface, config, persistence, and completed-sidecar classes passed. Reason: the full surface is now the authoritative tuple-plan cost profile, every requested supported query shape is retained, and legacy non-Omni carriers are removed before starting the coverage/module-health milestone.
+
+Revision note (2026-07-10 06:36Z, Codex): Recorded the third full-module red set and the focused planner remediations. Reason: bounded finite anchors, prefix-aware path costing, and provenance-based anti-join restoration close the final observed regressions without query-specific rules or weakened assertions.

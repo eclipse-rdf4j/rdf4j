@@ -19,17 +19,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class CollectedJoinArgs {
@@ -110,58 +104,6 @@ final class DeferredFilter {
 
 	String sourceFilterStringMetric(String metricName) {
 		return sourceFilter == null ? null : sourceFilter.getStringMetricPlanned(metricName);
-	}
-
-	boolean isInsideExistsScope() {
-		QueryModelNode current = sourceFilter;
-		while (current != null) {
-			if (current instanceof Exists) {
-				return true;
-			}
-			current = current.getParentNode();
-		}
-		return false;
-	}
-
-	boolean hasMultipleStatementPatternsInScope() {
-		if (sourceFilter == null) {
-			return false;
-		}
-		TupleExpr scope = sourceFilter.getArg();
-		QueryModelNode current = sourceFilter;
-		QueryModelNode parent = current.getParentNode();
-		while (parent instanceof Join || parent instanceof LeftJoin || parent instanceof Filter) {
-			scope = (TupleExpr) parent;
-			current = parent;
-			parent = current.getParentNode();
-		}
-
-		int[] count = { 0 };
-		TupleExpr filterScope = scope;
-		filterScope.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Filter node) {
-				node.getArg().visit(this);
-			}
-
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (count[0] >= 2) {
-					return;
-				}
-				if (node != filterScope && node instanceof VariableScopeChange scopeChange
-						&& scopeChange.isVariableScopeChange()) {
-					return;
-				}
-				super.meetNode(node);
-			}
-
-			@Override
-			public void meet(StatementPattern node) {
-				count[0]++;
-			}
-		});
-		return count[0] >= 2;
 	}
 
 	static Set<String> conditionBindingNames(ValueExpr condition) {

@@ -726,7 +726,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void rewritesDuplicateInsensitiveMembershipAsEarlyJoinAnchor() {
+	void keepsDuplicateInsensitiveObjectMembershipLocalForCascadesCosting() {
 		StatementPattern name = statementPatternWithPredicate("a", "http://example.com/theme/social/name", "optName");
 		TupleExpr cycle = new Join(
 				new Join(statementPattern("a", "follows", "b"), statementPattern("b", "follows", "c")),
@@ -741,12 +741,11 @@ class LmdbFilterSimplifierOptimizerTest {
 				RdfTermDomain.classify(VF.createLiteral("user0")))).optimize(root, null, null);
 
 		Group optimizedGroup = assertInstanceOf(Group.class, root.getArg());
-		Join optimizedJoin = assertInstanceOf(Join.class, optimizedGroup.getArg(), optimizedGroup.getArg().toString());
-		assertTrue(containsBindingSetAssignmentFor(optimizedJoin.getLeftArg(), "optName"));
-		assertTrue(containsStatementPatternWithObject(optimizedJoin.getLeftArg(), "optName"));
-		assertFalse(containsFilter(optimizedJoin));
-		assertFalse(containsExists(optimizedJoin));
-		assertRewriteCertificate(optimizedJoin, "DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER", "23", "false");
+		Filter optimizedFilter = assertInstanceOf(Filter.class, optimizedGroup.getArg(),
+				optimizedGroup.getArg().toString());
+		assertTrue(containsStatementPatternWithObject(optimizedFilter.getArg(), "optName"));
+		assertFalse(containsBindingSetAssignmentFor(optimizedFilter, "optName"));
+		assertFalse(containsExists(optimizedFilter));
 	}
 
 	@Test
