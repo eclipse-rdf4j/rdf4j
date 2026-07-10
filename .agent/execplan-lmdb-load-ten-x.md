@@ -36,6 +36,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 04:53Z) Replaced global value IDs with a packed local value dictionary and fixed NONE namespace ordering; nine focused tests pass and forked Java 26 reaches 98.847/152.981 ms/op.
 - [x] (2026-07-10 05:14Z) Halved fresh packed quad records with 32-bit local IDs; a candidate-control-candidate JDK 26 sequence improves pooled time 10.14%/3.73% and removes about 12.69 MB/op.
 - [x] (2026-07-10 05:23Z) Tested and rejected direct manual UTF-8 encoding into reserved LMDB buffers; it removed about 65 MB/op but regressed elapsed time 33-52 ms.
+- [x] (2026-07-10 05:34Z) Deferred `READ_COMMITTED` hash-model construction with an owned compact approval sequence; all sail-base tests pass and RC improves 8.47% with 22.09 MB/op less allocation.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -125,6 +126,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Avoiding encoded value arrays is not useful when it replaces HotSpot's optimized UTF-8 implementation with two Java character scans and byte-at-a-time direct-buffer stores.
   Evidence: `profiles/lmdb-load-10x/direct-packed-encoding/candidate.json` drops allocation from 94,965,668/119,524,052 B/op to 29,846,125/54,397,857 B/op, yet regresses NONE/READ_COMMITTED from 102.174/157.360 ms/op to 155.472/206.957 ms/op.
+
+- Observation: The hash-backed approval model is a material but not dominant part of the remaining `READ_COMMITTED` gap.
+  Evidence: `profiles/lmdb-load-10x/compact-changeset/candidate.json` leaves NONE statistically unchanged at 102.831 ms/op and improves READ_COMMITTED from 157.360 to 144.034 ms/op, while RC allocation falls from 119,524,052 to 97,436,683 B/op.
 
 ## Decision Log
 
@@ -218,6 +222,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject the manual direct UTF-8 encoder and retain `String.getBytes(UTF_8)` for packed values.
   Rationale: Allocation fell by about 65 MB/op, but the exact paired result regressed both requested isolation modes by far more than host noise. Any follow-up must preserve JDK bulk encoding or specialize only a proven ASCII representation.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Keep compact large-Set approvals in `Changeset` and lazily materialize the normal model only for later mutations that need set semantics.
+  Rationale: The input Set already proves uniqueness. Copying its immutable statement references into an owned array preserves transaction isolation and order without rehashing every statement; the exact paired result improves only the intended READ_COMMITTED mode and all base tests remain green.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -350,3 +358,5 @@ Revision note (2026-07-10 00:53Z): Recorded the TDD-verified but benchmark-rejec
 Revision note (2026-07-10 05:14Z): Recorded the retained 32-bit local-ID format, its candidate-control-candidate measurements, and its allocation and storage reductions.
 
 Revision note (2026-07-10 05:23Z): Recorded and removed the correctness-tested direct UTF-8 encoder after allocation gains failed to translate into elapsed-time gains.
+
+Revision note (2026-07-10 05:34Z): Recorded the TDD-verified compact Changeset representation and its stable READ_COMMITTED time and allocation improvement.

@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 @InternalUseOnly
 public abstract class Changeset implements SailSink, ModelFactory {
+	private static final int COMPACT_BULK_MIN_STATEMENTS = 1024;
 
 	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
 	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
@@ -82,6 +83,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
 	private volatile Model approved;
+	private volatile List<Statement> compactApproved;
 	private volatile boolean approvedEmpty = true;
 
 	/**
@@ -165,6 +167,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		prepend = null;
 		observed = null;
 		approved = null;
+		compactApproved = null;
 		deprecated = null;
 		approvedContexts = null;
 		deprecatedContexts = null;
@@ -199,12 +202,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		assert !closed;
-		if (approved == null || approvedEmpty) {
+		if (approvedEmpty) {
 			return false;
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
+			List<Statement> compact = compactApproved;
+			if (compact != null) {
+				return compact.stream().anyMatch(statement -> matches(statement, subj, pred, obj, contexts));
+			}
 			return approved.contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -409,6 +416,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			if (contexts != null && contexts.length == 0) {
 				statementCleared = true;
+				compactApproved = null;
 
 				if (approved != null) {
 					approved.clear();
@@ -417,6 +425,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					approvedContexts.clear();
 				}
 			} else {
+				materializeApproved();
 				if (deprecatedContexts == null) {
 					deprecatedContexts = new HashSet<>();
 				}
@@ -432,7 +441,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					deprecatedContexts.addAll(Arrays.asList(contexts));
 				}
 			}
-			approvedEmpty = approved == null || approved.isEmpty();
+			approvedEmpty = approvedStorageIsEmpty();
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
 		}
@@ -455,9 +464,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public long approveAll(Iterable<? extends Statement> statements, Resource... contexts) {
 		assert !closed;
-		long count = 0;
 		long writeLock = readWriteLock.writeLock();
 		try {
+			if (contexts.length == 0 && statements instanceof Set<?> set
+					&& set.size() >= COMPACT_BULK_MIN_STATEMENTS
+					&& approved == null && compactApproved == null && deprecated == null) {
+				return approveCompactWithoutMaterialization(statements, set.size());
+			}
+			long count = 0;
 			for (Statement statement : statements) {
 				if (contexts.length == 0) {
 					approveWithoutLock(statement);
@@ -481,6 +495,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(statement);
 			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
 		}
+		materializeApproved();
 		if (approved == null) {
 			approved = createEmptyModel();
 		}
@@ -494,6 +509,66 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
+	private long approveCompactWithoutMaterialization(Iterable<? extends Statement> statements, int expectedSize) {
+		ArrayList<Statement> compact = new ArrayList<>(expectedSize);
+		for (Statement statement : statements) {
+			compact.add(statement);
+			Resource context = statement.getContext();
+			if (context != null) {
+				if (approvedContexts == null) {
+					approvedContexts = new HashSet<>();
+				}
+				approvedContexts.add(context);
+			}
+		}
+		compactApproved = Collections.unmodifiableList(compact);
+		approvedEmpty = compact.isEmpty();
+		return compact.size();
+	}
+
+	private void materializeApproved() {
+		List<Statement> compact = compactApproved;
+		if (compact == null) {
+			return;
+		}
+		if (approved == null) {
+			approved = createEmptyModel();
+		}
+		approved.addAll(compact);
+		compactApproved = null;
+	}
+
+	private boolean approvedStorageIsEmpty() {
+		List<Statement> compact = compactApproved;
+		return (compact == null || compact.isEmpty()) && (approved == null || approved.isEmpty());
+	}
+
+	private Stream<Statement> approvedStatementsStream() {
+		List<Statement> compact = compactApproved;
+		return compact != null ? compact.parallelStream() : approved.parallelStream();
+	}
+
+	private boolean matches(Statement statement, Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (subj != null && !subj.equals(statement.getSubject())) {
+			return false;
+		}
+		if (pred != null && !pred.equals(statement.getPredicate())) {
+			return false;
+		}
+		if (obj != null && !obj.equals(statement.getObject())) {
+			return false;
+		}
+		if (contexts == null || contexts.length == 0) {
+			return true;
+		}
+		for (Resource context : contexts) {
+			if (Objects.equals(context, statement.getContext())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 		approve(Statements.statement(subj, pred, obj, ctx));
@@ -504,6 +579,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		long writeLock = readWriteLock.writeLock();
 		try {
+			materializeApproved();
 			if (approved != null) {
 				approved.remove(statement);
 				approvedEmpty = approved == null || approved.isEmpty();
@@ -556,6 +632,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		if (approved != null) {
 			sb.append(approved.size());
 			sb.append(" approved, ");
+		} else if (compactApproved != null) {
+			sb.append(compactApproved.size());
+			sb.append(" approved, ");
 		}
 		if (sb.length() > 0) {
 			return sb.substring(0, sb.length() - 2);
@@ -571,6 +650,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.sinkIsolationLevel = from.sinkIsolationLevel;
 		this.observed = from.observed;
 		this.approved = from.approved;
+		this.compactApproved = from.compactApproved;
 		this.approvedEmpty = from.approvedEmpty;
 		this.deprecated = from.deprecated;
 		this.deprecatedEmpty = from.deprecatedEmpty;
@@ -733,7 +813,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean isChanged() {
 		assert !closed;
-		return approved != null || deprecated != null || approvedContexts != null
+		return approved != null || compactApproved != null || deprecated != null || approvedContexts != null
 				|| deprecatedContexts != null || addedNamespaces != null
 				|| removedPrefixes != null || statementCleared || namespaceCleared
 				|| observed != null;
@@ -756,12 +836,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	List<Statement> getApprovedStatements() {
 		assert !closed;
-		if (approved == null || approvedEmpty) {
+		if (approvedEmpty) {
 			return Collections.emptyList();
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
+			List<Statement> compact = compactApproved;
+			if (compact != null) {
+				return new ArrayList<>(compact);
+			}
 			return new ArrayList<>(approved);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -795,19 +879,30 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean hasApproved() {
 		assert !closed;
-		return approved != null && !approvedEmpty;
+		return !approvedEmpty;
 	}
 
 	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
 		assert !closed;
 
-		if (approved == null || approvedEmpty) {
+		if (approvedEmpty) {
 			return Collections.emptyList();
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
+
+			List<Statement> compact = compactApproved;
+			if (compact != null) {
+				List<Statement> statements = new ArrayList<>();
+				for (Statement statement : compact) {
+					if (matches(statement, subj, pred, obj, contexts)) {
+						statements.add(statement);
+					}
+				}
+				return statements;
+			}
 
 			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
 
@@ -838,7 +933,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	Iterable<TripleTerm> getApprovedTriples(Resource subj, IRI pred, Value obj) {
 		assert !closed;
-		if (approved == null || approvedEmpty) {
+		if (approvedEmpty) {
 			return Collections.emptyList();
 		}
 
@@ -846,7 +941,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
-			Stream<TripleTerm> approvedSubjectTriples = approved.parallelStream()
+			Stream<TripleTerm> approvedSubjectTriples = approvedStatementsStream()
 					.filter(st -> st.getSubject().isTripleTerm())
 					.map(st -> (TripleTerm) st.getSubject())
 					.filter(t -> {
@@ -859,7 +954,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						return obj == null || obj.equals(t.getObject());
 					});
 
-			Stream<TripleTerm> approvedObjectTriples = approved.parallelStream()
+			Stream<TripleTerm> approvedObjectTriples = approvedStatementsStream()
 					.filter(st -> st.getObject().isTripleTerm())
 					.map(st -> (TripleTerm) st.getObject())
 					.filter(t -> {
@@ -880,6 +975,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	void removeApproved(Statement next) {
 		assert !closed;
+		if (compactApproved != null) {
+			long writeLock = readWriteLock.writeLock();
+			try {
+				materializeApproved();
+				approved.remove(next);
+				approvedEmpty = approvedStorageIsEmpty();
+			} finally {
+				readWriteLock.unlockWriter(writeLock);
+			}
+			return;
+		}
 
 		try {
 			Model localApproved = approved;
@@ -903,7 +1009,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			if (approved != null) {
 				approved.remove(next);
-				approvedEmpty = approved == null || approved.isEmpty();
+				approvedEmpty = approvedStorageIsEmpty();
 			}
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
@@ -920,13 +1026,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	void sinkApproved(SailSink sink) {
-		if (approved == null || approvedEmpty) {
+		if (approvedEmpty) {
 			return;
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			if (approved != null) {
+			List<Statement> compact = compactApproved;
+			if (compact != null) {
+				sink.approveAll(compact);
+			} else if (approved != null) {
 				sink.approveAll(approved, approvedContexts);
 			}
 		} finally {
@@ -974,6 +1083,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (deprecated != null) {
 				deprecated.removeAll(approve);
 			}
+			materializeApproved();
 			if (approved == null) {
 				approved = createEmptyModel();
 			}
@@ -996,6 +1106,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	public void deprecateAll(Set<Statement> deprecate) {
 		long writeLock = readWriteLock.writeLock();
 		try {
+			materializeApproved();
 
 			if (approved != null) {
 				approved.removeAll(deprecate);

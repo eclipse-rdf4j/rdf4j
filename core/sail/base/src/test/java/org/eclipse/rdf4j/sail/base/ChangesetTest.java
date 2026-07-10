@@ -16,11 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -82,6 +85,28 @@ public class ChangesetTest {
 				new Resource[] { replacementContext }));
 		assertFalse(changeset.hasApproved(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 				new Resource[] { originalContext }));
+	}
+
+	@Test
+	void largeUniqueBulkApprovalDefersHashModelMaterialization() {
+		AtomicInteger modelCreations = new AtomicInteger();
+		Changeset changeset = getChangeset(modelCreations);
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 10_000; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:subject:" + i), RDF.TYPE, RDFS.RESOURCE));
+		}
+
+		assertEquals(statements.size(), changeset.approveAll(statements));
+		assertEquals(0, modelCreations.get());
+		assertEquals(List.copyOf(statements), changeset.getApprovedStatements());
+		assertEquals(0, modelCreations.get());
+
+		Statement appended = vf.createStatement(vf.createIRI("urn:appended"), RDF.TYPE, RDFS.RESOURCE);
+		changeset.approve(appended);
+		assertEquals(1, modelCreations.get());
+		assertTrue(
+				changeset.hasApproved(appended.getSubject(), appended.getPredicate(), appended.getObject(), allGraph));
+		assertEquals(statements.size() + 1, changeset.getApprovedStatements().size());
 	}
 
 	@Test
@@ -223,6 +248,10 @@ public class ChangesetTest {
 	}
 
 	private Changeset getChangeset() {
+		return getChangeset(new AtomicInteger());
+	}
+
+	private Changeset getChangeset(AtomicInteger modelCreations) {
 		return new Changeset() {
 			@Override
 			public void flush() throws SailException {
@@ -231,6 +260,7 @@ public class ChangesetTest {
 
 			@Override
 			public Model createEmptyModel() {
+				modelCreations.incrementAndGet();
 				// don't use the dynamic model here, we don't want to test upgrading
 				return new LinkedHashModel();
 			}

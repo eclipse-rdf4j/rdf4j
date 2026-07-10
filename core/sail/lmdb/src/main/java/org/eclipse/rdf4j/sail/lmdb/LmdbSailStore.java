@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -1491,7 +1492,7 @@ class LmdbSailStore implements SailStore {
 			Statement last = null;
 			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
-			int packedExpectedCount = approved instanceof Set<?> set ? set.size() : 0;
+			int packedExpectedCount = approved instanceof Collection<?> collection ? collection.size() : 0;
 			boolean packedCandidate = packedBulkWritesEnabled && explicit && sketchBasedJoinEstimator == null
 					&& overrideContexts.length == 0
 					&& packedExpectedCount >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
