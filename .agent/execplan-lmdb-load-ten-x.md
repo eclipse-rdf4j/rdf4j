@@ -38,6 +38,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 05:23Z) Tested and rejected direct manual UTF-8 encoding into reserved LMDB buffers; it removed about 65 MB/op but regressed elapsed time 33-52 ms.
 - [x] (2026-07-10 05:34Z) Deferred `READ_COMMITTED` hash-model construction with an owned compact approval sequence; all sail-base tests pass and RC improves 8.47% with 22.09 MB/op less allocation.
 - [x] (2026-07-10 05:46Z) Re-profiled compact `READ_COMMITTED` with macOS async-profiler and Linux Java 26 CPU-time JFR; both now rank the packed equality dictionary as the next shared hotspot.
+- [x] (2026-07-10 05:50Z) Replaced boxed dictionary nodes with collision-safe primitive open addressing; nine packed tests pass, NONE improves 10.19%, and both modes allocate 2.33 MB/op less.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -133,6 +134,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: After compact changesets, cross-platform profiles agree that equality-map lookup is the largest removable shared ingestion cost; the compact changeset code is below 1% CPU.
   Evidence: macOS reports `packedValueId` at 9.30% plus 9.58% in equality/list/map leaves; Linux CPU-time reports `packedValueId` 11.11%, `HashMap.getNode` 8.82%, `String.equals` 6.03%, and `HashMap.hash` 3.31%. The Linux recording has 9,909 samples with 1.24% lost.
+
+- Observation: Primitive open addressing converts the profiled dictionary overhead into a repeatable NONE gain but does not remove READ_COMMITTED's remaining upstream traversal cost.
+  Evidence: `profiles/lmdb-load-10x/primitive-packed-value-map/candidate.json` improves NONE from 102.831 to 92.354 ms/op with 89.284-96.037 ms measurements; READ_COMMITTED is statistically neutral at 145.334 ms/op. Both allocate about 2.33 MB/op less.
 
 ## Decision Log
 
@@ -234,6 +238,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Replace the boxed node-based local `HashMap<Value, Integer>` with an already-available primitive open-addressed object-to-int map before attempting JVM-internal string access.
   Rationale: Both profilers put a material share in HashMap nodes, boxing, lookup, and equality. Eclipse Collections is already a module dependency and provides collision-safe primitive open addressing, so this experiment can remove node/Integer allocation and pointer chasing without a new dependency or String-layout coupling.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Keep `ObjectIntHashMap` as the packed local dictionary and next remove the separate `ArrayList<Value>` growth/indirection without changing equality semantics.
+  Rationale: The exact paired result gives a stable 10.19% NONE improvement, neutral RC behavior, and lower allocation in both. The map remains collision-safe and uses an existing dependency, so it is a strictly better retained checkpoint.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -370,3 +378,5 @@ Revision note (2026-07-10 05:23Z): Recorded and removed the correctness-tested d
 Revision note (2026-07-10 05:34Z): Recorded the TDD-verified compact Changeset representation and its stable READ_COMMITTED time and allocation improvement.
 
 Revision note (2026-07-10 05:46Z): Recorded the post-Changeset macOS and Linux profile matrix and selected primitive open addressing as the next shared dictionary experiment.
+
+Revision note (2026-07-10 05:50Z): Recorded the retained primitive object-to-int dictionary, nine-test verification, and exact paired time/allocation result.

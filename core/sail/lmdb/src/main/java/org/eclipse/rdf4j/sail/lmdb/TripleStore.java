@@ -86,6 +86,7 @@ import java.util.function.ToIntFunction;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -1893,7 +1894,7 @@ class TripleStore implements Closeable {
 		if (!packedWriteActive || packedTxnCount != 0) {
 			throw new IllegalStateException("Packed statement storage is not active for an empty transaction");
 		}
-		HashMap<Value, Integer> valueIds = new HashMap<>(Math.max(16, expectedCount / 2));
+		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount / 2));
 		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
 		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
 		int count = 0;
@@ -1916,12 +1917,12 @@ class TripleStore implements Closeable {
 		return count;
 	}
 
-	private int packedValueId(Value value, HashMap<Value, Integer> valueIds, ArrayList<Value> values) {
+	private int packedValueId(Value value, ObjectIntHashMap<Value> valueIds, ArrayList<Value> values) {
 		if (value == null) {
 			return 0;
 		}
-		Integer existing = valueIds.get(value);
-		if (existing != null) {
+		int existing = valueIds.get(value);
+		if (existing != 0) {
 			return existing;
 		}
 		if (value instanceof TripleTerm triple) {
@@ -1935,7 +1936,7 @@ class TripleStore implements Closeable {
 		return id;
 	}
 
-	private void writePackedValues(ArrayList<Value> values, HashMap<Value, Integer> valueIds) throws IOException {
+	private void writePackedValues(ArrayList<Value> values, ObjectIntHashMap<Value> valueIds) throws IOException {
 		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size());
 		ToIntFunction<Value> lookupId = value -> valueIds.get(value);
 		for (Value value : values) {
