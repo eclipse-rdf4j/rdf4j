@@ -82,6 +82,24 @@ final class OmniSketchCell {
 		return hashes;
 	}
 
+	boolean containsHash(final long identifierHash) {
+		flushStaging();
+		int low = 0;
+		int high = retained - 1;
+		while (low <= high) {
+			final int middle = (low + high) >>> 1;
+			final int comparison = compareUnsigned(hashes[middle], identifierHash);
+			if (comparison < 0) {
+				low = middle + 1;
+			} else if (comparison > 0) {
+				high = middle - 1;
+			} else {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	void update(final long identifierHash) {
 		updateAndCheckRetained(identifierHash);
 	}

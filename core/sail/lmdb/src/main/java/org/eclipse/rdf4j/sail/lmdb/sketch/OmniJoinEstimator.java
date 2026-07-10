@@ -2422,20 +2422,17 @@ final class OmniJoinEstimator {
 			if (exactWeights == null || exactWeights.isEmpty()) {
 				return new SnapshotWeights(new ValueWeights(), null);
 			}
-			OmniSketchProbeResult probe = probeValue(valueHash);
-			long[] retainedHashes = probe.getIdentifierHashesUnsafe();
-			if (retainedHashes.length == 0) {
-				return new SnapshotWeights(new ValueWeights(), probe);
-			}
-			ValueWeights retainedWeights = new ValueWeights(
-					Math.min(retainedHashes.length, exactWeights.size()));
-			for (long retainedHash : retainedHashes) {
-				double weight = exactWeights.get(retainedHash);
-				if (Double.isFinite(weight) && weight > 0.0d) {
-					retainedWeights.put(retainedHash, weight);
+			ValueWeights retainedWeights = new ValueWeights(Math.min(sketch.getNominalEntries(), exactWeights.size()));
+			ObjectIterator<Long2DoubleMap.Entry> iterator = Long2DoubleMaps.fastIterator(exactWeights);
+			while (iterator.hasNext()) {
+				Long2DoubleMap.Entry entry = iterator.next();
+				double weight = entry.getDoubleValue();
+				if (Double.isFinite(weight) && weight > 0.0d
+						&& sketch.isIdentifierHashRetained(valueHash, entry.getLongKey())) {
+					retainedWeights.put(entry.getLongKey(), weight);
 				}
 			}
-			return new SnapshotWeights(retainedWeights, probe);
+			return new SnapshotWeights(retainedWeights, null);
 		}
 
 		private WitnessCursor retainedWitnessCursor(long valueHash, OmniSketchProbeResult probe) {
@@ -3229,14 +3226,16 @@ final class OmniJoinEstimator {
 		}
 
 		private SnapshotWeights retainedWeightsForValueWithProbe(long valueHash, WitnessCursor cursor) {
-			OmniSketchProbeResult probe = probeValue(valueHash);
-			long[] retainedHashes = probe.getIdentifierHashesUnsafe();
-			if (retainedHashes.length == 0) {
-				return new SnapshotWeights(new ValueWeights(), probe);
+			ValueWeights retainedWeights = new ValueWeights(
+					Math.min(sketch.getNominalEntries(), Math.max(1, cursor.estimatedRemaining())));
+			while (cursor.next()) {
+				double weight = cursor.weight();
+				if (Double.isFinite(weight) && weight > 0.0d
+						&& sketch.isIdentifierHashRetained(valueHash, cursor.witnessHash())) {
+					retainedWeights.addTo(cursor.witnessHash(), weight);
+				}
 			}
-			ValueWeights retainedWeights = new ValueWeights(retainedHashes.length);
-			addCursorRetainedWeights(cursor, retainedHashes, 1.0d, retainedWeights);
-			return new SnapshotWeights(retainedWeights, probe);
+			return new SnapshotWeights(retainedWeights, null);
 		}
 
 		private static double positiveWeightSum(Long2DoubleOpenHashMap weightsByWitnessHash) {

@@ -94,6 +94,25 @@ class OmniSketchCoreTest {
 	}
 
 	@Test
+	void directRetainedMembershipMatchesProbeAcrossHeapAndCompactSketches() {
+		UpdateOmniSketch sketch = newSketch(64, 4, 32);
+		long valueHash = OmniJoinEstimator.stableHash("direct-membership-value");
+		long[] identifiers = new long[300];
+		for (int i = 0; i < identifiers.length; i++) {
+			identifiers[i] = OmniJoinEstimator.stableHash("direct-membership-id:" + i);
+			sketch.updateHash(valueHash, identifiers[i]);
+		}
+		long[] retained = sketch.probeHash(valueHash).getIdentifierHashes();
+		CompactOmniSketch compact = sketch.compact();
+
+		for (long identifier : identifiers) {
+			boolean expected = contains(retained, identifier);
+			assertEquals(expected, sketch.isIdentifierHashRetained(valueHash, identifier));
+			assertEquals(expected, compact.isIdentifierHashRetained(valueHash, identifier));
+		}
+	}
+
+	@Test
 	void probeJoinPreservesZeroRetainedSampleLoss() {
 		OmniJoinEstimator estimator = new OmniJoinEstimator(64, 3, 64, 1L);
 		OmniWitnessSet input = OmniWitnessSet.fromSortedUnsigned(new long[0], new double[0], 0,
@@ -204,6 +223,15 @@ class OmniSketchCoreTest {
 				.setNumRows(rows)
 				.setNominalEntries(nominalEntries)
 				.build();
+	}
+
+	private static boolean contains(long[] values, long expected) {
+		for (long value : values) {
+			if (value == expected) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void assertBetween(double lowerExclusive, double upperExclusive, double value) {

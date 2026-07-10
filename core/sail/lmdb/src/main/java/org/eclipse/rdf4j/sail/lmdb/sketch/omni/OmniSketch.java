@@ -170,6 +170,18 @@ public abstract class OmniSketch implements MemorySegmentStatus {
 		return OmniSketchProbeResult.fromSummary(summaryForValueHash(valueHash));
 	}
 
+	/** Returns whether a pre-hashed identifier is retained by every row cell selected by a pre-hashed value. */
+	public final boolean isIdentifierHashRetained(final long valueHash, final long identifierHash) {
+		for (int row = 0; row < getNumRows(); row++) {
+			final int column = OmniSketchHash.indexFor(OmniSketchHash.rowHash(valueHash, row, getSeed()),
+					getLgWidth());
+			if (!getCell(row, column).containsHash(identifierHash)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** Returns an immutable compact representation on the Java heap. */
 	public abstract CompactOmniSketch compact();
 
