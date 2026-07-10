@@ -54,6 +54,7 @@ Timestamps are UTC.
 - [x] (2026-07-10 08:12Z) Closed both pre-OOM assertions without weakening them. Subject-star fallback estimates now retain subject distinct evidence through the LMDB statistics bag, star physical properties, and opaque cost-model boundary. A no-choice guarantee rule no longer displaces a genuine connected-hypergraph subquery winner. `QueryBenchmarkTest` (16), memoization (100), Cascades cost model (50), optimizer (52), star support (5), surface retention (11), and context propagation (4) are focused-green.
 - [x] (2026-07-10 08:20Z) Removed an attempted recursive emergency-descendant repair after live OOM diagnostics showed it repeatedly cloning `DeleteInsertTest` into roughly 150,000 joins. The subselect regression remains green without recursion; heap occupancy is bounded again.
 - [x] (2026-07-10 08:45Z) Fifth module verify completed without OOM: 2082 tests, 2 failures, 0 errors, 54 skipped. Both failures were exact AAS anchor-order assertions. No-choice guarantee ownership now remains available for factor-local filters, and path deferral checks local statements on a bound endpoint plus selective constant binders on the unbound endpoint. AAS hypergraph (3), AAS benchmarks (6), cost tie (1), connected admissibility (15), and subselect repair (1) are focused-green.
+- [x] (2026-07-10 09:33Z) Sixth module verify completed all 2082 unit tests green, then exposed an integration-rebuild memory defect: exact sparse edge/composite postings retained 5,306,023 `ValueWeights` maps and 3.34 GiB of heap. Directed and subject-star composite indexes now retain bounded KMV candidates while the subject-star predicate index stays exact for selective-object intersection parity. The new sparse-posting regression (1), `OmniJoinEstimatorTest` (45), PHARMA q2 IT (1, 4.556 s), optimizer pipeline (38), Cascades optimizer (52), and finite-IN rewrite coverage (17) are green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -134,6 +135,14 @@ Timestamps are UTC.
   Evidence: focused subselect red `logs/mvnf/20260710-075727-verify.log`; context guard red `20260710-080740-verify.log`; focused and class greens `20260710-080949-verify.log`, `20260710-081044-verify.log`, and `20260710-081129-verify.log`.
 - Observation: Path deferral originally searched only the endpoint already bound by the prefix. That misses an exact statement such as `?prop aas:idShort "ratedPower"` which can bind the opposite endpoint, and after that anchor is chosen it can also let the path leapfrog a cheaper local `?prop aas:value ?val` lookup. Searching both sides indiscriminately would regress broad AAS paths, so the unbound side is eligible only when the statement's opposite term is constant.
   Evidence: full-module AAS reds `logs/mvnf/20260710-082145-verify.log`; intermediate single red `20260710-083610-verify.log`; focused green `20260710-083733-verify.log` and broader green `20260710-083925-verify.log`.
+- Observation: Exact sparse edge and subject-star composite postings defeated the global cohort cap because each distinct key allocated its own `ValueWeights` map outside cohort accounting. The full integration fixture retained 5,306,023 such maps and used 3.34 GiB before estimator readiness. Keeping only KMV candidates for those high-cardinality indexes bounds rebuild memory; the subject-star predicate index must remain exact because its per-object intersection mass is needed for live/byte/mapped parity.
+  Evidence: module failure `logs/mvnf/20260710-084358-verify.log`; sparse-posting red/green `20260710-090721-verify.log` and `20260710-090828-verify.log`; parity-preserving class green `20260710-091627-verify.log`.
+- Observation: `LmdbPharmaQ2BoundJoinProductEstimateIT` is a PHARMA-specific temporary-store regression but loaded every benchmark theme before its 60-second readiness assertion. Limiting its fixture to `Theme.PHARMA` preserves the query and planner assertions and completes in 4.556 seconds, so the test now measures the intended query instead of unrelated corpus construction.
+  Evidence: readiness timeout `logs/mvnf/20260710-090958-verify.log`; focused green `20260710-092934-verify.log`.
+- Observation: Replacing a `Var` inside an n-ary value operator through `replaceWith` can leave the replacement parent null even though the list slot changes. Capturing the old parent in `LmdbTupleExprFacts.replaceVars` and restoring it only when replacement did not attach one preserves tree invariants without overriding a correctly assigned parent.
+  Evidence: parent-reference failure `logs/mvnf/20260710-091708-verify.log`; focused PHARMA green `20260710-092934-verify.log`.
+- Observation: A two-statement correlated EXISTS preserved parser order even when its second statement was the only one sharing an assured outer binding. Orienting that simple probe to start from the correlated statement avoids a broad local scan. The parent plan can now expose a selected finite anchor instead of the older `optimizer.connectedFactor` marker, so the regression accepts either proof while still forbidding the broad target first.
+  Evidence: probe-order red `logs/mvnf/20260710-092156-verify.log`; focused green `20260710-092934-verify.log`; neighboring optimizer greens `20260710-093100-verify.log`, `20260710-093156-verify.log`, and `20260710-093254-verify.log`.
 
 ## Decision Log
 
@@ -217,6 +226,12 @@ Timestamps are UTC.
   Date/Author: 2026-07-10 / Codex.
 - Decision: Delay a one-ended path for a cheaper constant-predicate statement on its bound endpoint, or for a cheaper unbound-endpoint statement only when that statement has a constant opposite term.
   Rationale: This prioritizes exact endpoint anchors and local lookups without forcing a broad far-end predicate scan ahead of a genuinely cheaper one-ended traversal.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Preserve exact postings only for the subject-star predicate attribute; directed-edge and subject-star composite attributes use their bounded KMV candidate retention.
+  Rationale: The predicate attribute supplies exact selective-object intersection mass required by snapshot parity, while exact sparse edge/composite populations allocate one map per distinct key and can exhaust the integration-test heap independently of the cohort cap.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: For a simple two-statement correlated EXISTS, place the statement sharing assured outer bindings first and attach the existence-equivalent `CORRELATED_EXISTS_BOUND_PREFIX` rewrite proof.
+  Rationale: Join order is semantically irrelevant inside EXISTS, but an outer-bound first probe avoids broad local enumeration and makes the transformation explicit for downstream proof consumers.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -483,3 +498,5 @@ Revision note (2026-07-09 22:15Z, Codex): Marked Milestone 1 complete after all 
 Revision note (2026-07-09 23:18Z, Codex): Marked Milestone 4 complete after the focused surface, config, persistence, and completed-sidecar classes passed. Reason: the full surface is now the authoritative tuple-plan cost profile, every requested supported query shape is retained, and legacy non-Omni carriers are removed before starting the coverage/module-health milestone.
 
 Revision note (2026-07-10 06:36Z, Codex): Recorded the third full-module red set and the focused planner remediations. Reason: bounded finite anchors, prefix-aware path costing, and provenance-based anti-join restoration close the final observed regressions without query-specific rules or weakened assertions.
+
+Revision note (2026-07-10 09:33Z, Codex): Recorded the sixth acceptance run's integration-rebuild memory evidence and the focused remediation. Reason: sparse edge/composite exact-posting maps bypassed cohort accounting, while the PHARMA fixture and correlated EXISTS orientation separately obscured the intended planner assertion.

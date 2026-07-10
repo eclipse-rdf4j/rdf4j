@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -68,7 +69,12 @@ final class LmdbTupleExprFacts {
 			@Override
 			public void meet(Var node) {
 				if (!node.hasValue() && oldName.equals(node.getName())) {
-					node.replaceWith(Var.of(newName));
+					QueryModelNode parent = node.getParentNode();
+					Var replacement = Var.of(newName);
+					node.replaceWith(replacement);
+					if (replacement.getParentNode() == null) {
+						replacement.setParentNode(parent);
+					}
 				}
 			}
 		});

@@ -1847,9 +1847,7 @@ final class OmniJoinEstimator {
 		}
 
 		private boolean exactPostings(OmniAttributeRef attribute) {
-			return name == OmniRelation.EDGE_FORWARD || name == OmniRelation.EDGE_REVERSE
-					|| isSubjectStarPredicateAttribute(attribute)
-					|| isSubjectStarCompositeAttribute(attribute);
+			return isSubjectStarPredicateAttribute(attribute);
 		}
 
 		private boolean compactLargePostings(OmniAttributeRef attribute) {
@@ -1860,18 +1858,6 @@ final class OmniJoinEstimator {
 			return name == OmniRelation.SUBJECT_STAR && attribute != null
 					&& attribute.kind() == OmniAttributeRef.KIND_STATIC
 					&& attribute.staticId() == OmniAttributeRef.component(1);
-		}
-
-		private boolean isSubjectStarCompositeAttribute(OmniAttributeRef attribute) {
-			if (name != OmniRelation.SUBJECT_STAR || attribute == null
-					|| attribute.kind() != OmniAttributeRef.KIND_STATIC) {
-				return false;
-			}
-			byte staticId = attribute.staticId();
-			return staticId == OmniAttributeRef.subjectStarPO()
-					|| staticId == OmniAttributeRef.subjectStarPC()
-					|| staticId == OmniAttributeRef.subjectStarOC()
-					|| staticId == OmniAttributeRef.subjectStarPOC();
 		}
 
 		private boolean hasAttributes() {

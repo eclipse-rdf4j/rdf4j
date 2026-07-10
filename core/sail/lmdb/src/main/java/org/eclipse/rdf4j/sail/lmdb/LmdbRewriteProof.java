@@ -58,6 +58,7 @@ record LmdbRewriteProof(RewriteKind kind, EquivalenceScope scope, Set<String> fa
 
 	enum RewriteKind {
 		TRIVIAL_BIND_ALIAS,
+		CORRELATED_EXISTS_BOUND_PREFIX,
 		TAUTOLOGICAL_POSITIVE_HAVING,
 		ELIGIBILITY_UNION_SEMI_FILTER,
 		GROUP_KEY_EXISTS_LIFT,

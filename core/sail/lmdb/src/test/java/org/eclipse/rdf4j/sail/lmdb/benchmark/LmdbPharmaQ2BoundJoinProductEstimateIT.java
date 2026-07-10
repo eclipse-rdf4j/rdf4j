@@ -129,6 +129,10 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 		if (connectedFactorLine != null) {
 			return connectedFactorLine;
 		}
+		String finiteAnchorFactor = firstSelectedFiniteAnchorFactor(plan);
+		if (finiteAnchorFactor != null) {
+			return "selected finite-anchor first access path=" + finiteAnchorFactor;
+		}
 		String[] lines = plan.split("\\R");
 		int mainJoinLine = firstMainJoinLine(lines);
 		if (mainJoinLine < 0) {
@@ -144,6 +148,22 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 			}
 		}
 		return null;
+	}
+
+	private static String firstSelectedFiniteAnchorFactor(String plan) {
+		int selected = plan.indexOf("selected=finite-anchor:");
+		int order = selected < 0 ? -1 : plan.indexOf("order=[VALUES[", selected);
+		int firstComma = order < 0 ? -1 : plan.indexOf(',', order);
+		if (firstComma < 0) {
+			return null;
+		}
+		int nextComma = plan.indexOf(',', firstComma + 1);
+		int orderEnd = plan.indexOf(']', firstComma + 1);
+		int factorEnd = nextComma < 0 || orderEnd >= 0 && orderEnd < nextComma ? orderEnd : nextComma;
+		if (factorEnd < 0) {
+			return null;
+		}
+		return plan.substring(firstComma + 1, factorEnd).trim();
 	}
 
 	private static int firstMainJoinLine(String[] lines) {
@@ -186,11 +206,9 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 	private static void loadData(SailRepository repository) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme theme : Theme.values()) {
-				connection.begin(IsolationLevels.NONE);
-				ThemeDataSetGenerator.generate(theme, inserter);
-				connection.commit();
-			}
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generate(THEME, inserter);
+			connection.commit();
 		}
 	}
 

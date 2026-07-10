@@ -909,6 +909,19 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void sparseDirectedPostingsRetainOnlyKmvCandidates() throws Exception {
+		OmniJoinEstimator estimator = newEstimator(64, 1, 8);
+		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.EDGE_FORWARD);
+		SketchTermKey predicateKey = SketchTermKey.iriString("urn:predicate:sparse-directed");
+		for (long id = 1; id <= 50_000; id++) {
+			relation.updatePredicate(predicateKey, id, id + 100_000L, 1.0d);
+		}
+
+		assertTrue(loadedWeightMapSize(predicateAttributeIndex(relation, predicateKey)) < 10_000,
+				"Sparse directed indexes must retain KMV candidates instead of one posting map per distinct key");
+	}
+
+	@Test
 	void compactedPostingsStayBoundedWhenNewWitnessesEnterRetainedSample() throws Exception {
 		OmniJoinEstimator estimator = newEstimator(64, 1, 1);
 		OmniJoinEstimator.Relation relation = estimator.relation(OmniRelation.STATEMENT);
@@ -1229,6 +1242,14 @@ class OmniJoinEstimatorTest {
 		attributesField.setAccessible(true);
 		Object[] attributes = (Object[]) attributesField.get(relation);
 		return attributes[attribute & 0xff];
+	}
+
+	private static Object predicateAttributeIndex(OmniJoinEstimator.Relation relation, SketchTermKey predicateKey)
+			throws Exception {
+		Field attributesField = OmniJoinEstimator.Relation.class.getDeclaredField("predicateAttributes");
+		attributesField.setAccessible(true);
+		Map<?, ?> attributes = (Map<?, ?>) attributesField.get(relation);
+		return attributes.get(predicateKey);
 	}
 
 	private static int loadedWeightMapSize(Object attributeIndex) throws Exception {

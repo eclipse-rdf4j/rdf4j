@@ -71,6 +71,7 @@ final class LmdbEligibilitySemiJoinOptimizer implements QueryOptimizer {
 		public void meet(Filter node) {
 			super.meet(node);
 			removeTrivialBindAlias(node);
+			orientCorrelatedExistsFromOuterBindings(node);
 		}
 
 		@Override
@@ -79,6 +80,39 @@ final class LmdbEligibilitySemiJoinOptimizer implements QueryOptimizer {
 			rewriteEligibilityUnion(node);
 			liftExistsAboveGroup(node);
 		}
+	}
+
+	private static void orientCorrelatedExistsFromOuterBindings(Filter filter) {
+		Set<String> outerBindings = filter.getArg().getAssuredBindingNames();
+		if (outerBindings.isEmpty()) {
+			return;
+		}
+		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists exists) {
+				if (exists.getSubQuery()instanceof Join join
+						&& join.getLeftArg()instanceof StatementPattern left
+						&& join.getRightArg()instanceof StatementPattern right) {
+					Set<String> leftShared = sharedBindings(left, outerBindings);
+					Set<String> rightShared = sharedBindings(right, outerBindings);
+					if (leftShared.isEmpty() && !rightShared.isEmpty()) {
+						join.setLeftArg(right);
+						join.setRightArg(left);
+						setProof(join, LmdbRewriteProof.RewriteKind.CORRELATED_EXISTS_BOUND_PREFIX,
+								LmdbRewriteProof.EquivalenceScope.EXISTENCE_EQUIVALENT,
+								Set.of("outerBindings=" + String.join("|", rightShared)),
+								"inner join commutativity places the outer-bound probe first");
+					}
+				}
+				super.meet(exists);
+			}
+		});
+	}
+
+	private static Set<String> sharedBindings(TupleExpr tupleExpr, Set<String> bindings) {
+		Set<String> shared = new LinkedHashSet<>(tupleExpr.getBindingNames());
+		shared.retainAll(bindings);
+		return shared;
 	}
 
 	private static void removeTrivialBindAlias(Filter filter) {
