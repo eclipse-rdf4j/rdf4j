@@ -196,7 +196,7 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
-	void legalPhysicalWinnerOutranksCheaperEmergencyDependentWinner() {
+	void legalPhysicalWinnerSurvivesCheaperEmergencyDependentWinner() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		int groupId = memo.intern(pattern("s", "p", "o"));
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
@@ -215,8 +215,10 @@ class CascadesMemoModelTest {
 		assertTrue(memo.addWinner(key, emergencyDependent, 8, true));
 		assertTrue(memo.addWinner(key, legal, 8, true),
 				"An emergency-dependent incumbent must not dominate a fully costed physical alternative");
-		assertSame(legal, memo.bestWinner(key).orElseThrow(),
-				"Emergency fallback is eligible only when no legal physical winner exists");
+		assertEquals(List.of(emergencyDependent, legal), memo.winners(key),
+				"The legal alternative must remain available for a standard-plan comparison");
+		assertSame(emergencyDependent, memo.bestWinner(key).orElseThrow(),
+				"Normal cost ordering remains intact until the standard-plan comparison boundary");
 	}
 
 	@Test

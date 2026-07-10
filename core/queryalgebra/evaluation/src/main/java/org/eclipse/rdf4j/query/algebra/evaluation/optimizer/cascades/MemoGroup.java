@@ -226,13 +226,7 @@ public final class MemoGroup {
 						&& !finiteAnchorBoundInputAlternative(existing, winner)) {
 					return -1;
 				}
-				boolean existingEmergency = dependsOnEmergencyFallback(existing);
-				boolean winnerEmergency = dependsOnEmergencyFallback(winner);
-				if (existingEmergency != winnerEmergency) {
-					if (!existingEmergency) {
-						insertionPoint = i + 1;
-					}
-				} else if (existing.cost().compareTo(winner.cost()) <= 0) {
+				if (existing.cost().compareTo(winner.cost()) <= 0) {
 					insertionPoint = i + 1;
 				}
 			}
