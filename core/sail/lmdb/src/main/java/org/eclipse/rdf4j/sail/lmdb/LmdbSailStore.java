@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -893,6 +894,9 @@ class LmdbSailStore implements SailStore {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
+		if (explicit && tripleStore.hasPackedValueDictionary()) {
+			return tripleStore.getPackedStatements(txn, subj, pred, obj, contexts);
+		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
@@ -1308,7 +1312,7 @@ class LmdbSailStore implements SailStore {
 		public void setNamespace(String prefix, String name) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startTransaction(false, false);
 				namespaceStore.setNamespace(prefix, name);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -1319,7 +1323,7 @@ class LmdbSailStore implements SailStore {
 		public void removeNamespace(String prefix) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startTransaction(false, false);
 				namespaceStore.removeNamespace(prefix);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -1330,7 +1334,7 @@ class LmdbSailStore implements SailStore {
 		public void clearNamespaces() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startTransaction(false, false);
 				namespaceStore.clear();
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -1487,14 +1491,18 @@ class LmdbSailStore implements SailStore {
 			Statement last = null;
 			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
+			int packedExpectedCount = approved instanceof Set<?> set ? set.size() : 0;
 			boolean packedCandidate = packedBulkWritesEnabled && explicit && sketchBasedJoinEstimator == null
-					&& overrideContexts.length == 0 && approved instanceof Set<?> set
-					&& set.size() >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
+					&& overrideContexts.length == 0
+					&& packedExpectedCount >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
 
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startTransaction(!packedCandidate);
 				flushPendingBulkAdd();
+				if (packedCandidate && !multiThreadingActive && tripleStore.enablePackedWritesIfEmpty()) {
+					return tripleStore.storePackedStatements(approved, packedExpectedCount);
+				}
 
 				HashMap<IRI, Long> predicateCache = new HashMap<>();
 				HashMap<Resource, Long> contextCache = new HashMap<>();
@@ -1724,10 +1732,17 @@ class LmdbSailStore implements SailStore {
 		 * @throws SailException if a transaction could not be started.
 		 */
 		private void startTransaction(boolean preferThreading) throws SailException {
+			startTransaction(preferThreading, true);
+		}
+
+		private void startTransaction(boolean preferThreading, boolean materializePackedValuesForMutation)
+				throws SailException {
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.compareAndSet(false, true)) {
+					boolean materializePackedValues = materializePackedValuesForMutation
+							&& tripleStore.hasPackedValueDictionary();
 					resetBulkOperationCapacity();
-					multiThreadingActive = preferThreading && enableMultiThreading;
+					multiThreadingActive = preferThreading && enableMultiThreading && !materializePackedValues;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;
 					try {
@@ -1807,8 +1822,17 @@ class LmdbSailStore implements SailStore {
 							tripleStore.startTransaction();
 						}
 						valueStore.startTransaction(true);
+						if (materializePackedValues) {
+							tripleStore.materializePackedIfNeeded(true);
+						}
 					} catch (Exception e) {
 						storeTxnStarted.set(false);
+						throw new SailException(e);
+					}
+				} else if (materializePackedValuesForMutation && tripleStore.hasPackedValueDictionary()) {
+					try {
+						tripleStore.materializePackedIfNeeded(true);
+					} catch (IOException e) {
 						throw new SailException(e);
 					}
 				}
@@ -2671,6 +2695,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			try {
+				if (tripleStore.hasPackedValueDictionary()) {
+					LinkedHashSet<Resource> contexts = new LinkedHashSet<>();
+					try (CloseableIteration<Statement> statements = tripleStore.getPackedStatements(txn, null, null,
+							null,
+							new Resource[0])) {
+						while (statements.hasNext()) {
+							Resource context = statements.next().getContext();
+							if (context != null) {
+								contexts.add(context);
+							}
+						}
+					}
+					return new CloseableIteratorIteration<Resource>(contexts.iterator());
+				}
 				return new LmdbContextIterator(tripleStore.getContexts(txn), valueStore);
 			} catch (IOException e) {
 				throw new SailException("Unable to get contexts", e);

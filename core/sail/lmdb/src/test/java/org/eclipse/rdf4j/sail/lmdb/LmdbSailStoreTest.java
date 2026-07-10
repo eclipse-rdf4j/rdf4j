@@ -49,11 +49,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -406,7 +408,9 @@ public class LmdbSailStoreTest {
 	@Test
 	void largeFreshIterableLoadUsesPackedSegmentAndSurvivesReopen() throws Exception {
 		File packedDir = new File(dataDir, "packed-iterable");
-		Set<Statement> statements = sampleStatements(10_000);
+		Model statements = new LinkedHashModel(sampleStatements(10_000));
+		statements.setNamespace("example", "http://example.org/");
+		statements.setNamespace("schema", "http://schema.org/");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		LmdbStore firstStore = new LmdbStore(packedDir, config);
@@ -580,6 +584,91 @@ public class LmdbSailStoreTest {
 			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void packedIterableLoadBypassesLegacyValueStore() throws Exception {
+		File packedDir = new File(dataDir, "packed-values");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		LmdbSailStore backingStore = store.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+		ValueStore valueStoreSpy = spy(originalValueStore);
+		valueStoreField.set(backingStore, valueStoreSpy);
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore tripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		try {
+			Set<Statement> statements = sampleStatements(10_000);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+				assertEquals(statements.size(), connection.size());
+			}
+			verify(valueStoreSpy, never()).storeValue(any(Value.class));
+			verify(valueStoreSpy, never()).storeValues(any(Value[].class), any(long[].class), anyInt());
+			assertEquals(statements.size(), backingStore.packedExplicitStatementCount());
+			assertTrue(tripleStore.hasPackedValueDictionary());
+		} finally {
+			valueStoreField.set(backingStore, originalValueStore);
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void packedValueDictionaryRoundTripsAllValueTypes() {
+		File packedDir = new File(dataDir, "packed-value-types");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		Set<Statement> statements = sampleStatements(10_000);
+		BNode bnode = F.createBNode("packed-bnode");
+		IRI predicate = F.createIRI("urn:packed-predicate");
+		Statement languageStatement = F.createStatement(bnode, predicate, F.createLiteral("bonjour", "fr"), bnode);
+		Statement typedStatement = F.createStatement(F.createIRI("urn:typed-subject"), predicate,
+				F.createLiteral("42", XSD.INTEGER));
+		TripleTerm triple = F.createTripleTerm(F.createIRI("urn:triple-subject"), predicate,
+				F.createLiteral("triple-object"));
+		Statement tripleStatement = F.createStatement(F.createIRI("urn:quoted-subject"), predicate, triple);
+		statements.add(languageStatement);
+		statements.add(typedStatement);
+		statements.add(tripleStatement);
+
+		Repository first = new SailRepository(new LmdbStore(packedDir, config));
+		first.init();
+		try {
+			try (RepositoryConnection connection = first.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+			}
+		} finally {
+			first.shutDown();
+		}
+
+		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc,posc");
+		reopenedConfig.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		Repository reopened = new SailRepository(new LmdbStore(packedDir, reopenedConfig));
+		reopened.init();
+		try {
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				assertEquals(statements.size(), connection.size());
+				assertTrue(connection.hasStatement(languageStatement, true));
+				assertTrue(connection.hasStatement(typedStatement, true));
+				assertTrue(connection.hasStatement(tripleStatement, true));
+				try (var contexts = connection.getContextIDs()) {
+					assertTrue(contexts.stream().anyMatch(bnode::equals));
+				}
+			}
+		} finally {
+			reopened.shutDown();
 		}
 	}
 

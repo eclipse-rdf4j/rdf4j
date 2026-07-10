@@ -87,6 +87,13 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
@@ -122,6 +129,7 @@ class TripleStore implements Closeable {
 	static final int PACKED_BULK_MIN_STATEMENTS = 10_000;
 	private static final int PACKED_BLOCK_STATEMENTS = 512;
 	private static final int PACKED_RECORD_BYTES = 4 * Long.BYTES;
+	private static final int PACKED_VALUE_BLOCK_BYTES = 64 * 1024;
 	private static final long PACKED_COUNT_KEY = 0;
 	/*-----------*
 	 * Variables *
@@ -162,11 +170,15 @@ class TripleStore implements Closeable {
 	long writeTxn;
 	private final int contextsDbi;
 	private final int packedExplicitDbi;
+	private final int packedValuesDbi;
 	private volatile long packedExplicitCount;
+	private volatile long packedExplicitValueCount;
 	private boolean packedWriteActive;
 	private boolean packedMaterializedInTxn;
 	private long packedTxnCount;
+	private long packedTxnValueCount;
 	private long packedNextBlockId;
+	private long packedNextValueBlockId;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -213,9 +225,9 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 1 for packed explicit segments, and 48 for all possible triple indexes
+		// 1 for contexts, 2 for packed explicit segments, and 48 for all possible triple indexes
 		// (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 2 + 48));
+		E(mdb_env_set_maxdbs(env, 3 + 48));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -249,6 +261,23 @@ class TripleStore implements Closeable {
 			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
 			MDBVal value = MDBVal.malloc(stack);
 			if (mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS) {
+				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			}
+			return 0L;
+		});
+		packedValuesDbi = transaction(env, (stack, txn) -> {
+			String name = "packed-values-explicit";
+			IntBuffer ip = stack.mallocInt(1);
+			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
+				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+			}
+			return ip.get(0);
+		});
+		packedExplicitValueCount = transaction(env, (stack, txn) -> {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			MDBVal value = MDBVal.malloc(stack);
+			if (mdb_get(txn, packedValuesDbi, key, value) == MDB_SUCCESS) {
 				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
 			}
 			return 0L;
@@ -328,15 +357,20 @@ class TripleStore implements Closeable {
 		return packedExplicitCount;
 	}
 
-	void enablePackedWritesIfEmpty() throws IOException {
+	boolean hasPackedValueDictionary() {
+		return packedExplicitValueCount > 0 || packedTxnValueCount > 0;
+	}
+
+	boolean enablePackedWritesIfEmpty() throws IOException {
 		if (packedWriteActive || packedExplicitCount != 0 || packedTxnCount != 0) {
-			return;
+			return packedWriteActive;
 		}
 		try (MemoryStack stack = stackPush()) {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(writeTxn, indexes.getFirst().getDB(true), stat));
 			packedWriteActive = stat.ms_entries() == 0;
 		}
+		return packedWriteActive;
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
@@ -592,6 +626,12 @@ class TripleStore implements Closeable {
 			legacy.close();
 			throw e;
 		}
+	}
+
+	CloseableIteration<Statement> getPackedStatements(Txn txn, Resource subject, IRI predicate, Value object,
+			Resource[] contexts) throws IOException {
+		return new PackedStatementIteration(packedValuesDbi, packedExplicitDbi, packedExplicitValueCount, txn,
+				subject, predicate, object, contexts, SimpleValueFactory.getInstance());
 	}
 
 	private boolean hasPackedTriples(Txn txn) {
@@ -1847,6 +1887,105 @@ class TripleStore implements Closeable {
 				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
 	}
 
+	long storePackedStatements(Iterable<? extends Statement> statements, int expectedCount) throws IOException {
+		if (!packedWriteActive || packedTxnCount != 0) {
+			throw new IllegalStateException("Packed statement storage is not active for an empty transaction");
+		}
+		HashMap<Value, Integer> valueIds = new HashMap<>(Math.max(16, expectedCount / 2));
+		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
+		long[] quads = new long[Math.multiplyExact(expectedCount, 4)];
+		int count = 0;
+		for (Statement statement : statements) {
+			int offset = Math.multiplyExact(count, 4);
+			if (offset == quads.length) {
+				quads = Arrays.copyOf(quads, Math.multiplyExact(quads.length, 2));
+			}
+			quads[offset] = packedValueId(statement.getSubject(), valueIds, values);
+			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, values);
+			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, values);
+			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, values);
+			count++;
+		}
+		writePackedValues(values, valueIds);
+		writePackedQuadIds(quads, count);
+		packedTxnCount = count;
+		packedTxnValueCount = values.size();
+		logAddedStatements(count);
+		return count;
+	}
+
+	private int packedValueId(Value value, HashMap<Value, Integer> valueIds, ArrayList<Value> values) {
+		if (value == null) {
+			return 0;
+		}
+		Integer existing = valueIds.get(value);
+		if (existing != null) {
+			return existing;
+		}
+		if (value instanceof TripleTerm triple) {
+			packedValueId(triple.getSubject(), valueIds, values);
+			packedValueId(triple.getPredicate(), valueIds, values);
+			packedValueId(triple.getObject(), valueIds, values);
+		}
+		int id = values.size() + 1;
+		valueIds.put(value, id);
+		values.add(value);
+		return id;
+	}
+
+	private void writePackedValues(ArrayList<Value> values, HashMap<Value, Integer> valueIds) throws IOException {
+		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size());
+		for (Value value : values) {
+			encodedValues.add(PackedValueCodec.encode(value, nested -> valueIds.get(nested)));
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			MDBVal data = MDBVal.calloc(stack);
+			for (int start = 0; start < encodedValues.size();) {
+				int end = start;
+				int blockBytes = 0;
+				while (end < encodedValues.size()) {
+					int recordBytes = Integer.BYTES + encodedValues.get(end).length;
+					if (blockBytes > 0 && blockBytes + recordBytes > PACKED_VALUE_BLOCK_BYTES) {
+						break;
+					}
+					blockBytes += recordBytes;
+					end++;
+				}
+				keyBuffer.clear();
+				key.mv_data(keyBuffer.putLong(packedNextValueBlockId++).flip());
+				data.mv_size(blockBytes);
+				E(mdb_put(writeTxn, packedValuesDbi, key, data, MDB_RESERVE));
+				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
+				for (int i = start; i < end; i++) {
+					byte[] encoded = encodedValues.get(i);
+					target.putInt(encoded.length).put(encoded);
+				}
+				start = end;
+			}
+		}
+	}
+
+	private void writePackedQuadIds(long[] quads, int count) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			MDBVal data = MDBVal.calloc(stack);
+			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
+				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
+				keyBuffer.clear();
+				key.mv_data(keyBuffer.putLong(packedNextBlockId++).flip());
+				data.mv_size((long) blockCount * PACKED_RECORD_BYTES);
+				E(mdb_put(writeTxn, packedExplicitDbi, key, data, MDB_RESERVE));
+				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
+				for (int i = start * 4, end = (start + blockCount) * 4; i < end; i++) {
+					target.putLong(quads[i]);
+				}
+			}
+		}
+	}
+
 	private void storePackedTriple(long subj, long pred, long obj, long context) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
@@ -1899,10 +2038,13 @@ class TripleStore implements Closeable {
 		logAddedStatements(count);
 	}
 
-	private void materializePackedIfNeeded(boolean explicit) throws IOException {
+	void materializePackedIfNeeded(boolean explicit) throws IOException {
 		if (!explicit || packedExplicitCount == 0 || packedWriteActive || packedMaterializedInTxn) {
 			return;
 		}
+		Value[] packedValues = packedExplicitValueCount > 0
+				? readPackedValues(writeTxn, packedExplicitValueCount)
+				: null;
 		long cursor = 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -1923,11 +2065,21 @@ class TripleStore implements Closeable {
 						long pred = records.getLong();
 						long obj = records.getLong();
 						long context = records.getLong();
+						if (packedValues != null) {
+							subj = valueStore.storeValue(packedValues[Math.toIntExact(subj)]);
+							pred = valueStore.storeValue(packedValues[Math.toIntExact(pred)]);
+							obj = valueStore.storeValue(packedValues[Math.toIntExact(obj)]);
+							context = context == 0 ? 0
+									: valueStore.storeValue(packedValues[Math.toIntExact(context)]);
+						}
 						for (TripleIndex index : indexes) {
 							legacyKeyBuffer.clear();
 							index.toKey(legacyKeyBuffer, subj, pred, obj, context);
 							LmdbUtil.setMDBValData(legacyKey, legacyKeyBuffer.flip());
 							E(mdb_put(writeTxn, index.getDB(true), legacyKey, legacyValue, 0));
+						}
+						if (packedValues != null) {
+							incrementContext(stack, context);
 						}
 					}
 				}
@@ -1939,6 +2091,7 @@ class TripleStore implements Closeable {
 			mdb_cursor_close(cursor);
 			cursor = 0;
 			E(mdb_drop(writeTxn, packedExplicitDbi, false));
+			E(mdb_drop(writeTxn, packedValuesDbi, false));
 			packedMaterializedInTxn = true;
 		} finally {
 			if (cursor != 0) {
@@ -1947,13 +2100,61 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void writePackedCount(long count) throws IOException {
+	private Value[] readPackedValues(long txn, long valueCount) throws IOException {
+		if (valueCount > Integer.MAX_VALUE - 1) {
+			throw new IOException("Packed value dictionary is too large");
+		}
+		Value[] values = new Value[(int) valueCount + 1];
+		long cursor = 0;
+		int valueId = 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, packedValuesDbi, cursorHandle));
+			cursor = cursorHandle.get(0);
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal data = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, data, MDB_FIRST);
+			while (rc == MDB_SUCCESS) {
+				ByteBuffer keyBuffer = key.mv_data().order(ByteOrder.BIG_ENDIAN);
+				if (keyBuffer.getLong(keyBuffer.position()) != PACKED_COUNT_KEY) {
+					ByteBuffer block = data.mv_data().order(ByteOrder.BIG_ENDIAN);
+					while (block.remaining() >= Integer.BYTES) {
+						int length = block.getInt();
+						if (length < 0 || length > block.remaining()) {
+							throw new IOException("Corrupt packed value record length " + length);
+						}
+						byte[] encoded = new byte[length];
+						block.get(encoded);
+						valueId++;
+						values[valueId] = PackedValueCodec.decode(encoded, values, SimpleValueFactory.getInstance());
+					}
+				}
+				rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+			}
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			if (valueId != valueCount) {
+				throw new IOException(
+						"Packed value dictionary expected " + valueCount + " values but found " + valueId);
+			}
+			mdb_cursor_close(cursor);
+			cursor = 0;
+			return values;
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void writePackedCount(int dbi, long count) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
 			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
 			MDBVal value = MDBVal.malloc(stack);
 			value.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(count).flip());
-			E(mdb_put(writeTxn, packedExplicitDbi, key, value, 0));
+			E(mdb_put(writeTxn, dbi, key, value, 0));
 		}
 	}
 
@@ -2471,7 +2672,9 @@ class TripleStore implements Closeable {
 		packedWriteActive = false;
 		packedMaterializedInTxn = false;
 		packedTxnCount = 0;
+		packedTxnValueCount = 0;
 		packedNextBlockId = 1;
+		packedNextValueBlockId = 1;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
@@ -2488,7 +2691,8 @@ class TripleStore implements Closeable {
 				closeAlignedWriteCursors();
 				if (commit) {
 					if (packedWriteActive) {
-						writePackedCount(packedTxnCount);
+						writePackedCount(packedExplicitDbi, packedTxnCount);
+						writePackedCount(packedValuesDbi, packedTxnValueCount);
 					}
 					var lockManager = txnManager.lockManager();
 					long stamp;
@@ -2501,8 +2705,10 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						if (packedWriteActive) {
 							packedExplicitCount = packedTxnCount;
+							packedExplicitValueCount = packedTxnValueCount;
 						} else if (packedMaterializedInTxn) {
 							packedExplicitCount = 0;
+							packedExplicitValueCount = 0;
 						}
 						if (recordCache != null) {
 							try {
@@ -2544,7 +2750,9 @@ class TripleStore implements Closeable {
 				packedWriteActive = false;
 				packedMaterializedInTxn = false;
 				packedTxnCount = 0;
+				packedTxnValueCount = 0;
 				packedNextBlockId = 1;
+				packedNextValueBlockId = 1;
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {

@@ -32,6 +32,8 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 01:49Z) Specialized the iterable conduit in `LmdbSailSink`; two paired runs pooled to 683.717 ms/op for `NONE` and 719.733 ms/op for `READ_COMMITTED`.
 - [x] (2026-07-10 02:01Z) Re-profiled direct ingestion with macOS async-profiler and Docker Java 26 CPU-time JFR; native cursor puts remain 28% self CPU and equality-based value resolution remains the next removable Java cost.
 - [x] (2026-07-10 03:12Z) Tested and rejected operation-wide hash-sorted value resolution after it regressed NONE 41.36% and READ_COMMITTED 44.12%; removed all production/test changes.
+- [x] (2026-07-10 03:45Z) Added append-free packed statement blocks for fresh default-evaluator loads, scoped them away from automatic/native evaluation, and reduced the Docker checkpoint to 428.029/493.600 ms/op.
+- [x] (2026-07-10 04:53Z) Replaced global value IDs with a packed local value dictionary and fixed NONE namespace ordering; nine focused tests pass and forked Java 26 reaches 98.847/152.981 ms/op.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -109,6 +111,12 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Operation-wide hash sorting is algorithmically correct but destroys the beneficial streaming overlap and makes `ValueStore.storeValues` batch encoding/sorting substantially more expensive.
   Evidence: `profiles/lmdb-load-10x/hash-sorted-values/run-1-short.json` measures 966.514 ms/op for NONE and 1037.307 ms/op for READ_COMMITTED, regressions of 41.36% and 44.12% from the retained direct-ingestion checkpoint. Focused batch, failure, opt-out, and ordering tests passed before the experiment was removed.
+
+- Observation: A fresh-store local value dictionary plus one reserved LMDB block stream removes nearly all legacy value/index I/O, but multiple RDF namespaces caused NONE to materialize that representation immediately.
+  Evidence: async-profiler JFR traces `AbstractRepositoryConnection.add` through `LmdbSailSink.setNamespace` to `TripleStore.materializePackedIfNeeded`; the two-namespace regression expected packed count 10,000 and observed 0 before the fix.
+
+- Observation: Preserving packed triples across namespace-only transactions makes NONE substantially faster than READ_COMMITTED, while allocation remains the dominant Java-side difference.
+  Evidence: `profiles/lmdb-load-10x/packed-value-dictionary/forked-paired-after-namespace-fix.json` measures NONE at 98.847 ms/op and 107,660,034 B/op and READ_COMMITTED at 152.981 ms/op and 132,219,959 B/op, 7.90x and 5.43x faster than the durable baselines.
 
 ## Decision Log
 
@@ -190,6 +198,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject hash-sorted value batches and keep the streaming scalar/transaction-cache resolver while pursuing packed index writes.
   Rationale: The measured 41-44% regression overwhelms the 8-10% Java equality cost the experiment targeted. Reducing or reordering value-map probes cannot approach the remaining factor; native per-statement index writes must be collapsed first while preserving the producer/worker overlap.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Keep the packed local value dictionary and preserve it across namespace-only transactions.
+  Rationale: It reduces NONE to 98.847 ms/op and READ_COMMITTED to 152.981 ms/op without append flags. Namespace changes do not mutate triple/value identity, while any subsequent data mutation in the same store transaction still forces materialization before writing.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
