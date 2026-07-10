@@ -41,3 +41,20 @@ A second scratch probe ran fresh directory creation, LMDB repository initializat
 ## Implication
 
 The measured path has three independent costs of comparable size. Reaching 10x requires a bulk-ingestion entry point that avoids per-statement Sail changeset work, resolves distinct values through a collision-safe two-pass scheme, and persists sorted transaction segments as page-sized packed blocks. Optimizing any one of those layers in isolation cannot satisfy both thresholds.
+
+## Rejected public-hash partition
+
+A follow-up scratch probe attempted the proposed two-pass resolver using `Model.subjects()`, `predicates()`, `objects()`, and `contexts()` to enumerate distinct terms, group them by `Value.hashCode()`, record unequal collisions, and then skip equality checks for collision-free statement components. It was both collision-heavy and slow:
+
+```text
+values:             179,732
+collision hashes:     2,517
+collision values:     2,659
+distinct build:      129-137 ms (stable early rounds)
+statement resolve:    89-103 ms (stable early rounds)
+combined:            219-236 ms
+```
+
+The distinct-view calls force `DynamicModel` to upgrade to `LinkedHashModel`; later rounds rose to 448-481 ms under allocation/GC pressure. The high collision count also disproves the assumption that RDF4J's public 32-bit equality hash is nearly unique across term kinds.
+
+After the upgrade, statement components are canonical object identities (179,732 identities for 179,732 equal values), but the indexed model's iterator and node indirections are slower: scans rose from 19 ms to 43-51 ms and identity resolution took 62-81 ms. Forcing an upgrade during loading would therefore be a benchmark-warmup artifact, not a real ingestion improvement. The next candidate must preserve the lightweight map-backed iteration while arranging canonical term identities during model construction or source parsing.

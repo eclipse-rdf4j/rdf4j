@@ -26,6 +26,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 00:06Z) Probed an append-free `MDB_DUPSORT | MDB_DUPFIXED` index layout with grouped `MDB_MULTIPLE` writes; pure two-index insertion improved 3.28x, from 701.436 ms to 213.872 ms.
 - [x] (2026-07-10 00:18Z) Swept duplicate bucket shapes and all four benchmark indexes; fixed duplicates bottomed out at 139.411 ms, while page-sized immutable packed blocks reduced four-index insertion to 39.476 ms.
 - [x] (2026-07-10 00:31Z) Captured post-cursor async-profiler call stacks for both isolation modes and measured Java/lifecycle floors; triple indexes, value resolution, and Sail ingestion each require structural work.
+- [x] (2026-07-10 00:40Z) Tested and rejected collision-aware partitioning by `Value.hashCode()`; 2,517 collision buckets plus `DynamicModel` upgrade costs made it slower than equality-map resolution.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -86,6 +87,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: Equality-based statement-value resolution alone exceeds the final benchmark budget, while repository lifecycle does not.
   Evidence: the lower-bound probes summarized in `profiles/lmdb-load-10x/main-index-cursor/call-stack-attribution.md` measure model scan/hash at 19.429 ms, new equality-map resolution at 124.345 ms, existing equality-map lookup at 106.831 ms, and empty full repository lifecycle at roughly 2.8-3.8 ms. Identity lookup is invalid because 179,732 equal values appear as 1,226,197 identities.
 
+- Observation: The public 32-bit `Value.hashCode()` is not selective enough for equality-free bulk resolution, and obtaining distinct Model views changes iteration representation and cost.
+  Evidence: the rejected probe documented in `profiles/lmdb-load-10x/main-index-cursor/call-stack-attribution.md` finds 2,517 collision hashes/2,659 colliding values and takes 219-236 ms in stable early rounds. `DynamicModel` upgrades to `LinkedHashModel`; although that canonicalizes identities, scans rise to 43-51 ms and identity resolution to 62-81 ms.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -142,6 +146,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Treat bulk entry, value resolution, and packed indexes as one coordinated ingestion architecture rather than sequential micro-optimizations.
   Rationale: Fresh call-stack attribution and lower-bound probes show that each existing layer independently consumes a substantial fraction of the 78-83 ms target. The implementation needs a reusable-iterable bulk entry point, collision-safe distinct-value resolution, and immutable sorted blocks so it does not pay the per-statement Sail, equality-map, or B-tree costs.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject public-hash partitioning and forced `DynamicModel` upgrade; test canonical lightweight model terms instead.
+  Rationale: The measured collision rate requires thousands of equality fallback buckets, while the only public distinct-term views force a representation whose iteration is more than twice as slow. Canonicalizing terms while retaining the original insertion-order map can make identity resolution correct without paying the indexed-model cost.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -266,3 +274,5 @@ Revision note (2026-07-10 00:06Z): Recorded the append-free `MDB_MULTIPLE` struc
 Revision note (2026-07-10 00:18Z): Recorded the bucket-shape sweep, the four-index fixed-duplicate floor, the rejected `MDB_WRITEMAP` probe, and the 39.476 ms immutable packed-block result that motivates the next design milestone.
 
 Revision note (2026-07-10 00:31Z): Added fresh two-isolation async-profiler call-stack attribution plus Java model/value and empty-lifecycle lower bounds, establishing that the next milestone must collapse all three ingestion layers together.
+
+Revision note (2026-07-10 00:40Z): Recorded and rejected the public-hash/distinct-view resolver after collision counts and model-upgrade timings disproved its expected advantage.
