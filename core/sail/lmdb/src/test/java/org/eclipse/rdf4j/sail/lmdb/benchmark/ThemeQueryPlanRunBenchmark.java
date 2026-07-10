@@ -148,6 +148,8 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({ "omni" })
 		public String sketchEstimatorStrategy;
+		public boolean loadSelectedThemeOnly;
+		public boolean rebuildStoreBeforeSetup;
 
 		@Param({ QUERY_VARIANT_FILTER })
 		public String queryVariant;
@@ -169,6 +171,9 @@ public class ThemeQueryPlanRunBenchmark {
 			expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
 			File storeDirectory = storeDirectory();
+			if (rebuildStoreBeforeSetup) {
+				FileUtils.deleteDirectory(storeDirectory);
+			}
 			if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
 				throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 			}
@@ -351,7 +356,8 @@ public class ThemeQueryPlanRunBenchmark {
 			StopWatch started = StopWatch.createStarted();
 			try (SailRepositoryConnection loadConnection = repository.getConnection()) {
 				RDFInserter inserter = new RDFInserter(loadConnection);
-				for (Theme themeDataset : Theme.values()) {
+				Theme[] themeDatasets = loadSelectedThemeOnly ? new Theme[] { theme } : Theme.values();
+				for (Theme themeDataset : themeDatasets) {
 					loadConnection.begin(IsolationLevels.NONE);
 					System.out.println("Loading theme dataset: " + themeDataset);
 					ThemeDataSetGenerator.generate(themeDataset, inserter);
@@ -368,10 +374,13 @@ public class ThemeQueryPlanRunBenchmark {
 			if (strategy == null || strategy.isBlank()) {
 				strategy = "fastagms";
 			}
-			if ("fastagms".equals(strategy)) {
-				return new File(STORE_DIRECTORY, "complete");
+			String directoryName = "fastagms".equals(strategy)
+					? "complete"
+					: "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_");
+			if (loadSelectedThemeOnly) {
+				directoryName += "-" + themeName.replaceAll("[^A-Za-z0-9._-]", "_");
 			}
-			return new File(STORE_DIRECTORY, "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_"));
+			return new File(STORE_DIRECTORY, directoryName);
 		}
 
 		private String sketchEstimatorStrategyOrDefault() {

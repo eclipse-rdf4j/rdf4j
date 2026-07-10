@@ -29,9 +29,11 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.z_queryIndex = 4;
 		state.sketchEstimatorEnabled = true;
 		state.sketchEstimatorStrategy = "omni";
+		state.loadSelectedThemeOnly = true;
+		state.rebuildStoreBeforeSetup = true;
 
-		state.setup();
 		try {
+			state.setup();
 			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
 			String plan = snapshot.plan();
 			String diagnostics = snapshot.diagnostics();
