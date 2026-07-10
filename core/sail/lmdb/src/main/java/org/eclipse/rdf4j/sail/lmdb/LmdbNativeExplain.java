@@ -133,9 +133,10 @@ final class LmdbNativeExplain {
 	}
 
 	private static String describePattern(PatternPlan pattern, String[] slotNames) {
+		String index = pattern.indexName.isEmpty() ? "" : ", indexName=" + pattern.indexName;
 		return "Pattern(s=" + term(pattern.s, slotNames) + ", p=" + term(pattern.p, slotNames) + ", o="
 				+ term(pattern.o, slotNames) + ", c=" + term(pattern.c, slotNames) + ", contexts="
-				+ contexts(pattern.contexts) + ")";
+				+ contexts(pattern.contexts) + index + ")";
 	}
 
 	private static String term(Term term, String[] slotNames) {

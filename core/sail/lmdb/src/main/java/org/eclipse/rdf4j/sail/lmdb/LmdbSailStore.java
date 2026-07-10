@@ -40,6 +40,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -1149,6 +1150,13 @@ class LmdbSailStore implements SailStore {
 		private IRI[] pendingApprovePredicates;
 		private Value[] pendingApproveObjects;
 		private Resource[] pendingApproveContexts;
+		private int[] pendingApproveSubjectIndexes;
+		private int[] pendingApprovePredicateIndexes;
+		private int[] pendingApproveObjectIndexes;
+		private int[] pendingApproveContextIndexes;
+		private Value[] pendingApproveValues;
+		private long[] pendingApproveValueIds;
+		private ObjectIntHashMap<Value> pendingApproveValueIndexes;
 		private int pendingApproveCount;
 		private volatile boolean estimatorTouchedInTransaction;
 
@@ -1416,6 +1424,14 @@ class LmdbSailStore implements SailStore {
 			pendingApprovePredicates = new IRI[capacity];
 			pendingApproveObjects = new Value[capacity];
 			pendingApproveContexts = new Resource[capacity];
+			pendingApproveSubjectIndexes = new int[capacity];
+			pendingApprovePredicateIndexes = new int[capacity];
+			pendingApproveObjectIndexes = new int[capacity];
+			pendingApproveContextIndexes = new int[capacity];
+			int valueCapacity = Math.max(1, 4 * capacity);
+			pendingApproveValues = new Value[valueCapacity];
+			pendingApproveValueIds = new long[valueCapacity];
+			pendingApproveValueIndexes = new ObjectIntHashMap<>(valueCapacity);
 		}
 
 		private void flushPendingBulkAdd() throws IOException {
@@ -1438,42 +1454,45 @@ class LmdbSailStore implements SailStore {
 			if (statementCount == 0) {
 				return;
 			}
-			int[] subjects = new int[statementCount];
-			int[] predicates = new int[statementCount];
-			int[] objects = new int[statementCount];
-			int[] contexts = new int[statementCount];
-			Value[] values = new Value[Math.max(1, 4 * statementCount)];
-			HashMap<Value, Integer> valueIndexes = new HashMap<>(Math.max(1, 4 * statementCount));
-
-			for (int i = 0; i < statementCount; i++) {
-				subjects[i] = addBatchValue(valueIndexes, values, pendingApproveSubjects[i]);
-				predicates[i] = addBatchValue(valueIndexes, values, pendingApprovePredicates[i]);
-				objects[i] = addBatchValue(valueIndexes, values, pendingApproveObjects[i]);
-				Resource context = pendingApproveContexts[i];
-				contexts[i] = context == null ? -1 : addBatchValue(valueIndexes, values, context);
-			}
-
+			ObjectIntHashMap<Value> valueIndexes = pendingApproveValueIndexes;
+			valueIndexes.clear();
 			try {
-				long[] valueIds = new long[valueIndexes.size()];
-				valueStore.storeValues(values, valueIds, valueIndexes.size());
 				for (int i = 0; i < statementCount; i++) {
-					int contextIndex = contexts[i];
-					pending.add(valueIds[subjects[i]], valueIds[predicates[i]], valueIds[objects[i]],
-							contextIndex < 0 ? 0 : valueIds[contextIndex]);
+					pendingApproveSubjectIndexes[i] = addBatchValue(valueIndexes, pendingApproveValues,
+							pendingApproveSubjects[i]);
+					pendingApprovePredicateIndexes[i] = addBatchValue(valueIndexes, pendingApproveValues,
+							pendingApprovePredicates[i]);
+					pendingApproveObjectIndexes[i] = addBatchValue(valueIndexes, pendingApproveValues,
+							pendingApproveObjects[i]);
+					Resource context = pendingApproveContexts[i];
+					pendingApproveContextIndexes[i] = context == null ? -1
+							: addBatchValue(valueIndexes, pendingApproveValues, context);
+				}
+
+				int valueCount = valueIndexes.size();
+				valueStore.storeValues(pendingApproveValues, pendingApproveValueIds, valueCount);
+				for (int i = 0; i < statementCount; i++) {
+					int contextIndex = pendingApproveContextIndexes[i];
+					pending.add(pendingApproveValueIds[pendingApproveSubjectIndexes[i]],
+							pendingApproveValueIds[pendingApprovePredicateIndexes[i]],
+							pendingApproveValueIds[pendingApproveObjectIndexes[i]],
+							contextIndex < 0 ? 0 : pendingApproveValueIds[contextIndex]);
 				}
 			} finally {
+				Arrays.fill(pendingApproveValues, 0, valueIndexes.size(), null);
+				valueIndexes.clear();
 				clearPendingApproveValues(statementCount);
 				pendingApproveCount = 0;
 			}
 		}
 
-		private int addBatchValue(HashMap<Value, Integer> valueIndexes, Value[] values, Value value) {
-			Integer existing = valueIndexes.get(value);
-			if (existing != null) {
-				return existing;
+		private int addBatchValue(ObjectIntHashMap<Value> valueIndexes, Value[] values, Value value) {
+			int existing = valueIndexes.get(value);
+			if (existing != 0) {
+				return existing - 1;
 			}
 			int index = valueIndexes.size();
-			valueIndexes.put(value, index);
+			valueIndexes.put(value, index + 1);
 			values[index] = value;
 			return index;
 		}
@@ -2134,6 +2153,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public String indexName(long subj, long pred, long obj, long context) {
+			checkOpen();
+			return tripleStore.getIndexName(subj, pred, obj, context);
+		}
+
+		@Override
 		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 			checkOpen();
 			if (!hasStatementsInSource()) {
@@ -2296,6 +2321,17 @@ class LmdbSailStore implements SailStore {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
 				}
+			}
+		}
+
+		@Override
+		public String indexName(long subj, long pred, long obj, long context) {
+			long readStamp = acquireNativeSourceReadLockUnchecked();
+			try {
+				assertNativeSourceOpen();
+				return tripleStore.getIndexName(subj, pred, obj, context);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
 			}
 		}
 

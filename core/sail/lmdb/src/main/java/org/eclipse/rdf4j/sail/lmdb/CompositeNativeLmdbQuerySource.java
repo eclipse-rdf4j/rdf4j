@@ -68,6 +68,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public String indexName(long subj, long pred, long obj, long context) {
+		for (NativeLmdbQuerySource source : sources) {
+			if (source.hasStatementsInSource()) {
+				String indexName = source.indexName(subj, pred, obj, context);
+				if (!indexName.isEmpty()) {
+					return indexName;
+				}
+			}
+		}
+		return "";
+	}
+
+	@Override
 	public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		return active == null ? null : active.prefixRunPlan(prefixFields, subj, pred, obj, context);
@@ -210,6 +223,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return delegate.statements(subj, pred, obj, context);
+		}
+
+		@Override
+		public String indexName(long subj, long pred, long obj, long context) {
+			return delegate.indexName(subj, pred, obj, context);
 		}
 
 		@Override

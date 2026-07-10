@@ -155,6 +155,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+				indexName(s, p, o, c),
 				staticEstimate(s, p, o, c, contexts));
 	}
 
@@ -332,7 +333,13 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+				indexName(s, p, o, c),
 				algebraEstimate(sp));
+	}
+
+	private String indexName(Term s, Term p, Term o, Term c) {
+		return source.indexName(s.isConstant() ? s.constant : UNKNOWN, p.isConstant() ? p.constant : UNKNOWN,
+				o.isConstant() ? o.constant : UNKNOWN, c.isConstant() ? c.constant : UNKNOWN);
 	}
 
 	double algebraEstimate(StatementPattern sp) {

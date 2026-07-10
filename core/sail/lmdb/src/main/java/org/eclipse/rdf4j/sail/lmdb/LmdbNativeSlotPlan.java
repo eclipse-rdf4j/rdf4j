@@ -16,6 +16,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbNativeAggregateCompiler.*;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -111,7 +113,36 @@ interface SlotPlan {
 		if (left == EmptyPlan.INSTANCE || right == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
+		if (canFlatten(left) && canFlatten(right)) {
+			ArrayList<SlotPlan> children = new ArrayList<>();
+			ArrayList<MaskedFilter> filters = new ArrayList<>();
+			collectFlattenable(left, children, filters);
+			collectFlattenable(right, children, filters);
+			return new MultiJoinPlan(children.toArray(SlotPlan[]::new), filters.toArray(MaskedFilter[]::new));
+		}
 		return new JoinPlan(left, right);
+	}
+
+	static boolean canFlatten(SlotPlan plan) {
+		if (plan instanceof FilterPlan) {
+			FilterPlan filterPlan = (FilterPlan) plan;
+			return filterPlan.filterMask >= 0L && canFlatten(filterPlan.arg);
+		}
+		return plan instanceof PatternPlan || plan instanceof MultiJoinPlan;
+	}
+
+	static void collectFlattenable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {
+		if (plan instanceof MultiJoinPlan) {
+			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
+			children.addAll(Arrays.asList(multiJoin.children));
+			filters.addAll(Arrays.asList(multiJoin.filters));
+		} else if (plan instanceof FilterPlan) {
+			FilterPlan filterPlan = (FilterPlan) plan;
+			collectFlattenable(filterPlan.arg, children, filters);
+			filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+		} else {
+			children.add(plan);
+		}
 	}
 
 	static SlotPlan leftJoin(SlotPlan left, SlotPlan right) {

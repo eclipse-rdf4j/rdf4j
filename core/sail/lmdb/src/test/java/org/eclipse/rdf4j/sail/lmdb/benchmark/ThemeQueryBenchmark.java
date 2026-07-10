@@ -95,6 +95,7 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
+	private static final String JOIN_ESTIMATOR_METADATA_FILE = "join-estimator.rjes/metadata.bin";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
@@ -167,13 +168,19 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
 		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setSketchEstimatorEnabled(false);
+		storeConfig.setSketchEstimatorEnabled(waitForSketchesEnabled());
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-		ensureDataLoadedAndValidated();
-		waitForSketchesIfEnabled();
-		if (QueryPlanCapture.isCaptureEnabled()) {
-			captureQueryPlanSnapshot();
+		try {
+			ensureDataLoadedAndValidated();
+			ensureSketchesAvailable(storeDirectory);
+			waitForSketchesIfEnabled();
+			if (QueryPlanCapture.isCaptureEnabled()) {
+				captureQueryPlanSnapshot();
+			}
+		} catch (IOException | RuntimeException e) {
+			repository.shutDown();
+			throw e;
 		}
 
 	}
@@ -259,7 +266,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	private void waitForSketchesIfEnabled() throws IOException {
-		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
+		if (!waitForSketchesEnabled()) {
 			return;
 		}
 		repository.init();
@@ -267,6 +274,16 @@ public class ThemeQueryBenchmark {
 				DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS);
 		BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark setup", timeoutSeconds,
 				TimeUnit.SECONDS);
+	}
+
+	private boolean waitForSketchesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"));
+	}
+
+	private void ensureSketchesAvailable(File storeDirectory) throws IOException {
+		if (waitForSketchesEnabled() && !new File(storeDirectory, JOIN_ESTIMATOR_METADATA_FILE).isFile()) {
+			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+		}
 	}
 
 	private void rebuildStoreFromScratch() throws IOException {
@@ -282,12 +299,17 @@ public class ThemeQueryBenchmark {
 
 		storeConfig = ConfigUtil.createConfig();
 		storeConfig.setIterationCacheSyncThreshold(0);
-		storeConfig.setSketchEstimatorEnabled(false);
+		boolean buildSketches = waitForSketchesEnabled();
+		storeConfig.setSketchEstimatorEnabled(buildSketches);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		if (buildSketches) {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		}
 		loadData();
-//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+		if (buildSketches) {
+			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+		}
 
 		repository.shutDown();
 		repository = null;

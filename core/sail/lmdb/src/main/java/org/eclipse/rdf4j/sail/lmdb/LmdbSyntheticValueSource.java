@@ -158,6 +158,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public String indexName(long subj, long pred, long obj, long context) {
+		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(subj, pred, obj, context);
+	}
+
+	@Override
 	public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return null;

@@ -99,10 +99,16 @@ final class PatternPlan implements SlotPlan {
 	final Term c;
 	final ContextConstraint contexts;
 	final boolean namedContextScope;
+	final String indexName;
 	final long producedMask;
 	final double staticEstimate;
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			double staticEstimate) {
+		this(s, p, o, c, contexts, namedContextScope, "", staticEstimate);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope, String indexName,
 			double staticEstimate) {
 		this.s = s;
 		this.p = p;
@@ -110,6 +116,7 @@ final class PatternPlan implements SlotPlan {
 		this.c = c;
 		this.contexts = contexts;
 		this.namedContextScope = namedContextScope;
+		this.indexName = indexName;
 		long mask = 0L;
 		if (s.hasSlot()) {
 			mask |= 1L << s.slot;

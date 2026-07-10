@@ -631,6 +631,10 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	String getIndexName(long subj, long pred, long obj, long context) {
+		return bestIndexByBoundMask[boundMask(subj, pred, obj, context)].toString();
+	}
+
 	CloseableIteration<Statement> getPackedStatements(Txn txn, Resource subject, IRI predicate, Value object,
 			Resource[] contexts) throws IOException {
 		return new PackedStatementIteration(packedValuesDbi, packedExplicitDbi, packedExplicitValueCount, txn,

@@ -43,6 +43,10 @@ interface NativeLmdbQuerySource {
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
+	default String indexName(long subj, long pred, long obj, long context) {
+		return "";
+	}
+
 	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 		return null;
 	}
