@@ -569,7 +569,7 @@ final class LmdbCascadesRuleProvider {
 		TupleExpr arg = removeUnusedOptionals(group.getArg(), distinctVars, optionalRemoved);
 		boolean[] finiteFilterRewritten = { false };
 		TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(arg, finiteFilterRewritten,
-				"lmdb-finite-filter-values-distinct-rewrite", true);
+				"lmdb-finite-filter-values-distinct-rewrite", true, false);
 		if (!finiteFilterRewritten[0]) {
 			return null;
 		}
@@ -584,12 +584,19 @@ final class LmdbCascadesRuleProvider {
 	static TupleExpr finiteFilterValuesAlternative(TupleExpr tupleExpr) {
 		boolean[] changed = { false };
 		TupleExpr rewritten = rewriteFiniteFiltersAsValues(tupleExpr, changed, "lmdb-finite-filter-values-rewrite",
-				false);
+				false, false);
 		if (!changed[0]) {
 			return null;
 		}
 		rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-filter-values-rewrite");
 		return rewritten;
+	}
+
+	static TupleExpr materializeFiniteFilterValuesAfterCosting(TupleExpr tupleExpr) {
+		boolean[] changed = { false };
+		TupleExpr rewritten = rewriteFiniteFiltersAsValues(tupleExpr, changed,
+				"lmdb-post-cost-finite-filter-values-rewrite", true, true);
+		return changed[0] ? rewritten : tupleExpr;
 	}
 
 	static TupleExpr unionConstantsToValuesAlternative(TupleExpr tupleExpr) {
@@ -1410,18 +1417,22 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private static TupleExpr rewriteFiniteFiltersAsValues(TupleExpr tupleExpr, boolean[] changed,
-			String semanticRewrite, boolean allowCurrentFilterAnchor) {
+			String semanticRewrite, boolean allowCurrentFilterAnchor, boolean placeAnchorLocally) {
 		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
 			TupleExpr rewrittenArg = rewriteFiniteFiltersAsValues(filter.getArg(), changed, semanticRewrite,
-					allowCurrentFilterAnchor);
+					allowCurrentFilterAnchor, placeAnchorLocally);
 			ValueExpr rewrittenCondition = rewriteFiniteFilterSubqueries(filter.getCondition(), changed,
-					semanticRewrite);
+					semanticRewrite, placeAnchorLocally);
 			boolean conditionRewritten = rewrittenCondition != filter.getCondition();
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(rewrittenCondition);
-			if (allowCurrentFilterAnchor && safeFiniteFilterValuesAnchor(rewrittenCondition, rewrittenArg, anchor)) {
+			if (allowCurrentFilterAnchor
+					&& safeFiniteFilterValuesAnchor(rewrittenCondition, rewrittenArg, anchor)
+					&& postCostFiniteAnchorAllowed(filter, anchor, placeAnchorLocally)) {
 				changed[0] = true;
 				anchor.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
-				return new Join(anchor, rewrittenArg);
+				annotateFiniteFilterValuesAnchor(anchor, rewrittenCondition, placeAnchorLocally);
+				return placeAnchorLocally ? insertFiniteAnchorBeforeProducer(rewrittenArg, anchor)
+						: new Join(anchor, rewrittenArg);
 			}
 			if (rewrittenArg != filter.getArg() || conditionRewritten) {
 				Filter alternative = new Filter(rewrittenArg, rewrittenCondition.clone());
@@ -1432,9 +1443,9 @@ final class LmdbCascadesRuleProvider {
 		}
 		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
 			TupleExpr left = rewriteFiniteFiltersAsValues(join.getLeftArg(), changed, semanticRewrite,
-					allowCurrentFilterAnchor);
+					allowCurrentFilterAnchor, placeAnchorLocally);
 			TupleExpr right = rewriteFiniteFiltersAsValues(join.getRightArg(), changed, semanticRewrite,
-					allowCurrentFilterAnchor);
+					allowCurrentFilterAnchor, placeAnchorLocally);
 			if (left != join.getLeftArg() || right != join.getRightArg()) {
 				Join alternative = new Join(left, right);
 				alternative.setStringMetricPlanned("optimizer.semanticRewrite", semanticRewrite);
@@ -1444,7 +1455,7 @@ final class LmdbCascadesRuleProvider {
 		}
 		TupleExpr rewritten = rewriteUnaryOrBinaryChild(tupleExpr, child -> {
 			TupleExpr rewrittenChild = rewriteFiniteFiltersAsValues(child, changed, semanticRewrite,
-					allowCurrentFilterAnchor);
+					allowCurrentFilterAnchor, placeAnchorLocally);
 			return rewrittenChild == child ? null : rewrittenChild;
 		}, semanticRewrite);
 		if (rewritten != null) {
@@ -1454,7 +1465,7 @@ final class LmdbCascadesRuleProvider {
 	}
 
 	private static ValueExpr rewriteFiniteFilterSubqueries(ValueExpr condition, boolean[] changed,
-			String semanticRewrite) {
+			String semanticRewrite, boolean placeAnchorLocally) {
 		if (condition == null) {
 			return null;
 		}
@@ -1464,7 +1475,8 @@ final class LmdbCascadesRuleProvider {
 			@Override
 			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
 				TupleExpr subQuery = node.getSubQuery();
-				TupleExpr rewritten = rewriteFiniteFiltersAsValues(subQuery, changed, semanticRewrite, true);
+				TupleExpr rewritten = rewriteFiniteFiltersAsValues(subQuery, changed, semanticRewrite, true,
+						placeAnchorLocally);
 				if (rewritten != subQuery) {
 					node.setSubQuery(rewritten);
 					conditionChanged[0] = true;
@@ -1472,6 +1484,74 @@ final class LmdbCascadesRuleProvider {
 			}
 		});
 		return conditionChanged[0] ? clone : condition;
+	}
+
+	private static TupleExpr insertFiniteAnchorBeforeProducer(TupleExpr tupleExpr, BindingSetAssignment anchor) {
+		List<TupleExpr> factors = new ArrayList<>();
+		collectPostCostJoinFactors(tupleExpr, factors);
+		for (int i = 0; i < factors.size(); i++) {
+			if (factors.get(i).getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+				factors.add(i, anchor);
+				TupleExpr result = factors.getFirst();
+				for (int factorIndex = 1; factorIndex < factors.size(); factorIndex++) {
+					result = new Join(result, factors.get(factorIndex));
+				}
+				return result;
+			}
+		}
+		return new Join(anchor, tupleExpr);
+	}
+
+	private static boolean postCostFiniteAnchorAllowed(Filter filter, BindingSetAssignment anchor,
+			boolean postCost) {
+		if (!postCost || isInsideSubQuery(filter)) {
+			return true;
+		}
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			for (String bindingName : anchor.getBindingNames()) {
+				if (!(bindingSet.getValue(bindingName) instanceof IRI)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	private static boolean isInsideSubQuery(QueryModelNode node) {
+		for (QueryModelNode current = node == null ? null : node.getParentNode(); current != null; current = current
+				.getParentNode()) {
+			if (current instanceof SubQueryValueOperator) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void collectPostCostJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			collectPostCostJoinFactors(join.getLeftArg(), factors);
+			collectPostCostJoinFactors(join.getRightArg(), factors);
+			return;
+		}
+		factors.add(tupleExpr);
+	}
+
+	private static void annotateFiniteFilterValuesAnchor(BindingSetAssignment anchor, ValueExpr condition,
+			boolean postCost) {
+		if (!(condition instanceof ListMemberOperator)) {
+			return;
+		}
+		Set<String> facts = postCost
+				? Set.of("finiteRelation", "conditionVarsAssured", "filterIn", "postCostMaterialization")
+				: Set.of("finiteRelation", "conditionVarsAssured", "filterIn");
+		anchor.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.FILTER_IN_TO_VALUES,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						facts,
+						"filter-in-finite-relation-is-materialized-as-values",
+						new RewriteCertificate("10", "filter-in-finite-relation", "values-finite-relation",
+								RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)))
+										.metricFragment());
 	}
 
 	private static TupleExpr rewriteDistinctExistsFiltersAsJoins(TupleExpr tupleExpr, Set<String> distinctVars,

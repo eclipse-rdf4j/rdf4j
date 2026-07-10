@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -48,6 +49,23 @@ final class LmdbCorrelatedFilterPlacementOptimizer implements QueryOptimizer {
 				pushCorrelatedNotExists(filter);
 			}
 		});
+		materializeFiniteFilterValues(tupleExpr);
+	}
+
+	private static void materializeFiniteFilterValues(TupleExpr tupleExpr) {
+		TupleExpr rewritten = LmdbCascadesRuleProvider.materializeFiniteFilterValuesAfterCosting(tupleExpr);
+		if (rewritten == tupleExpr) {
+			return;
+		}
+		if (tupleExpr instanceof QueryRoot root && rewritten instanceof QueryRoot rewrittenRoot) {
+			root.setArg(rewrittenRoot.getArg());
+			root.setStringMetricPlanned("optimizer.semanticRewrite",
+					"lmdb-post-cost-finite-filter-values-rewrite");
+			return;
+		}
+		if (tupleExpr.getParentNode() != null) {
+			tupleExpr.replaceWith(rewritten);
+		}
 	}
 
 	private static void pushCorrelatedNotExists(Filter filter) {
