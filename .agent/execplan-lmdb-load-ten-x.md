@@ -31,6 +31,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 01:08Z) Added and tested a repository-to-sink bulk-ingestion conduit; it is neutral for `NONE`, reduces current-host `READ_COMMITTED` by about 30 ms, and enables an LMDB-specific compact numeric batch next.
 - [x] (2026-07-10 01:49Z) Specialized the iterable conduit in `LmdbSailSink`; two paired runs pooled to 683.717 ms/op for `NONE` and 719.733 ms/op for `READ_COMMITTED`.
 - [x] (2026-07-10 02:01Z) Re-profiled direct ingestion with macOS async-profiler and Docker Java 26 CPU-time JFR; native cursor puts remain 28% self CPU and equality-based value resolution remains the next removable Java cost.
+- [x] (2026-07-10 03:12Z) Tested and rejected operation-wide hash-sorted value resolution after it regressed NONE 41.36% and READ_COMMITTED 44.12%; removed all production/test changes.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -105,6 +106,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: After direct ingestion, native cursor puts and collision-safe equality work dominate both isolation modes; READ_COMMITTED changeset materialization is comparatively small.
   Evidence: Docker Java 26 CPU-time JFR assigns 27.67%/27.90% self CPU to `nmdb_cursor_put`, while `String.equals`, primitive-map equality/spread, and `ValueStore.getId` contribute roughly another 8-10%. macOS inclusive stacks put `ValueStore` at 21.49%/19.93%, aligned triples at 29.56%/28.48%, and `Changeset.approveAll` at only 0%/2.30% for NONE/READ_COMMITTED.
+
+- Observation: Operation-wide hash sorting is algorithmically correct but destroys the beneficial streaming overlap and makes `ValueStore.storeValues` batch encoding/sorting substantially more expensive.
+  Evidence: `profiles/lmdb-load-10x/hash-sorted-values/run-1-short.json` measures 966.514 ms/op for NONE and 1037.307 ms/op for READ_COMMITTED, regressions of 41.36% and 44.12% from the retained direct-ingestion checkpoint. Focused batch, failure, opt-out, and ordering tests passed before the experiment was removed.
 
 ## Decision Log
 
@@ -182,6 +186,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Test operation-wide hash-sorted value resolution before the packed-index format change.
   Rationale: Equal values necessarily share a public hash, so a primitive radix ordering can make equality checks sequential and restrict expensive collision handling to the 2,517 known collision hashes. This can remove random hash-map probes while preserving exact equality and the current on-disk format. Packed segments remain necessary afterward because cursor puts alone consume about 28% self CPU.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject hash-sorted value batches and keep the streaming scalar/transaction-cache resolver while pursuing packed index writes.
+  Rationale: The measured 41-44% regression overwhelms the 8-10% Java equality cost the experiment targeted. Reducing or reordering value-map probes cannot approach the remaining factor; native per-statement index writes must be collapsed first while preserving the producer/worker overlap.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
