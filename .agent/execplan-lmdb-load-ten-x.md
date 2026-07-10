@@ -28,6 +28,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 00:31Z) Captured post-cursor async-profiler call stacks for both isolation modes and measured Java/lifecycle floors; triple indexes, value resolution, and Sail ingestion each require structural work.
 - [x] (2026-07-10 00:40Z) Tested and rejected collision-aware partitioning by `Value.hashCode()`; 2,517 collision buckets plus `DynamicModel` upgrade costs made it slower than equality-map resolution.
 - [x] (2026-07-10 00:53Z) Tested and rejected map-backed canonical term identities; all model tests passed, but paired loading regressed 9.34% for `NONE` and 27.95% for `READ_COMMITTED`.
+- [x] (2026-07-10 01:08Z) Added and tested a repository-to-sink bulk-ingestion conduit; it is neutral for `NONE`, reduces current-host `READ_COMMITTED` by about 30 ms, and enables an LMDB-specific compact numeric batch next.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -94,6 +95,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - Observation: Canonical component identities do not help while every downstream LMDB layer still performs its own equality-based indexing.
   Evidence: `profiles/lmdb-load-10x/canonical-dynamic-model/run-1-jdk26.json` measures 771.802 ms/op for `NONE` and 912.047 ms/op for `READ_COMMITTED`, 9.34% and 27.95% slower than the retained main-cursor checkpoint. All 27 model tests passed before the experiment was removed.
 
+- Observation: A single iterable call can cross the repository and Sail layers without changing duplicate, context, listener, ordering, or metrics semantics; holding the `Changeset` lock across that iterable removes a visible READ_COMMITTED cost but does not materially alter NONE.
+  Evidence: all 10 `SailRepositoryConnectionTest` and 8 `ChangesetTest` tests pass. Short paired runs under `profiles/lmdb-load-10x/bulk-conduit` measure READ_COMMITTED at 772.575 ms/op before and 742.816 ms/op after the one-lock change, while NONE remains in the current-host 756-772 ms range.
+
 ## Decision Log
 
 - Decision: Define 10x against the pooled means of two fresh same-machine paired post-adaptive-write runs rather than an older pre-feature state or one noisy run.
@@ -158,6 +162,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject model-only canonicalization and keep term representation outside the production LMDB change.
   Rationale: Canonical identities are correct and fully tested but do not bypass the Sail changeset, operation-local maps, transaction value map, or LMDB dictionary. A useful bulk API must carry pre-resolved numeric IDs through those layers rather than merely changing object identity upstream.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Keep the default-method bulk-ingestion conduit as an architectural checkpoint and specialize it in LMDB before drawing an end-to-end performance conclusion.
+  Rationale: The conduit preserves compatibility and semantics for every existing Sail while eliminating hundreds of thousands of repository/Sail calls for stores that specialize it. Its generic one-lock path helps READ_COMMITTED, and its larger value is that LMDB can now consume one batch without rebuilding a `Changeset` statement model first.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -255,7 +263,7 @@ Target summary:
 
 ## Interfaces and Dependencies
 
-No new public RDF4J API or persisted configuration is planned. Production work should remain inside the LMDB module and preserve `LmdbStoreConfig`, `SailSink`, isolation, and transaction contracts. Existing LWJGL LMDB bindings, JDK primitive arrays, repository sort utilities, JMH, async-profiler 4.4, Docker, and JDK 26 JFR are the default tools. A new dependency is permitted only if profile evidence shows it removes a material cost that in-repository primitives cannot address, and only after a dependency health check.
+One source-compatible default bulk method is added to the existing repository-to-Sail ingestion interfaces so stores can specialize an iterable without breaking scalar implementations; no persisted configuration is added. Production work should otherwise remain focused on LMDB and preserve `LmdbStoreConfig`, isolation, and transaction contracts. Existing LWJGL LMDB bindings, JDK primitive arrays, repository sort utilities, JMH, async-profiler 4.4, Docker, and JDK 26 JFR are the default tools. A new dependency is permitted only if profile evidence shows it removes a material cost that in-repository primitives cannot address, and only after a dependency health check.
 
 The key internal interfaces are `LmdbSailStore.LmdbSailSink`, `LmdbSailStore.BulkAddQuadsOperation`, `ValueStore.storeValues(Value[], long[], int)`, and `TripleStore.storeTriplesAligned(long[], long[], long[], long[], int, boolean)`. Their internal implementations may change, but the final system must preserve statement identity, duplicate handling, explicit/inferred separation, context semantics, rollback, ordering, and reservation release.
 

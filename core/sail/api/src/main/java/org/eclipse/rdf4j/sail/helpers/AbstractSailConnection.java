@@ -676,6 +676,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
+	public final void addStatements(Iterable<? extends Statement> statements, Resource... contexts)
+			throws SailException {
+		if (statementsRemoved) {
+			flushPendingUpdates();
+		}
+		long added = addStatementsInternal(statements, contexts);
+		recordDataImportMetricsStatementsAdded(added);
+		if (added > 0) {
+			setStatementsAdded();
+		}
+	}
+
+	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (pendingAdds()) {
 			flushPendingUpdates();
@@ -751,6 +764,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 			return;
 		}
 		dataImportMetricsStatementsAdded += contexts.length;
+	}
+
+	private void recordDataImportMetricsStatementsAdded(long statements) {
+		if (dataImportMetricsEnabled) {
+			dataImportMetricsStatementsAdded += statements;
+		}
 	}
 
 	private void resetDataImportMetricsState() {
@@ -1091,6 +1110,27 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
+
+	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
+			throws SailException {
+		long count = 0;
+		for (Statement statement : statements) {
+			if (contexts.length == 0) {
+				Resource context = statement.getContext();
+				if (context == null) {
+					addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject());
+				} else {
+					addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							context);
+				}
+				count++;
+			} else {
+				addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject(), contexts);
+				count += contexts.length;
+			}
+		}
+		return count;
+	}
 
 	@Experimental
 	protected void bulkAddStatementsInternal(final Collection<? extends Statement> statements)

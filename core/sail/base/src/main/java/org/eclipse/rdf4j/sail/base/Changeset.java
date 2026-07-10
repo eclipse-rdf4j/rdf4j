@@ -445,26 +445,53 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		long writeLock = readWriteLock.writeLock();
 		try {
-
-			if (deprecated != null) {
-				deprecated.remove(statement);
-				deprecatedEmpty = deprecated == null || deprecated.isEmpty();
-			}
-			if (approved == null) {
-				approved = createEmptyModel();
-			}
-			approved.add(statement);
-			approvedEmpty = approved == null || approved.isEmpty();
-			if (statement.getContext() != null) {
-				if (approvedContexts == null) {
-					approvedContexts = new HashSet<>();
-				}
-				approvedContexts.add(statement.getContext());
-			}
+			approveWithoutLock(statement);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
 		}
 
+	}
+
+	@Override
+	public long approveAll(Iterable<? extends Statement> statements, Resource... contexts) {
+		assert !closed;
+		long count = 0;
+		long writeLock = readWriteLock.writeLock();
+		try {
+			for (Statement statement : statements) {
+				if (contexts.length == 0) {
+					approveWithoutLock(statement);
+					count++;
+				} else {
+					for (Resource context : contexts) {
+						approveWithoutLock(Statements.statement(statement.getSubject(), statement.getPredicate(),
+								statement.getObject(), context));
+						count++;
+					}
+				}
+			}
+			return count;
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+	}
+
+	private void approveWithoutLock(Statement statement) {
+		if (deprecated != null) {
+			deprecated.remove(statement);
+			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+		}
+		if (approved == null) {
+			approved = createEmptyModel();
+		}
+		approved.add(statement);
+		approvedEmpty = approved.isEmpty();
+		if (statement.getContext() != null) {
+			if (approvedContexts == null) {
+				approvedContexts = new HashSet<>();
+			}
+			approvedContexts.add(statement.getContext());
+		}
 	}
 
 	@Override

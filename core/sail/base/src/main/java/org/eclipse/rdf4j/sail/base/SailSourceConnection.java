@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -678,6 +679,53 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 		setStatementsAdded();
 		addStatementInternal(subj, pred, obj, contexts);
+	}
+
+	@Override
+	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
+			throws SailException {
+		verifyIsOpen();
+		verifyIsActive();
+		if (hasConnectionListeners()) {
+			return super.addStatementsInternal(statements, contexts);
+		}
+		synchronized (datasets) {
+			if (!datasets.containsKey(null)) {
+				SailSource source = branch(IncludeInferred.explicitOnly);
+				datasets.put(null, source.dataset(getIsolationLevel()));
+				explicitSinks.put(null, source.sink(getIsolationLevel()));
+			}
+			SailSink sink = explicitSinks.get(null);
+			Iterable<Statement> trackedStatements = () -> new Iterator<>() {
+				private final Iterator<? extends Statement> delegate = statements.iterator();
+
+				@Override
+				public boolean hasNext() {
+					return delegate.hasNext();
+				}
+
+				@Override
+				public Statement next() {
+					Statement statement = delegate.next();
+					if (contexts.length == 0) {
+						Resource context = statement.getContext();
+						if (context == null) {
+							addStatementInternal(statement.getSubject(), statement.getPredicate(),
+									statement.getObject());
+						} else {
+							addStatementInternal(statement.getSubject(), statement.getPredicate(),
+									statement.getObject(),
+									context);
+						}
+					} else {
+						addStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+								contexts);
+					}
+					return statement;
+				}
+			};
+			return sink.approveAll(trackedStatements, contexts);
+		}
 	}
 
 	@Override
