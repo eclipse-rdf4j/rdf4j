@@ -55,6 +55,7 @@ Timestamps are UTC.
 - [x] (2026-07-10 08:20Z) Removed an attempted recursive emergency-descendant repair after live OOM diagnostics showed it repeatedly cloning `DeleteInsertTest` into roughly 150,000 joins. The subselect regression remains green without recursion; heap occupancy is bounded again.
 - [x] (2026-07-10 08:45Z) Fifth module verify completed without OOM: 2082 tests, 2 failures, 0 errors, 54 skipped. Both failures were exact AAS anchor-order assertions. No-choice guarantee ownership now remains available for factor-local filters, and path deferral checks local statements on a bound endpoint plus selective constant binders on the unbound endpoint. AAS hypergraph (3), AAS benchmarks (6), cost tie (1), connected admissibility (15), and subselect repair (1) are focused-green.
 - [x] (2026-07-10 09:33Z) Sixth module verify completed all 2082 unit tests green, then exposed an integration-rebuild memory defect: exact sparse edge/composite postings retained 5,306,023 `ValueWeights` maps and 3.34 GiB of heap. Directed and subject-star composite indexes now retain bounded KMV candidates while the subject-star predicate index stays exact for selective-object intersection parity. The new sparse-posting regression (1), `OmniJoinEstimatorTest` (45), PHARMA q2 IT (1, 4.556 s), optimizer pipeline (38), Cascades optimizer (52), and finite-IN rewrite coverage (17) are green.
+- [x] (2026-07-10 09:54Z) Replaced Social q7's unrelated 3.1 GiB all-theme setup with an isolated selected-theme benchmark fixture and unconditional setup-failure cleanup. The first scoped run exposed that the winning pushed anti-exists plan correctly rejected the direct correlated-MINUS candidate (score 1104) for the cheaper correlated filter (score 386); the regression now asserts the operator's `lmdb-correlated-anti-exists-filter` evidence source plus its existing bound/direct-lookup contracts. Social q7 is green in 1.699 s on reload.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -143,6 +144,10 @@ Timestamps are UTC.
   Evidence: parent-reference failure `logs/mvnf/20260710-091708-verify.log`; focused PHARMA green `20260710-092934-verify.log`.
 - Observation: A two-statement correlated EXISTS preserved parser order even when its second statement was the only one sharing an assured outer binding. Orienting that simple probe to start from the correlated statement avoids a broad local scan. The parent plan can now expose a selected finite anchor instead of the older `optimizer.connectedFactor` marker, so the regression accepts either proof while still forbidding the broad target first.
   Evidence: probe-order red `logs/mvnf/20260710-092156-verify.log`; focused green `20260710-092934-verify.log`; neighboring optimizer greens `20260710-093100-verify.log`, `20260710-093156-verify.log`, and `20260710-093254-verify.log`.
+- Observation: Social q7's 120-second timeout rebuilt the shared 3.1 GiB all-theme benchmark store even though the regression exercises only `Theme.SOCIAL_MEDIA`. A selected-theme store loaded in 23.691 seconds and subsequently reloaded in 1.699 seconds, exposing the actual assertion instead of timing out and leaking the repository lock.
+  Evidence: timeout `logs/mvnf/20260710-093706-verify.log`; scoped semantic red `20260710-094051-verify.log`; green `20260710-095324-verify.log`.
+- Observation: The direct `lmdb-correlated-minus-anti-exists` candidate was available after removing its finite-anchor guard but was correctly dominated at scores 1104-1145. The winning pushed filter costed at 386 and carried `plannedEstimateSource=lmdb-correlated-anti-exists-filter`, a stronger execution contract than the rejected rule ID. The production experiment and its unit-test hypothesis were removed.
+  Evidence: candidate trace `logs/mvnf/20260710-095113-verify.log`; corrected end-to-end green `20260710-095324-verify.log`.
 
 ## Decision Log
 
@@ -232,6 +237,12 @@ Timestamps are UTC.
   Date/Author: 2026-07-10 / Codex.
 - Decision: For a simple two-statement correlated EXISTS, place the statement sharing assured outer bindings first and attach the existence-equivalent `CORRELATED_EXISTS_BOUND_PREFIX` rewrite proof.
   Rationale: Join order is semantically irrelevant inside EXISTS, but an outer-bound first probe avoids broad local enumeration and makes the transformation explicit for downstream proof consumers.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Give `ThemeQueryBenchmark` an opt-in selected-theme store for focused integration regressions; retain the all-theme store as the JMH/default benchmark corpus. Always call teardown from Social q7 even when setup fails.
+  Rationale: Focused planner tests should not spend their timeout building unrelated themes, while benchmark comparability still requires the default complete corpus. Unconditional cleanup prevents a readiness interruption from cascading into repository-lock failures.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Assert Social q7's correlated anti execution using `plannedEstimateSource=lmdb-correlated-anti-exists-filter`, the rendered `FILTER NOT EXISTS`, bound self-loop state, and direct-lookup metric rather than requiring a dominated rule ID.
+  Rationale: Cascades may implement the same correlated operator through a cheaper pushed transformation. The estimate source names the selected physical costing path; the other assertions preserve scope, placement, and access-mode guarantees.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -500,3 +511,5 @@ Revision note (2026-07-09 23:18Z, Codex): Marked Milestone 4 complete after the 
 Revision note (2026-07-10 06:36Z, Codex): Recorded the third full-module red set and the focused planner remediations. Reason: bounded finite anchors, prefix-aware path costing, and provenance-based anti-join restoration close the final observed regressions without query-specific rules or weakened assertions.
 
 Revision note (2026-07-10 09:33Z, Codex): Recorded the sixth acceptance run's integration-rebuild memory evidence and the focused remediation. Reason: sparse edge/composite exact-posting maps bypassed cohort accounting, while the PHARMA fixture and correlated EXISTS orientation separately obscured the intended planner assertion.
+
+Revision note (2026-07-10 09:54Z, Codex): Recorded the scoped Social q7 fixture and corrected its misleading rule-identity contract. Reason: the all-theme rebuild hid the semantic result, and the selected pushed correlated filter is cheaper and more precise than the rejected direct rule candidate.

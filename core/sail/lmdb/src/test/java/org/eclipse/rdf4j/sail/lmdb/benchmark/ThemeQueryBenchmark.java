@@ -142,6 +142,8 @@ public class ThemeQueryBenchmark {
 	@Param({ "Timed" })
 	public String queryExplanationLevel;
 
+	boolean loadOnlySelectedTheme;
+
 	private SailRepository repository;
 	private LmdbStore store;
 	private LmdbStoreConfig storeConfig;
@@ -553,7 +555,8 @@ public class ThemeQueryBenchmark {
 			var inserter = new RDFInserter(connection);
 //			System.out.println("Loading theme dataset: " + theme);
 //			ThemeDataSetGenerator.generate(theme, inserter);
-			for (var themeDataset : Theme.values()) {
+			Theme[] datasets = loadOnlySelectedTheme ? new Theme[] { theme } : Theme.values();
+			for (var themeDataset : datasets) {
 				connection.begin(IsolationLevels.NONE);
 
 				System.out.println("Loading theme dataset: " + themeDataset);
@@ -568,7 +571,9 @@ public class ThemeQueryBenchmark {
 	}
 
 	private File storeDirectory() {
-//		return new File(STORE_DIRECTORY, theme.name().toLowerCase());
+		if (loadOnlySelectedTheme) {
+			return new File(STORE_DIRECTORY, theme.name().toLowerCase(Locale.ROOT) + "-only");
+		}
 		return new File(STORE_DIRECTORY, "complete");
 	}
 

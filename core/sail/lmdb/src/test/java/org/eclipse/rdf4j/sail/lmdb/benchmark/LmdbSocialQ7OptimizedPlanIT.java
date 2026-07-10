@@ -30,6 +30,7 @@ class LmdbSocialQ7OptimizedPlanIT {
 	private static final String MUTUAL_FOLLOW = "?u <http://example.com/theme/social/follows> ?v";
 	private static final String MATERIALIZED_MINUS = "MINUS {";
 	private static final String CORRELATED_ANTI_PROBE = "FILTER NOT EXISTS";
+	private static final String CORRELATED_ANTI_ESTIMATE = "plannedEstimateSource=lmdb-correlated-anti-exists-filter";
 
 	@Test
 	@Timeout(120)
@@ -39,38 +40,39 @@ class LmdbSocialQ7OptimizedPlanIT {
 		benchmark.z_queryIndex = 7;
 		benchmark.sketchEstimatorEnabled = true;
 		benchmark.queryExplanationLevel = "Optimized";
+		benchmark.loadOnlySelectedTheme = true;
 
 		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
 		System.setProperty(PROFILING_PROPERTY, "true");
 		try {
 			benchmark.setup();
-			try {
-				String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 7);
-				String plan = benchmark.explainOptimizedPlan(query);
-				String renderedQuery = benchmark.renderOptimizedQuery(query);
+			String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 7);
+			String plan = benchmark.explainOptimizedPlan(query);
+			String renderedQuery = benchmark.renderOptimizedQuery(query);
 
-				assertBefore(renderedQuery, PAIR_VALUES, CORRELATED_ANTI_PROBE,
-						"q7 should use the finite pair anchor at the mutual-follow anti-probe\n" + plan);
-				assertBefore(renderedQuery, PAIR_VALUES, MUTUAL_FOLLOW,
-						"q7 should use the finite pair anchor before expanding mutual follow pairs\n" + plan);
-				assertTrue(renderedQuery.contains(OPT_NAME_VALUES),
-						"q7 should retain the finite optName anchor after removing the redundant IN filter\n"
-								+ renderedQuery + "\n" + plan);
-				assertTrue(!renderedQuery.contains(OPT_NAME_FILTER),
-						"q7 should not keep the redundant optName IN filter after materializing VALUES\n"
-								+ renderedQuery + "\n" + plan);
-				assertTrue(!renderedQuery.contains(MATERIALIZED_MINUS),
-						"q7 should use a correlated anti-exists probe instead of retaining materialized MINUS\n"
-								+ renderedQuery + "\n" + plan);
-				assertTrue(plan.contains("rule=lmdb-correlated-minus-anti-exists"),
-						"q7 should cost the self-loop exclusion as a correlated anti-exists implementation\n" + plan);
-				assertNoUnboundSelfLoopFollows(plan);
-				assertTrue(plan.contains("plannedIndexAccessMode=directLookup"), plan);
-			} finally {
-				benchmark.tearDown();
-			}
+			assertBefore(renderedQuery, PAIR_VALUES, CORRELATED_ANTI_PROBE,
+					"q7 should use the finite pair anchor at the mutual-follow anti-probe\n" + plan);
+			assertBefore(renderedQuery, PAIR_VALUES, MUTUAL_FOLLOW,
+					"q7 should use the finite pair anchor before expanding mutual follow pairs\n" + plan);
+			assertTrue(renderedQuery.contains(OPT_NAME_VALUES),
+					"q7 should retain the finite optName anchor after removing the redundant IN filter\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(!renderedQuery.contains(OPT_NAME_FILTER),
+					"q7 should not keep the redundant optName IN filter after materializing VALUES\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(!renderedQuery.contains(MATERIALIZED_MINUS),
+					"q7 should use a correlated anti-exists probe instead of retaining materialized MINUS\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(plan.contains(CORRELATED_ANTI_ESTIMATE),
+					"q7 should cost the self-loop exclusion with correlated anti-exists evidence\n" + plan);
+			assertNoUnboundSelfLoopFollows(plan);
+			assertTrue(plan.contains("plannedIndexAccessMode=directLookup"), plan);
 		} finally {
-			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+			try {
+				benchmark.tearDown();
+			} finally {
+				restoreProperty(PROFILING_PROPERTY, previousProfiling);
+			}
 		}
 	}
 
