@@ -65,6 +65,7 @@ Timestamps are UTC.
 - [x] (2026-07-10 17:55Z) Ninth module verify completed all 2,087 unit tests green, then exposed five integration reds: the finite-anchor locality test timed out during redundant sampled-posting probes and recursive finite-prefix costing; q10 retained a plan assertion; the remaining readiness/lock errors cascaded from failed teardown.
 - [x] (2026-07-10 18:50Z) Snapshot persistence now tests retained membership directly instead of materializing full probe intersections. Ordered finite-anchor costing no longer expands late assignments recursively, nested LEO key canonicalization cannot refresh its permutation allowance, and no-evidence ranking avoids key construction. The locality IT now completes in 3.8 seconds instead of timing out/OOMing.
 - [x] (2026-07-10 18:55Z) Added the missing post-Cascades finite-values materialization boundary. IRI anchors are restored beside their assured producer; safe literal anchors are restored inside correlated subqueries; ordinary object-literal filters remain local. Locality (1), finite-IN rewrites (17), optimizer pipeline (38), feedback stats (37), and LEO keys (9) are green.
+- [x] (2026-07-10 19:15Z) Closed the remaining q10 plan assertion with a bounded exact two-statement correlated anti bridge. Ordered filter costing now propagates singleton finite prefix values, the bridge evaluates residual conditions over both RHS rows plus those fixed bindings, cache identity includes the fixed values, and every scan remains under the existing one-million-row work ceiling. Q10 (1), Train (1), memoization (100), and Omni surface retention (11) are green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -264,6 +265,9 @@ Timestamps are UTC.
   Date/Author: 2026-07-10 / Codex.
 - Decision: Focused benchmark plan/run regressions load only their selected theme and close partially opened resources on setup failure; the default JMH state retains the complete multi-theme corpus.
   Rationale: Planner regressions should measure their named query rather than spend timeout and heap on unrelated themes, and a failed readiness check must not leak the LMDB repository lock into later tests.
+  Date/Author: 2026-07-10 / Codex.
+- Decision: Admit exact correlated anti costing for exactly two RHS statement patterns only when they have one outer shared binding, one internal bridge binding, every residual external variable has one finite prefix value, and the existing one-million-row work ceiling is respected.
+  Rationale: Q10's Omni structural probe could see the neighbor/weight bridge but not its `w2 < threshold` residual, yielding pass ratio 1.0. The narrow exact scan evaluates the real predicate and makes that selectivity available without widening unsupported shapes or introducing unbounded planning work.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -540,3 +544,5 @@ Revision note (2026-07-10 15:08Z, Codex): Replaced the immediate-sampling heap r
 Revision note (2026-07-10 16:34Z, Codex): Recorded the eighth full-module distinct-evidence cluster and its focused closure. Reason: the base-retention controller must not conflate attribute sampling with whether an individual value has already contributed to NDV telemetry.
 
 Revision note (2026-07-10 18:55Z, Codex): Recorded the ninth full-module integration cluster and the bounded planner/persistence closure. Reason: direct retained membership removes full-probe snapshot work, late finite anchors must be costed iteratively, nested LEO canonicalization needs one non-recursive permutation allowance, and the post-cost rewrite boundary must distinguish ordinary object literals from IRI and correlated-subquery anchors.
+
+Revision note (2026-07-10 19:15Z, Codex): Recorded the final q10 focused closure. Reason: ordered filter costing had discarded finite prefix values, and the structural Omni anti probe could not evaluate a residual comparison across a two-statement bridge; the exact path is intentionally restricted and work-bounded.
