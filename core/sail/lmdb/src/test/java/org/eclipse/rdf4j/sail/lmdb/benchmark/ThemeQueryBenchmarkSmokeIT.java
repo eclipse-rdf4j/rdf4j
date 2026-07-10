@@ -311,6 +311,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		benchmark.themeName = theme.name();
 		benchmark.z_queryIndex = queryIndex;
 		benchmark.sketchEstimatorEnabled = true;
+		benchmark.loadOnlySelectedTheme = true;
 		return benchmark;
 	}
 

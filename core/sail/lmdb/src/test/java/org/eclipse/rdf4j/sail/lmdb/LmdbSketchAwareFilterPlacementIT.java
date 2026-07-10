@@ -591,7 +591,7 @@ class LmdbSketchAwareFilterPlacementIT {
 					try {
 						loadThemeData(repository, Theme.MEDICAL_RECORDS);
 						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+						String query = backgroundSampledRecordedOnQuery();
 
 						TupleExpr optimized = waitForRecordedOnBackgroundSample(repository, store, query);
 
@@ -622,23 +622,21 @@ class LmdbSketchAwareFilterPlacementIT {
 			}
 
 			Filter recordedOnFilter = findFirstRecordedOnFilter(latestOptimized);
-			Filter samplingFilter = recordedOnFilter == null ? recordedOnLocalFilter() : recordedOnFilter;
+			Filter samplingFilter = recordedOnFilter == null ? recordedOnBackgroundSampleFilter() : recordedOnFilter;
 			EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
 					.getEvaluationStatistics()
 					.estimateFilterPass(samplingFilter);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Expected background sampling to make the recordedOn IN-filter available to planning");
-			if (recordedOnFilter == null) {
-				assertNotNull(findBindingSetAssignment(latestOptimized, "date"),
-						"Expected sampled optimized plan to retain the recordedOn date constraint as a finite anchor\n"
-								+ latestOptimizedText);
-			} else {
-				assertEquals("sampled",
-						recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-						"Expected optimized plan telemetry to show sampled background selectivity");
-			}
+					"Expected background sampling to make the recordedOn range available to planning; sampledRequests="
+							+ sampledRequests[0]);
+			assertNotNull(recordedOnFilter,
+					"Expected the non-finite recordedOn range to remain a local runtime filter\n"
+							+ latestOptimizedText);
+			assertEquals("sampled",
+					recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+					"Expected optimized plan telemetry to show sampled background selectivity");
 			assertTrue(sampledRequests[0] > 0,
-					"Expected background sampling to process the recordedOn IN-filter vote");
+					"Expected background sampling to process the recordedOn range-filter vote");
 			return latestOptimized;
 		});
 	}
@@ -1300,11 +1298,24 @@ class LmdbSketchAwareFilterPlacementIT {
 				&& VarNameCollector.process(filter.getCondition()).contains("date");
 	}
 
-	private static Filter recordedOnLocalFilter() {
+	private static String backgroundSampledRecordedOnQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {",
+				"  ?enc a med:Encounter ; med:handledBy ?practitioner ; med:recordedOn ?date .",
+				"  FILTER(?date < \"2024-03-01\"^^xsd:date)",
+				"  OPTIONAL { ?enc med:hasCondition ?cond . }",
+				"}",
+				"GROUP BY ?practitioner",
+				"HAVING(COUNT(?enc) > 0)");
+	}
+
+	private static Filter recordedOnBackgroundSampleFilter() {
 		return new Filter(
 				new StatementPattern(Var.of("enc"), Var.of("predicate", MEDICAL_RECORDED_ON), Var.of("date")),
-				listMember("date", VF.createLiteral("2024-01-01", XSD.DATE),
-						VF.createLiteral("2024-02-01", XSD.DATE)));
+				new Compare(Var.of("date"), new ValueConstant(VF.createLiteral("2024-03-01", XSD.DATE)),
+						Compare.CompareOp.LT));
 	}
 
 	private static boolean isSubstationNameFilter(Filter filter) {

@@ -2996,6 +2996,13 @@ final class LmdbCascadesRuleProvider {
 				}
 				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
 						passEstimate.getConfidenceScore());
+				String selectivitySource = passEstimate.getSource().name().toLowerCase(Locale.ROOT);
+				filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, selectivitySource);
+				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, selectivitySource);
+				if (passEstimate.getEvidenceCount() >= 0L) {
+					filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
+							passEstimate.getEvidenceCount());
+				}
 				filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, placement);
 				result = filter;
 			}

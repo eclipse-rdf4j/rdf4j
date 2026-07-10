@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -53,7 +54,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
-	void compareLegacyBenchmarkHarnessCatalogQ9WithForcedMinusOrder() throws Exception {
+	void compareStandardBenchmarkHarnessCatalogQ9WithForcedMinusOrder() throws Exception {
 		try (var ignored = BenchmarkJoinEstimatorSupport.forceStandardOptimizerMode()) {
 			ThemeQueryBenchmark benchmark = newBenchmark();
 			benchmark.setup();
@@ -79,8 +80,10 @@ class LmdbForcedMedicalQ9PerformanceIT {
 
 				assertEquals("ok", comparison.catalog().status(), report);
 				assertEquals("ok", comparison.forced().status(), report);
-				assertTrue(catalogSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
-				assertTrue(forcedSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
+				assertFalse(catalogSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
+				assertFalse(forcedSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
+				assertTrue(catalogSnapshot.plan().contains("HashJoinIteration"), report);
+				assertTrue(forcedSnapshot.plan().contains("HashJoinIteration"), report);
 			} finally {
 				benchmark.tearDown();
 			}
@@ -92,6 +95,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 		benchmark.themeName = THEME.name();
 		benchmark.z_queryIndex = QUERY_INDEX;
 		benchmark.sketchEstimatorEnabled = true;
+		benchmark.loadOnlySelectedTheme = true;
 		return benchmark;
 	}
 
@@ -133,7 +137,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 			OptimizerSnapshot postWarmupForcedSnapshot) {
 		return """
 				MEDICAL_RECORDS q9 forced order comparison
-				optimizerMode=legacy-sketch
+				optimizerMode=standard
 				maxExecutionTimeSeconds=%s
 				warmupsPerQuery=%s
 				catalog status=%s count=%s elapsedMs=%s
