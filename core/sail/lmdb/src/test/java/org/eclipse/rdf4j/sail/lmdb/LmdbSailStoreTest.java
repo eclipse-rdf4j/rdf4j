@@ -46,15 +46,18 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
@@ -397,6 +400,166 @@ public class LmdbSailStoreTest {
 
 			verify(sink, never()).approve(any(Resource.class), any(IRI.class), any(Value.class),
 					nullable(Resource.class));
+		}
+	}
+
+	@Test
+	void largeFreshIterableLoadUsesPackedSegmentAndSurvivesReopen() throws Exception {
+		File packedDir = new File(dataDir, "packed-iterable");
+		Set<Statement> statements = sampleStatements(10_000);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore firstStore = new LmdbStore(packedDir, config);
+		Repository firstRepository = new SailRepository(firstStore);
+		firstRepository.init();
+		try {
+			try (RepositoryConnection connection = firstRepository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+			}
+
+			assertEquals(statements.size(), firstStore.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			firstRepository.shutDown();
+		}
+
+		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc,posc");
+		reopenedConfig.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		Repository reopenedRepository = new SailRepository(new LmdbStore(packedDir, reopenedConfig));
+		reopenedRepository.init();
+		try {
+			try (RepositoryConnection connection = reopenedRepository.getConnection();
+					var result = connection.getStatements(null, null, null, true)) {
+				long count = 0;
+				while (result.hasNext()) {
+					result.next();
+					count++;
+				}
+				assertEquals(statements.size(), count);
+			}
+		} finally {
+			reopenedRepository.shutDown();
+		}
+	}
+
+	@Test
+	void largeFreshReadCommittedIterableLoadUsesPackedSegment() throws Exception {
+		File packedDir = new File(dataDir, "packed-read-committed-iterable");
+		Model statements = new LinkedHashModel(sampleStatements(10_000));
+		statements.setNamespace("example", "http://example.org/");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.add(statements);
+				connection.commit();
+			}
+
+			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void rolledBackPackedIterableLoadLeavesStoreEmpty() throws Exception {
+		File packedDir = new File(dataDir, "packed-rollback");
+		Set<Statement> statements = sampleStatements(10_000);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.rollback();
+				assertFalse(connection.hasStatement(null, null, null, true));
+			}
+			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void mutationAfterPackedLoadMaterializesLegacyIndexes() throws Exception {
+		File packedDir = new File(dataDir, "packed-materialization");
+		Set<Statement> statements = sampleStatements(10_000);
+		Statement extra = F.createStatement(F.createIRI("urn:extra-subject"), F.createIRI("urn:extra-predicate"),
+				F.createLiteral("extra-object"));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+
+				connection.begin(IsolationLevels.NONE);
+				connection.add(extra);
+				connection.commit();
+				assertEquals(statements.size() + 1L, connection.size());
+			}
+			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void existingStatementKeepsLargeIterableOnLegacyIndexes() throws Exception {
+		File packedDir = new File(dataDir, "packed-non-empty-store");
+		Set<Statement> statements = sampleStatements(10_000);
+		Statement first = F.createStatement(F.createIRI("urn:first-subject"), F.createIRI("urn:first-predicate"),
+				F.createLiteral("first-object"));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(first);
+				connection.add(statements);
+				connection.commit();
+				assertEquals(statements.size() + 1L, connection.size());
+			}
+			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void disabledBulkWritesDoNotUsePackedSegments() throws Exception {
+		File packedDir = new File(dataDir, "packed-disabled");
+		Set<Statement> statements = sampleStatements(10_000);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(0);
+		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		LmdbStore store = new LmdbStore(packedDir, config);
+		Repository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(statements);
+				connection.commit();
+				assertEquals(statements.size(), connection.size());
+			}
+			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			repository.shutDown();
 		}
 	}
 

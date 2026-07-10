@@ -282,6 +282,10 @@ class LmdbSailStore implements SailStore {
 		return alignedWriteBudget.reservedStatements();
 	}
 
+	long packedExplicitStatementCount() {
+		return tripleStore.packedExplicitStatementCount();
+	}
+
 	/**
 	 * Special operation that commits the current transaction.
 	 */
@@ -336,6 +340,7 @@ class LmdbSailStore implements SailStore {
 		final int capacity;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
+		boolean packedCandidate;
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit, int capacity) {
@@ -352,6 +357,10 @@ class LmdbSailStore implements SailStore {
 			if (estimatorCallback != null && statements == null) {
 				statements = new Statement[capacity];
 			}
+		}
+
+		void setPackedCandidate() {
+			packedCandidate = true;
 		}
 
 		void add(long subject, long predicate, long object, long context) {
@@ -373,6 +382,9 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
+				if (packedCandidate) {
+					tripleStore.enablePackedWritesIfEmpty();
+				}
 				if (!explicit) {
 					mayHaveInferred = true;
 				}
@@ -1471,6 +1483,8 @@ class LmdbSailStore implements SailStore {
 			Statement last = null;
 			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
+			boolean packedCandidate = explicit && sketchBasedJoinEstimator == null && overrideContexts.length == 0
+					&& approved instanceof Set<?> set && set.size() >= TripleStore.PACKED_BULK_MIN_STATEMENTS;
 
 			sinkStoreAccessLock.lock();
 			try {
@@ -1487,6 +1501,10 @@ class LmdbSailStore implements SailStore {
 						if (bulk == null) {
 							bulk = newBulkAddQuadsOperation(explicit);
 							configureBulkEstimator(bulk);
+							if (packedCandidate) {
+								bulk.setPackedCandidate();
+								packedCandidate = false;
+							}
 						}
 						last = statement;
 						Resource subj = statement.getSubject();

@@ -32,6 +32,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
@@ -42,6 +43,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -62,6 +64,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -116,6 +119,10 @@ class TripleStore implements Closeable {
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
+	static final int PACKED_BULK_MIN_STATEMENTS = 10_000;
+	private static final int PACKED_BLOCK_STATEMENTS = 512;
+	private static final int PACKED_RECORD_BYTES = 4 * Long.BYTES;
+	private static final long PACKED_COUNT_KEY = 0;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -154,6 +161,12 @@ class TripleStore implements Closeable {
 	long env;
 	long writeTxn;
 	private final int contextsDbi;
+	private final int packedExplicitDbi;
+	private volatile long packedExplicitCount;
+	private boolean packedWriteActive;
+	private boolean packedMaterializedInTxn;
+	private long packedTxnCount;
+	private long packedNextBlockId;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -200,8 +213,9 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 1 + 48));
+		// 1 for contexts, 1 for packed explicit segments, and 48 for all possible triple indexes
+		// (24 explicit + 24 inferred)
+		E(mdb_env_set_maxdbs(env, 2 + 48));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -221,6 +235,23 @@ class TripleStore implements Closeable {
 				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
 			}
 			return ip.get(0);
+		});
+		packedExplicitDbi = transaction(env, (stack, txn) -> {
+			String name = "packed-spoc-explicit";
+			IntBuffer ip = stack.mallocInt(1);
+			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
+				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+			}
+			return ip.get(0);
+		});
+		packedExplicitCount = transaction(env, (stack, txn) -> {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			MDBVal value = MDBVal.malloc(stack);
+			if (mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS) {
+				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			}
+			return 0L;
 		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
@@ -291,6 +322,21 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	long packedExplicitStatementCount() {
+		return packedExplicitCount;
+	}
+
+	void enablePackedWritesIfEmpty() throws IOException {
+		if (packedWriteActive || packedExplicitCount != 0 || packedTxnCount != 0) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(writeTxn, indexes.getFirst().getDB(true), stat));
+			packedWriteActive = stat.ms_entries() == 0;
+		}
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
@@ -520,6 +566,9 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public RecordIterator getAllTriplesSortedByContext(Txn txn) throws IOException {
+		if (packedExplicitCount > 0) {
+			return null;
+		}
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
@@ -532,8 +581,51 @@ class TripleStore implements Closeable {
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		int mask = boundMask(subj, pred, obj, context);
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, bestIndexByBoundMask[mask],
-				rangeSearchByBoundMask[mask]);
+		RecordIterator legacy = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
+				bestIndexByBoundMask[mask], rangeSearchByBoundMask[mask]);
+		if (!explicit || !hasPackedTriples(txn)) {
+			return legacy;
+		}
+		try {
+			return concatenate(new PackedRecordIterator(packedExplicitDbi, txn, subj, pred, obj, context), legacy);
+		} catch (IOException | RuntimeException e) {
+			legacy.close();
+			throw e;
+		}
+	}
+
+	private boolean hasPackedTriples(Txn txn) {
+		return packedExplicitCount > 0 || txn.get() == writeTxn && packedTxnCount > 0;
+	}
+
+	private RecordIterator concatenate(RecordIterator first, RecordIterator second) {
+		return new RecordIterator() {
+			private RecordIterator current = first;
+
+			@Override
+			public long[] next() {
+				long[] record = current.next();
+				if (record == null && current == first) {
+					current = second;
+					record = current.next();
+				}
+				return record;
+			}
+
+			@Override
+			public String getIndexName() {
+				return first.getIndexName() + "+" + second.getIndexName();
+			}
+
+			@Override
+			public void close() {
+				try {
+					first.close();
+				} finally {
+					second.close();
+				}
+			}
+		};
 	}
 
 	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
@@ -618,6 +710,15 @@ class TripleStore implements Closeable {
 	}
 
 	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (explicit && hasPackedTriples(txn)) {
+			long count = 0;
+			try (RecordIterator records = getTriples(txn, subj, pred, obj, context, true)) {
+				while (records.next() != null) {
+					count++;
+				}
+			}
+			return count;
+		}
 		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 			return countAllTriples(txn, explicit);
 		}
@@ -640,6 +741,11 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (explicit && hasPackedTriples(txn)) {
+			try (RecordIterator records = getTriples(txn, subj, pred, obj, context, true)) {
+				return records.next() != null;
+			}
+		}
 		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 			return hasAnyTriples(txn, explicit);
 		}
@@ -686,7 +792,13 @@ class TripleStore implements Closeable {
 			TripleIndex mainIndex = indexes.getFirst();
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
-			return stat.ms_entries();
+			long packedCount = explicit && !(txnRef.get() == writeTxn && packedMaterializedInTxn)
+					? packedExplicitCount
+					: 0;
+			if (explicit && txnRef.get() == writeTxn && packedWriteActive) {
+				packedCount += packedTxnCount;
+			}
+			return stat.ms_entries() + packedCount;
 		} finally {
 			txnRef.lockManager().unlockRead(readStamp);
 		}
@@ -1152,6 +1264,9 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
+		if (explicit && packedExplicitCount > 0) {
+			return true;
+		}
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
@@ -1646,6 +1761,11 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (packedWriteActive && explicit) {
+			storePackedTriple(subj, pred, obj, context);
+			return true;
+		}
+		materializePackedIfNeeded(explicit);
 		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1727,6 +1847,116 @@ class TripleStore implements Closeable {
 				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
 	}
 
+	private void storePackedTriple(long subj, long pred, long obj, long context) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(packedNextBlockId++).flip());
+			MDBVal value = MDBVal.calloc(stack);
+			value.mv_size(PACKED_RECORD_BYTES);
+			E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
+			value.mv_data()
+					.order(ByteOrder.BIG_ENDIAN)
+					.putLong(subj)
+					.putLong(pred)
+					.putLong(obj)
+					.putLong(context);
+			incrementContext(stack, context);
+		}
+		packedTxnCount++;
+		logAddedStatements(1);
+	}
+
+	private void storePackedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			IntConsumer addedIndexConsumer) throws IOException {
+		LongIntHashMap contextIncrements = alignedContextIncrements;
+		contextIncrements.clear();
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			MDBVal value = MDBVal.calloc(stack);
+			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
+				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
+				keyBuffer.clear();
+				key.mv_data(keyBuffer.putLong(packedNextBlockId++).flip());
+				value.mv_size((long) blockCount * PACKED_RECORD_BYTES);
+				E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
+				ByteBuffer packed = value.mv_data().order(ByteOrder.BIG_ENDIAN);
+				for (int i = start, end = start + blockCount; i < end; i++) {
+					packed.putLong(subj[i]).putLong(pred[i]).putLong(obj[i]).putLong(context[i]);
+					contextIncrements.addToValue(context[i], 1);
+					if (addedIndexConsumer != null) {
+						addedIndexConsumer.accept(i);
+					}
+				}
+			}
+			LongIterator contextIterator = contextIncrements.keysView().longIterator();
+			while (contextIterator.hasNext()) {
+				long contextId = contextIterator.next();
+				incrementAlignedContext(stack, contextId, contextIncrements.get(contextId));
+			}
+		}
+		packedTxnCount += count;
+		logAddedStatements(count);
+	}
+
+	private void materializePackedIfNeeded(boolean explicit) throws IOException {
+		if (!explicit || packedExplicitCount == 0 || packedWriteActive || packedMaterializedInTxn) {
+			return;
+		}
+		long cursor = 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, packedExplicitDbi, cursorHandle));
+			cursor = cursorHandle.get(0);
+			MDBVal packedKey = MDBVal.malloc(stack);
+			MDBVal packedValue = MDBVal.malloc(stack);
+			MDBVal legacyKey = MDBVal.malloc(stack);
+			MDBVal legacyValue = MDBVal.calloc(stack);
+			ByteBuffer legacyKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			int rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_FIRST);
+			while (rc == MDB_SUCCESS) {
+				ByteBuffer key = packedKey.mv_data().order(ByteOrder.BIG_ENDIAN);
+				if (key.getLong(key.position()) != PACKED_COUNT_KEY) {
+					ByteBuffer records = packedValue.mv_data().order(ByteOrder.BIG_ENDIAN);
+					while (records.remaining() >= PACKED_RECORD_BYTES) {
+						long subj = records.getLong();
+						long pred = records.getLong();
+						long obj = records.getLong();
+						long context = records.getLong();
+						for (TripleIndex index : indexes) {
+							legacyKeyBuffer.clear();
+							index.toKey(legacyKeyBuffer, subj, pred, obj, context);
+							LmdbUtil.setMDBValData(legacyKey, legacyKeyBuffer.flip());
+							E(mdb_put(writeTxn, index.getDB(true), legacyKey, legacyValue, 0));
+						}
+					}
+				}
+				rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_NEXT);
+			}
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			mdb_cursor_close(cursor);
+			cursor = 0;
+			E(mdb_drop(writeTxn, packedExplicitDbi, false));
+			packedMaterializedInTxn = true;
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void writePackedCount(long count) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			MDBVal value = MDBVal.malloc(stack);
+			value.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(count).flip());
+			E(mdb_put(writeTxn, packedExplicitDbi, key, value, 0));
+		}
+	}
+
 	@Experimental
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
 			throws IOException {
@@ -1740,6 +1970,11 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return;
 		}
+		if (packedWriteActive && explicit) {
+			storePackedTriples(subj, pred, obj, context, count, addedIndexConsumer);
+			return;
+		}
+		materializePackedIfNeeded(explicit);
 		if (count == 1 || recordCache != null || requiresResize()) {
 			storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 			return;
@@ -2138,6 +2373,7 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
+		materializePackedIfNeeded(explicit);
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
@@ -2232,6 +2468,10 @@ class TripleStore implements Closeable {
 
 	public void startTransaction() throws IOException {
 		closeAlignedWriteCursors();
+		packedWriteActive = false;
+		packedMaterializedInTxn = false;
+		packedTxnCount = 0;
+		packedNextBlockId = 1;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
@@ -2247,6 +2487,9 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
+					if (packedWriteActive) {
+						writePackedCount(packedTxnCount);
+					}
 					var lockManager = txnManager.lockManager();
 					long stamp;
 					try {
@@ -2256,6 +2499,11 @@ class TripleStore implements Closeable {
 					}
 					try {
 						E(mdb_txn_commit(writeTxn));
+						if (packedWriteActive) {
+							packedExplicitCount = packedTxnCount;
+						} else if (packedMaterializedInTxn) {
+							packedExplicitCount = 0;
+						}
 						if (recordCache != null) {
 							try {
 								txnManager.deactivate();
@@ -2293,6 +2541,10 @@ class TripleStore implements Closeable {
 				}
 			} finally {
 				writeTxn = 0;
+				packedWriteActive = false;
+				packedMaterializedInTxn = false;
+				packedTxnCount = 0;
+				packedNextBlockId = 1;
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {
