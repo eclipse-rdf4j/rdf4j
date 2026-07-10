@@ -39,6 +39,7 @@ Timestamps are UTC.
 - [x] (2026-07-09 22:46Z) Milestone 3 complete: cohort checkpoint cursors merge mapped plus overlay; byte/manifest versions persist cap and three source exponents; incompatible/rejected mappings close; source IDs are stable; obsolete generations and temp files are retried/deleted; layout arithmetic is checked; and `PersistenceMutationCycle` makes mutation-during-persist versioned and deterministic. `OmniWitnessPersistenceStoreTest` is green (12 tests); full estimator-persistence class gate is pending before the milestone commit.
 - [x] (2026-07-09 23:18Z) Milestone 4 complete: optional composition retained; `TuplePlanEstimate` carries the full surface into cost inputs; natural/reverse one-variable routing selects by evidence quality; semi/anti probes cover object traversal and tuple witnesses; output probabilities come from output surfaces; `OmniFrequencySketch` and its format-4 state are removed; Count-Min is cardinality-only. Surface retention (8), config (34), persistence (50), and completed-sidecar (2) classes are green.
 - [x] (2026-07-09 23:53Z) Milestone 5 complete: accuracy helpers fail on absent surfaces; shared subject/object coverage uses real estimator ingestion; LMDB handoff covers cohort counts 0/1/16 and the cap; byte/mapped predicate-context cohorts and full evidence reload are pinned; delete/rebuild recovery is corrected; Count-Min is cardinality-only; correlated EXISTS/NOT EXISTS finite-IN rewrites retain scope/proof; the sparse-prefix, optimizer-pipeline, and baseline-red AAS gates are green without weakened assertions.
+- [x] (2026-07-10 00:00Z) Added and ran the two cohort JMH gates. Under-cap update measured 0.034 ± 0.006 us/op; a 4,096-posting rebalance measured 48.216 ± 40.140 us/op and throws if the timed operation leaves the cap exceeded.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -91,6 +92,8 @@ Timestamps are UTC.
   Evidence: `OmniJoinEstimatorTest#mappedCohortAppliesAdditionalLiveSamplingExponent` failed with all 64 mapped postings visible, then passed after the delta cursor/accounting implementation (`logs/mvnf/20260709-223725-verify.log`, `20260709-223850-verify.log`).
 - Observation: The mutation race can be represented without a timing-sensitive estimator hook. The package-private `PersistenceMutationCycle` has two monotonic counters; the deterministic sequence capture N → enqueue N+1 → acknowledge N leaves work pending. `persistIfDirty` captures before draining and acknowledges only after metadata publication.
   Evidence: `SketchBasedJoinEstimatorPersistenceTest#mutationArrivingDuringPersistenceRemainsDirtyAfterCapturedVersionCompletes`, green in `logs/mvnf/20260709-224356-verify.log`.
+- Observation: No pre-controller JMH result is checked into the repository or retained logs, so the requested 15% under-cap comparison has no trustworthy denominator. The supported harness now establishes a reproducible post-controller baseline instead of claiming a fabricated regression percentage.
+  Evidence: `cohortUpdateBelowCap` measured 0.034 ± 0.006 us/op on JDK 25; repository search found no earlier method/result with that name.
 
 ## Decision Log
 

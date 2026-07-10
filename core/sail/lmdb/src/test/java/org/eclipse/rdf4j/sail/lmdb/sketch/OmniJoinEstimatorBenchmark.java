@@ -38,6 +38,7 @@ public class OmniJoinEstimatorBenchmark {
 	private static final long SEED = 0x51E7C0DEL;
 	private static final byte ATTR_P = OmniAttributeRef.component(1);
 	private static final byte ATTR_O = OmniAttributeRef.component(2);
+	private static final int REBALANCE_CAP = 4096;
 
 	private OmniJoinEstimator estimator;
 	private OmniJoinEstimator exactSnapshotEstimator;
@@ -140,6 +141,67 @@ public class OmniJoinEstimatorBenchmark {
 		}
 		return accumulator.toWitnessSet(1.0d, 1.0d, OmniWitnessSet.FallbackReason.NONE, 0.0d)
 				.estimatedRows();
+	}
+
+	@Benchmark
+	public long cohortUpdateBelowCap(CohortUpdateState state) {
+		long witnessHash = state.witnessHashes[state.nextWitness++ & (state.witnessHashes.length - 1)];
+		state.relation.updateStatic(ATTR_P, state.valueHash, witnessHash, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		return state.estimator.retainedCohortPostingCount();
+	}
+
+	@Benchmark
+	public long cohortRebalance(CohortRebalanceState state) {
+		state.relation.updateStatic(ATTR_P, state.valueHash, state.overflowWitnessHash, 1.0d,
+				OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+		long retainedPostings = state.estimator.retainedCohortPostingCount();
+		if (retainedPostings > REBALANCE_CAP) {
+			throw new IllegalStateException("cohort rebalance exceeded its configured cap: " + retainedPostings);
+		}
+		return retainedPostings;
+	}
+
+	@State(Scope.Thread)
+	public static class CohortUpdateState {
+
+		private OmniJoinEstimator estimator;
+		private OmniJoinEstimator.Relation relation;
+		private long valueHash;
+		private long[] witnessHashes;
+		private int nextWitness;
+
+		@Setup(Level.Trial)
+		public void setup() {
+			estimator = new OmniJoinEstimator(64, 1, 8, SEED, 1, 0, 1_000_000);
+			relation = estimator.relation(OmniRelation.STATEMENT);
+			valueHash = OmniJoinEstimator.stableHash("cohort-update-below-cap");
+			witnessHashes = new long[1 << 16];
+			for (int i = 0; i < witnessHashes.length; i++) {
+				witnessHashes[i] = witnessHash(i);
+			}
+		}
+	}
+
+	@State(Scope.Thread)
+	public static class CohortRebalanceState {
+
+		private OmniJoinEstimator estimator;
+		private OmniJoinEstimator.Relation relation;
+		private long valueHash;
+		private long overflowWitnessHash;
+
+		@Setup(Level.Invocation)
+		public void setup() {
+			estimator = new OmniJoinEstimator(64, 1, 8, SEED, 1, 0, REBALANCE_CAP);
+			relation = estimator.relation(OmniRelation.STATEMENT);
+			valueHash = OmniJoinEstimator.stableHash("cohort-rebalance");
+			for (int i = 0; i < REBALANCE_CAP; i++) {
+				relation.updateStatic(ATTR_P, valueHash, witnessHash(i), 1.0d,
+						OmniWitnessSet.SourceKind.SUBJECT_COHORT);
+			}
+			overflowWitnessHash = witnessHash(REBALANCE_CAP);
+		}
 	}
 
 	private static long witnessHash(int value) {
