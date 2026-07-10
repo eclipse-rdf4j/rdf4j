@@ -17,7 +17,9 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -66,7 +69,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
+		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg()) || rightLocallyProducesSharedBinding(join)) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
@@ -137,6 +140,35 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
 		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
+	}
+
+	private static boolean rightLocallyProducesSharedBinding(Join join) {
+		Set<String> sharedNames = new LinkedHashSet<>(join.getLeftArg().getBindingNames());
+		sharedNames.retainAll(join.getRightArg().getBindingNames());
+		if (sharedNames.isEmpty()) {
+			return false;
+		}
+		boolean[] found = { false };
+		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				for (var element : extension.getElements()) {
+					if (sharedNames.contains(element.getName())) {
+						found[0] = true;
+						return;
+					}
+				}
+				super.meet(extension);
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+				}
+			}
+		});
+		return found[0];
 	}
 
 	private static boolean isNoNewBindingStatementGuard(Join join) {

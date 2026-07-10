@@ -53,6 +53,7 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 				&& !TupleExprs.isVariableScopeChange(join)
 				&& !TupleExprs.isVariableScopeChange(join.getRightArg())
 				&& !TupleExprs.containsSubquery(join.getRightArg())
+				&& !LmdbJoinPlanSupport.rightLocallyProducesSharedBinding(join)
 				&& !leftPathEndpointBoundByRight(join)
 				&& !leftBroadStatementPatternSubjectAnchoredByRight(join);
 	}

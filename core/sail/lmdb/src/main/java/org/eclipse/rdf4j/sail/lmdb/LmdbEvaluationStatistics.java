@@ -2937,6 +2937,7 @@ class LmdbEvaluationStatistics
 				|| TupleExprs.isVariableScopeChange(join)
 				|| TupleExprs.isVariableScopeChange(join.getRightArg())
 				|| TupleExprs.containsSubquery(join.getRightArg())
+				|| LmdbJoinPlanSupport.rightLocallyProducesSharedBinding(join)
 				|| "hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
 			return Optional.empty();
 		}

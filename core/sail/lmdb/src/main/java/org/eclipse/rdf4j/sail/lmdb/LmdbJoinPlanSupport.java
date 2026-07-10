@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -73,6 +74,30 @@ final class LmdbJoinPlanSupport {
 	private static final double SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO = 0.75d;
 
 	private LmdbJoinPlanSupport() {
+	}
+
+	static boolean rightLocallyProducesSharedBinding(Join join) {
+		if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
+			return false;
+		}
+		Set<String> sharedBindings = plannerBindingNames(join.getLeftArg().getAssuredBindingNames());
+		sharedBindings.retainAll(plannerBindingNames(join.getRightArg().getBindingNames()));
+		if (sharedBindings.isEmpty()) {
+			return false;
+		}
+		Set<String> localExtensionBindings = new HashSet<>();
+		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				extension.getElements().forEach(element -> {
+					if (element.getName() != null) {
+						localExtensionBindings.add(element.getName());
+					}
+				});
+				super.meet(extension);
+			}
+		});
+		return !Collections.disjoint(sharedBindings, localExtensionBindings);
 	}
 
 	static List<DeferredFilter> buildDeferredFilters(List<Filter> filters, Set<String> scopeBindingNames,

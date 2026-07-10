@@ -41,6 +41,9 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -745,6 +748,27 @@ class CascadesCostModelTest {
 		assertFalse(delivered.inputBoundVars().contains("topic"),
 				"A generic physical Join may satisfy RHS input bindings from the left sibling when the RHS remains "
 						+ "in the same variable scope");
+	}
+
+	@Test
+	void genericPhysicalJoinDoesNotPrebindProjectedRightLocalBindOutput() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		TupleExpr left = pattern("work", "about", "c");
+		Extension rightBind = new Extension(pattern("a", "mainEntityOfPage", "page"),
+				new ExtensionElem(new Var("a"), "c"));
+		ProjectionElemList elements = new ProjectionElemList();
+		elements.addElement(new ProjectionElem("a"));
+		elements.addElement(new ProjectionElem("c"));
+		Projection right = new Projection(rightBind, elements, false);
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 8_000.0d), parameterizedWinner(3, right, 1.0d, Set.of("c"))));
+
+		assertTrue(delivered.inputBoundVars().contains("c"),
+				"A non-subquery projection must not hide a nested local BIND output from parameterization safety");
 	}
 
 	@Test

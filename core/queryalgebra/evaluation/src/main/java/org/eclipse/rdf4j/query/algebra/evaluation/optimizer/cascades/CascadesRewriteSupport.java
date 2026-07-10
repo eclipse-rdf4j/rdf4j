@@ -241,7 +241,9 @@ final class CascadesRewriteSupport {
 
 			@Override
 			public void meet(Projection projection) {
-				// Sub-select internals are scoped behind the projection boundary.
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+				}
 			}
 
 			@Override

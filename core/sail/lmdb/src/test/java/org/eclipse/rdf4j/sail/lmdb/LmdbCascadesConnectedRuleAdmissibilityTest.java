@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -136,6 +138,37 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
 		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
 		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+	}
+
+	@Test
+	void innerBoundLookupRejectsSharedBindingProducedByRightExtension() {
+		StatementPattern left = new StatementPattern(new Var("left"), new Var("p1", P1), new Var("c"));
+		StatementPattern rightSource = new StatementPattern(new Var("a"), new Var("p2", P2), new Var("value"));
+		Extension right = new Extension(rightSource);
+		right.addElement(new ExtensionElem(new Var("a"), "c"));
+
+		List<String> rules = applicableRuleIds(new Join(left, right));
+
+		assertFalse(rules.contains("lmdb-inner-join-bound-lookup"),
+				() -> "A right-local BIND target cannot be consumed as an external lookup key: " + rules);
+	}
+
+	@Test
+	void joinCommutationRejectsProjectedBindOutputConsumedBySubquery() {
+		StatementPattern outerSource = new StatementPattern(new Var("a"), new Var("p1", P1), new Var("value"));
+		Extension outerBind = new Extension(outerSource);
+		outerBind.addElement(new ExtensionElem(new Var("a"), "c"));
+		Projection outer = projection(outerBind, "a", "c");
+
+		Projection subquery = projection(
+				new StatementPattern(new Var("c"), new Var("p2", P2), new Var("subqueryValue")),
+				"c", "subqueryValue");
+		subquery.setVariableScopeChange(true);
+
+		List<String> rules = applicableRuleIds(new Join(outer, subquery));
+
+		assertFalse(rules.contains("join-commute"),
+				() -> "A BIND producer must remain before a subquery that consumes its output: " + rules);
 	}
 
 	@Test

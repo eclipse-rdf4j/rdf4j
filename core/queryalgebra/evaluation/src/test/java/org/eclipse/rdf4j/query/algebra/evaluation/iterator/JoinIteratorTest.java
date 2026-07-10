@@ -33,8 +33,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -86,6 +91,27 @@ public class JoinIteratorTest {
 			b.addBinding("x", vf.createLiteral("foo"));
 			testBindingSetAssignmentJoin(5, 5, b);
 		}
+	}
+
+	@Test
+	public void testJoinDoesNotPrebindRightLocalBindOutput() {
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(binding("c", "left")));
+
+		BindingSetAssignment rightSource = new BindingSetAssignment();
+		rightSource.setBindingSets(List.of(binding("a", "right")));
+		Extension rightBind = new Extension(rightSource, new ExtensionElem(new Var("a"), "c"));
+		ProjectionElemList elements = new ProjectionElemList();
+		elements.addElement(new ProjectionElem("a"));
+		elements.addElement(new ProjectionElem("c"));
+		Projection right = new Projection(rightBind, elements);
+		right.setSubquery(false);
+
+		Join join = new Join(left, right);
+		List<BindingSet> rows = Iterations.asList(evaluator.precompile(join).evaluate(EmptyBindingSet.getInstance()));
+
+		assertEquals(0, rows.size(),
+				"The left ?c must join-filter the independently produced BIND value, not be overwritten on the RHS");
 	}
 
 	@Test

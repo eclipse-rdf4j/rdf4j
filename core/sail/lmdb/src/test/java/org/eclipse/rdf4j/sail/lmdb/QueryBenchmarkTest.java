@@ -263,6 +263,20 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	public void optimizedExplainDoesNotChangeSubsequentSubSelectResults() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(sub_select)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+		awaitOptimizerPipeline();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var stream = connection.prepareTupleQuery(sub_select).evaluate().stream()) {
+			assertEquals(16035L, stream.count());
+		}
+	}
+
+	@Test
 	public void subSelectPlanKeepsTopGroupCardinalityBounded() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
