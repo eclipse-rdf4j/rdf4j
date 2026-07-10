@@ -55,17 +55,13 @@ final class PackedStatementList extends AbstractList<Statement> implements Rando
 			IRI predicate = statement.getPredicate();
 			Value object = statement.getObject();
 			Resource context = statement.getContext();
-			addValue(subject, valueIds, values);
-			quads[offset] = valueIds.get(subject);
-			addValue(predicate, valueIds, values);
-			quads[offset + 1] = valueIds.get(predicate);
-			addValue(object, valueIds, values);
-			quads[offset + 2] = valueIds.get(object);
+			quads[offset] = valueId(subject, valueIds, values);
+			quads[offset + 1] = valueId(predicate, valueIds, values);
+			quads[offset + 2] = valueId(object, valueIds, values);
 			if (context == null) {
 				quads[offset + 3] = 0;
 			} else {
-				addValue(context, valueIds, values);
-				quads[offset + 3] = valueIds.get(context);
+				quads[offset + 3] = valueId(context, valueIds, values);
 			}
 			contextConsumer.accept(context);
 			count++;
@@ -73,17 +69,20 @@ final class PackedStatementList extends AbstractList<Statement> implements Rando
 		return new PackedStatementList(values.toArray(Value[]::new), Arrays.copyOf(quads, count * 4), valueIds);
 	}
 
-	private static void addValue(Value value, ObjectIntHashMap<Value> valueIds, ArrayList<Value> values) {
-		if (valueIds.get(value) != 0) {
-			return;
+	private static int valueId(Value value, ObjectIntHashMap<Value> valueIds, ArrayList<Value> values) {
+		int existing = valueIds.get(value);
+		if (existing != 0) {
+			return existing;
 		}
 		if (value instanceof TripleTerm triple) {
-			addValue(triple.getSubject(), valueIds, values);
-			addValue(triple.getPredicate(), valueIds, values);
-			addValue(triple.getObject(), valueIds, values);
+			valueId(triple.getSubject(), valueIds, values);
+			valueId(triple.getPredicate(), valueIds, values);
+			valueId(triple.getObject(), valueIds, values);
 		}
-		valueIds.put(value, values.size());
+		int id = values.size();
+		valueIds.put(value, id);
 		values.add(value);
+		return id;
 	}
 
 	@Override
