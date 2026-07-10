@@ -192,7 +192,8 @@ public final class MemoGroup {
 			}
 			for (int i = entries.size() - 1; i >= 0; i--) {
 				Winner existing = entries.get(i);
-				if (sameDeliveredContext(existing, winner) && winner.cost().dominates(existing.cost())) {
+				if (sameDeliveredContext(existing, winner) && winner.cost().dominates(existing.cost())
+						&& !emergencyFallbackWouldRemoveLegalWinner(existing, winner)) {
 					entries.remove(i);
 					if (i < insertionPoint) {
 						insertionPoint--;
@@ -221,10 +222,17 @@ public final class MemoGroup {
 				Winner existing = entries.get(i);
 				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
 						&& !baselineBlocksRuleAlternative(existing, winner)
+						&& !emergencyFallbackBlocksLegalAlternative(existing, winner)
 						&& !finiteAnchorBoundInputAlternative(existing, winner)) {
 					return -1;
 				}
-				if (existing.cost().compareTo(winner.cost()) <= 0) {
+				boolean existingEmergency = dependsOnEmergencyFallback(existing);
+				boolean winnerEmergency = dependsOnEmergencyFallback(winner);
+				if (existingEmergency != winnerEmergency) {
+					if (!existingEmergency) {
+						insertionPoint = i + 1;
+					}
+				} else if (existing.cost().compareTo(winner.cost()) <= 0) {
 					insertionPoint = i + 1;
 				}
 			}
@@ -254,6 +262,24 @@ public final class MemoGroup {
 
 		private static boolean baselineBlocksRuleAlternative(Winner existing, Winner candidate) {
 			return isBaseline(existing) && !isBaseline(candidate);
+		}
+
+		private static boolean emergencyFallbackBlocksLegalAlternative(Winner existing, Winner candidate) {
+			return dependsOnEmergencyFallback(existing) && !dependsOnEmergencyFallback(candidate);
+		}
+
+		private static boolean emergencyFallbackWouldRemoveLegalWinner(Winner existing, Winner candidate) {
+			return !dependsOnEmergencyFallback(existing) && dependsOnEmergencyFallback(candidate);
+		}
+
+		private static boolean dependsOnEmergencyFallback(Winner winner) {
+			if (winner == null || winner.proofs() == null) {
+				return false;
+			}
+			return winner.proofs()
+					.stream()
+					.anyMatch(proof -> proof != null
+							&& "existing-algebra-emergency-fallback".equals(proof.ruleId()));
 		}
 
 		private static boolean finiteAnchorBoundInputAlternative(Winner existing, Winner candidate) {

@@ -196,6 +196,30 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void legalPhysicalWinnerOutranksCheaperEmergencyDependentWinner() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int groupId = memo.intern(pattern("s", "p", "o"));
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		WinnerKey key = OptimizationGoal.root().key(groupId);
+		RuleProof generic = new RuleProof("generic-physical-implementation", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("rdf4jIteratorImplementation"), "generic wrapper");
+		RuleProof emergency = new RuleProof("existing-algebra-emergency-fallback", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("emergencyFallback"), "opaque child");
+
+		Winner emergencyDependent = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
+				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(generic, emergency), true,
+				"opaque child fallback");
+		Winner legal = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
+				new CostVector(10, 10, 0, 0, 0, 1, 1), List.of(generic), false, "");
+
+		assertTrue(memo.addWinner(key, emergencyDependent, 8, true));
+		assertTrue(memo.addWinner(key, legal, 8, true),
+				"An emergency-dependent incumbent must not dominate a fully costed physical alternative");
+		assertSame(legal, memo.bestWinner(key).orElseThrow(),
+				"Emergency fallback is eligible only when no legal physical winner exists");
+	}
+
+	@Test
 	void missingPhysicalPropertyPreventsDominance() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		int groupId = memo.intern(pattern("s", "p", "o"));

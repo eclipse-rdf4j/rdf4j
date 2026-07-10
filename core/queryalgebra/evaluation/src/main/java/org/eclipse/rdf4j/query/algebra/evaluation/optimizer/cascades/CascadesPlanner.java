@@ -305,9 +305,6 @@ public final class CascadesPlanner {
 			if (added.isPresent()) {
 				Optional<Winner> winner = optimizeExpression(memo, added.get(), goal, state, false, false);
 				if (winner.isPresent()) {
-					if (markApproximate) {
-						state.markApproximate("seeded existing algebra winner after " + reason);
-					}
 					return winner;
 				}
 			}
@@ -574,11 +571,13 @@ public final class CascadesPlanner {
 		List<PlanProvenance> inputProvenance = inputWinners.stream()
 				.map(Winner::provenance)
 				.toList();
+		WinnerApproximation winnerApproximation = winnerApproximation(state, inputWinners, proofs);
 		PlanProvenance provenance = new PlanProvenance(expression.groupId(), expression.id(), expression.operator(),
 				ruleId, ruleKind, inputProvenance, estimate, cost, goal.requiredProperties(), delivered,
-				state.rejectionsFor(expression.groupId()), proofs, state.approximate, state.approximateReason);
-		Winner candidate = new Winner(expression, null, delivered, cost, proofs, state.approximate,
-				state.approximateReason, provenance);
+				state.rejectionsFor(expression.groupId()), proofs, winnerApproximation.approximate(),
+				winnerApproximation.reason());
+		Winner candidate = new Winner(expression, null, delivered, cost, proofs, winnerApproximation.approximate(),
+				winnerApproximation.reason(), provenance);
 		if (!memo.canAddWinner(winnerKey, candidate, boundedFrontierLimit,
 				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED)) {
 			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "dominated-or-trimmed");
@@ -592,8 +591,8 @@ public final class CascadesPlanner {
 		stampDoubleMetrics(plan, decisionMetrics);
 		LeoPlanCandidate physicalCandidate = planCandidate("candidate", ruleId, expression.tupleExpr(), cost);
 		stampLeoCandidateMetrics(plan, physicalCandidate, false);
-		Winner winner = new Winner(expression, plan, delivered, cost, proofs, state.approximate,
-				state.approximateReason, provenance);
+		Winner winner = new Winner(expression, plan, delivered, cost, proofs, winnerApproximation.approximate(),
+				winnerApproximation.reason(), provenance);
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
 				&& memo.winners(winnerKey).size() >= boundedFrontierLimit) {
 			state.markApproximate("bounded winner frontier reached for group " + expression.groupId());
@@ -612,6 +611,30 @@ public final class CascadesPlanner {
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
+	}
+
+	private static WinnerApproximation winnerApproximation(SearchState state, List<Winner> inputWinners,
+			List<RuleProof> proofs) {
+		if (state.approximate) {
+			return new WinnerApproximation(true, state.approximateReason);
+		}
+		for (Winner inputWinner : inputWinners) {
+			if (inputWinner != null && inputWinner.approximate()) {
+				return new WinnerApproximation(true, inputWinner.reason());
+			}
+		}
+		for (RuleProof proof : proofs) {
+			if (proof != null && EXISTING_ALGEBRA_EMERGENCY_FALLBACK_RULE.equals(proof.ruleId())) {
+				String reason = proof.reason() == null || proof.reason().isBlank()
+						? "existing algebra emergency fallback"
+						: "seeded existing algebra winner after " + proof.reason();
+				return new WinnerApproximation(true, reason);
+			}
+		}
+		return new WinnerApproximation(false, "");
+	}
+
+	private record WinnerApproximation(boolean approximate, String reason) {
 	}
 
 	private void observeLeoPlanCandidate(MemoExpr expression, String ruleId, CostVector cost, int candidateRank,
