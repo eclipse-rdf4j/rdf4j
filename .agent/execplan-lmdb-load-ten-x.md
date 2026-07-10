@@ -40,6 +40,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 05:46Z) Re-profiled compact `READ_COMMITTED` with macOS async-profiler and Linux Java 26 CPU-time JFR; both now rank the packed equality dictionary as the next shared hotspot.
 - [x] (2026-07-10 05:50Z) Replaced boxed dictionary nodes with collision-safe primitive open addressing; nine packed tests pass, NONE improves 10.19%, and both modes allocate 2.33 MB/op less.
 - [x] (2026-07-10 05:54Z) Tested and rejected four adjacent object-identity caches after they left allocation flat and regressed NONE/READ_COMMITTED to 98.083/157.492 ms/op.
+- [x] (2026-07-10 05:58Z) Tested and rejected custom contiguous value/encoding collectors; exact pre-sizing already removed growth, while helper overhead regressed both modes to 105.363/167.662 ms/op.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -141,6 +142,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Adjacent object identity is not predictable enough in the parsed Model to justify four field-specific cache branches per statement.
   Evidence: `profiles/lmdb-load-10x/adjacent-identity-cache/candidate.json` leaves allocation unchanged and regresses NONE/READ_COMMITTED from 92.354/145.334 to 98.083/157.492 ms/op. The production candidate was removed.
+
+- Observation: The packed `ArrayList` collectors are not the source of sampled array growth; they are exactly pre-sized and HotSpot optimizes them better than a custom recursive array collector.
+  Evidence: `profiles/lmdb-load-10x/contiguous-packed-values/candidate.json` leaves allocation unchanged and regresses NONE/READ_COMMITTED to 105.363/167.662 ms/op. The production candidate was removed.
 
 ## Decision Log
 
@@ -250,6 +254,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Reject adjacent identity caching and retain direct primitive-map lookup for every component.
   Rationale: The branch/state overhead is paid 2.45 million times, while useful adjacent identities are too sparse. The measured two-mode regression is larger than any plausible allocation-neutral upside.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject custom packed value arrays and retain exactly pre-sized `ArrayList` collectors.
+  Rationale: There is no measurable allocation to remove, and the JDK collection path inlines better. The next candidate must eliminate a whole traversal or encoding pass rather than rename an already contiguous backing array.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -390,3 +398,5 @@ Revision note (2026-07-10 05:46Z): Recorded the post-Changeset macOS and Linux p
 Revision note (2026-07-10 05:50Z): Recorded the retained primitive object-to-int dictionary, nine-test verification, and exact paired time/allocation result.
 
 Revision note (2026-07-10 05:54Z): Recorded and removed the correctness-tested adjacent identity cache after its exact paired regression.
+
+Revision note (2026-07-10 05:58Z): Recorded and removed the contiguous collector experiment after allocation-neutral regressions in both isolation modes.
