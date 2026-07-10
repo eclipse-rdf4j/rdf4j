@@ -39,8 +39,13 @@ record CorrelatedAntiExistsExactEstimate(double inputRows, double matchedRows, d
 record CorrelatedAntiProbePattern(StatementPattern pattern, ValueExpr condition) {
 }
 
+record CorrelatedAntiProbeBridge(StatementPattern firstPattern, StatementPattern secondPattern,
+		ValueExpr condition, String bridgeBinding) {
+}
+
 record CorrelatedAntiExistsExactCacheKey(int tripleStoreIdentity, long dataRevision,
-		Object inputFingerprint, Object antiProbeFingerprint, String sharedBinding) {
+		Object inputFingerprint, Object antiProbeFingerprint, String sharedBinding,
+		Map<String, Value> fixedBindings) {
 }
 
 record CorrelatedAntiProbeResult(boolean matched, long rhsRowsScanned) {

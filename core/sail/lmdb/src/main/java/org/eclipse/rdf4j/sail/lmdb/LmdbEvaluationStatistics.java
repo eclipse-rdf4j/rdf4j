@@ -1335,6 +1335,11 @@ class LmdbEvaluationStatistics
 
 	private CorrelatedAntiExistsExactEstimate estimateExactCorrelatedAntiExists(TupleExpr input, TupleExpr antiProbe,
 			double inputRows, Set<String> sharedBindings) {
+		return estimateExactCorrelatedAntiExists(input, antiProbe, inputRows, sharedBindings, Map.of());
+	}
+
+	private CorrelatedAntiExistsExactEstimate estimateExactCorrelatedAntiExists(TupleExpr input, TupleExpr antiProbe,
+			double inputRows, Set<String> sharedBindings, Map<String, Set<Value>> finiteBindingValues) {
 		if (tripleStore == null || valueStore == null || !(input instanceof StatementPattern inputPattern)
 				|| !isFiniteNonNegative(inputRows)
 				|| inputRows > CORRELATED_ANTI_EXISTS_EXACT_MAX_INPUT_ROWS
@@ -1342,14 +1347,27 @@ class LmdbEvaluationStatistics
 			return null;
 		}
 		CorrelatedAntiProbePattern antiPattern = correlatedAntiProbePattern(antiProbe);
-		if (antiPattern == null) {
+		CorrelatedAntiProbeBridge antiBridge = antiPattern == null
+				? correlatedAntiProbeBridge(antiProbe, sharedBindings.iterator().next())
+				: null;
+		if (antiPattern == null && antiBridge == null) {
 			return null;
 		}
 		String sharedBinding = sharedBindings.iterator().next();
 		Component inputSharedComponent = singleVariableComponent(inputPattern, sharedBinding);
-		Component antiSharedComponent = singleVariableComponent(antiPattern.pattern(), sharedBinding);
-		if (inputSharedComponent == null || antiSharedComponent == null
-				|| !conditionUsesOnlyPatternBindings(antiPattern.condition(), antiPattern.pattern())) {
+		StatementPattern firstAntiPattern = antiPattern == null ? antiBridge.firstPattern() : antiPattern.pattern();
+		ValueExpr antiCondition = antiPattern == null ? antiBridge.condition() : antiPattern.condition();
+		Component antiSharedComponent = singleVariableComponent(firstAntiPattern, sharedBinding);
+		Set<String> producedBindings = plannerBindingNames(firstAntiPattern.getBindingNames());
+		if (antiBridge != null) {
+			producedBindings.addAll(plannerBindingNames(antiBridge.secondPattern().getBindingNames()));
+		}
+		Map<String, Value> fixedBindings = exactConditionFixedBindings(antiCondition, producedBindings,
+				finiteBindingValues);
+		Set<String> availableBindings = new HashSet<>(producedBindings);
+		availableBindings.addAll(fixedBindings == null ? Set.of() : fixedBindings.keySet());
+		if (inputSharedComponent == null || antiSharedComponent == null || fixedBindings == null
+				|| !conditionUsesOnlyBindings(antiCondition, availableBindings)) {
 			return null;
 		}
 		// The scan below is fully determined by the two patterns, the condition and the committed store
@@ -1357,16 +1375,16 @@ class LmdbEvaluationStatistics
 		// contexts (one per candidate join prefix) don't re-execute the anti-join.
 		CorrelatedAntiExistsExactCacheKey cacheKey = new CorrelatedAntiExistsExactCacheKey(
 				System.identityHashCode(tripleStore), tripleStore.getDataRevision(),
-				factorFingerprint(inputPattern), factorFingerprint(antiProbe), sharedBinding);
+				factorFingerprint(inputPattern), factorFingerprint(antiProbe), sharedBinding, fixedBindings);
 		Optional<CorrelatedAntiExistsExactEstimate> cached = CORRELATED_ANTI_EXISTS_EXACT_CACHE.get(cacheKey);
 		if (cached != null) {
 			return cached.orElse(null);
 		}
 		DefaultEvaluationStrategy strategy = exactFilterEvaluationStrategy();
-		QueryValueEvaluationStep condition = antiPattern.condition() == null
+		QueryValueEvaluationStep condition = antiCondition == null
 				? null
-				: prepareExactFilterCondition(strategy, antiPattern.condition());
-		if (antiPattern.condition() != null && condition == null) {
+				: prepareExactFilterCondition(strategy, antiCondition);
+		if (antiCondition != null && condition == null) {
 			return null;
 		}
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
@@ -1394,8 +1412,11 @@ class LmdbEvaluationStatistics
 						long sharedId = row[inputSharedComponent.ordinal()];
 						Boolean matched = antiMatches.get(sharedId);
 						if (matched == null) {
-							CorrelatedAntiProbeResult result = exactAntiProbeMatches(txn, antiPattern.pattern(),
-									condition, strategy, sharedBinding, sharedId);
+							CorrelatedAntiProbeResult result = antiPattern == null
+									? exactAntiBridgeProbeMatches(txn, antiBridge, condition, strategy,
+											sharedBinding, sharedId, fixedBindings)
+									: exactAntiProbeMatches(txn, antiPattern.pattern(), condition, strategy,
+											sharedBinding, sharedId, fixedBindings);
 							if (result == null) {
 								return cacheExactCorrelatedAntiExists(cacheKey, null);
 							}
@@ -1440,7 +1461,7 @@ class LmdbEvaluationStatistics
 
 	private CorrelatedAntiProbeResult exactAntiProbeMatches(Txn txn, StatementPattern pattern,
 			QueryValueEvaluationStep condition, DefaultEvaluationStrategy strategy, String sharedBinding,
-			long sharedId) throws IOException {
+			long sharedId, Map<String, Value> fixedBindings) throws IOException {
 		PatternIds ids = patternIds(pattern, sharedBinding, sharedId);
 		if (ids == null) {
 			return null;
@@ -1458,8 +1479,73 @@ class LmdbEvaluationStatistics
 						continue;
 					}
 					rhsRowsScanned++;
-					if (condition == null || exactFilterConditionMatches(condition, strategy, pattern, row)) {
+					if (rhsRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS) {
+						return null;
+					}
+					if (condition == null || exactFilterConditionMatches(condition, strategy,
+							toBindingSet(pattern, row, fixedBindings))) {
 						return new CorrelatedAntiProbeResult(true, rhsRowsScanned);
+					}
+				}
+			}
+		}
+		return new CorrelatedAntiProbeResult(false, rhsRowsScanned);
+	}
+
+	private CorrelatedAntiProbeResult exactAntiBridgeProbeMatches(Txn txn, CorrelatedAntiProbeBridge bridge,
+			QueryValueEvaluationStep condition, DefaultEvaluationStrategy strategy, String sharedBinding,
+			long sharedId, Map<String, Value> fixedBindings) throws IOException {
+		PatternIds firstIds = patternIds(bridge.firstPattern(), sharedBinding, sharedId);
+		if (firstIds == null) {
+			return null;
+		}
+		if (firstIds.zeroRows()) {
+			return new CorrelatedAntiProbeResult(false, 0L);
+		}
+		Component firstBridgeComponent = singleVariableComponent(bridge.firstPattern(), bridge.bridgeBinding());
+		if (firstBridgeComponent == null) {
+			return null;
+		}
+		long rhsRowsScanned = 0L;
+		for (boolean firstExplicit : new boolean[] { true, false }) {
+			try (RecordIterator firstRecords = tripleStore.getTriples(txn, firstIds.subjectId(), firstIds.predicateId(),
+					firstIds.objectId(), firstIds.contextId(), firstExplicit)) {
+				long[] firstRow;
+				while ((firstRow = firstRecords.next()) != null) {
+					if (!matchesRepeatedVariableEquality(bridge.firstPattern(), firstRow)) {
+						continue;
+					}
+					rhsRowsScanned++;
+					if (rhsRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS) {
+						return null;
+					}
+					long bridgeId = firstRow[firstBridgeComponent.ordinal()];
+					PatternIds secondIds = patternIds(bridge.secondPattern(), bridge.bridgeBinding(), bridgeId);
+					if (secondIds == null) {
+						return null;
+					}
+					if (secondIds.zeroRows()) {
+						continue;
+					}
+					for (boolean secondExplicit : new boolean[] { true, false }) {
+						try (RecordIterator secondRecords = tripleStore.getTriples(txn, secondIds.subjectId(),
+								secondIds.predicateId(), secondIds.objectId(), secondIds.contextId(), secondExplicit)) {
+							long[] secondRow;
+							while ((secondRow = secondRecords.next()) != null) {
+								if (!matchesRepeatedVariableEquality(bridge.secondPattern(), secondRow)) {
+									continue;
+								}
+								rhsRowsScanned++;
+								if (rhsRowsScanned > CORRELATED_ANTI_EXISTS_EXACT_MAX_WORK_ROWS) {
+									return null;
+								}
+								MapBindingSet bindingSet = toBindingSet(bridge.firstPattern(), firstRow, fixedBindings);
+								addBindings(bindingSet, toBindingSet(bridge.secondPattern(), secondRow));
+								if (condition == null || exactFilterConditionMatches(condition, strategy, bindingSet)) {
+									return new CorrelatedAntiProbeResult(true, rhsRowsScanned);
+								}
+							}
+						}
 					}
 				}
 			}
@@ -1477,9 +1563,44 @@ class LmdbEvaluationStatistics
 		return null;
 	}
 
+	private CorrelatedAntiProbeBridge correlatedAntiProbeBridge(TupleExpr antiProbe, String sharedBinding) {
+		TupleExpr tupleExpr = antiProbe;
+		ValueExpr condition = null;
+		if (tupleExpr instanceof Filter filter) {
+			tupleExpr = filter.getArg();
+			condition = filter.getCondition();
+		}
+		List<TupleExpr> factors = LmdbJoinIslandConnectivity.flattenFactors(tupleExpr);
+		if (factors.size() != 2 || !(factors.get(0)instanceof StatementPattern left)
+				|| !(factors.get(1)instanceof StatementPattern right)) {
+			return null;
+		}
+		StatementPattern first = left;
+		StatementPattern second = right;
+		if (singleVariableComponent(first, sharedBinding) == null) {
+			first = right;
+			second = left;
+		}
+		if (singleVariableComponent(first, sharedBinding) == null
+				|| plannerBindingNames(second.getBindingNames()).contains(sharedBinding)) {
+			return null;
+		}
+		Set<String> bridgeBindings = plannerBindingNames(first.getBindingNames());
+		bridgeBindings.retainAll(plannerBindingNames(second.getBindingNames()));
+		bridgeBindings.remove(sharedBinding);
+		if (bridgeBindings.size() != 1) {
+			return null;
+		}
+		String bridgeBinding = bridgeBindings.iterator().next();
+		if (singleVariableComponent(first, bridgeBinding) == null
+				|| singleVariableComponent(second, bridgeBinding) == null) {
+			return null;
+		}
+		return new CorrelatedAntiProbeBridge(first, second, condition, bridgeBinding);
+	}
+
 	private boolean exactFilterConditionMatches(QueryValueEvaluationStep condition, DefaultEvaluationStrategy strategy,
-			StatementPattern pattern, long[] row) throws IOException {
-		BindingSet bindingSet = toBindingSet(pattern, row);
+			BindingSet bindingSet) {
 		try {
 			return strategy.isTrue(condition, bindingSet);
 		} catch (ValueExprEvaluationException e) {
@@ -1519,11 +1640,10 @@ class LmdbEvaluationStatistics
 		}, null);
 	}
 
-	private boolean conditionUsesOnlyPatternBindings(ValueExpr condition, StatementPattern pattern) {
+	private boolean conditionUsesOnlyBindings(ValueExpr condition, Set<String> bindingNames) {
 		if (condition == null) {
 			return true;
 		}
-		Set<String> bindingNames = plannerBindingNames(pattern.getBindingNames());
 		boolean[] supported = { true };
 		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -1544,13 +1664,72 @@ class LmdbEvaluationStatistics
 		return supported[0];
 	}
 
+	private Map<String, Value> exactConditionFixedBindings(ValueExpr condition, Set<String> producedBindings,
+			Map<String, Set<Value>> finiteBindingValues) {
+		if (condition == null) {
+			return Map.of();
+		}
+		Set<String> conditionBindings = new LinkedHashSet<>();
+		boolean[] supported = { true };
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (supported[0] && !var.hasValue() && var.getName() != null) {
+					conditionBindings.add(var.getName());
+				}
+			}
+
+			@Override
+			public void meet(Exists exists) {
+				supported[0] = false;
+			}
+		});
+		if (!supported[0]) {
+			return null;
+		}
+		conditionBindings.removeAll(producedBindings);
+		if (conditionBindings.isEmpty()) {
+			return Map.of();
+		}
+		if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
+			return null;
+		}
+		Map<String, Value> fixedBindings = new LinkedHashMap<>();
+		for (String bindingName : conditionBindings) {
+			Set<Value> values = finiteBindingValues.get(bindingName);
+			if (values == null || values.size() != 1) {
+				return null;
+			}
+			fixedBindings.put(bindingName, values.iterator().next());
+		}
+		return Map.copyOf(fixedBindings);
+	}
+
 	private BindingSet toBindingSet(StatementPattern pattern, long[] row) throws IOException {
+		return toBindingSet(pattern, row, Map.of());
+	}
+
+	private MapBindingSet toBindingSet(StatementPattern pattern, long[] row, Map<String, Value> fixedBindings)
+			throws IOException {
 		MapBindingSet bindingSet = new MapBindingSet(4);
 		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleStore.SUBJ_IDX]);
 		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleStore.PRED_IDX]);
 		addBinding(bindingSet, pattern.getObjectVar(), row[TripleStore.OBJ_IDX]);
 		addBinding(bindingSet, pattern.getContextVar(), row[TripleStore.CONTEXT_IDX]);
+		for (Map.Entry<String, Value> entry : fixedBindings.entrySet()) {
+			if (!bindingSet.hasBinding(entry.getKey())) {
+				bindingSet.addBinding(entry.getKey(), entry.getValue());
+			}
+		}
 		return bindingSet;
+	}
+
+	private void addBindings(MapBindingSet target, BindingSet source) {
+		for (String bindingName : source.getBindingNames()) {
+			if (!target.hasBinding(bindingName)) {
+				target.addBinding(bindingName, source.getValue(bindingName));
+			}
+		}
 	}
 
 	private void addBinding(MapBindingSet bindingSet, Var var, long valueId) throws IOException {
@@ -2183,8 +2362,14 @@ class LmdbEvaluationStatistics
 
 	private FilterCostApplication applyOrderedCostFilter(FilterConstraint filter, Set<String> boundVarsBefore,
 			double inputRows, List<TupleExpr> prefixFactors) {
+		Map<String, Set<Value>> prefixFiniteBindingValues = new HashMap<>();
+		for (TupleExpr prefixFactor : prefixFactors) {
+			addFiniteBindingValues(prefixFiniteBindingValues, prefixFactor);
+		}
+		Map<String, Set<Value>> finiteBindingValues = finiteBindingValuesForStep(prefixFiniteBindingValues,
+				boundVarsBefore);
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(boundVarsBefore,
-				inputRows, Double.NaN, true, true, Map.of(), prefixFactors);
+				inputRows, Double.NaN, true, true, finiteBindingValues, prefixFactors);
 		Optional<JoinFactorCostModel.FilterCostEstimate> estimate = estimateFilterCost(filter, context);
 		if (estimate.isPresent()) {
 			JoinFactorCostModel.FilterCostEstimate filterEstimate = estimate.get();
@@ -2442,7 +2627,7 @@ class LmdbEvaluationStatistics
 		Set<String> sharedBindings = plannerBindingNames(inputPattern.getAssuredBindingNames());
 		sharedBindings.retainAll(antiBindings);
 		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(inputPattern, antiProbe,
-				inputRows, sharedBindings);
+				inputRows, sharedBindings, context.getFiniteBindingValues());
 		if (exactEstimate == null) {
 			Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator == null
 					? Optional.empty()
@@ -4313,7 +4498,7 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(filter.getArg(),
-				antiProbe, inputRows, sharedBindings);
+				antiProbe, inputRows, sharedBindings, finiteBindingValues);
 		if (exactEstimate == null && sketchBasedJoinEstimator != null) {
 			Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator
 					.estimateOmniCorrelatedAntiProbe(filter.getArg(), antiProbe, sharedBindings, inputRows);
