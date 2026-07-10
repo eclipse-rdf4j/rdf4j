@@ -39,6 +39,7 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 - [x] (2026-07-10 05:34Z) Deferred `READ_COMMITTED` hash-model construction with an owned compact approval sequence; all sail-base tests pass and RC improves 8.47% with 22.09 MB/op less allocation.
 - [x] (2026-07-10 05:46Z) Re-profiled compact `READ_COMMITTED` with macOS async-profiler and Linux Java 26 CPU-time JFR; both now rank the packed equality dictionary as the next shared hotspot.
 - [x] (2026-07-10 05:50Z) Replaced boxed dictionary nodes with collision-safe primitive open addressing; nine packed tests pass, NONE improves 10.19%, and both modes allocate 2.33 MB/op less.
+- [x] (2026-07-10 05:54Z) Tested and rejected four adjacent object-identity caches after they left allocation flat and regressed NONE/READ_COMMITTED to 98.083/157.492 ms/op.
 - [ ] Rank hotspots by end-to-end share and implement one focused optimization at a time, adding a failing correctness test before behavior changes and committing every benchmark-confirmed improvement.
 - [ ] Repeat paired benchmarks and both profiling modes until `NONE <= 78.10 ms/op` and `READ_COMMITTED <= 83.11 ms/op` without append mode.
 - [ ] Run focused and complete verification, document remaining unrelated failures, and record the final benchmark/profile comparison.
@@ -137,6 +138,9 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Observation: Primitive open addressing converts the profiled dictionary overhead into a repeatable NONE gain but does not remove READ_COMMITTED's remaining upstream traversal cost.
   Evidence: `profiles/lmdb-load-10x/primitive-packed-value-map/candidate.json` improves NONE from 102.831 to 92.354 ms/op with 89.284-96.037 ms measurements; READ_COMMITTED is statistically neutral at 145.334 ms/op. Both allocate about 2.33 MB/op less.
+
+- Observation: Adjacent object identity is not predictable enough in the parsed Model to justify four field-specific cache branches per statement.
+  Evidence: `profiles/lmdb-load-10x/adjacent-identity-cache/candidate.json` leaves allocation unchanged and regresses NONE/READ_COMMITTED from 92.354/145.334 to 98.083/157.492 ms/op. The production candidate was removed.
 
 ## Decision Log
 
@@ -242,6 +246,10 @@ The result is visible by running `DatagovLoadIsolationBenchmark.loadDatagovFileS
 
 - Decision: Keep `ObjectIntHashMap` as the packed local dictionary and next remove the separate `ArrayList<Value>` growth/indirection without changing equality semantics.
   Rationale: The exact paired result gives a stable 10.19% NONE improvement, neutral RC behavior, and lower allocation in both. The map remains collision-safe and uses an existing dependency, so it is a strictly better retained checkpoint.
+  Date/Author: 2026-07-10 / Codex.
+
+- Decision: Reject adjacent identity caching and retain direct primitive-map lookup for every component.
+  Rationale: The branch/state overhead is paid 2.45 million times, while useful adjacent identities are too sparse. The measured two-mode regression is larger than any plausible allocation-neutral upside.
   Date/Author: 2026-07-10 / Codex.
 
 ## Outcomes & Retrospective
@@ -380,3 +388,5 @@ Revision note (2026-07-10 05:34Z): Recorded the TDD-verified compact Changeset r
 Revision note (2026-07-10 05:46Z): Recorded the post-Changeset macOS and Linux profile matrix and selected primitive open addressing as the next shared dictionary experiment.
 
 Revision note (2026-07-10 05:50Z): Recorded the retained primitive object-to-int dictionary, nine-test verification, and exact paired time/allocation result.
+
+Revision note (2026-07-10 05:54Z): Recorded and removed the correctness-tested adjacent identity cache after its exact paired regression.
