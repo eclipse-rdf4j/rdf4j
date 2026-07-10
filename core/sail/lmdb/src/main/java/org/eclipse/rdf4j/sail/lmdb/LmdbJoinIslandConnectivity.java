@@ -62,7 +62,7 @@ final class LmdbJoinIslandConnectivity {
 	static boolean connectedJoinProviderCanOwn(TupleExpr tupleExpr) {
 		Island island = joinIsland(tupleExpr);
 		return island != null && island.factorCount() > 1 && island.supported()
-				&& island.runtimeFactorCount() > 1
+				&& island.runtimeFactorCount() > 0
 				&& island.connectedComponentCount() <= 1;
 	}
 
@@ -101,7 +101,8 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr == null) {
 			return true;
 		}
-		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)) {
+		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)
+				&& !pathDerivedDisconnectedIsland(tupleExpr)) {
 			return false;
 		}
 		if (lmdbJoinProviderAvailable && nestedFilterJoinSegmentCanOwn(tupleExpr)) {
@@ -117,6 +118,35 @@ final class LmdbJoinIslandConnectivity {
 			return false;
 		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
+	}
+
+	private static boolean pathDerivedDisconnectedIsland(TupleExpr tupleExpr) {
+		if (connectedJoinProviderCanOwn(tupleExpr)) {
+			return false;
+		}
+		if (containsPropertyPath(tupleExpr)) {
+			return true;
+		}
+		for (TupleExpr factor : flattenFactors(tupleExpr)) {
+			for (String name : runtimeVars(factor)) {
+				if (name.startsWith("_anon_path_")) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean containsPropertyPath(TupleExpr tupleExpr) {
+		if (propertyPath(tupleExpr)) {
+			return true;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
+			if (containsPropertyPath(child)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean anchorableFiniteFilterProviderCanOwn(TupleExpr tupleExpr) {

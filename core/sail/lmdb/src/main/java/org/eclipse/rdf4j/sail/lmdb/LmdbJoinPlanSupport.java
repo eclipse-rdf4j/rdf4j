@@ -80,7 +80,7 @@ final class LmdbJoinPlanSupport {
 		if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
 			return false;
 		}
-		Set<String> sharedBindings = plannerBindingNames(join.getLeftArg().getAssuredBindingNames());
+		Set<String> sharedBindings = new HashSet<>(plannerBindingNames(join.getLeftArg().getAssuredBindingNames()));
 		sharedBindings.retainAll(plannerBindingNames(join.getRightArg().getBindingNames()));
 		if (sharedBindings.isEmpty()) {
 			return false;

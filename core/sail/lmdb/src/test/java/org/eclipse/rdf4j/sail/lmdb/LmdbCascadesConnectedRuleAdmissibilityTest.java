@@ -154,6 +154,47 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
+	void innerBoundLookupRejectsBroadLeftComponentAnchoredByRightPropertyPath() {
+		IRI root = VF.createIRI("urn:root");
+		StatementPattern broadType = new StatementPattern(new Var("prop"), new Var("type", P1),
+				new Var("propertyClass", VF.createIRI("urn:Property")));
+		StatementPattern broadValue = new StatementPattern(new Var("prop"), new Var("value", P2),
+				new Var("propertyValue"));
+		TupleExpr broadLeft = new Join(broadType, broadValue);
+		StatementPattern startBinder = new StatementPattern(new Var("root", root), new Var("startPredicate", P1),
+				new Var("start"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("start"),
+				new StatementPattern(new Var("stepSubject"), new Var("pathPredicate", P2),
+						new Var("stepObject")),
+				new Var("prop"), 0L);
+		TupleExpr anchoredPath = new Join(startBinder, path);
+
+		List<String> rules = applicableRuleIds(new Join(broadLeft, anchoredPath));
+
+		assertFalse(rules.contains("lmdb-inner-join-bound-lookup"),
+				() -> "The constant-rooted path must be compared from its selective endpoint before broad ?prop rows: "
+						+ rules);
+	}
+
+	@Test
+	void genericImplementationOnlyBridgesPathDerivedDisconnectedIslands() {
+		Join ordinaryDisconnected = new Join(
+				new StatementPattern(new Var("left"), new Var("p1", P1), new Var("leftValue")),
+				new StatementPattern(new Var("right"), new Var("p2", P2), new Var("rightValue")));
+		Join pathDerivedDisconnected = new Join(
+				new StatementPattern(new Var("_anon_path_start"), new Var("p1", P1),
+						new Var("_anon_path_end")),
+				new StatementPattern(new Var("right"), new Var("p2", P2), new Var("rightValue")));
+
+		assertTrue(LmdbJoinIslandConnectivity.joinProviderCanOwn(ordinaryDisconnected));
+		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(ordinaryDisconnected));
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(ordinaryDisconnected, true, true),
+				"Ordinary disconnected islands must not bypass LMDB join ownership");
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(pathDerivedDisconnected, true, true),
+				"Decomposed path factors still need a generic bridge between disconnected memo groups");
+	}
+
+	@Test
 	void joinCommutationRejectsProjectedBindOutputConsumedBySubquery() {
 		StatementPattern outerSource = new StatementPattern(new Var("a"), new Var("p1", P1), new Var("value"));
 		Extension outerBind = new Extension(outerSource);
@@ -183,6 +224,23 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		assertTrue(LmdbJoinPlanSupport.runtimeBindingNames(right).isEmpty());
 		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(groundOnlyJoin));
 		assertTrue(LmdbJoinIslandConnectivity.disconnectedJoinIsland(groundOnlyJoin));
+	}
+
+	@Test
+	void connectedProviderCoversSingleRuntimeFactorWithGroundFilter() {
+		IRI subject = VF.createIRI("urn:aas:DriveUnitAAS:DU-1-1");
+		StatementPattern groundType = new StatementPattern(new Var("subject", subject), new Var("type", P1),
+				new Var("aasClass", VF.createIRI("urn:AssetAdministrationShell")));
+		StatementPattern runtimeLookup = new StatementPattern(new Var("subject", subject), new Var("submodel", P2),
+				new Var("submodelNode"));
+		Join join = new Join(groundType, runtimeLookup);
+
+		List<String> rules = applicableRuleIds(join);
+
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(join));
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
+				() -> "The runtime lookup should seed the connected plan before its ground filter: " + rules);
+		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
 	@Test

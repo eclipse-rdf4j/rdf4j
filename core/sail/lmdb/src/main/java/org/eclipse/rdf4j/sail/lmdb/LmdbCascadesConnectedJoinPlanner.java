@@ -142,7 +142,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
 		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
-		if (runtimeFactorIndices.size() < 2) {
+		if (runtimeFactorIndices.isEmpty()) {
 			return Optional.empty();
 		}
 		int fullMask = maskFor(runtimeFactorIndices);
@@ -316,7 +316,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
 		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
 		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
-		if (remaining.size() < 2) {
+		if (remaining.isEmpty()) {
 			trace.add("greedy reject runtimeFactorCount=" + remaining.size());
 			return Optional.empty();
 		}
