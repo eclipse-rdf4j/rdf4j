@@ -85,6 +85,40 @@ public class DynamicModelTest {
 		assertThat(statements).isInstanceOf(Map.class);
 	}
 
+	@Test
+	void mapBackedModelCanonicalizesEqualTerms() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource firstSubject = valueFactory.createIRI("urn:subject");
+		Resource equalSubject = valueFactory.createIRI("urn:subject");
+		IRI firstPredicate = valueFactory.createIRI("urn:predicate");
+		IRI equalPredicate = valueFactory.createIRI("urn:predicate");
+		Resource firstContext = valueFactory.createIRI("urn:context");
+		Resource equalContext = valueFactory.createIRI("urn:context");
+		var firstObject = valueFactory.createLiteral("object");
+		var equalObject = valueFactory.createLiteral("object");
+
+		assertThat(firstSubject).isNotSameAs(equalSubject);
+		assertThat(firstPredicate).isNotSameAs(equalPredicate);
+		assertThat(firstObject).isNotSameAs(equalObject);
+		assertThat(firstContext).isNotSameAs(equalContext);
+
+		model.add(firstSubject, firstPredicate, firstObject, firstContext);
+		model.add(equalSubject, equalPredicate, valueFactory.createLiteral("other"), equalContext);
+		model.add(valueFactory.createIRI("urn:other-subject"), equalPredicate, equalObject,
+				valueFactory.createIRI("urn:other-context"));
+
+		Iterator<Statement> iterator = model.iterator();
+		Statement first = iterator.next();
+		Statement second = iterator.next();
+		Statement third = iterator.next();
+		assertThat(second.getSubject()).isSameAs(first.getSubject());
+		assertThat(second.getPredicate()).isSameAs(first.getPredicate());
+		assertThat(second.getContext()).isSameAs(first.getContext());
+		assertThat(third.getPredicate()).isSameAs(first.getPredicate());
+		assertThat(third.getObject()).isSameAs(first.getObject());
+	}
+
 //	@Test
 //	void largeLinkedHashStatementSetCanBeReusedAcrossUpgrades() {
 //		int originalMinSize = DynamicModel.LARGE_STATEMENT_SET_MIN_SIZE;

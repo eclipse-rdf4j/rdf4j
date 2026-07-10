@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 
 /**
@@ -74,6 +76,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private static final StripedCleaner cleaner = new StripedCleaner();
 
 	private Map<Statement, Statement> statements;
+	private Map<Value, Value> canonicalValues = new HashMap<>();
 	private Set<Resource> addedContexts = null;
 	private Set<Namespace> namespaces = null;
 	private long statementVersion;
@@ -239,7 +242,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
-				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
+				Statement statement = canonicalStatement(subj, pred, obj, context);
 				initializeAddedContextsIfNeeded().add(context);
 				added = added | statements.put(statement, statement) == null;
 			}
@@ -396,6 +399,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
+			statement = canonicalStatement(statement);
 			initializeAddedContextsIfNeeded().add(statement.getContext());
 			boolean changed = statements.put(statement, statement) == null;
 			markStatementsChangedIf(changed);
@@ -438,6 +442,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			boolean changed = false;
 			for (Statement statement : c) {
 				Objects.requireNonNull(statement);
+				statement = canonicalStatement(statement);
 				initializeAddedContextsIfNeeded().add(statement.getContext());
 				changed = changed | statements.put(statement, statement) == null;
 			}
@@ -487,6 +492,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			if (!statements.isEmpty()) {
 				statements.clear();
+				canonicalValues.clear();
 				invalidateAddedContexts();
 				markStatementsChanged();
 			}
@@ -774,7 +780,48 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				namespaces.forEach(tempModel::setNamespace);
 			}
 			model = tempModel;
+			canonicalValues = null;
 		}
+	}
+
+	private Statement canonicalStatement(Statement statement) {
+		Resource subject = (Resource) canonicalValue(statement.getSubject());
+		IRI predicate = (IRI) canonicalValue(statement.getPredicate());
+		Value object = canonicalValue(statement.getObject());
+		Resource context = (Resource) canonicalValue(statement.getContext());
+		if (subject == statement.getSubject() && predicate == statement.getPredicate()
+				&& object == statement.getObject() && context == statement.getContext()) {
+			return statement;
+		}
+		return SimpleValueFactory.getInstance().createStatement(subject, predicate, object, context);
+	}
+
+	private Statement canonicalStatement(Resource subject, IRI predicate, Value object, Resource context) {
+		return SimpleValueFactory.getInstance()
+				.createStatement(
+						(Resource) canonicalValue(subject),
+						(IRI) canonicalValue(predicate),
+						canonicalValue(object),
+						(Resource) canonicalValue(context));
+	}
+
+	private Value canonicalValue(Value value) {
+		if (value == null) {
+			return null;
+		}
+		if (canonicalValues == null) {
+			canonicalValues = new HashMap<>();
+		}
+		if (value instanceof TripleTerm triple) {
+			Resource subject = (Resource) canonicalValue(triple.getSubject());
+			IRI predicate = (IRI) canonicalValue(triple.getPredicate());
+			Value object = canonicalValue(triple.getObject());
+			if (subject != triple.getSubject() || predicate != triple.getPredicate() || object != triple.getObject()) {
+				value = SimpleValueFactory.getInstance().createTripleTerm(subject, predicate, object);
+			}
+		}
+		Value existing = canonicalValues.putIfAbsent(value, value);
+		return existing == null ? value : existing;
 	}
 
 	static LinkedHashMap<Statement, Statement> borrowLargeStatementSet() {
@@ -881,6 +928,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private void readObject(ObjectInputStream objectInputStream) throws IOException, ClassNotFoundException {
 		objectInputStream.defaultReadObject();
+		if (model == null && canonicalValues == null) {
+			canonicalValues = new HashMap<>();
+			for (Statement statement : statements.values()) {
+				canonicalValue(statement.getSubject());
+				canonicalValue(statement.getPredicate());
+				canonicalValue(statement.getObject());
+				canonicalValue(statement.getContext());
+			}
+		}
 		initializeAddedContextsIfNeeded();
 	}
 
