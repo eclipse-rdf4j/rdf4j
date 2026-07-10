@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -167,6 +169,14 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 
 		assertCompleteSurface(probe.omniSurface(), "root", "finite-filter-probe");
 		assertEquals(probe.omniSurface().samplingProbability(), probe.samplingProbability(), 0.0d);
+		assertEquals(48.0d, probe.outputRows(), 0.0d);
+		assertFalse(probe.exactZero());
+
+		OmniFiniteFilterProbeEstimate subRowProbe = estimator
+				.estimateOmniFiniteFilterProbe(rootStatus, condition, 0.1d)
+				.orElseThrow();
+		assertTrue(subRowProbe.outputRows() > 0.0d);
+		assertFalse(subRowProbe.exactZero());
 	}
 
 	@Test
@@ -185,6 +195,22 @@ class SketchBasedJoinEstimatorOmniSurfaceRetentionTest {
 		assertCompleteSurface(anti.omniSurface(), "root", "correlated-anti-probe");
 		assertEquals(semi.omniSurface().samplingProbability(), semi.samplingProbability(), 0.0d);
 		assertEquals(anti.omniSurface().samplingProbability(), anti.samplingProbability(), 0.0d);
+	}
+
+	@Test
+	void correlatedAntiProbeTraversesFilteredBridgeChain() {
+		StatementPattern rootType = fixedObjectPattern("root", TYPE, ENTITY);
+		StatementPattern rootEdge = pattern("root", EDGE, "middle");
+		StatementPattern middleFlag = pattern("middle", FLAG, "flag");
+		Filter filteredBridge = new Filter(new Join(rootEdge, middleFlag),
+				new Compare(new Var("flag"), new ValueConstant(ACTIVE), Compare.CompareOp.EQ));
+
+		OmniCorrelatedProbeEstimate anti = estimator
+				.estimateOmniCorrelatedAntiProbe(rootType, filteredBridge, Set.of("root"), 64.0d)
+				.orElseThrow();
+
+		assertCompleteSurface(anti.omniSurface(), "root", "correlated-anti-probe");
+		assertTrue(anti.confidence() <= 0.50d);
 	}
 
 	@Test

@@ -689,6 +689,57 @@ class OmniJoinEstimatorTest {
 	}
 
 	@Test
+	void intersectedPostingMassSurvivesLiveByteAndMappedSnapshots(
+			@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator writer = newEstimator(64, 1, 8);
+		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.SUBJECT_STAR);
+		long predicate = OmniJoinEstimator.stableHash("mapped-intersection-predicate");
+		long selectedObject = OmniJoinEstimator.stableHash("mapped-intersection-object");
+		for (int index = 0; index < 40; index++) {
+			long witness = OmniJoinEstimator.stableHash("mapped-intersection-witness:" + index);
+			relation.updateStatic(ATTR_P, predicate, witness, 1.0d);
+			if (index < 8) {
+				relation.updateStatic(ATTR_O, selectedObject, witness, 1.0d);
+			}
+		}
+
+		OmniWitnessSet live = intersectStatic(writer, predicate, selectedObject);
+		OmniJoinEstimator byteReader = newEstimator(64, 1, 8);
+		byteReader.loadFromByteArray(writer.toByteArray());
+		OmniWitnessSet bytePredicate = staticWitnesses(byteReader, ATTR_P, predicate);
+		OmniWitnessSet byteObject = staticWitnesses(byteReader, ATTR_O, selectedObject);
+		OmniWitnessSet bytes = intersectStatic(byteReader, predicate, selectedObject);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 23L);
+			OmniJoinEstimator mappedReader = newEstimator(64, 1, 8);
+			try {
+				mappedReader.loadMappedSnapshot(store.openSnapshot((byte) 0));
+				OmniWitnessSet mapped = intersectStatic(mappedReader, predicate, selectedObject);
+				assertEquals(8.0d, live.estimatedRows(), 0.0d);
+				assertEquals(40.0d, bytePredicate.estimatedRows(), 1.0e-6d,
+						() -> "predicate=" + bytePredicate);
+				assertEquals(8.0d, byteObject.estimatedRows(), 0.0d, () -> "object=" + byteObject);
+				assertEquals(live.estimatedRows(), bytes.estimatedRows(), 0.0d);
+				assertEquals(live.estimatedRows(), mapped.estimatedRows(), 0.0d);
+			} finally {
+				mappedReader.clear();
+			}
+		}
+	}
+
+	private static OmniWitnessSet intersectStatic(OmniJoinEstimator estimator, long predicate, long object) {
+		OmniWitnessSet predicateWitnesses = staticWitnesses(estimator, ATTR_P, predicate);
+		OmniWitnessSet objectWitnesses = staticWitnesses(estimator, ATTR_O, object);
+		return estimator.intersect(List.of(predicateWitnesses, objectWitnesses));
+	}
+
+	private static OmniWitnessSet staticWitnesses(OmniJoinEstimator estimator, byte attribute, long value) {
+		return estimator.probeStatic(estimator.relation(OmniRelation.SUBJECT_STAR), attribute,
+				OmniJoinEstimator.Predicate.equalHash(value));
+	}
+
+	@Test
 	void cohortWitnessesSurviveByteArrayRoundTrip() throws Exception {
 		OmniJoinEstimator writer = newCohortEstimator(64, 1, 1, 4, 1);
 		OmniJoinEstimator.Relation relation = writer.relation(OmniRelation.STATEMENT);
@@ -1090,6 +1141,40 @@ class OmniJoinEstimatorTest {
 
 			assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(codeA).next(),
 					"Clearing a mapped Omni estimator must close the mmap snapshot it owns");
+		}
+	}
+
+	@Test
+	void clearWaitsForMappedSnapshotCriticalSection(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+		OmniJoinEstimator writer = newEstimator(64, 4, 64);
+		long value = OmniJoinEstimator.stableHash("lifecycle-value");
+		writer.relation(OmniRelation.STATEMENT)
+				.updateStatic(ATTR_P, value, OmniJoinEstimator.stableHash("lifecycle-witness"), 1.0d);
+
+		try (OmniWitnessPersistenceStore store = OmniWitnessPersistenceStore.open(tempDir)) {
+			store.writeSnapshot((byte) 0, writer, 9L);
+			MappedOmniJoinSnapshot snapshot = store.openSnapshot((byte) 0);
+			MappedWitnessIndex mappedIndex = snapshot.attributes()
+					.get(OmniRelation.STATEMENT)
+					.get(OmniAttributeRef.staticAttribute(ATTR_P));
+			OmniJoinEstimator reader = newEstimator(64, 4, 64);
+			reader.loadMappedSnapshot(snapshot);
+
+			Thread clearThread = new Thread(reader::clear, "OmniJoinEstimator-Clear");
+			synchronized (reader) {
+				clearThread.start();
+				long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2L);
+				while (clearThread.isAlive() && clearThread.getState() != Thread.State.BLOCKED
+						&& System.nanoTime() < deadline) {
+					Thread.onSpinWait();
+				}
+				assertEquals(Thread.State.BLOCKED, clearThread.getState(),
+						"Mapped snapshot close must wait for an active snapshot critical section");
+				assertTrue(mappedIndex.cursor(value).next(), "Mapped cursor must remain readable inside the section");
+			}
+			clearThread.join(java.util.concurrent.TimeUnit.SECONDS.toMillis(2L));
+			assertFalse(clearThread.isAlive());
+			assertThrows(IllegalStateException.class, () -> mappedIndex.cursor(value).next());
 		}
 	}
 

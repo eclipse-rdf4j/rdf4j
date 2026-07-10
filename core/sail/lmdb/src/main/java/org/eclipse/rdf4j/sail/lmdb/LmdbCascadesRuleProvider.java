@@ -3144,7 +3144,10 @@ final class LmdbCascadesRuleProvider {
 				double finalRows, String details) {
 
 			static OptionCandidate original(CostedOption option) {
-				return valid("original", option.plan(), option.comparableWork(), "baseline");
+				String details = "order="
+						+ LmdbGuaranteeSemanticPrefixPlanner.orderSummary(option.plan().getOrderedArgs())
+						+ " steps=" + LmdbGuaranteeSemanticPrefixPlanner.stepSummary(option.plan());
+				return valid("original", option.plan(), option.comparableWork(), "baseline", details);
 			}
 
 			static OptionCandidate valid(String name, JoinOrderPlanner.JoinOrderPlan plan, double comparableWork) {

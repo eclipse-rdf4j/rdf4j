@@ -1018,7 +1018,8 @@ class LmdbEvaluationStatistics
 
 	private Optional<StatisticsEstimate> finiteOmniFilterEstimate(TupleExpr input, ValueExpr condition,
 			StatisticsEstimate inputEstimate) {
-		if (input == null || condition == null || inputEstimate == null || sketchBasedJoinEstimator == null) {
+		if (input == null || condition == null || inputEstimate == null || inputEstimate.rows() <= 0.0d
+				|| sketchBasedJoinEstimator == null) {
 			return Optional.empty();
 		}
 		Optional<OmniFiniteFilterProbeEstimate> omniEstimate = sketchBasedJoinEstimator
@@ -1986,7 +1987,9 @@ class LmdbEvaluationStatistics
 					"ROBUST_NOT_READY", null,
 					List.of("rejected: sketch estimator not ready"));
 		}
-		Optional<JoinOrderPlan> plan = orderedCostPlan(args, initiallyBoundVars, algorithm, deferredFilters);
+		Optional<JoinOrderPlan> plan = LmdbJoinOrderEnumerator.enumerate(args, initiallyBoundVars, algorithm,
+				orderedArgs -> orderedCostPlan(orderedArgs, initiallyBoundVars, algorithm, deferredFilters))
+				.map(selected -> annotateEnumeratedJoinOrder(selected, algorithm));
 		if (plan.isEmpty()) {
 			return PlanningAttempt.rejected(LMDB_ORDERED_COST_PLANNER_ID, algorithm, LMDB_ORDERED_COST_PATH, null,
 					List.of("rejected: ordered cost plan unavailable"));
@@ -1995,6 +1998,17 @@ class LmdbEvaluationStatistics
 		PlanningAttempt selectedAttempt = PlanningAttempt.planned(enrichedPlan, LMDB_ORDERED_COST_PLANNER_ID,
 				algorithm, LMDB_ORDERED_COST_PATH, enrichedPlan.getDiagnostics());
 		return withDecisionTrace(selectedAttempt, selectedPlannerTrace(selectedAttempt));
+	}
+
+	private JoinOrderPlan annotateEnumeratedJoinOrder(JoinOrderPlan plan, Algorithm algorithm) {
+		Map<String, String> stringMetrics = new LinkedHashMap<>(plan.getSummaryStringMetrics());
+		stringMetrics.put(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+				"costModel=lmdb, joinOrder="
+						+ (algorithm == Algorithm.DYNAMIC_PROGRAMMING ? "dynamic-programming" : "greedy"));
+		List<String> diagnostics = new ArrayList<>(plan.getDiagnostics());
+		diagnostics.add("join-order-search: algorithm=" + algorithm + " selected=" + plan.getOrderedArgs().size());
+		return new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(), plan.getEstimatedTotalWork(),
+				diagnostics, stringMetrics, plan.getSummaryDoubleMetrics(), plan.getSteps());
 	}
 
 	private PlanningAttempt withDecisionTrace(PlanningAttempt attempt, String decisionTrace) {
@@ -2096,6 +2110,17 @@ class LmdbEvaluationStatistics
 									prefixOutputRows, filterPrefixFactors);
 							prefixOutputRows = filterCost.outputRows();
 							stepWorkRows += filterCost.workRows();
+							String filterSource = filterCost.stringMetrics()
+									.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+											filter.getSelectivitySource() == null ? "unknown"
+													: filter.getSelectivitySource());
+							double appliedPassRatio = filterCost.doubleMetrics()
+									.getOrDefault(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
+											filter.getEstimatedPassRatio());
+							String unlockedFilter = filter.getDebugLabel() + " passRatio="
+									+ appliedPassRatio + " source=" + filterSource;
+							stringMetrics.merge(TelemetryMetricNames.UNLOCKED_FILTERS, unlockedFilter,
+									(previous, current) -> previous + "; " + current);
 							stringMetrics.putAll(filterCost.stringMetrics());
 							doubleMetrics.putAll(filterCost.doubleMetrics());
 							appliedFilterIndexes.add(i);
@@ -2410,8 +2435,15 @@ class LmdbEvaluationStatistics
 		sharedBindings.retainAll(antiBindings);
 		CorrelatedAntiExistsExactEstimate exactEstimate = estimateExactCorrelatedAntiExists(inputPattern, antiProbe,
 				inputRows, sharedBindings);
-		if (exactEstimate == null || !isFiniteNonNegative(exactEstimate.inputRows())
-				|| exactEstimate.inputRows() == 0.0d) {
+		if (exactEstimate == null) {
+			Optional<OmniCorrelatedProbeEstimate> omniEstimate = sketchBasedJoinEstimator == null
+					? Optional.empty()
+					: sketchBasedJoinEstimator.estimateOmniCorrelatedAntiProbe(inputPattern, antiProbe,
+							sharedBindings, inputRows);
+			return omniEstimate.map(estimate -> correlatedAntiExistsOmniFilterCost(inputPattern, condition,
+					inputRows, sharedBindings, estimate));
+		}
+		if (!isFiniteNonNegative(exactEstimate.inputRows()) || exactEstimate.inputRows() == 0.0d) {
 			return Optional.empty();
 		}
 		double passRatio = Math.clamp(exactEstimate.outputRows() / exactEstimate.inputRows(), 0.0d, 1.0d);
@@ -2441,6 +2473,49 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put("plannedAntiExistsExactWorkRows", exactEstimate.probeWorkRows());
 		return Optional.of(new JoinFactorCostModel.FilterCostEstimate(exactEstimate.probeWorkRows(), outputRows,
 				passRatio, stringMetrics, doubleMetrics, exactOutputRows));
+	}
+
+	private JoinFactorCostModel.FilterCostEstimate correlatedAntiExistsOmniFilterCost(StatementPattern inputPattern,
+			ValueExpr condition, double inputRows, Set<String> sharedBindings,
+			OmniCorrelatedProbeEstimate omniEstimate) {
+		double outputRows = Math.min(inputRows, Math.max(0.0d, omniEstimate.outputRows()));
+		double passRatio = inputRows == 0.0d ? 0.0d : Math.clamp(outputRows / inputRows, 0.0d, 1.0d);
+		double probeWorkRows = Math.max(1.0d, Math.max(omniEstimate.probeRows(), omniEstimate.matchedRows()));
+
+		Map<String, String> stringMetrics = new HashMap<>();
+		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, omniEstimate.source());
+		stringMetrics.put("plannedAntiExistsExecution", "omni-correlated-probe");
+		stringMetrics.put("plannedAntiExistsSharedBindings", new TreeSet<>(sharedBindings).toString());
+		Map<String, Double> doubleMetrics = new HashMap<>();
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE, omniEstimate.confidence());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, omniEstimate.confidence());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, probeWorkRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, probeWorkRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS,
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : outputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+		doubleMetrics.put("plannedAntiExistsProbeWorkRows", probeWorkRows);
+		doubleMetrics.put("plannedAntiExistsProbeOutputRows", omniEstimate.probeRows());
+		doubleMetrics.put("plannedAntiExistsMatchedRows", omniEstimate.matchedRows());
+		doubleMetrics.put("plannedAntiExistsInputRows", inputRows);
+		doubleMetrics.put("plannedAntiExistsSharedBindingCount", (double) sharedBindings.size());
+		doubleMetrics.put("plannedOmniAntiInputWitnesses", (double) omniEstimate.inputWitnesses());
+		doubleMetrics.put("plannedOmniAntiProbeWitnesses", (double) omniEstimate.matchedWitnesses());
+		doubleMetrics.put("plannedOmniAntiMatchedWitnesses", (double) omniEstimate.matchedWitnesses());
+		doubleMetrics.put("plannedOmniAntiTupleKeyWitnesses", omniEstimate.keyWidth() == 2
+				? (double) omniEstimate.matchedWitnesses()
+				: 0.0d);
+		doubleMetrics.put("plannedOmniAntiSamplingProbability", omniEstimate.samplingProbability());
+		doubleMetrics.put("plannedOmniAntiConfidence", omniEstimate.confidence());
+		doubleMetrics.put("plannedOmniAntiProbeKeyWidth", (double) omniEstimate.keyWidth());
+		doubleMetrics.put("plannedOmniAntiSketchZero",
+				outputRows == 0.0d && !omniEstimate.exactZero() ? 1.0d : 0.0d);
+		Filter evidenceFactor = new Filter(inputPattern.clone(), condition.clone());
+		attachOmniSurfaceMetrics(evidenceFactor, stringMetrics, doubleMetrics, "correlated-anti-probe",
+				factorFingerprint(evidenceFactor), omniEstimate.omniSurface());
+		return new JoinFactorCostModel.FilterCostEstimate(probeWorkRows, outputRows, passRatio,
+				stringMetrics, doubleMetrics, omniEstimate.exactZero());
 	}
 
 	@Override

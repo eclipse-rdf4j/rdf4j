@@ -165,13 +165,13 @@ final class OmniJoinEstimator {
 		return omniWitnessCohortBucketCount > 0;
 	}
 
-	void clear() {
+	synchronized void clear() {
 		closeMappedSnapshot();
 		relations.clear();
 		cohortRetentionController.reset();
 	}
 
-	List<AttributeSnapshot> snapshotAttributes() {
+	synchronized List<AttributeSnapshot> snapshotAttributes() {
 		List<AttributeSnapshot> snapshots = new ArrayList<>();
 		for (Map.Entry<OmniRelation, Relation> relationEntry : relations.entrySet()) {
 			for (AttributeEntry attributeEntry : relationEntry.getValue().attributeEntries()) {
@@ -199,7 +199,7 @@ final class OmniJoinEstimator {
 		return false;
 	}
 
-	byte[] toByteArray() throws IOException {
+	synchronized byte[] toByteArray() throws IOException {
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream(Math.max(64, relations.size() * 256));
 		try (DataOutputStream out = new DataOutputStream(bytes)) {
 			out.writeInt(SERIAL_MAGIC);
@@ -223,7 +223,6 @@ final class OmniJoinEstimator {
 				for (AttributeEntry attributeEntry : attributes) {
 					attributeEntry.attribute().writeTo(out);
 					AttributeIndex index = attributeEntry.index();
-					index.compactWeightsToRetainedSample();
 					byte[] sketchPayload = index.sketch.compact().toByteArray();
 					out.writeInt(sketchPayload.length);
 					out.write(sketchPayload);
@@ -287,7 +286,7 @@ final class OmniJoinEstimator {
 		return postings;
 	}
 
-	void loadFromByteArray(byte[] payload) throws IOException {
+	synchronized void loadFromByteArray(byte[] payload) throws IOException {
 		if (payload == null || payload.length == 0) {
 			clear();
 			return;
@@ -373,7 +372,7 @@ final class OmniJoinEstimator {
 		}
 	}
 
-	void loadMappedSnapshot(MappedOmniJoinSnapshot snapshot) throws IOException {
+	synchronized void loadMappedSnapshot(MappedOmniJoinSnapshot snapshot) throws IOException {
 		if (snapshot == null) {
 			clear();
 			return;
@@ -2217,6 +2216,9 @@ final class OmniJoinEstimator {
 				}
 			}
 			distinctValueCount = valueHashes.length;
+			if (exactSmallPostings) {
+				materializeAllLazyWeights();
+			}
 			clearWitnessCache();
 		}
 
@@ -2243,46 +2245,6 @@ final class OmniJoinEstimator {
 
 		private long distinctValueCount() {
 			return distinctValueCount;
-		}
-
-		private void compactWeightsToRetainedSample() {
-			materializeAllLazyWeights();
-			if (weightsByValueHash == null || weightsByValueHash.isEmpty()) {
-				return;
-			}
-			List<Long> removeKeys = null;
-			Long2ObjectOpenHashMap<ValueWeights> replacementWeights = null;
-			for (Long2ObjectMap.Entry<ValueWeights> entry : weightsByValueHash.long2ObjectEntrySet()) {
-				long valueHash = entry.getLongKey();
-				ValueWeights retained = retainedWeightsForValue(valueHash, entry.getValue());
-				if (retained.isEmpty()) {
-					if (removeKeys == null) {
-						removeKeys = new ArrayList<>();
-					}
-					if (entry.getValue().compacted) {
-						compactedValueHashes.add(valueHash);
-					}
-					removeKeys.add(valueHash);
-				} else if (retained.size() != entry.getValue().size()) {
-					if (replacementWeights == null) {
-						replacementWeights = new Long2ObjectOpenHashMap<>();
-					}
-					retained.compacted = entry.getValue().compacted;
-					replacementWeights.put(valueHash, retained);
-				}
-			}
-			if (removeKeys != null) {
-				for (long valueHash : removeKeys) {
-					weightsByValueHash.remove(valueHash);
-					invalidateWitnessCache(valueHash);
-				}
-			}
-			if (replacementWeights != null) {
-				for (Long2ObjectMap.Entry<ValueWeights> entry : replacementWeights.long2ObjectEntrySet()) {
-					weightsByValueHash.put(entry.getLongKey(), entry.getValue());
-					invalidateWitnessCache(entry.getLongKey());
-				}
-			}
 		}
 
 		/**

@@ -939,9 +939,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (pattern == null || !"object".equals(localPatternComponent(pattern, bindingName))) {
 			return false;
 		}
-		if (isDuplicateInsensitiveDistinctMembershipFilter(filter, condition, bindingName, pattern)) {
-			return false;
-		}
 		if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)) {
 			return false;
 		}

@@ -245,7 +245,8 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(OrderLimitOptimizer.class, LmdbCascadesExplainFinalizer.class),
+		assertEquals(List.of(LmdbCorrelatedFilterPlacementOptimizer.class, OrderLimitOptimizer.class,
+				LmdbCascadesExplainFinalizer.class),
 				nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}

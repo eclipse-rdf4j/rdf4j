@@ -110,6 +110,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(new LmdbCorrelatedFilterPlacementOptimizer());
+		}
 		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 		optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
 				Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));

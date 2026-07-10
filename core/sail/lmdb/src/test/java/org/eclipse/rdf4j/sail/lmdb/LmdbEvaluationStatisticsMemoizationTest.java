@@ -3909,7 +3909,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
-
 			String query = """
 					SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
 						{
@@ -4189,7 +4188,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void medicalAggregateInFilterUsesFiniteAnchorOrBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
+	void medicalAggregateInFilterUsesFiniteOmniEvidenceWithoutRawSampling()
 			throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
@@ -4203,6 +4202,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+			Filter directRecordedOnFilter = recordedOnLocalFilter();
+			var directFiniteProbe = backingStore.getSketchBasedJoinEstimator()
+					.estimateOmniFiniteFilterProbe(directRecordedOnFilter.getArg(),
+							directRecordedOnFilter.getCondition(), 40.0d)
+					.orElseThrow();
+			assertEquals(8.0d, directFiniteProbe.outputRows(), 0.0d);
 
 			String query = """
 					SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
@@ -4226,70 +4231,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				optimized = (TupleExpr) explanation.tupleExpr();
 				optimizedText = explanation.toString();
 			}
-
 			List<?> requests = peekBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore));
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
-			if (recordedOnFilter == null && optimizedText.contains("selected=finite-anchor:date")) {
-				assertTrue(optimizedText.contains("BindingSetAssignment ([[date="),
-						"Expected optimized plan to use the exact selected date anchor\n" + optimizedText);
-				assertTrue(requests.isEmpty(),
-						"Finite date anchors should not need background filter sampling; requests=" + requests);
-				assertFalse(optimizedText.contains("Filter (filterSelectivitySource=unknown)"),
-						"Selected date anchor should not leave an unknown recordedOn filter\n" + optimizedText);
-				return;
-			}
-			assertTrue(requests.stream()
-					.anyMatch(request -> {
-						try {
-							return "http://example.com/theme/medical/recordedOn"
-									.equals(invokeString(request, "predicateIri"));
-						} catch (Exception e) {
-							throw new RuntimeException(e);
-						}
-					}),
-					"Expected optimizer to queue background sampling for the recordedOn IN filter; requests="
-							+ requests);
-
-			Filter recordedOnSamplingFilter = recordedOnFilter == null ? recordedOnLocalFilter() : recordedOnFilter;
-			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, backingStore.getEvaluationStatistics(),
-					recordedOnSamplingFilter) > 0,
-					"Expected background cycle to sample the queued recordedOn filter");
-
-			EvaluationStatistics.FilterPassEstimate estimate = backingStore.getEvaluationStatistics()
-					.estimateFilterPass(recordedOnSamplingFilter);
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Expected background sampling to make the recordedOn IN filter available to planning");
-			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.5d,
-					"Expected Jan-Feb date filter to be more selective than handledBy/rdf:type scans");
-
-			TupleExpr optimizedAfterSampling;
-			String optimizedTextAfterSampling;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
-						.explain(Explanation.Level.Optimized);
-				optimizedAfterSampling = (TupleExpr) explanation.tupleExpr();
-				optimizedTextAfterSampling = explanation.toString();
-			}
-			Filter recordedOnFilterAfterSampling = findRecordedOnFilter(optimizedAfterSampling);
-			if (recordedOnFilterAfterSampling == null) {
-				assertTrue(optimizedTextAfterSampling.contains("BindingSetAssignment ([[date="),
-						"Expected sampled optimized plan to use the exact selected date anchor\n"
-								+ optimizedTextAfterSampling);
-				assertTrue(optimizedTextAfterSampling.contains("selected=finite-anchor:date"),
-						"Expected Workbench text explain to show the selected recordedOn date anchor\n"
-								+ optimizedTextAfterSampling);
-			} else {
-				assertEquals("sampled",
-						recordedOnFilterAfterSampling
-								.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-						"Expected optimized plan telemetry to show sampled background selectivity");
-				assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
-						"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
-								+ optimizedTextAfterSampling);
-			}
-			assertFalse(optimizedTextAfterSampling.contains("Filter (filterSelectivitySource=unknown)"),
-					"Unsupported filters should not make Workbench text explain look like sampled selectivity was missed\n"
-							+ optimizedTextAfterSampling);
+			assertNotNull(recordedOnFilter,
+					() -> "Expected the object-position filter to remain local\n" + optimizedText);
+			var optimizedFiniteProbe = backingStore.getSketchBasedJoinEstimator()
+					.estimateOmniFiniteFilterProbe(recordedOnFilter.getArg(), recordedOnFilter.getCondition(), 40.0d)
+					.orElseThrow();
+			assertEquals(8.0d, optimizedFiniteProbe.outputRows(), 0.0d);
+			assertTrue(requests.isEmpty(),
+					"Finite Omni probes should not queue redundant raw sampling; requests=" + requests);
+			assertEquals("finite-filter-probe", recordedOnFilter.getStringMetricPlanned("plannedOmniSurfaceKind"));
+			assertEquals(0.0d, recordedOnFilter.getDoubleMetricPlanned("plannedOmniExactZero"), 0.0d);
+			assertTrue(recordedOnFilter.getDoubleMetricPlanned("plannedOmniJoinSurfaceRows") > 0.0d,
+					() -> "Expected positive finite Omni rows\n" + optimizedText);
+			assertFalse(optimizedText.contains("Filter (filterSelectivitySource=unknown)"),
+					"Finite Omni evidence should prevent an unknown filter estimate\n" + optimizedText);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);

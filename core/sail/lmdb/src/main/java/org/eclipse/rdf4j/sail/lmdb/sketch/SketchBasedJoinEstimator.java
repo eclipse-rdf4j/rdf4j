@@ -6344,8 +6344,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return Optional.empty();
 		}
 		double scale = inputRows / inputWitnessRows;
-		double outputRows = normalizeRows(Math.min(inputRows, Math.max(0.0d, matchedWitness.estimatedRows()
-				* scale)));
+		double scaledOutputRows = Math.min(inputRows, Math.max(0.0d, matchedWitness.estimatedRows() * scale));
+		double outputRows = normalizeRows(scaledOutputRows);
+		if (scaledOutputRows > 0.0d && outputRows == 0.0d) {
+			outputRows = scaledOutputRows;
+		}
 		double probeRows = normalizeRows(Math.max(probeWitness.estimatedRows(), outputRows));
 		double confidence = Math.min(inputWitness.confidence(), Math.min(probeWitness.confidence(),
 				matchedWitness.confidence()));
@@ -6354,7 +6357,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			confidence = Math.min(confidence, 0.25d);
 		}
 		String fallbackReason = omniFallbackReason(inputWitness, probeWitness, matchedWitness);
-		boolean exactZero = outputRows == 0.0d
+		boolean exactZero = matchedWitness.retainedWitnessCount() == 0 && matchedWitness.estimatedRows() == 0.0d
 				&& matchedWitness.fallbackReason() == OmniWitnessSet.FallbackReason.NONE;
 		Map<String, OmniWitnessSet> retainedWitnesses = Map.of(subject.getName(), matchedWitness);
 		OmniSketchStepEvidence step = new OmniSketchStepEvidence("finite-filter-probe", subject.getName(),
@@ -6552,7 +6555,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		List<TupleExpr> antiFactors = new ArrayList<>();
-		flattenJoinTreeToOrderedArgs(antiProbe, antiFactors);
+		boolean residualFilter = flattenCorrelatedProbePatterns(antiProbe, antiFactors);
 		if (antiFactors.size() < 2 || !(antiFactors.getFirst()instanceof StatementPattern firstPattern)) {
 			return null;
 		}
@@ -6572,6 +6575,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (!(antiFactors.get(i)instanceof StatementPattern pattern)) {
 				return null;
 			}
+			String subjectName = unboundVarName(pattern.getSubjectVar());
+			String objectName = unboundVarName(pattern.getObjectVar());
+			if (currentBinding.equals(subjectName) && objectName != null
+					&& !bindingUsedByLaterPattern(antiFactors, i + 1, objectName)) {
+				currentWitness = filterOmniSubjectWitnesses(currentWitness, pattern, currentBinding);
+				if (currentWitness == null || currentWitness.isEmpty()) {
+					return null;
+				}
+				probeRows = Math.max(probeRows, currentWitness.estimatedRows());
+				confidence = Math.min(confidence, currentWitness.confidence());
+				continue;
+			}
 			OmniBridgeDirection stepDirection = omniBridgeDirection(Set.of(currentBinding), pattern);
 			if (stepDirection != null && currentBinding.equals(stepDirection.inputBindingName())) {
 				currentWitness = probeOmniBridgeWitnesses(currentWitness, stepDirection.relationName(), pattern);
@@ -6583,7 +6598,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				confidence = Math.min(confidence, currentWitness.confidence());
 				continue;
 			}
-			String subjectName = unboundVarName(pattern.getSubjectVar());
 			if (!currentBinding.equals(subjectName)) {
 				return null;
 			}
@@ -6607,7 +6621,33 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		probeRows = Math.max(probeRows, matchedInput.estimatedRows());
 		confidence = Math.min(confidence, matchedInput.confidence());
+		if (residualFilter) {
+			confidence = Math.min(confidence, 0.50d);
+		}
 		return new OmniCorrelatedBridgeProbe(matchedInput, normalizeRows(probeRows), confidence);
+	}
+
+	private boolean flattenCorrelatedProbePatterns(TupleExpr tupleExpr, List<TupleExpr> orderedArgs) {
+		if (tupleExpr instanceof Filter filter) {
+			flattenCorrelatedProbePatterns(filter.getArg(), orderedArgs);
+			return true;
+		}
+		if (tupleExpr instanceof Join join) {
+			boolean leftFilter = flattenCorrelatedProbePatterns(join.getLeftArg(), orderedArgs);
+			boolean rightFilter = flattenCorrelatedProbePatterns(join.getRightArg(), orderedArgs);
+			return leftFilter || rightFilter;
+		}
+		orderedArgs.add(tupleExpr);
+		return false;
+	}
+
+	private boolean bindingUsedByLaterPattern(List<TupleExpr> factors, int startIndex, String bindingName) {
+		for (int i = startIndex; i < factors.size(); i++) {
+			if (factors.get(i).getBindingNames().contains(bindingName)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private OmniWitnessStep estimateOmniBridgeChainStep(StatementPattern pattern,

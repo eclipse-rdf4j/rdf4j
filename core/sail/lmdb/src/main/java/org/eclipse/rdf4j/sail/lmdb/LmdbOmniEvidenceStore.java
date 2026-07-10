@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchStepEvidence;
 import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 
 final class LmdbOmniEvidenceStore {
@@ -30,6 +31,7 @@ final class LmdbOmniEvidenceStore {
 		if (evidence == null) {
 			return null;
 		}
+		evidence = rebaseContradictoryExactZero(evidence);
 		if (tupleExpr != null) {
 			evidenceByTuple.put(tupleExpr, evidence);
 		}
@@ -40,6 +42,23 @@ final class LmdbOmniEvidenceStore {
 		}
 		evidenceByFingerprint.put(fingerprint, evidence);
 		return fingerprint;
+	}
+
+	private static OmniSketchSurfaceEstimate rebaseContradictoryExactZero(OmniSketchSurfaceEstimate evidence) {
+		if (!evidence.exactZero() || evidence.selectedRows() != 0.0d) {
+			return evidence;
+		}
+		double positiveStepRows = 0.0d;
+		for (OmniSketchStepEvidence step : evidence.steps()) {
+			if (step.outputWitnesses() > 0 && Double.isFinite(step.outputRows()) && step.outputRows() > 0.0d) {
+				positiveStepRows = step.outputRows();
+			}
+		}
+		if (positiveStepRows == 0.0d) {
+			return evidence;
+		}
+		return evidence.rebase(positiveStepRows, Math.min(evidence.confidence(), 0.25d), evidence.source(),
+				"contradictory-exact-zero");
 	}
 
 	Optional<OmniSketchSurfaceEstimate> get(TupleExpr tupleExpr) {
