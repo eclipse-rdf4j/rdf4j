@@ -2066,11 +2066,11 @@ final class OmniJoinEstimator {
 			invalidateWitnessCache(valueHash);
 			ValueWeights weights = weightsForRead(valueHash);
 			// only registered maps (never empty) carry the flag; an empty map is an unregistered lazy stub
-			boolean compacted = !exactPostingRetentionEnabled
-					|| (weights != null && !weights.isEmpty() ? weights.compacted
-							: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash));
+			boolean valueCompacted = weights != null && !weights.isEmpty() ? weights.compacted
+					: !compactedValueHashes.isEmpty() && compactedValueHashes.contains(valueHash);
+			boolean compacted = !exactPostingRetentionEnabled || valueCompacted;
 			boolean newExactValuePosting = false;
-			if (!wasTotalOnly && weights == null && !compacted
+			if (!wasTotalOnly && weights == null && !valueCompacted
 					&& !totalWeightByValueHash.containsKey(valueHash)
 					&& mappedValueRecord(valueHash) == null) {
 				distinctValueCount++;

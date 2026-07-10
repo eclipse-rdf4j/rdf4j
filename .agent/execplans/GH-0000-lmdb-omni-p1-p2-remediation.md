@@ -60,6 +60,8 @@ Timestamps are UTC.
 - [x] (2026-07-10 13:15Z) Seventh module verify completed without OOM: 2086 tests, 7 failures, 0 errors, 54 skipped. All four Omni failures and the three sparse-planner failures shared the immediate-sampling change made after the prior heap diagnosis: exact directed/composite evidence had been discarded before the configured global budget was reached.
 - [x] (2026-07-10 15:07Z) Replaced immediate directed/composite sampling with shared bounded exact retention. Exact value postings remain available below the one-million-entry default; crossing the cap deterministically converts the largest attribute to its KMV sample. The sampling mode and mapped-overlay population survive byte version 10 and mapped snapshots. Omni estimator (45), persistence (12), generated shapes (1), and accuracy regressions (9) are green.
 - [x] (2026-07-10 15:08Z) Scoped-UNION contextual replanning now rejects branch-local BIND/VALUES outputs while retaining the property-path UNION case. The 55-test Cascades optimizer class is green. The real sparse Q6 remained red before bounded exact evidence was restored, so its expensive acceptance rerun is still pending.
+- [x] (2026-07-10 15:39Z) Full sparse-prefix acceptance is green: 3 tests, 0 failures in 529.510 seconds. Prefix q-error, Q6 connected work, and stale-snapshot rebuild all recovered after bounded exact directed/composite evidence was restored.
+- [x] (2026-07-10 16:34Z) Eighth module verify completed 2087 tests with 7 failures, 0 errors, 54 skipped. Separating attribute-level sampling from per-value compaction restored statement-attribute NDV tracking; Omni distinct (5), core cursor skip (9), context/safe-scope cursor skip (3), and estimator parity (45) are green.
 - [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
 
 ## Surprises & Discoveries
@@ -156,6 +158,8 @@ Timestamps are UTC.
   Evidence: corrected unit reds `logs/mvnf/20260710-101906-verify.log` and `20260710-102309-verify.log`; unit greens `20260710-102050-verify.log` and `20260710-102407-verify.log`; forced PHARMA q7 green `20260710-102625-verify.log`.
 - Observation: PHARMA's older plan assertions searched unanchored `StatementPattern (` text and could select a serialized `optimizer.connectedFactor` or `unlockedFilters` payload instead of an algebra node. After exact finite-anchor planning, q2 no longer exposes the intermediate null-rejecting OPTIONAL marker; its durable contract is the duplicate-safe guarantee option, finite-value equivalence, unlocked EXISTS filter, and bound `indicatedFor` object.
   Evidence: PHARMA class red `logs/mvnf/20260710-103218-verify.log`; exact q2 green `20260710-105747-verify.log`.
+- Observation: Attribute-level sampling and per-value compaction answer different questions. Treating every sampled attribute as if each value were already known/compacted prevented `distinctValueCount` from incrementing for new STATEMENT values, so wildcard subject/predicate NDV fell to zero and four cursor-skip plans rejected the selective prefix path. A separate `valueCompacted` flag retains the first-seen test while `exactPostingRetentionEnabled` controls witness retention.
+  Evidence: module red `logs/mvnf/20260710-154042-verify.log`; Omni NDV green `20260710-161718-verify.log`; cursor-skip greens `20260710-162211-verify.log` and manual 3-test verify at 18:28:32.
 
 ## Decision Log
 
@@ -529,3 +533,5 @@ Revision note (2026-07-10 09:33Z, Codex): Recorded the sixth acceptance run's in
 Revision note (2026-07-10 09:54Z, Codex): Recorded the scoped Social q7 fixture and corrected its misleading rule-identity contract. Reason: the all-theme rebuild hid the semantic result, and the selected pushed correlated filter is cheaper and more precise than the rejected direct rule candidate.
 
 Revision note (2026-07-10 15:08Z, Codex): Replaced the immediate-sampling heap remediation with bounded exact-value retention and narrowed scoped-UNION admission around branch-local outputs. Reason: the seventh full verify proved all remaining Omni and sparse failures shared discarded directed/composite evidence, while property-path and BIND-producing UNIONs require different contextual-planning treatment.
+
+Revision note (2026-07-10 16:34Z, Codex): Recorded the eighth full-module distinct-evidence cluster and its focused closure. Reason: the base-retention controller must not conflate attribute sampling with whether an individual value has already contributed to NDV telemetry.
