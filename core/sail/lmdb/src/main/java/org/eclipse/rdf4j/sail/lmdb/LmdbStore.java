@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
@@ -94,6 +95,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private EvaluationStrategyFactory explicitEvalStratFactory;
 
 	private LmdbNativeEvaluationStrategyFactory nativeEvalStratFactory;
+	private DefaultEvaluationStrategyFactory packedEvalStratFactory;
 
 	private EvaluationStrategyFactory connectionEvalStratFactory;
 
@@ -186,6 +188,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		EvaluationStrategyFactory factory;
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
+		} else if (backingStore != null && backingStore.hasPackedValueDictionary()) {
+			if (backingStore.materializePackedForNativeEvaluation()) {
+				factory = getAutomaticNativeEvaluationStrategyFactory();
+			} else {
+				if (packedEvalStratFactory == null) {
+					packedEvalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+				}
+				factory = packedEvalStratFactory;
+			}
 		} else {
 			factory = getAutomaticNativeEvaluationStrategyFactory();
 		}

@@ -1,0 +1,2 @@
+Benchmark                                              Mode  Cnt     Score      Error  Units
+TransactionsPerSecondForceSyncBenchmark.transactions  thrpt    5  2535.312 ± 2062.466  ops/s

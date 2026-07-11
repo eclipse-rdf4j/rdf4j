@@ -87,6 +87,7 @@ import java.util.function.ToIntFunction;
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
+import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -128,11 +129,14 @@ class TripleStore implements Closeable {
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
-	static final int PACKED_BULK_MIN_STATEMENTS = 10_000;
+	static final int PACKED_BULK_MIN_STATEMENTS = 1;
+	private static final int INITIAL_PACKED_APPEND_STATEMENTS = 256;
 	private static final int PACKED_BLOCK_STATEMENTS = 512;
 	private static final int PACKED_RECORD_BYTES = 4 * Long.BYTES;
 	private static final int PACKED_LOCAL_RECORD_BYTES = 4 * Integer.BYTES;
 	private static final int PACKED_VALUE_BLOCK_BYTES = 64 * 1024;
+	private static final long PACKED_TRANSACTION_RESERVE_BYTES = 1L << 30;
+	private static final int PACKED_MATERIALIZATION_VALUE_BATCH_SIZE = 4096;
 	private static final long PACKED_COUNT_KEY = 0;
 	/*-----------*
 	 * Variables *
@@ -176,12 +180,21 @@ class TripleStore implements Closeable {
 	private final int packedValuesDbi;
 	private volatile long packedExplicitCount;
 	private volatile long packedExplicitValueCount;
+	private volatile boolean packedExplicitSegmented;
+	private boolean packedCountMetadataPresent;
 	private boolean packedWriteActive;
+	private boolean packedTxnSegmented;
 	private boolean packedMaterializedInTxn;
 	private long packedTxnCount;
 	private long packedTxnValueCount;
 	private long packedNextBlockId;
 	private long packedNextValueBlockId;
+	private ObjectIntHashMap<Value> packedValueIds;
+	private PackedFingerprintIndex packedFingerprintLocations;
+	private Map<Long, List<Long>> packedFingerprintCollisionLocations;
+	private Map<Long, List<PackedStatementKey>> packedDuplicateKeys;
+	private LongHashSet packedDuplicateFingerprints;
+	private final Object packedFingerprintLock = new Object();
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -204,6 +217,77 @@ class TripleStore implements Closeable {
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
+
+	private static final class PackedFingerprintIndex {
+		private long[] fingerprints;
+		private long[] statementOrdinals;
+		private int size;
+		private int resizeAt;
+
+		private PackedFingerprintIndex(int expectedSize) {
+			int capacity = 16;
+			int required = Math.max(16, expectedSize + expectedSize / 2);
+			while (capacity < required) {
+				capacity = Math.multiplyExact(capacity, 2);
+			}
+			fingerprints = new long[capacity];
+			statementOrdinals = new long[capacity];
+			resizeAt = capacity * 2 / 3;
+		}
+
+		private long get(long fingerprint) {
+			int mask = statementOrdinals.length - 1;
+			int index = hashIndex(fingerprint, mask);
+			while (statementOrdinals[index] != 0) {
+				if (fingerprints[index] == fingerprint) {
+					return statementOrdinals[index];
+				}
+				index = (index + 1) & mask;
+			}
+			return 0;
+		}
+
+		private void put(long fingerprint, long statementOrdinal) {
+			if (size >= resizeAt) {
+				resize();
+			}
+			putWithoutResize(fingerprint, statementOrdinal);
+		}
+
+		private void putWithoutResize(long fingerprint, long statementOrdinal) {
+			int mask = statementOrdinals.length - 1;
+			int index = hashIndex(fingerprint, mask);
+			while (statementOrdinals[index] != 0) {
+				if (fingerprints[index] == fingerprint) {
+					return;
+				}
+				index = (index + 1) & mask;
+			}
+			fingerprints[index] = fingerprint;
+			statementOrdinals[index] = statementOrdinal;
+			size++;
+		}
+
+		private void resize() {
+			long[] oldFingerprints = fingerprints;
+			long[] oldOrdinals = statementOrdinals;
+			fingerprints = new long[Math.multiplyExact(oldFingerprints.length, 2)];
+			statementOrdinals = new long[fingerprints.length];
+			resizeAt = fingerprints.length * 2 / 3;
+			size = 0;
+			for (int i = 0; i < oldOrdinals.length; i++) {
+				if (oldOrdinals[i] != 0) {
+					putWithoutResize(oldFingerprints[i], oldOrdinals[i]);
+				}
+			}
+		}
+
+		private static int hashIndex(long fingerprint, int mask) {
+			long value = fingerprint ^ fingerprint >>> 32;
+			value ^= value >>> 16;
+			return (int) value & mask;
+		}
+	}
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -230,7 +314,7 @@ class TripleStore implements Closeable {
 
 		// 1 for contexts, 2 for packed explicit segments, and 48 for all possible triple indexes
 		// (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 3 + 48));
+		E(mdb_env_set_maxdbs(env, 3 + 96));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -280,11 +364,32 @@ class TripleStore implements Closeable {
 			MDBVal key = MDBVal.malloc(stack);
 			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
 			MDBVal value = MDBVal.malloc(stack);
+			if (mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS && value.mv_size() >= 2L * Long.BYTES) {
+				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong(Long.BYTES);
+			}
 			if (mdb_get(txn, packedValuesDbi, key, value) == MDB_SUCCESS) {
 				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
 			}
 			return 0L;
 		});
+		packedCountMetadataPresent = transaction(env, (stack, txn) -> {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			MDBVal value = MDBVal.malloc(stack);
+			return mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS
+					|| mdb_get(txn, packedValuesDbi, key, value) == MDB_SUCCESS;
+		});
+		packedExplicitSegmented = transaction(env, (stack, txn) -> isLastPackedSegment(stack, txn));
+		if (packedExplicitSegmented) {
+			packedExplicitValueCount = 0;
+		}
+		if (!packedExplicitSegmented && packedExplicitValueCount == 0) {
+			packedExplicitValueCount = transaction(env, (stack, txn) -> readLastPackedValueCount(stack, txn));
+		}
+		if (packedExplicitCount == 0) {
+			packedExplicitCount = transaction(env,
+					(stack, txn) -> readLastPackedStatementCount(stack, txn, packedExplicitValueCount > 0));
+		}
 
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
@@ -361,12 +466,27 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasPackedValueDictionary() {
-		return packedExplicitValueCount > 0 || packedTxnValueCount > 0;
+		return packedExplicitSegmented || packedTxnSegmented || packedExplicitValueCount > 0 || packedTxnValueCount > 0;
 	}
 
 	boolean enablePackedWritesIfEmpty() throws IOException {
-		if (packedWriteActive || packedExplicitCount != 0 || packedTxnCount != 0) {
-			return packedWriteActive;
+		if (packedMaterializedInTxn) {
+			return false;
+		}
+		if (packedWriteActive) {
+			return !packedTxnSegmented;
+		}
+		if (packedExplicitSegmented) {
+			return false;
+		}
+		if (packedExplicitValueCount == 0 && packedExplicitCount > 0) {
+			packedWriteActive = true;
+			packedTxnCount = packedExplicitCount;
+			packedNextBlockId = nextPackedBlockId(packedExplicitDbi);
+			return true;
+		}
+		if (packedExplicitCount != 0 || packedTxnCount != 0) {
+			return false;
 		}
 		try (MemoryStack stack = stackPush()) {
 			MDBStat stat = MDBStat.malloc(stack);
@@ -374,6 +494,52 @@ class TripleStore implements Closeable {
 			packedWriteActive = stat.ms_entries() == 0;
 		}
 		return packedWriteActive;
+	}
+
+	boolean enablePackedStatementWrites() throws IOException {
+		if (packedMaterializedInTxn) {
+			return false;
+		}
+		if (packedWriteActive) {
+			return true;
+		}
+		if (packedExplicitCount > 0) {
+			if (packedExplicitSegmented) {
+				packedWriteActive = true;
+				packedTxnSegmented = true;
+				packedTxnCount = packedExplicitCount;
+				return true;
+			}
+			packedWriteActive = true;
+			packedTxnCount = packedExplicitCount;
+			packedTxnValueCount = packedExplicitValueCount;
+			packedNextBlockId = nextPackedBlockId(packedExplicitDbi);
+			packedNextValueBlockId = nextPackedBlockId(packedValuesDbi);
+			return true;
+		}
+		return enablePackedWritesIfEmpty();
+	}
+
+	private long nextPackedBlockId(int dbi) throws IOException {
+		long cursor = 0;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, dbi, cursorHandle));
+			cursor = cursorHandle.get(0);
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return 1;
+			}
+			E(rc);
+			long lastKey = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			return lastKey == PACKED_COUNT_KEY ? 1 : Math.addExact(lastKey, 1);
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
+		}
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
@@ -575,7 +741,6 @@ class TripleStore implements Closeable {
 					caughtExceptions.add(e);
 				}
 			}
-
 			mdb_env_close(env);
 			env = 0;
 
@@ -637,8 +802,34 @@ class TripleStore implements Closeable {
 
 	CloseableIteration<Statement> getPackedStatements(Txn txn, Resource subject, IRI predicate, Value object,
 			Resource[] contexts) throws IOException {
+		if (packedExplicitSegmented || packedTxnSegmented) {
+			return new PackedSegmentIteration(packedExplicitDbi, txn, subject, predicate, object, contexts,
+					SimpleValueFactory.getInstance());
+		}
 		return new PackedStatementIteration(packedValuesDbi, packedExplicitDbi, packedExplicitValueCount, txn,
 				subject, predicate, object, contexts, SimpleValueFactory.getInstance());
+	}
+
+	boolean hasPackedStatements(Txn txn, Resource subject, IRI predicate, Value object, Resource[] contexts)
+			throws IOException {
+		if ((packedExplicitSegmented || packedTxnSegmented) && subject != null && predicate != null && object != null
+				&& contexts != null && contexts.length > 0) {
+			synchronized (packedFingerprintLock) {
+				ensurePackedFingerprintLocations(txn.get());
+				long fingerprint;
+				for (Resource context : contexts) {
+					fingerprint = statementFingerprint(subject, predicate, object, context);
+					if (containsPackedStatement(txn.get(), fingerprint, subject, predicate, object, context)) {
+						return true;
+					}
+				}
+				return false;
+			}
+		}
+		try (CloseableIteration<Statement> statements = getPackedStatements(txn, subject, predicate, object,
+				contexts)) {
+			return statements.hasNext();
+		}
 	}
 
 	private boolean hasPackedTriples(Txn txn) {
@@ -1803,6 +1994,57 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	void ensurePackedWriteCapacity(long segmentBytes) throws IOException {
+		long requiredBytes = Math.max(PACKED_TRANSACTION_RESERVE_BYTES, segmentBytes);
+		if (mapSize >= requiredBytes) {
+			return;
+		}
+		ensureWriteCapacity(requiredBytes);
+	}
+
+	void ensurePackedMaterializationCapacity() throws IOException {
+		if (packedExplicitCount == 0) {
+			return;
+		}
+		long bytesPerStatement = Math.addExact(64L, Math.multiplyExact((long) indexes.size(), 128L));
+		ensureWriteCapacity(Math.multiplyExact(packedExplicitCount, bytesPerStatement));
+	}
+
+	private void ensureWriteCapacity(long additionalBytes) throws IOException {
+		if (!autoGrow || additionalBytes <= 0 || writeTxn != 0) {
+			return;
+		}
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try {
+			txnManager.deactivate();
+			try (MemoryStack stack = stackPush()) {
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				E(mdb_env_info(env, info));
+				long usedBytes = Math.multiplyExact(Math.addExact(info.me_last_pgno(), 1L), pageSize);
+				long requiredMapSize = Math.addExact(usedBytes,
+						Math.addExact(additionalBytes, LmdbUtil.MIN_FREE_SPACE));
+				if (mapSize < requiredMapSize) {
+					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredMapSize);
+					E(mdb_env_set_mapsize(env, mapSize));
+					logger.debug("resized map to {} for a {} byte packed write", mapSize, additionalBytes);
+				}
+			}
+		} finally {
+			try {
+				txnManager.activate();
+			} finally {
+				lockManager.unlockWrite(stamp);
+			}
+		}
+	}
+
 	static LongAdder statementsAdded = new LongAdder();
 	static long lastLogTime = System.currentTimeMillis();
 	int localCount = 0;
@@ -1895,20 +2137,32 @@ class TripleStore implements Closeable {
 	}
 
 	long storePackedStatements(Iterable<? extends Statement> statements, int expectedCount) throws IOException {
-		if (!packedWriteActive || packedTxnCount != 0) {
-			throw new IllegalStateException("Packed statement storage is not active for an empty transaction");
+		if (!packedWriteActive) {
+			throw new IllegalStateException("Packed statement storage is not active");
 		}
 		if (statements instanceof PackedStatementList packed) {
-			writePackedValues(Arrays.asList(packed.values()), packed.valueIdLookup(), 1);
-			writePackedQuadIds(packed.quads(), packed.size());
-			packedTxnCount = packed.size();
-			packedTxnValueCount = packed.values().length - 1;
+			packed = filterDuplicatePackedStatements(packed);
+			if (packed.isEmpty()) {
+				return 0;
+			}
+			long firstStatementOrdinal = Math.addExact(packedTxnCount, 1L);
+			writePackedSegment(Arrays.asList(packed.values()), packed.valueIdLookup(), 1, packed.quads(),
+					packed.size());
+			synchronized (packedFingerprintLock) {
+				if (packedFingerprintLocations != null) {
+					indexPackedStatements(packed, firstStatementOrdinal);
+				}
+			}
+			packedTxnCount = Math.addExact(packedTxnCount, packed.size());
+			packedTxnValueCount = 0;
+			packedTxnSegmented = true;
 			logAddedStatements(packed.size());
 			return packed.size();
 		}
-		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount / 2));
+		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount * 2));
 		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
-		ArrayList<Value> values = new ArrayList<>(Math.max(16, expectedCount / 2));
+		ArrayList<Value> newValues = new ArrayList<>(Math.max(16, expectedCount / 2));
+		packedTxnValueCount = 0;
 		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
 		int count = 0;
 		for (Statement statement : statements) {
@@ -1916,18 +2170,354 @@ class TripleStore implements Closeable {
 			if (offset == quads.length) {
 				quads = Arrays.copyOf(quads, Math.multiplyExact(quads.length, 2));
 			}
-			quads[offset] = packedValueId(statement.getSubject(), valueIds, identityValueIds, values);
-			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, identityValueIds, values);
-			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, identityValueIds, values);
-			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, identityValueIds, values);
+			quads[offset] = packedValueId(statement.getSubject(), valueIds, identityValueIds, newValues);
+			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, identityValueIds, newValues);
+			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, identityValueIds, newValues);
+			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, identityValueIds, newValues);
 			count++;
 		}
-		writePackedValues(values, valueIds::get, 0);
-		writePackedQuadIds(quads, count);
-		packedTxnCount = count;
-		packedTxnValueCount = values.size();
+		writePackedSegment(newValues, valueIds::get, 0, quads, count);
+		packedTxnCount = Math.addExact(packedTxnCount, count);
+		packedTxnSegmented = true;
 		logAddedStatements(count);
 		return count;
+	}
+
+	long storePackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects, Resource[] contexts, int count)
+			throws IOException {
+		if (!packedWriteActive) {
+			throw new IllegalStateException("Packed statement storage is not active");
+		}
+		count = filterDuplicatePackedStatements(subjects, predicates, objects, contexts, count);
+		if (count == 0) {
+			return 0;
+		}
+		long firstStatementOrdinal = Math.addExact(packedTxnCount, 1L);
+		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, count * 2));
+		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
+		ArrayList<Value> values = new ArrayList<>(Math.max(16, count * 2));
+		packedTxnValueCount = 0;
+		int[] quads = new int[Math.multiplyExact(count, 4)];
+		for (int i = 0; i < count; i++) {
+			int offset = i * 4;
+			quads[offset] = packedValueId(subjects[i], valueIds, identityValueIds, values);
+			quads[offset + 1] = packedValueId(predicates[i], valueIds, identityValueIds, values);
+			quads[offset + 2] = packedValueId(objects[i], valueIds, identityValueIds, values);
+			quads[offset + 3] = packedValueId(contexts[i], valueIds, identityValueIds, values);
+		}
+		writePackedSegment(values, valueIds::get, 0, quads, count);
+		synchronized (packedFingerprintLock) {
+			if (packedFingerprintLocations != null) {
+				indexPackedStatements(subjects, predicates, objects, contexts, count, firstStatementOrdinal);
+			}
+		}
+		packedTxnCount = Math.addExact(packedTxnCount, count);
+		packedTxnSegmented = true;
+		logAddedStatements(count);
+		return count;
+	}
+
+	private PackedStatementList filterDuplicatePackedStatements(PackedStatementList packed) throws IOException {
+		synchronized (packedFingerprintLock) {
+			return filterDuplicatePackedStatementsLocked(packed);
+		}
+	}
+
+	private PackedStatementList filterDuplicatePackedStatementsLocked(PackedStatementList packed) throws IOException {
+		ensurePackedFingerprintLocations(writeTxn);
+		boolean[] included = null;
+		int includedCount = packed.size();
+		Value[] values = packed.values();
+		int[] quads = packed.quads();
+		for (int statementIndex = 0; statementIndex < packed.size(); statementIndex++) {
+			int offset = statementIndex * 4;
+			Resource subject = (Resource) values[quads[offset]];
+			IRI predicate = (IRI) values[quads[offset + 1]];
+			Value object = values[quads[offset + 2]];
+			int contextId = quads[offset + 3];
+			Resource context = contextId == 0 ? null : (Resource) values[contextId];
+			boolean duplicate = containsPackedStatement(writeTxn,
+					statementFingerprint(subject, predicate, object, context),
+					subject, predicate, object, context);
+			if (duplicate) {
+				if (included == null) {
+					included = new boolean[packed.size()];
+					Arrays.fill(included, 0, statementIndex, true);
+				}
+				includedCount--;
+			} else if (included != null) {
+				included[statementIndex] = true;
+			}
+		}
+		if (included == null) {
+			return packed;
+		}
+		ArrayList<Statement> filtered = new ArrayList<>(includedCount);
+		for (int i = 0; i < included.length; i++) {
+			if (included[i]) {
+				filtered.add(packed.get(i));
+			}
+		}
+		return PackedStatementList.copyOf(filtered, filtered.size(), ignored -> {
+		});
+	}
+
+	private int filterDuplicatePackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects,
+			Resource[] contexts, int count) throws IOException {
+		synchronized (packedFingerprintLock) {
+			return filterDuplicatePackedStatementsLocked(subjects, predicates, objects, contexts, count);
+		}
+	}
+
+	private int filterDuplicatePackedStatementsLocked(Resource[] subjects, IRI[] predicates, Value[] objects,
+			Resource[] contexts, int count) throws IOException {
+		ensurePackedFingerprintLocations(writeTxn);
+		int target = 0;
+		for (int source = 0; source < count; source++) {
+			Resource subject = subjects[source];
+			IRI predicate = predicates[source];
+			Value object = objects[source];
+			Resource context = contexts[source];
+			boolean duplicate = containsPackedStatement(writeTxn,
+					statementFingerprint(subject, predicate, object, context),
+					subject, predicate, object, context);
+			if (duplicate) {
+				continue;
+			}
+			if (target != source) {
+				subjects[target] = subject;
+				predicates[target] = predicate;
+				objects[target] = object;
+				contexts[target] = context;
+			}
+			target++;
+		}
+		return target;
+	}
+
+	private void ensurePackedFingerprintLocations(long nativeTxn) throws IOException {
+		if (packedFingerprintLocations != null) {
+			return;
+		}
+		int expected = (int) Math.min(packedExplicitCount, 1_000_000L);
+		PackedFingerprintIndex locations = new PackedFingerprintIndex(Math.max(16, expected));
+		if ((packedExplicitSegmented || packedTxnSegmented) && (packedExplicitCount > 0 || packedTxnCount > 0)) {
+			long cursor = 0;
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(nativeTxn, packedExplicitDbi, cursorHandle));
+				cursor = cursorHandle.get(0);
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal data = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, key, data, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					long blockKey = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+					if (blockKey != PACKED_COUNT_KEY) {
+						PackedSegmentCodec.Decoded decoded = PackedSegmentCodec.decode(data.mv_data(),
+								SimpleValueFactory.getInstance());
+						indexPackedSegment(locations, decoded, blockKey);
+					}
+					rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+		}
+		packedFingerprintLocations = locations;
+	}
+
+	private void indexPackedSegment(PackedFingerprintIndex locations, PackedSegmentCodec.Decoded decoded,
+			long firstStatementOrdinal) {
+		Value[] values = decoded.values();
+		ByteBuffer quads = decoded.quads().duplicate();
+		long statementOrdinal = firstStatementOrdinal;
+		while (quads.hasRemaining()) {
+			Resource subject = (Resource) values[quads.getInt()];
+			IRI predicate = (IRI) values[quads.getInt()];
+			Value object = values[quads.getInt()];
+			int contextId = quads.getInt();
+			Resource context = contextId == 0 ? null : (Resource) values[contextId];
+			indexPackedFingerprint(locations, statementFingerprint(subject, predicate, object, context),
+					statementOrdinal++);
+		}
+	}
+
+	private void indexPackedStatements(PackedStatementList packed, long firstStatementOrdinal) {
+		Value[] values = packed.values();
+		int[] quads = packed.quads();
+		for (int i = 0; i < packed.size(); i++) {
+			int offset = i * 4;
+			Resource subject = (Resource) values[quads[offset]];
+			IRI predicate = (IRI) values[quads[offset + 1]];
+			Value object = values[quads[offset + 2]];
+			int contextId = quads[offset + 3];
+			Resource context = contextId == 0 ? null : (Resource) values[contextId];
+			indexPackedFingerprint(packedFingerprintLocations,
+					statementFingerprint(subject, predicate, object, context), firstStatementOrdinal + i);
+		}
+	}
+
+	private void indexPackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects, Resource[] contexts,
+			int count, long firstStatementOrdinal) {
+		for (int i = 0; i < count; i++) {
+			indexPackedFingerprint(packedFingerprintLocations,
+					statementFingerprint(subjects[i], predicates[i], objects[i], contexts[i]),
+					firstStatementOrdinal + i);
+		}
+	}
+
+	private void indexPackedFingerprint(PackedFingerprintIndex locations, long fingerprint, long statementOrdinal) {
+		long existing = locations.get(fingerprint);
+		if (existing == 0) {
+			locations.put(fingerprint, statementOrdinal);
+			return;
+		}
+		if (packedFingerprintCollisionLocations == null) {
+			packedFingerprintCollisionLocations = new HashMap<>();
+		}
+		packedFingerprintCollisionLocations.computeIfAbsent(fingerprint, ignored -> new ArrayList<>(1))
+				.add(statementOrdinal);
+	}
+
+	private boolean containsPackedStatement(long nativeTxn, long fingerprint, Resource subject, IRI predicate,
+			Value object, Resource context) throws IOException {
+		PackedStatementKey candidate = null;
+		if (packedDuplicateFingerprints != null && packedDuplicateFingerprints.contains(fingerprint)) {
+			candidate = new PackedStatementKey(subject, predicate, object, context);
+			List<PackedStatementKey> duplicates = packedDuplicateKeys.get(fingerprint);
+			if (duplicates != null && duplicates.contains(candidate)) {
+				return true;
+			}
+		}
+		long statementOrdinal = packedFingerprintLocations.get(fingerprint);
+		if (statementOrdinal == 0) {
+			return false;
+		}
+		if (packedStatementEquals(nativeTxn, statementOrdinal, subject, predicate, object, context)) {
+			if (candidate == null) {
+				candidate = new PackedStatementKey(subject, predicate, object, context);
+			}
+			cachePackedDuplicate(fingerprint, candidate);
+			return true;
+		}
+		if (packedFingerprintCollisionLocations != null) {
+			List<Long> collisions = packedFingerprintCollisionLocations.get(fingerprint);
+			if (collisions != null) {
+				for (long collisionOrdinal : collisions) {
+					if (packedStatementEquals(nativeTxn, collisionOrdinal, subject, predicate, object, context)) {
+						if (candidate == null) {
+							candidate = new PackedStatementKey(subject, predicate, object, context);
+						}
+						cachePackedDuplicate(fingerprint, candidate);
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private void cachePackedDuplicate(long fingerprint, PackedStatementKey duplicate) {
+		if (packedDuplicateKeys == null) {
+			packedDuplicateKeys = new HashMap<>();
+			packedDuplicateFingerprints = new LongHashSet();
+		}
+		packedDuplicateFingerprints.add(fingerprint);
+		packedDuplicateKeys.computeIfAbsent(fingerprint, ignored -> new ArrayList<>(1)).add(duplicate);
+	}
+
+	private boolean packedStatementEquals(long nativeTxn, long statementOrdinal, Resource subject, IRI predicate,
+			Value object, Resource context) throws IOException {
+		long cursor = 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(nativeTxn, packedExplicitDbi, cursorHandle));
+			cursor = cursorHandle.get(0);
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(statementOrdinal).flip());
+			MDBVal data = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+			if (rc == MDB_NOTFOUND) {
+				rc = mdb_cursor_get(cursor, key, data, MDB_LAST);
+			} else if (rc == MDB_SUCCESS
+					&& key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong() > statementOrdinal) {
+				rc = mdb_cursor_get(cursor, key, data, MDB_PREV);
+			}
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			long firstStatementOrdinal = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			long offset = statementOrdinal - firstStatementOrdinal;
+			if (offset < 0 || offset > Integer.MAX_VALUE) {
+				return false;
+			}
+			return PackedSegmentCodec.statementEquals(data.mv_data(), (int) offset, subject, predicate, object, context,
+					SimpleValueFactory.getInstance());
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private long statementFingerprint(Resource subject, IRI predicate, Value object, Resource context) {
+		long subjectPredicate = (long) subject.hashCode() << 32 ^ Integer.toUnsignedLong(predicate.hashCode());
+		long objectContext = (long) object.hashCode() << 32
+				^ Integer.toUnsignedLong(context == null ? 0 : context.hashCode());
+		return subjectPredicate ^ Long.rotateLeft(objectContext, 17);
+	}
+
+	private void clearPackedFingerprintLocations() {
+		synchronized (packedFingerprintLock) {
+			packedFingerprintLocations = null;
+			packedFingerprintCollisionLocations = null;
+			packedDuplicateKeys = null;
+			packedDuplicateFingerprints = null;
+		}
+	}
+
+	private record PackedStatementKey(Resource subject, IRI predicate, Value object, Resource context) {
+	}
+
+	private void writePackedSegment(List<Value> values, ToIntFunction<Value> valueIds, int firstValue, int[] quads,
+			int count) throws IOException {
+		byte[] encoded = PackedSegmentCodec.encode(values, valueIds, firstValue, quads, count);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES)
+					.order(ByteOrder.BIG_ENDIAN)
+					.putLong(Math.addExact(packedTxnCount, 1L))
+					.flip());
+			MDBVal value = MDBVal.calloc(stack);
+			value.mv_size(encoded.length);
+			E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
+			value.mv_data().put(encoded);
+		}
+	}
+
+	private ObjectIntHashMap<Value> ensurePackedValueIds() throws IOException {
+		if (packedValueIds != null) {
+			return packedValueIds;
+		}
+		if (packedExplicitValueCount > Integer.MAX_VALUE - 1) {
+			throw new IOException("Packed value dictionary is too large");
+		}
+		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(
+				Math.max(16, (int) packedExplicitValueCount));
+		if (packedExplicitValueCount > 0) {
+			Value[] values = readPackedValues(writeTxn, packedExplicitValueCount);
+			for (int id = 1; id < values.length; id++) {
+				valueIds.put(values[id], id);
+			}
+		}
+		packedValueIds = valueIds;
+		return valueIds;
 	}
 
 	private int packedValueId(Value value, ObjectIntHashMap<Value> valueIds,
@@ -1950,7 +2540,7 @@ class TripleStore implements Closeable {
 			packedValueId(triple.getPredicate(), valueIds, identityValueIds, values);
 			packedValueId(triple.getObject(), valueIds, identityValueIds, values);
 		}
-		int id = values.size() + 1;
+		int id = Math.toIntExact(packedTxnValueCount + values.size() + 1L);
 		valueIds.put(value, id);
 		identityValueIds.put(value, id, identitySlot);
 		values.add(value);
@@ -1980,7 +2570,7 @@ class TripleStore implements Closeable {
 					end++;
 				}
 				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(packedNextValueBlockId++).flip());
+				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnValueCount, start + 1L)).flip());
 				data.mv_size(blockBytes);
 				E(mdb_put(writeTxn, packedValuesDbi, key, data, MDB_RESERVE));
 				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
@@ -1994,6 +2584,10 @@ class TripleStore implements Closeable {
 	}
 
 	private void writePackedQuadIds(int[] quads, int count) throws IOException {
+		writePackedQuadIds(quads, count, 0);
+	}
+
+	private void writePackedQuadIds(int[] quads, int count, int valueIdOffset) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
 			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
@@ -2001,12 +2595,13 @@ class TripleStore implements Closeable {
 			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
 				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
 				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(packedNextBlockId++).flip());
+				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnCount, start + 1L)).flip());
 				data.mv_size((long) blockCount * PACKED_LOCAL_RECORD_BYTES);
 				E(mdb_put(writeTxn, packedExplicitDbi, key, data, MDB_RESERVE));
 				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
 				for (int i = start * 4, end = (start + blockCount) * 4; i < end; i++) {
-					target.putInt(quads[i]);
+					int valueId = quads[i];
+					target.putInt(valueId == 0 ? 0 : Math.addExact(valueIdOffset, valueId));
 				}
 			}
 		}
@@ -2015,7 +2610,10 @@ class TripleStore implements Closeable {
 	private void storePackedTriple(long subj, long pred, long obj, long context) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(packedNextBlockId++).flip());
+			key.mv_data(stack.malloc(Long.BYTES)
+					.order(ByteOrder.BIG_ENDIAN)
+					.putLong(Math.addExact(packedTxnCount, 1L))
+					.flip());
 			MDBVal value = MDBVal.calloc(stack);
 			value.mv_size(PACKED_RECORD_BYTES);
 			E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
@@ -2042,7 +2640,7 @@ class TripleStore implements Closeable {
 			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
 				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
 				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(packedNextBlockId++).flip());
+				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnCount, start + 1L)).flip());
 				value.mv_size((long) blockCount * PACKED_RECORD_BYTES);
 				E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
 				ByteBuffer packed = value.mv_data().order(ByteOrder.BIG_ENDIAN);
@@ -2071,6 +2669,7 @@ class TripleStore implements Closeable {
 		Value[] packedValues = packedExplicitValueCount > 0
 				? readPackedValues(writeTxn, packedExplicitValueCount)
 				: null;
+		long[] packedValueIds = packedValues == null ? null : materializePackedValues(packedValues);
 		long cursor = 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -2085,6 +2684,29 @@ class TripleStore implements Closeable {
 			while (rc == MDB_SUCCESS) {
 				ByteBuffer key = packedKey.mv_data().order(ByteOrder.BIG_ENDIAN);
 				if (key.getLong(key.position()) != PACKED_COUNT_KEY) {
+					if (packedExplicitSegmented) {
+						PackedSegmentCodec.Decoded decoded = PackedSegmentCodec.decode(packedValue.mv_data(),
+								SimpleValueFactory.getInstance());
+						ByteBuffer quads = decoded.quads();
+						Value[] values = decoded.values();
+						long[] valueIds = materializePackedValues(values);
+						while (quads.hasRemaining()) {
+							long subj = valueIds[quads.getInt()];
+							long pred = valueIds[quads.getInt()];
+							long obj = valueIds[quads.getInt()];
+							int contextId = quads.getInt();
+							long context = contextId == 0 ? 0 : valueIds[contextId];
+							for (TripleIndex index : indexes) {
+								legacyKeyBuffer.clear();
+								index.toKey(legacyKeyBuffer, subj, pred, obj, context);
+								LmdbUtil.setMDBValData(legacyKey, legacyKeyBuffer.flip());
+								E(mdb_put(writeTxn, index.getDB(true), legacyKey, legacyValue, 0));
+							}
+							incrementContext(stack, context);
+						}
+						rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_NEXT);
+						continue;
+					}
 					ByteBuffer records = packedValue.mv_data().order(ByteOrder.BIG_ENDIAN);
 					int recordBytes = packedValues == null ? PACKED_RECORD_BYTES : PACKED_LOCAL_RECORD_BYTES;
 					while (records.remaining() >= recordBytes) {
@@ -2098,11 +2720,11 @@ class TripleStore implements Closeable {
 							obj = records.getLong();
 							context = records.getLong();
 						} else {
-							subj = valueStore.storeValue(packedValues[records.getInt()]);
-							pred = valueStore.storeValue(packedValues[records.getInt()]);
-							obj = valueStore.storeValue(packedValues[records.getInt()]);
+							subj = packedValueIds[records.getInt()];
+							pred = packedValueIds[records.getInt()];
+							obj = packedValueIds[records.getInt()];
 							int contextId = records.getInt();
-							context = contextId == 0 ? 0 : valueStore.storeValue(packedValues[contextId]);
+							context = contextId == 0 ? 0 : packedValueIds[contextId];
 						}
 						for (TripleIndex index : indexes) {
 							legacyKeyBuffer.clear();
@@ -2130,6 +2752,19 @@ class TripleStore implements Closeable {
 				mdb_cursor_close(cursor);
 			}
 		}
+	}
+
+	private long[] materializePackedValues(Value[] values) throws IOException {
+		long[] ids = new long[values.length];
+		for (int offset = 1; offset < values.length; offset += PACKED_MATERIALIZATION_VALUE_BATCH_SIZE) {
+			int count = Math.min(PACKED_MATERIALIZATION_VALUE_BATCH_SIZE, values.length - offset);
+			Value[] batchValues = new Value[count];
+			long[] batchIds = new long[count];
+			System.arraycopy(values, offset, batchValues, 0, count);
+			valueStore.storeValues(batchValues, batchIds, count);
+			System.arraycopy(batchIds, 0, ids, offset, count);
+		}
+		return ids;
 	}
 
 	private Value[] readPackedValues(long txn, long valueCount) throws IOException {
@@ -2187,6 +2822,122 @@ class TripleStore implements Closeable {
 			MDBVal value = MDBVal.malloc(stack);
 			value.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(count).flip());
 			E(mdb_put(writeTxn, dbi, key, value, 0));
+		}
+	}
+
+	private void writePackedCounts(long statementCount, long valueCount) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			MDBVal value = MDBVal.malloc(stack);
+			value.mv_data(stack.malloc(2 * Long.BYTES)
+					.order(ByteOrder.BIG_ENDIAN)
+					.putLong(statementCount)
+					.putLong(valueCount)
+					.flip());
+			E(mdb_put(writeTxn, packedExplicitDbi, key, value, 0));
+			int rc = mdb_del(writeTxn, packedValuesDbi, key, null);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+		}
+	}
+
+	private long readLastPackedValueCount(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer cursorHandle = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, packedValuesDbi, cursorHandle));
+		long cursor = cursorHandle.get(0);
+		try {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return 0;
+			}
+			E(rc);
+			long firstValueId = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			if (firstValueId == PACKED_COUNT_KEY) {
+				return 0;
+			}
+			ByteBuffer block = value.mv_data();
+			long count = 0;
+			while (block.remaining() >= Integer.BYTES) {
+				int length = block.getInt();
+				if (length < 0 || length > block.remaining()) {
+					throw new IOException("Corrupt packed value record length " + length);
+				}
+				block.position(block.position() + length);
+				count++;
+			}
+			return Math.addExact(firstValueId, count - 1);
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private boolean isLastPackedSegment(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer cursorHandle = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, packedExplicitDbi, cursorHandle));
+		long cursor = cursorHandle.get(0);
+		try {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			ByteBuffer data = value.mv_data().order(ByteOrder.BIG_ENDIAN);
+			return data.remaining() >= Integer.BYTES
+					&& data.getInt(data.position()) == PackedSegmentCodec.MAGIC;
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private long readLastPackedStatementCount(MemoryStack stack, long txn, boolean localValueIds) throws IOException {
+		PointerBuffer cursorHandle = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, packedExplicitDbi, cursorHandle));
+		long cursor = cursorHandle.get(0);
+		try {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return 0;
+			}
+			E(rc);
+			long firstStatement = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+			if (firstStatement == PACKED_COUNT_KEY) {
+				return 0;
+			}
+			ByteBuffer data = value.mv_data().order(ByteOrder.BIG_ENDIAN);
+			long blockCount;
+			if (data.remaining() >= 3 * Integer.BYTES
+					&& data.getInt(data.position()) == PackedSegmentCodec.MAGIC) {
+				blockCount = data.getInt(data.position() + 2 * Integer.BYTES);
+			} else {
+				int recordBytes = localValueIds ? PACKED_LOCAL_RECORD_BYTES : PACKED_RECORD_BYTES;
+				blockCount = value.mv_size() / recordBytes;
+			}
+			return Math.addExact(firstStatement, blockCount - 1);
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private void removePackedCountMetadata() throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
+			int explicitRc = mdb_del(writeTxn, packedExplicitDbi, key, null);
+			if (explicitRc != MDB_SUCCESS && explicitRc != MDB_NOTFOUND) {
+				E(explicitRc);
+			}
+			int valueRc = mdb_del(writeTxn, packedValuesDbi, key, null);
+			if (valueRc != MDB_SUCCESS && valueRc != MDB_NOTFOUND) {
+				E(valueRc);
+			}
 		}
 	}
 
@@ -2702,6 +3453,7 @@ class TripleStore implements Closeable {
 	public void startTransaction() throws IOException {
 		closeAlignedWriteCursors();
 		packedWriteActive = false;
+		packedTxnSegmented = false;
 		packedMaterializedInTxn = false;
 		packedTxnCount = 0;
 		packedTxnValueCount = 0;
@@ -2711,6 +3463,32 @@ class TripleStore implements Closeable {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
+			if (autoGrow && pageSize > 0 && requiresResize()) {
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+				var lockManager = txnManager.lockManager();
+				long stamp;
+				try {
+					stamp = lockManager.writeLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
+				try {
+					txnManager.deactivate();
+					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+					E(mdb_env_set_mapsize(env, mapSize));
+					logger.debug("resized map to {} before starting write transaction", mapSize);
+				} finally {
+					try {
+						txnManager.activate();
+					} finally {
+						lockManager.unlockWrite(stamp);
+					}
+				}
+				E(mdb_txn_begin(env, NULL, 0, pp));
+				writeTxn = pp.get(0);
+			}
 		}
 	}
 
@@ -2722,9 +3500,8 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
-					if (packedWriteActive) {
-						writePackedCount(packedExplicitDbi, packedTxnCount);
-						writePackedCount(packedValuesDbi, packedTxnValueCount);
+					if (packedWriteActive && packedCountMetadataPresent) {
+						removePackedCountMetadata();
 					}
 					var lockManager = txnManager.lockManager();
 					long stamp;
@@ -2738,9 +3515,13 @@ class TripleStore implements Closeable {
 						if (packedWriteActive) {
 							packedExplicitCount = packedTxnCount;
 							packedExplicitValueCount = packedTxnValueCount;
+							packedExplicitSegmented = packedTxnSegmented;
+							packedCountMetadataPresent = false;
 						} else if (packedMaterializedInTxn) {
 							packedExplicitCount = 0;
 							packedExplicitValueCount = 0;
+							packedExplicitSegmented = false;
+							clearPackedFingerprintLocations();
 						}
 						if (recordCache != null) {
 							try {
@@ -2770,16 +3551,19 @@ class TripleStore implements Closeable {
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
+						clearPackedFingerprintLocations();
 						throw e;
 					} finally {
 						lockManager.unlockWrite(stamp);
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
+					clearPackedFingerprintLocations();
 				}
 			} finally {
 				writeTxn = 0;
 				packedWriteActive = false;
+				packedTxnSegmented = false;
 				packedMaterializedInTxn = false;
 				packedTxnCount = 0;
 				packedTxnValueCount = 0;

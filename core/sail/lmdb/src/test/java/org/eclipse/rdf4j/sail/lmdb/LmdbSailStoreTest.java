@@ -286,7 +286,11 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testExplainExecutedShowsIndexName() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		sail.getBackingStore().enablePackedWrites = false;
 		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(F.createIRI("urn:materialize"), F.createIRI("urn:materialize-predicate"),
+					F.createIRI("urn:materialize-object"));
 			String actual = conn.prepareTupleQuery("select * { ?s <" + RDFS.LABEL + "> ?o }")
 					.explain(Explanation.Level.Executed)
 					.toString();
@@ -332,6 +336,13 @@ public class LmdbSailStoreTest {
 	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enablePackedWrites = false;
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(F.createIRI("urn:materialize-before-spy"), F.createIRI("urn:materialize-predicate"),
+					F.createIRI("urn:materialize-object"));
+			connection.commit();
+		}
 		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
 		valueStoreField.setAccessible(true);
 		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
@@ -365,6 +376,7 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
+		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -529,7 +541,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void mutationAfterPackedLoadMaterializesLegacyIndexes() throws Exception {
+	void mutationAfterPackedLoadAppendsPackedSegment() throws Exception {
 		File packedDir = new File(dataDir, "packed-materialization");
 		Set<Statement> statements = sampleStatements(10_000);
 		Statement extra = F.createStatement(F.createIRI("urn:extra-subject"), F.createIRI("urn:extra-predicate"),
@@ -550,14 +562,14 @@ public class LmdbSailStoreTest {
 				connection.commit();
 				assertEquals(statements.size() + 1L, connection.size());
 			}
-			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+			assertEquals(statements.size() + 1L, store.getBackingStore().packedExplicitStatementCount());
 		} finally {
 			repository.shutDown();
 		}
 	}
 
 	@Test
-	void existingStatementKeepsLargeIterableOnLegacyIndexes() throws Exception {
+	void existingStatementAndLargeIterableUsePackedSegments() throws Exception {
 		File packedDir = new File(dataDir, "packed-non-empty-store");
 		Set<Statement> statements = sampleStatements(10_000);
 		Statement first = F.createStatement(F.createIRI("urn:first-subject"), F.createIRI("urn:first-predicate"),
@@ -575,7 +587,7 @@ public class LmdbSailStoreTest {
 				connection.commit();
 				assertEquals(statements.size() + 1L, connection.size());
 			}
-			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+			assertEquals(statements.size() + 1L, store.getBackingStore().packedExplicitStatementCount());
 		} finally {
 			repository.shutDown();
 		}
@@ -604,7 +616,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void automaticEvaluationKeepsLargeIterableOnLegacyIndexes() {
+	void automaticEvaluationUsesPackedSegments() {
 		File automaticDir = new File(dataDir, "automatic-evaluation-packed");
 		LmdbStore store = new LmdbStore(automaticDir, new LmdbStoreConfig("spoc,posc"));
 		Repository repository = new SailRepository(store);
@@ -617,9 +629,52 @@ public class LmdbSailStoreTest {
 				connection.commit();
 				assertEquals(statements.size(), connection.size());
 			}
-			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
+			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void automaticEvaluationPackedSegmentsDeduplicateAndSurviveReopen() {
+		File packedDir = new File(dataDir, "automatic-evaluation-packed-reopen");
+		Set<Statement> statements = sampleStatements(256);
+		Statement extra = F.createStatement(F.createIRI("urn:extra-subject"), F.createIRI("urn:extra-predicate"),
+				F.createLiteral("extra-object"));
+		LmdbStore firstStore = new LmdbStore(packedDir, new LmdbStoreConfig("spoc,posc"));
+		Repository firstRepository = new SailRepository(firstStore);
+		firstRepository.init();
+		try {
+			try (RepositoryConnection connection = firstRepository.getConnection()) {
+				connection.begin();
+				connection.add(statements);
+				connection.commit();
+				connection.begin();
+				connection.add(statements);
+				connection.add(extra);
+				connection.commit();
+				assertEquals(statements.size() + 1L, connection.size());
+				assertTrue(connection.hasStatement(extra, true));
+			}
+			assertEquals(statements.size() + 1L, firstStore.getBackingStore().packedExplicitStatementCount());
+		} finally {
+			firstRepository.shutDown();
+		}
+
+		LmdbStore reopenedStore = new LmdbStore(packedDir, new LmdbStoreConfig("spoc,posc"));
+		Repository reopenedRepository = new SailRepository(reopenedStore);
+		reopenedRepository.init();
+		try {
+			try (RepositoryConnection connection = reopenedRepository.getConnection()) {
+				assertEquals(statements.size() + 1L, connection.size());
+				assertTrue(connection.hasStatement(extra, true));
+				connection.begin();
+				connection.add(extra);
+				connection.commit();
+				assertEquals(statements.size() + 1L, connection.size());
+			}
+		} finally {
+			reopenedRepository.shutDown();
 		}
 	}
 
@@ -735,6 +790,7 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
+		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -835,6 +891,7 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
+		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -954,6 +1011,13 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = true;
+		backingStore.enablePackedWrites = false;
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(F.createIRI("urn:materialize-before-async-spy"), F.createIRI("urn:materialize-predicate"),
+					F.createIRI("urn:materialize-object"));
+			connection.commit();
+		}
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
 		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
@@ -999,6 +1063,7 @@ public class LmdbSailStoreTest {
 		try {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.enableMultiThreading = false;
+			backingStore.enablePackedWrites = false;
 
 			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 			tripleStoreField.setAccessible(true);
@@ -1047,6 +1112,7 @@ public class LmdbSailStoreTest {
 		try {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.enableMultiThreading = false;
+			backingStore.enablePackedWrites = false;
 
 			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 			tripleStoreField.setAccessible(true);

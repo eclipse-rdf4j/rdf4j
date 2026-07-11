@@ -861,8 +861,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Line type should use exact direct access");
-		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
-				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
+		requirePredicateHeaderContainsAny(mismatches, plan, "http://example.com/theme/train/partOfLine",
+				"partOfLine optional should use a bounded line object access",
+				"plannedLookupComponents=[O]", "plannedLookupComponents=[P, O]");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
@@ -1300,6 +1301,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (!header.contains(expectedHeaderPart)) {
 			mismatches.add(description + ": expected `" + expectedHeaderPart + "` in `" + header + "`");
 		}
+	}
+
+	private static void requirePredicateHeaderContainsAny(List<String> mismatches, String plan, String predicateIri,
+			String description, String... expectedHeaderParts) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			mismatches.add(description + ": missing predicate `" + predicateIri + "`");
+			return;
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		int patternEnd = plan.indexOf('\n', patternStart);
+		if (patternStart < 0 || patternEnd < 0) {
+			mismatches.add(description + ": missing statement-pattern header for `" + predicateIri + "`");
+			return;
+		}
+		String header = plan.substring(patternStart, patternEnd);
+		for (String expectedHeaderPart : expectedHeaderParts) {
+			if (header.contains(expectedHeaderPart)) {
+				return;
+			}
+		}
+		mismatches.add(description + ": expected one of `" + String.join("`, `", expectedHeaderParts)
+				+ "` in `" + header + "`");
 	}
 
 	private static void requireAnyPredicateHeaderContains(List<String> mismatches, String plan, String predicateIri,

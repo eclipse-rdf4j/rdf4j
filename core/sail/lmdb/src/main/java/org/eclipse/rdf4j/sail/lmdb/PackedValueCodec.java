@@ -34,6 +34,28 @@ final class PackedValueCodec {
 	private PackedValueCodec() {
 	}
 
+	static long maximumEncodedSize(Value value) {
+		return switch (value.getType()) {
+		case IRI -> Byte.BYTES + Integer.BYTES + maximumUtf8Size(value.stringValue());
+		case BNode -> Byte.BYTES + Integer.BYTES + maximumUtf8Size(((BNode) value).getID());
+		case Literal -> {
+			Literal literal = (Literal) value;
+			long size = Byte.BYTES + Integer.BYTES + maximumUtf8Size(literal.getLabel())
+					+ Integer.BYTES + Byte.BYTES + Integer.BYTES
+					+ maximumUtf8Size(literal.getDatatype().stringValue());
+			if (literal.getLanguage().isPresent()) {
+				size = Math.addExact(size, maximumUtf8Size(literal.getLanguage().orElseThrow()));
+			}
+			yield size;
+		}
+		case TripleTerm -> Byte.BYTES + 3L * Integer.BYTES;
+		};
+	}
+
+	private static long maximumUtf8Size(String value) {
+		return Math.multiplyExact((long) value.length(), 3L);
+	}
+
 	static byte[] encode(Value value, ToIntFunction<Value> idLookup) {
 		return switch (value.getType()) {
 		case IRI -> encodeStringValue(IRI_VALUE, value.stringValue());
