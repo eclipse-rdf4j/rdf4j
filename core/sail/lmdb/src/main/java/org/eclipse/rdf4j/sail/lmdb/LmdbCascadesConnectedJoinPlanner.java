@@ -108,14 +108,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 			trace.add("reject factorCount=" + factors.size());
 			return Optional.empty();
 		}
-		if (LmdbHypergraphJoinPlanner.enabled()) {
-			Optional<Plan> dphypPlan = LmdbHypergraphJoinPlanner.tryPlan(factors, initialBoundVars, costModel,
-					fallbackStatistics, tier, trace);
-			if (dphypPlan.isPresent()) {
-				return dphypPlan;
-			}
+		if (!LmdbHypergraphJoinPlanner.enabled()) {
+			trace.add("reject dphyp-disabled; standard pipeline owns rollback");
+			return Optional.empty();
 		}
-		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
 		Set<String> initial = plannerNames(initialBoundVars);
 		PlanTemplateCache.Key cacheKey = scopedPlanCacheAvailable(scopedStatistics)
 				? new PlanTemplateCache.Key(factorFingerprints(factors, scopedStatistics), initial,
@@ -126,18 +122,16 @@ final class LmdbCascadesConnectedJoinPlanner {
 								LmdbHypergraphJoinPlanner.maxFactors(), LmdbHypergraphJoinPlanner.pairBudget(), tier),
 						scopedStatistics.get().statisticsSnapshotVersion())
 				: null;
-		Optional<PlanTemplate> cachedTemplate = trace.enabled() ? null : cachedPlanTemplate(scopedStatistics, cacheKey);
+		Optional<Plan> cachedTemplate = trace.enabled() ? null : cachedDphypPlan(scopedStatistics, cacheKey);
 		if (cachedTemplate != null) {
-			return cachedTemplate.map(template -> template.toPlan(factors));
+			return cachedTemplate;
 		}
-
-		Optional<PlanTemplate> template = greedy
-				? greedyPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace, tier)
-				: dpPlan(factors, initialBoundVars, costModel, fallbackStatistics, trace, tier);
-		if (!trace.enabled()) {
-			cachePlanTemplate(scopedStatistics, cacheKey, template);
+		Optional<Plan> planned = LmdbHypergraphJoinPlanner.tryPlan(factors, initialBoundVars, costModel,
+				fallbackStatistics, tier, trace);
+		if (!trace.enabled() && planned.isPresent()) {
+			cacheDphypPlan(scopedStatistics, cacheKey, planned.get());
 		}
-		return template.map(planTemplate -> planTemplate.toPlan(factors));
+		return planned;
 	}
 
 	private static Optional<PlanTemplate> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
@@ -524,6 +518,22 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static boolean scopedPlanCacheAvailable(Optional<LmdbPlannerServices> services) {
 		return services.isPresent() && services.get().hasOptimizationScopedPlannerCache();
+	}
+
+	private static Optional<Plan> cachedDphypPlan(Optional<LmdbPlannerServices> services,
+			PlanTemplateCache.Key cacheKey) {
+		if (services.isEmpty() || cacheKey == null) {
+			return null;
+		}
+		Object cached = services.get().planTemplateCache().get(cacheKey).orElse(null);
+		return cached instanceof DphypPlanTemplate template ? Optional.of(template.instantiate()) : null;
+	}
+
+	private static void cacheDphypPlan(Optional<LmdbPlannerServices> services, PlanTemplateCache.Key cacheKey,
+			Plan plan) {
+		if (services.isPresent() && cacheKey != null && plan != null) {
+			services.get().planTemplateCache().put(cacheKey, new DphypPlanTemplate(plan));
+		}
 	}
 
 	private static Optional<LmdbPlannerServices> scopedPlanCacheStatistics(JoinFactorCostModel costModel,
@@ -1575,6 +1585,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	record Plan(TupleExpr tupleExpr, CostVector cost, EstimateSnapshot estimate, int factorCount, String algorithm,
 			int zeroVarFactorCount) {
+	}
+
+	private record DphypPlanTemplate(Plan plan) {
+		private DphypPlanTemplate {
+			plan = copy(plan);
+		}
+
+		private Plan instantiate() {
+			return copy(plan);
+		}
+
+		private static Plan copy(Plan source) {
+			return new Plan(source.tupleExpr().clone(), source.cost(), source.estimate(), source.factorCount(),
+					source.algorithm(), source.zeroVarFactorCount());
+		}
 	}
 
 	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount, String trace) {

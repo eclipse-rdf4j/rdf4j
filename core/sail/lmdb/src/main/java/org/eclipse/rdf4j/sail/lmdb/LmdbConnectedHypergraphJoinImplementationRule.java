@@ -38,6 +38,7 @@ final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 	@Override
 	public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 		return expression.logical()
+				&& LmdbHypergraphJoinPlanner.enabled()
 				&& costModel != null
 				&& expression.tupleExpr() instanceof Join
 				&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())

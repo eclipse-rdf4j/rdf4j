@@ -88,7 +88,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String APPLIED_METRIC = "optimizer.cascadesApplied";
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
 	static final String STANDARD_PLAN_POLICY_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanPolicy";
-	static final String STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanMinImprovement";
 	static final String STANDARD_PLAN_FULL_ANNOTATIONS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations";
 	private static final String CASCADES_RULE = "optimizer.cascadesRule";
 	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
@@ -112,7 +111,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final int DEFAULT_TRACE_LIMIT = 512;
 	private static final int CANDIDATE_PLAN_TEXT_LIMIT = 16_384;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
-	private static final double DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT = 1.20d;
 
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -323,27 +321,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (cascadesPlan.approximate() && hasEmergencyFallbackProvenance(cascadesPlan)) {
 			return policy.fallbacks();
 		}
-		if (!policy.compares()) {
-			return false;
-		}
-		if (mode == Mode.EXACT) {
-			return false;
-		}
-		return standardPlanWinsByCanonicalWork(candidate, cascadesPlan);
-	}
-
-	private boolean standardPlanWinsByCanonicalWork(StandardPlanCandidate candidate, CascadesPlan cascadesPlan) {
-		double standardWork = standardPlanCanonicalWorkRows(candidate);
-		if (!isComparableWorkRows(standardWork)) {
-			return false;
-		}
-		double cascadesWork = cascadesPlan.cost().workRows();
-		if (!isComparableWorkRows(cascadesWork)) {
-			return true;
-		}
-		double minImprovement = doubleProperty(STANDARD_PLAN_MIN_IMPROVEMENT_PROPERTY,
-				DEFAULT_STANDARD_PLAN_MIN_IMPROVEMENT);
-		return standardWork * Math.max(1.0d, minImprovement) <= cascadesWork;
+		return false;
 	}
 
 	private boolean shouldRepairStandardFallbackSubtrees(StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
@@ -1898,19 +1876,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		try {
 			return Math.max(1L, Long.parseLong(value.trim()));
-		} catch (NumberFormatException e) {
-			return fallback;
-		}
-	}
-
-	private double doubleProperty(String property, double fallback) {
-		String value = System.getProperty(property);
-		if (value == null || value.isBlank()) {
-			return fallback;
-		}
-		try {
-			double parsed = Double.parseDouble(value.trim());
-			return Double.isFinite(parsed) && parsed > 0.0d ? parsed : fallback;
 		} catch (NumberFormatException e) {
 			return fallback;
 		}

@@ -1048,7 +1048,7 @@ class LmdbCascadesOptimizerTest {
 
 	@Test
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	void comparePolicyUsesCanonicalStandardPlanWorkRows() throws Exception {
+	void comparePolicyNeverArbitratesAgainstLegalCascadesPlan() throws Exception {
 		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new RecordingStatistics(), false);
 		Class<?> modeClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$Mode");
 		Class<?> policyClass = Class.forName(LmdbCascadesOptimizer.class.getName() + "$StandardPlanPolicy");
@@ -1066,7 +1066,7 @@ class LmdbCascadesOptimizerTest {
 		MemoExpr expression = new MemoExpr(1, 1, "StatementPattern", List.of(), "", pattern(),
 				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
 		Winner winner = new Winner(expression, pattern(), PhysicalProperties.ANY,
-				CostVector.ofRowsAndWork(1.0d, 1_100.0d, QErrorInterval.exact(1.0d, "test-cascades")),
+				CostVector.ofRowsAndWork(1.0d, 10_000.0d, QErrorInterval.exact(1.0d, "test-cascades")),
 				List.of(), false, "complete");
 		CascadesPlan cascadesPlan = new CascadesPlan(new Memo(CascadesCostModel.from(new RecordingStatistics())),
 				1, OptimizationGoal.root(), Optional.of(winner), false, List.of("complete"));
@@ -1076,7 +1076,7 @@ class LmdbCascadesOptimizerTest {
 
 		assertFalse((Boolean) standardPlanWins.invoke(optimizer, autoMode, comparePolicy, standardPlan,
 				cascadesPlan),
-				"Canonical standard-plan work rows need the configured 1.2x improvement before replacement");
+				"A standard plan must not replace a legal Cascades winner through cross-planner cost arbitration");
 	}
 
 	@Test

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -286,10 +288,15 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				new PathFocusStatistics(), new PathFocusStatistics());
 
 		assertTrue(plan.isPresent());
-		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
-		assertTrue(orderedFactors.get(1) instanceof ArbitraryLengthPath,
-				() -> "The planner should use the cheap already-bound start endpoint instead of hard-waiting "
-						+ "for a later expensive ?prop endpoint: " + orderedFactors);
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, plan.get().algorithm());
+		ArbitraryLengthPath plannedPath = collect(plan.get().tupleExpr(), ArbitraryLengthPath.class).getFirst();
+		assertTrue(plannedPath.getParentNode() instanceof Join);
+		Join pathJoin = (Join) plannedPath.getParentNode();
+		assertTrue(pathJoin.getRightArg() == plannedPath,
+				() -> "The selected path endpoint must be evaluated as a parameterized inner: "
+						+ plan.get().tupleExpr());
+		assertTrue(pathJoin.getLeftArg().getBindingNames().contains("start"),
+				"The cheaper start endpoint must be bound before path evaluation");
 	}
 
 	@Test
@@ -303,14 +310,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				new FiniteAnchorBridgeStatistics(), new FiniteAnchorBridgeStatistics());
 
 		assertTrue(plan.isPresent());
-		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
-		int userAnchorIndex = factorIndex(orderedFactors, "u");
-		int nameAnchorIndex = factorIndex(orderedFactors, "optName");
-		int nameLookupIndex = statementPatternIndex(orderedFactors, "u", "optName");
-		assertTrue(userAnchorIndex >= 0 && nameAnchorIndex >= 0 && nameLookupIndex >= 0,
-				() -> "Expected both finite anchors and the bridge lookup in the plan: " + orderedFactors);
-		assertTrue(userAnchorIndex < nameLookupIndex && nameAnchorIndex < nameLookupIndex,
-				() -> "The bridge lookup should see both finite anchors before it is costed: " + orderedFactors);
+		assertFiniteAnchorBridgePlan(plan.get(), 2, 1, false);
 	}
 
 	@Test
@@ -331,15 +331,47 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 				Set.of(), new BoundBridgeStatistics(), new BoundBridgeStatistics());
 
 		assertTrue(plan.isPresent());
-		List<TupleExpr> orderedFactors = LmdbJoinIslandConnectivity.flattenFactors(plan.get().tupleExpr());
-		int userAnchorIndex = factorIndex(orderedFactors, "u");
-		int nameAnchorIndex = factorIndex(orderedFactors, "optName");
-		int nameLookupIndex = statementPatternIndex(orderedFactors, "u", "optName");
-		assertTrue(userAnchorIndex >= 0 && nameAnchorIndex >= 0 && nameLookupIndex >= 0,
-				() -> "Expected both finite anchors and bridge lookup in the plan: " + orderedFactors);
-		assertTrue(userAnchorIndex < nameAnchorIndex && nameAnchorIndex < nameLookupIndex,
-				() -> "A small finite anchor should be counted before the expensive bound bridge lookup: "
-						+ orderedFactors);
+		assertFiniteAnchorBridgePlan(plan.get(), 2, 36, true);
+	}
+
+	private static void assertFiniteAnchorBridgePlan(LmdbCascadesConnectedJoinPlanner.Plan plan, int anchorCount,
+			int statementPatternCount, boolean degraded) {
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, plan.algorithm());
+		assertEquals(anchorCount, collect(plan.tupleExpr(), BindingSetAssignment.class).size());
+		assertEquals(statementPatternCount, collect(plan.tupleExpr(), StatementPattern.class).size());
+		StatementPattern bridge = collect(plan.tupleExpr(), StatementPattern.class)
+				.stream()
+				.filter(pattern -> "u".equals(pattern.getSubjectVar().getName())
+						&& "optName".equals(pattern.getObjectVar().getName()))
+				.findFirst()
+				.orElseThrow();
+		assertTrue(bridge.getParentNode() instanceof Join);
+		Join bridgeJoin = (Join) bridge.getParentNode();
+		assertTrue(bridgeJoin.getRightArg() == bridge,
+				() -> "Bridge must be a bound inner lookup: " + plan.tupleExpr());
+		assertTrue(bridgeJoin.getLeftArg().getBindingNames().containsAll(Set.of("u", "optName")),
+				"Both finite anchors must be available before the bridge lookup");
+		assertTrue(bridge.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS) < 1_000_000.0d,
+				"Finite anchors must avoid the unbound bridge scan");
+		if (degraded) {
+			assertEquals(1.0d, plan.tupleExpr().getDoubleMetricPlanned("optimizer.dphypDegraded"), 0.0d);
+		} else {
+			assertFalse(plan.tupleExpr().getDoubleMetricsPlanned().containsKey("optimizer.dphypDegraded"));
+		}
+	}
+
+	private static <T extends TupleExpr> List<T> collect(TupleExpr root, Class<T> type) {
+		List<T> matches = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					matches.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		return List.copyOf(matches);
 	}
 
 	private static List<String> applicableRuleIds(TupleExpr tupleExpr) {
@@ -506,29 +538,6 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 			current = new Join(current, factors.get(i));
 		}
 		return current;
-	}
-
-	private static int factorIndex(List<TupleExpr> orderedFactors, String bindingName) {
-		for (int i = 0; i < orderedFactors.size(); i++) {
-			TupleExpr factor = orderedFactors.get(i);
-			if (factor instanceof BindingSetAssignment assignment
-					&& assignment.getAssuredBindingNames().contains(bindingName)) {
-				return i;
-			}
-		}
-		return -1;
-	}
-
-	private static int statementPatternIndex(List<TupleExpr> orderedFactors, String subjectName, String objectName) {
-		for (int i = 0; i < orderedFactors.size(); i++) {
-			TupleExpr factor = orderedFactors.get(i);
-			if (factor instanceof StatementPattern pattern
-					&& subjectName.equals(pattern.getSubjectVar().getName())
-					&& objectName.equals(pattern.getObjectVar().getName())) {
-				return i;
-			}
-		}
-		return -1;
 	}
 
 	private static TupleExpr constantSubjectRuntimeIslandWithGroundType() {

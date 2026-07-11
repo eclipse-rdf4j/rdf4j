@@ -53,7 +53,10 @@ estimate-audit contract tests.
 - [x] (2026-07-11 16:03+02:00) Keyed DPhyp frontiers by node set, required outer nodes, and `PhysicalProperties`;
   retained interesting orders, preserved nested-loop outer order, and passed all 11 core costing tests plus 19 adapter
   tests.
-- [ ] Remove duplicate join planners and standard/Cascades arbitration.
+- [x] (2026-07-11 17:57+02:00) Made enabled DPhyp authoritative for two-factor, exact, over-cap, zero-variable, path,
+  and bounded-finite-anchor islands; moved template caching around DPhyp, made the kill switch decline to the standard
+  pipeline, removed 1.20 cross-planner arbitration, and passed 19 adapter, 15 admissibility, and 55 optimizer tests.
+- [ ] Physically delete unreachable connected and guarantee mini-planners.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
 ## Surprises & Discoveries
@@ -102,6 +105,14 @@ estimate-audit contract tests.
   states. A node-set-indexed frontier preserves the complete key while keeping enumeration lookup proportional to the
   alternatives for one node set.
   Evidence: `CostingReceiver`'s `Map<Long, Map<StateKey, JoinPlan>>` and the 11-test core costing selector.
+- Observation: Treating every path endpoint producer as a conjunctive dependency can disconnect the graph and force a
+  path to wait for both endpoints, although either endpoint is sufficient. Choosing the cheapest endpoint producer and
+  retaining other endpoint equalities as connectivity preserves legal alternatives.
+  Evidence: the red/green `connectedPlannerDoesNotHardWaitForMoreExpensivePathEndpoint` selector.
+- Observation: Deterministic greedy fallback initially considered nested lookups only for explicitly parameterized
+  nodes, delaying an ordinary but cheaply bound bridge behind padding scans. Greedy must compare hash and lookup access
+  for every connected singleton, just like exact costing.
+  Evidence: the red/green `greedyPlannerBuildsFiniteAnchorBeforeExpensiveBoundBridgeLookup` selector.
 
 ## Decision Log
 
@@ -194,6 +205,13 @@ DPhyp state retention now distinguishes required outer nodes and shared Cascades
 set. Scan alternatives can retain interesting orders, nested loops preserve the outer ordering, hash joins explicitly
 destroy it, and parameterized singleton requirements clear only when a legal outer supplies them. The full core costing
 and LMDB adapter selectors pass.
+
+Enabled DPhyp is now the connected-rule dispatch for all supported island sizes. Exact-cap and pair-budget exhaustion
+degrade through deterministic greedy costing; tiny disjoint VALUES anchors receive a bounded common-bridge
+simplification; ground filters enter only after the runtime component; and paths select the cheapest sufficient
+endpoint. Disabling DPhyp makes the Cascades rule decline to the standard pipeline. A legal Cascades winner is no longer
+replaced through the former 1.20 standard-plan cost comparison. The obsolete connected-DP helpers are now unreachable
+and still need physical deletion together with the guarantee rule's private planner.
 
 ## Context and Orientation
 

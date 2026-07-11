@@ -76,6 +76,11 @@ public final class HypergraphOptimizer {
 				} else {
 					double cost = plan.cost() + scan.cost() + costs.hashJoinCost(plan.rows(), scan.rows(), rows);
 					candidate = JoinPlan.join(JoinPlan.Kind.HASH_JOIN, plan, scan, rows, cost);
+					double lookup = costs.nestedLoopLookupCost(node, plan.nodes(), plan.rows());
+					if (!Double.isNaN(lookup) && plan.cost() + lookup < candidate.cost()) {
+						candidate = JoinPlan.join(JoinPlan.Kind.NESTED_LOOP, plan, scan, rows,
+								plan.cost() + lookup);
+					}
 				}
 				if (best == null || candidate.cost() < best.cost()
 						|| (candidate.cost() == best.cost() && node < best.right().scanNode())) {

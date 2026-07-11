@@ -185,12 +185,11 @@ class LmdbHypergraphJoinPlannerTest {
 	}
 
 	@Test
-	void flagOffKeepsTheExistingPlanner() {
+	void flagOffDeclinesToTheStandardPipeline() {
 		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "false");
 		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(starIsland(), starModel());
-		assertTrue(result.isPresent());
-		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
-				"with the flag explicitly off the left-deep planner must answer");
+		assertTrue(result.isEmpty(),
+				"with DPhyp disabled the Cascades connected implementation must decline to the standard pipeline");
 	}
 
 	@Test
@@ -459,13 +458,13 @@ class LmdbHypergraphJoinPlannerTest {
 	}
 
 	@Test
-	void declinesTwoFactorIslands() {
+	void ownsTwoFactorIslands() {
 		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
 		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
 		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(island, starModel());
 		assertTrue(result.isPresent());
-		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
-				"two factors have no bushy alternative; leave them to the existing planner");
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
+				"enabled DPhyp must own even a two-factor join island");
 	}
 
 	@Test
@@ -495,7 +494,7 @@ class LmdbHypergraphJoinPlannerTest {
 	}
 
 	@Test
-	void maxFactorCapDeclines() {
+	void maxFactorCapDegradesInsideDphyp() {
 		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
 		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_MAX_FACTORS_PROPERTY, "3");
 		SyntheticCostModel model = starModel().table("d", 10).boundSelectivity("d", "s", 0.1d);
@@ -503,7 +502,8 @@ class LmdbHypergraphJoinPlannerTest {
 				pattern("s", "d", "o4"));
 		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(island, model);
 		assertTrue(result.isPresent());
-		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm());
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm());
+		assertEquals(1.0d, result.get().tupleExpr().getDoubleMetricPlanned("optimizer.dphypDegraded"), 0.0d);
 	}
 
 	@Test
