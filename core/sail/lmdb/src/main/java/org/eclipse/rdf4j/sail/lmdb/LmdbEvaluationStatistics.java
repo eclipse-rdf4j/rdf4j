@@ -392,8 +392,8 @@ class LmdbEvaluationStatistics
 			workRows = Math.max(1.0d, rows);
 		}
 		StatisticsEstimate estimate = new StatisticsEstimate(rows,
-				QErrorInterval.heuristic(rows, factor.getEstimateVector().rowQErrorMax(), source), workRows, source,
-				metrics);
+				QErrorInterval.heuristic(rows, factor.getNormalizedEstimateVector().rowQErrorMax(), source), workRows,
+				source, metrics);
 		return Optional.of(factor.getBagEstimate()
 				.map(estimate::withBag)
 				.orElse(estimate));
@@ -5785,7 +5785,7 @@ class LmdbEvaluationStatistics
 						baseEstimate.getAccessRowsBeforeFilter()),
 				baseEstimate.isRepeatedInvocationsCosted() || isPositiveFinite(repeatedInvocations), false);
 		return preserveBagEstimate(baseEstimate, blendedEstimate, blendedRows, blendedWorkRows,
-				blendedEstimate.getEstimateVector().confidence(),
+				blendedEstimate.getNormalizedEstimateVector().confidence(),
 				stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 						baseEstimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)),
 				doubleMetrics, true);

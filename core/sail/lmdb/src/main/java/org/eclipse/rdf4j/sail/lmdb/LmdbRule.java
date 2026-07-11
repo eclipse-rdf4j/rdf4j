@@ -363,7 +363,7 @@ abstract class LmdbRule implements CascadesRule {
 	}
 
 	CostVector cost(JoinFactorCostModel.FactorCostEstimate estimate) {
-		return CostVector.from(estimate.getEstimateVector());
+		return CostVector.from(estimate.getNormalizedEstimateVector());
 	}
 
 	EstimateSnapshot snapshot(JoinFactorCostModel.FactorCostEstimate estimate, CostVector cost) {

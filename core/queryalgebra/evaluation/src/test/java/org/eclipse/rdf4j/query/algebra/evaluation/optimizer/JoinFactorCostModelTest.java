@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Map;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimateVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -28,10 +28,12 @@ class JoinFactorCostModelTest {
 				Map.of("plannedEstimateSource", "sketch-join"),
 				Map.of(TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, 0.90d));
 
-		EstimateVector vector = estimate.getEstimateVector();
+		EstimateVector vector = estimate.getNormalizedEstimateVector();
 
 		assertEquals(0.90d, vector.confidence(), 1.0e-9d);
 		assertEquals(3.0d, vector.uncertaintyRows(), 1.0e-9d);
+		assertEquals(vector.confidence(), estimate.getEstimateVector().confidence(), 1.0e-9d,
+				"Deprecated vector descriptor should forward the canonical evidence");
 	}
 
 	@Test
@@ -42,6 +44,6 @@ class JoinFactorCostModelTest {
 						TelemetryMetricNames.PLANNED_SKETCH_CONFIDENCE, 0.90d,
 						TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.60d));
 
-		assertEquals(0.60d, estimate.getEstimateVector().confidence(), 1.0e-9d);
+		assertEquals(0.60d, estimate.getNormalizedEstimateVector().confidence(), 1.0e-9d);
 	}
 }

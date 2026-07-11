@@ -561,9 +561,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		TupleExpr plannedFactor = plannedRowPreservingFactor(factor, boundVars, costModel, fallbackStatistics,
 				estimationTier);
 		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, stringMetrics,
-				doubleMetrics, factorEstimate.getEstimateVector().rowQErrorMax(),
-				factorEstimate.getEstimateVector().workQErrorMax(), factorEstimate.getEstimateVector().confidence(),
-				factorEstimate.getEstimateVector().evidenceCount(), disconnected, plannedFactor);
+				doubleMetrics, factorEstimate.getNormalizedEstimateVector().rowQErrorMax(),
+				factorEstimate.getNormalizedEstimateVector().workQErrorMax(),
+				factorEstimate.getNormalizedEstimateVector().confidence(),
+				factorEstimate.getNormalizedEstimateVector().evidenceCount(), disconnected, plannedFactor);
 	}
 
 	private static TupleExpr plannedRowPreservingFactor(TupleExpr factor, Set<String> boundVars,

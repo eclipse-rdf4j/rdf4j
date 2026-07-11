@@ -68,6 +68,10 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 				estimateVector.uncertaintyRows(), estimateVector.confidence(), estimateVector.evidenceCount());
 	}
 
+	public static CostVector from(EstimateVector estimateVector) {
+		return estimateVector == null ? INFINITE : estimateVector.toCostVector();
+	}
+
 	public CostVector plus(CostVector other) {
 		Objects.requireNonNull(other, "other");
 		return new CostVector(rows + other.rows, workRows + other.workRows, memoryRows + other.memoryRows,

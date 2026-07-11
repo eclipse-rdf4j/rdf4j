@@ -33,8 +33,11 @@ estimate-audit contract tests.
 - [ ] (2026-07-11 10:51+02:00) Extracted the first estimator service slice: ingest policy, persistence-cycle
   coordination, scope lifecycle, fixed-order plan costing, frequency arithmetic, and OMNI membership estimation now
   have the requested package-private owners. Remaining deep OMNI/persistence kernels still need migration.
-- [ ] Split the statistics facade behind package-private services.
-- [ ] Consolidate estimates into BagEstimate, EstimateVector, and CostVector boundaries.
+- [x] (2026-07-11 11:15+02:00) Composed the statistics facade behind the five requested package-private services and
+  passed matching 100-test memoization coverage.
+- [x] (2026-07-11 11:15+02:00) Made shared Cascades `EstimateVector` canonical for factor estimates, migrated every
+  production consumer, removed dead `JoinCostVector`, retained the released nested vector descriptor as a deprecated
+  forwarding API, and passed both compatibility gates.
 - [ ] Extract guarantee planning and finish DPhyp Milestone E.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
@@ -64,6 +67,9 @@ estimate-audit contract tests.
   moving step construction into `SketchJoinOrderService` preserves that existing behavior and makes the unused
   extension seam explicit for later removal or implementation.
   Evidence: matching 8-test `LmdbFiniteValuesJoinSurfacePlanningTest` runs before and after extraction.
+- Observation: `JoinCostVector` had no production caller; its only executable consumer was its dedicated comparator
+  test. Historical benchmark text still contains the old diagnostic rendering and is intentionally preserved.
+  Evidence: `rg -n 'JoinCostVector' core/sail/lmdb/src/main/java core/sail/lmdb/src/test/java` before deletion.
 
 ## Decision Log
 
@@ -81,6 +87,11 @@ estimate-audit contract tests.
 - Decision: Keep one draft PR but land independently green milestone commits.
   Rationale: This is the user's requested delivery shape; green boundaries retain review and rollback points without a
   history rewrite or force-push.
+  Date/Author: 2026-07-11 / Codex.
+- Decision: Retain `JoinFactorCostModel.EstimateVector` and `FactorCostEstimate.getEstimateVector()` as deprecated
+  forwarding descriptors while making `getNormalizedEstimateVector()` canonical internally.
+  Rationale: The nested type and getter were released as stable public API in 6.0, so removing them would contradict
+  the zero-stable-incompatibility acceptance criterion. All production consumers now use the shared Cascades type.
   Date/Author: 2026-07-11 / Codex.
 - Decision: Use `BagEstimate` as the statistics/evidence currency, Cascades `EstimateVector` as the normalized estimate
   boundary, and `CostVector` as the only ranking currency.
@@ -113,6 +124,13 @@ policy; `SketchEstimatorPersistenceManager` owns publication serialization; `Ske
 thread-local scope lifecycle; `SketchJoinOrderService` owns fixed-order step construction and summary costing;
 `FrequencySketchEstimator` owns net frequency arithmetic; and `OmniSketchEstimatorService` owns retained-witness
 membership estimation. Matching scope, persistence, rebuild-parity, fixed-order, and OMNI selectors are green.
+
+The statistics composition and currency boundary are complete. `LmdbPlannerServices` composes
+`LmdbCardinalityEstimator`, `LmdbJoinFactorCostEstimator`, `LmdbJoinOrderEstimator`,
+`LmdbExecutionFeedbackRecorder`, and `LmdbEstimatorScope`; concrete-statistics detection remains centralized there.
+`FactorCostEstimate` now creates one canonical shared `EstimateVector`, while the released nested descriptor forwards
+the same values. `CostVector` is the remaining production ranking currency. The 100-test memoization selector and both
+japicmp module gates pass.
 
 ## Context and Orientation
 

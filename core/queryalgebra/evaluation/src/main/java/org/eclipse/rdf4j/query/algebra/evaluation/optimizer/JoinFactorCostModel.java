@@ -86,6 +86,7 @@ public interface JoinFactorCostModel {
 		}
 	}
 
+	@Deprecated(since = "6.1.0")
 	record EstimateVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
 			double rowQErrorMean, double rowQErrorMax, double workQErrorMean, double workQErrorMax,
 			double uncertaintyRows, double confidence, double evidenceCount) {
@@ -539,6 +540,7 @@ public interface JoinFactorCostModel {
 		private final boolean repeatedInvocationsCosted;
 		private final boolean exactOutputRows;
 		private final EstimateVector estimateVector;
+		private final org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector normalizedEstimateVector;
 		private final BagEstimate bagEstimate;
 
 		public FactorCostEstimate(double workRows, double outputRows) {
@@ -608,18 +610,27 @@ public interface JoinFactorCostModel {
 			double workQErrorMean = workQErrorMean(this.doubleMetrics, this.outputRows, exactOutputRows);
 			double workQErrorMax = workQErrorMax(this.doubleMetrics, this.outputRows, exactOutputRows);
 			double confidence = confidence(this.doubleMetrics);
-			this.estimateVector = new EstimateVector(this.outputRows, this.workRows,
-					metric(this.doubleMetrics, "plannedMemoryRows", 0.0d),
-					metric(this.doubleMetrics, "plannedSeeks", 0.0d),
-					pageWalkRows(this.doubleMetrics),
-					rowQErrorMean,
-					rowQErrorMax,
-					workQErrorMean,
-					workQErrorMax,
-					uncertaintyRows(this.doubleMetrics, this.outputRows, rowQErrorMax, workQErrorMax, confidence,
-							exactOutputRows),
-					confidence,
-					evidenceCount(this.doubleMetrics));
+			double memoryRows = metric(this.doubleMetrics, "plannedMemoryRows", 0.0d);
+			double seeks = metric(this.doubleMetrics, "plannedSeeks", 0.0d);
+			double pageWalkRows = pageWalkRows(this.doubleMetrics);
+			double uncertaintyRows = uncertaintyRows(this.doubleMetrics, this.outputRows, rowQErrorMax, workQErrorMax,
+					confidence, exactOutputRows);
+			double evidenceCount = evidenceCount(this.doubleMetrics);
+			double lowerRows = Math.max(0.0d, this.outputRows - uncertaintyRows / 2.0d);
+			double upperRows = lowerRows + uncertaintyRows;
+			String source = this.stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+					"join-factor-estimate");
+			this.normalizedEstimateVector = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector(
+					this.outputRows, lowerRows, upperRows, this.workRows,
+					memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax,
+					uncertaintyRows, confidence, evidenceCount, source, this.doubleMetrics);
+			this.estimateVector = new EstimateVector(normalizedEstimateVector.rows(),
+					normalizedEstimateVector.workRows(),
+					normalizedEstimateVector.memoryRows(), normalizedEstimateVector.seeks(),
+					normalizedEstimateVector.pageWalkRows(), normalizedEstimateVector.rowQErrorMean(),
+					normalizedEstimateVector.rowQErrorMax(), normalizedEstimateVector.workQErrorMean(),
+					normalizedEstimateVector.workQErrorMax(), normalizedEstimateVector.uncertaintyRows(),
+					normalizedEstimateVector.confidence(), normalizedEstimateVector.evidenceCount());
 			this.bagEstimate = bagEstimate;
 		}
 
@@ -667,8 +678,16 @@ public interface JoinFactorCostModel {
 			return exactOutputRows;
 		}
 
+		/**
+		 * @deprecated use {@link #getNormalizedEstimateVector()}.
+		 */
+		@Deprecated(since = "6.1.0")
 		public EstimateVector getEstimateVector() {
 			return estimateVector;
+		}
+
+		public org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector getNormalizedEstimateVector() {
+			return normalizedEstimateVector;
 		}
 
 		public Optional<BagEstimate> getBagEstimate() {

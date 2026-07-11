@@ -477,7 +477,7 @@ public interface CascadesCostModel {
 		private StatisticsEstimate statisticsEstimateFromFactor(TupleExpr tupleExpr,
 				JoinFactorCostModel.FactorCostEstimate factor) {
 			String source = factorEstimateSource(factor);
-			StatisticsEstimate estimate = EstimateVector.fromFactorVector(factor.getEstimateVector())
+			StatisticsEstimate estimate = factor.getNormalizedEstimateVector()
 					.toStatistics(source)
 					.withMetrics(factor.getDoubleMetrics());
 			BagEstimate bag = factor.getBagEstimate()
@@ -1364,7 +1364,7 @@ public interface CascadesCostModel {
 			metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 			BagEstimate rightBag = right.getBagEstimate()
 					.map(bag -> bag.withRowsPreservingEvidence(rightRows, rightWorkRows,
-							right.getEstimateVector().confidence(), "physical-leftjoin-bound-lookup-right",
+							right.getNormalizedEstimateVector().confidence(), "physical-leftjoin-bound-lookup-right",
 							metrics, true))
 					.orElseGet(() -> bagWithBindings(rightPlan, rightRows, rightWorkRows,
 							"physical-leftjoin-bound-lookup-right"));
@@ -1443,7 +1443,7 @@ public interface CascadesCostModel {
 			metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
 			BagEstimate bag = factor.getBagEstimate()
 					.map(factorBag -> factorBag.withRowsPreservingEvidence(outputRows, workRows,
-							factor.getEstimateVector().confidence(), source, metrics, true))
+							factor.getNormalizedEstimateVector().confidence(), source, metrics, true))
 					.orElseGet(() -> EstimateMath.difference(left.bag(), right.bag(), sharedVars)
 							.withRows(outputRows, source)
 							.withWorkRows(workRows, source)
@@ -2174,7 +2174,7 @@ public interface CascadesCostModel {
 		}
 
 		private CostVector factorCostVector(JoinFactorCostModel.FactorCostEstimate estimate) {
-			return CostVector.from(estimate.getEstimateVector());
+			return CostVector.from(estimate.getNormalizedEstimateVector());
 		}
 
 		private CostVector applyPolicy(CostVector vector, OptimizationGoal goal) {

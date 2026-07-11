@@ -28,10 +28,18 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 
 final class LmdbPlannerServices {
-	private final LmdbEvaluationStatistics statistics;
+	private final LmdbCardinalityEstimator cardinalityEstimator;
+	private final LmdbJoinFactorCostEstimator joinFactorCostEstimator;
+	private final LmdbJoinOrderEstimator joinOrderEstimator;
+	private final LmdbExecutionFeedbackRecorder executionFeedbackRecorder;
+	private final LmdbEstimatorScope estimatorScope;
 
 	private LmdbPlannerServices(LmdbEvaluationStatistics statistics) {
-		this.statistics = statistics;
+		this.cardinalityEstimator = new LmdbCardinalityEstimator(statistics);
+		this.joinFactorCostEstimator = new LmdbJoinFactorCostEstimator(statistics);
+		this.joinOrderEstimator = new LmdbJoinOrderEstimator(statistics);
+		this.executionFeedbackRecorder = new LmdbExecutionFeedbackRecorder(statistics);
+		this.estimatorScope = new LmdbEstimatorScope(statistics);
 	}
 
 	static Optional<LmdbPlannerServices> from(EvaluationStatistics statistics) {
@@ -48,94 +56,95 @@ final class LmdbPlannerServices {
 	}
 
 	ValueStore valueStore() {
-		return statistics.getValueStore();
+		return cardinalityEstimator.valueStore();
 	}
 
 	Optional<EvaluationStatistics.FilterPassEstimate> estimatePatternLocalFilterPass(
 			ValueExpr condition, StatementPattern pattern, Set<StatementPattern> originPatterns) {
-		return statistics.estimatePatternLocalFilterPass(condition, pattern, originPatterns);
+		return cardinalityEstimator.estimatePatternLocalFilterPass(condition, pattern, originPatterns);
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ArbitraryLengthPath path, Set<String> boundVars) {
-		return statistics.estimatePropertyPath(path, boundVars);
+		return cardinalityEstimator.estimatePropertyPath(path, boundVars);
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ZeroLengthPath path, Set<String> boundVars) {
-		return statistics.estimatePropertyPath(path, boundVars);
+		return cardinalityEstimator.estimatePropertyPath(path, boundVars);
 	}
 
 	Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns, Set<String> boundVars) {
-		return statistics.estimateSubjectStar(patterns, boundVars);
+		return cardinalityEstimator.estimateSubjectStar(patterns, boundVars);
 	}
 
 	BoundJoinProductEstimate estimateBoundJoinProduct(
 			TupleExpr leftArg, TupleExpr rightArg, double knownLeftRows) {
-		return statistics.estimateBoundJoinProduct(leftArg, rightArg, knownLeftRows);
+		return joinFactorCostEstimator.estimateBoundJoinProduct(leftArg, rightArg, knownLeftRows);
 	}
 
 	OptionalBridgeProductEstimate estimateOptionalBridgeProduct(
 			TupleExpr leftArg, TupleExpr rightArg, double knownLeftRows) {
-		return statistics.estimateOptionalBridgeProduct(leftArg, rightArg, knownLeftRows);
+		return joinFactorCostEstimator.estimateOptionalBridgeProduct(leftArg, rightArg, knownLeftRows);
 	}
 
 	double estimateBoundJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
-		return statistics.estimateBoundJoinSurfaceRows(factors, joinVarName);
+		return joinFactorCostEstimator.estimateBoundJoinSurfaceRows(factors, joinVarName);
 	}
 
 	double estimateBoundJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
-		return statistics.estimateBoundJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		return joinFactorCostEstimator.estimateBoundJoinSurfaceRows(prefixFactors, factor, joinVarName);
 	}
 
 	boolean supportsOperatorFeedbackTracking(TupleExpr node) {
-		return statistics.supportsOperatorFeedbackTracking(node);
+		return executionFeedbackRecorder.supportsOperatorFeedbackTracking(node);
 	}
 
 	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
-		return statistics.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
+		return executionFeedbackRecorder.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows,
+				executionMode);
 	}
 
 	String debugEvidence(TupleExpr tupleExpr) {
-		return statistics.debugEvidence(tupleExpr);
+		return executionFeedbackRecorder.debugEvidence(tupleExpr);
 	}
 
 	Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr tupleExpr) {
-		return statistics.planRankingAdvice(tupleExpr);
+		return executionFeedbackRecorder.planRankingAdvice(tupleExpr);
 	}
 
 	String learnedOptimizerDebugEvidence(TupleExpr tupleExpr) {
-		return statistics.learnedOptimizerDebugEvidence(tupleExpr);
+		return executionFeedbackRecorder.learnedOptimizerDebugEvidence(tupleExpr);
 	}
 
 	String learnedOptimizerExplainDiff(TupleExpr tupleExpr) {
-		return statistics.learnedOptimizerExplainDiff(tupleExpr);
+		return executionFeedbackRecorder.learnedOptimizerExplainDiff(tupleExpr);
 	}
 
 	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
-		return statistics.optimizationScopedFactorFingerprint(factor);
+		return estimatorScope.factorFingerprint(factor);
 	}
 
 	Optional<OmniSketchSurfaceEstimate> optimizationScopedOmniEvidence(TupleExpr tupleExpr) {
-		return statistics.optimizationScopedOmniEvidence(tupleExpr);
+		return estimatorScope.omniEvidence(tupleExpr);
 	}
 
 	LmdbOmniEvidenceStore optimizationScopedOmniEvidenceStore() {
-		return statistics.optimizationScopedOmniEvidenceStore();
+		return estimatorScope.omniEvidenceStore();
 	}
 
 	void clearCompletedOmniEvidence() {
-		statistics.clearCompletedOmniEvidence();
+		estimatorScope.clearCompletedOmniEvidence();
 	}
 
 	boolean hasOptimizationScopedPlannerCache() {
-		return statistics.hasOptimizationScopedPlannerCache();
+		return estimatorScope.hasPlannerCache();
 	}
 
 	Object getOptimizationScopedPlannerCacheValue(Object key) {
-		return statistics.getOptimizationScopedPlannerCacheValue(key);
+		return estimatorScope.getPlannerCacheValue(key);
 	}
 
 	void putOptimizationScopedPlannerCacheValue(Object key, Object value) {
-		statistics.putOptimizationScopedPlannerCacheValue(key, value);
+		estimatorScope.putPlannerCacheValue(key, value);
 	}
 }
