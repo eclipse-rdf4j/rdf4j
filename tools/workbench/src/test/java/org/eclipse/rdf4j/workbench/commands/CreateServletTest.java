@@ -572,7 +572,7 @@ public class CreateServletTest {
 	private static List<String> extractBindingValues(String xml, String bindingName) {
 		try {
 			NodeList bindings = DocumentUtil
-					.getDocument(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+					.getDocument(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)), false, true)
 					.getElementsByTagNameNS("*", "binding");
 			List<String> values = new ArrayList<>();
 			for (int i = 0; i < bindings.getLength(); i++) {

@@ -23,12 +23,10 @@ import java.net.URLConnection;
 import java.security.PrivilegedAction;
 import java.util.List;
 import java.util.Set;
-import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import org.apache.commons.lang3.StringUtils;
-import org.eclipse.rdf4j.common.io.GZipUtil;
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.ZipUtil;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -42,6 +40,7 @@ import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+import org.eclipse.rdf4j.rio.helpers.RioCompression;
 
 /**
  * Handles common I/O to retrieve and parse RDF.
@@ -223,10 +222,13 @@ public class RDFLoader {
 
 		if (ZipUtil.isZipStream(in)) {
 			loadZip(in, baseURI, dataFormat, rdfHandler);
-		} else if (GZipUtil.isGZipStream(in)) {
-			load(new GZIPInputStream(in), baseURI, dataFormat, rdfHandler);
 		} else {
-			loadInputStreamOrReader(in, baseURI, dataFormat, rdfHandler);
+			InputStream decompressedInput = RioCompression.decompressIfDetected(in);
+			if (decompressedInput != in) {
+				load(decompressedInput, baseURI, dataFormat, rdfHandler);
+			} else {
+				loadInputStreamOrReader(in, baseURI, dataFormat, rdfHandler);
+			}
 		}
 	}
 

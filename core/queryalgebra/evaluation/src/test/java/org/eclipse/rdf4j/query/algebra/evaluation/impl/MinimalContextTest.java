@@ -16,18 +16,20 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class MinimalContextNowTest {
+public class MinimalContextTest {
 
 	@Test
 	public void testNow() {
@@ -51,7 +53,6 @@ public class MinimalContextNowTest {
 
 		ExecutorService executorService = Executors.newCachedThreadPool();
 		try {
-
 			for (int i = 0; i < numberOfIterations; i++) {
 				QueryEvaluationContext.Minimal context = new QueryEvaluationContext.Minimal(null);
 
@@ -67,7 +68,7 @@ public class MinimalContextNowTest {
 								throw new RuntimeException(e);
 							}
 						}))
-						.collect(Collectors.toList());
+						.toList();
 
 				Literal prev = null;
 				for (Future<Literal> future : futures) {
@@ -78,13 +79,42 @@ public class MinimalContextNowTest {
 					}
 					prev = now;
 				}
-
 			}
-
 		} finally {
 			List<Runnable> runnables = executorService.shutdownNow();
 			Assertions.assertTrue(runnables.isEmpty());
 		}
+	}
 
+	@Test
+	public void testBNodePrefixUsesNodeLabel() {
+		QueryEvaluationContext.Minimal context = new QueryEvaluationContext.Minimal(null);
+
+		BNode bNode = context.getOrCreateBNode("nodeLabel", EmptyBindingSet.getInstance(),
+				SimpleValueFactory.getInstance());
+
+		Assertions.assertTrue(bNode.getID().startsWith("nodeLabel_"),
+				"Expected generated bnode id to start with node label prefix");
+	}
+
+	@Test
+	public void testDefaultBNodePrefixUsesNodeLabel() {
+		QueryEvaluationContext context = new QueryEvaluationContext() {
+			@Override
+			public Literal getNow() {
+				return SimpleValueFactory.getInstance().createLiteral("now");
+			}
+
+			@Override
+			public Dataset getDataset() {
+				return null;
+			}
+		};
+
+		BNode bNode = context.getOrCreateBNode("nodeLabel", EmptyBindingSet.getInstance(),
+				SimpleValueFactory.getInstance());
+
+		Assertions.assertTrue(bNode.getID().startsWith("nodeLabel_"),
+				"Expected generated bnode id to start with node label prefix");
 	}
 }
