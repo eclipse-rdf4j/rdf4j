@@ -56,6 +56,9 @@ estimate-audit contract tests.
 - [x] (2026-07-11 17:57+02:00) Made enabled DPhyp authoritative for two-factor, exact, over-cap, zero-variable, path,
   and bounded-finite-anchor islands; moved template caching around DPhyp, made the kill switch decline to the standard
   pipeline, removed 1.20 cross-planner arbitration, and passed 19 adapter, 15 admissibility, and 55 optimizer tests.
+- [x] (2026-07-11 17:59+02:00) Restored the generic theme plan/run benchmark to sketches disabled, added explicit
+  DPhyp false/true A/B parameters, and set the requested three-fork/five-measurement default; the LMDB quick reactor
+  compile passed.
 - [ ] Physically delete unreachable connected and guarantee mini-planners.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -212,6 +215,10 @@ simplification; ground filters enter only after the runtime component; and paths
 endpoint. Disabling DPhyp makes the Cascades rule decline to the standard pipeline. A legal Cascades winner is no longer
 replaced through the former 1.20 standard-plan cost comparison. The obsolete connected-DP helpers are now unreachable
 and still need physical deletion together with the guarantee rule's private planner.
+
+`ThemeQueryPlanRunBenchmark` now separates DPhyp and sketch configuration. Its generic default keeps sketches off,
+the DPhyp parameter exposes both rollback and authoritative paths, and its annotations provide three forks and five
+measurement iterations for the requested plan/run comparisons.
 
 ## Context and Orientation
 

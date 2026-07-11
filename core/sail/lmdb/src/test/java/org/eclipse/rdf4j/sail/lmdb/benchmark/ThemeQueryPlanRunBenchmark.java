@@ -57,8 +57,8 @@ import org.openjdk.jmh.annotations.Warmup;
 
 @Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Fork(value = 3, jvmArgs = { "-Xms1G", "-Xmx16G" })
+@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Threads(1)
 public class ThemeQueryPlanRunBenchmark {
@@ -143,11 +143,14 @@ public class ThemeQueryPlanRunBenchmark {
 		})
 		public String themeName;
 
-		@Param({ "true" })
+		@Param({ "false" })
 		public boolean sketchEstimatorEnabled;
 
 		@Param({ "omni" })
 		public String sketchEstimatorStrategy;
+
+		@Param({ "false", "true" })
+		public boolean dphypEnabled = true;
 		public boolean loadSelectedThemeOnly;
 		public boolean rebuildStoreBeforeSetup;
 
@@ -162,10 +165,13 @@ public class ThemeQueryPlanRunBenchmark {
 		private long expectedRows;
 		private OptionalLong expectedCountBindingValue;
 		protected SailRepositoryConnection connection;
+		private String previousDphypEnabled;
 
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			try {
+				previousDphypEnabled = System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp",
+						Boolean.toString(dphypEnabled));
 				theme = Theme.valueOf(themeName);
 				query = queryForVariant(theme, z_queryIndex, queryVariant);
 				expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
@@ -215,6 +221,12 @@ public class ThemeQueryPlanRunBenchmark {
 			}
 			store = null;
 			storeConfig = null;
+			if (previousDphypEnabled == null) {
+				System.clearProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp");
+			} else {
+				System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp", previousDphypEnabled);
+			}
+			previousDphypEnabled = null;
 		}
 
 		private void ensureDataLoadedAndValidated() throws IOException {
