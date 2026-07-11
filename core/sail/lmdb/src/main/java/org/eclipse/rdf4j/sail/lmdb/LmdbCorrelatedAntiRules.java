@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -23,20 +21,17 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 
 final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
 	private final RdfStatisticsProvider statisticsProvider;
@@ -59,21 +54,9 @@ final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 		Difference difference = (Difference) expression.tupleExpr();
 		TupleExpr alternative = StandardCascadesRules.correlatedAntiExistsFilter(difference);
-		if (!(alternative instanceof Filter filter)) {
+		if (!(alternative instanceof Filter)) {
 			return List.of();
 		}
-		Set<String> boundVars = goalBoundVars(goal);
-		StatisticsEstimate inputEstimate = inputEstimate(difference.getLeftArg(), boundVars);
-		// An empty probe means the estimator failed, not that the alternative is illegal. Bailing out here
-		// removes the plan from the memo entirely and the cost model never sees it; emit a conservative
-		// low-confidence estimate instead and let uncertainty costing rank it.
-		StatisticsEstimate estimate = statisticsProvider.filter(filter.getArg(),
-				filter.getCondition(), inputEstimate, boundVars)
-				.orElseGet(() -> unpricedAntiExistsEstimate(inputEstimate));
-		double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
-				Math.max(1.0d, estimate.rows()));
-		CostVector cost = estimate.vector()
-				.toCostVector();
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(alternative.getBindingNames())
 				.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
@@ -84,33 +67,11 @@ final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
 		Set<String> facts = new LinkedHashSet<>();
 		facts.add("sharedVarsAssured");
 		facts.add("correlatedAntiExists");
-		facts.add("operatorWorkRows=" + probeWorkRows);
+		facts.add("costedFromMemoInput");
 		RuleProof proof = proof(semanticScope(goal), facts,
 				"MINUS with assured shared variables is implemented as a streaming correlated NOT EXISTS probe");
-		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
-				"lmdb-correlated-minus-anti-exists",
-				snapshot(estimate, cost, "lmdb-correlated-anti-exists-filter")));
-	}
-
-	private static StatisticsEstimate unpricedAntiExistsEstimate(StatisticsEstimate inputEstimate) {
-		double rows = Math.max(1.0d, inputEstimate.rows());
-		double workRows = Math.max(inputEstimate.workRows(), rows) + rows;
-		return new StatisticsEstimate(rows,
-				QErrorInterval.heuristic(rows, 4.0d, "lmdb-correlated-anti-exists-unpriced-probe"), workRows,
-				"lmdb-correlated-anti-exists-unpriced-probe",
-				Map.of("plannedAntiExistsUnpricedProbe", 1.0d));
-	}
-
-	private StatisticsEstimate inputEstimate(TupleExpr input, Set<String> boundVars) {
-		if (costModel == null || input == null) {
-			return StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-anti-exists-input");
-		}
-		return estimate(input, boundVars, false)
-				.map(estimate -> new StatisticsEstimate(estimate.getOutputRows(),
-						QErrorInterval.heuristic(estimate.getOutputRows(), 4.0d,
-								"lmdb-correlated-anti-exists-input"),
-						estimate.getWorkRows(), "lmdb-correlated-anti-exists-input", estimate.getDoubleMetrics()))
-				.orElseGet(() -> StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-anti-exists-input"));
+		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, CostVector.ZERO, proof,
+				"lmdb-correlated-minus-anti-exists"));
 	}
 }
 
@@ -132,19 +93,6 @@ final class LmdbCorrelatedNotExistsAntiFilterRule extends LmdbRule {
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 		Filter alternative = ((Filter) expression.tupleExpr()).clone();
 		Set<String> shared = correlatedNotExistsSharedBindings(alternative);
-		Set<String> boundVars = goalBoundVars(goal);
-		StatisticsEstimate inputEstimate = inputEstimate(alternative.getArg(), boundVars);
-		Optional<StatisticsEstimate> antiExistsEstimate = statistics instanceof RdfStatisticsProvider provider
-				? provider.filter(alternative.getArg(), alternative.getCondition(), inputEstimate, boundVars)
-				: Optional.empty();
-		if (antiExistsEstimate.isEmpty()) {
-			return List.of();
-		}
-		StatisticsEstimate estimate = antiExistsEstimate.get();
-		double probeWorkRows = finiteMetric(estimate.metrics(), "plannedAntiExistsProbeWorkRows",
-				Math.max(1.0d, estimate.rows()));
-		CostVector cost = estimate.vector()
-				.toCostVector();
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(alternative.getBindingNames())
 				.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
@@ -155,25 +103,12 @@ final class LmdbCorrelatedNotExistsAntiFilterRule extends LmdbRule {
 		Set<String> facts = new LinkedHashSet<>();
 		facts.add("correlatedNotExists");
 		facts.add("shared=" + shared);
-		facts.add("operatorWorkRows=" + probeWorkRows);
+		facts.add("costedFromMemoInput");
 		RuleProof proof = proof(semanticScope(goal), facts,
 				"FILTER NOT EXISTS over assured shared variables is implemented as a streaming correlated "
 						+ "anti probe");
 		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
-				cost, proof, "lmdb-correlated-not-exists-anti-filter",
-				snapshot(estimate, cost, estimate.method())));
-	}
-
-	private StatisticsEstimate inputEstimate(TupleExpr input, Set<String> boundVars) {
-		if (costModel == null || input == null) {
-			return StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-not-exists-input");
-		}
-		return estimate(input, boundVars, false)
-				.map(estimate -> new StatisticsEstimate(estimate.getOutputRows(),
-						QErrorInterval.heuristic(estimate.getOutputRows(), 4.0d,
-								"lmdb-correlated-not-exists-input"),
-						estimate.getWorkRows(), "lmdb-correlated-not-exists-input", estimate.getDoubleMetrics()))
-				.orElseGet(() -> StatisticsEstimate.heuristic(1.0d, "lmdb-correlated-not-exists-input"));
+				CostVector.ZERO, proof, "lmdb-correlated-not-exists-anti-filter"));
 	}
 
 	private boolean correlatedNotExistsFilterSafe(Filter filter) {

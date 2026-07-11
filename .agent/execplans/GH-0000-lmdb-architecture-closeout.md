@@ -59,6 +59,14 @@ estimate-audit contract tests.
 - [x] (2026-07-11 17:59+02:00) Restored the generic theme plan/run benchmark to sketches disabled, added explicit
   DPhyp false/true A/B parameters, and set the requested three-fork/five-measurement default; the LMDB quick reactor
   compile passed.
+- [x] (2026-07-11 22:33+02:00) Re-enabled all estimate-audit contracts, repaired exact-zero and disconnected-product
+  estimates, and passed the complete 300-query generated corpus with the worst-q-error limit of 10.
+- [ ] (2026-07-12 00:43+02:00) Final LMDB verification is not green: sparse q6 still routes its UNION/correlated-anti
+  shape through generic bound-lookup alternatives and reports 169.2B work rows; selected LeftJoin plans retain LEO
+  feedback evidence but do not fuse it into `CostVector`. Focused regressions and the exact reports are retained.
+- [x] (2026-07-12 01:25+02:00) Made correlated anti implementations compositional and excluded standalone
+  bound-lookup enumeration from DPhyp-owned islands. Sparse q6 is green after fresh and stale-snapshot startup, and
+  the 27-test context/admissibility/anti selector plus LMDB japicmp pass.
 - [ ] Physically delete unreachable connected and guarantee mini-planners.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -116,6 +124,17 @@ estimate-audit contract tests.
   nodes, delaying an ordinary but cheaply bound bridge behind padding scans. Greedy must compare hash and lookup access
   for every connected singleton, just like exact costing.
   Evidence: the red/green `greedyPlannerBuildsFiniteAnchorBeforeExpensiveBoundBridgeLookup` selector.
+- Observation: Full-corpus state contamination exposed exact-zero, independent OPTIONAL, and disconnected-filter
+  estimate regressions that isolated templates did not reproduce. Exact statement zero repair, non-exact-zero
+  parameterized rejection, and disconnected-component row preservation close all 300 generated queries.
+  Evidence: `logs/mvnf/20260711-201453-verify.log` through the green full-corpus run and focused q44/q74 reports.
+- Observation: Sparse q6 is not entering the DPhyp rule at all. Its UNION and correlated `NOT EXISTS` leave the
+  connected prefix under generic bound-lookup rules, producing `plannedAntiExistsInputRows=1.45817075712E10` and
+  root `plannedCostWorkRows=1.692472959332E11` even after a fresh or stale-snapshot rebuild.
+  Evidence: `logs/mvnf/20260711-224114-verify.log` and `LmdbSparsePrefixCostTest`'s Surefire report.
+- Observation: Completed LeftJoin feedback is retained in `optimizer.leoEvidence`, but the selected plan no longer
+  carries `plannedEstimateFusion=operator_feedback` or the structured operator-feedback q-error metrics.
+  Evidence: the two failures in `LmdbOperatorFeedbackPlanningTest` from the final LMDB inventory.
 
 ## Decision Log
 
@@ -153,6 +172,11 @@ estimate-audit contract tests.
   Rationale: Payload and manifest files form one publication transaction. A cycle lock prevents scheduled and direct
   publishers from interleaving while preserving the existing rule that state-lock work does not hold `persistLock`.
   Date/Author: 2026-07-11 / Codex.
+- Decision: Correlated anti rules declare legality and physical properties but do not precompute a complete subtree
+  cost; Cascades derives the operator estimate from the selected memo input winner.
+  Rationale: Pricing the logical subtree during rule application ignored DPhyp's physical child and retained stale
+  bound-lookup work even after a better child plan was selected.
+  Date/Author: 2026-07-12 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -219,6 +243,25 @@ and still need physical deletion together with the guarantee rule's private plan
 `ThemeQueryPlanRunBenchmark` now separates DPhyp and sketch configuration. Its generic default keeps sketches off,
 the DPhyp parameter exposes both rollback and authoritative paths, and its annotations provide three forks and five
 measurement iterations for the requested plan/run comparisons.
+
+The estimate-audit closeout is green. All previously disabled audit contracts are active, the 30-template smoke corpus
+and complete 300-query stateful corpus pass, and focused regressions cover exact-zero nested filters, independent
+OPTIONALs, and disconnected selective/low-threshold filters. Obsolete left-deep assertions encountered by full-module
+verification were replaced with connectedness, no-Cartesian-work, bounded-work, direct-access, and semantic-rule
+proof assertions.
+
+Final module acceptance remains open. The last complete LMDB inventory identified two genuine production gaps after
+the test migrations: sparse q6's UNION/correlated-anti shape bypasses DPhyp ownership and produces astronomical generic
+bound-lookup work, and completed LeftJoin feedback is visible only as LEO evidence instead of being fused into the
+selected ranking vector. These require architectural fixes; no metric cap, assertion weakening, or feature disable was
+used to hide them.
+
+The sparse-q6 production blocker is closed. `LmdbCorrelatedNotExistsAntiFilterRule` and the correlated MINUS
+implementation now retain memo inputs with zero precomputed rule cost, so concrete unary costing consumes the selected
+child's `BagEstimate`. DPhyp-owned islands no longer expose `lmdb-inner-join-bound-lookup` as a competing whole-island
+implementation. The fresh/stale sparse selector passes all three tests, and the neighboring 27 rule/context tests pass;
+retained focused logs begin at `logs/mvnf/20260711-231334-verify.log` and the green sparse log is
+`logs/mvnf/20260711-231807-verify.log`.
 
 ## Context and Orientation
 

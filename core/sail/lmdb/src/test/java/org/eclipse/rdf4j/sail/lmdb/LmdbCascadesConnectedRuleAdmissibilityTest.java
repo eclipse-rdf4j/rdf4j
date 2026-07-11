@@ -81,16 +81,54 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void connectedThresholdPathIslandIsSeededByCascadesConnectedOrdering() {
+	void connectedThresholdPathIslandUsesOnlyAuthoritativeHypergraphOrdering() {
 		TupleExpr island = thresholdPathIsland();
 		List<String> rules = applicableRuleIds(island);
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
 		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
 		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertTrue(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+		assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
 		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
+	}
+
+	@Test
+	void dphypOwnedIslandDoesNotRepeatGenericJoinEnumeration() {
+		TupleExpr island = new Join(connectedJoinIsland(),
+				new StatementPattern(new Var("o"), new Var("p1", P1), new Var("tail")));
+
+		List<String> rules = applicableRuleIds(island);
+
+		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
+		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertFalse(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
+		assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+		assertFalse(rules.contains("join-commute"), rules::toString);
+		assertFalse(rules.contains("join-associate-left"), rules::toString);
+		assertFalse(rules.contains("join-associate-right"), rules::toString);
+	}
+
+	@Test
+	void dphypKillSwitchRestoresStandardJoinEnumeration() {
+		String previous = System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "false");
+		try {
+			TupleExpr island = new Join(connectedJoinIsland(),
+					new StatementPattern(new Var("o"), new Var("p1", P1), new Var("tail")));
+
+			List<String> rules = applicableRuleIds(island);
+
+			assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+			assertTrue(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+			assertTrue(rules.contains("join-commute"), rules::toString);
+			assertTrue(rules.contains("join-associate-left"), rules::toString);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
+			} else {
+				System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, previous);
+			}
+		}
 	}
 
 	@Test

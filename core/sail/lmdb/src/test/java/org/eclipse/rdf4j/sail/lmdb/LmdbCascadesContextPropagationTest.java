@@ -29,11 +29,13 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -50,13 +52,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPla
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -107,8 +113,11 @@ class LmdbCascadesContextPropagationTest {
 		CascadesPlanProvenanceAnnotator.annotate(selected, plan.provenance()
 				.orElseThrow(), "lmdb-cascades");
 		StatementPattern namePattern = statementPatternWithPredicateName(selected, "namePredicate");
+		QueryModelNode nameFactor = namePattern.getParentNode();
 
-		assertEquals("directLookup", namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+		assertTrue(nameFactor instanceof Extension,
+				() -> "Expected the name lookup's row-preserving wrapper:\n" + selected);
+		assertEquals(1.0d, nameFactor.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS), 0.0d,
 				() -> "The row-preserving RHS should be planned with the ?comp binding produced by the UNION left "
 						+ "sibling:\n" + selected);
 	}
@@ -134,8 +143,11 @@ class LmdbCascadesContextPropagationTest {
 		CascadesPlanProvenanceAnnotator.annotate(selected, plan.provenance()
 				.orElseThrow(), "lmdb-cascades");
 		StatementPattern namePattern = statementPatternWithPredicateName(selected, "namePredicate");
+		QueryModelNode nameFactor = namePattern.getParentNode();
 
-		assertEquals("directLookup", namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+		assertTrue(nameFactor instanceof Extension,
+				() -> "Expected the name lookup's row-preserving wrapper:\n" + selected);
+		assertEquals(1.0d, nameFactor.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS), 0.0d,
 				() -> "Safe scoped leaf statement patterns should still expose their assured ?comp binding to the "
 						+ "row-preserving RHS:\n" + selected);
 	}
@@ -177,6 +189,24 @@ class LmdbCascadesContextPropagationTest {
 				() -> "Semantic finite anchors must compete on planner work instead of bypassing the original plan: "
 						+ application.alternative()
 								.getStringMetricPlanned("optimizer.guaranteeOptions"));
+	}
+
+	@Test
+	void correlatedNotExistsDefersCostToSelectedMemoChild() {
+		CorrelatedAntiCostingStatistics statistics = new CorrelatedAntiCostingStatistics();
+		TupleExpr input = new Join(
+				new StatementPattern(new Var("person"), new Var("memberOf"), new Var("org")),
+				new StatementPattern(new Var("org"), new Var("department"), new Var("departmentValue")));
+		Filter filter = new Filter(input,
+				new Not(new Exists(
+						new StatementPattern(new Var("org"), new Var("employee"), new Var("fanout")))));
+
+		RuleApplication application = ruleApplication(filter, statistics, OptimizationGoal.root(),
+				"lmdb-correlated-not-exists-anti-filter");
+
+		assertEquals(CostVector.ZERO, application.localCost(),
+				"The physical anti operator must be costed from the selected input winner");
+		assertFalse(application.opaque(), "The anti operator must retain its memo input group");
 	}
 
 	private static void restoreMode(String previousMode) {
@@ -519,6 +549,23 @@ class LmdbCascadesContextPropagationTest {
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 			return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
+		}
+	}
+
+	private static final class CorrelatedAntiCostingStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel, RdfStatisticsProvider {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.of(new FactorCostEstimate(100.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> filter(TupleExpr input, org.eclipse.rdf4j.query.algebra.ValueExpr condition,
+				StatisticsEstimate inputEstimate, Set<String> boundVars) {
+			return Optional.of(new StatisticsEstimate(5.0d,
+					QErrorInterval.heuristic(5.0d, 4.0d, "test-correlated-anti"), 1_000.0d,
+					"test-correlated-anti", Map.of()));
 		}
 	}
 }
