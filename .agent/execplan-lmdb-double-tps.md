@@ -18,7 +18,7 @@ The primary tracked TPS contract is the fourteen rows in `core/sail/lmdb/src/tes
 - [x] (2026-07-10 19:04Z) Profiled small, large, and force-sync representatives with Linux Java 26 JFR.
 - [x] (2026-07-11 00:35Z) Implemented direct-addressed packed segments with collision-safe duplicate indexing.
 - [x] (2026-07-11 02:35Z) Demonstrated at least 2.00x throughput on all twenty exact acceptance rows.
-- [x] (2026-07-11 03:54Z) Completed formatting, final root offline install, and the full 1,471-test LMDB verification with zero failures or errors.
+- [x] (2026-07-11 03:54Z) Completed formatting, final root offline install, and the full 1,586-test LMDB verification with zero failures or errors.
 
 ## Surprises & Discoveries
 
@@ -161,7 +161,7 @@ The primary tracked TPS contract is the fourteen rows in `core/sail/lmdb/src/tes
 
 ## Outcomes & Retrospective
 
-The performance objective is achieved. All twenty final exact JMH point estimates exceed twice the `b2cc8fadd7` baseline using identical JDK, heap, GC, fork, warmup, measurement, and sketch settings. Final ratios range from 2.377x to 14.798x; the raw tables and consolidated comparison are under `profiles/lmdb-tps-double/final-current-exact/`. The retained implementation stores transaction-owned values and quads in self-contained append-only segments, uses direct offsets for duplicate comparison, maintains a primitive collision-safe fingerprint index, and routes evaluation through the standard strategy while packed segments exist. Exact spill-model probes use the same collision-safe index rather than rescanning segments. Rejected shared-environment and fixed-duplicate experiments were removed. Formatting, the final root offline install, and the complete `core/sail/lmdb` verification all pass; the final test summary is 1,471 tests, zero failures, zero errors, and three skipped.
+The performance objective is achieved. All twenty final exact JMH point estimates exceed twice the `b2cc8fadd7` baseline using identical JDK, heap, GC, fork, warmup, measurement, and sketch settings. Final ratios range from 2.377x to 14.798x; the raw tables and consolidated comparison are under `profiles/lmdb-tps-double/final-current-exact/`. The retained implementation stores transaction-owned values and quads in self-contained append-only segments, uses direct offsets for duplicate comparison, maintains a primitive collision-safe fingerprint index, and routes evaluation through the standard strategy while packed segments exist. Exact spill-model probes use the same collision-safe index rather than rescanning segments. Rejected shared-environment and fixed-duplicate experiments were removed. Formatting, the final root offline install, and the complete `core/sail/lmdb` verification all pass; Maven reports 1,473 unit tests and 113 integration tests, for 1,586 total with zero failures, zero errors, and three skipped.
 
 ## Context and Orientation
 
@@ -282,4 +282,4 @@ Revision note (2026-07-10 19:35Z): Recorded the combined one-index/inline 1.85x 
 
 Revision note (2026-07-11 02:45Z): Recorded the retained direct-addressed packed-segment design, rejected and removed the shared/fixed-index experiments, and documented all twenty exact passing TPS ratios under `profiles/lmdb-tps-double/candidate-final-exact/`.
 
-Revision note (2026-07-11 03:54Z): Recorded the spill-model quadratic exact-lookup diagnosis and fix, refreshed all twenty final exact rows under `profiles/lmdb-tps-double/final-current-exact/`, and completed the final 1,471-test zero-failure verification.
+Revision note (2026-07-11 03:54Z): Recorded the spill-model quadratic exact-lookup diagnosis and fix, refreshed all twenty final exact rows under `profiles/lmdb-tps-double/final-current-exact/`, and completed the final 1,586-test zero-failure verification.
