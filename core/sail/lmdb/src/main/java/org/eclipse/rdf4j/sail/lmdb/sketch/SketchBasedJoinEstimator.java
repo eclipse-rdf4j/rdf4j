@@ -1736,6 +1736,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private volatile PositiveReadinessCache positiveReadinessCache = NO_POSITIVE_READINESS_CACHE;
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
+	private final Object persistenceCycleLock = new Object();
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
 	private final Object readyMonitor = new Object();
@@ -16172,6 +16173,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
+		synchronized (persistenceCycleLock) {
+			return persistIfDirtySerially();
+		}
+	}
+
+	private boolean persistIfDirtySerially() {
 		long targetMutationVersion = persistenceMutationCycle.captureTargetVersion();
 		flushPendingIncremental();
 		SketchEstimatorPersistenceStore store;

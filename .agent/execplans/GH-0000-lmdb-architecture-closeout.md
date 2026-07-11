@@ -28,7 +28,8 @@ estimate-audit contract tests.
   `Archive.zip`, and branch-added `CLAUDE.md`, preserved the full-module log, and completed the clean root install.
 - [x] (2026-07-11 10:16+02:00) Repaired LMDB binary comparison with complete isolated old/new classpaths, advanced
   the reactor to `6.1.0-SNAPSHOT`, and passed both LMDB and query-evaluation japicmp gates offline.
-- [ ] Add a deterministic concurrent-persistence regression and root-cause fix.
+- [x] (2026-07-11 10:28+02:00) Added a deterministic concurrent-persistence regression, serialized the complete
+  publication cycle, and passed the focused selector plus all 51 persistence tests.
 - [ ] Split estimator and statistics facades behind package-private services.
 - [ ] Consolidate estimates into BagEstimate, EstimateVector, and CostVector boundaries.
 - [ ] Extract guarantee planning and finish DPhyp Milestone E.
@@ -52,6 +53,10 @@ estimate-audit contract tests.
   `newClassPathDependencies` as single artifacts; after the released query-evaluation jar was fetched, comparison
   advanced to a missing transitive `IterationWrapper` class and showed only that jar on the old classpath.
   Evidence: the 0.18.3 `JApiCmpMojo.resolveArtifact(...)` bytecode and the 2026-07-11 LMDB verify output.
+- Observation: Twelve synchronized `persistIfDirty()` callers deterministically race in
+  `OmniWitnessPersistenceStore.writeSnapshot(...)` because payload publication occurs before `persistLock`; multiple
+  callers move the same generation's fixed `.tmp` path.
+  Evidence: `logs/mvnf/20260711-082159-verify.log` and the focused Surefire persistence report.
 
 ## Decision Log
 
@@ -79,11 +84,22 @@ estimate-audit contract tests.
   Rationale: The kill switch is the rollback boundary; silently falling into another join-order implementation while
   enabled would prevent one-planner acceptance and make benchmark attribution ambiguous.
   Date/Author: 2026-07-11 / Codex.
+- Decision: Serialize the complete `persistIfDirty()` cycle with a dedicated cycle lock rather than widening
+  `persistLock` or inventing unique temporary-file names.
+  Rationale: Payload and manifest files form one publication transaction. A cycle lock prevents scheduled and direct
+  publishers from interleaving while preserving the existing rule that state-lock work does not hold `persistLock`.
+  Date/Author: 2026-07-11 / Codex.
 
 ## Outcomes & Retrospective
 
 Implementation is in progress. Update this section at every milestone with the observable behavior delivered, retained
 evidence, remaining gaps, and any deviation from the decisions above.
+
+The persistence milestone now prevents scheduled and direct callers from moving the same temporary snapshot file.
+The dedicated cycle lock preserves the former `persistLock` boundary, and the latest lazily loaded OMNI snapshot is
+readable after the concurrent run. The focused selector passed in 0.483 seconds and the 51-test persistence class
+passed in 10.167 seconds; retained logs are `logs/mvnf/20260711-082611-verify.log` and
+`logs/mvnf/20260711-082713-verify.log`.
 
 ## Context and Orientation
 
@@ -242,6 +258,10 @@ After the reactor version was advanced at the user's direction, the 6.1 root qui
 `BUILD SUCCESS` in 37.025 seconds. The LMDB compatibility command completed with `BUILD SUCCESS` in 16.829 seconds and
 the query-evaluation compatibility command completed with `BUILD SUCCESS` in 6.469 seconds. Both ran offline; the
 generated reports contain no missing classes and mark all reported modifications source- and binary-compatible.
+
+The concurrent persistence selector failed before the fix with 1 test, 1 failure, and 0 errors. Its assertion captured
+`NoSuchFileException` while moving `omni-witness-b-2.dat.tmp` to `omni-witness-b-2.dat`; the retained Maven log is
+`logs/mvnf/20260711-082159-verify.log`.
 
 ## Interfaces and Dependencies
 

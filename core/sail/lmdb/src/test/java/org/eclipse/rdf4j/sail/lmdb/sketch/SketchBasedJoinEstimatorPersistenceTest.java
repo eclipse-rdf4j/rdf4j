@@ -76,6 +76,10 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.core.read.ListAppender;
+
 class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -1578,6 +1582,80 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void concurrentPersistIfDirtySerializesOmniSnapshotPublication(@TempDir Path tempDir) throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 128; i++) {
+			store.add(st(VF.createIRI("urn:concurrent-persist:s:" + i),
+					VF.createIRI("urn:concurrent-persist:p:" + i),
+					VF.createIRI("urn:concurrent-persist:o:" + i)));
+		}
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store,
+				smallConfig().withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)));
+		estimator.rebuild();
+		estimator.configurePersistence(snapshot, false);
+
+		ch.qos.logback.classic.Logger estimatorLogger = (ch.qos.logback.classic.Logger) LoggerFactory
+				.getLogger(SketchBasedJoinEstimator.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		estimatorLogger.addAppender(appender);
+
+		int parallelism = 12;
+		CountDownLatch ready = new CountDownLatch(parallelism);
+		CountDownLatch start = new CountDownLatch(1);
+		AtomicReferenceArray<Boolean> results = new AtomicReferenceArray<>(parallelism);
+		AtomicReferenceArray<Throwable> failures = new AtomicReferenceArray<>(parallelism);
+		List<Thread> threads = new ArrayList<>(parallelism);
+		Object persistLock = privateFieldValue(estimator, "persistLock");
+		try {
+			synchronized (persistLock) {
+				for (int i = 0; i < parallelism; i++) {
+					int index = i;
+					Thread thread = new Thread(() -> {
+						ready.countDown();
+						awaitUninterruptibly(start);
+						try {
+							results.set(index, estimator.persistIfDirty());
+						} catch (Throwable t) {
+							failures.set(index, t);
+						}
+					}, "SketchEstimator-ConcurrentPersist-" + i);
+					threads.add(thread);
+					thread.start();
+				}
+				assertTrue(ready.await(2, TimeUnit.SECONDS), "Expected all persistence callers to be ready");
+				start.countDown();
+				waitForThreadsBlockedOnPersistCycleOrFinished(estimator, threads, persistLock,
+						TimeUnit.SECONDS.toMillis(10));
+			}
+			for (Thread thread : threads) {
+				thread.join(TimeUnit.SECONDS.toMillis(10));
+				assertFalse(thread.isAlive(), "Concurrent persistence caller should complete: " + thread.getName());
+			}
+		} finally {
+			start.countDown();
+			estimatorLogger.detachAppender(appender);
+			appender.stop();
+		}
+
+		for (int i = 0; i < parallelism; i++) {
+			assertNull(failures.get(i), "Concurrent persistence caller should not throw");
+			assertNotNull(results.get(i), "Concurrent persistence caller should complete normally");
+		}
+		assertFalse(appender.list.stream().anyMatch(SketchBasedJoinEstimatorPersistenceTest::hasNoSuchFileException),
+				"Concurrent persistence must not race while moving a shared temporary snapshot file");
+
+		SketchBasedJoinEstimator reader = track(new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+				smallConfig().withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)));
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady(), "Latest concurrently published snapshot should remain readable");
+		assertEquals(1.0d,
+				reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:concurrent-persist:p:0"), 0.0d,
+				"Latest concurrently published snapshot should preserve its sketch payload");
+	}
+
+	@Test
 	void persistIfDirtyDoesNotHoldPersistLockWhileBlockedOnStateLock(@TempDir Path tempDir) throws Exception {
 		Resource subject = VF.createIRI("urn:s");
 		IRI predicate = VF.createIRI("urn:p");
@@ -1700,6 +1778,59 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Field field = target.getClass().getDeclaredField(fieldName);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static Object privateFieldValueIfPresent(Object target, String fieldName) throws Exception {
+		try {
+			return privateFieldValue(target, fieldName);
+		} catch (NoSuchFieldException ignored) {
+			return null;
+		}
+	}
+
+	private static void waitForThreadsBlockedOnPersistCycleOrFinished(SketchBasedJoinEstimator estimator,
+			List<Thread> threads, Object persistLock, long timeoutMillis) throws Exception {
+		Object persistenceCycleLock = privateFieldValueIfPresent(estimator, "persistenceCycleLock");
+		int persistLockIdentity = System.identityHashCode(persistLock);
+		int persistenceCycleLockIdentity = persistenceCycleLock == null
+				? Integer.MIN_VALUE
+				: System.identityHashCode(persistenceCycleLock);
+		var threadMxBean = ManagementFactory.getThreadMXBean();
+		long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		while (System.nanoTime() < deadline) {
+			boolean allPublishedOrWaiting = true;
+			for (Thread thread : threads) {
+				if (!thread.isAlive()) {
+					continue;
+				}
+				ThreadInfo info = threadMxBean.getThreadInfo(thread.getId());
+				if (info == null || info.getThreadState() != Thread.State.BLOCKED || info.getLockInfo() == null) {
+					allPublishedOrWaiting = false;
+					break;
+				}
+				int blockedOn = info.getLockInfo().getIdentityHashCode();
+				if (blockedOn != persistLockIdentity && blockedOn != persistenceCycleLockIdentity) {
+					allPublishedOrWaiting = false;
+					break;
+				}
+			}
+			if (allPublishedOrWaiting) {
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		throw new TimeoutException("Persistence callers did not reach publication completion or a cycle lock");
+	}
+
+	private static boolean hasNoSuchFileException(ILoggingEvent event) {
+		IThrowableProxy throwable = event.getThrowableProxy();
+		while (throwable != null) {
+			if ("java.nio.file.NoSuchFileException".equals(throwable.getClassName())) {
+				return true;
+			}
+			throwable = throwable.getCause();
+		}
+		return false;
 	}
 
 	private static void awaitUninterruptibly(CountDownLatch latch) {
