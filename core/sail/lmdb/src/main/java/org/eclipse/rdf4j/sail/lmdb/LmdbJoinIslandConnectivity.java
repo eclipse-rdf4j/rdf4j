@@ -419,7 +419,7 @@ final class LmdbJoinIslandConnectivity {
 		return LmdbJoinPlanSupport.runtimeBindingNames(tupleExpr);
 	}
 
-	private static boolean supportedFactor(TupleExpr tupleExpr) {
+	static boolean supportedFactor(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof StatementPattern
 				|| tupleExpr instanceof BindingSetAssignment
 				|| tupleExpr instanceof EmptySet

@@ -41,7 +41,9 @@ estimate-audit contract tests.
 - [ ] (2026-07-11 11:34+02:00) Routed the registry through top-level `LmdbGuaranteeOptionRule` and extracted focused
   guarantee costing, materialization, and diagnostics collaborators. The package-visible delegate still owns option
   enumeration and its private planner; removing that planner is the next behavior-changing slice.
-- [ ] Finish DPhyp Milestone E.
+- [ ] (2026-07-11 11:40+02:00) Added opaque-factor dependency hyperedges derived from
+  `opaqueFactorRequiredVars`, admitted safe filtered/extension factors, and passed all 14 DPhyp adapter tests.
+  Conflict/TES operator semantics, parameterized property states, and template caching remain.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -77,6 +79,10 @@ estimate-audit contract tests.
   fixed/dynamic join planning, materialization, and diagnostics. A top-level registry rule can delegate without changing
   rule identity, providing a green seam before the private mini-planner is removed test-first.
   Evidence: matching registry and `LmdbCascadesContextPropagationTest` runs.
+- Observation: Adding an opaque dependency edge alone is insufficient if ordinary shared-variable edges incident to
+  that factor remain: the enumerator can bypass the dependency through the simple edge. Shared selectivity must remain
+  a TES predicate while dependency hyperedges provide the only connectivity for that opaque node.
+  Evidence: the red/green `opaqueRequiredVarBecomesHyperedgeDependency` regression.
 
 ## Decision Log
 
@@ -143,6 +149,10 @@ The first guarantee-rule split is green: `LmdbGuaranteeOptionRule` is the regist
 `LmdbGuaranteeCostEstimator`, `LmdbGuaranteeMaterializer`, and `LmdbGuaranteeDiagnostics` own their focused concerns.
 The existing option-enumeration delegate intentionally remains until ordinary memo-alternative tests define the
 behavioral replacement for its private join planner.
+
+DPhyp now admits factors certified by the island owner instead of rejecting every non-statement factor. Opaque input
+requirements are mapped to dependency hyperedges, and incident equality selectivities remain delayed TES predicates so
+they cannot provide an illegal shortcut. The focused regression and the full 14-test DPhyp adapter class pass.
 
 ## Context and Orientation
 

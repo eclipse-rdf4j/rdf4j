@@ -27,6 +27,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -48,6 +50,7 @@ class LmdbHypergraphJoinPlannerTest {
 	void clearFlags() {
 		System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
 		System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_MAX_FACTORS_PROPERTY);
+		System.clearProperty(LmdbJoinIslandConnectivity.OPAQUE_FACTORS_PROPERTY);
 	}
 
 	/**
@@ -86,7 +89,8 @@ class LmdbHypergraphJoinPlannerTest {
 		}
 
 		private Optional<FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars, double prefixRows) {
-			if (!(factor instanceof StatementPattern pattern) || pattern.getPredicateVar().getValue() == null) {
+			TupleExpr estimateFactor = factor instanceof Extension extension ? extension.getArg() : factor;
+			if (!(estimateFactor instanceof StatementPattern pattern) || pattern.getPredicateVar().getValue() == null) {
 				return Optional.empty();
 			}
 			String predicate = ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
@@ -284,15 +288,60 @@ class LmdbHypergraphJoinPlannerTest {
 	}
 
 	@Test
-	void declinesNonStatementPatternFactorsAndFallsBack() {
+	void admitsSafeNonScopeChangingFilterFactors() {
 		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
 		StatementPattern wrapped = pattern("s", "c", "o3");
 		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"),
 				new Filter(wrapped, new ValueConstant(VF.createLiteral(true))));
 		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = plan(island, starModel());
-		assertTrue(result.isPresent(), "the left-deep planner must still answer");
-		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
-				"a non-StatementPattern factor is outside the v1 dphyp scope");
+		assertTrue(result.isPresent());
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
+				"A safe filtered factor should remain in the authoritative hypergraph planner");
+		assertEquals(3, collectPatterns(result.get().tupleExpr()).size(),
+				"Every base pattern must remain exactly once");
+		assertTrue(findFirst(result.get().tupleExpr(), Filter.class).isPresent(),
+				"The filtered factor must preserve its condition after reordering");
+	}
+
+	@Test
+	void opaqueRequiredVarBecomesHyperedgeDependency() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		System.setProperty(LmdbJoinIslandConnectivity.OPAQUE_FACTORS_PROPERTY, "true");
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 100)
+				.table("b", 10)
+				.table("c", 1);
+		StatementPattern requiredVarProducer = pattern("s", "a", "required");
+		StatementPattern connector = pattern("s", "b", "middle");
+		Extension opaque = new Extension(pattern("middle", "c", "tail"));
+		opaque.addElement(new ExtensionElem(new Var("required"), "copied"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(
+				joinIsland(requiredVarProducer, connector, opaque), model).orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm(),
+				"A safe opaque factor should remain owned by DPhyp");
+		Extension plannedOpaque = findFirst(result.tupleExpr(), Extension.class).orElseThrow();
+		assertTrue(plannedOpaque.getParentNode() instanceof Join, "Opaque factor should enter at a join boundary");
+		Join parent = (Join) plannedOpaque.getParentNode();
+		TupleExpr sibling = parent.getLeftArg() == plannedOpaque ? parent.getRightArg() : parent.getLeftArg();
+		assertTrue(sibling.getBindingNames().contains("required"),
+				"The sibling subplan must provide every opaque required variable before evaluation: "
+						+ result.tupleExpr());
+	}
+
+	private static <T extends TupleExpr> Optional<T> findFirst(TupleExpr root, Class<T> type) {
+		List<T> matches = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+				if (type.isInstance(node)) {
+					matches.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		return matches.stream().findFirst();
 	}
 
 	@Test

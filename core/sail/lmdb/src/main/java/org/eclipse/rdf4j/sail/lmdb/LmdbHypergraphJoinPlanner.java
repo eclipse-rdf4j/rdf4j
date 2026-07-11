@@ -42,9 +42,9 @@ import org.eclipse.rdf4j.sail.lmdb.hypergraph.PlanHypergraph;
  * instead of only connected left-deep prefixes.
  * <p>
  * Enabled by default; disable with {@code -Drdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp=false}. The v1 scope is
- * deliberately narrow: every factor must be a plain {@link StatementPattern} with at least one runtime variable, and
- * the island must have 3..maxFactors factors whose shared-variable graph is connected. Anything else returns empty and
- * the caller falls through to the existing left-deep planner.
+ * deliberately bounded: every factor must be certified by {@link LmdbJoinIslandConnectivity}, have at least one
+ * runtime variable, and the island must have 3..maxFactors factors whose dependency hypergraph is connected. Opaque
+ * required bindings become hyperedges, so an opaque factor cannot enter before the factors that supply its inputs.
  * <p>
  * Estimates reuse the same {@link JoinFactorCostModel} probes as the left-deep planner: base cardinalities come from
  * unbound-context probes, per-edge join selectivities are derived from pairwise conditional probes (selectivity =
@@ -96,8 +96,8 @@ final class LmdbHypergraphJoinPlanner {
 		Set<String> initial = LmdbJoinPlanSupport.plannerBindingNames(initialBoundVars);
 		List<Set<String>> factorJoinVars = new ArrayList<>(factorCount);
 		for (TupleExpr factor : factors) {
-			if (!(factor instanceof StatementPattern)) {
-				traceDecline(trace, "non-statement-pattern factor " + factor.getSignature());
+			if (!LmdbJoinIslandConnectivity.supportedFactor(factor)) {
+				traceDecline(trace, "unsupported factor " + factor.getSignature());
 				return Optional.empty();
 			}
 			Set<String> vars = new HashSet<>(LmdbJoinPlanSupport.runtimeBindingNames(factor));
@@ -108,6 +108,7 @@ final class LmdbHypergraphJoinPlanner {
 			}
 			factorJoinVars.add(vars);
 		}
+		long[] opaqueDependencyNodes = opaqueDependencyNodes(factors, factorJoinVars, initial);
 
 		PlanHypergraph planGraph = new PlanHypergraph();
 		LmdbCascadesConnectedJoinPlanner.Step[] seedSteps = new LmdbCascadesConnectedJoinPlanner.Step[factorCount];
@@ -132,7 +133,19 @@ final class LmdbHypergraphJoinPlanner {
 				}
 				double selectivity = edgeSelectivity(factors, i, j, initial, factorJoinVars, baseRows, costModel,
 						fallbackStatistics, tier);
-				planGraph.addJoinEdge(NodeSets.bit(i), NodeSets.bit(j), selectivity, String.join(",", shared));
+				if (opaqueDependencyNodes[i] != 0L || opaqueDependencyNodes[j] != 0L) {
+					planGraph.addPredicate(NodeSets.bit(i) | NodeSets.bit(j), selectivity, String.join(",", shared));
+				} else {
+					planGraph.addJoinEdge(NodeSets.bit(i), NodeSets.bit(j), selectivity, String.join(",", shared));
+				}
+			}
+		}
+		for (int i = 0; i < factorCount; i++) {
+			long requiredNodes = opaqueDependencyNodes[i];
+			if (requiredNodes != 0L) {
+				planGraph.addJoinEdge(requiredNodes, NodeSets.bit(i), 1.0d,
+						"opaque-required:" + String.join(",",
+								new TreeSet<>(LmdbJoinIslandConnectivity.opaqueFactorRequiredVars(factors.get(i)))));
 			}
 		}
 
@@ -149,6 +162,32 @@ final class LmdbHypergraphJoinPlanner {
 					+ winner.rows() + " rankCost=" + winner.cost());
 		}
 		return Optional.of(toPlan(winner, factors, seedSteps, factorCount, adapterCostModel));
+	}
+
+	private static long[] opaqueDependencyNodes(List<TupleExpr> factors, List<Set<String>> factorJoinVars,
+			Set<String> initialBoundVars) {
+		long[] dependencies = new long[factors.size()];
+		for (int i = 0; i < factors.size(); i++) {
+			Set<String> requiredVars = new HashSet<>(
+					LmdbJoinIslandConnectivity.opaqueFactorRequiredVars(factors.get(i)));
+			requiredVars.removeAll(initialBoundVars);
+			if (requiredVars.isEmpty()) {
+				continue;
+			}
+			long requiredNodes = 0L;
+			for (int j = 0; j < factors.size(); j++) {
+				if (i == j) {
+					continue;
+				}
+				Set<String> supplied = new HashSet<>(factorJoinVars.get(j));
+				supplied.retainAll(requiredVars);
+				if (!supplied.isEmpty()) {
+					requiredNodes |= NodeSets.bit(j);
+				}
+			}
+			dependencies[i] = requiredNodes;
+		}
+		return dependencies;
 	}
 
 	/**
