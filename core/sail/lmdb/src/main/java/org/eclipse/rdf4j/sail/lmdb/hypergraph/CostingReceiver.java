@@ -71,13 +71,16 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 		}
 		double rows = leftPlan.rows() * rightPlan.rows() * planGraph.newlySatisfiedSelectivity(left, right);
 
-		// Hash joins in both directions; the build side is the right child.
-		propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, leftPlan, rightPlan, rows,
-				leftPlan.cost() + rightPlan.cost()
-						+ costModel.hashJoinCost(leftPlan.rows(), rightPlan.rows(), rows)));
-		propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, rightPlan, leftPlan, rows,
-				leftPlan.cost() + rightPlan.cost()
-						+ costModel.hashJoinCost(rightPlan.rows(), leftPlan.rows(), rows)));
+		// Hash joins cannot satisfy a parameter dependency that crosses this cut: the dependent side must be a
+		// per-outer-row lookup instead.
+		if (!crossesParameterDependency(left, right) && !crossesParameterDependency(right, left)) {
+			propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, leftPlan, rightPlan, rows,
+					leftPlan.cost() + rightPlan.cost()
+							+ costModel.hashJoinCost(leftPlan.rows(), rightPlan.rows(), rows)));
+			propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, rightPlan, leftPlan, rows,
+					leftPlan.cost() + rightPlan.cost()
+							+ costModel.hashJoinCost(rightPlan.rows(), leftPlan.rows(), rows)));
+		}
 
 		// Nested loop with a per-outer-row lookup when the inner side is a single node with lookup access. The
 		// inner side's own scan cost is not paid: the lookup cost callback covers all access to it.
@@ -90,11 +93,29 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 		if (!NodeSets.isSingleton(inner.nodes())) {
 			return;
 		}
+		if (crossesParameterDependency(outer.nodes(), inner.nodes())) {
+			return;
+		}
+		long innerRequirements = planGraph.requiredNodes(inner.scanNode());
+		if (innerRequirements != 0L && !NodeSets.isSubset(innerRequirements, outer.nodes())) {
+			return;
+		}
 		double lookupCost = costModel.nestedLoopLookupCost(inner.scanNode(), outer.nodes(), outer.rows());
 		if (Double.isNaN(lookupCost)) {
 			return;
 		}
 		propose(JoinPlan.join(JoinPlan.Kind.NESTED_LOOP, outer, inner, rows, outer.cost() + lookupCost));
+	}
+
+	private boolean crossesParameterDependency(long dependentSide, long otherSide) {
+		for (long rest = dependentSide; rest != 0L; rest &= rest - 1L) {
+			int node = Long.numberOfTrailingZeros(rest);
+			long required = planGraph.requiredNodes(node);
+			if (!NodeSets.isSubset(required, dependentSide) && NodeSets.overlaps(required, otherSide)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Tournament insertion: keeps the incumbent unless the candidate dominates it (v1: strictly cheaper). */

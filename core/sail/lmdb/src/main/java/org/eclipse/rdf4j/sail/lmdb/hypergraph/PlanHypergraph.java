@@ -61,6 +61,7 @@ public final class PlanHypergraph {
 	private final Hypergraph graph = new Hypergraph();
 	private final List<String> nodeNames = new ArrayList<>();
 	private final List<Double> cardinalities = new ArrayList<>();
+	private final List<Long> requiredNodes = new ArrayList<>();
 	private final List<JoinPredicate> predicates = new ArrayList<>();
 	private final Map<Long, Double> selectivityProductCache = new HashMap<>();
 
@@ -71,8 +72,23 @@ public final class PlanHypergraph {
 		int idx = graph.addNode();
 		nodeNames.add(name);
 		cardinalities.add(cardinality);
+		requiredNodes.add(0L);
 		selectivityProductCache.clear();
 		return idx;
+	}
+
+	/** Nodes that must be in the outer plan before {@code nodeIdx} may be evaluated as a parameterized inner. */
+	public void setRequiredNodes(int nodeIdx, long nodes) {
+		long ownNode = NodeSets.bit(nodeIdx);
+		if (NodeSets.overlaps(ownNode, nodes) || !NodeSets.isSubset(nodes, graph.allNodes())) {
+			throw new IllegalArgumentException(
+					"invalid required nodes for " + nodeIdx + ": " + NodeSets.describe(nodes));
+		}
+		requiredNodes.set(nodeIdx, nodes);
+	}
+
+	public long requiredNodes(int nodeIdx) {
+		return requiredNodes.get(nodeIdx);
 	}
 
 	/**

@@ -43,7 +43,9 @@ estimate-audit contract tests.
   enumeration and its private planner; removing that planner is the next behavior-changing slice.
 - [ ] (2026-07-11 11:40+02:00) Added opaque-factor dependency hyperedges derived from
   `opaqueFactorRequiredVars`, admitted safe filtered/extension factors, and passed all 14 DPhyp adapter tests.
-  Conflict/TES operator semantics, parameterized property states, and template caching remain.
+  Conflict/TES operator semantics, interesting-order property states, and template caching remain.
+- [x] (2026-07-11 11:48+02:00) Added required-node state metadata and admitted property paths through endpoint-binder
+  requirements; dependency-crossing hash/outer orientations are rejected and parameterized inner paths are retained.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -83,6 +85,9 @@ estimate-audit contract tests.
   that factor remain: the enumerator can bypass the dependency through the simple edge. Shared selectivity must remain
   a TES predicate while dependency hyperedges provide the only connectivity for that opaque node.
   Evidence: the red/green `opaqueRequiredVarBecomesHyperedgeDependency` regression.
+- Observation: Undirected dependency hyperedges alone still allow the cost receiver to flip a dependent path to the
+  hash/outer side. Required-node metadata must participate in physical-plan admissibility, not connectivity alone.
+  Evidence: the red/green `propertyPathWithLaterEndpointBinderIsParameterizedInner` regression.
 
 ## Decision Log
 
@@ -153,6 +158,10 @@ behavioral replacement for its private join planner.
 DPhyp now admits factors certified by the island owner instead of rejecting every non-statement factor. Opaque input
 requirements are mapped to dependency hyperedges, and incident equality selectivities remain delayed TES predicates so
 they cannot provide an illegal shortcut. The focused regression and the full 14-test DPhyp adapter class pass.
+
+Parameterized path admission is also complete at the DPhyp adapter/core boundary. The graph records per-node outer
+requirements; costing rejects dependency-crossing hash joins and reversed nested loops, retaining only an inner lookup
+whose outer covers the endpoint requirement. All 15 adapter tests and 9 core costing tests pass.
 
 ## Context and Orientation
 

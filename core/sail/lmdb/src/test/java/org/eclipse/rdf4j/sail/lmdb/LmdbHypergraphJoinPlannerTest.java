@@ -27,6 +27,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -90,6 +91,9 @@ class LmdbHypergraphJoinPlannerTest {
 
 		private Optional<FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars, double prefixRows) {
 			TupleExpr estimateFactor = factor instanceof Extension extension ? extension.getArg() : factor;
+			if (estimateFactor instanceof ArbitraryLengthPath path) {
+				estimateFactor = path.getPathExpression();
+			}
 			if (!(estimateFactor instanceof StatementPattern pattern) || pattern.getPredicateVar().getValue() == null) {
 				return Optional.empty();
 			}
@@ -101,7 +105,10 @@ class LmdbHypergraphJoinPlannerTest {
 			double rows = base;
 			double workRows = baseWorkRows.getOrDefault(predicate, base);
 			Map<String, Double> selectivities = boundVarSelectivity.getOrDefault(predicate, Map.of());
-			for (Var var : List.of(pattern.getSubjectVar(), pattern.getObjectVar())) {
+			List<Var> lookupVars = factor instanceof ArbitraryLengthPath path
+					? List.of(path.getSubjectVar(), path.getObjectVar())
+					: List.of(pattern.getSubjectVar(), pattern.getObjectVar());
+			for (Var var : lookupVars) {
 				if (!var.hasValue() && boundVars.contains(var.getName())) {
 					double selectivity = selectivities.getOrDefault(var.getName(), 1.0d);
 					rows *= selectivity;
@@ -328,6 +335,32 @@ class LmdbHypergraphJoinPlannerTest {
 		assertTrue(sibling.getBindingNames().contains("required"),
 				"The sibling subplan must provide every opaque required variable before evaluation: "
 						+ result.tupleExpr());
+	}
+
+	@Test
+	void propertyPathWithLaterEndpointBinderIsParameterizedInner() {
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 100)
+				.boundSelectivity("a", "start", 0.0001d)
+				.table("b", 1)
+				.table("c", 1)
+				.boundSelectivity("c", "start", 0.001d);
+		StatementPattern endpointBinder = pattern("anchor", "a", "start");
+		StatementPattern connector = pattern("anchor", "b", "middle");
+		ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("start"),
+				pattern("stepSubject", "c", "stepObject"), new Var("tail"), 1L);
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(joinIsland(endpointBinder, connector, path), model)
+				.orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+		ArbitraryLengthPath plannedPath = findFirst(result.tupleExpr(), ArbitraryLengthPath.class).orElseThrow();
+		assertTrue(plannedPath.getParentNode() instanceof Join);
+		Join pathJoin = (Join) plannedPath.getParentNode();
+		assertTrue(pathJoin.getRightArg() == plannedPath,
+				"A path with a later endpoint binder must be the parameterized inner side: " + result.tupleExpr());
+		assertTrue(pathJoin.getLeftArg().getBindingNames().contains("start"),
+				"The outer side must bind a path endpoint before lookup");
 	}
 
 	private static <T extends TupleExpr> Optional<T> findFirst(TupleExpr root, Class<T> type) {

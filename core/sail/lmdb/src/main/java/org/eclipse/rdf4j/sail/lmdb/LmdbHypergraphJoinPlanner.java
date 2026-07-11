@@ -21,9 +21,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
@@ -42,9 +45,9 @@ import org.eclipse.rdf4j.sail.lmdb.hypergraph.PlanHypergraph;
  * instead of only connected left-deep prefixes.
  * <p>
  * Enabled by default; disable with {@code -Drdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp=false}. The v1 scope is
- * deliberately bounded: every factor must be certified by {@link LmdbJoinIslandConnectivity}, have at least one
- * runtime variable, and the island must have 3..maxFactors factors whose dependency hypergraph is connected. Opaque
- * required bindings become hyperedges, so an opaque factor cannot enter before the factors that supply its inputs.
+ * deliberately bounded: every factor must be certified by {@link LmdbJoinIslandConnectivity}, have at least one runtime
+ * variable, and the island must have 3..maxFactors factors whose dependency hypergraph is connected. Opaque required
+ * bindings become hyperedges, so an opaque factor cannot enter before the factors that supply its inputs.
  * <p>
  * Estimates reuse the same {@link JoinFactorCostModel} probes as the left-deep planner: base cardinalities come from
  * unbound-context probes, per-edge join selectivities are derived from pairwise conditional probes (selectivity =
@@ -108,7 +111,7 @@ final class LmdbHypergraphJoinPlanner {
 			}
 			factorJoinVars.add(vars);
 		}
-		long[] opaqueDependencyNodes = opaqueDependencyNodes(factors, factorJoinVars, initial);
+		long[] dependencyNodes = dependencyNodes(factors, factorJoinVars, initial);
 
 		PlanHypergraph planGraph = new PlanHypergraph();
 		LmdbCascadesConnectedJoinPlanner.Step[] seedSteps = new LmdbCascadesConnectedJoinPlanner.Step[factorCount];
@@ -125,6 +128,9 @@ final class LmdbHypergraphJoinPlanner {
 			planGraph.addNode("f" + i, baseRows[i]);
 		}
 		for (int i = 0; i < factorCount; i++) {
+			planGraph.setRequiredNodes(i, dependencyNodes[i]);
+		}
+		for (int i = 0; i < factorCount; i++) {
 			for (int j = i + 1; j < factorCount; j++) {
 				Set<String> shared = new TreeSet<>(factorJoinVars.get(i));
 				shared.retainAll(factorJoinVars.get(j));
@@ -133,7 +139,7 @@ final class LmdbHypergraphJoinPlanner {
 				}
 				double selectivity = edgeSelectivity(factors, i, j, initial, factorJoinVars, baseRows, costModel,
 						fallbackStatistics, tier);
-				if (opaqueDependencyNodes[i] != 0L || opaqueDependencyNodes[j] != 0L) {
+				if (dependencyNodes[i] != 0L || dependencyNodes[j] != 0L) {
 					planGraph.addPredicate(NodeSets.bit(i) | NodeSets.bit(j), selectivity, String.join(",", shared));
 				} else {
 					planGraph.addJoinEdge(NodeSets.bit(i), NodeSets.bit(j), selectivity, String.join(",", shared));
@@ -141,7 +147,7 @@ final class LmdbHypergraphJoinPlanner {
 			}
 		}
 		for (int i = 0; i < factorCount; i++) {
-			long requiredNodes = opaqueDependencyNodes[i];
+			long requiredNodes = dependencyNodes[i];
 			if (requiredNodes != 0L) {
 				planGraph.addJoinEdge(requiredNodes, NodeSets.bit(i), 1.0d,
 						"opaque-required:" + String.join(",",
@@ -164,12 +170,16 @@ final class LmdbHypergraphJoinPlanner {
 		return Optional.of(toPlan(winner, factors, seedSteps, factorCount, adapterCostModel));
 	}
 
-	private static long[] opaqueDependencyNodes(List<TupleExpr> factors, List<Set<String>> factorJoinVars,
+	private static long[] dependencyNodes(List<TupleExpr> factors, List<Set<String>> factorJoinVars,
 			Set<String> initialBoundVars) {
 		long[] dependencies = new long[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
 			Set<String> requiredVars = new HashSet<>(
 					LmdbJoinIslandConnectivity.opaqueFactorRequiredVars(factors.get(i)));
+			if (path(factors.get(i))
+					&& pathEndpointNames(factors.get(i)).stream().noneMatch(initialBoundVars::contains)) {
+				requiredVars.addAll(pathEndpointNames(factors.get(i)));
+			}
 			requiredVars.removeAll(initialBoundVars);
 			if (requiredVars.isEmpty()) {
 				continue;
@@ -188,6 +198,28 @@ final class LmdbHypergraphJoinPlanner {
 			dependencies[i] = requiredNodes;
 		}
 		return dependencies;
+	}
+
+	private static boolean path(TupleExpr factor) {
+		return factor instanceof ArbitraryLengthPath || factor instanceof ZeroLengthPath;
+	}
+
+	private static Set<String> pathEndpointNames(TupleExpr factor) {
+		Set<String> names = new HashSet<>();
+		if (factor instanceof ArbitraryLengthPath path) {
+			addVarName(names, path.getSubjectVar());
+			addVarName(names, path.getObjectVar());
+		} else if (factor instanceof ZeroLengthPath path) {
+			addVarName(names, path.getSubjectVar());
+			addVarName(names, path.getObjectVar());
+		}
+		return names;
+	}
+
+	private static void addVarName(Set<String> names, Var var) {
+		if (var != null && !var.hasValue() && var.getName() != null) {
+			names.add(var.getName());
+		}
 	}
 
 	/**
