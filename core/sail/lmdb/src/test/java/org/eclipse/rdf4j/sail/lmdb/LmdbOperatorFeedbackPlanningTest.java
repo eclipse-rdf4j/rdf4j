@@ -128,7 +128,7 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Second plan should apply completed-query operator feedback through the cost model "
 								+ "to the bound OPTIONAL fanout");
 			}
@@ -160,7 +160,7 @@ class LmdbOperatorFeedbackPlanningTest {
 
 				assertTrue(trainedPlan.contains("Union"),
 						"Expected OPTIONAL UNION plan to still contain a union surface:\n" + trainedPlan);
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Second plan should apply completed-query operator feedback to the OPTIONAL UNION fanout:\n"
 								+ trainedPlan);
 			}
@@ -189,7 +189,7 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Operator feedback must still be selected for the trained OPTIONAL fanout");
 				assertTrue(trainedPlan.contains("plannedOperatorFeedbackRowQErrorMean="),
 						"Trained plans must expose learned row q-error:\n" + trainedPlan);

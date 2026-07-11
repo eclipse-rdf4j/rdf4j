@@ -517,6 +517,7 @@ public interface CascadesCostModel {
 			if (expression.physical() && !expression.inputGroupIds().isEmpty()) {
 				return currentCost;
 			}
+			boolean explicitOpaqueCost = expression.physical() && !CostVector.ZERO.equals(expression.ruleCost());
 			Set<String> boundVars = boundVars(goal);
 			StatisticsEstimate baseEstimate = estimateForLocalCost(expression, expression.tupleExpr(), boundVars,
 					inputWinners);
@@ -524,10 +525,16 @@ public interface CascadesCostModel {
 					boundVars, baseEstimate, currentCost, incumbentCost);
 			if (providerRefined.isPresent()) {
 				StatisticsEstimate refinedEstimate = providerRefined.get();
+				if (explicitOpaqueCost && !expression.estimate().source().equals(refinedEstimate.method())) {
+					return currentCost;
+				}
 				stampStatisticsEstimate(expression.tupleExpr(), refinedEstimate);
 				return applyPolicy(
 						composeOperatorCost(inputCost(inputWinners), refinedEstimate.vector().toCostVector()),
 						goal);
+			}
+			if (explicitOpaqueCost) {
+				return currentCost;
 			}
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression.tupleExpr(), boundVars,
 					goal);
@@ -1196,6 +1203,11 @@ public interface CascadesCostModel {
 						"reason=non-finite-right-estimate, rightEstimate=" + describeFactorEstimate(right));
 				return Optional.empty();
 			}
+			if (rightRows == 0.0d && !right.hasExactOutputRows()) {
+				traceCost("physical-join-parameterized-reject", join,
+						"reason=non-exact-zero-right-estimate, rightEstimate=" + describeFactorEstimate(right));
+				return Optional.empty();
+			}
 			double outputRows = rightRows;
 			double workRows = Math.max(outputRows, left.workRows() + Math.max(rightWorkRows, rightRows));
 			Map<String, Double> metrics = new LinkedHashMap<>(right.getDoubleMetrics());
@@ -1278,7 +1290,14 @@ public interface CascadesCostModel {
 				List<Winner> inputWinners) {
 			StatisticsEstimate left = inputWinnerEstimate(inputWinners, 0, leftJoin.getLeftArg(), boundVars);
 			StatisticsEstimate right = inputWinnerEstimate(inputWinners, 1, leftJoin.getRightArg(), boundVars);
-			Set<String> sharedVars = sharedNames(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			TupleExpr leftPlan = inputWinnerPlan(inputWinners, 0, leftJoin.getLeftArg());
+			TupleExpr rightPlan = inputWinnerPlan(inputWinners, 1, leftJoin.getRightArg());
+			Set<String> sharedVars = sharedNames(leftPlan, rightPlan);
+			Optional<StatisticsEstimate> factorEstimate = estimatePhysicalLeftJoinWithFactorModel(leftJoin, leftPlan,
+					rightPlan, boundVars, left, right, sharedVars);
+			if (factorEstimate.isPresent()) {
+				return factorEstimate.get();
+			}
 			Optional<StatisticsEstimate> parameterized = estimateParameterizedPhysicalLeftJoin(leftJoin, boundVars,
 					inputWinners, left, sharedVars);
 			if (parameterized.isPresent()) {
@@ -1287,6 +1306,60 @@ public interface CascadesCostModel {
 			return rdfStatisticsProvider.leftJoin(left, right, sharedVars)
 					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.leftJoin(left.bag(), right.bag(),
 							sharedVars), "physical-leftjoin"));
+		}
+
+		private Optional<StatisticsEstimate> estimatePhysicalLeftJoinWithFactorModel(LeftJoin leftJoin,
+				TupleExpr leftPlan, TupleExpr rightPlan, Set<String> boundVars, StatisticsEstimate left,
+				StatisticsEstimate right, Set<String> sharedVars) {
+			if (factorCostModel == null || leftJoin == null || leftPlan == null || rightPlan == null
+					|| left == null || right == null) {
+				return Optional.empty();
+			}
+			LeftJoin winnerLeftJoin = leftJoin.clone();
+			winnerLeftJoin.setLeftArg(leftPlan.clone());
+			winnerLeftJoin.setRightArg(rightPlan.clone());
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(winnerLeftJoin, boundVars, null);
+			if (estimate.isEmpty()) {
+				return Optional.empty();
+			}
+			JoinFactorCostModel.FactorCostEstimate factor = estimate.get();
+			double outputRows = factor.getOutputRows();
+			double selectedWorkRows = factor.getWorkRows();
+			if (!isFiniteNonNegative(outputRows) || !isFiniteNonNegative(selectedWorkRows)) {
+				return Optional.empty();
+			}
+			double childWorkFloor = left.workRows() + Math.max(right.workRows(), right.rows());
+			if (isFiniteNonNegative(childWorkFloor)) {
+				selectedWorkRows = Math.max(selectedWorkRows, Math.max(outputRows, childWorkFloor));
+			}
+			final double workRows = selectedWorkRows;
+			String source = factorEstimateSource(factor);
+			Map<String, Double> metrics = new LinkedHashMap<>(factor.getDoubleMetrics());
+			metrics.put("plannedOptionalLeftRows", left.rows());
+			metrics.put("plannedOptionalLeftWorkRows", left.workRows());
+			metrics.put("plannedOptionalRightRows", right.rows());
+			metrics.put("plannedOptionalRightWorkRows", right.workRows());
+			if (isFiniteNonNegative(childWorkFloor)) {
+				metrics.put("plannedOptionalChildWorkFloor", childWorkFloor);
+			}
+			metrics.put("plannedOptionalOutputRows", outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			metrics.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+			for (Map.Entry<String, String> entry : factor.getStringMetrics().entrySet()) {
+				leftJoin.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : metrics.entrySet()) {
+				leftJoin.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			BagEstimate formulaBag = EstimateMath.leftJoin(left.bag(), right.bag(), sharedVars);
+			BagEstimate bag = factor.getBagEstimate()
+					.orElse(formulaBag)
+					.withRowsPreservingEvidence(outputRows, workRows,
+							factor.getNormalizedEstimateVector().confidence(), source, metrics, true);
+			return Optional.of(StatisticsEstimate.fromBag(bag, source));
 		}
 
 		private Optional<StatisticsEstimate> estimateParameterizedPhysicalLeftJoin(LeftJoin leftJoin,

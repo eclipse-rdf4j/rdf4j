@@ -67,6 +67,9 @@ estimate-audit contract tests.
 - [x] (2026-07-12 01:25+02:00) Made correlated anti implementations compositional and excluded standalone
   bound-lookup enumeration from DPhyp-owned islands. Sparse q6 is green after fresh and stale-snapshot startup, and
   the 27-test context/admissibility/anti selector plus LMDB japicmp pass.
+- [x] (2026-07-12 01:31+02:00) Routed concrete physical LeftJoin costing through the existing factor model with
+  selected child plans and a child-work floor. Operator feedback now participates in `CostVector` ranking and retains
+  its exact key, q-error, uncertainty, robust-work, and source metrics; 143 focused shared/LMDB tests pass.
 - [ ] Physically delete unreachable connected and guarantee mini-planners.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -177,6 +180,11 @@ estimate-audit contract tests.
   Rationale: Pricing the logical subtree during rule application ignored DPhyp's physical child and retained stale
   bound-lookup work even after a better child plan was selected.
   Date/Author: 2026-07-12 / Codex.
+- Decision: Refine a concrete physical LeftJoin through the existing `JoinFactorCostModel` after materializing its
+  selected child winners, without adding another statistics-provider method.
+  Rationale: The factor model already owns LMDB feedback fusion and its structured metrics. Reusing it keeps
+  `BagEstimate` evidence and `CostVector` ranking aligned while preserving the public statistics interface.
+  Date/Author: 2026-07-12 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -262,6 +270,13 @@ child's `BagEstimate`. DPhyp-owned islands no longer expose `lmdb-inner-join-bou
 implementation. The fresh/stale sparse selector passes all three tests, and the neighboring 27 rule/context tests pass;
 retained focused logs begin at `logs/mvnf/20260711-231334-verify.log` and the green sparse log is
 `logs/mvnf/20260711-231807-verify.log`.
+
+The selected physical LeftJoin now passes its winner-materialized children through the existing factor model before
+the provider fallback. The result retains factor evidence, applies a selected-child work floor, and stamps the same
+operator-feedback key/q-error/uncertainty metrics used for ranking onto Explain. The active feedback selector passes
+with three intentionally deferred exploratory cases, all 50 shared cost-model tests pass, and 88 LMDB feedback/OPTIONAL
+tests pass. Retained logs are `logs/mvnf/20260711-232933-verify.log` and
+`logs/mvnf/20260711-233030-verify.log`.
 
 ## Context and Orientation
 
