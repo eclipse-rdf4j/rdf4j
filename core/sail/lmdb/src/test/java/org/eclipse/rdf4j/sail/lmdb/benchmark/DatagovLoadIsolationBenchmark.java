@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -125,6 +126,13 @@ public class DatagovLoadIsolationBenchmark {
 			connection.commit();
 		}
 
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery("SELECT * WHERE { ?s a ?type. ?type ?b ?c. }").evaluate()) {
+			if(evaluate.hasNext()) {
+				evaluate.next();
+				return true;
+			}
+		}
+
 		return connection.hasStatement(null, null, null, true);
 	}
 
@@ -135,6 +143,12 @@ public class DatagovLoadIsolationBenchmark {
 		connection.begin(isolationLevel);
 		connection.add(data);
 		connection.commit();
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery("SELECT * WHERE { ?s a ?type. ?type ?b ?c. }").evaluate()) {
+			if(evaluate.hasNext()) {
+				evaluate.next();
+				return true;
+			}
+		}
 		return connection.hasStatement(null, null, null, true);
 	}
 
