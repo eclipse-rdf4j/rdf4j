@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 
 /** Owns access to optimization-scoped fingerprints, evidence, and planner caches. */
 final class LmdbEstimatorScope {
+	private static final String PLAN_TEMPLATE_CACHE_KEY = PlanTemplateCache.class.getName();
 	private final LmdbEvaluationStatistics statistics;
 
 	LmdbEstimatorScope(LmdbEvaluationStatistics statistics) {
@@ -50,5 +51,20 @@ final class LmdbEstimatorScope {
 
 	void putPlannerCacheValue(Object key, Object value) {
 		statistics.putOptimizationScopedPlannerCacheValue(key, value);
+	}
+
+	@SuppressWarnings("unchecked")
+	PlanTemplateCache<Object> planTemplateCache() {
+		Object existing = statistics.getOptimizationScopedPlannerCacheValue(PLAN_TEMPLATE_CACHE_KEY);
+		if (existing instanceof PlanTemplateCache<?>) {
+			return (PlanTemplateCache<Object>) existing;
+		}
+		PlanTemplateCache<Object> created = new PlanTemplateCache<>(256);
+		statistics.putOptimizationScopedPlannerCacheValue(PLAN_TEMPLATE_CACHE_KEY, created);
+		return created;
+	}
+
+	long statisticsSnapshotVersion() {
+		return statistics.optimizationScopedStatisticsSnapshotVersion();
 	}
 }

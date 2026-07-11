@@ -75,7 +75,7 @@ final class LmdbHypergraphJoinPlanner {
 		return Boolean.parseBoolean(System.getProperty(DPHYP_PROPERTY, "true"));
 	}
 
-	private static int maxFactors() {
+	static int maxFactors() {
 		String value = System.getProperty(DPHYP_MAX_FACTORS_PROPERTY);
 		if (value == null || value.isBlank()) {
 			return DEFAULT_MAX_FACTORS;
@@ -86,6 +86,10 @@ final class LmdbHypergraphJoinPlanner {
 		} catch (NumberFormatException e) {
 			return DEFAULT_MAX_FACTORS;
 		}
+	}
+
+	static long pairBudget() {
+		return Math.max(0L, Long.getLong(DPHYP_PAIR_BUDGET_PROPERTY, PAIR_BUDGET));
 	}
 
 	static Optional<LmdbCascadesConnectedJoinPlanner.Plan> tryPlan(List<TupleExpr> factors,
@@ -158,8 +162,7 @@ final class LmdbHypergraphJoinPlanner {
 
 		ProbingCostModel adapterCostModel = new ProbingCostModel(factors, factorJoinVars, initial, seedSteps, costModel,
 				fallbackStatistics, tier);
-		long pairBudget = Long.getLong(DPHYP_PAIR_BUDGET_PROPERTY, PAIR_BUDGET);
-		Optional<JoinPlan> best = HypergraphOptimizer.bestPlan(planGraph, adapterCostModel, Math.max(0L, pairBudget));
+		Optional<JoinPlan> best = HypergraphOptimizer.bestPlan(planGraph, adapterCostModel, pairBudget());
 		boolean degraded = best.isEmpty();
 		if (degraded) {
 			best = HypergraphOptimizer.greedyPlan(planGraph, adapterCostModel);

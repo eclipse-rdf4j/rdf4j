@@ -147,4 +147,12 @@ final class LmdbPlannerServices {
 	void putOptimizationScopedPlannerCacheValue(Object key, Object value) {
 		estimatorScope.putPlannerCacheValue(key, value);
 	}
+
+	PlanTemplateCache<Object> planTemplateCache() {
+		return estimatorScope.planTemplateCache();
+	}
+
+	long statisticsSnapshotVersion() {
+		return estimatorScope.statisticsSnapshotVersion();
+	}
 }

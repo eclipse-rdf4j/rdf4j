@@ -195,6 +195,7 @@ class LmdbEvaluationStatistics
 	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
 	private static final double LEO_FANOUT_CONFIDENCE_THRESHOLD = 0.55d;
 	private static final AtomicLong ESTIMATE_TRACE_SEQUENCE = new AtomicLong();
+	private static final AtomicLong STATISTICS_SNAPSHOT_SEQUENCE = new AtomicLong();
 	private static final String FINITE_DERIVED_SURFACE_CACHE_HITS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
 			+ "finiteDerivedSurfaceCacheHits";
 	private static final String FINITE_DERIVED_SURFACE_CACHE_MISSES_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
@@ -2020,7 +2021,7 @@ class LmdbEvaluationStatistics
 		OptimizationCostScope costScope = optimizationCostScope.get();
 		if (costScope == null) {
 			completedOmniEvidence.remove();
-			costScope = new OptimizationCostScope();
+			costScope = new OptimizationCostScope(STATISTICS_SNAPSHOT_SEQUENCE.incrementAndGet());
 			optimizationCostScope.set(costScope);
 		}
 		costScope.depth++;
@@ -2047,6 +2048,11 @@ class LmdbEvaluationStatistics
 
 	boolean hasOptimizationScopedPlannerCache() {
 		return optimizationCostScope.get() != null;
+	}
+
+	long optimizationScopedStatisticsSnapshotVersion() {
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		return costScope == null ? 0L : costScope.statisticsSnapshotVersion;
 	}
 
 	Object getOptimizationScopedPlannerCacheValue(Object key) {
@@ -10687,6 +10693,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static final class OptimizationCostScope {
+		private final long statisticsSnapshotVersion;
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
 		private final Map<Object, Object> plannerCache = new HashMap<>();
 		private final LmdbOmniEvidenceStore omniEvidence = new LmdbOmniEvidenceStore();
@@ -10708,6 +10715,11 @@ class LmdbEvaluationStatistics
 		private long finiteBranchFactorSurfaceCacheHits;
 		private long finiteBranchFactorSurfaceCacheMisses;
 		private long exactJoinSurfaceCalls;
+
+		private OptimizationCostScope(long statisticsSnapshotVersion) {
+			this.statisticsSnapshotVersion = statisticsSnapshotVersion;
+		}
+
 		private long sketchJoinSurfaceCalls;
 		private long fallbackJoinSurfaceCalls;
 		private int depth;

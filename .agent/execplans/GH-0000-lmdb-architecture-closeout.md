@@ -48,6 +48,8 @@ estimate-audit contract tests.
   requirements; dependency-crossing hash/outer orientations are rejected and parameterized inner paths are retained.
 - [x] (2026-07-11 12:39+02:00) Replaced pair-budget fallthrough with a deterministic connected greedy fallback inside
   the hypergraph package; zero-budget searches remain DPhyp-owned and expose `optimizer.dphypDegraded=1`.
+- [x] (2026-07-11 14:07+02:00) Added and wired bounded `PlanTemplateCache` with canonical fingerprints, initial
+  bindings, full optimization goal/properties, relevant DPhyp configuration, and monotonic statistics-scope version.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -168,6 +170,10 @@ whose outer covers the endpoint requirement. All 15 adapter tests and 9 core cos
 Exact DPhyp enumeration now uses a configurable deterministic pair budget. Exhaustion invokes an O(n²) connected
 greedy plan builder inside `HypergraphOptimizer`, never the legacy connected planner, and stamps explicit degradation
 evidence. The full 16-test DPhyp adapter class passes.
+
+Plan templates now use a bounded typed cache rather than raw scoped map entries. Cache identity includes factor
+fingerprints, bindings, goal/properties, DPhyp configuration and statistics snapshot scope; the identity regression and
+all 100 statistics memoization tests pass.
 
 ## Context and Orientation
 

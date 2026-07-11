@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -114,9 +116,15 @@ final class LmdbCascadesConnectedJoinPlanner {
 			}
 		}
 		boolean greedy = factors.size() > EXACT_DP_FACTOR_LIMIT;
-		PlanCacheKey cacheKey = scopedPlanCacheAvailable(scopedStatistics)
-				? new PlanCacheKey(factorFingerprints(factors, scopedStatistics), plannerNames(initialBoundVars),
-						greedy, tier)
+		Set<String> initial = plannerNames(initialBoundVars);
+		PlanTemplateCache.Key cacheKey = scopedPlanCacheAvailable(scopedStatistics)
+				? new PlanTemplateCache.Key(factorFingerprints(factors, scopedStatistics), initial,
+						OptimizationGoal.root()
+								.withRequiredProperties(PhysicalProperties.ANY.withBoundVars(initial))
+								.withEstimationTier(tier),
+						new PlanTemplateCache.Configuration(LmdbHypergraphJoinPlanner.enabled(),
+								LmdbHypergraphJoinPlanner.maxFactors(), LmdbHypergraphJoinPlanner.pairBudget(), tier),
+						scopedStatistics.get().statisticsSnapshotVersion())
 				: null;
 		Optional<PlanTemplate> cachedTemplate = trace.enabled() ? null : cachedPlanTemplate(scopedStatistics, cacheKey);
 		if (cachedTemplate != null) {
@@ -496,21 +504,21 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	@SuppressWarnings("unchecked")
 	private static Optional<PlanTemplate> cachedPlanTemplate(Optional<LmdbPlannerServices> services,
-			PlanCacheKey cacheKey) {
+			PlanTemplateCache.Key cacheKey) {
 		if (services.isEmpty() || cacheKey == null) {
 			return null;
 		}
-		Object cached = services.get().getOptimizationScopedPlannerCacheValue(cacheKey);
+		Object cached = services.get().planTemplateCache().get(cacheKey).orElse(null);
 		if (cached instanceof Optional<?>) {
 			return (Optional<PlanTemplate>) cached;
 		}
 		return null;
 	}
 
-	private static void cachePlanTemplate(Optional<LmdbPlannerServices> services, PlanCacheKey cacheKey,
+	private static void cachePlanTemplate(Optional<LmdbPlannerServices> services, PlanTemplateCache.Key cacheKey,
 			Optional<PlanTemplate> template) {
 		if (services.isPresent() && cacheKey != null && template != null) {
-			services.get().putOptimizationScopedPlannerCacheValue(cacheKey, template);
+			services.get().planTemplateCache().put(cacheKey, template);
 		}
 	}
 
@@ -1610,15 +1618,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 				return comparison;
 			}
 			return Integer.compare(factorIndex, other.factorIndex);
-		}
-	}
-
-	private record PlanCacheKey(List<Object> factors, Set<String> initialBoundVars, boolean greedy,
-			EstimationTier estimationTier) {
-		private PlanCacheKey {
-			factors = factors == null || factors.isEmpty() ? List.of() : List.copyOf(factors);
-			initialBoundVars = initialBoundVars == null || initialBoundVars.isEmpty() ? Set.of()
-					: Set.copyOf(initialBoundVars);
 		}
 	}
 
