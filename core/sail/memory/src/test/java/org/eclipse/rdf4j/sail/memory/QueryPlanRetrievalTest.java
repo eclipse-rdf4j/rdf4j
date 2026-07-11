@@ -437,28 +437,28 @@ public class QueryPlanRetrievalTest {
 					"║     ProjectionElem \"score\"\n" +
 					"║     ProjectionElem \"lvl\"\n" +
 					"╚══ Join (JoinIterator)\n" +
-					"   ├── Filter [left]\n" +
-					"   │  ╠══ Bound\n" +
-					"   │  ║     Var (name=s)\n" +
-					"   │  ╚══ BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
+					"   ├── Filter (new scope) [left]\n" +
+					"   │  ╠══ And\n" +
+					"   │  ║  ├── Compare (!=)\n" +
+					"   │  ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
+					"   │  ║  │  ║     Str\n" +
+					"   │  ║  │  ║        Var (name=o)\n" +
+					"   │  ║  │  ╚══ ValueConstant (value=\"bad\")\n" +
+					"   │  ║  └── Not\n" +
+					"   │  ║        Exists\n" +
+					"   │  ║           StatementPattern (resultSizeEstimate=0)\n" +
+					"   │  ║              s: Var (name=s)\n" +
+					"   │  ║              p: Var (name=_const_52097_uri, value=http://example.com/deprecated, anonymous)\n"
 					+
+					"   │  ║              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
+					+
+					"   │  ╚══ SingletonSet\n" +
 					"   └── Join (JoinIterator) [right]\n" +
-					"      ╠══ Filter (new scope) [left]\n" +
-					"      ║  ├── And\n" +
-					"      ║  │  ╠══ Compare (!=)\n" +
-					"      ║  │  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
-					"      ║  │  ║  │     Str\n" +
-					"      ║  │  ║  │        Var (name=o)\n" +
-					"      ║  │  ║  └── ValueConstant (value=\"bad\")\n" +
-					"      ║  │  ╚══ Not\n" +
-					"      ║  │        Exists\n" +
-					"      ║  │           StatementPattern (resultSizeEstimate=0)\n" +
-					"      ║  │              s: Var (name=s)\n" +
-					"      ║  │              p: Var (name=_const_52097_uri, value=http://example.com/deprecated, anonymous)\n"
+					"      ╠══ Filter [left]\n" +
+					"      ║  ├── Bound\n" +
+					"      ║  │     Var (name=s)\n" +
+					"      ║  └── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
 					+
-					"      ║  │              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
-					+
-					"      ║  └── SingletonSet\n" +
 					"      ╚══ Join (JoinIterator) [right]\n" +
 					"         ├── Filter [left]\n" +
 					"         │  ╠══ Compare (!=)\n" +
