@@ -28,10 +28,13 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -92,6 +95,15 @@ class LmdbHypergraphJoinPlannerTest {
 
 		private Optional<FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars, double prefixRows) {
 			TupleExpr estimateFactor = factor instanceof Extension extension ? extension.getArg() : factor;
+			if (estimateFactor instanceof Filter filter) {
+				estimateFactor = filter.getArg();
+			}
+			if (estimateFactor instanceof LeftJoin leftJoin) {
+				estimateFactor = leftJoin.getLeftArg();
+			}
+			if (estimateFactor instanceof Difference difference) {
+				estimateFactor = difference.getLeftArg();
+			}
 			if (estimateFactor instanceof ArbitraryLengthPath path) {
 				estimateFactor = path.getPathExpression();
 			}
@@ -336,6 +348,74 @@ class LmdbHypergraphJoinPlannerTest {
 		assertTrue(sibling.getBindingNames().contains("required"),
 				"The sibling subplan must provide every opaque required variable before evaluation: "
 						+ result.tupleExpr());
+	}
+
+	@Test
+	void filterExternalVarBecomesTotalEligibilityDependency() {
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 100)
+				.table("b", 10)
+				.table("c", 1);
+		StatementPattern requiredVarProducer = pattern("s", "a", "required");
+		StatementPattern connector = pattern("s", "b", "middle");
+		Filter correlatedFilter = new Filter(pattern("middle", "c", "tail"),
+				new Compare(new Var("required"), new ValueConstant(VF.createLiteral("allowed"))));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(
+				joinIsland(requiredVarProducer, connector, correlatedFilter), model).orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+		Filter plannedFilter = findFirst(result.tupleExpr(), Filter.class).orElseThrow();
+		assertTrue(plannedFilter.getParentNode() instanceof Join);
+		Join parent = (Join) plannedFilter.getParentNode();
+		assertTrue(parent.getRightArg() == plannedFilter,
+				"A correlated filter must remain a parameterized inner factor: " + result.tupleExpr());
+		assertTrue(parent.getLeftArg().getBindingNames().contains("required"),
+				"The filter TES must include the factor that supplies its external condition variable");
+	}
+
+	@Test
+	void optionalConditionExternalVarBecomesTotalEligibilityDependency() {
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 100)
+				.table("b", 10)
+				.table("c", 1)
+				.table("d", 1);
+		StatementPattern requiredVarProducer = pattern("s", "a", "required");
+		StatementPattern connector = pattern("s", "b", "middle");
+		LeftJoin optional = new LeftJoin(pattern("middle", "c", "tail"), pattern("tail", "d", "label"),
+				new Compare(new Var("required"), new ValueConstant(VF.createLiteral("allowed"))));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(
+				joinIsland(requiredVarProducer, connector, optional), model).orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+		LeftJoin plannedOptional = findFirst(result.tupleExpr(), LeftJoin.class).orElseThrow();
+		assertTrue(plannedOptional.getParentNode() instanceof Join);
+		Join parent = (Join) plannedOptional.getParentNode();
+		assertTrue(parent.getRightArg() == plannedOptional,
+				"A conditioned OPTIONAL must remain a parameterized inner factor: " + result.tupleExpr());
+		assertTrue(parent.getLeftArg().getBindingNames().contains("required"),
+				"The OPTIONAL TES must include the factor supplying its external condition variable");
+	}
+
+	@Test
+	void minusFactorRemainsAtomicInsideDphypIsland() {
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 100)
+				.table("b", 10)
+				.table("c", 1)
+				.table("d", 1);
+		Difference minus = new Difference(pattern("middle", "c", "tail"), pattern("tail", "d", "rejected"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(joinIsland(
+				pattern("s", "a", "required"), pattern("s", "b", "middle"), minus), model).orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm(),
+				"MINUS must remain an atomic factor owned by the enabled hypergraph planner");
+		assertTrue(findFirst(result.tupleExpr(), Difference.class).isPresent(),
+				"DPhyp must preserve the internal anti-join operator");
+		assertEquals(4, collectPatterns(result.tupleExpr()).size(), "Every MINUS branch pattern appears exactly once");
 	}
 
 	@Test

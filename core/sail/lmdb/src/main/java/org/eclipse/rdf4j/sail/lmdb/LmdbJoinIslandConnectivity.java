@@ -442,6 +442,9 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return opaqueFactorsEnabled() && leftJoin.getLeftArg() != null && leftJoin.getRightArg() != null;
 		}
+		if (tupleExpr instanceof Difference difference) {
+			return opaqueFactorsEnabled() && difference.getLeftArg() != null && difference.getRightArg() != null;
+		}
 		if (tupleExpr instanceof Union union) {
 			return opaqueFactorsEnabled() && union.getLeftArg() != null && union.getRightArg() != null;
 		}
@@ -479,10 +482,31 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	/**
-	 * Variables an opaque factor needs bound before it may be placed: for an Extension these are the expression
-	 * variables its own argument does not assuredly bind. Native factors have no requirement.
+	 * Variables an opaque factor needs bound before it may be placed. Conditions and expressions contribute names not
+	 * assured by the factor's internal inputs; LATERAL and SERVICE contribute their declared correlation surfaces.
+	 * Native factors have no requirement.
 	 */
 	static Set<String> opaqueFactorRequiredVars(TupleExpr factor) {
+		if (factor instanceof LeftJoin leftJoin && leftJoin.getCondition() != null) {
+			Set<String> required = new LinkedHashSet<>(LmdbJoinPlanSupport
+					.plannerBindingNames(VarNameCollector.process(leftJoin.getCondition())));
+			if (leftJoin.getLeftArg() != null) {
+				required.removeAll(LmdbJoinPlanSupport
+						.plannerBindingNames(leftJoin.getLeftArg().getAssuredBindingNames()));
+			}
+			if (leftJoin.getRightArg() != null) {
+				required.removeAll(LmdbJoinPlanSupport
+						.plannerBindingNames(leftJoin.getRightArg().getAssuredBindingNames()));
+			}
+			return required.isEmpty() ? Set.of() : Set.copyOf(required);
+		}
+		if (factor instanceof Filter filter && filter.getArg() != null && filter.getCondition() != null) {
+			Set<String> required = new LinkedHashSet<>(LmdbJoinPlanSupport
+					.plannerBindingNames(VarNameCollector.process(filter.getCondition())));
+			required.removeAll(
+					LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames()));
+			return required.isEmpty() ? Set.of() : Set.copyOf(required);
+		}
 		if (factor instanceof Extension extension && extension.getArg() != null) {
 			Set<String> argAssured = LmdbJoinPlanSupport
 					.plannerBindingNames(extension.getArg().getAssuredBindingNames());
@@ -500,7 +524,8 @@ final class LmdbJoinIslandConnectivity {
 		if (factor instanceof Lateral lateral) {
 			// The right side may consume rightInputBindingNames; anything its own left side does not assuredly
 			// bind must come from earlier island factors.
-			Set<String> required = LmdbJoinPlanSupport.plannerBindingNames(lateral.getRightInputBindingNames());
+			Set<String> required = new LinkedHashSet<>(
+					LmdbJoinPlanSupport.plannerBindingNames(lateral.getRightInputBindingNames()));
 			if (lateral.getLeftArg() != null) {
 				required.removeAll(
 						LmdbJoinPlanSupport.plannerBindingNames(lateral.getLeftArg().getAssuredBindingNames()));

@@ -41,9 +41,9 @@ estimate-audit contract tests.
 - [ ] (2026-07-11 11:34+02:00) Routed the registry through top-level `LmdbGuaranteeOptionRule` and extracted focused
   guarantee costing, materialization, and diagnostics collaborators. The package-visible delegate still owns option
   enumeration and its private planner; removing that planner is the next behavior-changing slice.
-- [ ] (2026-07-11 11:40+02:00) Added opaque-factor dependency hyperedges derived from
-  `opaqueFactorRequiredVars`, admitted safe filtered/extension factors, and passed all 14 DPhyp adapter tests.
-  Conflict/TES operator semantics, interesting-order property states, and template caching remain.
+- [x] (2026-07-11 15:33+02:00) Added opaque-factor dependency hyperedges and operator TES requirements for
+  FILTER/EXISTS, conditioned OPTIONAL, LATERAL, and property paths; admitted atomic MINUS factors and passed all 19
+  DPhyp adapter tests. Interesting-order physical-property states remain.
 - [x] (2026-07-11 11:48+02:00) Added required-node state metadata and admitted property paths through endpoint-binder
   requirements; dependency-crossing hash/outer orientations are rejected and parameterized inner paths are retained.
 - [x] (2026-07-11 12:39+02:00) Replaced pair-budget fallthrough with a deterministic connected greedy fallback inside
@@ -92,6 +92,9 @@ estimate-audit contract tests.
 - Observation: Undirected dependency hyperedges alone still allow the cost receiver to flip a dependent path to the
   hash/outer side. Required-node metadata must participate in physical-plan admissibility, not connectivity alone.
   Evidence: the red/green `propertyPathWithLaterEndpointBinderIsParameterizedInner` regression.
+- Observation: Collecting no condition variables can return an immutable empty set; subtracting assured bindings from
+  it failed only in the broader adapter selector after focused correlated tests passed.
+  Evidence: the red/green full `LmdbHypergraphJoinPlannerTest` run around `admitsSafeNonScopeChangingFilterFactors`.
 
 ## Decision Log
 
@@ -174,6 +177,11 @@ evidence. The full 16-test DPhyp adapter class passes.
 Plan templates now use a bounded typed cache rather than raw scoped map entries. Cache identity includes factor
 fingerprints, bindings, goal/properties, DPhyp configuration and statistics snapshot scope; the identity regression and
 all 100 statistics memoization tests pass.
+
+Opaque operator eligibility is now explicit. FILTER conditions (including EXISTS trees) and conditioned OPTIONALs
+derive required variables after subtracting their internally assured bindings; those variables become dependency
+hyperedges and TES predicates. MINUS remains an atomic anti-join factor, while existing LATERAL input requirements and
+property-path endpoint requirements share the same parameterized-inner enforcement. All 19 adapter tests pass.
 
 ## Context and Orientation
 
