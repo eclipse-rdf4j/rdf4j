@@ -170,7 +170,7 @@ final class LmdbCascadesRuleProvider {
 					.add(new StandardCascadesRules.UnionSubsumedBranchEliminationRule())
 					.add(new StandardCascadesRules.BranchLocalDistinctRule());
 		}
-		builder.add(new LmdbGuaranteeOptionImplementationRule(statistics))
+		builder.add(new LmdbGuaranteeOptionRule(statistics))
 				.add(new LmdbStarMultiPredicateScanRule(statistics))
 				.add(new LmdbPropertyPathImplementationRule(statistics))
 				.add(new LmdbAccessPathImplementationRule(statistics))
@@ -2236,14 +2236,14 @@ final class LmdbCascadesRuleProvider {
 	private record UnionConstantDomain(int position, Value leftValue, Value rightValue) {
 	}
 
-	private static final class LmdbGuaranteeOptionImplementationRule extends LmdbRule {
+	static final class GuaranteeOptionImplementation extends LmdbRule {
 		private static final int MAX_CANDIDATE_METRICS = 8;
 		private static final int FIXED_ORDER_PRESELECTION_FACTOR_THRESHOLD = 6;
 		private static final double SEMANTIC_REWRITE_MIN_WORK_IMPROVEMENT_RATIO = 0.90d;
 
 		private final JoinOrderPlanner joinOrderPlanner;
 
-		LmdbGuaranteeOptionImplementationRule(EvaluationStatistics statistics) {
+		GuaranteeOptionImplementation(EvaluationStatistics statistics) {
 			super("lmdb-guarantee-options", RuleKind.IMPLEMENTATION, 125, statistics);
 			this.joinOrderPlanner = statistics instanceof JoinOrderPlanner planner ? planner : null;
 		}
@@ -2455,15 +2455,16 @@ final class LmdbCascadesRuleProvider {
 			Optional<JoinOrderPlanner.JoinOrderPlan> plan = factors.size() == 1
 					? estimateSingleFactor(factors.getFirst(), filters, goal)
 					: joinOrderPlanner.planJoinOrder(factors, boundVars, algorithm, plannerFilters);
-			double comparableWork = plan.map(joinOrderPlan -> guaranteeOptionComparableWork(joinOrderPlan, name))
+			double comparableWork = plan.map(joinOrderPlan -> LmdbGuaranteeCostEstimator.comparableWork(joinOrderPlan,
+					name))
 					.orElse(Double.POSITIVE_INFINITY);
 			String details = "costing=dynamic";
 			Optional<JoinOrderPlanner.JoinOrderPlan> fixedPlan = fixedFiniteAnchorPlan(name, factors, boundVars,
 					algorithm, plannerFilters, semanticRewrite);
 			if (fixedPlan.isPresent()) {
-				double fixedComparableWork = guaranteeOptionComparableWork(fixedPlan.get(), name);
+				double fixedComparableWork = LmdbGuaranteeCostEstimator.comparableWork(fixedPlan.get(), name);
 				if (plan.isEmpty()
-						|| finiteAnchorFixedPlanBeats(fixedPlan.get(), fixedComparableWork, plan.get(),
+						|| LmdbGuaranteeCostEstimator.fixedPlanBeats(fixedPlan.get(), fixedComparableWork, plan.get(),
 								comparableWork)) {
 					plan = fixedPlan;
 					comparableWork = fixedComparableWork;
@@ -2514,9 +2515,9 @@ final class LmdbCascadesRuleProvider {
 							+ ":order=" + LmdbGuaranteeSemanticPrefixPlanner.orderSummary(order.order()));
 					continue;
 				}
-				double comparableWork = guaranteeOptionComparableWork(plan.get(), option.name());
-				prefixAlternatives.add(order.details() + ":cmp=" + formatMetric(comparableWork)
-						+ ":total=" + formatMetric(plan.get().getEstimatedTotalWork())
+				double comparableWork = LmdbGuaranteeCostEstimator.comparableWork(plan.get(), option.name());
+				prefixAlternatives.add(order.details() + ":cmp=" + LmdbGuaranteeDiagnostics.formatMetric(comparableWork)
+						+ ":total=" + LmdbGuaranteeDiagnostics.formatMetric(plan.get().getEstimatedTotalWork())
 						+ ":order=" + LmdbGuaranteeSemanticPrefixPlanner.orderSummary(plan.get().getOrderedArgs())
 						+ ":steps=" + LmdbGuaranteeSemanticPrefixPlanner.stepSummary(plan.get()));
 				CostedOption prefixCandidate = new CostedOption(option.name(), plan.get(), optionFilters,
@@ -2544,123 +2545,6 @@ final class LmdbCascadesRuleProvider {
 			return Optional.ofNullable(best);
 		}
 
-		private boolean finiteAnchorFixedPlanBeats(JoinOrderPlanner.JoinOrderPlan candidate,
-				double candidateComparableWork, JoinOrderPlanner.JoinOrderPlan incumbent,
-				double incumbentComparableWork) {
-			if (candidateComparableWork < incumbentComparableWork) {
-				return true;
-			}
-			boolean candidateHasFiniteAccess = hasFiniteAccessStep(candidate);
-			if (!candidateHasFiniteAccess) {
-				return false;
-			}
-			double incumbentCartesianWork = incumbent.getSummaryDoubleMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
-			if (hasFiniteAccessStep(incumbent)) {
-				double candidateCartesianWork = candidate.getSummaryDoubleMetrics()
-						.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(incumbentCartesianWork)
-						&& incumbentCartesianWork > 0.0d
-						&& LmdbJoinPlanSupport.isFiniteNonNegative(candidateCartesianWork)
-						&& candidateCartesianWork == 0.0d) {
-					return true;
-				}
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(incumbentCartesianWork)
-						&& incumbentCartesianWork > 0.0d
-						&& (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateCartesianWork)
-								|| candidateCartesianWork < incumbentCartesianWork)
-						&& (candidate.getEstimatedTotalWork() <= incumbent.getEstimatedTotalWork()
-								|| candidateComparableWork <= incumbentComparableWork * 1.25d
-								|| candidate.getEstimatedFinalRows() <= incumbent.getEstimatedFinalRows())) {
-					return true;
-				}
-				return false;
-			}
-			if (LmdbJoinPlanSupport.isFiniteNonNegative(incumbentCartesianWork) && incumbentCartesianWork > 0.0d
-					&& candidateComparableWork <= incumbent.getEstimatedTotalWork()) {
-				return true;
-			}
-			double candidateAccessRows = finiteAnchorAccessRows(candidate);
-			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateAccessRows)
-					&& candidateAccessRows > 0.0d
-					&& candidateComparableWork <= incumbentComparableWork * 1.05d;
-		}
-
-		private double cartesianWork(JoinOrderPlanner.JoinOrderPlan plan) {
-			double cartesianWork = plan.getSummaryDoubleMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
-			return LmdbJoinPlanSupport.isFiniteNonNegative(cartesianWork) ? cartesianWork : Double.POSITIVE_INFINITY;
-		}
-
-		private boolean hasFiniteAccessStep(JoinOrderPlanner.JoinOrderPlan plan) {
-			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
-				if (finiteAccessStep(step)) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		private boolean finiteAccessStep(JoinOrderPlanner.PlanStep step) {
-			String source = step.getStringMetrics()
-					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-			return "lmdb-finite-binding-lookup".equals(source)
-					|| "lmdb-finite-derived-surface".equals(source);
-		}
-
-		private double finiteAnchorAccessRows(JoinOrderPlanner.JoinOrderPlan plan) {
-			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
-				if (!finiteAccessStep(step)) {
-					continue;
-				}
-				double accessRows = step.getDoubleMetrics()
-						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(accessRows)) {
-					return accessRows;
-				}
-			}
-			return Double.NaN;
-		}
-
-		private double guaranteeOptionComparableWork(JoinOrderPlanner.JoinOrderPlan plan, String optionName) {
-			double work = plan.getSummaryDoubleMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, Double.NaN);
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(work)) {
-				work = plan.getEstimatedTotalWork();
-			}
-			if (!LmdbJoinPlanSupport.isFiniteNonNegative(work)) {
-				return Double.POSITIVE_INFINITY;
-			}
-			return Math.max(0.0d, work - generatedFiniteAnchorAssignmentWork(plan, optionName));
-		}
-
-		private double generatedFiniteAnchorAssignmentWork(JoinOrderPlanner.JoinOrderPlan plan, String optionName) {
-			if (optionName == null || !optionName.startsWith("finite-anchor:")) {
-				return 0.0d;
-			}
-			List<TupleExpr> orderedArgs = plan.getOrderedArgs();
-			List<JoinOrderPlanner.PlanStep> steps = plan.getSteps();
-			int limit = Math.min(orderedArgs.size(), steps.size());
-			double work = 0.0d;
-			for (int i = 0; i < limit; i++) {
-				TupleExpr orderedArg = orderedArgs.get(i);
-				if (LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(orderedArg).isEmpty()) {
-					continue;
-				}
-				String stepOption = steps.get(i)
-						.getStringMetrics()
-						.get("optimizer.guaranteeOption");
-				if (stepOption == null || stepOption.isEmpty()) {
-					stepOption = orderedArg.getStringMetricPlanned("optimizer.guaranteeOption");
-				}
-				if (optionName.equals(stepOption)) {
-					work += steps.get(i)
-							.getStepWorkRows();
-				}
-			}
-			return work;
-		}
-
 		private String guaranteeOptionConciseDetails(JoinOrderPlanner.JoinOrderPlan plan, int satisfiedFilterIndex) {
 			Map<String, String> details = new LinkedHashMap<>();
 			List<String> stepSources = new ArrayList<>();
@@ -2678,7 +2562,7 @@ final class LmdbCascadesRuleProvider {
 			}
 			if (!details.containsKey("surfaceRows")
 					&& LmdbJoinPlanSupport.isFiniteNonNegative(plan.getEstimatedFinalRows())) {
-				details.put("surfaceRows", formatMetric(plan.getEstimatedFinalRows()));
+				details.put("surfaceRows", LmdbGuaranteeDiagnostics.formatMetric(plan.getEstimatedFinalRows()));
 			}
 			if (!stepSources.isEmpty()) {
 				details.put("stepSources", stepSources.toString());
@@ -2691,7 +2575,7 @@ final class LmdbCascadesRuleProvider {
 
 		private boolean addFiniteAccessGuaranteeDetails(Map<String, String> details,
 				JoinOrderPlanner.PlanStep step) {
-			if (!finiteAccessStep(step)) {
+			if (!LmdbGuaranteeCostEstimator.finiteAccessStep(step)) {
 				return false;
 			}
 			Map<String, String> stringMetrics = step.getStringMetrics();
@@ -2702,16 +2586,16 @@ final class LmdbCascadesRuleProvider {
 					stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "n/a"));
 			double accessRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(accessRows)) {
-				details.putIfAbsent("anchorAccessRows", formatMetric(accessRows));
+				details.putIfAbsent("anchorAccessRows", LmdbGuaranteeDiagnostics.formatMetric(accessRows));
 			}
 			double workRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
 					step.getStepWorkRows());
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
-				details.putIfAbsent("anchorWorkRows", formatMetric(workRows));
+				details.putIfAbsent("anchorWorkRows", LmdbGuaranteeDiagnostics.formatMetric(workRows));
 			}
 			Double surfaceRows = doubleMetrics.get("plannedSurfaceRows");
 			if (surfaceRows != null && LmdbJoinPlanSupport.isFiniteNonNegative(surfaceRows)) {
-				details.putIfAbsent("surfaceRows", formatMetric(surfaceRows));
+				details.putIfAbsent("surfaceRows", LmdbGuaranteeDiagnostics.formatMetric(surfaceRows));
 			}
 			return true;
 		}
@@ -2786,7 +2670,7 @@ final class LmdbCascadesRuleProvider {
 			}
 			if (candidate.semanticRewrite()
 					&& !incumbent.semanticRewrite()
-					&& cartesianWork(candidate.plan()) > 0.0d
+					&& LmdbGuaranteeCostEstimator.cartesianWork(candidate.plan()) > 0.0d
 					&& optionFullWork(candidate.plan()) >= optionFullWork(incumbent.plan())) {
 				return false;
 			}
@@ -2848,9 +2732,7 @@ final class LmdbCascadesRuleProvider {
 		}
 
 		private TupleExpr materialize(CostedOption selected) {
-			if (selected.materializer() != null) {
-				selected.materializer().run();
-			}
+			LmdbGuaranteeMaterializer.materialize(selected.materializer());
 			List<TupleExpr> orderedArgs = promoteFiniteBindingPrefix(selected.plan().getOrderedArgs(),
 					correlatedNotExistsFiniteBindingNames(selected.filters()));
 			Map<Integer, Integer> filterPlacementSteps = plannerFilterPlacementSteps(selected.plan(),
@@ -3087,11 +2969,11 @@ final class LmdbCascadesRuleProvider {
 						.append("[")
 						.append(candidate.status())
 						.append(" total=")
-						.append(formatMetric(candidate.totalWork()))
+						.append(LmdbGuaranteeDiagnostics.formatMetric(candidate.totalWork()))
 						.append(" cmp=")
-						.append(formatMetric(candidate.comparableWork()))
+						.append(LmdbGuaranteeDiagnostics.formatMetric(candidate.comparableWork()))
 						.append(" finalRows=")
-						.append(formatMetric(candidate.finalRows()))
+						.append(LmdbGuaranteeDiagnostics.formatMetric(candidate.finalRows()))
 						.append(candidate.details().isEmpty() ? "" : " " + candidate.details())
 						.append("]");
 			}
@@ -3123,22 +3005,6 @@ final class LmdbCascadesRuleProvider {
 					&& analysis.finiteAnchorOptions().size() == 1
 					&& analysis.filterOptions().isEmpty()
 					&& selected.plan().getOrderedArgs().size() > FIXED_ORDER_PRESELECTION_FACTOR_THRESHOLD;
-		}
-
-		private String formatMetric(double value) {
-			if (Double.isNaN(value)) {
-				return "n/a";
-			}
-			if (Double.isInfinite(value)) {
-				return value > 0.0d ? "inf" : "-inf";
-			}
-			if (Math.rint(value) == value) {
-				return String.format(Locale.ROOT, "%.0f", value);
-			}
-			if (Math.abs(value) >= 1000.0d) {
-				return String.format(Locale.ROOT, "%.1f", value);
-			}
-			return String.format(Locale.ROOT, "%.2f", value);
 		}
 
 		private JoinOrderPlanner.Algorithm algorithm(OptimizationGoal goal, int factorCount) {

@@ -38,7 +38,10 @@ estimate-audit contract tests.
 - [x] (2026-07-11 11:15+02:00) Made shared Cascades `EstimateVector` canonical for factor estimates, migrated every
   production consumer, removed dead `JoinCostVector`, retained the released nested vector descriptor as a deprecated
   forwarding API, and passed both compatibility gates.
-- [ ] Extract guarantee planning and finish DPhyp Milestone E.
+- [ ] (2026-07-11 11:34+02:00) Routed the registry through top-level `LmdbGuaranteeOptionRule` and extracted focused
+  guarantee costing, materialization, and diagnostics collaborators. The package-visible delegate still owns option
+  enumeration and its private planner; removing that planner is the next behavior-changing slice.
+- [ ] Finish DPhyp Milestone E.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -70,6 +73,10 @@ estimate-audit contract tests.
 - Observation: `JoinCostVector` had no production caller; its only executable consumer was its dedicated comparator
   test. Historical benchmark text still contains the old diagnostic rendering and is intentionally preserved.
   Evidence: `rg -n 'JoinCostVector' core/sail/lmdb/src/main/java core/sail/lmdb/src/test/java` before deletion.
+- Observation: The remaining guarantee rule is roughly 1,000 lines and mixes rule matching, option generation,
+  fixed/dynamic join planning, materialization, and diagnostics. A top-level registry rule can delegate without changing
+  rule identity, providing a green seam before the private mini-planner is removed test-first.
+  Evidence: matching registry and `LmdbCascadesContextPropagationTest` runs.
 
 ## Decision Log
 
@@ -131,6 +138,11 @@ The statistics composition and currency boundary are complete. `LmdbPlannerServi
 `FactorCostEstimate` now creates one canonical shared `EstimateVector`, while the released nested descriptor forwards
 the same values. `CostVector` is the remaining production ranking currency. The 100-test memoization selector and both
 japicmp module gates pass.
+
+The first guarantee-rule split is green: `LmdbGuaranteeOptionRule` is the registry entry, and
+`LmdbGuaranteeCostEstimator`, `LmdbGuaranteeMaterializer`, and `LmdbGuaranteeDiagnostics` own their focused concerns.
+The existing option-enumeration delegate intentionally remains until ordinary memo-alternative tests define the
+behavioral replacement for its private join planner.
 
 ## Context and Orientation
 
