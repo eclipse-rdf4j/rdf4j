@@ -46,6 +46,8 @@ estimate-audit contract tests.
   Conflict/TES operator semantics, interesting-order property states, and template caching remain.
 - [x] (2026-07-11 11:48+02:00) Added required-node state metadata and admitted property paths through endpoint-binder
   requirements; dependency-crossing hash/outer orientations are rejected and parameterized inner paths are retained.
+- [x] (2026-07-11 12:39+02:00) Replaced pair-budget fallthrough with a deterministic connected greedy fallback inside
+  the hypergraph package; zero-budget searches remain DPhyp-owned and expose `optimizer.dphypDegraded=1`.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -162,6 +164,10 @@ they cannot provide an illegal shortcut. The focused regression and the full 14-
 Parameterized path admission is also complete at the DPhyp adapter/core boundary. The graph records per-node outer
 requirements; costing rejects dependency-crossing hash joins and reversed nested loops, retaining only an inner lookup
 whose outer covers the endpoint requirement. All 15 adapter tests and 9 core costing tests pass.
+
+Exact DPhyp enumeration now uses a configurable deterministic pair budget. Exhaustion invokes an O(n²) connected
+greedy plan builder inside `HypergraphOptimizer`, never the legacy connected planner, and stamps explicit degradation
+evidence. The full 16-test DPhyp adapter class passes.
 
 ## Context and Orientation
 

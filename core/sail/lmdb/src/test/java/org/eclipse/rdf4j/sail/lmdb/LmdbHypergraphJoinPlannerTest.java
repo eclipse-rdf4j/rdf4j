@@ -51,6 +51,7 @@ class LmdbHypergraphJoinPlannerTest {
 	void clearFlags() {
 		System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
 		System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_MAX_FACTORS_PROPERTY);
+		System.clearProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp.pairBudget");
 		System.clearProperty(LmdbJoinIslandConnectivity.OPAQUE_FACTORS_PROPERTY);
 	}
 
@@ -385,6 +386,17 @@ class LmdbHypergraphJoinPlannerTest {
 		assertTrue(result.isPresent());
 		assertNotEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.get().algorithm(),
 				"two factors have no bushy alternative; leave them to the existing planner");
+	}
+
+	@Test
+	void exhaustedPairBudgetDegradesInsideDphypDeterministically() {
+		System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp.pairBudget", "0");
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(starIsland(), starModel()).orElseThrow();
+
+		assertEquals(LmdbHypergraphJoinPlanner.ALGORITHM, result.algorithm());
+		assertEquals(1.0d, result.tupleExpr().getDoubleMetricPlanned("optimizer.dphypDegraded"), 0.0d,
+				"Budget exhaustion must remain inside DPhyp and expose deterministic degradation");
 	}
 
 	@Test

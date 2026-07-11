@@ -58,6 +58,7 @@ final class LmdbHypergraphJoinPlanner {
 
 	static final String DPHYP_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp";
 	static final String DPHYP_MAX_FACTORS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp.maxFactors";
+	static final String DPHYP_PAIR_BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp.pairBudget";
 	static final String ESTIMATE_SOURCE = "lmdb-cascades-dphyp";
 	static final String ALGORITHM = "dphyp-bushy";
 	static final String PLANNER_ALGORITHM_METRIC_VALUE = "DPHYP_BUSHY";
@@ -157,7 +158,12 @@ final class LmdbHypergraphJoinPlanner {
 
 		ProbingCostModel adapterCostModel = new ProbingCostModel(factors, factorJoinVars, initial, seedSteps, costModel,
 				fallbackStatistics, tier);
-		Optional<JoinPlan> best = HypergraphOptimizer.bestPlan(planGraph, adapterCostModel, PAIR_BUDGET);
+		long pairBudget = Long.getLong(DPHYP_PAIR_BUDGET_PROPERTY, PAIR_BUDGET);
+		Optional<JoinPlan> best = HypergraphOptimizer.bestPlan(planGraph, adapterCostModel, Math.max(0L, pairBudget));
+		boolean degraded = best.isEmpty();
+		if (degraded) {
+			best = HypergraphOptimizer.greedyPlan(planGraph, adapterCostModel);
+		}
 		if (best.isEmpty()) {
 			traceDecline(trace, "no-full-plan (disconnected island or pair budget exhausted)");
 			return Optional.empty();
@@ -167,7 +173,11 @@ final class LmdbHypergraphJoinPlanner {
 			trace.add("dphyp winner " + winner.describe(planGraph::nodeName) + " rows="
 					+ winner.rows() + " rankCost=" + winner.cost());
 		}
-		return Optional.of(toPlan(winner, factors, seedSteps, factorCount, adapterCostModel));
+		LmdbCascadesConnectedJoinPlanner.Plan plan = toPlan(winner, factors, seedSteps, factorCount, adapterCostModel);
+		if (degraded) {
+			plan.tupleExpr().setDoubleMetricPlanned("optimizer.dphypDegraded", 1.0d);
+		}
+		return Optional.of(plan);
 	}
 
 	private static long[] dependencyNodes(List<TupleExpr> factors, List<Set<String>> factorJoinVars,

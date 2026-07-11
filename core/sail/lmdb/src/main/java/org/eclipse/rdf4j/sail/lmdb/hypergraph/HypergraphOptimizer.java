@@ -38,4 +38,66 @@ public final class HypergraphOptimizer {
 		}
 		return Optional.ofNullable(receiver.planFor(planGraph.graph().allNodes()));
 	}
+
+	/** Deterministic connected fallback used after exact pair-budget exhaustion. */
+	public static Optional<JoinPlan> greedyPlan(PlanHypergraph graph, CostModel costs) {
+		JoinPlan plan = null;
+		for (int i = 0; i < graph.nodeCount(); i++) {
+			if (graph.requiredNodes(i) == 0L) {
+				JoinPlan scan = JoinPlan.scan(i, graph.cardinality(i), costs.scanCost(i, graph.cardinality(i)));
+				if (plan == null || scan.cost() < plan.cost()) {
+					plan = scan;
+				}
+			}
+		}
+		if (plan == null) {
+			return Optional.empty();
+		}
+		while (plan.nodes() != graph.graph().allNodes()) {
+			JoinPlan best = null;
+			for (int node = 0; node < graph.nodeCount(); node++) {
+				long bit = NodeSets.bit(node);
+				if (NodeSets.overlaps(plan.nodes(), bit) || !connected(graph.graph(), plan.nodes(), bit)) {
+					continue;
+				}
+				JoinPlan scan = JoinPlan.scan(node, graph.cardinality(node),
+						costs.scanCost(node, graph.cardinality(node)));
+				double rows = plan.rows() * scan.rows() * graph.newlySatisfiedSelectivity(plan.nodes(), bit);
+				JoinPlan candidate;
+				if (graph.requiredNodes(node) != 0L) {
+					if (!NodeSets.isSubset(graph.requiredNodes(node), plan.nodes())) {
+						continue;
+					}
+					double lookup = costs.nestedLoopLookupCost(node, plan.nodes(), plan.rows());
+					if (Double.isNaN(lookup)) {
+						continue;
+					}
+					candidate = JoinPlan.join(JoinPlan.Kind.NESTED_LOOP, plan, scan, rows, plan.cost() + lookup);
+				} else {
+					double cost = plan.cost() + scan.cost() + costs.hashJoinCost(plan.rows(), scan.rows(), rows);
+					candidate = JoinPlan.join(JoinPlan.Kind.HASH_JOIN, plan, scan, rows, cost);
+				}
+				if (best == null || candidate.cost() < best.cost()
+						|| (candidate.cost() == best.cost() && node < best.right().scanNode())) {
+					best = candidate;
+				}
+			}
+			if (best == null) {
+				return Optional.empty();
+			}
+			plan = best;
+		}
+		return Optional.of(plan);
+	}
+
+	private static boolean connected(Hypergraph graph, long left, long right) {
+		for (int edge = 0; edge < graph.edgeCount(); edge++) {
+			if ((NodeSets.isSubset(graph.edgeLeft(edge), left) && NodeSets.isSubset(graph.edgeRight(edge), right))
+					|| (NodeSets.isSubset(graph.edgeRight(edge), left)
+							&& NodeSets.isSubset(graph.edgeLeft(edge), right))) {
+				return true;
+			}
+		}
+		return false;
+	}
 }
