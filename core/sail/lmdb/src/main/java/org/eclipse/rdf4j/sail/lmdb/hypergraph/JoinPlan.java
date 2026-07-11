@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.hypergraph;
 
 import java.util.function.IntFunction;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+
 /**
  * A candidate physical plan for one node set: a scan of a single node, or a binary join of two sub-plans. The row
  * estimate is canonical per node set (identical for every plan covering the same nodes); cost is what plans covering
@@ -34,8 +36,11 @@ public final class JoinPlan {
 	private final JoinPlan left;
 	private final JoinPlan right;
 	private final int scanNode;
+	private final long requiredOuterNodes;
+	private final PhysicalProperties physicalProperties;
 
-	private JoinPlan(Kind kind, long nodes, double rows, double cost, JoinPlan left, JoinPlan right, int scanNode) {
+	private JoinPlan(Kind kind, long nodes, double rows, double cost, JoinPlan left, JoinPlan right, int scanNode,
+			long requiredOuterNodes, PhysicalProperties physicalProperties) {
 		this.kind = kind;
 		this.nodes = nodes;
 		this.rows = rows;
@@ -43,14 +48,25 @@ public final class JoinPlan {
 		this.left = left;
 		this.right = right;
 		this.scanNode = scanNode;
+		this.requiredOuterNodes = requiredOuterNodes;
+		this.physicalProperties = physicalProperties == null ? PhysicalProperties.ANY : physicalProperties;
 	}
 
 	static JoinPlan scan(int nodeIdx, double rows, double cost) {
-		return new JoinPlan(Kind.SCAN, NodeSets.bit(nodeIdx), rows, cost, null, null, nodeIdx);
+		return scan(nodeIdx, rows, cost, 0L, PhysicalProperties.ANY);
+	}
+
+	static JoinPlan scan(int nodeIdx, double rows, double cost, long requiredOuterNodes,
+			PhysicalProperties physicalProperties) {
+		return new JoinPlan(Kind.SCAN, NodeSets.bit(nodeIdx), rows, cost, null, null, nodeIdx,
+				requiredOuterNodes, physicalProperties);
 	}
 
 	static JoinPlan join(Kind kind, JoinPlan left, JoinPlan right, double rows, double cost) {
-		return new JoinPlan(kind, left.nodes | right.nodes, rows, cost, left, right, -1);
+		long nodes = left.nodes | right.nodes;
+		long requiredOuterNodes = (left.requiredOuterNodes | right.requiredOuterNodes) & ~nodes;
+		PhysicalProperties properties = kind == Kind.NESTED_LOOP ? left.physicalProperties : PhysicalProperties.ANY;
+		return new JoinPlan(kind, nodes, rows, cost, left, right, -1, requiredOuterNodes, properties);
 	}
 
 	public Kind kind() {
@@ -80,6 +96,14 @@ public final class JoinPlan {
 	/** Node index for {@link Kind#SCAN} plans, -1 otherwise. */
 	public int scanNode() {
 		return scanNode;
+	}
+
+	public long requiredOuterNodes() {
+		return requiredOuterNodes;
+	}
+
+	public PhysicalProperties physicalProperties() {
+		return physicalProperties;
 	}
 
 	/** True when every join in the tree has a single-node right side (the shape the left-deep planners produce). */

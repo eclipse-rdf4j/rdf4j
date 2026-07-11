@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+
 /**
  * A {@link Hypergraph} plus the payloads costing needs: per-node base cardinalities and a list of join predicates.
  * <p>
@@ -62,6 +64,7 @@ public final class PlanHypergraph {
 	private final List<String> nodeNames = new ArrayList<>();
 	private final List<Double> cardinalities = new ArrayList<>();
 	private final List<Long> requiredNodes = new ArrayList<>();
+	private final List<List<PhysicalProperties>> scanAlternatives = new ArrayList<>();
 	private final List<JoinPredicate> predicates = new ArrayList<>();
 	private final Map<Long, Double> selectivityProductCache = new HashMap<>();
 
@@ -73,6 +76,7 @@ public final class PlanHypergraph {
 		nodeNames.add(name);
 		cardinalities.add(cardinality);
 		requiredNodes.add(0L);
+		scanAlternatives.add(new ArrayList<>(List.of(PhysicalProperties.ANY)));
 		selectivityProductCache.clear();
 		return idx;
 	}
@@ -89,6 +93,19 @@ public final class PlanHypergraph {
 
 	public long requiredNodes(int nodeIdx) {
 		return requiredNodes.get(nodeIdx);
+	}
+
+	/** Adds an interesting physical-property alternative for this node's scan. */
+	public void addScanAlternative(int nodeIdx, PhysicalProperties properties) {
+		PhysicalProperties safeProperties = properties == null ? PhysicalProperties.ANY : properties;
+		List<PhysicalProperties> alternatives = scanAlternatives.get(nodeIdx);
+		if (!alternatives.contains(safeProperties)) {
+			alternatives.add(safeProperties);
+		}
+	}
+
+	public List<PhysicalProperties> scanAlternatives(int nodeIdx) {
+		return Collections.unmodifiableList(scanAlternatives.get(nodeIdx));
 	}
 
 	/**

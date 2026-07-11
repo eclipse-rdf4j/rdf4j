@@ -12,7 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.hypergraph;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 
 /**
  * The dynamic-programming layer: keeps the best {@link JoinPlan} per connected node set while
@@ -23,16 +26,14 @@ import java.util.Map;
  * one cut of any join tree, computing this incrementally at each join applies every predicate exactly once and yields
  * the same estimate for a set no matter which join order produced it — which keeps the DP stable.
  * <p>
- * Plan retention is a degenerate Pareto frontier for now: all plans for a set have identical rows and no tracked
- * physical properties yet (no orderings, no stored parameterized paths), so dominance collapses to cost and one plan
- * per set survives. All insertion goes through {@link #propose(JoinPlan)} so that adding dimensions later (ordering,
- * parameterization, rescan cost) is a local change.
+ * Plan retention is keyed by node set, required outer nodes, and physical properties. Candidates compete only inside
+ * one such state, allowing parameterized plans and interesting orders to survive beside a cheaper unordered plan.
  */
 public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 
 	private final PlanHypergraph planGraph;
 	private final CostModel costModel;
-	private final Map<Long, JoinPlan> bestPlans = new HashMap<>();
+	private final Map<Long, Map<StateKey, JoinPlan>> bestPlans = new HashMap<>();
 	private long remainingPairBudget;
 
 	/**
@@ -53,7 +54,10 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 	@Override
 	public boolean foundSingleNode(int nodeIdx) {
 		double cardinality = planGraph.cardinality(nodeIdx);
-		propose(JoinPlan.scan(nodeIdx, cardinality, costModel.scanCost(nodeIdx, cardinality)));
+		for (PhysicalProperties properties : planGraph.scanAlternatives(nodeIdx)) {
+			propose(JoinPlan.scan(nodeIdx, cardinality, costModel.scanCost(nodeIdx, cardinality),
+					planGraph.requiredNodes(nodeIdx), properties));
+		}
 		return false;
 	}
 
@@ -62,30 +66,29 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 		if (--remainingPairBudget < 0) {
 			return true;
 		}
-		JoinPlan leftPlan = bestPlans.get(left);
-		JoinPlan rightPlan = bestPlans.get(right);
-		if (leftPlan == null || rightPlan == null) {
+		List<JoinPlan> leftPlans = plansFor(left);
+		List<JoinPlan> rightPlans = plansFor(right);
+		if (leftPlans.isEmpty() || rightPlans.isEmpty()) {
 			// Cannot happen for a correct enumerator (DP order guarantees both sides are planned); stay safe.
 			throw new IllegalStateException("csg-cmp pair emitted before both sides were planned: "
 					+ NodeSets.describe(left) + " | " + NodeSets.describe(right));
 		}
-		double rows = leftPlan.rows() * rightPlan.rows() * planGraph.newlySatisfiedSelectivity(left, right);
-
-		// Hash joins cannot satisfy a parameter dependency that crosses this cut: the dependent side must be a
-		// per-outer-row lookup instead.
-		if (!crossesParameterDependency(left, right) && !crossesParameterDependency(right, left)) {
-			propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, leftPlan, rightPlan, rows,
-					leftPlan.cost() + rightPlan.cost()
-							+ costModel.hashJoinCost(leftPlan.rows(), rightPlan.rows(), rows)));
-			propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, rightPlan, leftPlan, rows,
-					leftPlan.cost() + rightPlan.cost()
-							+ costModel.hashJoinCost(rightPlan.rows(), leftPlan.rows(), rows)));
+		for (JoinPlan leftPlan : leftPlans) {
+			for (JoinPlan rightPlan : rightPlans) {
+				double rows = leftPlan.rows() * rightPlan.rows()
+						* planGraph.newlySatisfiedSelectivity(left, right);
+				if (!crossesParameterDependency(left, right) && !crossesParameterDependency(right, left)) {
+					propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, leftPlan, rightPlan, rows,
+							leftPlan.cost() + rightPlan.cost()
+									+ costModel.hashJoinCost(leftPlan.rows(), rightPlan.rows(), rows)));
+					propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, rightPlan, leftPlan, rows,
+							leftPlan.cost() + rightPlan.cost()
+									+ costModel.hashJoinCost(rightPlan.rows(), leftPlan.rows(), rows)));
+				}
+				proposeNestedLoop(leftPlan, rightPlan, rows);
+				proposeNestedLoop(rightPlan, leftPlan, rows);
+			}
 		}
-
-		// Nested loop with a per-outer-row lookup when the inner side is a single node with lookup access. The
-		// inner side's own scan cost is not paid: the lookup cost callback covers all access to it.
-		proposeNestedLoop(leftPlan, rightPlan, rows);
-		proposeNestedLoop(rightPlan, leftPlan, rows);
 		return false;
 	}
 
@@ -120,12 +123,28 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 
 	/** Tournament insertion: keeps the incumbent unless the candidate dominates it (v1: strictly cheaper). */
 	private void propose(JoinPlan candidate) {
-		bestPlans.merge(candidate.nodes(), candidate,
-				(incumbent, challenger) -> challenger.cost() < incumbent.cost() ? challenger : incumbent);
+		bestPlans.computeIfAbsent(candidate.nodes(), ignored -> new HashMap<>())
+				.merge(StateKey.from(candidate), candidate,
+						(incumbent, challenger) -> challenger.cost() < incumbent.cost() ? challenger : incumbent);
 	}
 
 	/** The best plan covering exactly this node set, or null when none was assembled (disconnected set). */
 	public JoinPlan planFor(long nodeSet) {
-		return bestPlans.get(nodeSet);
+		return plansFor(nodeSet).stream()
+				.filter(plan -> plan.requiredOuterNodes() == 0L)
+				.min((left, right) -> Double.compare(left.cost(), right.cost()))
+				.orElse(null);
+	}
+
+	/** All non-dominated parameter/property states retained for this exact node set. */
+	public List<JoinPlan> plansFor(long nodeSet) {
+		Map<StateKey, JoinPlan> frontier = bestPlans.get(nodeSet);
+		return frontier == null ? List.of() : List.copyOf(frontier.values());
+	}
+
+	private record StateKey(long nodes, long requiredOuterNodes, PhysicalProperties physicalProperties) {
+		private static StateKey from(JoinPlan plan) {
+			return new StateKey(plan.nodes(), plan.requiredOuterNodes(), plan.physicalProperties());
+		}
 	}
 }

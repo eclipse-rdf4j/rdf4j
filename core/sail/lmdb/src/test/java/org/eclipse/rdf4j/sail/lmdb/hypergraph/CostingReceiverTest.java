@@ -18,6 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.junit.jupiter.api.Test;
 
 class CostingReceiverTest {
@@ -182,5 +185,55 @@ class CostingReceiverTest {
 		CostingReceiver receiver = run(planGraph, CostModel.DEFAULT);
 		assertEquals(100.0d, receiver.planFor(planGraph.graph().allNodes()).rows(), 1e-9,
 				"selectivity above 1 clamps to 1");
+	}
+
+	@Test
+	void retainsInterestingOrderAsDistinctPhysicalState() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 10);
+		PhysicalProperties ordered = PhysicalProperties.ANY.withOrdering(List.of("a:ASC"));
+		planGraph.addScanAlternative(a, ordered);
+
+		CostingReceiver receiver = run(planGraph, CostModel.DEFAULT);
+
+		assertEquals(2, receiver.plansFor(NodeSets.bit(a)).size(),
+				"unordered and interesting-order scans must survive as distinct DP states");
+		assertTrue(receiver.plansFor(NodeSets.bit(a))
+				.stream()
+				.anyMatch(plan -> plan.physicalProperties().equals(ordered)));
+	}
+
+	@Test
+	void parameterizedStateClearsRequiredOuterNodesOnlyAtLegalJoin() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 10);
+		int b = planGraph.addNode("B", 1000);
+		planGraph.setRequiredNodes(b, NodeSets.bit(a));
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 0.001d, "ab");
+
+		CostingReceiver receiver = run(planGraph, new CostModel() {
+			@Override
+			public double scanCost(int nodeIdx, double cardinality) {
+				return CostModel.DEFAULT.scanCost(nodeIdx, cardinality);
+			}
+
+			@Override
+			public double hashJoinCost(double probeRows, double buildRows, double outputRows) {
+				return CostModel.DEFAULT.hashJoinCost(probeRows, buildRows, outputRows);
+			}
+
+			@Override
+			public double nestedLoopLookupCost(int nodeIdx, long boundNodes, double outerRows) {
+				return nodeIdx == b ? outerRows : Double.NaN;
+			}
+		});
+
+		JoinPlan parameterizedB = receiver.plansFor(NodeSets.bit(b)).getFirst();
+		assertEquals(NodeSets.bit(a), parameterizedB.requiredOuterNodes());
+		JoinPlan complete = receiver.planFor(planGraph.graph().allNodes());
+		assertNotNull(complete);
+		assertEquals(0L, complete.requiredOuterNodes());
+		assertEquals(JoinPlan.Kind.NESTED_LOOP, complete.kind());
+		assertEquals(b, complete.right().scanNode(), "the dependent node must remain the lookup inner");
 	}
 }

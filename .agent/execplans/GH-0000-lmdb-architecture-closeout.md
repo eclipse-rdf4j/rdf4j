@@ -50,6 +50,9 @@ estimate-audit contract tests.
   the hypergraph package; zero-budget searches remain DPhyp-owned and expose `optimizer.dphypDegraded=1`.
 - [x] (2026-07-11 14:07+02:00) Added and wired bounded `PlanTemplateCache` with canonical fingerprints, initial
   bindings, full optimization goal/properties, relevant DPhyp configuration, and monotonic statistics-scope version.
+- [x] (2026-07-11 16:03+02:00) Keyed DPhyp frontiers by node set, required outer nodes, and `PhysicalProperties`;
+  retained interesting orders, preserved nested-loop outer order, and passed all 11 core costing tests plus 19 adapter
+  tests.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
@@ -95,6 +98,10 @@ estimate-audit contract tests.
 - Observation: Collecting no condition variables can return an immutable empty set; subtracting assured bindings from
   it failed only in the broader adapter selector after focused correlated tests passed.
   Evidence: the red/green full `LmdbHypergraphJoinPlannerTest` run around `admitsSafeNonScopeChangingFilterFactors`.
+- Observation: A flat map keyed by complete DPhyp state would make every `hasSeen` and pair lookup scan all retained
+  states. A node-set-indexed frontier preserves the complete key while keeping enumeration lookup proportional to the
+  alternatives for one node set.
+  Evidence: `CostingReceiver`'s `Map<Long, Map<StateKey, JoinPlan>>` and the 11-test core costing selector.
 
 ## Decision Log
 
@@ -182,6 +189,11 @@ Opaque operator eligibility is now explicit. FILTER conditions (including EXISTS
 derive required variables after subtracting their internally assured bindings; those variables become dependency
 hyperedges and TES predicates. MINUS remains an atomic anti-join factor, while existing LATERAL input requirements and
 property-path endpoint requirements share the same parameterized-inner enforcement. All 19 adapter tests pass.
+
+DPhyp state retention now distinguishes required outer nodes and shared Cascades `PhysicalProperties` within each node
+set. Scan alternatives can retain interesting orders, nested loops preserve the outer ordering, hash joins explicitly
+destroy it, and parameterized singleton requirements clear only when a legal outer supplies them. The full core costing
+and LMDB adapter selectors pass.
 
 ## Context and Orientation
 
