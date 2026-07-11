@@ -1736,13 +1736,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private volatile PositiveReadinessCache positiveReadinessCache = NO_POSITIVE_READINESS_CACHE;
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
-	private final Object persistenceCycleLock = new Object();
+	private final SketchEstimatorIngestService ingestService = new SketchEstimatorIngestService(this);
+	private final SketchEstimatorPersistenceManager persistenceManager = new SketchEstimatorPersistenceManager();
+	private final SketchJoinOrderService joinOrderService = new SketchJoinOrderService(this);
+	private final OmniSketchEstimatorService omniEstimatorService = new OmniSketchEstimatorService();
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
 	private final Object readyMonitor = new Object();
 	private final Object sketchCacheLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
-	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
+	private final SketchOptimizationScope<OptimizationScopeState> optimizationScope = new SketchOptimizationScope<>(
+			OptimizationScopeState::new);
 	private final ThreadLocal<Integer> unscopedSketchIntersectionUpperBoundUses = ThreadLocal.withInitial(() -> 0);
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
@@ -2092,28 +2096,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
-		OptimizationScopeState scope = optimizationScope.get();
-		if (scope == null) {
-			scope = new OptimizationScopeState();
-			optimizationScope.set(scope);
-		}
-		scope.depth++;
-		OptimizationScopeState openedScope = scope;
-		return new QueryOptimizationScope() {
-			private boolean closed;
-
-			@Override
-			public void close() {
-				if (closed) {
-					return;
-				}
-				closed = true;
-				openedScope.depth--;
-				if (openedScope.depth <= 0) {
-					optimizationScope.remove();
-				}
-			}
-		};
+		return optimizationScope.begin();
 	}
 
 	public boolean isReady() {
@@ -2984,34 +2967,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* ────────────────────────────────────────────────────────────── */
 
 	public void addStatement(Statement st) {
-		Objects.requireNonNull(st);
-		clearEstimateCacheIfPopulated();
-		recordStoreMutationMillis();
-		if (!isReadyForIncrementalUpdates()) {
-			recordStoreSizeDelta(1L, 0L);
-			return;
-		}
-
-		seenTriples = approxStoreSize.incrementAndGet();
-		enqueueIncrementalStatement(st, false);
-		markPersistenceMutation();
+		ingestService.addStatement(st);
 	}
 
 	public void addStatements(List<? extends Statement> statements) {
-		Objects.requireNonNull(statements);
-		if (statements.isEmpty()) {
-			return;
-		}
-		clearEstimateCacheIfPopulated();
-		recordStoreMutationMillis();
-		if (!isReadyForIncrementalUpdates()) {
-			recordStoreSizeDelta(statements.size(), 0L);
-			return;
-		}
-
-		seenTriples = approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, statements.size(), 0L));
-		enqueueIncrementalStatements(statements, false);
-		markPersistenceMutation();
+		ingestService.addStatements(statements);
 	}
 
 	public void addStatement(Resource s, IRI p, Value o, Resource c) {
@@ -3026,14 +2986,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * Records committed store-size changes when exact incremental sketch updates are intentionally deferred.
 	 */
 	public void recordStoreSizeDelta(long additions, long deletions) {
-		if (additions < 0 || deletions < 0) {
-			throw new IllegalArgumentException("Store-size deltas must be non-negative");
-		}
-		if (additions == 0 && deletions == 0) {
-			return;
-		}
+		ingestService.recordStoreSizeDelta(additions, deletions);
+	}
+
+	void prepareIngestMutation() {
 		clearEstimateCacheIfPopulated();
 		recordStoreMutationMillis();
+	}
+
+	void recordDeferredStoreSizeDelta(long additions, long deletions) {
 		approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, additions, deletions));
 		if (sketchStrategy == SketchStrategy.OMNI && deletions > 0L) {
 			markOmniEstimatorHasDeletes(bufA);
@@ -3045,46 +3006,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		notifyReadyWaiters();
 	}
 
-	public void deleteStatement(Statement st) {
-		Objects.requireNonNull(st);
-		clearEstimateCacheIfPopulated();
-		recordStoreMutationMillis();
-		if (sketchStrategy == SketchStrategy.OMNI) {
-			markOmniDeleteRequiresRebuild(1L);
-			return;
-		}
-		if (!isReadyForIncrementalUpdates()) {
-			recordStoreSizeDelta(0L, 1L);
-			return;
-		}
+	void recordIncrementalStoreSizeDelta(long additions, long deletions) {
+		seenTriples = approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, additions, deletions));
+	}
 
-		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
-		enqueueIncrementalStatement(st, true);
-		markPersistenceMutation();
+	boolean usesOmniStrategy() {
+		return sketchStrategy == SketchStrategy.OMNI;
+	}
+
+	public void deleteStatement(Statement st) {
+		ingestService.deleteStatement(st);
 	}
 
 	public void deleteStatements(List<? extends Statement> statements) {
-		Objects.requireNonNull(statements);
-		if (statements.isEmpty()) {
-			return;
-		}
-		clearEstimateCacheIfPopulated();
-		recordStoreMutationMillis();
-		if (sketchStrategy == SketchStrategy.OMNI) {
-			markOmniDeleteRequiresRebuild(statements.size());
-			return;
-		}
-		if (!isReadyForIncrementalUpdates()) {
-			recordStoreSizeDelta(0L, statements.size());
-			return;
-		}
-
-		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - statements.size()));
-		enqueueIncrementalStatements(statements, true);
-		markPersistenceMutation();
+		ingestService.deleteStatements(statements);
 	}
 
-	private void markPersistenceMutation() {
+	void markPersistenceMutation() {
 		persistenceMutationCycle.mutationEnqueued();
 		dirty.set(true);
 	}
@@ -3098,7 +3036,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		lastStoreMutationMillis.set(System.currentTimeMillis());
 	}
 
-	private void markOmniDeleteRequiresRebuild(long deletions) {
+	void markOmniDeleteRequiresRebuild(long deletions) {
 		if (deletions <= 0L) {
 			return;
 		}
@@ -3146,7 +3084,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return applyStoreSizeDelta(rebuiltRows, 0L, sizeBeforeRebuild - currentSize);
 	}
 
-	private boolean isReadyForIncrementalUpdates() {
+	boolean isReadyForIncrementalUpdates() {
 		if (rebuildRequired.get()) {
 			return false;
 		}
@@ -3183,7 +3121,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void enqueueIncrementalStatement(Statement statement, boolean isDelete) {
+	void enqueueIncrementalStatement(Statement statement, boolean isDelete) {
 		rethrowAsyncIncrementalFailure();
 		StatementUpdateBatch batch = null;
 		synchronized (incrementalBufferLock) {
@@ -3207,7 +3145,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void enqueueIncrementalStatements(List<? extends Statement> statements, boolean isDelete) {
+	void enqueueIncrementalStatements(List<? extends Statement> statements, boolean isDelete) {
 		Objects.requireNonNull(statements);
 		rethrowAsyncIncrementalFailure();
 		for (Statement statement : statements) {
@@ -4244,7 +4182,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return estimateOmniStatementRows(snap, fixed);
 			}
 			int idx = hash(c, v);
-			return estimateNetRows(getSketchForRead(snap, singleTripleAddress(false, c, idx)),
+			return FrequencySketchEstimator.estimateNetRows(getSketchForRead(snap, singleTripleAddress(false, c, idx)),
 					getSketchForRead(snap, singleTripleAddress(true, c, idx)));
 		}
 	}
@@ -4265,7 +4203,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			long key = pairKey(hash(p.x, x), hash(p.y, y));
 			int row = (int) (key >>> 32);
 			int col = (int) key;
-			return estimateNetRows(getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)),
+			return FrequencySketchEstimator.estimateNetRows(
+					getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)),
 					getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, true, p, row, col)));
 		}
 	}
@@ -4670,7 +4609,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private double cardSingle(State st, Component c, String val) {
 		int idx = hash(c, val);
-		return estimateNetRows(getSketchForRead(st, singleTripleAddress(false, c, idx)),
+		return FrequencySketchEstimator.estimateNetRows(getSketchForRead(st, singleTripleAddress(false, c, idx)),
 				getSketchForRead(st, singleTripleAddress(true, c, idx)));
 	}
 
@@ -4681,7 +4620,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		long key = pairKey(hash(p.x, x), hash(p.y, y));
 		int row = (int) (key >>> 32);
 		int col = (int) key;
-		return estimateNetRows(getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)),
+		return FrequencySketchEstimator.estimateNetRows(
+				getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)),
 				getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, true, p, row, col)));
 	}
 
@@ -4904,7 +4844,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 		}
 
-		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+		return roundJoinEstimate(FrequencySketchEstimator.estimateNetIntersectionProductSum(sa, sb, da, db));
 	}
 
 	private double joinSingles(State st, Component j,
@@ -4935,7 +4875,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return roundJoinEstimate(joinSketchRows);
 			}
 		}
-		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+		return roundJoinEstimate(FrequencySketchEstimator.estimateNetIntersectionProductSum(sa, sb, da, db));
 	}
 
 	private double estimateOmniPairJoinRows(State state, Component join, Pair leftPair, String leftXValue,
@@ -6277,21 +6217,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private double estimateOmniMembershipRows(OmniWitnessSet source, OmniWitnessSet membership, double sourceRows) {
-		if (source == null || source.isEmpty() || membership == null || membership.isEmpty()) {
-			return 0.0d;
-		}
-		int retainedCount = 0;
-		for (int i = 0; i < source.retainedWitnessCount(); i++) {
-			long hash = source.hashAt(i);
-			if (membership.containsHash(hash)) {
-				retainedCount++;
-			}
-		}
-		int sourceCount = source.retainedWitnessCount();
-		if (sourceCount <= 0) {
-			return 0.0d;
-		}
-		return normalizeRows(sourceRows * ((double) retainedCount / (double) sourceCount));
+		return omniEstimatorService.estimateMembershipRows(source, membership, sourceRows, this::normalizeRows);
 	}
 
 	public Optional<OmniFiniteFilterProbeEstimate> estimateOmniFiniteFilterProbe(TupleExpr input,
@@ -8100,22 +8026,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* Utility */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static double estimateNetRows(FastAgmsBindingSummary additions, FastAgmsBindingSummary deletions) {
-		return Math.max(0.0d,
-				FrequencySummaryOps.estimatePositiveSum(additions)
-						- FrequencySummaryOps.estimatePositiveSum(deletions));
-	}
-
-	private static double estimateNetIntersectionProductSum(FastAgmsBindingSummary leftAdd,
-			FastAgmsBindingSummary rightAdd, FastAgmsBindingSummary leftDelete, FastAgmsBindingSummary rightDelete,
-			int k) {
-		double additions = FrequencySummaryOps.estimateIntersectionProductSum(leftAdd, rightAdd);
-		double leftRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftDelete, rightAdd);
-		double rightRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftAdd, rightDelete);
-		double bothRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftDelete, rightDelete);
-		return Math.max(0.0d, additions - leftRemoved - rightRemoved + bothRemoved);
-	}
-
 	private static double signedDelta(boolean isDelete) {
 		return isDelete ? -1.0d : 1.0d;
 	}
@@ -8340,72 +8250,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
 			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		if ((factorCostModel == null && !isReady()) || orderedArgs == null || orderedArgs.isEmpty()) {
-			return Optional.empty();
-		}
-		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
-				: Set.copyOf(initiallyBoundVars);
-		List<TupleExpr> expressions = List.copyOf(orderedArgs);
-		Set<String> mutableBound = new LinkedHashSet<>(bound);
-		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(expressions.size());
-		double prefixRows = 1.0d;
-		double totalWorkRows = 0.0d;
-		String estimateSource = null;
-		for (TupleExpr expression : expressions) {
-			Set<String> boundBefore = Set.copyOf(mutableBound);
-			double factorRows;
-			double stepWorkRows;
-			Map<String, String> stringMetrics = new LinkedHashMap<>();
-			Map<String, Double> doubleMetrics = new LinkedHashMap<>();
-			if (factorCostModel != null) {
-				Optional<JoinFactorCostModel.FactorCostEstimate> factorEstimate = factorCostModel.estimateFactorCost(
-						expression, JoinFactorCostModel.CostContext.forOptimization(boundBefore, prefixRows,
-								Double.NaN, true, true, Map.of(), expressions.subList(0, steps.size())));
-				if (factorEstimate.isEmpty()) {
-					return Optional.empty();
-				}
-				JoinFactorCostModel.FactorCostEstimate estimate = factorEstimate.get();
-				factorRows = finiteNonNegative(estimate.getOutputRows(), prefixRows);
-				stepWorkRows = finiteNonNegative(estimate.getWorkRows(), factorRows);
-				stringMetrics.putAll(estimate.getStringMetrics());
-				doubleMetrics.putAll(estimate.getDoubleMetrics());
-			} else {
-				TuplePlanEstimate estimate = estimateTupleExprPlan(expression, boundBefore);
-				if (estimate == null || !Double.isFinite(estimate.outputRows) || estimate.outputRows < 0.0d) {
-					return Optional.empty();
-				}
-				factorRows = normalizeRows(estimate.outputRows);
-				stepWorkRows = factorRows;
-				stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "sketch-fixed-order");
-			}
-			mutableBound.addAll(expression.getBindingNames());
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorRows);
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, factorRows);
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, stepWorkRows);
-			steps.add(new JoinOrderPlanner.PlanStep(boundBefore, factorRows, factorRows, stepWorkRows,
-					stringMetrics, doubleMetrics));
-			totalWorkRows += stepWorkRows;
-			prefixRows = factorRows;
-			String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-			if (estimateSource == null && source != null) {
-				estimateSource = source;
-			}
-		}
-		Map<String, String> summaryStringMetrics = new LinkedHashMap<>();
-		summaryStringMetrics.put("plannedSketchStrategy", sketchStrategy.configValue());
-		summaryStringMetrics.put("plannedSketchEstimateSource",
-				estimateSource == null ? "sketch-fixed-order" : estimateSource);
-		Map<String, Double> summaryDoubleMetrics = new LinkedHashMap<>();
-		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, prefixRows);
-		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWorkRows);
-		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(expressions, prefixRows, totalWorkRows,
-				List.of("input: algorithm=" + algorithm + " initiallyBoundVars=" + bound),
-				summaryStringMetrics, summaryDoubleMetrics, steps));
+		return joinOrderService.estimate(orderedArgs, initiallyBoundVars, algorithm, factorCostModel);
 	}
 
-	private static double finiteNonNegative(double value, double fallback) {
-		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	SketchJoinOrderService.FactorEstimate estimateJoinOrderFactor(TupleExpr expression, Set<String> boundVars) {
+		TuplePlanEstimate estimate = estimateTupleExprPlan(expression, boundVars);
+		if (estimate == null || !Double.isFinite(estimate.outputRows) || estimate.outputRows < 0.0d) {
+			return null;
+		}
+		double factorRows = normalizeRows(estimate.outputRows);
+		return new SketchJoinOrderService.FactorEstimate(factorRows, factorRows,
+				Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "sketch-fixed-order"), Map.of());
+	}
+
+	String sketchStrategyConfigValue() {
+		return sketchStrategy.configValue();
 	}
 
 	SketchPlannerPath lastJoinOrderPlannerPath() {
@@ -10748,8 +10607,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private static final class OptimizationScopeState {
-		private int depth;
+	private static final class OptimizationScopeState extends SketchOptimizationScope.State {
 		private long readyEpoch;
 		private boolean readyKnown;
 		private boolean ready;
@@ -16173,9 +16031,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
-		synchronized (persistenceCycleLock) {
-			return persistIfDirtySerially();
-		}
+		return persistenceManager.persist(this::persistIfDirtySerially);
 	}
 
 	private boolean persistIfDirtySerially() {

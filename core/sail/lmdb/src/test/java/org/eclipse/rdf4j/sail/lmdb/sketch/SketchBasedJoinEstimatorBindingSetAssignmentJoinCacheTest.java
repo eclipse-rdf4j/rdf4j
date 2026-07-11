@@ -223,8 +223,8 @@ class SketchBasedJoinEstimatorBindingSetAssignmentJoinCacheTest {
 			SketchBasedJoinEstimator estimator) throws Exception {
 		Field optimizationScope = SketchBasedJoinEstimator.class.getDeclaredField("optimizationScope");
 		optimizationScope.setAccessible(true);
-		ThreadLocal<?> threadLocal = (ThreadLocal<?>) optimizationScope.get(estimator);
-		Object scope = threadLocal.get();
+		SketchOptimizationScope<?> scopeOwner = (SketchOptimizationScope<?>) optimizationScope.get(estimator);
+		Object scope = scopeOwner.get();
 		Field cacheField = scope.getClass().getDeclaredField("bindingSetAssignmentJoinPlanCache");
 		cacheField.setAccessible(true);
 		@SuppressWarnings("unchecked")

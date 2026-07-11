@@ -1791,6 +1791,12 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	private static void waitForThreadsBlockedOnPersistCycleOrFinished(SketchBasedJoinEstimator estimator,
 			List<Thread> threads, Object persistLock, long timeoutMillis) throws Exception {
 		Object persistenceCycleLock = privateFieldValueIfPresent(estimator, "persistenceCycleLock");
+		if (persistenceCycleLock == null) {
+			Object persistenceManager = privateFieldValueIfPresent(estimator, "persistenceManager");
+			if (persistenceManager != null) {
+				persistenceCycleLock = privateFieldValueIfPresent(persistenceManager, "cycleLock");
+			}
+		}
 		int persistLockIdentity = System.identityHashCode(persistLock);
 		int persistenceCycleLockIdentity = persistenceCycleLock == null
 				? Integer.MIN_VALUE

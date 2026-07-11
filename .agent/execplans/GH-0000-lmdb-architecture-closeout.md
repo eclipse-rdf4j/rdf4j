@@ -30,7 +30,10 @@ estimate-audit contract tests.
   the reactor to `6.1.0-SNAPSHOT`, and passed both LMDB and query-evaluation japicmp gates offline.
 - [x] (2026-07-11 10:28+02:00) Added a deterministic concurrent-persistence regression, serialized the complete
   publication cycle, and passed the focused selector plus all 51 persistence tests.
-- [ ] Split estimator and statistics facades behind package-private services.
+- [ ] (2026-07-11 10:51+02:00) Extracted the first estimator service slice: ingest policy, persistence-cycle
+  coordination, scope lifecycle, fixed-order plan costing, frequency arithmetic, and OMNI membership estimation now
+  have the requested package-private owners. Remaining deep OMNI/persistence kernels still need migration.
+- [ ] Split the statistics facade behind package-private services.
 - [ ] Consolidate estimates into BagEstimate, EstimateVector, and CostVector boundaries.
 - [ ] Extract guarantee planning and finish DPhyp Milestone E.
 - [ ] Remove duplicate join planners and standard/Cascades arbitration.
@@ -57,6 +60,10 @@ estimate-audit contract tests.
   `OmniWitnessPersistenceStore.writeSnapshot(...)` because payload publication occurs before `persistLock`; multiple
   callers move the same generation's fixed `.tmp` path.
   Evidence: `logs/mvnf/20260711-082159-verify.log` and the focused Surefire persistence report.
+- Observation: The estimator's fixed-order implementation did not use its work-adjuster or deferred-filter parameters;
+  moving step construction into `SketchJoinOrderService` preserves that existing behavior and makes the unused
+  extension seam explicit for later removal or implementation.
+  Evidence: matching 8-test `LmdbFiniteValuesJoinSurfacePlanningTest` runs before and after extraction.
 
 ## Decision Log
 
@@ -100,6 +107,12 @@ The dedicated cycle lock preserves the former `persistLock` boundary, and the la
 readable after the concurrent run. The focused selector passed in 0.483 seconds and the 51-test persistence class
 passed in 10.167 seconds; retained logs are `logs/mvnf/20260711-082611-verify.log` and
 `logs/mvnf/20260711-082713-verify.log`.
+
+The first estimator facade slice is also complete. `SketchEstimatorIngestService` owns add/delete/deferred-update
+policy; `SketchEstimatorPersistenceManager` owns publication serialization; `SketchOptimizationScope` owns nested
+thread-local scope lifecycle; `SketchJoinOrderService` owns fixed-order step construction and summary costing;
+`FrequencySketchEstimator` owns net frequency arithmetic; and `OmniSketchEstimatorService` owns retained-witness
+membership estimation. Matching scope, persistence, rebuild-parity, fixed-order, and OMNI selectors are green.
 
 ## Context and Orientation
 
