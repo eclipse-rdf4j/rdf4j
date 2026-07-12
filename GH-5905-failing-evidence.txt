@@ -1,0 +1,6 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py AlgebraEquivalenceRegressionTest --retain-logs
+Reports: core/queryalgebra/equivalence/target/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceRegressionTest.xml, core/queryalgebra/equivalence/target/surefire-reports/org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceRegressionTest.txt
+Summary: tests=18, failures=16, errors=0, skipped=0, time=0.201s
+Failure: org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceRegressionTest.runtimeJoinDoesNotCommuteFilterReadingLeftBinding: failure: Both expressions normalize to the same checked semantic form ==> expected: <NOT_EQUIVALENT> but was: <EQUIVALENT>
+Log: logs/mvnf/20260712-143413-verify.log

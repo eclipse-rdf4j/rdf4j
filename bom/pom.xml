@@ -45,6 +45,11 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-queryalgebra-equivalence</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-queryalgebra-evaluation</artifactId>
 				<version>${project.version}</version>
 			</dependency>

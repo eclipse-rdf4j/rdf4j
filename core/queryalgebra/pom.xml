@@ -13,6 +13,7 @@
 	<modules>
 		<module>model</module>
 		<module>evaluation</module>
+		<module>equivalence</module>
 		<module>geosparql</module>
 	</modules>
 </project>
