@@ -193,6 +193,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (hasOptionalOnlyBinding(bindings)) {
 			return genericStep().evaluate(bindings);
 		}
+		if (orderSlots.length == 0) {
+			return new NativeRowsIteration(this, bindings);
+		}
 		List<BindingSet> rows = evaluateAll(bindings);
 		Iterator<BindingSet> iterator = rows.iterator();
 		return new CloseableIteration<>() {
@@ -263,60 +266,6 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		AggContext values = new AggContext(source, strictCompare);
 		long emitCap = limit < 0 ? Long.MAX_VALUE : offset + limit;
-		boolean streamingCap = orderSlots.length == 0 && emitCap != Long.MAX_VALUE;
-
-		if (orderSlots.length == 0) {
-			ArrayList<BindingSet> results = new ArrayList<>();
-			List<BindingSet> prefixResults = evaluatePrefixRuns(row, values, emitCap);
-			if (prefixResults != null) {
-				return prefixResults;
-			}
-			HashMap<GroupKey, Boolean> seen = distinct ? new HashMap<>() : null;
-			GroupKey probe = distinct ? new GroupKey(new long[sourceSlots.length]) : null;
-			if (LmdbNativeFactorizedRows.ENABLED && arg instanceof MultiJoinPlan
-					&& ((MultiJoinPlan) arg).children.length > 0) {
-				MultiJoinPlan multiJoin = (MultiJoinPlan) arg;
-				try {
-					LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-							multiJoin.derivedPlan(row), row, row.boundMask(), sourceSlots, distinct);
-					if (factorized != null) {
-						factorized.evaluate(row, (slots, multiplicity) -> {
-							if (distinct) {
-								if (registerDistinct(seen, probe, slots)) {
-									results.add(project(slots, values));
-								}
-								return !streamingCap || results.size() < emitCap;
-							}
-							BindingSet projected = project(slots, values);
-							for (long i = 0; i < multiplicity; i++) {
-								results.add(projected);
-								if (streamingCap && results.size() >= emitCap) {
-									return false;
-								}
-							}
-							return true;
-						});
-						return slice(results);
-					}
-				} catch (IOException e) {
-					throw new QueryEvaluationException(e);
-				}
-			}
-			try (RowCursor cursor = arg.open(row)) {
-				while (cursor.next()) {
-					if (distinct && !registerDistinct(seen, probe, row.slots)) {
-						continue;
-					}
-					results.add(project(row.slots, values));
-					if (streamingCap && results.size() >= emitCap) {
-						break;
-					}
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return slice(results);
-		}
 
 		// ORDER BY: snapshot full slot rows (keys may be unprojected), sort on materialized key values,
 		// then project/dedup/slice in SPARQL pipeline order
@@ -416,7 +365,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId), codec.decode(rightId));
 	}
 
-	List<BindingSet> evaluatePrefixRuns(RowState row, AggContext values, long emitCap) {
+	RowCursor openPrefixRunCursor(RowState row) throws IOException {
 		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
 			return null;
 		}
@@ -424,28 +373,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		long pred = prefixPattern.p.lookup(row.slots);
 		long obj = prefixPattern.o.lookup(row.slots);
 		long context = prefixPattern.c.lookup(row.slots);
-		try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false)) {
-			if (cursor == null) {
-				return null;
-			}
-			ArrayList<BindingSet> results = new ArrayList<>();
-			while (cursor.next()) {
-				int mark = row.mark();
-				try {
-					if (prefixPattern.bind(cursor.quad(), row)) {
-						results.add(project(row.slots, values));
-						if (results.size() >= emitCap) {
-							break;
-						}
-					}
-				} finally {
-					row.rollback(mark);
-				}
-			}
-			return slice(results);
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+		LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false);
+		if (cursor == null) {
+			return null;
 		}
+		return new PrefixRunRowCursor(row, prefixPattern, cursor);
 	}
 
 	BindingSet project(long[] slots, AggContext values) {
@@ -466,5 +398,221 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		int from = (int) Math.min(offset, results.size());
 		int to = limit < 0 ? results.size() : (int) Math.min(from + limit, results.size());
 		return results.subList(from, to);
+	}
+}
+
+@Experimental
+final class NativeRowsIteration implements CloseableIteration<BindingSet> {
+	NativeRowsStep step;
+	BindingSet base;
+	HashMap<GroupKey, Boolean> seen;
+	GroupKey distinctProbe;
+	long remainingOffset;
+	long remainingLimit;
+	long remainingMultiplicity;
+	volatile boolean closed;
+	boolean initialized;
+	boolean distinctHandledByCursor;
+	RowState row;
+	AggContext values;
+	RowCursor cursor;
+	BindingSet next;
+	BindingSet repeated;
+
+	NativeRowsIteration(NativeRowsStep step, BindingSet base) {
+		this.step = step;
+		this.base = base;
+		this.seen = step.distinct ? new HashMap<>() : null;
+		this.distinctProbe = step.distinct ? new GroupKey(new long[step.sourceSlots.length]) : null;
+		this.remainingOffset = Math.max(0L, step.offset);
+		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
+	}
+
+	@Override
+	public synchronized boolean hasNext() {
+		if (closed) {
+			return false;
+		}
+		if (next != null) {
+			return true;
+		}
+		try {
+			next = getNextElement();
+			if (next == null) {
+				finish();
+			}
+			return next != null;
+		} catch (IOException e) {
+			finish();
+			throw new QueryEvaluationException(e);
+		} catch (RuntimeException | Error e) {
+			finish();
+			throw e;
+		}
+	}
+
+	private BindingSet getNextElement() throws IOException {
+		if (remainingLimit == 0 || closed) {
+			return null;
+		}
+		if (remainingMultiplicity > 0) {
+			remainingMultiplicity--;
+			remainingLimit--;
+			return repeated;
+		}
+		if (!initialized && !initialize()) {
+			return null;
+		}
+
+		while (!closed && cursor.next()) {
+			if (closed) {
+				return null;
+			}
+			long multiplicity = cursor instanceof FactorizedRowCursor
+					? ((FactorizedRowCursor) cursor).multiplicity()
+					: 1L;
+			if (step.distinct && !distinctHandledByCursor) {
+				if (!step.registerDistinct(seen, distinctProbe, row.slots)) {
+					continue;
+				}
+				multiplicity = 1L;
+			}
+			if (remainingOffset > 0) {
+				long skipped = Math.min(remainingOffset, multiplicity);
+				remainingOffset -= skipped;
+				multiplicity -= skipped;
+				if (multiplicity == 0) {
+					continue;
+				}
+			}
+			repeated = step.project(row.slots, values);
+			remainingMultiplicity = multiplicity - 1;
+			remainingLimit--;
+			return repeated;
+		}
+		return null;
+	}
+
+	private boolean initialize() throws IOException {
+		initialized = true;
+		row = new RowState(step.source, step.layout, base);
+		if (!initializeRow(row, base, step.source, step.layout)) {
+			return false;
+		}
+		values = new AggContext(step.source, step.strictCompare);
+		cursor = step.openPrefixRunCursor(row);
+		if (cursor != null) {
+			distinctHandledByCursor = true;
+			return true;
+		}
+		if (step.arg instanceof MultiJoinPlan && ((MultiJoinPlan) step.arg).children.length > 0) {
+			MultiJoinPlan multiJoin = (MultiJoinPlan) step.arg;
+			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
+					multiJoin.derivedPlan(row), row, row.boundMask(), step.sourceSlots, step.distinct);
+			if (factorized != null) {
+				cursor = factorized.open(row);
+				return true;
+			}
+		}
+		cursor = step.arg.open(row);
+		return true;
+	}
+
+	@Override
+	public synchronized BindingSet next() {
+		if (!hasNext()) {
+			throw new NoSuchElementException();
+		}
+		BindingSet result = next;
+		next = null;
+		return result;
+	}
+
+	@Override
+	public void remove() {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public void close() {
+		closed = true;
+		synchronized (this) {
+			closeResources();
+		}
+	}
+
+	private void finish() {
+		closed = true;
+		closeResources();
+	}
+
+	private void closeResources() {
+		RowCursor activeCursor = cursor;
+		cursor = null;
+		try {
+			if (activeCursor != null) {
+				activeCursor.close();
+			}
+		} finally {
+			step = null;
+			base = null;
+			seen = null;
+			distinctProbe = null;
+			next = null;
+			repeated = null;
+			values = null;
+			row = null;
+			remainingMultiplicity = 0;
+		}
+	}
+}
+
+@Experimental
+final class PrefixRunRowCursor implements RowCursor {
+	final RowState row;
+	final PatternPlan pattern;
+	final LmdbPrefixRunCursor delegate;
+	int mark = -1;
+	boolean closed;
+
+	PrefixRunRowCursor(RowState row, PatternPlan pattern, LmdbPrefixRunCursor delegate) {
+		this.row = row;
+		this.pattern = pattern;
+		this.delegate = delegate;
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		if (closed) {
+			return false;
+		}
+		rollback();
+		while (delegate.next()) {
+			int candidateMark = row.mark();
+			if (pattern.bind(delegate.quad(), row)) {
+				mark = candidateMark;
+				return true;
+			}
+			row.rollback(candidateMark);
+		}
+		close();
+		return false;
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		rollback();
+		delegate.close();
+	}
+
+	private void rollback() {
+		if (mark >= 0) {
+			row.rollback(mark);
+			mark = -1;
+		}
 	}
 }
