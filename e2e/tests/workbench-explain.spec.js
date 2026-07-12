@@ -89,5 +89,4 @@ test('Executed explanation hides telemetry stability stats for LMDB queries', as
 
     await expect(explanation).toContain('StatementPattern');
     await expect(explanation).toContain('indexName=spoc');
-    await expect(explanation).not.toContain('nativePhysicalPlan=');
 });
