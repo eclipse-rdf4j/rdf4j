@@ -90,6 +90,32 @@ class LmdbQueryReadyBulkLoadTest {
 	}
 
 	@Test
+	void namespaceOnlyReadCommittedCommitDoesNotWriteLmdbEnvironments() throws IOException {
+		LmdbStore store = new LmdbStore(new File(dataDir, "namespace-only"), config());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				LmdbSailStore backingStore = store.getBackingStore();
+				long tripleTransactionId = backingStore.tripleStoreTransactionId();
+				long valueTransactionId = backingStore.valueStoreTransactionId();
+
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.setNamespace("example", "urn:example:");
+				connection.commit();
+
+				assertEquals("urn:example:", connection.getNamespace("example"));
+				assertEquals(tripleTransactionId, backingStore.tripleStoreTransactionId(),
+						"namespace persistence must not commit an empty triple transaction");
+				assertEquals(valueTransactionId, backingStore.valueStoreTransactionId(),
+						"namespace persistence must not commit an empty value transaction");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void rollbackDiscardsOnlyCurrentFreshBatchAndDuplicateCommitsSurviveReopen() throws IOException {
 		File storeDir = new File(dataDir, "fresh-session-rollback");
 		Model initial = statements();

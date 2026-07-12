@@ -121,8 +121,7 @@ class ValueStore extends AbstractValueFactory {
 		private final ArrayList<Long> provisionalFirstLargeHashes = new ArrayList<>();
 		private final LongLongHashMap provisionalReferenceDeltas = new LongLongHashMap();
 		private final long[] nextIdValueByType = new long[ValueIds.T_TRIPLE + 1];
-		private long nextCompactPredicateIdValue = 127;
-		private long nextExtendedPredicateIdValue = 128;
+		private long nextPredicateIdValue = 1;
 		private boolean predicateIdWindowEnabled;
 
 		private FreshValueSession() {
@@ -348,7 +347,8 @@ class ValueStore extends AbstractValueFactory {
 	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
 
 	private static final byte URI_VALUE = 0;
-	private static final long LAST_RESERVED_PREDICATE_ID_VALUE = 1024;
+	// Keep the window bounded so later URI IDs do not cross an additional varint-width boundary.
+	private static final long RESERVED_PREDICATE_ID_COUNT = 64;
 
 	private static final byte LITERAL_VALUE = 1;
 
@@ -646,9 +646,9 @@ class ValueStore extends AbstractValueFactory {
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
-		int flags = MDB_NOTLS | MDB_WRITEMAP;
+		int flags = MDB_NOTLS;
 		if (!forceSync) {
-			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC | MDB_WRITEMAP;
 		}
 		if (noReadahead) {
 			flags |= MDB_NORDAHEAD;
@@ -906,14 +906,10 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long nextFreshPredicateId(FreshValueSession session) {
-		long result;
-		if (session.nextCompactPredicateIdValue > 0) {
-			result = session.nextCompactPredicateIdValue--;
-		} else if (session.nextExtendedPredicateIdValue <= LAST_RESERVED_PREDICATE_ID_VALUE) {
-			result = session.nextExtendedPredicateIdValue++;
-		} else {
+		if (session.nextPredicateIdValue > RESERVED_PREDICATE_ID_COUNT) {
 			return nextFreshId(session, URI_VALUE);
 		}
+		long result = session.nextPredicateIdValue++;
 		nextId = Math.max(nextId, result + 1);
 		return ValueIds.createId(ValueIds.T_URI, result);
 	}
@@ -2165,7 +2161,7 @@ class ValueStore extends AbstractValueFactory {
 		if (session.nextIdValueByType[ValueIds.T_URI] != 1) {
 			return false;
 		}
-		session.nextIdValueByType[ValueIds.T_URI] = LAST_RESERVED_PREDICATE_ID_VALUE + 1;
+		session.nextIdValueByType[ValueIds.T_URI] = RESERVED_PREDICATE_ID_COUNT + 1;
 		session.predicateIdWindowEnabled = true;
 		return true;
 	}

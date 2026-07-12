@@ -41,6 +41,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -438,6 +439,46 @@ public class LmdbSailStoreTest {
 			verify(tripleStoreSpy, never()).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
+	void namespaceMutationDoesNotDisablePreparedWriteThreading() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		config.setSketchEstimatorEnabled(false);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "namespace-threading"), config);
+		sail.init();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		AtomicReference<Thread> writeThread = new AtomicReference<>();
+
+		doAnswer(invocation -> {
+			writeThread.compareAndSet(null, Thread.currentThread());
+			return invocation.callRealMethod();
+		}).when(tripleStoreSpy)
+				.storePreparedTriples(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
+						anyInt(), anyBoolean(), anyBoolean(), nullable(TripleStore.EncodedIndexKeys.class),
+						any(TripleStore.PreparedSecondaryIndexesSupplier.class));
+
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+		try {
+			Thread callerThread = Thread.currentThread();
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.setNamespace("example", "urn:example:");
+				sink.approveAll(sampleStatements(2048));
+				sink.flush();
+
+				assertTrue("the prepared write path must be exercised", writeThread.get() != null);
+				assertNotSame("namespace changes must not force prepared index writes onto the caller thread",
+						callerThread,
+						writeThread.get());
+			}
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
+			sail.shutDown();
 		}
 	}
 

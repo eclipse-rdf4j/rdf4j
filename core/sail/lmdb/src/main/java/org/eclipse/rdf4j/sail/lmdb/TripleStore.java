@@ -132,7 +132,6 @@ class TripleStore implements Closeable {
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
-	private static final boolean LOAD_TIMING = Boolean.getBoolean("rdf4j.lmdb.loadTiming");
 	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
 	private static final int GLOBAL_ENCODE_BLOCK_STATEMENTS = 64 * 1024;
 	private static final AtomicInteger OPEN_PREPARED_KEY_ARENAS = new AtomicInteger();
@@ -250,9 +249,9 @@ class TripleStore implements Closeable {
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
-		int flags = MDB_NOTLS | MDB_WRITEMAP;
+		int flags = MDB_NOTLS;
 		if (!forceSync) {
-			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC | MDB_WRITEMAP;
 		}
 		if (noReadahead) {
 			flags |= MDB_NORDAHEAD;
@@ -831,10 +830,6 @@ class TripleStore implements Closeable {
 					context[statementIndex]);
 		}
 		offsets[count] = keys.position();
-		if (LOAD_TIMING) {
-			System.err.printf("prepared-index-keys index=%s statements=%d bytes=%d avg=%.3f%n",
-					new String(index.getFieldSeq()), count, keys.position(), keys.position() / (double) count);
-		}
 		keys.flip();
 		return new EncodedIndexKeys(indexPosition, encodedStatementIndices, offsets, keys);
 	}
@@ -2797,7 +2792,6 @@ class TripleStore implements Closeable {
 			EncodedIndexKeys preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
-		long preparedStartNanos = LOAD_TIMING && preparedSecondaryIndexesSupplier != null ? System.nanoTime() : 0;
 		if (count == 0) {
 			return;
 		}
@@ -2881,11 +2875,6 @@ class TripleStore implements Closeable {
 					contextIncrements.addToValue(context[statementIndex], 1);
 				}
 			}
-			if (preparedStartNanos != 0) {
-				System.err.printf("prepared-index-write index=%s statements=%d ms=%.3f%n",
-						new String(mainIndex.getFieldSeq()), count,
-						(System.nanoTime() - preparedStartNanos) / 1_000_000.0);
-			}
 			int[] mainOrderIndices = ensureAlignedWriteMainOrderIndices(addedCount);
 			System.arraycopy(sortedIndices, 0, mainOrderIndices, 0, addedCount);
 			LongIntHashMap appliedContextIncrements = alignedAppliedContextIncrements;
@@ -2913,7 +2902,6 @@ class TripleStore implements Closeable {
 					: preparedSecondaryIndexesSupplier.get()) {
 				if (preparedIndexes != null) {
 					for (EncodedIndexKeys encodedIndex : preparedIndexes.indexes) {
-						long secondaryStartNanos = preparedStartNanos == 0 ? 0 : System.nanoTime();
 						int indexPosition = encodedIndex.indexPosition;
 						TripleIndex index = indexes.get(indexPosition);
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
@@ -2942,11 +2930,6 @@ class TripleStore implements Closeable {
 								return;
 							}
 							E(rc);
-						}
-						if (secondaryStartNanos != 0) {
-							System.err.printf("prepared-index-write index=%s statements=%d ms=%.3f%n",
-									new String(index.getFieldSeq()), count,
-									(System.nanoTime() - secondaryStartNanos) / 1_000_000.0);
 						}
 					}
 				} else {
@@ -3002,10 +2985,6 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
-		}
-		if (preparedStartNanos != 0) {
-			System.err.printf("prepared-index-write statements=%d totalMs=%.3f%n", count,
-					(System.nanoTime() - preparedStartNanos) / 1_000_000.0);
 		}
 		if (remainingStart < count) {
 			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);

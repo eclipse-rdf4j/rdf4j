@@ -104,17 +104,18 @@ class PreparedStatementBatchTest {
 	}
 
 	@Test
-	void predicateValueIndexesAreDistinctAndOrderedByFirstStatementUse() {
+	void predicateValueIndexesAreDistinctAndFrequencyOrdered() {
 		IRI firstPredicate = VF.createIRI("urn:predicate:first");
 		IRI secondPredicate = VF.createIRI("urn:predicate:second");
 		PreparedStatementBatch prepared = PreparedStatementBatch.copyOf(
 				List.of(VF.createStatement(VF.createIRI("urn:subject:1"), firstPredicate, VF.createLiteral("one")),
 						VF.createStatement(VF.createIRI("urn:subject:2"), secondPredicate, VF.createLiteral("two")),
-						VF.createStatement(VF.createIRI("urn:subject:3"), firstPredicate, VF.createLiteral("three"))),
-				3, ignored -> {
+						VF.createStatement(VF.createIRI("urn:subject:3"), secondPredicate, VF.createLiteral("three")),
+						VF.createStatement(VF.createIRI("urn:subject:4"), secondPredicate, VF.createLiteral("four"))),
+				4, ignored -> {
 				});
 
-		assertArrayEquals(new int[] { 1, 4 }, prepared.predicateValueIndexes());
+		assertArrayEquals(new int[] { 4, 1 }, prepared.predicateValueIndexes());
 	}
 
 	@Test

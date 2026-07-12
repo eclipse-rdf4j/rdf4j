@@ -95,7 +95,6 @@ class LmdbSailStore implements SailStore {
 	private static final long MAX_PREPARED_IMPORT_BYTES = 512L * 1024 * 1024;
 	private static final long PREPARED_VALUE_ESTIMATED_BYTES = 128L;
 	private static final long PREPARED_INDEX_ENTRY_OVERHEAD = 16L;
-	private static final boolean LOAD_TIMING = Boolean.getBoolean("rdf4j.lmdb.loadTiming");
 	private static final int VALUE_RESOLUTION_CHUNK_CAPACITY = 1024;
 	private static final long HEAP_BYTES_PER_ALIGNED_WRITE_STATEMENT = 16L * 1024L;
 
@@ -605,17 +604,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
-			long startNanos = LOAD_TIMING ? System.nanoTime() : 0;
 			try {
 				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
-				long preparedNanos = LOAD_TIMING ? System.nanoTime() : 0;
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
 						mayHaveInferred, preparedMainIndex, this::awaitPreparedSecondaryIndexes);
-				if (LOAD_TIMING) {
-					System.err.printf("prepared-operation statements=%d awaitMainMs=%.3f storeMs=%.3f%n",
-							statementCount, (preparedNanos - startNanos) / 1_000_000.0,
-							(System.nanoTime() - preparedNanos) / 1_000_000.0);
-				}
 			} finally {
 				try {
 					preparedSecondaryIndexes.cancel();
@@ -1585,7 +1577,6 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
-			long flushStartNanos = LOAD_TIMING ? System.nanoTime() : 0;
 			boolean activeTxn = false;
 			try {
 				if (pendingBulkAdd != null && !storeTxnStarted.get()) {
@@ -1607,7 +1598,6 @@ class LmdbSailStore implements SailStore {
 				try {
 					namespaceStore.sync();
 				} finally {
-					long awaitStartNanos = LOAD_TIMING ? System.nanoTime() : 0;
 					if (multiThreadingActive) {
 						try {
 							asyncTransactionCompletion.await();
@@ -1619,7 +1609,6 @@ class LmdbSailStore implements SailStore {
 							throw wrapTripleStoreException();
 						}
 					}
-					long tripleFinishedNanos = LOAD_TIMING ? System.nanoTime() : 0;
 					if (activeTxn) {
 						if (!multiThreadingActive) {
 							tripleStore.commit();
@@ -1628,12 +1617,6 @@ class LmdbSailStore implements SailStore {
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
 						valueStore.commitFreshValueTransaction(freshValueSession);
-						if (LOAD_TIMING) {
-							System.err.printf("prepared-flush beforeAwaitMs=%.3f awaitMs=%.3f valueCommitMs=%.3f%n",
-									(awaitStartNanos - flushStartNanos) / 1_000_000.0,
-									(tripleFinishedNanos - awaitStartNanos) / 1_000_000.0,
-									(System.nanoTime() - tripleFinishedNanos) / 1_000_000.0);
-						}
 						for (ValueStore.PreparedValueBatch preparedValues : pendingFreshValueBatches) {
 							valueStore.publishPreparedValues(preparedValues);
 						}
@@ -1680,7 +1663,6 @@ class LmdbSailStore implements SailStore {
 		public void setNamespace(String prefix, String name) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(false);
 				namespaceStore.setNamespace(prefix, name);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -1691,7 +1673,6 @@ class LmdbSailStore implements SailStore {
 		public void removeNamespace(String prefix) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(false);
 				namespaceStore.removeNamespace(prefix);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -1702,7 +1683,6 @@ class LmdbSailStore implements SailStore {
 		public void clearNamespaces() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(false);
 				namespaceStore.clear();
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -2139,10 +2119,8 @@ class LmdbSailStore implements SailStore {
 				return storeGlobalFreshPreparedStatements(prepared, session);
 			}
 			Value[] values = prepared.values();
-			long operationStartNanos = LOAD_TIMING ? System.nanoTime() : 0;
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
 					prepared.predicateValueIndexes());
-			long valuesAssignedNanos = LOAD_TIMING ? System.nanoTime() : 0;
 			long[] valueIds = assignment.ids();
 			int[] quads = prepared.quads();
 			int statementCount = prepared.size();
@@ -2171,39 +2149,20 @@ class LmdbSailStore implements SailStore {
 				}
 				statementOffset += operationSize;
 			}
-			long operationsSubmittedNanos = LOAD_TIMING ? System.nanoTime() : 0;
 			pendingFreshValueBatches.add(assignment.publication());
 			ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
 			ValueStore.PreparedValueBatch preparedValues;
-			long encodeNanos = 0;
-			long persistNanos = 0;
 			while (true) {
-				long phaseStartNanos = LOAD_TIMING ? System.nanoTime() : 0;
 				preparedValues = encoder.next(MAX_BULK_OPERATION_CAPACITY);
-				if (LOAD_TIMING) {
-					encodeNanos += System.nanoTime() - phaseStartNanos;
-				}
 				if (preparedValues == null) {
 					break;
 				}
 				if (tripleStoreException != null) {
 					throw wrapTripleStoreException();
 				}
-				phaseStartNanos = LOAD_TIMING ? System.nanoTime() : 0;
 				valueStore.persistPreparedValues(preparedValues);
-				if (LOAD_TIMING) {
-					persistNanos += System.nanoTime() - phaseStartNanos;
-				}
 				preparedValues.releasePersistenceData();
 				pendingFreshValueBatches.add(preparedValues);
-			}
-			if (LOAD_TIMING) {
-				System.err.printf(
-						"assigned-values statements=%d values=%d assignMs=%.3f mapSubmitMs=%.3f encodeMs=%.3f persistMs=%.3f totalMs=%.3f%n",
-						statementCount, values.length, (valuesAssignedNanos - operationStartNanos) / 1_000_000.0,
-						(operationsSubmittedNanos - valuesAssignedNanos) / 1_000_000.0,
-						encodeNanos / 1_000_000.0, persistNanos / 1_000_000.0,
-						(System.nanoTime() - operationStartNanos) / 1_000_000.0);
 			}
 			return statementCount;
 		}

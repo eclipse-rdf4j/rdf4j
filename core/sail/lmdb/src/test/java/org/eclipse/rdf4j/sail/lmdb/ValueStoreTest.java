@@ -235,10 +235,10 @@ public class ValueStoreTest {
 		ValueStore.FreshValueAssignment firstAssignment = valueStore.assignFreshValues(session, firstValues,
 				new int[] { 1, 3 });
 		long[] firstIds = firstAssignment.ids();
-		assertEquals(127, ValueIds.getValue(firstIds[1]));
-		assertEquals(126, ValueIds.getValue(firstIds[3]));
-		assertEquals(1025, ValueIds.getValue(firstIds[0]));
-		assertEquals(1026, ValueIds.getValue(firstIds[2]));
+		assertEquals(1, ValueIds.getValue(firstIds[1]));
+		assertEquals(2, ValueIds.getValue(firstIds[3]));
+		assertEquals(65, ValueIds.getValue(firstIds[0]));
+		assertEquals(66, ValueIds.getValue(firstIds[2]));
 		persistFreshAssignment(session, firstAssignment);
 
 		IRI secondSubject = valueFactory.createIRI("urn:reserved:subject:2");
@@ -248,8 +248,8 @@ public class ValueStoreTest {
 		ValueStore.FreshValueAssignment secondAssignment = valueStore.assignFreshValues(session, secondValues,
 				new int[] { 1 });
 		long[] secondIds = secondAssignment.ids();
-		assertEquals(125, ValueIds.getValue(secondIds[1]));
-		assertEquals(1027, ValueIds.getValue(secondIds[0]));
+		assertEquals(3, ValueIds.getValue(secondIds[1]));
+		assertEquals(67, ValueIds.getValue(secondIds[0]));
 		persistFreshAssignment(session, secondAssignment);
 
 		valueStore.close();
@@ -259,6 +259,33 @@ public class ValueStoreTest {
 		assertEquals(secondIds[1], valueStore.getId(thirdPredicate));
 		assertEquals(firstIds[0], valueStore.getId(firstSubject));
 		assertEquals(secondIds[0], valueStore.getId(secondSubject));
+	}
+
+	@Test
+	public void assignedFreshPredicateIdsOverflowIntoTheRegularUriSequence() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Value[] values = new Value[67];
+		int[] predicateValueIndexes = new int[66];
+		values[0] = valueFactory.createIRI("urn:reserved:subject");
+		for (int i = 0; i < predicateValueIndexes.length; i++) {
+			values[i + 1] = valueFactory.createIRI("urn:reserved:predicate:" + i);
+			predicateValueIndexes[i] = i + 1;
+		}
+
+		valueStore.startTransaction(true);
+		ValueStore.FreshValueSession session = valueStore.startFreshValueSessionIfEmpty();
+		assertNotNull(session);
+		long[] ids = valueStore.assignFreshValues(session, values, predicateValueIndexes).ids();
+
+		assertEquals(1, ValueIds.getValue(ids[1]));
+		assertEquals(64, ValueIds.getValue(ids[64]));
+		assertEquals(65, ValueIds.getValue(ids[65]));
+		assertEquals(66, ValueIds.getValue(ids[66]));
+		assertEquals(67, ValueIds.getValue(ids[0]));
+
+		valueStore.rollback();
+		valueStore.rollbackFreshValueTransaction(session);
+		valueStore.discardFreshValueSession(session);
 	}
 
 	private void persistFreshAssignment(ValueStore.FreshValueSession session,
