@@ -84,6 +84,17 @@ final class LmdbJoinIslandConnectivity {
 		return connectedComponentCount(tupleExpr, externallyBoundVars) > 1;
 	}
 
+	static boolean structurallyDisconnectedJoinIsland(TupleExpr tupleExpr, Set<String> externallyBoundVars) {
+		Island island = joinIsland(tupleExpr);
+		if (island == null || island.factorCount() <= 1) {
+			return false;
+		}
+		if (island.zeroVarFactorCount() > 0) {
+			return true;
+		}
+		return island.runtimeFactorCount() == 0 || connectedComponentCount(tupleExpr, externallyBoundVars) > 1;
+	}
+
 	static boolean joinProviderCanOwn(TupleExpr tupleExpr) {
 		Island island = joinIsland(tupleExpr);
 		return island != null && island.factorCount() > 1 && island.supported();
@@ -101,8 +112,7 @@ final class LmdbJoinIslandConnectivity {
 		if (tupleExpr == null) {
 			return true;
 		}
-		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)
-				&& !pathDerivedDisconnectedIsland(tupleExpr)) {
+		if (lmdbJoinProviderAvailable && connectedJoinProviderCanOwn(tupleExpr)) {
 			return false;
 		}
 		if (lmdbJoinProviderAvailable && nestedFilterJoinSegmentCanOwn(tupleExpr)) {
@@ -118,35 +128,6 @@ final class LmdbJoinIslandConnectivity {
 			return false;
 		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));
-	}
-
-	private static boolean pathDerivedDisconnectedIsland(TupleExpr tupleExpr) {
-		if (connectedJoinProviderCanOwn(tupleExpr)) {
-			return false;
-		}
-		if (containsPropertyPath(tupleExpr)) {
-			return true;
-		}
-		for (TupleExpr factor : flattenFactors(tupleExpr)) {
-			for (String name : runtimeVars(factor)) {
-				if (name.startsWith("_anon_path_")) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	private static boolean containsPropertyPath(TupleExpr tupleExpr) {
-		if (propertyPath(tupleExpr)) {
-			return true;
-		}
-		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
-			if (containsPropertyPath(child)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private static boolean anchorableFiniteFilterProviderCanOwn(TupleExpr tupleExpr) {

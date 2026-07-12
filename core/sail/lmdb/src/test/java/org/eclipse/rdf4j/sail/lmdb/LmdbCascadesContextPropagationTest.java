@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInter
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -173,22 +174,26 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	@Test
-	void semanticFiniteAnchorRewriteDoesNotBypassCheaperOriginalPlan() {
+	void guaranteeOptionsEnterMemoAsIndependentLogicalAlternatives() {
 		SemanticRewriteCostingStatistics statistics = new SemanticRewriteCostingStatistics();
+		IRI weightPredicate = VF.createIRI("urn:weight");
 		TupleExpr input = new Join(
 				new StatementPattern(new Var("node"), new Var("typePredicate"), new Var("type")),
-				new StatementPattern(new Var("node"), new Var("weightPredicate"), new Var("w")));
+				new StatementPattern(new Var("node"), new Var("weightPredicate", weightPredicate), new Var("w")));
 		Filter filter = new Filter(input, listMember("w", "urn:w1", "urn:w2", "urn:w3", "urn:w4"));
 
-		RuleApplication application = ruleApplication(filter, statistics, OptimizationGoal.root(),
+		List<RuleApplication> applications = ruleApplications(filter, statistics, OptimizationGoal.root(),
 				"lmdb-guarantee-options");
 
-		assertTrue(application.alternative()
-				.getStringMetricPlanned("optimizer.guaranteeOptions")
-				.contains("selected=original"),
-				() -> "Semantic finite anchors must compete on planner work instead of bypassing the original plan: "
-						+ application.alternative()
-								.getStringMetricPlanned("optimizer.guaranteeOptions"));
+		assertFalse(applications.isEmpty(), applications::toString);
+		assertTrue(applications.stream().allMatch(application -> application.kind() == RuleKind.TRANSFORMATION),
+				applications::toString);
+		assertTrue(applications.stream().noneMatch(RuleApplication::opaque), applications::toString);
+		assertEquals(applications.size(), applications.stream()
+				.map(application -> application.alternative()
+						.getStringMetricPlanned("optimizer.guaranteeOption"))
+				.distinct()
+				.count(), applications::toString);
 	}
 
 	@Test
@@ -534,7 +539,7 @@ class LmdbCascadesContextPropagationTest {
 	}
 
 	private static final class SemanticRewriteCostingStatistics extends EvaluationStatistics
-			implements JoinOrderPlanner, JoinFactorCostModel {
+			implements JoinOrderPlanner, JoinFactorCostModel, LmdbPredicateObjectDomainSource {
 
 		@Override
 		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
@@ -549,6 +554,13 @@ class LmdbCascadesContextPropagationTest {
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 			return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return RdfTermDomain.finiteValues(List.of(
+					VF.createIRI("urn:w1"), VF.createIRI("urn:w2"), VF.createIRI("urn:w3"),
+					VF.createIRI("urn:w4")));
 		}
 	}
 

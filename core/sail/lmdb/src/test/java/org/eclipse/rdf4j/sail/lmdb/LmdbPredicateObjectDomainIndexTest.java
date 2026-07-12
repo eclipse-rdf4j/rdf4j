@@ -532,7 +532,7 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	@Test
-	void iriObjectEqualityAddsIriGuardAndPreservesResults(@TempDir File dataDir) throws Exception {
+	void iriObjectEqualityPreservesDomainProofAndBagResults(@TempDir File dataDir) throws Exception {
 		IRI iriPredicate = VF.createIRI("http://example.com/iriObject");
 		IRI otherPredicate = VF.createIRI("http://example.com/other");
 		IRI object = VF.createIRI("http://example.com/object");
@@ -552,19 +552,14 @@ class LmdbPredicateObjectDomainIndexTest {
 							  FILTER(?iriObject = ?unknown)
 							}
 					""");
-			assertTrue(snapshot.plan.contains("IsURI") || snapshot.renderedQuery.contains("isURI(?unknown)"),
-					snapshot.plan + "\n" + snapshot.renderedQuery);
-
-			try (RepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery("""
-							SELECT ?s WHERE {
-							  ?s <http://example.com/iriObject> ?iriObject .
-							  ?x ?p ?unknown .
-							  FILTER(?iriObject = ?unknown)
-							}
-							""").evaluate()) {
-				assertTrue(result.hasNext());
-			}
+			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[IRI]"), snapshot.plan);
+			assertEquals(2, countResults(repository, """
+					SELECT ?s WHERE {
+					  ?s <http://example.com/iriObject> ?iriObject .
+					  ?x ?p ?unknown .
+					  FILTER(?iriObject = ?unknown)
+					}
+					"""), "The ordinary guarantee alternatives must preserve the query's bag multiplicity");
 		} finally {
 			repository.shutDown();
 		}

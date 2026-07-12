@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.IntPredicate;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -31,7 +30,6 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -39,8 +37,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -134,303 +130,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return planned;
 	}
 
-	private static Optional<PlanTemplate> dpPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
-			EstimationTier estimationTier) {
-		int factorCount = factors.size();
-		List<Set<String>> factorVars = factorVars(factors);
-		BindingUniverse universe = BindingUniverse.create();
-		BindingMask initialMask = bindingMask(universe, initialBoundVars);
-		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
-		List<Integer> runtimeFactorIndices = runtimeFactorIndices(factorVars);
-		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
-		if (runtimeFactorIndices.isEmpty()) {
-			return Optional.empty();
-		}
-		int fullMask = maskFor(runtimeFactorIndices);
-		Set<String> initial = plannerNames(initialBoundVars);
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
-		List<Set<String>> opaqueRequiredVars = opaqueRequiredVars(factors, factorVars, initial);
-		if (trace.enabled()) {
-			trace.add("dp initial=" + initial + " runtime=" + runtimeFactorIndices + " zeroVar="
-					+ zeroVarFactorIndices + " fullMask=0x" + Integer.toHexString(fullMask));
-			for (int i = 0; i < factors.size(); i++) {
-				trace.add("vars f" + i + '=' + factorVars.get(i)
-						+ (path(factors.get(i)) ? " endpoints=" + pathEndpointNames(factors.get(i))
-								+ " hasEndpointBinder=" + pathHasEndpointBinder[i] : ""));
-			}
-		}
-		@SuppressWarnings("unchecked")
-		List<State>[] best = new List[1 << factorCount];
-
-		for (int factorIndex : runtimeFactorIndices) {
-			if (!admissibleSeed(factors.get(factorIndex), initial, pathHasEndpointBinder[factorIndex])) {
-				if (trace.enabled()) {
-					trace.add("seed reject f" + factorIndex + " reason=path-has-later-endpoint-binder endpoints="
-							+ pathEndpointNames(factors.get(factorIndex)) + " factor="
-							+ factorSummary(factors.get(factorIndex)));
-				}
-				continue;
-			}
-			if (!initial.containsAll(opaqueRequiredVars.get(factorIndex))) {
-				if (trace.enabled()) {
-					trace.add("seed reject f" + factorIndex + " reason=opaque-requires-bound required="
-							+ opaqueRequiredVars.get(factorIndex) + " factor="
-							+ factorSummary(factors.get(factorIndex)));
-				}
-				continue;
-			}
-			Step step = estimateStep(factors, factorIndex, initial, 0.0d, false, List.of(), costModel,
-					fallbackStatistics, estimationTier);
-			if (step == null) {
-				if (trace.enabled()) {
-					trace.add("seed reject f" + factorIndex + " reason=no-estimate factor="
-							+ factorSummary(factors.get(factorIndex)));
-				}
-				continue;
-			}
-			int mask = 1 << factorIndex;
-			State state = State.seed(mask, factorIndex, step, union(initial, factorVars.get(factorIndex)),
-					initialMask.union(factorVarMasks.get(factorIndex)));
-			if (mask == fullMask) {
-				state = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
-						estimationTier);
-				if (state == null) {
-					continue;
-				}
-			}
-			List<State> incumbent = best[mask];
-			best[mask] = addBestState(incumbent, state);
-			if (trace.enabled()) {
-				trace.add("seed accept " + stepSummary(step, factors) + " incumbent="
-						+ statesSummary(incumbent, factors) + " retained=" + best[mask].contains(state));
-			}
-		}
-
-		for (int mask = 1; mask <= fullMask; mask++) {
-			List<State> states = best[mask];
-			if (states == null || states.isEmpty()) {
-				continue;
-			}
-			for (State state : states) {
-				if (trace.enabled()) {
-					trace.add("prefix " + stateSummary(state, factors));
-				}
-				List<TupleExpr> prefixFactors = state.prefixFactors(factors);
-				for (int factorIndex : runtimeFactorIndices) {
-					int bit = 1 << factorIndex;
-					if ((mask & bit) != 0) {
-						continue;
-					}
-					boolean disconnectedByVars = !state.boundMask().intersects(factorVarMasks.get(factorIndex));
-					IntPredicate prefixContains = prefixMaskContains(mask);
-					boolean bridgeEnabledFiniteAnchor = disconnectedByVars
-							&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex,
-									state.boundMask(), factorVarMasks);
-					String extensionRejection = connectedExtensionRejection(factors, prefixContains, factorIndex,
-							state.boundVars(), factorVars, state.boundMask(), factorVarMasks,
-							bridgeEnabledFiniteAnchor);
-					if (extensionRejection != null) {
-						if (trace.enabled()) {
-							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex + " reason="
-									+ extensionRejection + " factor="
-									+ factorSummary(factors.get(factorIndex)));
-						}
-						continue;
-					}
-					if (!state.boundVars().containsAll(opaqueRequiredVars.get(factorIndex))) {
-						if (trace.enabled()) {
-							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-									+ " reason=opaque-requires-bound required=" + opaqueRequiredVars.get(factorIndex)
-									+ " factor=" + factorSummary(factors.get(factorIndex)));
-						}
-						continue;
-					}
-					Step step = estimateStep(factors, factorIndex, state.boundVars(), state.rows(), true,
-							prefixFactors, costModel, fallbackStatistics, estimationTier,
-							disconnectedByVars && !bridgeEnabledFiniteAnchor);
-					if (step == null) {
-						if (trace.enabled()) {
-							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-									+ " reason=no-estimate factor=" + factorSummary(factors.get(factorIndex)));
-						}
-						continue;
-					}
-					PendingDirectAlternative cheaperDirect = cheaperPendingDirectEndpointAlternative(factors,
-							factorIndex, state, mask, step, costModel, fallbackStatistics, estimationTier);
-					if (cheaperDirect != null) {
-						if (trace.enabled()) {
-							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-									+ " reason=path-delayed-for-cheaper-direct-endpoint-statement direct=f"
-									+ cheaperDirect.factorIndex() + " directWork="
-									+ compactDouble(cheaperDirect.step().workRows()) + " pathWork="
-									+ compactDouble(step.workRows()) + " factor="
-									+ factorSummary(factors.get(factorIndex)));
-						}
-						continue;
-					}
-					PathAlternative cheaperEndpoint = cheaperKnownEndpointPathAlternative(factors, factorIndex, state,
-							step,
-							best, costModel, fallbackStatistics, estimationTier);
-					if (cheaperEndpoint != null) {
-						if (trace.enabled()) {
-							trace.add("extend reject prefix=" + state.order() + " f" + factorIndex
-									+ " reason=path-dominated-by-cheaper-endpoint-alternative "
-									+ cheaperEndpoint.mode() + " prefix=" + cheaperEndpoint.prefix().order()
-									+ " totalWork=" + compactDouble(cheaperEndpoint.totalWorkRows())
-									+ " currentWork=" + compactDouble(state.workRows() + step.workRows())
-									+ " factor=" + factorSummary(factors.get(factorIndex)));
-						}
-						continue;
-					}
-					State next = state.append(mask | bit, factorIndex, step,
-							union(state.boundVars(), factorVars.get(factorIndex)),
-							state.boundMask().union(factorVarMasks.get(factorIndex)));
-					if (next.mask() == fullMask) {
-						next = appendZeroVarFactors(next, factors, zeroVarFactorIndices, costModel,
-								fallbackStatistics, estimationTier);
-						if (next == null) {
-							continue;
-						}
-					}
-					List<State> incumbent = best[next.mask()];
-					best[next.mask()] = addBestState(incumbent, next);
-					if (trace.enabled()) {
-						trace.add("extend accept prefix=" + state.order() + " + " + stepSummary(step, factors)
-								+ " incumbent=" + statesSummary(incumbent, factors) + " retained="
-								+ best[next.mask()].contains(next));
-					}
-				}
-			}
-		}
-
-		if (trace.enabled()) {
-			tracePathAlternatives(factors, best, factorVars, costModel, fallbackStatistics, trace, estimationTier);
-		}
-		State complete = bestState(best[fullMask]);
-		if (complete == null) {
-			trace.add("reject no-full-connected-state");
-			return Optional.empty();
-		}
-		trace.add("final " + stateSummary(complete, factors));
-		return Optional.of(new PlanTemplate(complete, "connected-dp", zeroVarFactorIndices.size(),
-				trace.snapshot()));
-	}
-
-	private static Optional<PlanTemplate> greedyPlan(List<TupleExpr> factors, Set<String> initialBoundVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
-			EstimationTier estimationTier) {
-		List<Set<String>> factorVars = factorVars(factors);
-		BindingUniverse universe = BindingUniverse.create();
-		BindingMask boundMask = bindingMask(universe, initialBoundVars);
-		List<BindingMask> factorVarMasks = factorVarMasks(factorVars, universe);
-		List<Integer> remaining = new ArrayList<>(runtimeFactorIndices(factorVars));
-		List<Integer> zeroVarFactorIndices = zeroVarFactorIndices(factorVars);
-		if (remaining.isEmpty()) {
-			trace.add("greedy reject runtimeFactorCount=" + remaining.size());
-			return Optional.empty();
-		}
-		boolean[] pathHasEndpointBinder = pathHasEndpointBinder(factors, factorVarMasks, universe);
-		List<Set<String>> opaqueRequiredVars = opaqueRequiredVars(factors, factorVars,
-				plannerNames(initialBoundVars));
-		if (trace.enabled()) {
-			trace.add("greedy initial=" + plannerNames(initialBoundVars) + " remaining=" + remaining
-					+ " zeroVar=" + zeroVarFactorIndices);
-		}
-		Set<String> boundVars = plannerNames(initialBoundVars);
-		List<Integer> order = new ArrayList<>(factors.size());
-		List<Step> steps = new ArrayList<>(factors.size());
-		double rows = 0.0d;
-		double workRows = 0.0d;
-		double maxRows = 0.0d;
-		while (!remaining.isEmpty()) {
-			int selectedPosition = -1;
-			Step selectedStep = null;
-			List<TupleExpr> prefixFactors = prefixFactors(factors, order);
-			for (int position = 0; position < remaining.size(); position++) {
-				int factorIndex = remaining.get(position);
-				TupleExpr factor = factors.get(factorIndex);
-				boolean hasPrefix = !order.isEmpty();
-				if (!hasPrefix && !admissibleSeed(factor, boundVars, pathHasEndpointBinder[factorIndex])) {
-					if (trace.enabled()) {
-						trace.add("greedy seed reject f" + factorIndex
-								+ " reason=path-has-later-endpoint-binder factor=" + factorSummary(factor));
-					}
-					continue;
-				}
-				boolean disconnectedByVars = hasPrefix && !boundMask.intersects(factorVarMasks.get(factorIndex));
-				IntPredicate prefixContains = prefixOrderContains(order);
-				boolean bridgeEnabledFiniteAnchor = disconnectedByVars
-						&& disconnectedFiniteAnchorEnablesBridge(factors, prefixContains, factorIndex, boundMask,
-								factorVarMasks);
-				String extensionRejection = hasPrefix
-						? connectedExtensionRejection(factors, prefixContains, factorIndex, boundVars, factorVars,
-								boundMask, factorVarMasks, bridgeEnabledFiniteAnchor)
-						: null;
-				if (extensionRejection != null) {
-					if (trace.enabled()) {
-						trace.add("greedy extend reject order=" + order + " f" + factorIndex + " reason="
-								+ extensionRejection
-								+ " factor=" + factorSummary(factor));
-					}
-					continue;
-				}
-				if (!boundVars.containsAll(opaqueRequiredVars.get(factorIndex))) {
-					if (trace.enabled()) {
-						trace.add("greedy reject order=" + order + " f" + factorIndex
-								+ " reason=opaque-requires-bound required=" + opaqueRequiredVars.get(factorIndex)
-								+ " factor=" + factorSummary(factor));
-					}
-					continue;
-				}
-				Step step = estimateStep(factors, factorIndex, boundVars, rows, hasPrefix,
-						prefixFactors, costModel, fallbackStatistics, estimationTier,
-						disconnectedByVars && !bridgeEnabledFiniteAnchor);
-				if (step == null) {
-					if (trace.enabled()) {
-						trace.add("greedy reject order=" + order + " f" + factorIndex
-								+ " reason=no-estimate factor=" + factorSummary(factor));
-					}
-					continue;
-				}
-				if (trace.enabled()) {
-					trace.add("greedy candidate order=" + order + " " + stepSummary(step, factors));
-				}
-				if (selectedStep == null || step.compareTo(selectedStep) < 0) {
-					selectedStep = step;
-					selectedPosition = position;
-				}
-			}
-			if (selectedPosition < 0 || selectedStep == null) {
-				trace.add("greedy reject no-selected-step order=" + order + " remaining=" + remaining);
-				return Optional.empty();
-			}
-			int factorIndex = remaining.remove(selectedPosition);
-			order.add(factorIndex);
-			steps.add(selectedStep);
-			rows = selectedStep.outputRows();
-			workRows += selectedStep.workRows();
-			maxRows = Math.max(maxRows, rows);
-			boundVars = union(boundVars, factorVars.get(factorIndex));
-			boundMask = boundMask.union(factorVarMasks.get(factorIndex));
-			if (trace.enabled()) {
-				trace.add("greedy choose f" + factorIndex + " order=" + order + " bound=" + boundVars);
-			}
-		}
-		State state = new State(maskFor(order), List.copyOf(order), List.copyOf(steps),
-				boundVars, boundMask, rows, workRows, maxRows, 0.0d, qErrorMax(steps), workQErrorMax(steps),
-				confidence(steps), evidence(steps));
-		State complete = appendZeroVarFactors(state, factors, zeroVarFactorIndices, costModel, fallbackStatistics,
-				estimationTier);
-		if (complete == null) {
-			trace.add("greedy reject zero-var-append-failed order=" + order);
-			return Optional.empty();
-		}
-		trace.add("final " + stateSummary(complete, factors));
-		return Optional.of(new PlanTemplate(complete, "connected-greedy", zeroVarFactorIndices.size(),
-				trace.snapshot()));
-	}
-
 	private static List<TupleExpr> canonicalFactors(List<TupleExpr> factors, Optional<LmdbPlannerServices> services) {
 		if (factors == null || factors.isEmpty()) {
 			return List.of();
@@ -496,26 +195,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return factor == null ? null : factor;
 	}
 
-	@SuppressWarnings("unchecked")
-	private static Optional<PlanTemplate> cachedPlanTemplate(Optional<LmdbPlannerServices> services,
-			PlanTemplateCache.Key cacheKey) {
-		if (services.isEmpty() || cacheKey == null) {
-			return null;
-		}
-		Object cached = services.get().planTemplateCache().get(cacheKey).orElse(null);
-		if (cached instanceof Optional<?>) {
-			return (Optional<PlanTemplate>) cached;
-		}
-		return null;
-	}
-
-	private static void cachePlanTemplate(Optional<LmdbPlannerServices> services, PlanTemplateCache.Key cacheKey,
-			Optional<PlanTemplate> template) {
-		if (services.isPresent() && cacheKey != null && template != null) {
-			services.get().planTemplateCache().put(cacheKey, template);
-		}
-	}
-
 	private static boolean scopedPlanCacheAvailable(Optional<LmdbPlannerServices> services) {
 		return services.isPresent() && services.get().hasOptimizationScopedPlannerCache();
 	}
@@ -563,10 +242,25 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (factorEstimate == null) {
 			return null;
 		}
-		double outputRows = finiteNonNegative(factorEstimate.getOutputRows(), Double.MAX_VALUE);
-		double workRows = finiteNonNegative(factorEstimate.getWorkRows(), outputRows);
+		Optional<Plan> rowPreservingPlan = plannedRowPreservingJoinPlan(factor, boundVars, costModel,
+				fallbackStatistics, estimationTier);
+		double outputRows = rowPreservingPlan.map(plan -> plan.estimate().rows())
+				.map(rows -> finiteNonNegative(rows, factorEstimate.getOutputRows()))
+				.orElseGet(() -> finiteNonNegative(factorEstimate.getOutputRows(), Double.MAX_VALUE));
+		double workRows = rowPreservingPlan.map(plan -> plan.estimate().workRows() + outputRows)
+				.map(rows -> finiteNonNegative(rows, factorEstimate.getWorkRows()))
+				.orElseGet(() -> finiteNonNegative(factorEstimate.getWorkRows(), outputRows));
 		Map<String, String> stringMetrics = new LinkedHashMap<>(factorEstimate.getStringMetrics());
 		Map<String, Double> doubleMetrics = new LinkedHashMap<>(factorEstimate.getDoubleMetrics());
+		if (rowPreservingPlan.isPresent()) {
+			Plan plan = rowPreservingPlan.get();
+			stringMetrics.putAll(plan.estimate().stringMetrics());
+			doubleMetrics.putAll(plan.estimate().doubleMetrics());
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		}
 		if (outputRows == 0.0d && workRows == 0.0d && !factorEstimate.hasExactOutputRows()) {
 			workRows = 1.0d;
 			doubleMetrics.put("plannedNonExactZeroWorkFloor", workRows);
@@ -576,35 +270,41 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (path(factor)) {
 			stringMetrics.put("optimizer.pathEndpointMode", pathEndpointMode(factor, boundVars));
 		}
-		TupleExpr plannedFactor = plannedRowPreservingFactor(factor, boundVars, costModel, fallbackStatistics,
-				estimationTier);
+		TupleExpr plannedFactor = rowPreservingPlan.map(plan -> materializeRowPreservingFactor(factor, plan))
+				.orElse(null);
+		double rowQErrorMax = rowPreservingPlan.map(plan -> plan.cost().rowQErrorMax())
+				.orElseGet(() -> factorEstimate.getNormalizedEstimateVector().rowQErrorMax());
+		double workQErrorMax = rowPreservingPlan.map(plan -> plan.cost().workQErrorMax())
+				.orElseGet(() -> factorEstimate.getNormalizedEstimateVector().workQErrorMax());
+		double confidence = rowPreservingPlan.map(plan -> plan.cost().confidence())
+				.orElseGet(() -> factorEstimate.getNormalizedEstimateVector().confidence());
+		double evidenceCount = rowPreservingPlan.map(plan -> plan.cost().evidenceCount())
+				.orElseGet(() -> factorEstimate.getNormalizedEstimateVector().evidenceCount());
 		return new Step(factorIndex, plannerNames(boundVars), workRows, outputRows, stringMetrics,
-				doubleMetrics, factorEstimate.getNormalizedEstimateVector().rowQErrorMax(),
-				factorEstimate.getNormalizedEstimateVector().workQErrorMax(),
-				factorEstimate.getNormalizedEstimateVector().confidence(),
-				factorEstimate.getNormalizedEstimateVector().evidenceCount(), disconnected, plannedFactor);
+				doubleMetrics, rowQErrorMax, workQErrorMax, confidence, evidenceCount,
+				factorEstimate.hasExactOutputRows(), disconnected, plannedFactor);
 	}
 
-	private static TupleExpr plannedRowPreservingFactor(TupleExpr factor, Set<String> boundVars,
+	private static Optional<Plan> plannedRowPreservingJoinPlan(TupleExpr factor, Set<String> boundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
 		TupleExpr arg = rowPreservingJoinArg(factor);
 		if (arg == null || costModel == null) {
-			return null;
+			return Optional.empty();
 		}
-		Optional<Plan> plannedArg = plan(arg, boundVars, costModel, fallbackStatistics,
+		return plan(arg, boundVars, costModel, fallbackStatistics,
 				estimationTier == null ? EstimationTier.STANDARD : estimationTier);
-		if (plannedArg.isEmpty()) {
-			return null;
-		}
+	}
+
+	private static TupleExpr materializeRowPreservingFactor(TupleExpr factor, Plan plannedArg) {
 		if (factor instanceof Projection projection) {
 			Projection clone = projection.clone();
-			clone.setArg(plannedArg.get().tupleExpr());
+			clone.setArg(plannedArg.tupleExpr());
 			clone.setStringMetricPlanned("optimizer.rowPreservingPhysicalChild", ESTIMATE_SOURCE);
 			return clone;
 		}
 		if (factor instanceof Extension extension) {
 			Extension clone = extension.clone();
-			clone.setArg(plannedArg.get().tupleExpr());
+			clone.setArg(plannedArg.tupleExpr());
 			clone.setStringMetricPlanned("optimizer.rowPreservingPhysicalChild", ESTIMATE_SOURCE);
 			return clone;
 		}
@@ -619,203 +319,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 			return join;
 		}
 		return null;
-	}
-
-	private static PendingDirectAlternative cheaperPendingDirectEndpointAlternative(List<TupleExpr> factors,
-			int factorIndex, State currentPrefix, int prefixMask, Step pathStep, JoinFactorCostModel costModel,
-			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
-		if (factors == null || currentPrefix == null || pathStep == null || !path(factors.get(factorIndex))) {
-			return null;
-		}
-		Set<String> boundEndpoints = boundPathEndpointNames(factors.get(factorIndex), currentPrefix.boundVars());
-		Set<String> unboundEndpoints = unboundPathEndpointNames(factors.get(factorIndex), currentPrefix.boundVars());
-		if (boundEndpoints.isEmpty() && unboundEndpoints.isEmpty()) {
-			return null;
-		}
-		PendingDirectAlternative best = null;
-		for (int candidateIndex = 0; candidateIndex < factors.size(); candidateIndex++) {
-			TupleExpr candidateFactor = factors.get(candidateIndex);
-			if (candidateIndex == factorIndex || (prefixMask & (1 << candidateIndex)) != 0
-					|| !constantPredicateStatementOnAny(candidateFactor, boundEndpoints)
-							&& !selectiveConstantStatementOnAny(candidateFactor, unboundEndpoints)) {
-				continue;
-			}
-			Step directStep = estimateStep(factors, candidateIndex, currentPrefix.boundVars(), currentPrefix.rows(),
-					true, currentPrefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
-			if (directStep == null || directStep.compareTo(pathStep) >= 0) {
-				continue;
-			}
-			PendingDirectAlternative candidate = new PendingDirectAlternative(candidateIndex, directStep);
-			if (best == null || candidate.compareTo(best) < 0) {
-				best = candidate;
-			}
-		}
-		return best;
-	}
-
-	private static Set<String> boundPathEndpointNames(TupleExpr tupleExpr, Set<String> boundVars) {
-		Set<String> endpoints = pathEndpointNames(tupleExpr);
-		Set<String> plannerBoundVars = plannerNames(boundVars);
-		if (endpoints.isEmpty() || plannerBoundVars.isEmpty()) {
-			return Set.of();
-		}
-		LinkedHashSet<String> boundEndpoints = new LinkedHashSet<>();
-		for (String endpoint : endpoints) {
-			if (plannerBoundVars.contains(endpoint)) {
-				boundEndpoints.add(endpoint);
-			}
-		}
-		return boundEndpoints.isEmpty() ? Set.of() : Set.copyOf(boundEndpoints);
-	}
-
-	private static Set<String> unboundPathEndpointNames(TupleExpr tupleExpr, Set<String> boundVars) {
-		Set<String> endpoints = pathEndpointNames(tupleExpr);
-		Set<String> plannerBoundVars = plannerNames(boundVars);
-		if (endpoints.isEmpty()) {
-			return Set.of();
-		}
-		LinkedHashSet<String> unboundEndpoints = new LinkedHashSet<>();
-		for (String endpoint : endpoints) {
-			if (!plannerBoundVars.contains(endpoint)) {
-				unboundEndpoints.add(endpoint);
-			}
-		}
-		return unboundEndpoints.isEmpty() ? Set.of() : Set.copyOf(unboundEndpoints);
-	}
-
-	private static boolean constantPredicateStatementOnAny(TupleExpr tupleExpr, Set<String> names) {
-		if (!(tupleExpr instanceof StatementPattern pattern) || names == null || names.isEmpty()
-				|| pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()) {
-			return false;
-		}
-		String subjectName = plannerVarName(pattern.getSubjectVar());
-		String objectName = plannerVarName(pattern.getObjectVar());
-		return subjectName != null && names.contains(subjectName) || objectName != null && names.contains(objectName);
-	}
-
-	private static boolean selectiveConstantStatementOnAny(TupleExpr tupleExpr, Set<String> names) {
-		if (!(tupleExpr instanceof StatementPattern pattern) || names == null || names.isEmpty()
-				|| pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()) {
-			return false;
-		}
-		String subjectName = plannerVarName(pattern.getSubjectVar());
-		String objectName = plannerVarName(pattern.getObjectVar());
-		return subjectName != null && names.contains(subjectName) && constantTerm(pattern.getObjectVar())
-				|| objectName != null && names.contains(objectName) && constantTerm(pattern.getSubjectVar());
-	}
-
-	private static boolean constantTerm(Var var) {
-		return var != null && (var.hasValue() || var.isConstant());
-	}
-
-	private static String plannerVarName(Var var) {
-		if (var == null || var.hasValue() || var.isConstant()) {
-			return null;
-		}
-		String name = var.getName();
-		return name == null || name.startsWith("_const_") ? null : name;
-	}
-
-	private static PathAlternative cheaperKnownEndpointPathAlternative(List<TupleExpr> factors, int factorIndex,
-			State currentPrefix, Step currentStep, List<State>[] best, JoinFactorCostModel costModel,
-			EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
-		if (factors == null || factorIndex < 0 || factorIndex >= factors.size() || currentPrefix == null
-				|| currentStep == null || best == null) {
-			return null;
-		}
-		TupleExpr factor = factors.get(factorIndex);
-		if (!path(factor)) {
-			return null;
-		}
-		String currentMode = pathEndpointMode(factor, currentPrefix.boundVars());
-		if (!"fromStart".equals(currentMode) && !"toEnd".equals(currentMode)) {
-			return null;
-		}
-		double currentTotalWorkRows = currentPrefix.workRows() + currentStep.workRows();
-		if (!Double.isFinite(currentTotalWorkRows) || currentTotalWorkRows <= 0.0d) {
-			return null;
-		}
-		int factorBit = 1 << factorIndex;
-		PathAlternative bestAlternative = null;
-		for (List<State> alternatives : best) {
-			for (State alternativePrefix : states(alternatives)) {
-				if (alternativePrefix == currentPrefix
-						|| (alternativePrefix.mask() & factorBit) != 0
-						|| (alternativePrefix.mask() & currentPrefix.mask()) != currentPrefix.mask()
-						|| !pathHasBoundEndpoint(factor, alternativePrefix.boundVars())) {
-					continue;
-				}
-				String alternativeMode = pathEndpointMode(factor, alternativePrefix.boundVars());
-				if (currentMode.equals(alternativeMode) || "fullScan".equals(alternativeMode)) {
-					continue;
-				}
-				Step alternativeStep = estimateStep(factors, factorIndex, alternativePrefix.boundVars(),
-						alternativePrefix.rows(), true, alternativePrefix.prefixFactors(factors), costModel,
-						fallbackStatistics, estimationTier);
-				if (alternativeStep == null) {
-					continue;
-				}
-				PathAlternative alternative = new PathAlternative(alternativeMode, alternativePrefix, alternativeStep,
-						alternativePrefix.workRows() + alternativeStep.workRows(),
-						Math.max(alternativePrefix.maxRows(), alternativeStep.outputRows()));
-				bestAlternative = better(bestAlternative, alternative);
-			}
-		}
-		if (bestAlternative == null || !Double.isFinite(bestAlternative.totalWorkRows())) {
-			return null;
-		}
-		return bestAlternative.totalWorkRows() * 1.10d < currentTotalWorkRows ? bestAlternative : null;
-	}
-
-	private static void tracePathAlternatives(List<TupleExpr> factors, List<State>[] best, List<Set<String>> factorVars,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, Trace trace,
-			EstimationTier estimationTier) {
-		if (factors == null || best == null || factorVars == null || trace == null || !trace.enabled()) {
-			return;
-		}
-		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
-			TupleExpr factor = factors.get(factorIndex);
-			if (!path(factor)) {
-				continue;
-			}
-			PathAlternative fromStart = null;
-			PathAlternative toEnd = null;
-			PathAlternative between = null;
-			int factorBit = 1 << factorIndex;
-			for (List<State> prefixes : best) {
-				for (State prefix : states(prefixes)) {
-					if ((prefix.mask() & factorBit) != 0 || !pathHasBoundEndpoint(factor, prefix.boundVars())) {
-						continue;
-					}
-					String mode = pathEndpointMode(factor, prefix.boundVars());
-					if (!"fromStart".equals(mode) && !"toEnd".equals(mode) && !"between".equals(mode)) {
-						continue;
-					}
-					Step step = estimateStep(factors, factorIndex, prefix.boundVars(), prefix.rows(), true,
-							prefix.prefixFactors(factors), costModel, fallbackStatistics, estimationTier);
-					if (step == null) {
-						continue;
-					}
-					PathAlternative candidate = new PathAlternative(mode, prefix, step,
-							prefix.workRows() + step.workRows(), Math.max(prefix.maxRows(), step.outputRows()));
-					if ("fromStart".equals(mode)) {
-						fromStart = better(fromStart, candidate);
-					} else if ("toEnd".equals(mode)) {
-						toEnd = better(toEnd, candidate);
-					} else {
-						between = better(between, candidate);
-					}
-				}
-			}
-			trace.pathAlternatives(factorIndex, factor, fromStart, toEnd, between);
-		}
-	}
-
-	private static PathAlternative better(PathAlternative incumbent, PathAlternative candidate) {
-		if (incumbent == null) {
-			return candidate;
-		}
-		return candidate.compareTo(incumbent) < 0 ? candidate : incumbent;
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate fallbackEstimate(TupleExpr factor,
@@ -897,104 +400,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private static List<State> states(List<State> states) {
-		return states == null || states.isEmpty() ? List.of() : states;
-	}
-
-	private static State bestState(List<State> states) {
-		return states == null || states.isEmpty() ? null : states.getFirst();
-	}
-
-	private static List<State> addBestState(List<State> incumbents, State candidate) {
-		if (candidate == null) {
-			return states(incumbents);
-		}
-		List<State> next = new ArrayList<>(states(incumbents));
-		for (int i = 0; i < next.size(); i++) {
-			State incumbent = next.get(i);
-			if (incumbent.order().equals(candidate.order())) {
-				if (candidate.compareTo(incumbent) < 0) {
-					next.set(i, candidate);
-				}
-				next.sort(State::compareTo);
-				return trimStates(next);
-			}
-		}
-		next.add(candidate);
-		next.sort(State::compareTo);
-		return trimStates(next);
-	}
-
-	private static List<State> trimStates(List<State> states) {
-		if (states == null || states.isEmpty()) {
-			return List.of();
-		}
-		int limit = Math.min(MAX_CONNECTED_DP_STATES_PER_MASK, states.size());
-		return List.copyOf(states.subList(0, limit));
-	}
-
-	private static State better(State incumbent, State candidate) {
-		if (incumbent == null) {
-			return candidate;
-		}
-		return candidate.compareTo(incumbent) < 0 ? candidate : incumbent;
-	}
-
-	private static boolean admissibleSeed(TupleExpr factor, Set<String> initialBoundVars,
-			boolean pathHasEndpointBinder) {
-		if (!path(factor)) {
-			return true;
-		}
-		return pathHasBoundEndpoint(factor, initialBoundVars) || !pathHasEndpointBinder;
-	}
-
-	/**
-	 * Per-factor variables that must already be bound before an opaque factor may be placed. Only variables that some
-	 * other factor (or an initial binding) can actually bind constrain placement — a correlated variable no factor
-	 * binds stays unbound in every order and imposes no precedence.
-	 */
-	private static List<Set<String>> opaqueRequiredVars(List<TupleExpr> factors, List<Set<String>> factorVars,
-			Set<String> initialBoundVars) {
-		List<Set<String>> result = new ArrayList<>(factors.size());
-		for (int i = 0; i < factors.size(); i++) {
-			Set<String> raw = LmdbJoinIslandConnectivity.opaqueFactorRequiredVars(factors.get(i));
-			if (raw.isEmpty()) {
-				result.add(Set.of());
-				continue;
-			}
-			Set<String> bindable = new HashSet<>(initialBoundVars);
-			for (int j = 0; j < factors.size(); j++) {
-				if (j != i) {
-					bindable.addAll(factorVars.get(j));
-				}
-			}
-			Set<String> required = new LinkedHashSet<>();
-			for (String name : plannerNames(raw)) {
-				if (bindable.contains(name)) {
-					required.add(name);
-				}
-			}
-			result.add(required.isEmpty() ? Set.of() : Set.copyOf(required));
-		}
-		return result;
-	}
-
-	private static int compareAccessPathQuality(List<Step> left, List<Step> right) {
-		if (left == right) {
-			return 0;
-		}
-		int leftSize = left == null ? 0 : left.size();
-		int rightSize = right == null ? 0 : right.size();
-		int limit = Math.min(leftSize, rightSize);
-		for (int i = 0; i < limit; i++) {
-			int comparison = compareAccessPathQuality(left.get(i), right.get(i));
-			if (comparison != 0) {
-				return comparison;
-			}
-		}
-		return Integer.compare(leftSize, rightSize);
-	}
-
 	private static int compareAccessPathQuality(Step left, Step right) {
 		if (left == right) {
 			return 0;
@@ -1049,77 +454,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		};
 	}
 
-	private static String connectedExtensionRejection(List<TupleExpr> factors, IntPredicate prefixContains,
-			int candidateIndex, Set<String> prefixVars, List<Set<String>> factorVars,
-			BindingMask prefixMask, List<BindingMask> factorVarMasks, boolean bridgeEnabledFiniteAnchor) {
-		TupleExpr candidate = factors.get(candidateIndex);
-		BindingMask candidateVars = factorVarMasks.get(candidateIndex);
-		if (path(candidate)) {
-			if (!pathHasBoundEndpoint(candidate, prefixVars)) {
-				return "path-endpoint-not-bound";
-			}
-			/*
-			 * Do not hard-delay a path merely because another endpoint has a later selective binder. The connected
-			 * DP/greedy planner already costs fromStart, toEnd and between alternatives with the current prefix. A hard
-			 * wait predicate makes those costs irrelevant and can force the expensive endpoint, as seen in AAS query1
-			 * where fromStart is orders of magnitude cheaper than waiting for ?prop and running toEnd.
-			 */
-			return null;
-		}
-		if (candidateVars == null || candidateVars.isEmpty()) {
-			return "zero-runtime-vars";
-		}
-		if (prefixMask.intersects(candidateVars)) {
-			return null;
-		}
-		return bridgeEnabledFiniteAnchor ? null : "no-shared-vars";
-	}
-
-	private static boolean disconnectedFiniteAnchorEnablesBridge(List<TupleExpr> factors, IntPredicate prefixContains,
-			int candidateIndex, BindingMask prefixVars, List<BindingMask> factorVars) {
-		TupleExpr candidate = factors.get(candidateIndex);
-		if (!(candidate instanceof BindingSetAssignment assignment) || !smallFiniteAssignment(assignment)) {
-			return false;
-		}
-		BindingMask candidateVars = factorVars.get(candidateIndex);
-		for (int i = 0; i < factors.size(); i++) {
-			if (i == candidateIndex || prefixContains.test(i)) {
-				continue;
-			}
-			BindingMask bridgeVars = factorVars.get(i);
-			if (prefixVars.intersects(bridgeVars) && candidateVars.intersects(bridgeVars)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static IntPredicate prefixMaskContains(int prefixMask) {
-		return factorIndex -> (prefixMask & (1 << factorIndex)) != 0;
-	}
-
-	private static IntPredicate prefixOrderContains(List<Integer> order) {
-		if (order == null || order.isEmpty()) {
-			return ignored -> false;
-		}
-		Set<Integer> prefixIndices = Set.copyOf(order);
-		return prefixIndices::contains;
-	}
-
-	private static boolean smallFiniteAssignment(BindingSetAssignment assignment) {
-		if (assignment == null || assignment.getBindingSets() == null) {
-			return false;
-		}
-		int count = 0;
-		for (BindingSet ignored : assignment.getBindingSets()) {
-			count++;
-			if (count > MAX_DISCONNECTED_FINITE_ANCHOR_ROWS) {
-				return false;
-			}
-		}
-		return count > 0;
-	}
-
 	private static String pathEndpointMode(TupleExpr tupleExpr, Set<String> boundVars) {
 		Set<String> plannerBoundVars = plannerNames(boundVars);
 		boolean subjectBound = false;
@@ -1145,100 +479,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static boolean endpointBound(Var var, Set<String> boundVars) {
 		return var != null && !var.hasValue() && boundVars != null && boundVars.contains(var.getName());
-	}
-
-	private static boolean hasDisconnectedStep(State state) {
-		for (Step step : state.steps()) {
-			if (step.disconnected()) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static State appendZeroVarFactors(State state, List<TupleExpr> factors, List<Integer> zeroVarFactorIndices,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier) {
-		State current = state;
-		for (int factorIndex : zeroVarFactorIndices) {
-			Step step = estimateStep(factors, factorIndex, current.boundVars(), current.rows(), true,
-					current.prefixFactors(factors), costModel, fallbackStatistics, estimationTier, true);
-			if (step == null) {
-				return null;
-			}
-			current = current.append(current.mask(), factorIndex, step, current.boundVars());
-		}
-		return current;
-	}
-
-	private static List<Integer> runtimeFactorIndices(List<Set<String>> factorVars) {
-		List<Integer> indices = new ArrayList<>();
-		for (int i = 0; i < factorVars.size(); i++) {
-			if (!factorVars.get(i).isEmpty()) {
-				indices.add(i);
-			}
-		}
-		return List.copyOf(indices);
-	}
-
-	private static List<Integer> zeroVarFactorIndices(List<Set<String>> factorVars) {
-		List<Integer> indices = new ArrayList<>();
-		for (int i = 0; i < factorVars.size(); i++) {
-			if (factorVars.get(i).isEmpty()) {
-				indices.add(i);
-			}
-		}
-		return List.copyOf(indices);
-	}
-
-	private static int maskFor(List<Integer> factorIndices) {
-		int mask = 0;
-		for (int factorIndex : factorIndices) {
-			mask |= 1 << factorIndex;
-		}
-		return mask;
-	}
-
-	private static boolean[] pathHasEndpointBinder(List<TupleExpr> factors, List<BindingMask> factorVars,
-			BindingUniverse universe) {
-		boolean[] result = new boolean[factors.size()];
-		for (int i = 0; i < factors.size(); i++) {
-			TupleExpr factor = factors.get(i);
-			if (!path(factor)) {
-				continue;
-			}
-			BindingMask endpoints = pathEndpointMask(factor, universe);
-			for (int j = 0; j < factors.size(); j++) {
-				if (i != j && endpoints.intersects(factorVars.get(j))) {
-					result[i] = true;
-					break;
-				}
-			}
-		}
-		return result;
-	}
-
-	private static List<Set<String>> factorVars(List<TupleExpr> factors) {
-		List<Set<String>> factorVars = new ArrayList<>(factors.size());
-		for (TupleExpr factor : factors) {
-			factorVars.add(LmdbJoinPlanSupport.runtimeBindingNames(factor));
-		}
-		return List.copyOf(factorVars);
-	}
-
-	private static List<BindingMask> factorVarMasks(List<Set<String>> factorVars, BindingUniverse universe) {
-		if (factorVars == null || factorVars.isEmpty()) {
-			return List.of();
-		}
-		List<BindingMask> masks = new ArrayList<>(factorVars.size());
-		for (Set<String> names : factorVars) {
-			masks.add(bindingMask(universe, names));
-		}
-		return List.copyOf(masks);
-	}
-
-	private static BindingMask bindingMask(BindingUniverse universe, Set<String> names) {
-		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
-		return safeUniverse.maskOf(plannerNames(names));
 	}
 
 	private static Set<String> plannerNames(Set<String> names) {
@@ -1269,10 +509,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return Set.of();
 	}
 
-	private static BindingMask pathEndpointMask(TupleExpr tupleExpr, BindingUniverse universe) {
-		return bindingMask(universe, pathEndpointNames(tupleExpr));
-	}
-
 	private static Set<String> endpointNames(Var left, Var right) {
 		LinkedHashSet<String> names = new LinkedHashSet<>();
 		addEndpointName(names, left);
@@ -1288,31 +524,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (name != null && !name.startsWith("_const_")) {
 			names.add(name);
 		}
-	}
-
-	private static List<TupleExpr> prefixFactors(List<TupleExpr> factors, List<Integer> order) {
-		if (order == null || order.isEmpty()) {
-			return List.of();
-		}
-		List<TupleExpr> prefix = new ArrayList<>(order.size());
-		for (int factorIndex : order) {
-			prefix.add(factors.get(factorIndex));
-		}
-		return List.copyOf(prefix);
-	}
-
-	private static Set<String> union(Set<String> left, Set<String> right) {
-		if ((left == null || left.isEmpty()) && (right == null || right.isEmpty())) {
-			return Set.of();
-		}
-		Set<String> union = new LinkedHashSet<>();
-		if (left != null) {
-			union.addAll(left);
-		}
-		if (right != null) {
-			union.addAll(right);
-		}
-		return union.isEmpty() ? Set.of() : Set.copyOf(union);
 	}
 
 	private static boolean intersects(Set<String> left, Set<String> right) {
@@ -1333,38 +544,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 
-	private static double qErrorMax(List<Step> steps) {
-		double qError = 1.0d;
-		for (Step step : steps) {
-			qError = Math.max(qError, step.rowQErrorMax());
-		}
-		return qError;
-	}
-
-	private static double workQErrorMax(List<Step> steps) {
-		double qError = 1.0d;
-		for (Step step : steps) {
-			qError = Math.max(qError, step.workQErrorMax());
-		}
-		return qError;
-	}
-
-	private static double confidence(List<Step> steps) {
-		double confidence = 1.0d;
-		for (Step step : steps) {
-			confidence = Math.min(confidence, step.confidence());
-		}
-		return confidence;
-	}
-
-	private static double evidence(List<Step> steps) {
-		double evidence = 0.0d;
-		for (Step step : steps) {
-			evidence += step.evidenceCount();
-		}
-		return evidence;
-	}
-
 	private static String factorSummary(TupleExpr factor) {
 		if (factor == null) {
 			return "<null>";
@@ -1374,70 +553,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 			summary = summary.replace("  ", " ");
 		}
 		return summary.length() <= 240 ? summary : summary.substring(0, 240) + "...";
-	}
-
-	private static String stateSummary(State state, List<TupleExpr> factors) {
-		if (state == null) {
-			return "<none>";
-		}
-		return "order=" + state.order() + " labels=" + orderLabels(state.order(), factors)
-				+ " rows=" + compactDouble(state.rows()) + " work=" + compactDouble(state.workRows())
-				+ " maxRows=" + compactDouble(state.maxRows()) + " bound=" + state.boundVars();
-	}
-
-	private static String statesSummary(List<State> states, List<TupleExpr> factors) {
-		if (states == null || states.isEmpty()) {
-			return "<none>";
-		}
-		return states.stream()
-				.map(state -> stateSummary(state, factors))
-				.toList()
-				.toString();
-	}
-
-	private static String stepSummary(Step step, List<TupleExpr> factors) {
-		if (step == null) {
-			return "<null-step>";
-		}
-		return "f" + step.factorIndex() + '=' + factorSummary(factors.get(step.factorIndex()))
-				+ " before=" + step.boundVarsBefore() + " rows=" + compactDouble(step.outputRows())
-				+ " work=" + compactDouble(step.workRows()) + " conf=" + compactDouble(step.confidence())
-				+ " pathMode=" + step.stringMetrics().getOrDefault("optimizer.pathEndpointMode", "-")
-				+ " source=" + step.stringMetrics()
-						.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-								"-");
-	}
-
-	private static String orderLabels(List<Integer> order, List<TupleExpr> factors) {
-		if (order == null || order.isEmpty()) {
-			return "[]";
-		}
-		List<String> labels = new ArrayList<>(order.size());
-		for (int factorIndex : order) {
-			labels.add("f" + factorIndex + ':' + factorSummary(factors.get(factorIndex)));
-		}
-		return labels.toString();
-	}
-
-	private static String orderSummary(List<Integer> order) {
-		return order == null ? "[]" : order.toString();
-	}
-
-	private static String formatRows(double rows) {
-		return compactDouble(rows);
-	}
-
-	private static String compactDouble(double value) {
-		if (!Double.isFinite(value)) {
-			return Double.toString(value);
-		}
-		if (Math.abs(value) >= 1_000_000.0d || Math.abs(value) < 0.01d && value != 0.0d) {
-			return String.format(java.util.Locale.ROOT, "%.3e", value);
-		}
-		if (Math.rint(value) == value) {
-			return Long.toString(Math.round(value));
-		}
-		return String.format(java.util.Locale.ROOT, "%.3f", value);
 	}
 
 	private static int traceLimit() {
@@ -1455,9 +570,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final class Trace {
 		private final boolean enabled;
 		private final int limit;
-		private final StringBuilder priorityBuilder;
 		private final StringBuilder builder;
-		private boolean priorityTruncated;
 		private boolean truncated;
 
 		static Trace create() {
@@ -1467,7 +580,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 		private Trace(boolean enabled, int limit) {
 			this.enabled = enabled;
 			this.limit = limit;
-			this.priorityBuilder = enabled ? new StringBuilder(Math.min(512, limit)) : null;
 			this.builder = enabled ? new StringBuilder(Math.min(4096, limit)) : null;
 		}
 
@@ -1494,81 +606,11 @@ final class LmdbCascadesConnectedJoinPlanner {
 			builder.append(normalized);
 		}
 
-		void pathAlternatives(int factorIndex, TupleExpr factor, PathAlternative fromStart,
-				PathAlternative toEnd, PathAlternative between) {
-			if (fromStart == null && toEnd == null && between == null) {
-				appendPriority("path alternatives f=" + factorIndex + " none " + factorSummary(factor));
-				return;
-			}
-			StringBuilder line = new StringBuilder(256);
-			line.append("path alternatives f=").append(factorIndex).append(' ').append(factorSummary(factor));
-			appendAlternative(line, fromStart);
-			appendAlternative(line, toEnd);
-			appendAlternative(line, between);
-			appendPriority(line.toString());
-		}
-
-		private void appendAlternative(StringBuilder line, PathAlternative alternative) {
-			if (alternative == null) {
-				return;
-			}
-			Step step = alternative.step();
-			String source = step.stringMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-							"<unknown>");
-			String method = step.stringMetrics().getOrDefault("plannedPropertyPathMethod", "");
-			line.append(" ; ")
-					.append(alternative.mode())
-					.append("{prefix=")
-					.append(orderSummary(alternative.prefix().order()))
-					.append(", prefixRows=")
-					.append(formatRows(alternative.prefix().rows()))
-					.append(", prefixWork=")
-					.append(formatRows(alternative.prefix().workRows()))
-					.append(", pathRows=")
-					.append(formatRows(step.outputRows()))
-					.append(", pathWork=")
-					.append(formatRows(step.workRows()))
-					.append(", totalWork=")
-					.append(formatRows(alternative.totalWorkRows()))
-					.append(", maxRows=")
-					.append(formatRows(alternative.maxRows()))
-					.append(", source=")
-					.append(source);
-			if (!method.isBlank()) {
-				line.append(", method=").append(method);
-			}
-			line.append('}');
-		}
-
-		private void appendPriority(String event) {
-			if (!enabled || event == null || priorityTruncated) {
-				return;
-			}
-			String normalized = normalize(event);
-			if (priorityBuilder.length() + normalized.length() + 3 > limit) {
-				priorityTruncated = true;
-				return;
-			}
-			if (priorityBuilder.length() > 0) {
-				priorityBuilder.append(" | ");
-			}
-			priorityBuilder.append(normalized);
-		}
-
 		String snapshot() {
 			if (!enabled) {
 				return "";
 			}
-			String priority = snapshot(priorityBuilder, priorityTruncated, "... priority trace truncated ...");
-			String regular = snapshot(builder, truncated, "<trace-truncated>");
-			if (priority.isEmpty()) {
-				return regular;
-			}
-			if (regular.isEmpty()) {
-				return priority;
-			}
-			return priority + " | " + regular;
+			return snapshot(builder, truncated, "<trace-truncated>");
 		}
 
 		private static String snapshot(StringBuilder builder, boolean truncated, String marker) {
@@ -1576,10 +618,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 				return truncated ? marker : "";
 			}
 			return truncated ? builder + " | " + marker : builder.toString();
-		}
-
-		private static String normalize(String event) {
-			return event.replace('\n', ' ').replace('\r', ' ').replace(',', ';');
 		}
 	}
 
@@ -1602,304 +640,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 	}
 
-	private record PlanTemplate(State state, String algorithm, int zeroVarFactorCount, String trace) {
-		private Plan toPlan(List<TupleExpr> factors) {
-			return state.toPlan(factors, algorithm, zeroVarFactorCount, trace);
-		}
-	}
-
-	private record PathAlternative(String mode, State prefix, Step step, double totalWorkRows, double maxRows)
-			implements Comparable<PathAlternative> {
-		@Override
-		public int compareTo(PathAlternative other) {
-			if (other == null) {
-				return -1;
-			}
-			int comparison = Double.compare(totalWorkRows, other.totalWorkRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(step.outputRows(), other.step.outputRows());
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(maxRows, other.maxRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			return orderSummary(prefix.order()).compareTo(orderSummary(other.prefix.order()));
-		}
-	}
-
-	private record PendingDirectAlternative(int factorIndex, Step step)
-			implements Comparable<PendingDirectAlternative> {
-		@Override
-		public int compareTo(PendingDirectAlternative other) {
-			if (other == null) {
-				return -1;
-			}
-			int comparison = step.compareTo(other.step);
-			if (comparison != 0) {
-				return comparison;
-			}
-			return Integer.compare(factorIndex, other.factorIndex);
-		}
-	}
-
-	private record State(int mask, List<Integer> order, List<Step> steps, Set<String> boundVars, BindingMask boundMask,
-			double rows, double workRows, double maxRows, double cartesianWorkRows, double rowQErrorMax,
-			double workQErrorMax, double confidence, double evidenceCount) implements Comparable<State> {
-
-		static State seed(int mask, int factorIndex, Step step, Set<String> boundVars, BindingMask boundMask) {
-			return new State(mask, List.of(factorIndex), List.of(step), boundVars,
-					boundMask == null ? BindingMask.EMPTY : boundMask, step.outputRows(), step.workRows(),
-					step.outputRows(), 0.0d, step.rowQErrorMax(), step.workQErrorMax(), step.confidence(),
-					step.evidenceCount());
-		}
-
-		State append(int mask, int factorIndex, Step step, Set<String> boundVars) {
-			return append(mask, factorIndex, step, boundVars, boundMask);
-		}
-
-		State append(int mask, int factorIndex, Step step, Set<String> boundVars, BindingMask boundMask) {
-			List<Integer> nextOrder = new ArrayList<>(order.size() + 1);
-			nextOrder.addAll(order);
-			nextOrder.add(factorIndex);
-			List<Step> nextSteps = new ArrayList<>(steps.size() + 1);
-			nextSteps.addAll(steps);
-			nextSteps.add(step);
-			double nextCartesianWorkRows = cartesianWorkRows + (step.disconnected() ? step.workRows() : 0.0d);
-			return new State(mask, List.copyOf(nextOrder), List.copyOf(nextSteps), boundVars,
-					boundMask == null ? BindingMask.EMPTY : boundMask, step.outputRows(), workRows + step.workRows(),
-					Math.max(maxRows, step.outputRows()), nextCartesianWorkRows,
-					Math.max(rowQErrorMax, step.rowQErrorMax()), Math.max(workQErrorMax, step.workQErrorMax()),
-					Math.min(confidence, step.confidence()), evidenceCount + step.evidenceCount());
-		}
-
-		List<TupleExpr> prefixFactors(List<TupleExpr> factors) {
-			return LmdbCascadesConnectedJoinPlanner.prefixFactors(factors, order);
-		}
-
-		Plan toPlan(List<TupleExpr> factors, String algorithm, int zeroVarFactorCount, String trace) {
-			TupleExpr tupleExpr = buildPlan(factors);
-			CostVector cost = new CostVector(rows, workRows, 0.0d, 0.0d, 0.0d, rowQErrorMax, rowQErrorMax,
-					workQErrorMax, workQErrorMax, Math.max(0.0d, rows * Math.max(rowQErrorMax - 1.0d, 0.0d)),
-					confidence, evidenceCount);
-			EstimateSnapshot estimate = estimateSnapshot(cost, algorithm, factors.size(), order.size(), maxRows,
-					cartesianWorkRows, zeroVarFactorCount, trace);
-			return new Plan(tupleExpr, cost, estimate, factors.size(), algorithm, zeroVarFactorCount);
-		}
-
-		private TupleExpr buildPlan(List<TupleExpr> factors) {
-			TupleExpr root = cloneFactor(factors.get(order.get(0)), steps.get(0));
-			for (int i = 1; i < order.size(); i++) {
-				Step step = steps.get(i);
-				TupleExpr right = cloneFactor(factors.get(order.get(i)), step);
-				Join join = new Join(root, right);
-				stampPrefix(join, step, i + 1);
-				root = join;
-			}
-			return root;
-		}
-
-		private TupleExpr cloneFactor(TupleExpr factor, Step step) {
-			TupleExpr clone = step != null && step.plannedFactor() != null ? step.plannedFactor().clone()
-					: factor.clone();
-			if (step != null) {
-				stampFactor(clone, step);
-			}
-			return clone;
-		}
-
-		private void stampFactor(TupleExpr tupleExpr, Step step) {
-			for (Map.Entry<String, String> entry : step.stringMetrics().entrySet()) {
-				if (!localRuntimeStringMetric(entry.getKey())) {
-					tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
-				}
-			}
-			for (Map.Entry<String, Double> entry : step.doubleMetrics().entrySet()) {
-				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-			}
-			if (!step.boundVarsBefore().isEmpty()) {
-				tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_BOUND_VARS,
-						LmdbJoinPlanSupport.describeBindingNames(step.boundVarsBefore()));
-			}
-			tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
-			tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
-			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, step.outputRows());
-			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, step.workRows());
-			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, step.workRows());
-			TupleExpr accessTarget = rowPreservingAccessTarget(tupleExpr);
-			if (accessTarget != null && accessTarget != tupleExpr) {
-				stampAccessMetrics(accessTarget, step);
-			}
-		}
-
-		/**
-		 * The factor cost model estimates a row-preserving wrapper chain (BIND/FILTER over a single statement pattern)
-		 * via the underlying pattern's access path. Execution and explain read access metrics off the pattern, so
-		 * mirror them there — the wrapper keeps the step-level cardinality metrics.
-		 */
-		private static TupleExpr rowPreservingAccessTarget(TupleExpr tupleExpr) {
-			TupleExpr current = tupleExpr;
-			while (true) {
-				if (current instanceof Extension extension && !TupleExprs.isVariableScopeChange(extension)) {
-					current = extension.getArg();
-				} else if (current instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
-					current = filter.getArg();
-				} else {
-					break;
-				}
-			}
-			return current instanceof StatementPattern ? current : null;
-		}
-
-		private static void stampAccessMetrics(TupleExpr target, Step step) {
-			for (String key : new String[] { TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
-					TelemetryMetricNames.PLANNED_INDEX_NAME, TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS }) {
-				String value = step.stringMetrics().get(key);
-				if (value != null) {
-					target.setStringMetricPlanned(key, value);
-				}
-			}
-			for (String key : new String[] { TelemetryMetricNames.PLANNED_ACCESS_ROWS,
-					TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
-					TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH }) {
-				Double value = step.doubleMetrics().get(key);
-				if (value != null) {
-					target.setDoubleMetricPlanned(key, value);
-				}
-			}
-		}
-
-		private void stampPrefix(Join join, Step step, int prefixFactorCount) {
-			for (Map.Entry<String, String> entry : step.stringMetrics().entrySet()) {
-				if (entry.getKey().startsWith("plannedOmni")) {
-					join.setStringMetricPlanned(entry.getKey(), entry.getValue());
-				}
-			}
-			for (Map.Entry<String, Double> entry : step.doubleMetrics().entrySet()) {
-				if (entry.getKey().startsWith("plannedOmni")) {
-					join.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-				}
-			}
-			join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
-			join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
-			join.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ALGORITHM, "CONNECTED_HYPERGRAPH_DP");
-			join.setStringMetricPlanned("optimizer.connectedEnumeration",
-					step.disconnected() ? RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION : CONNECTED_ENUMERATION);
-			join.setDoubleMetricPlanned("optimizer.connectedPrefixFactorCount", (double) prefixFactorCount);
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, step.outputRows());
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, step.outputRows());
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, cumulativeWorkThrough(step));
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cumulativeWorkThrough(step));
-			join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS,
-					cumulativeCartesianThrough(step));
-		}
-
-		private double cumulativeWorkThrough(Step step) {
-			double work = 0.0d;
-			for (Step current : steps) {
-				work += current.workRows();
-				if (current == step) {
-					return work;
-				}
-			}
-			return work;
-		}
-
-		private double cumulativeCartesianThrough(Step step) {
-			double work = 0.0d;
-			for (Step current : steps) {
-				if (current.disconnected()) {
-					work += current.workRows();
-				}
-				if (current == step) {
-					return work;
-				}
-			}
-			return work;
-		}
-
-		private EstimateSnapshot estimateSnapshot(CostVector cost, String algorithm, int factorCount,
-				int acceptedStates,
-				double maxRows, double cartesianWorkRows, int zeroVarFactorCount, String trace) {
-			Map<String, String> strings = new LinkedHashMap<>();
-			strings.put(TelemetryMetricNames.PLANNER_ID, "lmdb-cascades");
-			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
-			strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
-			strings.put(TelemetryMetricNames.PLANNER_ALGORITHM, "CONNECTED_HYPERGRAPH_DP");
-			strings.put("optimizer.connectedEnumeration", zeroVarFactorCount == 0 && cartesianWorkRows == 0.0d
-					? CONNECTED_ENUMERATION
-					: RUNTIME_CONNECTED_WITH_ZERO_VAR_ENUMERATION);
-			strings.put("optimizer.hypergraphPlanner", algorithm);
-			if (trace != null && !trace.isBlank()) {
-				strings.put(CONNECTED_JOIN_TRACE_METRIC, trace);
-			}
-			Map<String, Double> doubles = new LinkedHashMap<>();
-			doubles.put("optimizer.connectedComponentCount", 1.0d + zeroVarFactorCount);
-			doubles.put("optimizer.zeroVarFactorCount", (double) zeroVarFactorCount);
-			doubles.put("optimizer.joinIslandFactorCount", (double) factorCount);
-			doubles.put("optimizer.connectedDpStateCount", (double) acceptedStates);
-			doubles.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
-			doubles.put(TelemetryMetricNames.PLANNED_COST_MAX_INTERMEDIATE_ROWS, maxRows);
-			doubles.put(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, cartesianWorkRows);
-			doubles.put(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
-			return new EstimateSnapshot("lmdb-cascades", ESTIMATE_SOURCE,
-					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING, rows, workRows, cost,
-					Collections.unmodifiableMap(strings), Collections.unmodifiableMap(doubles));
-		}
-
-		private boolean localRuntimeStringMetric(String key) {
-			return TelemetryMetricNames.PLANNER_ID.equals(key)
-					|| TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE.equals(key)
-					|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE.equals(key)
-					|| TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID.equals(key)
-					|| TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE.equals(key)
-					|| TelemetryMetricNames.PLANNED_COST_SHAPE.equals(key);
-		}
-
-		@Override
-		public int compareTo(State other) {
-			int comparison = Double.compare(workRows, other.workRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(rows, other.rows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(maxRows, other.maxRows);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = compareAccessPathQuality(steps, other.steps);
-			if (comparison != 0) {
-				return comparison;
-			}
-			return compareOrder(order, other.order);
-		}
-
-		private int compareOrder(List<Integer> left, List<Integer> right) {
-			int leftSize = left == null ? 0 : left.size();
-			int rightSize = right == null ? 0 : right.size();
-			int limit = Math.min(leftSize, rightSize);
-			for (int i = 0; i < limit; i++) {
-				int comparison = Integer.compare(left.get(i), right.get(i));
-				if (comparison != 0) {
-					return comparison;
-				}
-			}
-			return Integer.compare(leftSize, rightSize);
-		}
-	}
-
 	record Step(int factorIndex, Set<String> boundVarsBefore, double workRows, double outputRows,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics, double rowQErrorMax,
-			double workQErrorMax, double confidence, double evidenceCount, boolean disconnected,
+			double workQErrorMax, double confidence, double evidenceCount, boolean exactOutputRows,
+			boolean disconnected,
 			TupleExpr plannedFactor)
 			implements Comparable<Step> {
 

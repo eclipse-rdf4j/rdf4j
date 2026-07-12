@@ -38,9 +38,8 @@ estimate-audit contract tests.
 - [x] (2026-07-11 11:15+02:00) Made shared Cascades `EstimateVector` canonical for factor estimates, migrated every
   production consumer, removed dead `JoinCostVector`, retained the released nested vector descriptor as a deprecated
   forwarding API, and passed both compatibility gates.
-- [ ] (2026-07-11 11:34+02:00) Routed the registry through top-level `LmdbGuaranteeOptionRule` and extracted focused
-  guarantee costing, materialization, and diagnostics collaborators. The package-visible delegate still owns option
-  enumeration and its private planner; removing that planner is the next behavior-changing slice.
+- [x] (2026-07-12 02:27+02:00) Converted guarantee choices to independent logical memo alternatives, retained the
+  original group expression and empty-set implementation, and physically deleted the private guarantee mini-planner.
 - [x] (2026-07-11 15:33+02:00) Added opaque-factor dependency hyperedges and operator TES requirements for
   FILTER/EXISTS, conditioned OPTIONAL, LATERAL, and property paths; admitted atomic MINUS factors and passed all 19
   DPhyp adapter tests. Interesting-order physical-property states remain.
@@ -70,7 +69,9 @@ estimate-audit contract tests.
 - [x] (2026-07-12 01:31+02:00) Routed concrete physical LeftJoin costing through the existing factor model with
   selected child plans and a child-work floor. Operator feedback now participates in `CostVector` ranking and retains
   its exact key, q-error, uncertainty, robust-work, and source metrics; 143 focused shared/LMDB tests pass.
-- [ ] Physically delete unreachable connected and guarantee mini-planners.
+- [x] (2026-07-12 02:31+02:00) Deleted the disabled-DPhyp ordering rule and the unreachable connected DP/greedy
+  implementations and state machinery; disconnected bridges remain ordinary generic joins between maximal DPhyp
+  islands.
 - [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
 
 ## Surprises & Discoveries
@@ -138,6 +139,11 @@ estimate-audit contract tests.
 - Observation: Completed LeftJoin feedback is retained in `optimizer.leoEvidence`, but the selected plan no longer
   carries `plannedEstimateFusion=operator_feedback` or the structured operator-feedback q-error metrics.
   Evidence: the two failures in `LmdbOperatorFeedbackPlanningTest` from the final LMDB inventory.
+- Observation: An ordinary guarantee rewrite can be semantically valid and cost-equivalent to its original filter;
+  normal memo ranking may therefore retain the original expression. The integration contract must assert RDF-domain
+  proof and exact bag multiplicity, while the focused memo test proves every generated option is independently added.
+  Evidence: the red `iriObjectEqualityAddsIriGuardAndPreservesResults` plan-string assertion and the green 39-test
+  guarantee/domain/admissibility selector.
 
 ## Decision Log
 
@@ -185,6 +191,11 @@ estimate-audit contract tests.
   Rationale: The factor model already owns LMDB feedback fusion and its structured metrics. Reusing it keeps
   `BagEstimate` evidence and `CostVector` ranking aligned while preserving the public statistics interface.
   Date/Author: 2026-07-12 / Codex.
+- Decision: Allow a generic physical join only as the bridge between structurally disconnected components; DPhyp
+  remains the sole owner of each maximal connected inner-join island.
+  Rationale: Rejecting the bridge left the memo with an emergency opaque fallback even though DPhyp correctly declined
+  a graph with no connecting edge. This preserves island ownership without reviving a second join-order planner.
+  Date/Author: 2026-07-12 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -210,10 +221,10 @@ The statistics composition and currency boundary are complete. `LmdbPlannerServi
 the same values. `CostVector` is the remaining production ranking currency. The 100-test memoization selector and both
 japicmp module gates pass.
 
-The first guarantee-rule split is green: `LmdbGuaranteeOptionRule` is the registry entry, and
-`LmdbGuaranteeCostEstimator`, `LmdbGuaranteeMaterializer`, and `LmdbGuaranteeDiagnostics` own their focused concerns.
-The existing option-enumeration delegate intentionally remains until ordinary memo-alternative tests define the
-behavioral replacement for its private join planner.
+The guarantee-rule closeout is green. `LmdbGuaranteeOptionRule` keeps the stable rule ID, priority, and registry
+position, rejects its own marked alternatives, retains the original logical expression, and emits each finite-anchor
+or filter rewrite as a separate transformation. The semantic empty-set proof remains a physical alternative. The
+private option preselection/join-order planner and its 900 lines of costing/materialization state are deleted.
 
 DPhyp now admits factors certified by the island owner instead of rejecting every non-statement factor. Opaque input
 requirements are mapped to dependency hyperedges, and incident equality selectivities remain delayed TES predicates so
@@ -241,12 +252,13 @@ set. Scan alternatives can retain interesting orders, nested loops preserve the 
 destroy it, and parameterized singleton requirements clear only when a legal outer supplies them. The full core costing
 and LMDB adapter selectors pass.
 
-Enabled DPhyp is now the connected-rule dispatch for all supported island sizes. Exact-cap and pair-budget exhaustion
+Enabled DPhyp is now the connected-rule dispatch for all supported connected island sizes. Exact-cap and pair-budget exhaustion
 degrade through deterministic greedy costing; tiny disjoint VALUES anchors receive a bounded common-bridge
 simplification; ground filters enter only after the runtime component; and paths select the cheapest sufficient
 endpoint. Disabling DPhyp makes the Cascades rule decline to the standard pipeline. A legal Cascades winner is no longer
-replaced through the former 1.20 standard-plan cost comparison. The obsolete connected-DP helpers are now unreachable
-and still need physical deletion together with the guarantee rule's private planner.
+replaced through the former 1.20 standard-plan cost comparison. A structurally disconnected join is implemented only
+as a generic bridge between maximal connected islands. The disabled-DPhyp ordering rule and all obsolete connected-DP
+and connected-greedy bodies, state records, and trace helpers are physically deleted.
 
 `ThemeQueryPlanRunBenchmark` now separates DPhyp and sketch configuration. Its generic default keeps sketches off,
 the DPhyp parameter exposes both rollback and authoritative paths, and its annotations provide three forks and five

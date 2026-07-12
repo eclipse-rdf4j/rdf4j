@@ -119,7 +119,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 			List<String> rules = applicableRuleIds(island);
 
 			assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-			assertTrue(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
+			assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
 			assertTrue(rules.contains("join-commute"), rules::toString);
 			assertTrue(rules.contains("join-associate-left"), rules::toString);
 		} finally {
@@ -228,8 +228,8 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		assertTrue(LmdbJoinIslandConnectivity.joinProviderCanOwn(ordinaryDisconnected));
 		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(ordinaryDisconnected));
-		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(ordinaryDisconnected, true, true),
-				"Ordinary disconnected islands must not bypass LMDB join ownership");
+		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(ordinaryDisconnected, true, true),
+				"DPhyp owns maximal connected islands; a disconnected bridge remains a generic physical join");
 		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(pathDerivedDisconnected, true, true),
 				"Decomposed path factors still need a generic bridge between disconnected memo groups");
 	}
