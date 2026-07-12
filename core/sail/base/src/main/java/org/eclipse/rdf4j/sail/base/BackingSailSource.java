@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -33,7 +34,7 @@ public abstract class BackingSailSource implements SailSource {
 			buffered.add(statement);
 			contextConsumer.accept(statement.getContext());
 		}
-		return buffered;
+		return Collections.unmodifiableList(buffered);
 	}
 
 	@Override

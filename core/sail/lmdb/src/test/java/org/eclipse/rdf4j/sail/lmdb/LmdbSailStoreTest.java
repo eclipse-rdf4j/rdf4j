@@ -49,20 +49,15 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
@@ -287,7 +282,6 @@ public class LmdbSailStoreTest {
 	@Test
 	public void testExplainExecutedShowsIndexName() {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
-		sail.getBackingStore().enablePackedWrites = false;
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(F.createIRI("urn:materialize"), F.createIRI("urn:materialize-predicate"),
 					F.createIRI("urn:materialize-object"));
@@ -336,7 +330,6 @@ public class LmdbSailStoreTest {
 	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
-		backingStore.enablePackedWrites = false;
 		try (RepositoryConnection connection = repo.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(F.createIRI("urn:materialize-before-spy"), F.createIRI("urn:materialize-predicate"),
@@ -376,7 +369,6 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
-		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -421,376 +413,10 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void largeFreshIterableLoadUsesPackedSegmentAndSurvivesReopen() throws Exception {
-		File packedDir = new File(dataDir, "packed-iterable");
-		Model statements = new LinkedHashModel(sampleStatements(10_000));
-		statements.setNamespace("example", "http://example.org/");
-		statements.setNamespace("schema", "http://schema.org/");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore firstStore = new LmdbStore(packedDir, config);
-		Repository firstRepository = new SailRepository(firstStore);
-		firstRepository.init();
-		try {
-			try (RepositoryConnection connection = firstRepository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-			}
-
-			assertEquals(statements.size(), firstStore.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			firstRepository.shutDown();
-		}
-
-		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc,posc");
-		reopenedConfig.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		Repository reopenedRepository = new SailRepository(new LmdbStore(packedDir, reopenedConfig));
-		reopenedRepository.init();
-		try {
-			try (RepositoryConnection connection = reopenedRepository.getConnection();
-					var result = connection.getStatements(null, null, null, true)) {
-				long count = 0;
-				while (result.hasNext()) {
-					result.next();
-					count++;
-				}
-				assertEquals(statements.size(), count);
-			}
-		} finally {
-			reopenedRepository.shutDown();
-		}
-	}
-
-	@Test
-	void largeFreshReadCommittedIterableLoadUsesPackedSegment() throws Exception {
-		File packedDir = new File(dataDir, "packed-read-committed-iterable");
-		Model statements = new LinkedHashModel(sampleStatements(10_000));
-		statements.setNamespace("example", "http://example.org/");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
-				connection.add(statements);
-				assertTrue(connection.hasStatement(F.createIRI("urn:bulk:subject:0"),
-						F.createIRI("urn:bulk:predicate:0"), F.createIRI("urn:bulk:object:0"), false,
-						F.createIRI("urn:bulk:context:0")));
-				connection.commit();
-			}
-
-			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void largeFreshReadCommittedIterableIsPreparedInOneStatementPass() throws Exception {
-		File packedDir = new File(dataDir, "packed-read-committed-single-pass");
-		StatementReadCounter reads = new StatementReadCounter();
-		Set<Statement> statements = new LinkedHashSet<>();
-		for (Statement statement : sampleStatements(10_000)) {
-			statements.add(new CountingStatement(statement, reads));
-		}
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
-				connection.add(statements);
-				connection.commit();
-			}
-
-			assertEquals(statements.size(), reads.subjects);
-			assertEquals(statements.size(), reads.predicates);
-			assertEquals(statements.size(), reads.objects);
-			assertEquals(statements.size(), reads.contexts);
-			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void rolledBackPackedIterableLoadLeavesStoreEmpty() throws Exception {
-		File packedDir = new File(dataDir, "packed-rollback");
-		Set<Statement> statements = sampleStatements(10_000);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.rollback();
-				assertFalse(connection.hasStatement(null, null, null, true));
-			}
-			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void mutationAfterPackedLoadAppendsPackedSegment() throws Exception {
-		File packedDir = new File(dataDir, "packed-materialization");
-		Set<Statement> statements = sampleStatements(10_000);
-		Statement extra = F.createStatement(F.createIRI("urn:extra-subject"), F.createIRI("urn:extra-predicate"),
-				F.createLiteral("extra-object"));
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-
-				connection.begin(IsolationLevels.NONE);
-				connection.add(extra);
-				connection.commit();
-				assertEquals(statements.size() + 1L, connection.size());
-			}
-			assertEquals(statements.size() + 1L, store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void existingStatementAndLargeIterableUsePackedSegments() throws Exception {
-		File packedDir = new File(dataDir, "packed-non-empty-store");
-		Set<Statement> statements = sampleStatements(10_000);
-		Statement first = F.createStatement(F.createIRI("urn:first-subject"), F.createIRI("urn:first-predicate"),
-				F.createLiteral("first-object"));
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(first);
-				connection.add(statements);
-				connection.commit();
-				assertEquals(statements.size() + 1L, connection.size());
-			}
-			assertEquals(statements.size() + 1L, store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void disabledBulkWritesDoNotUsePackedSegments() throws Exception {
-		File packedDir = new File(dataDir, "packed-disabled");
-		Set<Statement> statements = sampleStatements(10_000);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(0);
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-				assertEquals(statements.size(), connection.size());
-			}
-			assertEquals(0, store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void automaticEvaluationUsesPackedSegments() {
-		File automaticDir = new File(dataDir, "automatic-evaluation-packed");
-		LmdbStore store = new LmdbStore(automaticDir, new LmdbStoreConfig("spoc,posc"));
-		Repository repository = new SailRepository(store);
-		Set<Statement> statements = sampleStatements(10_000);
-		repository.init();
-		try {
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-				assertEquals(statements.size(), connection.size());
-			}
-			assertEquals(statements.size(), store.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void automaticEvaluationPackedSegmentsDeduplicateAndSurviveReopen() {
-		File packedDir = new File(dataDir, "automatic-evaluation-packed-reopen");
-		Set<Statement> statements = sampleStatements(256);
-		Statement extra = F.createStatement(F.createIRI("urn:extra-subject"), F.createIRI("urn:extra-predicate"),
-				F.createLiteral("extra-object"));
-		LmdbStore firstStore = new LmdbStore(packedDir, new LmdbStoreConfig("spoc,posc"));
-		Repository firstRepository = new SailRepository(firstStore);
-		firstRepository.init();
-		try {
-			try (RepositoryConnection connection = firstRepository.getConnection()) {
-				connection.begin();
-				connection.add(statements);
-				connection.commit();
-				connection.begin();
-				connection.add(statements);
-				connection.add(extra);
-				connection.commit();
-				assertEquals(statements.size() + 1L, connection.size());
-				assertTrue(connection.hasStatement(extra, true));
-			}
-			assertEquals(statements.size() + 1L, firstStore.getBackingStore().packedExplicitStatementCount());
-		} finally {
-			firstRepository.shutDown();
-		}
-
-		LmdbStore reopenedStore = new LmdbStore(packedDir, new LmdbStoreConfig("spoc,posc"));
-		Repository reopenedRepository = new SailRepository(reopenedStore);
-		reopenedRepository.init();
-		try {
-			try (RepositoryConnection connection = reopenedRepository.getConnection()) {
-				assertEquals(statements.size() + 1L, connection.size());
-				assertTrue(connection.hasStatement(extra, true));
-				connection.begin();
-				connection.add(extra);
-				connection.commit();
-				assertEquals(statements.size() + 1L, connection.size());
-			}
-		} finally {
-			reopenedRepository.shutDown();
-		}
-	}
-
-	@Test
-	void packedIterableLoadBypassesLegacyValueStore() throws Exception {
-		File packedDir = new File(dataDir, "packed-values");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		LmdbStore store = new LmdbStore(packedDir, config);
-		Repository repository = new SailRepository(store);
-		repository.init();
-		LmdbSailStore backingStore = store.getBackingStore();
-		backingStore.enableMultiThreading = false;
-		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
-		valueStoreField.setAccessible(true);
-		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
-		ValueStore valueStoreSpy = spy(originalValueStore);
-		valueStoreField.set(backingStore, valueStoreSpy);
-		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-		tripleStoreField.setAccessible(true);
-		TripleStore tripleStore = (TripleStore) tripleStoreField.get(backingStore);
-		try {
-			Set<Statement> statements = sampleStatements(10_000);
-			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-				assertEquals(statements.size(), connection.size());
-			}
-			verify(valueStoreSpy, never()).storeValue(any(Value.class));
-			verify(valueStoreSpy, never()).storeValues(any(Value[].class), any(long[].class), anyInt());
-			assertEquals(statements.size(), backingStore.packedExplicitStatementCount());
-			assertTrue(tripleStore.hasPackedValueDictionary());
-		} finally {
-			valueStoreField.set(backingStore, originalValueStore);
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void packedValueDictionaryRoundTripsAllValueTypes() {
-		File packedDir = new File(dataDir, "packed-value-types");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		Set<Statement> statements = sampleStatements(10_000);
-		BNode bnode = F.createBNode("packed-bnode");
-		IRI predicate = F.createIRI("urn:packed-predicate");
-		Statement languageStatement = F.createStatement(bnode, predicate, F.createLiteral("bonjour", "fr"), bnode);
-		Statement typedStatement = F.createStatement(F.createIRI("urn:typed-subject"), predicate,
-				F.createLiteral("42", XSD.INTEGER));
-		TripleTerm triple = F.createTripleTerm(F.createIRI("urn:triple-subject"), predicate,
-				F.createLiteral("triple-object"));
-		Statement tripleStatement = F.createStatement(F.createIRI("urn:quoted-subject"), predicate, triple);
-		statements.add(languageStatement);
-		statements.add(typedStatement);
-		statements.add(tripleStatement);
-
-		Repository first = new SailRepository(new LmdbStore(packedDir, config));
-		first.init();
-		try {
-			try (RepositoryConnection connection = first.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(statements);
-				connection.commit();
-			}
-		} finally {
-			first.shutDown();
-		}
-
-		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc,posc");
-		reopenedConfig.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
-		Repository reopened = new SailRepository(new LmdbStore(packedDir, reopenedConfig));
-		reopened.init();
-		try {
-			try (RepositoryConnection connection = reopened.getConnection()) {
-				assertEquals(statements.size(), connection.size());
-				assertTrue(connection.hasStatement(languageStatement, true));
-				assertTrue(connection.hasStatement(typedStatement, true));
-				assertTrue(connection.hasStatement(tripleStatement, true));
-				try (var contexts = connection.getContextIDs()) {
-					assertTrue(contexts.stream().anyMatch(bnode::equals));
-				}
-			}
-		} finally {
-			reopened.shutDown();
-		}
-	}
-
-	@Test
-	void packedStatementIdentityCachePreservesSemanticEquality() {
-		Resource firstSubject = F.createIRI("urn:equal-subject");
-		Resource equalSubject = F.createIRI("urn:equal-subject");
-		IRI firstPredicate = F.createIRI("urn:equal-predicate");
-		IRI equalPredicate = F.createIRI("urn:equal-predicate");
-		Value firstObject = F.createLiteral("equal-object");
-		Value equalObject = F.createLiteral("equal-object");
-		assertNotSame(firstSubject, equalSubject);
-		assertNotSame(firstPredicate, equalPredicate);
-		assertNotSame(firstObject, equalObject);
-
-		PackedStatementList packed = PackedStatementList.copyOf(
-				List.of(
-						F.createStatement(firstSubject, firstPredicate, firstObject),
-						F.createStatement(equalSubject, equalPredicate, equalObject)),
-				2, ignored -> {
-				});
-
-		assertArrayEquals(new int[] { 1, 2, 3, 0, 1, 2, 3, 0 }, packed.quads());
-	}
-
-	@Test
 	void noneIsolationBatchesIndividualApprovals() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
-		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -807,7 +433,8 @@ public class LmdbSailStoreTest {
 			sink.flush();
 
 			verify(tripleStoreSpy, times(1)).storeTriplesAligned(any(long[].class), any(long[].class),
-					any(long[].class), any(long[].class), anyInt(), anyBoolean(), nullable(IntConsumer.class));
+					any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
+					nullable(IntConsumer.class));
 			verify(tripleStoreSpy, never()).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
@@ -891,7 +518,6 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
-		backingStore.enablePackedWrites = false;
 
 		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 		tripleStoreField.setAccessible(true);
@@ -912,7 +538,8 @@ public class LmdbSailStoreTest {
 			}
 
 			verify(tripleStoreSpy, times(3)).storeTriplesAligned(subjects.capture(), any(long[].class),
-					any(long[].class), any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
+					any(long[].class), any(long[].class), counts.capture(), anyBoolean(), anyBoolean(),
+					nullable(IntConsumer.class));
 			assertEquals(256, subjects.getAllValues().get(0).length);
 			assertEquals(512, subjects.getAllValues().get(1).length);
 			assertEquals(1024, subjects.getAllValues().get(2).length);
@@ -931,7 +558,7 @@ public class LmdbSailStoreTest {
 			}
 
 			verify(tripleStoreSpy).storeTriplesAligned(subjects.capture(), any(long[].class), any(long[].class),
-					any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
+					any(long[].class), counts.capture(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class));
 			assertEquals(256, subjects.getValue().length);
 			assertEquals(Integer.valueOf(2), counts.getValue());
 			assertEquals(0, backingStore.reservedAlignedWriteStatements());
@@ -1011,7 +638,6 @@ public class LmdbSailStoreTest {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = true;
-		backingStore.enablePackedWrites = false;
 		try (RepositoryConnection connection = repo.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(F.createIRI("urn:materialize-before-async-spy"), F.createIRI("urn:materialize-predicate"),
@@ -1033,7 +659,7 @@ public class LmdbSailStoreTest {
 			throw new IOException("expected asynchronous aligned write failure");
 		}).when(tripleStoreSpy)
 				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
-						anyInt(), anyBoolean(), nullable(IntConsumer.class));
+						anyInt(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class));
 
 		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
@@ -1063,7 +689,6 @@ public class LmdbSailStoreTest {
 		try {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.enableMultiThreading = false;
-			backingStore.enablePackedWrites = false;
 
 			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 			tripleStoreField.setAccessible(true);
@@ -1078,7 +703,8 @@ public class LmdbSailStoreTest {
 					sink.flush();
 
 					verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-							any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
+							any(IntConsumer.class));
 					verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(),
 							anyBoolean());
 				}
@@ -1092,7 +718,8 @@ public class LmdbSailStoreTest {
 					sink.flush();
 				}
 				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
+						any(IntConsumer.class));
 				verify(tripleStoreSpy, times(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
@@ -1112,7 +739,6 @@ public class LmdbSailStoreTest {
 		try {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.enableMultiThreading = false;
-			backingStore.enablePackedWrites = false;
 
 			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 			tripleStoreField.setAccessible(true);
@@ -1128,7 +754,7 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy).storeTriplesAligned(subjects.capture(), any(long[].class), any(long[].class),
-						any(long[].class), counts.capture(), anyBoolean(), nullable(IntConsumer.class));
+						any(long[].class), counts.capture(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class));
 				assertEquals(256, subjects.getValue().length);
 				assertEquals(Integer.valueOf(5), counts.getValue());
 				verify(tripleStoreSpy, never()).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
@@ -1164,12 +790,12 @@ public class LmdbSailStoreTest {
 			TripleStore tripleStoreSpy = spy(originalTripleStore);
 
 			doAnswer(invocation -> {
-				IntConsumer addedIndexConsumer = invocation.getArgument(6);
+				IntConsumer addedIndexConsumer = invocation.getArgument(7);
 				addedIndexConsumer.accept(0);
 				throw new IOException("expected aligned bulk failure after estimator update");
 			}).when(tripleStoreSpy)
 					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
@@ -1205,60 +831,6 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:bulk:context:" + (i % 2))));
 		}
 		return statements;
-	}
-
-	private static final class StatementReadCounter {
-		private int subjects;
-		private int predicates;
-		private int objects;
-		private int contexts;
-	}
-
-	private static final class CountingStatement implements Statement {
-
-		private static final long serialVersionUID = 1L;
-
-		private final Statement delegate;
-		private final StatementReadCounter reads;
-
-		private CountingStatement(Statement delegate, StatementReadCounter reads) {
-			this.delegate = delegate;
-			this.reads = reads;
-		}
-
-		@Override
-		public Resource getSubject() {
-			reads.subjects++;
-			return delegate.getSubject();
-		}
-
-		@Override
-		public IRI getPredicate() {
-			reads.predicates++;
-			return delegate.getPredicate();
-		}
-
-		@Override
-		public Value getObject() {
-			reads.objects++;
-			return delegate.getObject();
-		}
-
-		@Override
-		public Resource getContext() {
-			reads.contexts++;
-			return delegate.getContext();
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			return delegate.equals(other instanceof CountingStatement counting ? counting.delegate : other);
-		}
-
-		@Override
-		public int hashCode() {
-			return delegate.hashCode();
-		}
 	}
 
 	@AfterEach

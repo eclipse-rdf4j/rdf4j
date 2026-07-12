@@ -63,6 +63,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
+	private static final String FIRST_QUERY = "SELECT * WHERE { ?s a ?type. ?s ?b ?c. }";
 
 	@Param({ "NONE", "READ_COMMITTED", })
 //	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
@@ -126,14 +127,14 @@ public class DatagovLoadIsolationBenchmark {
 			connection.commit();
 		}
 
-		try (TupleQueryResult evaluate = connection.prepareTupleQuery("SELECT * WHERE { ?s a ?type. ?type ?b ?c. }").evaluate()) {
-			if(evaluate.hasNext()) {
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery(FIRST_QUERY)
+				.evaluate()) {
+			if (evaluate.hasNext()) {
 				evaluate.next();
 				return true;
 			}
 		}
-
-		return connection.hasStatement(null, null, null, true);
+		throw new IllegalStateException("The first SPARQL query produced no row after batched loading");
 	}
 
 	boolean loadOnce(LmdbStoreConfig config) throws IOException {
@@ -143,13 +144,14 @@ public class DatagovLoadIsolationBenchmark {
 		connection.begin(isolationLevel);
 		connection.add(data);
 		connection.commit();
-		try (TupleQueryResult evaluate = connection.prepareTupleQuery("SELECT * WHERE { ?s a ?type. ?type ?b ?c. }").evaluate()) {
-			if(evaluate.hasNext()) {
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery(FIRST_QUERY)
+				.evaluate()) {
+			if (evaluate.hasNext()) {
 				evaluate.next();
 				return true;
 			}
 		}
-		return connection.hasStatement(null, null, null, true);
+		throw new IllegalStateException("The first SPARQL query produced no row after single-transaction loading");
 	}
 
 	@TearDown(Level.Invocation)

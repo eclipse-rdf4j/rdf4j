@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,6 +26,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -107,6 +111,42 @@ public class ChangesetTest {
 		assertTrue(
 				changeset.hasApproved(appended.getSubject(), appended.getPredicate(), appended.getObject(), allGraph));
 		assertEquals(statements.size() + 1, changeset.getApprovedStatements().size());
+	}
+
+	@Test
+	void transferableBulkApprovalRetainsPreparedRepresentation() {
+		AtomicReference<List<Statement>> prepared = new AtomicReference<>();
+		Changeset changeset = new Changeset() {
+			@Override
+			protected List<Statement> bufferStatements(Iterable<? extends Statement> statements, int expectedSize,
+					Consumer<Resource> contextConsumer) {
+				ArrayList<Statement> buffered = new ArrayList<>(expectedSize);
+				for (Statement statement : statements) {
+					buffered.add(statement);
+					contextConsumer.accept(statement.getContext());
+				}
+				List<Statement> result = List.copyOf(buffered);
+				prepared.set(result);
+				return result;
+			}
+
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 1024; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:subject:" + i), RDF.TYPE, RDFS.RESOURCE));
+		}
+
+		changeset.approveAll(statements);
+
+		assertSame(prepared.get(), changeset.getApprovedStatements());
 	}
 
 	@Test

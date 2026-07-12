@@ -24,15 +24,18 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_WRITEMAP;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
@@ -68,6 +71,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
@@ -107,12 +111,244 @@ class ValueStore extends AbstractValueFactory {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
+	static final class FreshValueSession {
+		private ObjectLongHashMap<Value> valueIds = new ObjectLongHashMap<>();
+		private final ObjectLongHashMap<String> namespaceIds = new ObjectLongHashMap<>();
+		private final Map<Long, Long> firstLargeValueIds = new HashMap<>();
+		private final LongLongHashMap referenceCounts = new LongLongHashMap();
+		private final ArrayList<Value> provisionalValues = new ArrayList<>();
+		private final ArrayList<String> provisionalNamespaces = new ArrayList<>();
+		private final ArrayList<Long> provisionalFirstLargeHashes = new ArrayList<>();
+		private final LongLongHashMap provisionalReferenceDeltas = new LongLongHashMap();
+		private final long[] nextIdValueByType = new long[ValueIds.T_TRIPLE + 1];
+		private long nextCompactPredicateIdValue = 127;
+		private long nextExtendedPredicateIdValue = 128;
+		private boolean predicateIdWindowEnabled;
+
+		private FreshValueSession() {
+			Arrays.fill(nextIdValueByType, 1L);
+		}
+	}
+
+	static final class PreparedValueBatch {
+		private final Value[] inputValues;
+		private final long[] inputIds;
+		private final ArrayList<PreparedValueRecord> records;
+		private final ArrayList<PreparedValueRecord> namespaceRecords = new ArrayList<>();
+		private final ArrayList<PreparedValueRecord> commonVocabularyRecords = new ArrayList<>();
+		private final ArrayList<PreparedTripleRecord> tripleRecords = new ArrayList<>();
+		private final LongLongHashMap referenceCountUpdates = new LongLongHashMap();
+		private boolean hasOwnInputValues;
+
+		private PreparedValueBatch(Value[] inputValues) {
+			this.inputValues = inputValues;
+			this.inputIds = new long[inputValues.length];
+			this.records = new ArrayList<>(inputValues.length);
+		}
+
+		long[] ids() {
+			return inputIds;
+		}
+
+		void releasePersistenceData() {
+			for (PreparedValueRecord record : records) {
+				record.data = null;
+			}
+			tripleRecords.clear();
+			referenceCountUpdates.clear();
+		}
+	}
+
+	static final class FreshValueAssignment {
+		private final PreparedValueBatch publication;
+		private final int namespaceStart;
+		private final int namespaceEnd;
+		private final int valueStart;
+		private final int valueEnd;
+
+		private FreshValueAssignment(PreparedValueBatch publication, int namespaceStart, int namespaceEnd,
+				int valueStart, int valueEnd) {
+			this.publication = publication;
+			this.namespaceStart = namespaceStart;
+			this.namespaceEnd = namespaceEnd;
+			this.valueStart = valueStart;
+			this.valueEnd = valueEnd;
+		}
+
+		long[] ids() {
+			return publication.ids();
+		}
+
+		PreparedValueBatch publication() {
+			return publication;
+		}
+	}
+
+	final class FreshValueEncoder {
+		private final FreshValueSession session;
+		private final FreshValueAssignment assignment;
+		private int namespaceOffset;
+		private int valueOffset;
+		private boolean referenceCountsEmitted;
+
+		private FreshValueEncoder(FreshValueSession session, FreshValueAssignment assignment) {
+			this.session = session;
+			this.assignment = assignment;
+			namespaceOffset = assignment.namespaceStart;
+			valueOffset = assignment.valueStart;
+		}
+
+		PreparedValueBatch next(int capacity) {
+			if (namespaceOffset < assignment.namespaceEnd) {
+				int end = Math.min(assignment.namespaceEnd, namespaceOffset + capacity);
+				PreparedValueBatch prepared = new PreparedValueBatch(new Value[0]);
+				for (; namespaceOffset < end; namespaceOffset++) {
+					prepareAssignedFreshNamespace(session, prepared,
+							session.provisionalNamespaces.get(namespaceOffset));
+				}
+				return prepared;
+			}
+			if (valueOffset < assignment.valueEnd) {
+				int end = Math.min(assignment.valueEnd, valueOffset + capacity);
+				PreparedValueBatch prepared = new PreparedValueBatch(new Value[0]);
+				for (; valueOffset < end; valueOffset++) {
+					prepareAssignedFreshValue(session, prepared, session.provisionalValues.get(valueOffset));
+				}
+				if (valueOffset == assignment.valueEnd) {
+					addAssignedReferenceCounts(session, prepared);
+					referenceCountsEmitted = true;
+				}
+				return prepared;
+			}
+			if (!referenceCountsEmitted && !session.provisionalReferenceDeltas.isEmpty()) {
+				PreparedValueBatch prepared = new PreparedValueBatch(new Value[0]);
+				addAssignedReferenceCounts(session, prepared);
+				referenceCountsEmitted = true;
+				return prepared;
+			}
+			return null;
+		}
+	}
+
+	private static final class PreparedValueRecord {
+		private final Value value;
+		private final String namespace;
+		private final long id;
+		private byte[] data;
+		private final long hash;
+		private final boolean firstForHash;
+
+		private PreparedValueRecord(Value value, String namespace, long id, byte[] data, long hash,
+				boolean firstForHash) {
+			this.value = value;
+			this.namespace = namespace;
+			this.id = id;
+			this.data = data;
+			this.hash = hash;
+			this.firstForHash = firstForHash;
+		}
+	}
+
+	private static final class PreparedTripleRecord {
+		private final TripleTerm value;
+		private final long id;
+		private final long subject;
+		private final long predicate;
+		private final long object;
+
+		private PreparedTripleRecord(TripleTerm value, long id, long subject, long predicate, long object) {
+			this.value = value;
+			this.id = id;
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+		}
+	}
+
+	long lastTransactionId() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			return info.me_last_txnid();
+		}
+	}
+
+	FreshValueSession startFreshValueSessionIfEmpty() throws IOException {
+		if (freeIdsAvailable) {
+			return null;
+		}
+		boolean empty = readTransaction(env, (stack, txn) -> {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				key.mv_data(stack.bytes(ID_KEY));
+				MDBVal value = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				return rc == MDB_NOTFOUND || key.mv_data().get(0) != ID_KEY;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+		if (!empty) {
+			return null;
+		}
+		FreshValueSession session = new FreshValueSession();
+		activeFreshValueSession = session;
+		return session;
+	}
+
+	void discardFreshValueSession(FreshValueSession session) {
+		if (activeFreshValueSession == session) {
+			activeFreshValueSession = null;
+		}
+	}
+
+	void commitFreshValueTransaction(FreshValueSession session) {
+		if (session != null) {
+			clearFreshValueTransaction(session);
+		}
+	}
+
+	void rollbackFreshValueTransaction(FreshValueSession session) {
+		if (session == null) {
+			return;
+		}
+		for (int i = session.provisionalValues.size() - 1; i >= 0; i--) {
+			session.valueIds.removeKey(session.provisionalValues.get(i));
+		}
+		for (int i = session.provisionalNamespaces.size() - 1; i >= 0; i--) {
+			session.namespaceIds.removeKey(session.provisionalNamespaces.get(i));
+		}
+		for (int i = session.provisionalFirstLargeHashes.size() - 1; i >= 0; i--) {
+			session.firstLargeValueIds.remove(session.provisionalFirstLargeHashes.get(i));
+		}
+		var referenceIds = session.provisionalReferenceDeltas.keysView().longIterator();
+		while (referenceIds.hasNext()) {
+			long id = referenceIds.next();
+			long count = session.referenceCounts.addToValue(id, -session.provisionalReferenceDeltas.get(id));
+			if (count == 0) {
+				session.referenceCounts.removeKey(id);
+			}
+		}
+		clearFreshValueTransaction(session);
+	}
+
+	private void clearFreshValueTransaction(FreshValueSession session) {
+		session.provisionalValues.clear();
+		session.provisionalNamespaces.clear();
+		session.provisionalFirstLargeHashes.clear();
+		session.provisionalReferenceDeltas.clear();
+	}
+
 	/**
 	 * The default triple term indexes. These are always used - even if not specified.
 	 */
 	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
 
 	private static final byte URI_VALUE = 0;
+	private static final long LAST_RESERVED_PREDICATE_ID_VALUE = 1024;
 
 	private static final byte LITERAL_VALUE = 1;
 
@@ -199,6 +435,7 @@ class ValueStore extends AbstractValueFactory {
 	private final ConcurrentCache<String, Long> namespaceIDCache;
 	private final ObjectLongHashMap<Value> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
+	private FreshValueSession activeFreshValueSession;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
@@ -409,7 +646,7 @@ class ValueStore extends AbstractValueFactory {
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
-		int flags = MDB_NOTLS;
+		int flags = MDB_NOTLS | MDB_WRITEMAP;
 		if (!forceSync) {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
@@ -621,14 +858,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long nextId(byte valueType) throws IOException {
-		int idType = switch (valueType) {
-		case URI_VALUE -> ValueIds.T_URI;
-		case BNODE_VALUE -> ValueIds.T_BNODE;
-		case LITERAL_VALUE -> ValueIds.T_LITERAL;
-		case NAMESPACE_VALUE -> ValueIds.T_PTR;
-		case TRIPLE_VALUE -> ValueIds.T_TRIPLE;
-		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
-		};
+		int idType = valueIdType(valueType);
 		if (freeIdsAvailable) {
 			// next id from store
 			Long reusedId = writeTransaction((stack, txn) -> {
@@ -666,6 +896,37 @@ class ValueStore extends AbstractValueFactory {
 		long result = nextId;
 		nextId++;
 		return ValueIds.createId(idType, result);
+	}
+
+	private long nextFreshId(FreshValueSession session, byte valueType) {
+		int idType = valueIdType(valueType);
+		long result = session.nextIdValueByType[idType]++;
+		nextId = Math.max(nextId, result + 1);
+		return ValueIds.createId(idType, result);
+	}
+
+	private long nextFreshPredicateId(FreshValueSession session) {
+		long result;
+		if (session.nextCompactPredicateIdValue > 0) {
+			result = session.nextCompactPredicateIdValue--;
+		} else if (session.nextExtendedPredicateIdValue <= LAST_RESERVED_PREDICATE_ID_VALUE) {
+			result = session.nextExtendedPredicateIdValue++;
+		} else {
+			return nextFreshId(session, URI_VALUE);
+		}
+		nextId = Math.max(nextId, result + 1);
+		return ValueIds.createId(ValueIds.T_URI, result);
+	}
+
+	private static int valueIdType(byte valueType) {
+		return switch (valueType) {
+		case URI_VALUE -> ValueIds.T_URI;
+		case BNODE_VALUE -> ValueIds.T_BNODE;
+		case LITERAL_VALUE -> ValueIds.T_LITERAL;
+		case NAMESPACE_VALUE -> ValueIds.T_PTR;
+		case TRIPLE_VALUE -> ValueIds.T_TRIPLE;
+		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
+		};
 	}
 
 	protected ByteBuffer idBuffer(MemoryStack stack) {
@@ -1091,6 +1352,16 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 		}
+	}
+
+	void reserveWriteCapacity(long requiredSize) throws IOException {
+		if (!autoGrow || requiredSize <= 0) {
+			return;
+		}
+		readTransaction(env, (stack, txn) -> {
+			resizeMap(txn, requiredSize);
+			return null;
+		});
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) {
@@ -1843,6 +2114,465 @@ class ValueStore extends AbstractValueFactory {
 		return LmdbValue.UNKNOWN_ID;
 	}
 
+	PreparedValueBatch prepareFreshValues(FreshValueSession session, Value[] values) throws IOException {
+		PreparedValueBatch prepared = new PreparedValueBatch(values);
+		long stamp = revisionLock.readLock();
+		try {
+			for (int i = 0; i < values.length; i++) {
+				prepared.inputIds[i] = prepareFreshValue(session, prepared, values[i]);
+				prepared.hasOwnInputValues |= isOwnValue(values[i]);
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+		return prepared;
+	}
+
+	FreshValueAssignment assignFreshValues(FreshValueSession session, Value[] values) throws IOException {
+		return assignFreshValues(session, values, null);
+	}
+
+	FreshValueAssignment assignFreshValues(FreshValueSession session, Value[] values, int[] predicateValueIndexes)
+			throws IOException {
+		if (session.valueIds.isEmpty() && values.length > 0) {
+			session.valueIds = new ObjectLongHashMap<>(values.length);
+		}
+		int namespaceStart = session.provisionalNamespaces.size();
+		int valueStart = session.provisionalValues.size();
+		PreparedValueBatch publication = new PreparedValueBatch(values);
+		long stamp = revisionLock.readLock();
+		try {
+			if (predicateValueIndexes != null && enablePredicateIdWindow(session)) {
+				for (int predicateValueIndex : predicateValueIndexes) {
+					assignFreshPredicate(session, (IRI) values[predicateValueIndex]);
+				}
+			}
+			for (int i = 0; i < values.length; i++) {
+				publication.inputIds[i] = assignFreshValue(session, values[i]);
+				publication.hasOwnInputValues |= isOwnValue(values[i]);
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+		return new FreshValueAssignment(publication, namespaceStart, session.provisionalNamespaces.size(), valueStart,
+				session.provisionalValues.size());
+	}
+
+	private boolean enablePredicateIdWindow(FreshValueSession session) {
+		if (session.predicateIdWindowEnabled) {
+			return true;
+		}
+		if (session.nextIdValueByType[ValueIds.T_URI] != 1) {
+			return false;
+		}
+		session.nextIdValueByType[ValueIds.T_URI] = LAST_RESERVED_PREDICATE_ID_VALUE + 1;
+		session.predicateIdWindowEnabled = true;
+		return true;
+	}
+
+	private long assignFreshPredicate(FreshValueSession session, IRI predicate) throws IOException {
+		long existingId = session.valueIds.getIfAbsent(predicate, LmdbValue.UNKNOWN_ID);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+		long namespaceId = assignFreshNamespace(session, predicate.getNamespace());
+		long id = nextFreshPredicateId(session);
+		session.valueIds.put(predicate, id);
+		session.provisionalValues.add(predicate);
+		addAssignedFreshReference(session, namespaceId);
+		return id;
+	}
+
+	FreshValueEncoder freshValueEncoder(FreshValueSession session, FreshValueAssignment assignment) {
+		return new FreshValueEncoder(session, assignment);
+	}
+
+	private long assignFreshValue(FreshValueSession session, Value value) throws IOException {
+		long existingId = session.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+
+		long inlineId = getInlineId(value);
+		if (inlineId != LmdbValue.UNKNOWN_ID) {
+			session.valueIds.put(value, inlineId);
+			session.provisionalValues.add(value);
+			return inlineId;
+		}
+
+		long referencedId = 0;
+		long id;
+		if (value instanceof TripleTerm triple) {
+			long subjectId = assignFreshValue(session, triple.getSubject());
+			long predicateId = assignFreshValue(session, triple.getPredicate());
+			long objectId = assignFreshValue(session, triple.getObject());
+			id = nextFreshId(session, TRIPLE_VALUE);
+			session.valueIds.put(value, id);
+			session.provisionalValues.add(value);
+			addAssignedFreshReference(session, subjectId);
+			addAssignedFreshReference(session, predicateId);
+			addAssignedFreshReference(session, objectId);
+			return id;
+		}
+
+		switch (value.getType()) {
+		case Value.Type.IRI:
+			referencedId = assignFreshNamespace(session, ((IRI) value).getNamespace());
+			id = nextFreshId(session, URI_VALUE);
+			break;
+		case Value.Type.BNode:
+			id = nextFreshId(session, BNODE_VALUE);
+			break;
+		case Value.Type.Literal:
+			IRI datatype = ((Literal) value).getDatatype();
+			referencedId = datatype == null ? 0 : assignFreshValue(session, datatype);
+			id = nextFreshId(session, LITERAL_VALUE);
+			break;
+		default:
+			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
+		}
+		session.valueIds.put(value, id);
+		session.provisionalValues.add(value);
+		if (referencedId != 0) {
+			addAssignedFreshReference(session, referencedId);
+		}
+		return id;
+	}
+
+	private long assignFreshNamespace(FreshValueSession session, String namespace) throws IOException {
+		long existingId = session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+		long id = nextFreshId(session, NAMESPACE_VALUE);
+		session.namespaceIds.put(namespace, id);
+		session.provisionalNamespaces.add(namespace);
+		return id;
+	}
+
+	private void addAssignedFreshReference(FreshValueSession session, long id) {
+		session.referenceCounts.addToValue(id, 1);
+		session.provisionalReferenceDeltas.addToValue(id, 1);
+	}
+
+	private void prepareAssignedFreshNamespace(FreshValueSession session, PreparedValueBatch prepared,
+			String namespace) {
+		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[namespaceBytes.length + 1];
+		data[0] = NAMESPACE_VALUE;
+		System.arraycopy(namespaceBytes, 0, data, 1, namespaceBytes.length);
+		long id = session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+		addPreparedValueRecord(session, prepared, null, namespace, id, data);
+	}
+
+	private void prepareAssignedFreshValue(FreshValueSession session, PreparedValueBatch prepared, Value value) {
+		long id = session.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+		if (ValueIds.isInlined(id)) {
+			return;
+		}
+		if (value instanceof TripleTerm triple) {
+			prepared.tripleRecords.add(new PreparedTripleRecord(triple, id,
+					session.valueIds.getIfAbsent(triple.getSubject(), LmdbValue.UNKNOWN_ID),
+					session.valueIds.getIfAbsent(triple.getPredicate(), LmdbValue.UNKNOWN_ID),
+					session.valueIds.getIfAbsent(triple.getObject(), LmdbValue.UNKNOWN_ID)));
+			return;
+		}
+
+		byte[] data;
+		switch (value.getType()) {
+		case Value.Type.IRI:
+			IRI iri = (IRI) value;
+			data = uri2data(iri, session.namespaceIds.getIfAbsent(iri.getNamespace(), LmdbValue.UNKNOWN_ID));
+			break;
+		case Value.Type.BNode:
+			data = bnode2data((BNode) value, true);
+			break;
+		case Value.Type.Literal:
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			long datatypeId = datatype == null ? 0
+					: session.valueIds.getIfAbsent(datatype, LmdbValue.UNKNOWN_ID);
+			data = literal2data(literal, datatypeId);
+			break;
+		default:
+			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
+		}
+		addPreparedValueRecord(session, prepared, value, null, id, data);
+	}
+
+	private void addAssignedReferenceCounts(FreshValueSession session, PreparedValueBatch prepared) {
+		var referenceIds = session.provisionalReferenceDeltas.keysView().longIterator();
+		while (referenceIds.hasNext()) {
+			long id = referenceIds.next();
+			prepared.referenceCountUpdates.put(id, session.referenceCounts.get(id));
+		}
+	}
+
+	private long prepareFreshValue(FreshValueSession session, PreparedValueBatch prepared, Value value)
+			throws IOException {
+		long existingId = session.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+
+		long inlineId = getInlineId(value);
+		if (inlineId != LmdbValue.UNKNOWN_ID) {
+			session.valueIds.put(value, inlineId);
+			session.provisionalValues.add(value);
+			return inlineId;
+		}
+
+		if (value instanceof TripleTerm triple) {
+			long subjectId = prepareFreshValue(session, prepared, triple.getSubject());
+			long predicateId = prepareFreshValue(session, prepared, triple.getPredicate());
+			long objectId = prepareFreshValue(session, prepared, triple.getObject());
+			long id = nextFreshId(session, TRIPLE_VALUE);
+			session.valueIds.put(value, id);
+			session.provisionalValues.add(value);
+			prepared.tripleRecords.add(new PreparedTripleRecord(triple, id, subjectId, predicateId, objectId));
+			addFreshReference(session, prepared, subjectId);
+			addFreshReference(session, prepared, predicateId);
+			addFreshReference(session, prepared, objectId);
+			return id;
+		}
+
+		byte[] data;
+		long referencedId = 0;
+		switch (value.getType()) {
+		case Value.Type.IRI:
+			IRI iri = (IRI) value;
+			long namespaceId = prepareFreshNamespace(session, prepared, iri.getNamespace());
+			data = uri2data(iri, namespaceId);
+			referencedId = namespaceId;
+			break;
+		case Value.Type.BNode:
+			data = bnode2data((BNode) value, true);
+			break;
+		case Value.Type.Literal:
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			long datatypeId = datatype == null ? 0 : prepareFreshValue(session, prepared, datatype);
+			data = literal2data(literal, datatypeId);
+			referencedId = datatypeId;
+			break;
+		default:
+			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
+		}
+
+		long id = nextFreshId(session, data[0]);
+		session.valueIds.put(value, id);
+		session.provisionalValues.add(value);
+		addPreparedValueRecord(session, prepared, value, null, id, data);
+		if (referencedId != 0) {
+			addFreshReference(session, prepared, referencedId);
+		}
+		return id;
+	}
+
+	private void addFreshReference(FreshValueSession session, PreparedValueBatch prepared, long id) {
+		long count = session.referenceCounts.addToValue(id, 1);
+		session.provisionalReferenceDeltas.addToValue(id, 1);
+		prepared.referenceCountUpdates.put(id, count);
+	}
+
+	private long prepareFreshNamespace(FreshValueSession session, PreparedValueBatch prepared, String namespace)
+			throws IOException {
+		long existingId = session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[namespaceBytes.length + 1];
+		data[0] = NAMESPACE_VALUE;
+		System.arraycopy(namespaceBytes, 0, data, 1, namespaceBytes.length);
+		long id = nextFreshId(session, NAMESPACE_VALUE);
+		session.namespaceIds.put(namespace, id);
+		session.provisionalNamespaces.add(namespace);
+		addPreparedValueRecord(session, prepared, null, namespace, id, data);
+		return id;
+	}
+
+	private void addPreparedValueRecord(FreshValueSession session, PreparedValueBatch prepared, Value value,
+			String namespace, long id, byte[] data) {
+		long dataHash = data.length > MAX_KEY_SIZE ? hash(data) : 0;
+		boolean firstForHash = false;
+		if (data.length > MAX_KEY_SIZE) {
+			Long firstId = session.firstLargeValueIds.putIfAbsent(dataHash, id);
+			firstForHash = firstId == null;
+			if (firstForHash) {
+				session.provisionalFirstLargeHashes.add(dataHash);
+			}
+		}
+		PreparedValueRecord record = new PreparedValueRecord(value, namespace, id, data, dataHash, firstForHash);
+		prepared.records.add(record);
+		if (namespace != null) {
+			prepared.namespaceRecords.add(record);
+		} else if (value instanceof IRI iri && isCommonVocabulary(iri)) {
+			prepared.commonVocabularyRecords.add(record);
+		}
+	}
+
+	private byte[] uri2data(IRI iri, long namespaceId) {
+		byte[] localNameData = iri.getLocalName().getBytes(StandardCharsets.UTF_8);
+		int namespaceIdLength = Varint.calcLengthUnsigned(namespaceId);
+		byte[] data = new byte[1 + namespaceIdLength + localNameData.length];
+		data[0] = URI_VALUE;
+		Varint.writeUnsigned(ByteBuffer.wrap(data, 1, namespaceIdLength), namespaceId);
+		ByteArrayUtil.put(localNameData, data, 1 + namespaceIdLength);
+		return data;
+	}
+
+	private byte[] literal2data(Literal literal, long datatypeId) {
+		Optional<String> language = literal.getLanguage();
+		byte[] languageData = language.isPresent() ? language.get().getBytes(StandardCharsets.UTF_8) : null;
+		int languageLength = languageData == null ? 0 : languageData.length;
+		Literal.BaseDirection baseDirection = literal.getBaseDirection();
+		int directionValue = baseDirection == null ? 0 : switch (baseDirection) {
+		case LTR -> 1;
+		case RTL -> 2;
+		default -> 0;
+		};
+		byte[] labelData = literal.getLabel().getBytes(StandardCharsets.UTF_8);
+		int datatypeIdLength = Varint.calcLengthUnsigned(datatypeId);
+		byte[] data = new byte[2 + datatypeIdLength + languageLength + labelData.length];
+		ByteBuffer buffer = ByteBuffer.wrap(data);
+		buffer.put(LITERAL_VALUE);
+		Varint.writeUnsigned(buffer, datatypeId);
+		buffer.put((byte) (directionValue << 6 | languageLength));
+		if (languageData != null) {
+			buffer.put(languageData);
+		}
+		buffer.put(labelData);
+		return data;
+	}
+
+	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, dbi, cursorHandle));
+			long cursor = cursorHandle.get(0);
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			MDBVal idVal = MDBVal.malloc(stack);
+			MDBVal emptyVal = MDBVal.calloc(stack);
+			ByteBuffer idBytes = idBuffer(stack);
+			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
+			try {
+				for (PreparedValueRecord record : prepared.records) {
+					if (record.data.length > MAX_KEY_SIZE) {
+						continue;
+					}
+					stack.push();
+					try {
+						idBytes.clear();
+						idVal.mv_data(id2data(idBytes, record.id).flip());
+						dataVal.mv_data(stack.bytes(record.data));
+						E(mdb_cursor_put(cursor, dataVal, idVal, 0));
+					} finally {
+						stack.pop();
+					}
+				}
+				for (PreparedValueRecord record : prepared.records) {
+					stack.push();
+					try {
+						idBytes.clear();
+						idVal.mv_data(id2data(idBytes, record.id).flip());
+						if (record.data.length <= MAX_KEY_SIZE) {
+							dataVal.mv_data(stack.bytes(record.data));
+							E(mdb_cursor_put(cursor, idVal, dataVal, 0));
+						} else {
+							dataVal.mv_size(record.data.length);
+							E(mdb_cursor_put(cursor, idVal, dataVal, MDB_RESERVE));
+							dataVal.mv_data().put(record.data);
+						}
+					} finally {
+						stack.pop();
+					}
+				}
+				for (PreparedValueRecord record : prepared.records) {
+					if (record.data.length <= MAX_KEY_SIZE) {
+						continue;
+					}
+					idBytes.clear();
+					idVal.mv_data(id2data(idBytes, record.id).flip());
+					hashBytes.clear();
+					hashBytes.put(record.firstForHash ? HASH_KEY : HASHID_KEY);
+					Varint.writeUnsigned(hashBytes, record.hash);
+					if (!record.firstForHash) {
+						hashBytes.put(idVal.mv_data().duplicate());
+					}
+					keyVal.mv_data(hashBytes.flip());
+					E(mdb_cursor_put(cursor, keyVal, record.firstForHash ? idVal : emptyVal, 0));
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			if (prepared.referenceCountUpdates.notEmpty()) {
+				E(mdb_cursor_open(writeTxn, refCountsDbi, cursorHandle));
+				long refCountCursor = cursorHandle.get(0);
+				try {
+					var referenceIds = prepared.referenceCountUpdates.keysView().longIterator();
+					while (referenceIds.hasNext()) {
+						long referencedId = referenceIds.next();
+						idBytes.clear();
+						idVal.mv_data(id2data(idBytes, referencedId).flip());
+						hashBytes.clear();
+						Varint.writeUnsigned(hashBytes, prepared.referenceCountUpdates.get(referencedId));
+						dataVal.mv_data(hashBytes.flip());
+						E(mdb_cursor_put(refCountCursor, idVal, dataVal, 0));
+					}
+				} finally {
+					mdb_cursor_close(refCountCursor);
+				}
+			}
+			ByteBuffer tripleKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			for (PreparedTripleRecord triple : prepared.tripleRecords) {
+				for (TripleIndex index : tripleTermIndexes) {
+					tripleKey.clear();
+					index.toKey(tripleKey, triple.subject, triple.predicate, triple.object, triple.id);
+					keyVal.mv_data(tripleKey.flip());
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, emptyVal, 0));
+				}
+			}
+		}
+	}
+
+	void publishPreparedValues(PreparedValueBatch prepared) {
+		int namespaceCapacity = namespaceIDCache.capacity();
+		int valueCapacity = valueIDCache.capacity();
+		int namespaceStart = Math.max(0, prepared.namespaceRecords.size() - namespaceCapacity);
+		int publishedValues = 0;
+		for (int i = namespaceStart; i < prepared.namespaceRecords.size(); i++) {
+			PreparedValueRecord record = prepared.namespaceRecords.get(i);
+			namespaceIDCache.put(record.namespace, record.id);
+		}
+		for (int i = prepared.records.size() - 1; i >= 0 && publishedValues < valueCapacity; i--) {
+			PreparedValueRecord record = prepared.records.get(i);
+			if (record.value != null) {
+				cacheStoredId(record.value, record.id, isOwnValue(record.value));
+				publishedValues++;
+			}
+		}
+		for (PreparedValueRecord record : prepared.commonVocabularyRecords) {
+			commonVocabulary.put(record.value, record.id);
+		}
+		if (valueHashCacheEnabled) {
+			for (PreparedValueRecord record : prepared.records) {
+				if (record.value != null && !ValueIds.isInlined(record.id)) {
+					storeHashIfAbsent(record.id, record.value);
+				}
+			}
+		}
+		if (prepared.hasOwnInputValues) {
+			for (int i = 0; i < prepared.inputValues.length; i++) {
+				Value value = prepared.inputValues[i];
+				if (isOwnValue(value)) {
+					((LmdbValue) value).setInternalID(prepared.inputIds[i], revision);
+				}
+			}
+		}
+	}
+
 	void storeValues(Value[] values, long[] ids, int count) throws IOException {
 		if (count == 0) {
 			return;
@@ -1916,6 +2646,13 @@ class ValueStore extends AbstractValueFactory {
 		if (transactionId != LmdbValue.UNKNOWN_ID) {
 			return transactionId;
 		}
+		FreshValueSession freshSession = activeFreshValueSession;
+		if (freshSession != null && isWriteTransactionOwner()) {
+			long freshId = freshSession.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+			if (freshId != LmdbValue.UNKNOWN_ID) {
+				return freshId;
+			}
+		}
 
 		Long cachedID = valueIDCache.get(value);
 		if (cachedID == null) {
@@ -1925,20 +2662,24 @@ class ValueStore extends AbstractValueFactory {
 			return cachedID;
 		}
 
-		if (inlineLiterals && value instanceof Literal) {
-			try {
-				long packedId = Values.packLiteral((Literal) value);
-				if (packedId != 0L) {
-					Literal unpacked = Values.unpackLiteral(packedId, this);
-					if (unpacked.equals(value)) {
-						return packedId;
-					}
-				}
-			} catch (IllegalArgumentException e) {
-				// ignore, invalid literal
-			}
-		}
+		return getInlineId(value);
+	}
 
+	private long getInlineId(Value value) {
+		if (!inlineLiterals || !(value instanceof Literal literal)) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		try {
+			long packedId = Values.packLiteral(literal);
+			if (packedId != 0L) {
+				Literal unpacked = Values.unpackLiteral(packedId, this);
+				if (unpacked.equals(value)) {
+					return packedId;
+				}
+			}
+		} catch (IllegalArgumentException e) {
+			// ignore, invalid literal
+		}
 		return LmdbValue.UNKNOWN_ID;
 	}
 
@@ -2720,6 +3461,13 @@ class ValueStore extends AbstractValueFactory {
 			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 			if (transactionId != LmdbValue.UNKNOWN_ID) {
 				return transactionId;
+			}
+			FreshValueSession freshSession = activeFreshValueSession;
+			if (freshSession != null) {
+				long freshId = freshSession.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+				if (freshId != LmdbValue.UNKNOWN_ID) {
+					return freshId;
+				}
 			}
 		}
 

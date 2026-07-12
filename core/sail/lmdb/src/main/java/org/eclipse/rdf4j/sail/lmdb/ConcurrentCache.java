@@ -73,6 +73,10 @@ public class ConcurrentCache<K, V> {
 		return cache.get(key);
 	}
 
+	int capacity() {
+		return entries.length;
+	}
+
 	public V put(K key, V value) {
 		Objects.requireNonNull(key);
 		Objects.requireNonNull(value);

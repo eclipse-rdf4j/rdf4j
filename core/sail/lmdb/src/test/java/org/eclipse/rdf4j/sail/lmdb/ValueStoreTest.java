@@ -143,6 +143,141 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void freshPreparedValuesPreserveInlineIdsHashCollisionsAndTripleTerms() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Literal inlined = valueFactory.createLiteral(true);
+		Literal firstCollision = valueFactory.createLiteral("plumless--fresh-collision-value");
+		Literal secondCollision = valueFactory.createLiteral("buckeroo--fresh-collision-value");
+		TripleTerm triple = valueFactory.createTripleTerm(valueFactory.createIRI("urn:fresh:subject"),
+				valueFactory.createIRI("urn:fresh:predicate"), firstCollision);
+		Value[] values = { inlined, firstCollision, secondCollision, triple };
+
+		valueStore.startTransaction(true);
+		ValueStore.FreshValueSession session = valueStore.startFreshValueSessionIfEmpty();
+		assertNotNull(session);
+		ValueStore.PreparedValueBatch prepared = valueStore.prepareFreshValues(session, values);
+		long[] ids = prepared.ids();
+		assertEquals(ValueIds.createId(ValueIds.T_BOOLEAN, 1L), ids[0]);
+		assertNotEquals(ids[1], ids[2]);
+		valueStore.persistPreparedValues(prepared);
+		valueStore.commit();
+		valueStore.commitFreshValueTransaction(session);
+		valueStore.publishPreparedValues(prepared);
+
+		assertEquals(firstCollision, valueStore.getValue(ids[1]));
+		assertEquals(secondCollision, valueStore.getValue(ids[2]));
+		assertEquals(triple, valueStore.getValue(ids[3]));
+
+		valueStore.close();
+		valueStore = createValueStore();
+		assertEquals(ids[1], valueStore.getId(firstCollision));
+		assertEquals(ids[2], valueStore.getId(secondCollision));
+		assertEquals(ids[3], valueStore.getId(triple));
+		assertEquals(triple, valueStore.getValue(ids[3]));
+	}
+
+	@Test
+	public void assignedFreshValuesPreserveEqualityInlineIdsHashCollisionsAndTripleTerms() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Literal inlined = valueFactory.createLiteral(true);
+		Literal firstCollision = valueFactory.createLiteral("plumless--fresh-collision-value");
+		Literal equalButNonidentical = valueFactory.createLiteral("plumless--fresh-collision-value");
+		Literal secondCollision = valueFactory.createLiteral("buckeroo--fresh-collision-value");
+		TripleTerm triple = valueFactory.createTripleTerm(valueFactory.createIRI("urn:fresh:subject"),
+				valueFactory.createIRI("urn:fresh:predicate"), firstCollision);
+		Value[] values = { inlined, firstCollision, equalButNonidentical, secondCollision, triple };
+
+		valueStore.startTransaction(true);
+		ValueStore.FreshValueSession session = valueStore.startFreshValueSessionIfEmpty();
+		assertNotNull(session);
+		ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values);
+		long[] ids = assignment.ids();
+		assertEquals(ValueIds.createId(ValueIds.T_BOOLEAN, 1L), ids[0]);
+		assertEquals(ids[1], ids[2]);
+		assertNotEquals(ids[1], ids[3]);
+		List<ValueStore.PreparedValueBatch> preparedBatches = new LinkedList<>();
+		ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
+		ValueStore.PreparedValueBatch prepared;
+		while ((prepared = encoder.next(2)) != null) {
+			valueStore.persistPreparedValues(prepared);
+			prepared.releasePersistenceData();
+			preparedBatches.add(prepared);
+		}
+		valueStore.commit();
+		valueStore.commitFreshValueTransaction(session);
+		valueStore.publishPreparedValues(assignment.publication());
+		preparedBatches.forEach(valueStore::publishPreparedValues);
+
+		assertEquals(firstCollision, valueStore.getValue(ids[1]));
+		assertEquals(secondCollision, valueStore.getValue(ids[3]));
+		assertEquals(triple, valueStore.getValue(ids[4]));
+
+		valueStore.close();
+		valueStore = createValueStore();
+		assertEquals(ids[1], valueStore.getId(firstCollision));
+		assertEquals(ids[3], valueStore.getId(secondCollision));
+		assertEquals(ids[4], valueStore.getId(triple));
+		assertEquals(triple, valueStore.getValue(ids[4]));
+	}
+
+	@Test
+	public void assignedFreshValuesReserveLowUriIdsForPredicatesAcrossCommits() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI firstSubject = valueFactory.createIRI("urn:reserved:subject:1");
+		IRI firstPredicate = valueFactory.createIRI("urn:reserved:predicate:1");
+		IRI firstObject = valueFactory.createIRI("urn:reserved:object:1");
+		IRI secondPredicate = valueFactory.createIRI("urn:reserved:predicate:2");
+		Value[] firstValues = { firstSubject, firstPredicate, firstObject, secondPredicate };
+
+		valueStore.startTransaction(true);
+		ValueStore.FreshValueSession session = valueStore.startFreshValueSessionIfEmpty();
+		assertNotNull(session);
+		ValueStore.FreshValueAssignment firstAssignment = valueStore.assignFreshValues(session, firstValues,
+				new int[] { 1, 3 });
+		long[] firstIds = firstAssignment.ids();
+		assertEquals(127, ValueIds.getValue(firstIds[1]));
+		assertEquals(126, ValueIds.getValue(firstIds[3]));
+		assertEquals(1025, ValueIds.getValue(firstIds[0]));
+		assertEquals(1026, ValueIds.getValue(firstIds[2]));
+		persistFreshAssignment(session, firstAssignment);
+
+		IRI secondSubject = valueFactory.createIRI("urn:reserved:subject:2");
+		IRI thirdPredicate = valueFactory.createIRI("urn:reserved:predicate:3");
+		Value[] secondValues = { secondSubject, thirdPredicate };
+		valueStore.startTransaction(true);
+		ValueStore.FreshValueAssignment secondAssignment = valueStore.assignFreshValues(session, secondValues,
+				new int[] { 1 });
+		long[] secondIds = secondAssignment.ids();
+		assertEquals(125, ValueIds.getValue(secondIds[1]));
+		assertEquals(1027, ValueIds.getValue(secondIds[0]));
+		persistFreshAssignment(session, secondAssignment);
+
+		valueStore.close();
+		valueStore = createValueStore();
+		assertEquals(firstIds[1], valueStore.getId(firstPredicate));
+		assertEquals(firstIds[3], valueStore.getId(secondPredicate));
+		assertEquals(secondIds[1], valueStore.getId(thirdPredicate));
+		assertEquals(firstIds[0], valueStore.getId(firstSubject));
+		assertEquals(secondIds[0], valueStore.getId(secondSubject));
+	}
+
+	private void persistFreshAssignment(ValueStore.FreshValueSession session,
+			ValueStore.FreshValueAssignment assignment) throws IOException {
+		List<ValueStore.PreparedValueBatch> preparedBatches = new LinkedList<>();
+		ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
+		ValueStore.PreparedValueBatch prepared;
+		while ((prepared = encoder.next(2)) != null) {
+			valueStore.persistPreparedValues(prepared);
+			prepared.releasePersistenceData();
+			preparedBatches.add(prepared);
+		}
+		valueStore.commit();
+		valueStore.commitFreshValueTransaction(session);
+		valueStore.publishPreparedValues(assignment.publication());
+		preparedBatches.forEach(valueStore::publishPreparedValues);
+	}
+
+	@Test
 	public void transactionRetainsNamespaceIdsAfterRegularCacheEviction() throws Exception {
 		CountingValueStore countingValueStore = new CountingValueStore(
 				new File(dataDir, "transaction-namespace-cache"), new LmdbStoreConfig());

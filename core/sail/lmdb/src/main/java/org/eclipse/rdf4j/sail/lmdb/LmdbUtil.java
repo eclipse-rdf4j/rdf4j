@@ -127,6 +127,18 @@ final class LmdbUtil {
 		unsafe.putAddress(struct + Pointer.POINTER_SIZE, address + buffer.position());
 	}
 
+	static void setMDBValData(MDBVal value, long address, int length) {
+		sun.misc.Unsafe unsafe = UNSAFE;
+		long struct = value.address();
+		if (unsafe != null) {
+			unsafe.putAddress(struct, length);
+			unsafe.putAddress(struct + Pointer.POINTER_SIZE, address);
+		} else {
+			MemoryUtil.memPutAddress(struct + MDBVal.MV_SIZE, length);
+			MemoryUtil.memPutAddress(struct + MDBVal.MV_DATA, address);
+		}
+	}
+
 	static int mdbValSize(MDBVal value) {
 		return Math.toIntExact(mdbValSizeLong(value));
 	}

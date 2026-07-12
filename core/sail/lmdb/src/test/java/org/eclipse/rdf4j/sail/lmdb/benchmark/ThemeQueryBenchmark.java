@@ -394,6 +394,13 @@ public class ThemeQueryBenchmark {
 
 	private void loadData() throws IOException {
 		StopWatch started = StopWatch.createStarted();
+		loadAllThemeDatasets(repository);
+		started.stop();
+
+		System.out.println("Loaded theme datasets in " + started);
+	}
+
+	static void loadAllThemeDatasets(SailRepository repository) throws IOException {
 		try (var connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
@@ -405,9 +412,6 @@ public class ThemeQueryBenchmark {
 			}
 			connection.commit();
 		}
-		started.stop();
-
-		System.out.println("Loaded theme datasets in " + started);
 	}
 
 	private File storeDirectory() {

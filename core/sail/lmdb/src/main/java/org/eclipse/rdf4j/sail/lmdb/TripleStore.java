@@ -18,6 +18,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.MemoryUtil.memAlloc;
+import static org.lwjgl.system.MemoryUtil.memFree;
 import static org.lwjgl.system.MemoryUtil.memGetByte;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
@@ -32,9 +34,9 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_WRITEMAP;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -43,7 +45,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
-import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -77,26 +78,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
-import java.util.function.ToIntFunction;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
-import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
-import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
@@ -129,15 +132,10 @@ class TripleStore implements Closeable {
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
-	static final int PACKED_BULK_MIN_STATEMENTS = 1;
-	private static final int INITIAL_PACKED_APPEND_STATEMENTS = 256;
-	private static final int PACKED_BLOCK_STATEMENTS = 512;
-	private static final int PACKED_RECORD_BYTES = 4 * Long.BYTES;
-	private static final int PACKED_LOCAL_RECORD_BYTES = 4 * Integer.BYTES;
-	private static final int PACKED_VALUE_BLOCK_BYTES = 64 * 1024;
-	private static final long PACKED_TRANSACTION_RESERVE_BYTES = 1L << 30;
-	private static final int PACKED_MATERIALIZATION_VALUE_BATCH_SIZE = 4096;
-	private static final long PACKED_COUNT_KEY = 0;
+	private static final boolean LOAD_TIMING = Boolean.getBoolean("rdf4j.lmdb.loadTiming");
+	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
+	private static final int GLOBAL_ENCODE_BLOCK_STATEMENTS = 64 * 1024;
+	private static final AtomicInteger OPEN_PREPARED_KEY_ARENAS = new AtomicInteger();
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -176,25 +174,6 @@ class TripleStore implements Closeable {
 	long env;
 	long writeTxn;
 	private final int contextsDbi;
-	private final int packedExplicitDbi;
-	private final int packedValuesDbi;
-	private volatile long packedExplicitCount;
-	private volatile long packedExplicitValueCount;
-	private volatile boolean packedExplicitSegmented;
-	private boolean packedCountMetadataPresent;
-	private boolean packedWriteActive;
-	private boolean packedTxnSegmented;
-	private boolean packedMaterializedInTxn;
-	private long packedTxnCount;
-	private long packedTxnValueCount;
-	private long packedNextBlockId;
-	private long packedNextValueBlockId;
-	private ObjectIntHashMap<Value> packedValueIds;
-	private PackedFingerprintIndex packedFingerprintLocations;
-	private Map<Long, List<Long>> packedFingerprintCollisionLocations;
-	private Map<Long, List<PackedStatementKey>> packedDuplicateKeys;
-	private LongHashSet packedDuplicateFingerprints;
-	private final Object packedFingerprintLock = new Object();
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -208,84 +187,38 @@ class TripleStore implements Closeable {
 	private long[] leadingFieldScratchValues = new long[0];
 	private int[] alignedWriteSortedIndices = new int[0];
 	private int[] alignedWriteMainOrderIndices = new int[0];
+	private boolean[] alignedWriteAddedStatements = new boolean[0];
 	private boolean[] alignedWritePromotedFromImplicit = new boolean[0];
 	private final LongIntHashMap alignedContextIncrements = new LongIntHashMap();
 	private final LongIntHashMap alignedAppliedContextIncrements = new LongIntHashMap();
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
+	private final ThreadLocal<PreparedSortWorkspace> preparedSortWorkspace = ThreadLocal
+			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
+	private boolean trackResizeChecks;
+	private int trackedResizeChecks;
 
-	private static final class PackedFingerprintIndex {
-		private long[] fingerprints;
-		private long[] statementOrdinals;
-		private int size;
-		private int resizeAt;
+	private static final class PreparedSortWorkspace {
+		private int[] mainOrder = new int[0];
+		private int[] currentOrder = new int[0];
+		private int[] scratchOrder = new int[0];
+		private long[] fieldValues = new long[0];
+		private long[] scratchValues = new long[0];
+		private final int[] radixCounts = new int[256];
+		private final int[] radixOffsets = new int[256];
 
-		private PackedFingerprintIndex(int expectedSize) {
-			int capacity = 16;
-			int required = Math.max(16, expectedSize + expectedSize / 2);
-			while (capacity < required) {
-				capacity = Math.multiplyExact(capacity, 2);
+		private void ensureCapacity(int count) {
+			if (mainOrder.length < count) {
+				mainOrder = new int[count];
+				currentOrder = new int[count];
+				scratchOrder = new int[count];
+				fieldValues = new long[count];
+				scratchValues = new long[count];
 			}
-			fingerprints = new long[capacity];
-			statementOrdinals = new long[capacity];
-			resizeAt = capacity * 2 / 3;
-		}
-
-		private long get(long fingerprint) {
-			int mask = statementOrdinals.length - 1;
-			int index = hashIndex(fingerprint, mask);
-			while (statementOrdinals[index] != 0) {
-				if (fingerprints[index] == fingerprint) {
-					return statementOrdinals[index];
-				}
-				index = (index + 1) & mask;
-			}
-			return 0;
-		}
-
-		private void put(long fingerprint, long statementOrdinal) {
-			if (size >= resizeAt) {
-				resize();
-			}
-			putWithoutResize(fingerprint, statementOrdinal);
-		}
-
-		private void putWithoutResize(long fingerprint, long statementOrdinal) {
-			int mask = statementOrdinals.length - 1;
-			int index = hashIndex(fingerprint, mask);
-			while (statementOrdinals[index] != 0) {
-				if (fingerprints[index] == fingerprint) {
-					return;
-				}
-				index = (index + 1) & mask;
-			}
-			fingerprints[index] = fingerprint;
-			statementOrdinals[index] = statementOrdinal;
-			size++;
-		}
-
-		private void resize() {
-			long[] oldFingerprints = fingerprints;
-			long[] oldOrdinals = statementOrdinals;
-			fingerprints = new long[Math.multiplyExact(oldFingerprints.length, 2)];
-			statementOrdinals = new long[fingerprints.length];
-			resizeAt = fingerprints.length * 2 / 3;
-			size = 0;
-			for (int i = 0; i < oldOrdinals.length; i++) {
-				if (oldOrdinals[i] != 0) {
-					putWithoutResize(oldFingerprints[i], oldOrdinals[i]);
-				}
-			}
-		}
-
-		private static int hashIndex(long fingerprint, int mask) {
-			long value = fingerprint ^ fingerprint >>> 32;
-			value ^= value >>> 16;
-			return (int) value & mask;
 		}
 	}
 
@@ -312,13 +245,12 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 2 for packed explicit segments, and 48 for all possible triple indexes
-		// (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 3 + 96));
+		// 1 for contexts and 48 for all possible triple indexes (24 explicit + 24 inferred)
+		E(mdb_env_set_maxdbs(env, 1 + 96));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
-		int flags = MDB_NOTLS;
+		int flags = MDB_NOTLS | MDB_WRITEMAP;
 		if (!forceSync) {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
@@ -335,62 +267,6 @@ class TripleStore implements Closeable {
 			}
 			return ip.get(0);
 		});
-		packedExplicitDbi = transaction(env, (stack, txn) -> {
-			String name = "packed-spoc-explicit";
-			IntBuffer ip = stack.mallocInt(1);
-			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
-				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
-			}
-			return ip.get(0);
-		});
-		packedExplicitCount = transaction(env, (stack, txn) -> {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			MDBVal value = MDBVal.malloc(stack);
-			if (mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS) {
-				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			}
-			return 0L;
-		});
-		packedValuesDbi = transaction(env, (stack, txn) -> {
-			String name = "packed-values-explicit";
-			IntBuffer ip = stack.mallocInt(1);
-			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
-				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
-			}
-			return ip.get(0);
-		});
-		packedExplicitValueCount = transaction(env, (stack, txn) -> {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			MDBVal value = MDBVal.malloc(stack);
-			if (mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS && value.mv_size() >= 2L * Long.BYTES) {
-				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong(Long.BYTES);
-			}
-			if (mdb_get(txn, packedValuesDbi, key, value) == MDB_SUCCESS) {
-				return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			}
-			return 0L;
-		});
-		packedCountMetadataPresent = transaction(env, (stack, txn) -> {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			MDBVal value = MDBVal.malloc(stack);
-			return mdb_get(txn, packedExplicitDbi, key, value) == MDB_SUCCESS
-					|| mdb_get(txn, packedValuesDbi, key, value) == MDB_SUCCESS;
-		});
-		packedExplicitSegmented = transaction(env, (stack, txn) -> isLastPackedSegment(stack, txn));
-		if (packedExplicitSegmented) {
-			packedExplicitValueCount = 0;
-		}
-		if (!packedExplicitSegmented && packedExplicitValueCount == 0) {
-			packedExplicitValueCount = transaction(env, (stack, txn) -> readLastPackedValueCount(stack, txn));
-		}
-		if (packedExplicitCount == 0) {
-			packedExplicitCount = transaction(env,
-					(stack, txn) -> readLastPackedStatementCount(stack, txn, packedExplicitValueCount > 0));
-		}
-
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
 
@@ -461,83 +337,885 @@ class TripleStore implements Closeable {
 		return dataRevision.get();
 	}
 
-	long packedExplicitStatementCount() {
-		return packedExplicitCount;
-	}
-
-	boolean hasPackedValueDictionary() {
-		return packedExplicitSegmented || packedTxnSegmented || packedExplicitValueCount > 0 || packedTxnValueCount > 0;
-	}
-
-	boolean enablePackedWritesIfEmpty() throws IOException {
-		if (packedMaterializedInTxn) {
-			return false;
-		}
-		if (packedWriteActive) {
-			return !packedTxnSegmented;
-		}
-		if (packedExplicitSegmented) {
-			return false;
-		}
-		if (packedExplicitValueCount == 0 && packedExplicitCount > 0) {
-			packedWriteActive = true;
-			packedTxnCount = packedExplicitCount;
-			packedNextBlockId = nextPackedBlockId(packedExplicitDbi);
-			return true;
-		}
-		if (packedExplicitCount != 0 || packedTxnCount != 0) {
-			return false;
-		}
-		try (MemoryStack stack = stackPush()) {
+	Map<String, Long> explicitIndexEntryCounts() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			Map<String, Long> counts = new HashMap<>(indexes.size());
 			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(writeTxn, indexes.getFirst().getDB(true), stat));
-			packedWriteActive = stat.ms_entries() == 0;
-		}
-		return packedWriteActive;
-	}
-
-	boolean enablePackedStatementWrites() throws IOException {
-		if (packedMaterializedInTxn) {
-			return false;
-		}
-		if (packedWriteActive) {
-			return true;
-		}
-		if (packedExplicitCount > 0) {
-			if (packedExplicitSegmented) {
-				packedWriteActive = true;
-				packedTxnSegmented = true;
-				packedTxnCount = packedExplicitCount;
-				return true;
+			for (TripleIndex index : indexes) {
+				E(mdb_stat(txn, index.getDB(true), stat));
+				counts.put(index.toString(), stat.ms_entries());
 			}
-			packedWriteActive = true;
-			packedTxnCount = packedExplicitCount;
-			packedTxnValueCount = packedExplicitValueCount;
-			packedNextBlockId = nextPackedBlockId(packedExplicitDbi);
-			packedNextValueBlockId = nextPackedBlockId(packedValuesDbi);
-			return true;
-		}
-		return enablePackedWritesIfEmpty();
+			return counts;
+		});
 	}
 
-	private long nextPackedBlockId(int dbi) throws IOException {
-		long cursor = 0;
+	long lastTransactionId() throws IOException {
 		try (MemoryStack stack = stackPush()) {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(writeTxn, dbi, cursorHandle));
-			cursor = cursorHandle.get(0);
-			MDBVal key = MDBVal.malloc(stack);
-			MDBVal value = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
-			if (rc == MDB_NOTFOUND) {
-				return 1;
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			return info.me_last_txnid();
+		}
+	}
+
+	char[] mainIndexFieldSequence() {
+		return indexes.getFirst().getFieldSeq();
+	}
+
+	int secondaryIndexCount() {
+		return Math.max(0, indexes.size() - 1);
+	}
+
+	boolean supportsGlobalPreparedOrder() {
+		return hasFourIndexPreparedOrder();
+	}
+
+	static int openPreparedKeyArenaCount() {
+		return OPEN_PREPARED_KEY_ARENAS.get();
+	}
+
+	void startTrackingResizeChecks() {
+		trackedResizeChecks = 0;
+		trackResizeChecks = true;
+	}
+
+	int trackedResizeCheckCount() {
+		return trackedResizeChecks;
+	}
+
+	boolean isEmpty() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			TripleIndex mainIndex = indexes.getFirst();
+			E(mdb_stat(txn, mainIndex.getDB(true), stat));
+			if (stat.ms_entries() != 0) {
+				return false;
 			}
-			E(rc);
-			long lastKey = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			return lastKey == PACKED_COUNT_KEY ? 1 : Math.addExact(lastKey, 1);
-		} finally {
-			if (cursor != 0) {
-				mdb_cursor_close(cursor);
+			E(mdb_stat(txn, mainIndex.getDB(false), stat));
+			return stat.ms_entries() == 0;
+		});
+	}
+
+	PreparedSecondaryIndexes prepareSecondaryIndexes(long[] subj, long[] pred, long[] obj, long[] context,
+			int count) {
+		if (count == 0 || indexes.size() == 1) {
+			return PreparedSecondaryIndexes.EMPTY;
+		}
+		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
+		workspace.ensureCapacity(count);
+		int[] mainOrder = workspace.mainOrder;
+		for (int i = 0; i < count; i++) {
+			mainOrder[i] = i;
+		}
+		return prepareSecondaryIndexes(mainOrder, subj, pred, obj, context, count);
+	}
+
+	private PreparedSecondaryIndexes prepareSecondaryIndexes(int[] mainOrder, long[] subj, long[] pred,
+			long[] obj, long[] context, int count) {
+		if (count == 0 || indexes.size() == 1) {
+			return PreparedSecondaryIndexes.EMPTY;
+		}
+		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
+		workspace.ensureCapacity(count);
+		int[] currentOrder = workspace.currentOrder;
+		int[] scratchOrder = workspace.scratchOrder;
+		long[] fieldValues = workspace.fieldValues;
+		long[] scratchValues = workspace.scratchValues;
+		int[] radixCounts = workspace.radixCounts;
+		int[] radixOffsets = workspace.radixOffsets;
+		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
+
+		EncodedIndexKeys[] encodedIndexes = new EncodedIndexKeys[indexes.size() - 1];
+		TripleIndex mainIndex = indexes.getFirst();
+		char[] currentFieldSequence = mainIndex.getFieldSeq();
+		try {
+			for (int indexPosition = 1; indexPosition < indexes.size(); indexPosition++) {
+				TripleIndex index = indexes.get(indexPosition);
+				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSequence,
+						index.getFieldSeq())) {
+					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
+				}
+				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
+						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
+				currentFieldSequence = index.getFieldSeq();
+				encodedIndexes[indexPosition - 1] = encodeIndexKeys(indexPosition, index, currentOrder, subj, pred,
+						obj, context, count);
+			}
+			return new PreparedSecondaryIndexes(encodedIndexes);
+		} catch (RuntimeException | Error e) {
+			closeEncodedIndexes(encodedIndexes);
+			throw e;
+		}
+	}
+
+	PreparedSecondaryIndexesTask prepareSecondaryIndexesAsync(ExecutorService executor, long[] subj, long[] pred,
+			long[] obj, long[] context, int count) {
+		return prepareSecondaryIndexesAsync(executor, subj, pred, obj, context, count, null);
+	}
+
+	PreparedSecondaryIndexesTask prepareSecondaryIndexesAsync(ExecutorService executor, long[] subj, long[] pred,
+			long[] obj, long[] context, int count, Runnable beforePreparation) {
+		CountDownLatch preparationReady = new CountDownLatch(1);
+		AtomicReference<Throwable> preparationFailure = new AtomicReference<>();
+		AtomicReference<int[]> mainOrder = new AtomicReference<>();
+		Future<EncodedIndexKeys> main = executor
+				.submit(() -> {
+					try {
+						if (beforePreparation != null) {
+							beforePreparation.run();
+						}
+						mainOrder.set(sortMainIndexOrder(subj, pred, obj, context, count));
+					} catch (RuntimeException | Error e) {
+						preparationFailure.set(e);
+						throw e;
+					} finally {
+						preparationReady.countDown();
+					}
+					return encodeIndexKeys(0, indexes.getFirst(), mainOrder.get(), subj, pred, obj, context, count);
+				});
+		if (hasFourIndexPreparedOrder()) {
+			Future<EncodedIndexKeys[]> objectChain = executor
+					.submit(() -> {
+						awaitPreparation(preparationReady, preparationFailure);
+						return prepareSecondaryIndexChain(new int[] { 1, 2 }, mainOrder.get(), subj, pred, obj,
+								context, count);
+					});
+			Future<EncodedIndexKeys[]> predicateChain = executor
+					.submit(() -> {
+						awaitPreparation(preparationReady, preparationFailure);
+						return prepareSecondaryIndexChain(new int[] { 3 }, mainOrder.get(), subj, pred, obj,
+								context, count);
+					});
+			return new PreparedSecondaryIndexesTask(indexes.size() - 1, main, objectChain, predicateChain);
+		}
+		Future<EncodedIndexKeys[]> sequential = executor
+				.submit(() -> {
+					awaitPreparation(preparationReady, preparationFailure);
+					return prepareSecondaryIndexes(mainOrder.get(), subj, pred, obj, context, count).indexes;
+				});
+		return new PreparedSecondaryIndexesTask(indexes.size() - 1, main, sequential, null);
+	}
+
+	GlobalPreparedIndexOrdersTask prepareGlobalIndexOrdersAsync(ExecutorService executor, int[] quads,
+			long[] valueIds, int count) {
+		if (!hasFourIndexPreparedOrder()) {
+			throw new IllegalStateException("Global prepared order requires spoc,ospc,posc,psoc indexes");
+		}
+		CountDownLatch preparationReady = new CountDownLatch(1);
+		AtomicReference<Throwable> preparationFailure = new AtomicReference<>();
+		AtomicReference<int[]> mainOrder = new AtomicReference<>();
+		Future<int[]> valueRanks = executor.submit(() -> rankGlobalValues(valueIds));
+		Future<int[]> main = executor.submit(() -> {
+			try {
+				mainOrder.set(sortGlobalIndexOrder(indexes.getFirst().getFieldSeq(), null, quads,
+						awaitGlobalOrder(valueRanks, "value ranks"), count));
+				return mainOrder.get();
+			} catch (RuntimeException | Error e) {
+				preparationFailure.set(e);
+				throw e;
+			} finally {
+				preparationReady.countDown();
+			}
+		});
+		Future<int[]> ospc = executor.submit(() -> {
+			awaitPreparation(preparationReady, preparationFailure);
+			int[] ranks = awaitGlobalOrder(valueRanks, "value ranks");
+			return sortGlobalIndexOrder(new char[] { 'o' }, mainOrder.get(), quads, ranks, count);
+		});
+		Future<int[]> predicate = executor.submit(() -> {
+			awaitPreparation(preparationReady, preparationFailure);
+			return sortGlobalIndexOrder(new char[] { 'p' }, mainOrder.get(), quads,
+					awaitGlobalOrder(valueRanks, "value ranks"), count);
+		});
+		Future<int[]> posc = executor.submit(() -> sortGlobalIndexOrder(new char[] { 'p' },
+				awaitGlobalOrder(ospc, "ospc order"), quads, awaitGlobalOrder(valueRanks, "value ranks"), count));
+		return new GlobalPreparedIndexOrdersTask(valueRanks, main, ospc, posc, predicate);
+	}
+
+	private int[] rankGlobalValues(long[] valueIds) {
+		int count = valueIds.length;
+		int[] localIds = new int[count];
+		int[] scratchIds = new int[count];
+		long[] orderedIds = Arrays.copyOf(valueIds, count);
+		long[] scratchValues = new long[count];
+		for (int i = 0; i < count; i++) {
+			localIds[i] = i;
+		}
+		LeadingFieldSorters.lsdRadixSort(localIds, orderedIds, count, scratchIds, scratchValues, new int[256],
+				new int[256]);
+		int[] ranks = new int[count];
+		for (int rank = 0; rank < count; rank++) {
+			ranks[localIds[rank]] = rank + 1;
+		}
+		return ranks;
+	}
+
+	private static int[] awaitGlobalOrder(Future<int[]> future, String description) throws IOException {
+		try {
+			return future.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while preparing global " + description, e);
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			throw new IOException("Failed to prepare global " + description, cause);
+		}
+	}
+
+	private int[] sortGlobalIndexOrder(char[] fieldSequence, int[] initialOrder, int[] quads, int[] valueRanks,
+			int count) {
+		int[] order = initialOrder == null ? new int[count] : Arrays.copyOf(initialOrder, count);
+		if (initialOrder == null) {
+			for (int i = 0; i < count; i++) {
+				order[i] = i;
+			}
+			if (Arrays.equals(fieldSequence, new char[] { 's', 'p', 'o', 'c' })
+					&& subjectsAreMonotonic(order, quads, valueRanks, count)) {
+				sortSpocWithinSubjectRuns(order, quads, valueRanks, count);
+				return order;
+			}
+		}
+		int[] scratch = new int[count];
+		int[] counts = new int[256];
+		int[] offsets = new int[256];
+		for (int fieldIndex = fieldSequence.length - 1; fieldIndex >= 0; fieldIndex--) {
+			radixSortGlobalField(order, scratch, globalFieldOffset(fieldSequence[fieldIndex]), quads, valueRanks, count,
+					counts, offsets);
+		}
+		return order;
+	}
+
+	private boolean subjectsAreMonotonic(int[] order, int[] quads, int[] valueRanks, int count) {
+		int previous = 0;
+		for (int i = 0; i < count; i++) {
+			int subject = globalFieldRank(order[i], 0, quads, valueRanks);
+			if (subject < previous) {
+				return false;
+			}
+			previous = subject;
+		}
+		return true;
+	}
+
+	private void sortSpocWithinSubjectRuns(int[] order, int[] quads, int[] valueRanks, int count) {
+		int runStart = 0;
+		while (runStart < count) {
+			int subject = globalFieldRank(order[runStart], 0, quads, valueRanks);
+			int runEnd = runStart + 1;
+			while (runEnd < count && globalFieldRank(order[runEnd], 0, quads, valueRanks) == subject) {
+				runEnd++;
+			}
+			if (runEnd - runStart <= 64) {
+				insertionSortSpocTail(order, runStart, runEnd, quads, valueRanks);
+			} else {
+				int[] run = Arrays.copyOfRange(order, runStart, runEnd);
+				int[] sorted = sortGlobalIndexOrder(new char[] { 'p', 'o', 'c' }, run, quads, valueRanks,
+						run.length);
+				System.arraycopy(sorted, 0, order, runStart, sorted.length);
+			}
+			runStart = runEnd;
+		}
+	}
+
+	private void insertionSortSpocTail(int[] order, int from, int to, int[] quads, int[] valueRanks) {
+		for (int i = from + 1; i < to; i++) {
+			int statementIndex = order[i];
+			int position = i;
+			while (position > from
+					&& compareSpocTail(statementIndex, order[position - 1], quads, valueRanks) < 0) {
+				order[position] = order[position - 1];
+				position--;
+			}
+			order[position] = statementIndex;
+		}
+	}
+
+	private int compareSpocTail(int left, int right, int[] quads, int[] valueRanks) {
+		int comparison = Integer.compare(globalFieldRank(left, 1, quads, valueRanks),
+				globalFieldRank(right, 1, quads, valueRanks));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Integer.compare(globalFieldRank(left, 2, quads, valueRanks),
+				globalFieldRank(right, 2, quads, valueRanks));
+		return comparison != 0 ? comparison
+				: Integer.compare(globalFieldRank(left, 3, quads, valueRanks),
+						globalFieldRank(right, 3, quads, valueRanks));
+	}
+
+	private void radixSortGlobalField(int[] order, int[] scratch, int fieldOffset, int[] quads, int[] valueRanks,
+			int count, int[] counts, int[] offsets) {
+		if (count < 2) {
+			return;
+		}
+		int firstValue = globalFieldRank(order[0], fieldOffset, quads, valueRanks);
+		int differingBits = 0;
+		for (int i = 1; i < count; i++) {
+			differingBits |= firstValue ^ globalFieldRank(order[i], fieldOffset, quads, valueRanks);
+		}
+		if (differingBits == 0) {
+			return;
+		}
+
+		int activePasses = 0;
+		for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
+			if (((differingBits >>> shift) & 0xFF) != 0) {
+				activePasses++;
+			}
+		}
+		int[] source = order;
+		int[] target = scratch;
+		if ((activePasses & 1) != 0) {
+			System.arraycopy(order, 0, scratch, 0, count);
+			source = scratch;
+			target = order;
+		}
+		for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
+			if (((differingBits >>> shift) & 0xFF) == 0) {
+				continue;
+			}
+			Arrays.fill(counts, 0);
+			for (int i = 0; i < count; i++) {
+				int value = globalFieldRank(source[i], fieldOffset, quads, valueRanks);
+				counts[(value >>> shift) & 0xFF]++;
+			}
+			int offset = 0;
+			for (int bucket = 0; bucket < counts.length; bucket++) {
+				offsets[bucket] = offset;
+				offset += counts[bucket];
+			}
+			for (int i = 0; i < count; i++) {
+				int statementIndex = source[i];
+				int value = globalFieldRank(statementIndex, fieldOffset, quads, valueRanks);
+				int bucket = (value >>> shift) & 0xFF;
+				target[offsets[bucket]++] = statementIndex;
+			}
+			int[] swap = source;
+			source = target;
+			target = swap;
+		}
+	}
+
+	private static int globalFieldOffset(char field) {
+		return switch (field) {
+		case 's' -> 0;
+		case 'p' -> 1;
+		case 'o' -> 2;
+		case 'c' -> 3;
+		default -> throw new IllegalArgumentException("Unknown index field " + field);
+		};
+	}
+
+	private int globalFieldRank(int statementIndex, int fieldOffset, int[] quads, int[] valueRanks) {
+		int localId = quads[(statementIndex << 2) + fieldOffset];
+		return localId < 0 ? 0 : valueRanks[localId];
+	}
+
+	private static void awaitPreparation(CountDownLatch ready, AtomicReference<Throwable> failure) throws IOException {
+		try {
+			ready.await();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for the main LMDB index order", e);
+		}
+		Throwable cause = failure.get();
+		if (cause instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (cause instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private int[] sortMainIndexOrder(long[] subj, long[] pred, long[] obj, long[] context, int count) {
+		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
+		workspace.ensureCapacity(count);
+		int[] statementIndices = workspace.mainOrder;
+		int[] scratchIndices = workspace.scratchOrder;
+		long[] fieldValues = workspace.fieldValues;
+		long[] scratchValues = workspace.scratchValues;
+		int[] radixCounts = workspace.radixCounts;
+		int[] radixOffsets = workspace.radixOffsets;
+		for (int i = 0; i < count; i++) {
+			statementIndices[i] = i;
+		}
+		StatementFieldValueAccessor[] accessors = indexes.getFirst().fieldValueAccessors;
+		for (int fieldIndex = accessors.length - 1; fieldIndex >= 0; fieldIndex--) {
+			StatementFieldValueAccessor accessor = accessors[fieldIndex];
+			for (int i = 0; i < count; i++) {
+				fieldValues[i] = accessor.get(subj, pred, obj, context, statementIndices[i]);
+			}
+			LeadingFieldSorters.lsdRadixSort(statementIndices, fieldValues, count, scratchIndices, scratchValues,
+					radixCounts, radixOffsets);
+		}
+		return statementIndices;
+	}
+
+	private boolean hasFourIndexPreparedOrder() {
+		return indexes.size() == 4
+				&& "spoc".contentEquals(new String(indexes.get(0).getFieldSeq()))
+				&& "ospc".contentEquals(new String(indexes.get(1).getFieldSeq()))
+				&& "posc".contentEquals(new String(indexes.get(2).getFieldSeq()))
+				&& "psoc".contentEquals(new String(indexes.get(3).getFieldSeq()));
+	}
+
+	private EncodedIndexKeys[] prepareSecondaryIndexChain(int[] indexPositions, int[] mainOrder, long[] subj,
+			long[] pred, long[] obj, long[] context, int count) {
+		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
+		workspace.ensureCapacity(count);
+		int[] currentOrder = workspace.currentOrder;
+		int[] scratchOrder = workspace.scratchOrder;
+		long[] fieldValues = workspace.fieldValues;
+		long[] scratchValues = workspace.scratchValues;
+		int[] radixCounts = workspace.radixCounts;
+		int[] radixOffsets = workspace.radixOffsets;
+		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
+
+		TripleIndex mainIndex = indexes.getFirst();
+		char[] currentFieldSequence = mainIndex.getFieldSeq();
+		EncodedIndexKeys[] encodedIndexes = new EncodedIndexKeys[indexPositions.length];
+		try {
+			for (int resultIndex = 0; resultIndex < indexPositions.length; resultIndex++) {
+				int indexPosition = indexPositions[resultIndex];
+				TripleIndex index = indexes.get(indexPosition);
+				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSequence,
+						index.getFieldSeq())) {
+					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
+				}
+				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
+						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
+				currentFieldSequence = index.getFieldSeq();
+				encodedIndexes[resultIndex] = encodeIndexKeys(indexPosition, index, currentOrder, subj, pred, obj,
+						context, count);
+			}
+			return encodedIndexes;
+		} catch (RuntimeException | Error e) {
+			closeEncodedIndexes(encodedIndexes);
+			throw e;
+		}
+	}
+
+	private static void closeEncodedIndexes(EncodedIndexKeys[] indexes) {
+		for (EncodedIndexKeys index : indexes) {
+			if (index != null) {
+				index.close();
+			}
+		}
+	}
+
+	private void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index,
+			long[] subj, long[] pred, long[] obj, long[] context, long[] fieldValues, int[] scratchIndices,
+			long[] scratchValues, int[] radixCounts, int[] radixOffsets) {
+		StatementFieldValueAccessor accessor = index.leadingFieldValueAccessor;
+		for (int i = 0; i < length; i++) {
+			fieldValues[i] = accessor.get(subj, pred, obj, context, statementIndices[i]);
+		}
+		LeadingFieldSorters.lsdRadixSort(statementIndices, fieldValues, length, scratchIndices, scratchValues,
+				radixCounts, radixOffsets);
+	}
+
+	private EncodedIndexKeys encodeIndexKeys(int indexPosition, TripleIndex index, int[] statementIndices,
+			long[] subj, long[] pred, long[] obj, long[] context, int count) {
+		ByteBuffer keys = memAlloc(Math.multiplyExact(count, TripleIndex.MAX_KEY_LENGTH));
+		int[] offsets = new int[count + 1];
+		int[] encodedStatementIndices = Arrays.copyOf(statementIndices, count);
+		for (int i = 0; i < count; i++) {
+			offsets[i] = keys.position();
+			int statementIndex = encodedStatementIndices[i];
+			index.toKey(keys, subj[statementIndex], pred[statementIndex], obj[statementIndex],
+					context[statementIndex]);
+		}
+		offsets[count] = keys.position();
+		if (LOAD_TIMING) {
+			System.err.printf("prepared-index-keys index=%s statements=%d bytes=%d avg=%.3f%n",
+					new String(index.getFieldSeq()), count, keys.position(), keys.position() / (double) count);
+		}
+		keys.flip();
+		return new EncodedIndexKeys(indexPosition, encodedStatementIndices, offsets, keys);
+	}
+
+	static final class PreparedSecondaryIndexes implements AutoCloseable {
+		private static final PreparedSecondaryIndexes EMPTY = new PreparedSecondaryIndexes(new EncodedIndexKeys[0]);
+		private final EncodedIndexKeys[] indexes;
+
+		private PreparedSecondaryIndexes(EncodedIndexKeys[] indexes) {
+			this.indexes = indexes;
+		}
+
+		int[] statementOrder(int indexPosition) {
+			for (EncodedIndexKeys index : indexes) {
+				if (index.indexPosition == indexPosition) {
+					return Arrays.copyOf(index.statementIndices, index.statementIndices.length);
+				}
+			}
+			throw new IllegalArgumentException("No prepared index at position " + indexPosition);
+		}
+
+		@Override
+		public synchronized void close() {
+			for (EncodedIndexKeys index : indexes) {
+				if (index != null) {
+					index.close();
+				}
+			}
+		}
+	}
+
+	static final class PreparedSecondaryIndexesTask {
+		private final int encodedIndexCount;
+		private final Future<EncodedIndexKeys> main;
+		private final Future<EncodedIndexKeys[]> first;
+		private final Future<EncodedIndexKeys[]> second;
+		private boolean mainTransferred;
+		private boolean secondaryTransferred;
+
+		private PreparedSecondaryIndexesTask(int encodedIndexCount, Future<EncodedIndexKeys> main,
+				Future<EncodedIndexKeys[]> first, Future<EncodedIndexKeys[]> second) {
+			this.encodedIndexCount = encodedIndexCount;
+			this.main = main;
+			this.first = first;
+			this.second = second;
+		}
+
+		synchronized PreparedSecondaryIndexes await() throws IOException {
+			EncodedIndexKeys[] combined = new EncodedIndexKeys[encodedIndexCount];
+			try {
+				copyPreparedIndexes(await(first), combined);
+				if (second != null) {
+					copyPreparedIndexes(await(second), combined);
+				}
+				secondaryTransferred = true;
+				return new PreparedSecondaryIndexes(combined);
+			} catch (IOException | RuntimeException | Error e) {
+				closeEncodedIndexes(combined);
+				throw e;
+			}
+		}
+
+		synchronized EncodedIndexKeys awaitMain() throws IOException {
+			EncodedIndexKeys preparedMain = main == null ? null : awaitMain(main);
+			mainTransferred = true;
+			return preparedMain;
+		}
+
+		synchronized void cancel() {
+			if (!mainTransferred && main != null) {
+				closeMainFuture(main);
+			}
+			if (!secondaryTransferred) {
+				closeSecondaryFuture(first);
+				if (second != null) {
+					closeSecondaryFuture(second);
+				}
+			}
+		}
+
+		private static void closeMainFuture(Future<EncodedIndexKeys> future) {
+			try {
+				EncodedIndexKeys index = future.get();
+				if (index != null) {
+					index.close();
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			} catch (ExecutionException | RuntimeException ignored) {
+				// Failed workers own no successfully transferred arena.
+			}
+		}
+
+		private static void closeSecondaryFuture(Future<EncodedIndexKeys[]> future) {
+			try {
+				closeEncodedIndexes(future.get());
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			} catch (ExecutionException | RuntimeException ignored) {
+				// Failed workers close any partially prepared arenas themselves.
+			}
+		}
+
+		private static EncodedIndexKeys[] await(Future<EncodedIndexKeys[]> future) throws IOException {
+			try {
+				return future.get();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while preparing secondary LMDB index keys", e);
+			} catch (ExecutionException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				if (cause instanceof Error error) {
+					throw error;
+				}
+				throw new IOException("Failed to prepare secondary LMDB index keys", cause);
+			}
+		}
+
+		private static EncodedIndexKeys awaitMain(Future<EncodedIndexKeys> future) throws IOException {
+			try {
+				return future.get();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while preparing the main LMDB index keys", e);
+			} catch (ExecutionException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				if (cause instanceof Error error) {
+					throw error;
+				}
+				throw new IOException("Failed to prepare the main LMDB index keys", cause);
+			}
+		}
+
+		private static void copyPreparedIndexes(EncodedIndexKeys[] source, EncodedIndexKeys[] target) {
+			for (EncodedIndexKeys encodedIndex : source) {
+				target[encodedIndex.indexPosition - 1] = encodedIndex;
+			}
+		}
+	}
+
+	static final class GlobalPreparedIndexOrdersTask {
+		private final Future<int[]> valueRanks;
+		private final Future<int[]> main;
+		private final Future<int[]> ospc;
+		private final Future<int[]> posc;
+		private final Future<int[]> predicate;
+
+		private GlobalPreparedIndexOrdersTask(Future<int[]> valueRanks, Future<int[]> main,
+				Future<int[]> ospc, Future<int[]> posc,
+				Future<int[]> predicate) {
+			this.valueRanks = valueRanks;
+			this.main = main;
+			this.ospc = ospc;
+			this.posc = posc;
+			this.predicate = predicate;
+		}
+
+		int[] awaitMain() throws IOException {
+			return awaitFuture(main, "main LMDB index order");
+		}
+
+		int[] awaitSecondary(int indexPosition) throws IOException {
+			return switch (indexPosition) {
+			case 1 -> awaitFuture(ospc, "ospc LMDB index order");
+			case 2 -> awaitFuture(posc, "posc LMDB index order");
+			case 3 -> awaitFuture(predicate, "psoc LMDB index order");
+			default -> throw new IllegalArgumentException("Unknown secondary index position " + indexPosition);
+			};
+		}
+
+		void cancel() {
+			valueRanks.cancel(true);
+			main.cancel(true);
+			ospc.cancel(true);
+			posc.cancel(true);
+			predicate.cancel(true);
+		}
+
+		private static <T> T awaitFuture(Future<T> future, String description) throws IOException {
+			try {
+				return future.get();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while preparing the " + description, e);
+			} catch (ExecutionException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				if (cause instanceof Error error) {
+					throw error;
+				}
+				throw new IOException("Failed to prepare the " + description, cause);
+			}
+		}
+	}
+
+	@FunctionalInterface
+	interface PreparedSecondaryIndexesSupplier {
+		PreparedSecondaryIndexes get() throws IOException;
+	}
+
+	static final class EncodedIndexKeys implements AutoCloseable {
+		private final int indexPosition;
+		private final int[] statementIndices;
+		private final int[] offsets;
+		private final ByteBuffer keys;
+		private final long address;
+		private boolean closed;
+
+		private EncodedIndexKeys(int indexPosition, int[] statementIndices, int[] offsets, ByteBuffer keys) {
+			this.indexPosition = indexPosition;
+			this.statementIndices = statementIndices;
+			this.offsets = offsets;
+			this.keys = keys;
+			this.address = LmdbUtil.directBufferAddress(keys);
+			OPEN_PREPARED_KEY_ARENAS.incrementAndGet();
+		}
+
+		@Override
+		public synchronized void close() {
+			if (!closed) {
+				closed = true;
+				memFree(keys);
+				OPEN_PREPARED_KEY_ARENAS.decrementAndGet();
+			}
+		}
+	}
+
+	private GlobalEncodedIndexBlocks prepareGlobalIndexBlocks(ExecutorService executor, int indexPosition,
+			int[] statementOrder, int[] quads, long[] valueIds) {
+		GlobalEncodedIndexBlocks blocks = new GlobalEncodedIndexBlocks(indexPosition, statementOrder, quads,
+				valueIds);
+		blocks.start(executor);
+		return blocks;
+	}
+
+	private final class GlobalEncodedIndexBlocks implements AutoCloseable {
+		private final int indexPosition;
+		private final int[] statementOrder;
+		private final int[] quads;
+		private final long[] valueIds;
+		private final ArrayBlockingQueue<EncodedIndexBlock> blocks = new ArrayBlockingQueue<>(2);
+		private final AtomicReference<Throwable> failure = new AtomicReference<>();
+		private Future<?> producer;
+
+		private GlobalEncodedIndexBlocks(int indexPosition, int[] statementOrder, int[] quads, long[] valueIds) {
+			this.indexPosition = indexPosition;
+			this.statementOrder = statementOrder;
+			this.quads = quads;
+			this.valueIds = valueIds;
+		}
+
+		private void start(ExecutorService executor) {
+			producer = executor.submit(this::produce);
+		}
+
+		private void produce() {
+			try {
+				TripleIndex index = indexes.get(indexPosition);
+				for (int offset = 0; offset < statementOrder.length; offset += GLOBAL_ENCODE_BLOCK_STATEMENTS) {
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedException("Global index encoding cancelled");
+					}
+					int length = Math.min(GLOBAL_ENCODE_BLOCK_STATEMENTS, statementOrder.length - offset);
+					EncodedIndexBlock block = encodeGlobalIndexBlock(index, statementOrder, offset, length, quads,
+							valueIds);
+					try {
+						blocks.put(block);
+					} catch (InterruptedException e) {
+						block.close();
+						throw e;
+					}
+				}
+			} catch (Throwable e) {
+				failure.compareAndSet(null, e);
+			} finally {
+				try {
+					blocks.put(EncodedIndexBlock.END);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					failure.compareAndSet(null, e);
+				}
+			}
+		}
+
+		private EncodedIndexBlock next() throws IOException {
+			EncodedIndexBlock block;
+			try {
+				block = blocks.take();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while awaiting encoded LMDB index keys", e);
+			}
+			if (block != EncodedIndexBlock.END) {
+				return block;
+			}
+			Throwable cause = failure.get();
+			if (cause instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			if (cause != null) {
+				throw new IOException("Failed to encode global LMDB index keys", cause);
+			}
+			return null;
+		}
+
+		@Override
+		public void close() {
+			if (producer != null) {
+				producer.cancel(true);
+			}
+			EncodedIndexBlock block;
+			while ((block = blocks.poll()) != null) {
+				if (block != EncodedIndexBlock.END) {
+					block.close();
+				}
+			}
+		}
+	}
+
+	private EncodedIndexBlock encodeGlobalIndexBlock(TripleIndex index, int[] statementOrder, int from, int count,
+			int[] quads, long[] valueIds) {
+		ByteBuffer keys = memAlloc(Math.multiplyExact(count, TripleIndex.MAX_KEY_LENGTH));
+		int[] offsets = new int[count + 1];
+		int[] statementIndices = Arrays.copyOfRange(statementOrder, from, from + count);
+		try {
+			for (int i = 0; i < count; i++) {
+				offsets[i] = keys.position();
+				int quadOffset = Math.multiplyExact(statementIndices[i], 4);
+				int contextId = quads[quadOffset + 3];
+				index.toKey(keys, valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
+						valueIds[quads[quadOffset + 2]], contextId < 0 ? 0 : valueIds[contextId]);
+			}
+			offsets[count] = keys.position();
+			keys.flip();
+			return new EncodedIndexBlock(statementIndices, offsets, keys);
+		} catch (RuntimeException | Error e) {
+			memFree(keys);
+			throw e;
+		}
+	}
+
+	private static final class EncodedIndexBlock implements AutoCloseable {
+		private static final EncodedIndexBlock END = new EncodedIndexBlock();
+		private final int[] statementIndices;
+		private final int[] offsets;
+		private final ByteBuffer keys;
+		private final long address;
+		private boolean closed;
+
+		private EncodedIndexBlock() {
+			statementIndices = null;
+			offsets = null;
+			keys = null;
+			address = 0;
+		}
+
+		private EncodedIndexBlock(int[] statementIndices, int[] offsets, ByteBuffer keys) {
+			this.statementIndices = statementIndices;
+			this.offsets = offsets;
+			this.keys = keys;
+			address = LmdbUtil.directBufferAddress(keys);
+			OPEN_PREPARED_KEY_ARENAS.incrementAndGet();
+		}
+
+		@Override
+		public void close() {
+			if (!closed && keys != null) {
+				closed = true;
+				memFree(keys);
+				OPEN_PREPARED_KEY_ARENAS.decrementAndGet();
 			}
 		}
 	}
@@ -768,9 +1446,6 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public RecordIterator getAllTriplesSortedByContext(Txn txn) throws IOException {
-		if (packedExplicitCount > 0) {
-			return null;
-		}
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
@@ -783,87 +1458,12 @@ class TripleStore implements Closeable {
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		int mask = boundMask(subj, pred, obj, context);
-		RecordIterator legacy = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
 				bestIndexByBoundMask[mask], rangeSearchByBoundMask[mask]);
-		if (!explicit || !hasPackedTriples(txn)) {
-			return legacy;
-		}
-		try {
-			return concatenate(new PackedRecordIterator(packedExplicitDbi, txn, subj, pred, obj, context), legacy);
-		} catch (IOException | RuntimeException e) {
-			legacy.close();
-			throw e;
-		}
 	}
 
 	String getIndexName(long subj, long pred, long obj, long context) {
 		return bestIndexByBoundMask[boundMask(subj, pred, obj, context)].toString();
-	}
-
-	CloseableIteration<Statement> getPackedStatements(Txn txn, Resource subject, IRI predicate, Value object,
-			Resource[] contexts) throws IOException {
-		if (packedExplicitSegmented || packedTxnSegmented) {
-			return new PackedSegmentIteration(packedExplicitDbi, txn, subject, predicate, object, contexts,
-					SimpleValueFactory.getInstance());
-		}
-		return new PackedStatementIteration(packedValuesDbi, packedExplicitDbi, packedExplicitValueCount, txn,
-				subject, predicate, object, contexts, SimpleValueFactory.getInstance());
-	}
-
-	boolean hasPackedStatements(Txn txn, Resource subject, IRI predicate, Value object, Resource[] contexts)
-			throws IOException {
-		if ((packedExplicitSegmented || packedTxnSegmented) && subject != null && predicate != null && object != null
-				&& contexts != null && contexts.length > 0) {
-			synchronized (packedFingerprintLock) {
-				ensurePackedFingerprintLocations(txn.get());
-				long fingerprint;
-				for (Resource context : contexts) {
-					fingerprint = statementFingerprint(subject, predicate, object, context);
-					if (containsPackedStatement(txn.get(), fingerprint, subject, predicate, object, context)) {
-						return true;
-					}
-				}
-				return false;
-			}
-		}
-		try (CloseableIteration<Statement> statements = getPackedStatements(txn, subject, predicate, object,
-				contexts)) {
-			return statements.hasNext();
-		}
-	}
-
-	private boolean hasPackedTriples(Txn txn) {
-		return packedExplicitCount > 0 || txn.get() == writeTxn && packedTxnCount > 0;
-	}
-
-	private RecordIterator concatenate(RecordIterator first, RecordIterator second) {
-		return new RecordIterator() {
-			private RecordIterator current = first;
-
-			@Override
-			public long[] next() {
-				long[] record = current.next();
-				if (record == null && current == first) {
-					current = second;
-					record = current.next();
-				}
-				return record;
-			}
-
-			@Override
-			public String getIndexName() {
-				return first.getIndexName() + "+" + second.getIndexName();
-			}
-
-			@Override
-			public void close() {
-				try {
-					first.close();
-				} finally {
-					second.close();
-				}
-			}
-		};
 	}
 
 	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
@@ -948,15 +1548,6 @@ class TripleStore implements Closeable {
 	}
 
 	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		if (explicit && hasPackedTriples(txn)) {
-			long count = 0;
-			try (RecordIterator records = getTriples(txn, subj, pred, obj, context, true)) {
-				while (records.next() != null) {
-					count++;
-				}
-			}
-			return count;
-		}
 		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 			return countAllTriples(txn, explicit);
 		}
@@ -979,11 +1570,6 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		if (explicit && hasPackedTriples(txn)) {
-			try (RecordIterator records = getTriples(txn, subj, pred, obj, context, true)) {
-				return records.next() != null;
-			}
-		}
 		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 			return hasAnyTriples(txn, explicit);
 		}
@@ -1030,13 +1616,7 @@ class TripleStore implements Closeable {
 			TripleIndex mainIndex = indexes.getFirst();
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
-			long packedCount = explicit && !(txnRef.get() == writeTxn && packedMaterializedInTxn)
-					? packedExplicitCount
-					: 0;
-			if (explicit && txnRef.get() == writeTxn && packedWriteActive) {
-				packedCount += packedTxnCount;
-			}
-			return stat.ms_entries() + packedCount;
+			return stat.ms_entries();
 		} finally {
 			txnRef.lockManager().unlockRead(readStamp);
 		}
@@ -1502,9 +2082,6 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
-		if (explicit && packedExplicitCount > 0) {
-			return true;
-		}
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
@@ -1987,62 +2564,22 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean requiresResize() {
+		return requiresResize(0);
+	}
+
+	private boolean requiresResize(long requiredSize) {
+		if (trackResizeChecks) {
+			trackedResizeChecks++;
+		}
 		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
+			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, requiredSize);
 		} else {
 			return false;
 		}
 	}
 
-	void ensurePackedWriteCapacity(long segmentBytes) throws IOException {
-		long requiredBytes = Math.max(PACKED_TRANSACTION_RESERVE_BYTES, segmentBytes);
-		if (mapSize >= requiredBytes) {
-			return;
-		}
-		ensureWriteCapacity(requiredBytes);
-	}
-
-	void ensurePackedMaterializationCapacity() throws IOException {
-		if (packedExplicitCount == 0) {
-			return;
-		}
-		long bytesPerStatement = Math.addExact(64L, Math.multiplyExact((long) indexes.size(), 128L));
-		ensureWriteCapacity(Math.multiplyExact(packedExplicitCount, bytesPerStatement));
-	}
-
-	private void ensureWriteCapacity(long additionalBytes) throws IOException {
-		if (!autoGrow || additionalBytes <= 0 || writeTxn != 0) {
-			return;
-		}
-		var lockManager = txnManager.lockManager();
-		long stamp;
-		try {
-			stamp = lockManager.writeLock();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
-		}
-		try {
-			txnManager.deactivate();
-			try (MemoryStack stack = stackPush()) {
-				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-				E(mdb_env_info(env, info));
-				long usedBytes = Math.multiplyExact(Math.addExact(info.me_last_pgno(), 1L), pageSize);
-				long requiredMapSize = Math.addExact(usedBytes,
-						Math.addExact(additionalBytes, LmdbUtil.MIN_FREE_SPACE));
-				if (mapSize < requiredMapSize) {
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredMapSize);
-					E(mdb_env_set_mapsize(env, mapSize));
-					logger.debug("resized map to {} for a {} byte packed write", mapSize, additionalBytes);
-				}
-			}
-		} finally {
-			try {
-				txnManager.activate();
-			} finally {
-				lockManager.unlockWrite(stamp);
-			}
-		}
+	private long preparedWriteReservation(int statementCount) {
+		return (long) statementCount * indexes.size() * PREPARED_WRITE_BYTES_PER_INDEX_ENTRY;
 	}
 
 	static LongAdder statementsAdded = new LongAdder();
@@ -2050,11 +2587,6 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		if (packedWriteActive && explicit) {
-			storePackedTriple(subj, pred, obj, context);
-			return true;
-		}
-		materializePackedIfNeeded(explicit);
 		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -2136,519 +2668,88 @@ class TripleStore implements Closeable {
 				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
 	}
 
-	long storePackedStatements(Iterable<? extends Statement> statements, int expectedCount) throws IOException {
-		if (!packedWriteActive) {
-			throw new IllegalStateException("Packed statement storage is not active");
-		}
-		if (statements instanceof PackedStatementList packed) {
-			packed = filterDuplicatePackedStatements(packed);
-			if (packed.isEmpty()) {
-				return 0;
-			}
-			long firstStatementOrdinal = Math.addExact(packedTxnCount, 1L);
-			writePackedSegment(Arrays.asList(packed.values()), packed.valueIdLookup(), 1, packed.quads(),
-					packed.size());
-			synchronized (packedFingerprintLock) {
-				if (packedFingerprintLocations != null) {
-					indexPackedStatements(packed, firstStatementOrdinal);
-				}
-			}
-			packedTxnCount = Math.addExact(packedTxnCount, packed.size());
-			packedTxnValueCount = 0;
-			packedTxnSegmented = true;
-			logAddedStatements(packed.size());
-			return packed.size();
-		}
-		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, expectedCount * 2));
-		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
-		ArrayList<Value> newValues = new ArrayList<>(Math.max(16, expectedCount / 2));
-		packedTxnValueCount = 0;
-		int[] quads = new int[Math.multiplyExact(expectedCount, 4)];
-		int count = 0;
-		for (Statement statement : statements) {
-			int offset = Math.multiplyExact(count, 4);
-			if (offset == quads.length) {
-				quads = Arrays.copyOf(quads, Math.multiplyExact(quads.length, 2));
-			}
-			quads[offset] = packedValueId(statement.getSubject(), valueIds, identityValueIds, newValues);
-			quads[offset + 1] = packedValueId(statement.getPredicate(), valueIds, identityValueIds, newValues);
-			quads[offset + 2] = packedValueId(statement.getObject(), valueIds, identityValueIds, newValues);
-			quads[offset + 3] = packedValueId(statement.getContext(), valueIds, identityValueIds, newValues);
-			count++;
-		}
-		writePackedSegment(newValues, valueIds::get, 0, quads, count);
-		packedTxnCount = Math.addExact(packedTxnCount, count);
-		packedTxnSegmented = true;
-		logAddedStatements(count);
-		return count;
-	}
-
-	long storePackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects, Resource[] contexts, int count)
+	@Experimental
+	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
 			throws IOException {
-		if (!packedWriteActive) {
-			throw new IllegalStateException("Packed statement storage is not active");
-		}
-		count = filterDuplicatePackedStatements(subjects, predicates, objects, contexts, count);
-		if (count == 0) {
-			return 0;
-		}
-		long firstStatementOrdinal = Math.addExact(packedTxnCount, 1L);
-		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(Math.max(16, count * 2));
-		IdentityValueIntCache identityValueIds = new IdentityValueIntCache();
-		ArrayList<Value> values = new ArrayList<>(Math.max(16, count * 2));
-		packedTxnValueCount = 0;
-		int[] quads = new int[Math.multiplyExact(count, 4)];
-		for (int i = 0; i < count; i++) {
-			int offset = i * 4;
-			quads[offset] = packedValueId(subjects[i], valueIds, identityValueIds, values);
-			quads[offset + 1] = packedValueId(predicates[i], valueIds, identityValueIds, values);
-			quads[offset + 2] = packedValueId(objects[i], valueIds, identityValueIds, values);
-			quads[offset + 3] = packedValueId(contexts[i], valueIds, identityValueIds, values);
-		}
-		writePackedSegment(values, valueIds::get, 0, quads, count);
-		synchronized (packedFingerprintLock) {
-			if (packedFingerprintLocations != null) {
-				indexPackedStatements(subjects, predicates, objects, contexts, count, firstStatementOrdinal);
-			}
-		}
-		packedTxnCount = Math.addExact(packedTxnCount, count);
-		packedTxnSegmented = true;
-		logAddedStatements(count);
-		return count;
+		storeTriplesAligned(subj, pred, obj, context, count, explicit, true, null, null, null);
 	}
 
-	private PackedStatementList filterDuplicatePackedStatements(PackedStatementList packed) throws IOException {
-		synchronized (packedFingerprintLock) {
-			return filterDuplicatePackedStatementsLocked(packed);
-		}
+	@Experimental
+	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
+			IntConsumer addedIndexConsumer)
+			throws IOException {
+		storeTriplesAligned(subj, pred, obj, context, count, explicit, true, addedIndexConsumer, null, null);
 	}
 
-	private PackedStatementList filterDuplicatePackedStatementsLocked(PackedStatementList packed) throws IOException {
-		ensurePackedFingerprintLocations(writeTxn);
-		boolean[] included = null;
-		int includedCount = packed.size();
-		Value[] values = packed.values();
-		int[] quads = packed.quads();
-		for (int statementIndex = 0; statementIndex < packed.size(); statementIndex++) {
-			int offset = statementIndex * 4;
-			Resource subject = (Resource) values[quads[offset]];
-			IRI predicate = (IRI) values[quads[offset + 1]];
-			Value object = values[quads[offset + 2]];
-			int contextId = quads[offset + 3];
-			Resource context = contextId == 0 ? null : (Resource) values[contextId];
-			boolean duplicate = containsPackedStatement(writeTxn,
-					statementFingerprint(subject, predicate, object, context),
-					subject, predicate, object, context);
-			if (duplicate) {
-				if (included == null) {
-					included = new boolean[packed.size()];
-					Arrays.fill(included, 0, statementIndex, true);
-				}
-				includedCount--;
-			} else if (included != null) {
-				included[statementIndex] = true;
-			}
-		}
-		if (included == null) {
-			return packed;
-		}
-		ArrayList<Statement> filtered = new ArrayList<>(includedCount);
-		for (int i = 0; i < included.length; i++) {
-			if (included[i]) {
-				filtered.add(packed.get(i));
-			}
-		}
-		return PackedStatementList.copyOf(filtered, filtered.size(), ignored -> {
-		});
+	void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
+			boolean mayHaveInferred, IntConsumer addedIndexConsumer)
+			throws IOException {
+		storeTriplesAligned(subj, pred, obj, context, count, explicit, mayHaveInferred, addedIndexConsumer, null,
+				null);
 	}
 
-	private int filterDuplicatePackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects,
-			Resource[] contexts, int count) throws IOException {
-		synchronized (packedFingerprintLock) {
-			return filterDuplicatePackedStatementsLocked(subjects, predicates, objects, contexts, count);
-		}
-	}
-
-	private int filterDuplicatePackedStatementsLocked(Resource[] subjects, IRI[] predicates, Value[] objects,
-			Resource[] contexts, int count) throws IOException {
-		ensurePackedFingerprintLocations(writeTxn);
-		int target = 0;
-		for (int source = 0; source < count; source++) {
-			Resource subject = subjects[source];
-			IRI predicate = predicates[source];
-			Value object = objects[source];
-			Resource context = contexts[source];
-			boolean duplicate = containsPackedStatement(writeTxn,
-					statementFingerprint(subject, predicate, object, context),
-					subject, predicate, object, context);
-			if (duplicate) {
-				continue;
-			}
-			if (target != source) {
-				subjects[target] = subject;
-				predicates[target] = predicate;
-				objects[target] = object;
-				contexts[target] = context;
-			}
-			target++;
-		}
-		return target;
-	}
-
-	private void ensurePackedFingerprintLocations(long nativeTxn) throws IOException {
-		if (packedFingerprintLocations != null) {
-			return;
-		}
-		int expected = (int) Math.min(packedExplicitCount, 1_000_000L);
-		PackedFingerprintIndex locations = new PackedFingerprintIndex(Math.max(16, expected));
-		if ((packedExplicitSegmented || packedTxnSegmented) && (packedExplicitCount > 0 || packedTxnCount > 0)) {
-			long cursor = 0;
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer cursorHandle = stack.mallocPointer(1);
-				E(mdb_cursor_open(nativeTxn, packedExplicitDbi, cursorHandle));
-				cursor = cursorHandle.get(0);
-				MDBVal key = MDBVal.malloc(stack);
-				MDBVal data = MDBVal.malloc(stack);
-				int rc = mdb_cursor_get(cursor, key, data, MDB_FIRST);
-				while (rc == MDB_SUCCESS) {
-					long blockKey = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-					if (blockKey != PACKED_COUNT_KEY) {
-						PackedSegmentCodec.Decoded decoded = PackedSegmentCodec.decode(data.mv_data(),
-								SimpleValueFactory.getInstance());
-						indexPackedSegment(locations, decoded, blockKey);
-					}
-					rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
-				}
-				if (rc != MDB_NOTFOUND) {
-					E(rc);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
-			}
-		}
-		packedFingerprintLocations = locations;
-	}
-
-	private void indexPackedSegment(PackedFingerprintIndex locations, PackedSegmentCodec.Decoded decoded,
-			long firstStatementOrdinal) {
-		Value[] values = decoded.values();
-		ByteBuffer quads = decoded.quads().duplicate();
-		long statementOrdinal = firstStatementOrdinal;
-		while (quads.hasRemaining()) {
-			Resource subject = (Resource) values[quads.getInt()];
-			IRI predicate = (IRI) values[quads.getInt()];
-			Value object = values[quads.getInt()];
-			int contextId = quads.getInt();
-			Resource context = contextId == 0 ? null : (Resource) values[contextId];
-			indexPackedFingerprint(locations, statementFingerprint(subject, predicate, object, context),
-					statementOrdinal++);
-		}
-	}
-
-	private void indexPackedStatements(PackedStatementList packed, long firstStatementOrdinal) {
-		Value[] values = packed.values();
-		int[] quads = packed.quads();
-		for (int i = 0; i < packed.size(); i++) {
-			int offset = i * 4;
-			Resource subject = (Resource) values[quads[offset]];
-			IRI predicate = (IRI) values[quads[offset + 1]];
-			Value object = values[quads[offset + 2]];
-			int contextId = quads[offset + 3];
-			Resource context = contextId == 0 ? null : (Resource) values[contextId];
-			indexPackedFingerprint(packedFingerprintLocations,
-					statementFingerprint(subject, predicate, object, context), firstStatementOrdinal + i);
-		}
-	}
-
-	private void indexPackedStatements(Resource[] subjects, IRI[] predicates, Value[] objects, Resource[] contexts,
-			int count, long firstStatementOrdinal) {
-		for (int i = 0; i < count; i++) {
-			indexPackedFingerprint(packedFingerprintLocations,
-					statementFingerprint(subjects[i], predicates[i], objects[i], contexts[i]),
-					firstStatementOrdinal + i);
-		}
-	}
-
-	private void indexPackedFingerprint(PackedFingerprintIndex locations, long fingerprint, long statementOrdinal) {
-		long existing = locations.get(fingerprint);
-		if (existing == 0) {
-			locations.put(fingerprint, statementOrdinal);
-			return;
-		}
-		if (packedFingerprintCollisionLocations == null) {
-			packedFingerprintCollisionLocations = new HashMap<>();
-		}
-		packedFingerprintCollisionLocations.computeIfAbsent(fingerprint, ignored -> new ArrayList<>(1))
-				.add(statementOrdinal);
-	}
-
-	private boolean containsPackedStatement(long nativeTxn, long fingerprint, Resource subject, IRI predicate,
-			Value object, Resource context) throws IOException {
-		PackedStatementKey candidate = null;
-		if (packedDuplicateFingerprints != null && packedDuplicateFingerprints.contains(fingerprint)) {
-			candidate = new PackedStatementKey(subject, predicate, object, context);
-			List<PackedStatementKey> duplicates = packedDuplicateKeys.get(fingerprint);
-			if (duplicates != null && duplicates.contains(candidate)) {
-				return true;
-			}
-		}
-		long statementOrdinal = packedFingerprintLocations.get(fingerprint);
-		if (statementOrdinal == 0) {
-			return false;
-		}
-		if (packedStatementEquals(nativeTxn, statementOrdinal, subject, predicate, object, context)) {
-			if (candidate == null) {
-				candidate = new PackedStatementKey(subject, predicate, object, context);
-			}
-			cachePackedDuplicate(fingerprint, candidate);
-			return true;
-		}
-		if (packedFingerprintCollisionLocations != null) {
-			List<Long> collisions = packedFingerprintCollisionLocations.get(fingerprint);
-			if (collisions != null) {
-				for (long collisionOrdinal : collisions) {
-					if (packedStatementEquals(nativeTxn, collisionOrdinal, subject, predicate, object, context)) {
-						if (candidate == null) {
-							candidate = new PackedStatementKey(subject, predicate, object, context);
-						}
-						cachePackedDuplicate(fingerprint, candidate);
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	}
-
-	private void cachePackedDuplicate(long fingerprint, PackedStatementKey duplicate) {
-		if (packedDuplicateKeys == null) {
-			packedDuplicateKeys = new HashMap<>();
-			packedDuplicateFingerprints = new LongHashSet();
-		}
-		packedDuplicateFingerprints.add(fingerprint);
-		packedDuplicateKeys.computeIfAbsent(fingerprint, ignored -> new ArrayList<>(1)).add(duplicate);
-	}
-
-	private boolean packedStatementEquals(long nativeTxn, long statementOrdinal, Resource subject, IRI predicate,
-			Value object, Resource context) throws IOException {
-		long cursor = 0;
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(nativeTxn, packedExplicitDbi, cursorHandle));
-			cursor = cursorHandle.get(0);
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(statementOrdinal).flip());
-			MDBVal data = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
-			if (rc == MDB_NOTFOUND) {
-				rc = mdb_cursor_get(cursor, key, data, MDB_LAST);
-			} else if (rc == MDB_SUCCESS
-					&& key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong() > statementOrdinal) {
-				rc = mdb_cursor_get(cursor, key, data, MDB_PREV);
-			}
-			if (rc == MDB_NOTFOUND) {
-				return false;
-			}
-			E(rc);
-			long firstStatementOrdinal = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			long offset = statementOrdinal - firstStatementOrdinal;
-			if (offset < 0 || offset > Integer.MAX_VALUE) {
-				return false;
-			}
-			return PackedSegmentCodec.statementEquals(data.mv_data(), (int) offset, subject, predicate, object, context,
-					SimpleValueFactory.getInstance());
+	void storePreparedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
+			boolean mayHaveInferred, EncodedIndexKeys preparedMainIndex,
+			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
+			throws IOException {
+		try {
+			storeTriplesAligned(subj, pred, obj, context, count, explicit, mayHaveInferred, null, preparedMainIndex,
+					preparedSecondaryIndexesSupplier);
 		} finally {
-			if (cursor != 0) {
-				mdb_cursor_close(cursor);
+			if (preparedMainIndex != null) {
+				preparedMainIndex.close();
 			}
 		}
 	}
 
-	private long statementFingerprint(Resource subject, IRI predicate, Value object, Resource context) {
-		long subjectPredicate = (long) subject.hashCode() << 32 ^ Integer.toUnsignedLong(predicate.hashCode());
-		long objectContext = (long) object.hashCode() << 32
-				^ Integer.toUnsignedLong(context == null ? 0 : context.hashCode());
-		return subjectPredicate ^ Long.rotateLeft(objectContext, 17);
-	}
+	void storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+			GlobalPreparedIndexOrdersTask preparedOrders, ExecutorService encoderExecutor) throws IOException {
+		if (count == 0) {
+			return;
+		}
+		if (recordCache != null || requiresResize(0)) {
+			throw new IOException("Insufficient reserved LMDB map capacity for global prepared import");
+		}
 
-	private void clearPackedFingerprintLocations() {
-		synchronized (packedFingerprintLock) {
-			packedFingerprintLocations = null;
-			packedFingerprintCollisionLocations = null;
-			packedDuplicateKeys = null;
-			packedDuplicateFingerprints = null;
-		}
-	}
-
-	private record PackedStatementKey(Resource subject, IRI predicate, Value object, Resource context) {
-	}
-
-	private void writePackedSegment(List<Value> values, ToIntFunction<Value> valueIds, int firstValue, int[] quads,
-			int count) throws IOException {
-		byte[] encoded = PackedSegmentCodec.encode(values, valueIds, firstValue, quads, count);
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES)
-					.order(ByteOrder.BIG_ENDIAN)
-					.putLong(Math.addExact(packedTxnCount, 1L))
-					.flip());
-			MDBVal value = MDBVal.calloc(stack);
-			value.mv_size(encoded.length);
-			E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
-			value.mv_data().put(encoded);
-		}
-	}
-
-	private ObjectIntHashMap<Value> ensurePackedValueIds() throws IOException {
-		if (packedValueIds != null) {
-			return packedValueIds;
-		}
-		if (packedExplicitValueCount > Integer.MAX_VALUE - 1) {
-			throw new IOException("Packed value dictionary is too large");
-		}
-		ObjectIntHashMap<Value> valueIds = new ObjectIntHashMap<>(
-				Math.max(16, (int) packedExplicitValueCount));
-		if (packedExplicitValueCount > 0) {
-			Value[] values = readPackedValues(writeTxn, packedExplicitValueCount);
-			for (int id = 1; id < values.length; id++) {
-				valueIds.put(values[id], id);
-			}
-		}
-		packedValueIds = valueIds;
-		return valueIds;
-	}
-
-	private int packedValueId(Value value, ObjectIntHashMap<Value> valueIds,
-			IdentityValueIntCache identityValueIds, ArrayList<Value> values) {
-		if (value == null) {
-			return 0;
-		}
-		int identitySlot = identityValueIds.slot(value);
-		int existing = identityValueIds.get(value, identitySlot);
-		if (existing != 0) {
-			return existing;
-		}
-		existing = valueIds.get(value);
-		if (existing != 0) {
-			identityValueIds.put(value, existing, identitySlot);
-			return existing;
-		}
-		if (value instanceof TripleTerm triple) {
-			packedValueId(triple.getSubject(), valueIds, identityValueIds, values);
-			packedValueId(triple.getPredicate(), valueIds, identityValueIds, values);
-			packedValueId(triple.getObject(), valueIds, identityValueIds, values);
-		}
-		int id = Math.toIntExact(packedTxnValueCount + values.size() + 1L);
-		valueIds.put(value, id);
-		identityValueIds.put(value, id, identitySlot);
-		values.add(value);
-		return id;
-	}
-
-	private void writePackedValues(List<Value> values, ToIntFunction<Value> lookupId, int firstValue)
-			throws IOException {
-		ArrayList<byte[]> encodedValues = new ArrayList<>(values.size() - firstValue);
-		for (int i = firstValue; i < values.size(); i++) {
-			Value value = values.get(i);
-			encodedValues.add(PackedValueCodec.encode(value, lookupId));
-		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			MDBVal data = MDBVal.calloc(stack);
-			for (int start = 0; start < encodedValues.size();) {
-				int end = start;
-				int blockBytes = 0;
-				while (end < encodedValues.size()) {
-					int recordBytes = Integer.BYTES + encodedValues.get(end).length;
-					if (blockBytes > 0 && blockBytes + recordBytes > PACKED_VALUE_BLOCK_BYTES) {
-						break;
-					}
-					blockBytes += recordBytes;
-					end++;
-				}
-				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnValueCount, start + 1L)).flip());
-				data.mv_size(blockBytes);
-				E(mdb_put(writeTxn, packedValuesDbi, key, data, MDB_RESERVE));
-				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
-				for (int i = start; i < end; i++) {
-					byte[] encoded = encodedValues.get(i);
-					target.putInt(encoded.length).put(encoded);
-				}
-				start = end;
-			}
-		}
-	}
-
-	private void writePackedQuadIds(int[] quads, int count) throws IOException {
-		writePackedQuadIds(quads, count, 0);
-	}
-
-	private void writePackedQuadIds(int[] quads, int count, int valueIdOffset) throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			MDBVal data = MDBVal.calloc(stack);
-			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
-				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
-				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnCount, start + 1L)).flip());
-				data.mv_size((long) blockCount * PACKED_LOCAL_RECORD_BYTES);
-				E(mdb_put(writeTxn, packedExplicitDbi, key, data, MDB_RESERVE));
-				ByteBuffer target = data.mv_data().order(ByteOrder.BIG_ENDIAN);
-				for (int i = start * 4, end = (start + blockCount) * 4; i < end; i++) {
-					int valueId = quads[i];
-					target.putInt(valueId == 0 ? 0 : Math.addExact(valueIdOffset, valueId));
-				}
-			}
-		}
-	}
-
-	private void storePackedTriple(long subj, long pred, long obj, long context) throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES)
-					.order(ByteOrder.BIG_ENDIAN)
-					.putLong(Math.addExact(packedTxnCount, 1L))
-					.flip());
-			MDBVal value = MDBVal.calloc(stack);
-			value.mv_size(PACKED_RECORD_BYTES);
-			E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
-			value.mv_data()
-					.order(ByteOrder.BIG_ENDIAN)
-					.putLong(subj)
-					.putLong(pred)
-					.putLong(obj)
-					.putLong(context);
-			incrementContext(stack, context);
-		}
-		packedTxnCount++;
-		logAddedStatements(1);
-	}
-
-	private void storePackedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count,
-			IntConsumer addedIndexConsumer) throws IOException {
+		int[] mainOrder = preparedOrders.awaitMain();
+		boolean[] addedStatements = ensureAlignedWriteAddedStatements(count);
+		Arrays.fill(addedStatements, 0, count, false);
 		LongIntHashMap contextIncrements = alignedContextIncrements;
 		contextIncrements.clear();
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			ByteBuffer keyBuffer = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			MDBVal value = MDBVal.calloc(stack);
-			for (int start = 0; start < count; start += PACKED_BLOCK_STATEMENTS) {
-				int blockCount = Math.min(PACKED_BLOCK_STATEMENTS, count - start);
-				keyBuffer.clear();
-				key.mv_data(keyBuffer.putLong(Math.addExact(packedTxnCount, start + 1L)).flip());
-				value.mv_size((long) blockCount * PACKED_RECORD_BYTES);
-				E(mdb_put(writeTxn, packedExplicitDbi, key, value, MDB_RESERVE));
-				ByteBuffer packed = value.mv_data().order(ByteOrder.BIG_ENDIAN);
-				for (int i = start, end = start + blockCount; i < end; i++) {
-					packed.putLong(subj[i]).putLong(pred[i]).putLong(obj[i]).putLong(context[i]);
-					contextIncrements.addToValue(context[i], 1);
-					if (addedIndexConsumer != null) {
-						addedIndexConsumer.accept(i);
+		int addedCount = 0;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR ? stack.mallocPointer(1) : null;
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			TripleIndex mainIndex = indexes.getFirst();
+			long mainCursor = REUSE_ALIGNED_WRITE_CURSOR
+					? getAlignedWriteCursor(0, mainIndex, true, cursorHandle)
+					: 0;
+			try (GlobalEncodedIndexBlocks encodedBlocks = prepareGlobalIndexBlocks(encoderExecutor, 0, mainOrder,
+					quads, valueIds)) {
+				EncodedIndexBlock block;
+				while ((block = encodedBlocks.next()) != null) {
+					try (EncodedIndexBlock currentBlock = block) {
+						for (int i = 0; i < currentBlock.statementIndices.length; i++) {
+							int statementIndex = currentBlock.statementIndices[i];
+							int offset = currentBlock.offsets[i];
+							LmdbUtil.setMDBValData(keyVal, currentBlock.address + offset,
+									currentBlock.offsets[i + 1] - offset);
+							int rc = REUSE_ALIGNED_WRITE_CURSOR
+									? mdb_cursor_put(mainCursor, keyVal, dataVal, MDB_NOOVERWRITE)
+									: mdb_put(writeTxn, mainIndex.getDB(true), keyVal, dataVal, MDB_NOOVERWRITE);
+							if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
+								E(rc);
+							}
+							if (rc == MDB_SUCCESS) {
+								addedStatements[statementIndex] = true;
+								int quadOffset = Math.multiplyExact(statementIndex, 4);
+								int contextId = quads[quadOffset + 3];
+								long context = contextId < 0 ? 0 : valueIds[contextId];
+								contextIncrements.addToValue(context, 1);
+								addedCount++;
+							}
+						}
 					}
 				}
 			}
@@ -2657,313 +2758,55 @@ class TripleStore implements Closeable {
 				long contextId = contextIterator.next();
 				incrementAlignedContext(stack, contextId, contextIncrements.get(contextId));
 			}
-		}
-		packedTxnCount += count;
-		logAddedStatements(count);
-	}
 
-	void materializePackedIfNeeded(boolean explicit) throws IOException {
-		if (!explicit || packedExplicitCount == 0 || packedWriteActive || packedMaterializedInTxn) {
-			return;
-		}
-		Value[] packedValues = packedExplicitValueCount > 0
-				? readPackedValues(writeTxn, packedExplicitValueCount)
-				: null;
-		long[] packedValueIds = packedValues == null ? null : materializePackedValues(packedValues);
-		long cursor = 0;
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(writeTxn, packedExplicitDbi, cursorHandle));
-			cursor = cursorHandle.get(0);
-			MDBVal packedKey = MDBVal.malloc(stack);
-			MDBVal packedValue = MDBVal.malloc(stack);
-			MDBVal legacyKey = MDBVal.malloc(stack);
-			MDBVal legacyValue = MDBVal.calloc(stack);
-			ByteBuffer legacyKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			int rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				ByteBuffer key = packedKey.mv_data().order(ByteOrder.BIG_ENDIAN);
-				if (key.getLong(key.position()) != PACKED_COUNT_KEY) {
-					if (packedExplicitSegmented) {
-						PackedSegmentCodec.Decoded decoded = PackedSegmentCodec.decode(packedValue.mv_data(),
-								SimpleValueFactory.getInstance());
-						ByteBuffer quads = decoded.quads();
-						Value[] values = decoded.values();
-						long[] valueIds = materializePackedValues(values);
-						while (quads.hasRemaining()) {
-							long subj = valueIds[quads.getInt()];
-							long pred = valueIds[quads.getInt()];
-							long obj = valueIds[quads.getInt()];
-							int contextId = quads.getInt();
-							long context = contextId == 0 ? 0 : valueIds[contextId];
-							for (TripleIndex index : indexes) {
-								legacyKeyBuffer.clear();
-								index.toKey(legacyKeyBuffer, subj, pred, obj, context);
-								LmdbUtil.setMDBValData(legacyKey, legacyKeyBuffer.flip());
-								E(mdb_put(writeTxn, index.getDB(true), legacyKey, legacyValue, 0));
+			for (int indexPosition = 1; indexPosition < indexes.size(); indexPosition++) {
+				int[] secondaryOrder = preparedOrders.awaitSecondary(indexPosition);
+				TripleIndex index = indexes.get(indexPosition);
+				long cursor = REUSE_ALIGNED_WRITE_CURSOR
+						? getAlignedWriteCursor(indexPosition, index, true, cursorHandle)
+						: 0;
+				try (GlobalEncodedIndexBlocks encodedSecondary = prepareGlobalIndexBlocks(encoderExecutor,
+						indexPosition, secondaryOrder, quads, valueIds)) {
+					EncodedIndexBlock block;
+					while ((block = encodedSecondary.next()) != null) {
+						try (EncodedIndexBlock currentBlock = block) {
+							for (int i = 0; i < currentBlock.statementIndices.length; i++) {
+								int statementIndex = currentBlock.statementIndices[i];
+								if (!addedStatements[statementIndex]) {
+									continue;
+								}
+								int offset = currentBlock.offsets[i];
+								LmdbUtil.setMDBValData(keyVal, currentBlock.address + offset,
+										currentBlock.offsets[i + 1] - offset);
+								if (REUSE_ALIGNED_WRITE_CURSOR) {
+									E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+								} else {
+									E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+								}
 							}
-							incrementContext(stack, context);
-						}
-						rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_NEXT);
-						continue;
-					}
-					ByteBuffer records = packedValue.mv_data().order(ByteOrder.BIG_ENDIAN);
-					int recordBytes = packedValues == null ? PACKED_RECORD_BYTES : PACKED_LOCAL_RECORD_BYTES;
-					while (records.remaining() >= recordBytes) {
-						long subj;
-						long pred;
-						long obj;
-						long context;
-						if (packedValues == null) {
-							subj = records.getLong();
-							pred = records.getLong();
-							obj = records.getLong();
-							context = records.getLong();
-						} else {
-							subj = packedValueIds[records.getInt()];
-							pred = packedValueIds[records.getInt()];
-							obj = packedValueIds[records.getInt()];
-							int contextId = records.getInt();
-							context = contextId == 0 ? 0 : packedValueIds[contextId];
-						}
-						for (TripleIndex index : indexes) {
-							legacyKeyBuffer.clear();
-							index.toKey(legacyKeyBuffer, subj, pred, obj, context);
-							LmdbUtil.setMDBValData(legacyKey, legacyKeyBuffer.flip());
-							E(mdb_put(writeTxn, index.getDB(true), legacyKey, legacyValue, 0));
-						}
-						if (packedValues != null) {
-							incrementContext(stack, context);
 						}
 					}
 				}
-				rc = mdb_cursor_get(cursor, packedKey, packedValue, MDB_NEXT);
-			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-			mdb_cursor_close(cursor);
-			cursor = 0;
-			E(mdb_drop(writeTxn, packedExplicitDbi, false));
-			E(mdb_drop(writeTxn, packedValuesDbi, false));
-			packedMaterializedInTxn = true;
-		} finally {
-			if (cursor != 0) {
-				mdb_cursor_close(cursor);
 			}
 		}
+		logAddedStatements(addedCount);
 	}
 
-	private long[] materializePackedValues(Value[] values) throws IOException {
-		long[] ids = new long[values.length];
-		for (int offset = 1; offset < values.length; offset += PACKED_MATERIALIZATION_VALUE_BATCH_SIZE) {
-			int count = Math.min(PACKED_MATERIALIZATION_VALUE_BATCH_SIZE, values.length - offset);
-			Value[] batchValues = new Value[count];
-			long[] batchIds = new long[count];
-			System.arraycopy(values, offset, batchValues, 0, count);
-			valueStore.storeValues(batchValues, batchIds, count);
-			System.arraycopy(batchIds, 0, ids, offset, count);
-		}
-		return ids;
-	}
-
-	private Value[] readPackedValues(long txn, long valueCount) throws IOException {
-		if (valueCount > Integer.MAX_VALUE - 1) {
-			throw new IOException("Packed value dictionary is too large");
-		}
-		Value[] values = new Value[(int) valueCount + 1];
-		long cursor = 0;
-		int valueId = 0;
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, packedValuesDbi, cursorHandle));
-			cursor = cursorHandle.get(0);
-			MDBVal key = MDBVal.malloc(stack);
-			MDBVal data = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, data, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				ByteBuffer keyBuffer = key.mv_data().order(ByteOrder.BIG_ENDIAN);
-				if (keyBuffer.getLong(keyBuffer.position()) != PACKED_COUNT_KEY) {
-					ByteBuffer block = data.mv_data().order(ByteOrder.BIG_ENDIAN);
-					while (block.remaining() >= Integer.BYTES) {
-						int length = block.getInt();
-						if (length < 0 || length > block.remaining()) {
-							throw new IOException("Corrupt packed value record length " + length);
-						}
-						byte[] encoded = new byte[length];
-						block.get(encoded);
-						valueId++;
-						values[valueId] = PackedValueCodec.decode(encoded, values, SimpleValueFactory.getInstance());
-					}
-				}
-				rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
-			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-			if (valueId != valueCount) {
-				throw new IOException(
-						"Packed value dictionary expected " + valueCount + " values but found " + valueId);
-			}
-			mdb_cursor_close(cursor);
-			cursor = 0;
-			return values;
-		} finally {
-			if (cursor != 0) {
-				mdb_cursor_close(cursor);
-			}
-		}
-	}
-
-	private void writePackedCount(int dbi, long count) throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			MDBVal value = MDBVal.malloc(stack);
-			value.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(count).flip());
-			E(mdb_put(writeTxn, dbi, key, value, 0));
-		}
-	}
-
-	private void writePackedCounts(long statementCount, long valueCount) throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			MDBVal value = MDBVal.malloc(stack);
-			value.mv_data(stack.malloc(2 * Long.BYTES)
-					.order(ByteOrder.BIG_ENDIAN)
-					.putLong(statementCount)
-					.putLong(valueCount)
-					.flip());
-			E(mdb_put(writeTxn, packedExplicitDbi, key, value, 0));
-			int rc = mdb_del(writeTxn, packedValuesDbi, key, null);
-			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-		}
-	}
-
-	private long readLastPackedValueCount(MemoryStack stack, long txn) throws IOException {
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(txn, packedValuesDbi, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.malloc(stack);
-			MDBVal value = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
-			if (rc == MDB_NOTFOUND) {
-				return 0;
-			}
-			E(rc);
-			long firstValueId = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			if (firstValueId == PACKED_COUNT_KEY) {
-				return 0;
-			}
-			ByteBuffer block = value.mv_data();
-			long count = 0;
-			while (block.remaining() >= Integer.BYTES) {
-				int length = block.getInt();
-				if (length < 0 || length > block.remaining()) {
-					throw new IOException("Corrupt packed value record length " + length);
-				}
-				block.position(block.position() + length);
-				count++;
-			}
-			return Math.addExact(firstValueId, count - 1);
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private boolean isLastPackedSegment(MemoryStack stack, long txn) throws IOException {
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(txn, packedExplicitDbi, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.malloc(stack);
-			MDBVal value = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
-			if (rc == MDB_NOTFOUND) {
-				return false;
-			}
-			E(rc);
-			ByteBuffer data = value.mv_data().order(ByteOrder.BIG_ENDIAN);
-			return data.remaining() >= Integer.BYTES
-					&& data.getInt(data.position()) == PackedSegmentCodec.MAGIC;
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private long readLastPackedStatementCount(MemoryStack stack, long txn, boolean localValueIds) throws IOException {
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(txn, packedExplicitDbi, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.malloc(stack);
-			MDBVal value = MDBVal.malloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
-			if (rc == MDB_NOTFOUND) {
-				return 0;
-			}
-			E(rc);
-			long firstStatement = key.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
-			if (firstStatement == PACKED_COUNT_KEY) {
-				return 0;
-			}
-			ByteBuffer data = value.mv_data().order(ByteOrder.BIG_ENDIAN);
-			long blockCount;
-			if (data.remaining() >= 3 * Integer.BYTES
-					&& data.getInt(data.position()) == PackedSegmentCodec.MAGIC) {
-				blockCount = data.getInt(data.position() + 2 * Integer.BYTES);
-			} else {
-				int recordBytes = localValueIds ? PACKED_LOCAL_RECORD_BYTES : PACKED_RECORD_BYTES;
-				blockCount = value.mv_size() / recordBytes;
-			}
-			return Math.addExact(firstStatement, blockCount - 1);
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private void removePackedCountMetadata() throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal key = MDBVal.malloc(stack);
-			key.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(PACKED_COUNT_KEY).flip());
-			int explicitRc = mdb_del(writeTxn, packedExplicitDbi, key, null);
-			if (explicitRc != MDB_SUCCESS && explicitRc != MDB_NOTFOUND) {
-				E(explicitRc);
-			}
-			int valueRc = mdb_del(writeTxn, packedValuesDbi, key, null);
-			if (valueRc != MDB_SUCCESS && valueRc != MDB_NOTFOUND) {
-				E(valueRc);
-			}
-		}
-	}
-
-	@Experimental
-	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
+	private void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
+			EncodedIndexKeys preparedMainIndex,
+			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
-		storeTriplesAligned(subj, pred, obj, context, count, explicit, null);
-	}
-
-	@Experimental
-	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-			IntConsumer addedIndexConsumer)
-			throws IOException {
+		long preparedStartNanos = LOAD_TIMING && preparedSecondaryIndexesSupplier != null ? System.nanoTime() : 0;
 		if (count == 0) {
 			return;
 		}
-		if (packedWriteActive && explicit) {
-			storePackedTriples(subj, pred, obj, context, count, addedIndexConsumer);
-			return;
-		}
-		materializePackedIfNeeded(explicit);
-		if (count == 1 || recordCache != null || requiresResize()) {
+		boolean preparedWrite = preparedSecondaryIndexesSupplier != null;
+		long requiredSize = preparedWrite ? preparedWriteReservation(count) : 0;
+		if (count == 1 || recordCache != null || requiresResize(requiredSize)) {
 			storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 			return;
 		}
-
 		TripleIndex mainIndex = indexes.getFirst();
 		int addedCount = 0;
 		int remainingStart = count;
@@ -2975,23 +2818,42 @@ class TripleStore implements Closeable {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
-			boolean[] promotedFromImplicit = ensureAlignedWritePromotedFromImplicit(count);
-			Arrays.fill(promotedFromImplicit, 0, count, false);
+			boolean[] addedStatements = preparedSecondaryIndexesSupplier == null ? null
+					: ensureAlignedWriteAddedStatements(count);
+			if (addedStatements != null) {
+				Arrays.fill(addedStatements, 0, count, false);
+			}
+			boolean[] promotedFromImplicit = explicit && mayHaveInferred
+					? ensureAlignedWritePromotedFromImplicit(count)
+					: null;
+			if (promotedFromImplicit != null) {
+				Arrays.fill(promotedFromImplicit, 0, count, false);
+			}
 			LongIntHashMap contextIncrements = alignedContextIncrements;
 			contextIncrements.clear();
 			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
 					? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
 					: 0;
+			EncodedIndexKeys encodedMainIndex = preparedMainIndex;
 
 			for (int i = 0; i < count; i++) {
-				if (shouldFallBackFromAlignedWrite()) {
+				if (!preparedWrite && shouldFallBackFromAlignedWrite()) {
 					remainingStart = i;
 					break;
 				}
-				keyBuf.clear();
-				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
-				keyBuf.flip();
-				LmdbUtil.setMDBValData(keyVal, keyBuf);
+				int statementIndex;
+				if (encodedMainIndex == null) {
+					statementIndex = i;
+					keyBuf.clear();
+					mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
+					keyBuf.flip();
+					LmdbUtil.setMDBValData(keyVal, keyBuf);
+				} else {
+					statementIndex = encodedMainIndex.statementIndices[i];
+					int offset = encodedMainIndex.offsets[i];
+					LmdbUtil.setMDBValData(keyVal, encodedMainIndex.address + offset,
+							encodedMainIndex.offsets[i + 1] - offset);
+				}
 
 				int rc = REUSE_ALIGNED_WRITE_CURSOR
 						? mdb_cursor_put(mainWriteCursor, keyVal, dataVal, MDB_NOOVERWRITE)
@@ -3005,18 +2867,25 @@ class TripleStore implements Closeable {
 				}
 
 				if (rc == MDB_SUCCESS) {
+					if (addedStatements != null) {
+						addedStatements[statementIndex] = true;
+					}
 					if (addedIndexConsumer != null) {
-						addedIndexConsumer.accept(i);
+						addedIndexConsumer.accept(statementIndex);
 					}
-					sortedIndices[addedCount++] = i;
-					if (explicit) {
-						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
-								dataVal) == MDB_SUCCESS;
+					sortedIndices[addedCount++] = statementIndex;
+					if (promotedFromImplicit != null) {
+						promotedFromImplicit[statementIndex] = mdb_del(writeTxn, mainIndex.getDB(false),
+								keyVal, dataVal) == MDB_SUCCESS;
 					}
-					contextIncrements.addToValue(context[i], 1);
+					contextIncrements.addToValue(context[statementIndex], 1);
 				}
 			}
-
+			if (preparedStartNanos != 0) {
+				System.err.printf("prepared-index-write index=%s statements=%d ms=%.3f%n",
+						new String(mainIndex.getFieldSeq()), count,
+						(System.nanoTime() - preparedStartNanos) / 1_000_000.0);
+			}
 			int[] mainOrderIndices = ensureAlignedWriteMainOrderIndices(addedCount);
 			System.arraycopy(sortedIndices, 0, mainOrderIndices, 0, addedCount);
 			LongIntHashMap appliedContextIncrements = alignedAppliedContextIncrements;
@@ -3039,63 +2908,114 @@ class TripleStore implements Closeable {
 				return;
 			}
 
-			char[] currentFieldSeq = mainIndex.getFieldSeq();
-			for (int i = 1; i < indexes.size(); i++) {
-				TripleIndex index = indexes.get(i);
-				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq,
-						index.getFieldSeq())) {
-					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
-				}
-				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
-				currentFieldSeq = index.getFieldSeq();
-				long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
-						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
-						: 0;
-				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
-					int statementIndex = sortedIndices[sortedIndex];
-					keyBuf.clear();
-					index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
-							context[statementIndex]);
-					keyBuf.flip();
-					LmdbUtil.setMDBValData(keyVal, keyBuf);
+			try (PreparedSecondaryIndexes preparedIndexes = preparedSecondaryIndexesSupplier == null
+					? null
+					: preparedSecondaryIndexesSupplier.get()) {
+				if (preparedIndexes != null) {
+					for (EncodedIndexKeys encodedIndex : preparedIndexes.indexes) {
+						long secondaryStartNanos = preparedStartNanos == 0 ? 0 : System.nanoTime();
+						int indexPosition = encodedIndex.indexPosition;
+						TripleIndex index = indexes.get(indexPosition);
+						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
+								? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
+								: 0;
+						int encodedCount = encodedIndex.statementIndices.length;
+						for (int keyIndex = 0; keyIndex < encodedCount; keyIndex++) {
+							int statementIndex = encodedIndex.statementIndices[keyIndex];
+							if (!addedStatements[statementIndex]) {
+								continue;
+							}
+							int offset = encodedIndex.offsets[keyIndex];
+							LmdbUtil.setMDBValData(keyVal, encodedIndex.address + offset,
+									encodedIndex.offsets[keyIndex + 1] - offset);
 
-					if (promotedFromImplicit[statementIndex]) {
-						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
-					}
-					if (shouldFallBackFromAlignedWrite()) {
-						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-								addedIndexConsumer);
-						return;
-					}
-					if (REUSE_ALIGNED_WRITE_CURSOR) {
-						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
+							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
+								E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+							}
+							int rc = REUSE_ALIGNED_WRITE_CURSOR
+									? mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0)
+									: mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
+							if (rc == MDB_MAP_FULL && autoGrow) {
+								fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+										promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+										addedIndexConsumer);
+								return;
+							}
+							E(rc);
 						}
-						E(rc);
-					} else {
-						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
+						if (secondaryStartNanos != 0) {
+							System.err.printf("prepared-index-write index=%s statements=%d ms=%.3f%n",
+									new String(index.getFieldSeq()), count,
+									(System.nanoTime() - secondaryStartNanos) / 1_000_000.0);
 						}
-						E(rc);
+					}
+				} else {
+					char[] currentFieldSeq = mainIndex.getFieldSeq();
+					for (int i = 1; i < indexes.size(); i++) {
+						TripleIndex index = indexes.get(i);
+						if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq,
+								index.getFieldSeq())) {
+							System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
+						}
+						sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
+						currentFieldSeq = index.getFieldSeq();
+						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
+								? getAlignedWriteCursor(i, index, explicit, cursorHandle)
+								: 0;
+						for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
+							int statementIndex = sortedIndices[sortedIndex];
+							if (shouldFallBackFromAlignedWrite()) {
+								fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+										promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+										addedIndexConsumer);
+								return;
+							}
+							keyBuf.clear();
+							index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
+									context[statementIndex]);
+							keyBuf.flip();
+							LmdbUtil.setMDBValData(keyVal, keyBuf);
+
+							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
+								E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+							}
+							if (REUSE_ALIGNED_WRITE_CURSOR) {
+								int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
+								if (rc == MDB_MAP_FULL && autoGrow) {
+									fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+											promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+											addedIndexConsumer);
+									return;
+								}
+								E(rc);
+							} else {
+								int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
+								if (rc == MDB_MAP_FULL && autoGrow) {
+									fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+											promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+											addedIndexConsumer);
+									return;
+								}
+								E(rc);
+							}
+						}
 					}
 				}
 			}
 		}
-
+		if (preparedStartNanos != 0) {
+			System.err.printf("prepared-index-write statements=%d totalMs=%.3f%n", count,
+					(System.nanoTime() - preparedStartNanos) / 1_000_000.0);
+		}
 		if (remainingStart < count) {
 			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
 		}
 
 		logAddedStatements(addedCount);
+	}
+
+	private boolean shouldFallBackFromAlignedWrite() {
+		return recordCache != null || requiresResize();
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
@@ -3106,10 +3026,6 @@ class TripleStore implements Closeable {
 				addedIndexConsumer.accept(i);
 			}
 		}
-	}
-
-	private boolean shouldFallBackFromAlignedWrite() {
-		return recordCache != null || requiresResize();
 	}
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
@@ -3127,7 +3043,7 @@ class TripleStore implements Closeable {
 			long statementPred = pred[statementIndex];
 			long statementObj = obj[statementIndex];
 			long statementContext = context[statementIndex];
-			if (explicit && promotedFromImplicit[statementIndex]) {
+			if (explicit && promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
 				long[] quad = new long[] { statementSubj, statementPred, statementObj, statementContext };
 				recordCache.removeRecord(quad, false, true);
 				recordCache.storeRecord(quad, true, true);
@@ -3192,6 +3108,13 @@ class TripleStore implements Closeable {
 			alignedWriteMainOrderIndices = new int[length];
 		}
 		return alignedWriteMainOrderIndices;
+	}
+
+	private boolean[] ensureAlignedWriteAddedStatements(int length) {
+		if (alignedWriteAddedStatements.length < length) {
+			alignedWriteAddedStatements = new boolean[length];
+		}
+		return alignedWriteAddedStatements;
 	}
 
 	private boolean[] ensureAlignedWritePromotedFromImplicit(int length) {
@@ -3357,7 +3280,6 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
-		materializePackedIfNeeded(explicit);
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
@@ -3452,13 +3374,6 @@ class TripleStore implements Closeable {
 
 	public void startTransaction() throws IOException {
 		closeAlignedWriteCursors();
-		packedWriteActive = false;
-		packedTxnSegmented = false;
-		packedMaterializedInTxn = false;
-		packedTxnCount = 0;
-		packedTxnValueCount = 0;
-		packedNextBlockId = 1;
-		packedNextValueBlockId = 1;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
@@ -3492,6 +3407,53 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	void reserveWriteCapacity(long requiredSize) throws IOException {
+		if (!autoGrow || pageSize <= 0 || requiredSize <= 0) {
+			return;
+		}
+
+		var lockManager = txnManager.lockManager();
+		long requiredMapSize = 0;
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try {
+			long readTxn = txnManager.getReadTxn().get();
+			if (LmdbUtil.requiresResize(mapSize, pageSize, readTxn, requiredSize)) {
+				requiredMapSize = LmdbUtil.getNewSize(pageSize, readTxn, requiredSize);
+			}
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+		if (requiredMapSize == 0 || requiredMapSize <= mapSize) {
+			return;
+		}
+
+		long writeStamp;
+		try {
+			writeStamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try {
+			txnManager.deactivate();
+			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredMapSize);
+			E(mdb_env_set_mapsize(env, mapSize));
+			logger.debug("reserved triple map capacity of {} bytes", mapSize);
+		} finally {
+			try {
+				txnManager.activate();
+			} finally {
+				lockManager.unlockWrite(writeStamp);
+			}
+		}
+	}
+
 	/**
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
@@ -3500,9 +3462,6 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
-					if (packedWriteActive && packedCountMetadataPresent) {
-						removePackedCountMetadata();
-					}
 					var lockManager = txnManager.lockManager();
 					long stamp;
 					try {
@@ -3512,17 +3471,6 @@ class TripleStore implements Closeable {
 					}
 					try {
 						E(mdb_txn_commit(writeTxn));
-						if (packedWriteActive) {
-							packedExplicitCount = packedTxnCount;
-							packedExplicitValueCount = packedTxnValueCount;
-							packedExplicitSegmented = packedTxnSegmented;
-							packedCountMetadataPresent = false;
-						} else if (packedMaterializedInTxn) {
-							packedExplicitCount = 0;
-							packedExplicitValueCount = 0;
-							packedExplicitSegmented = false;
-							clearPackedFingerprintLocations();
-						}
 						if (recordCache != null) {
 							try {
 								txnManager.deactivate();
@@ -3551,24 +3499,15 @@ class TripleStore implements Closeable {
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
-						clearPackedFingerprintLocations();
 						throw e;
 					} finally {
 						lockManager.unlockWrite(stamp);
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
-					clearPackedFingerprintLocations();
 				}
 			} finally {
 				writeTxn = 0;
-				packedWriteActive = false;
-				packedTxnSegmented = false;
-				packedMaterializedInTxn = false;
-				packedTxnCount = 0;
-				packedTxnValueCount = 0;
-				packedNextBlockId = 1;
-				packedNextValueBlockId = 1;
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {
