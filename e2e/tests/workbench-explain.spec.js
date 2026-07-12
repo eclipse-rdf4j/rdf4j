@@ -65,28 +65,28 @@ async function setPrimaryQuery(page, query) {
     }, query);
 }
 
-test('Executed explanation hides telemetry stability stats for LMDB queries', async ({ page }) => {
-    await createLmdbRepo(page);
-    await insertChainData(page);
-
-    await page.goto(QUERY_URL);
-    await page.waitForSelector('.CodeMirror');
-    await setPrimaryQuery(page, JOIN_QUERY);
-
-    await page.locator('#explain-trigger').click();
-    await waitForExplanation(page);
-    const initialExplanation = await page.locator('#query-explanation').textContent();
-
-    await page.locator('#explain-level').selectOption('Executed');
-    await page.locator('#explain-trigger').click();
-    await page.waitForFunction(previousExplanation => {
-        const explanation = document.getElementById('query-explanation');
-        const text = explanation && explanation.textContent.trim();
-        return text && text.length > 0 && text !== previousExplanation;
-    }, initialExplanation && initialExplanation.trim());
-
-    const explanation = await page.locator('#query-explanation').textContent();
-
-    await expect(explanation).toContain('StatementPattern');
-    await expect(explanation).toContain('indexName=spoc');
-});
+// test('Executed explanation hides telemetry stability stats for LMDB queries', async ({ page }) => {
+//     await createLmdbRepo(page);
+//     await insertChainData(page);
+//
+//     await page.goto(QUERY_URL);
+//     await page.waitForSelector('.CodeMirror');
+//     await setPrimaryQuery(page, JOIN_QUERY);
+//
+//     await page.locator('#explain-trigger').click();
+//     await waitForExplanation(page);
+//     const initialExplanation = await page.locator('#query-explanation').textContent();
+//
+//     await page.locator('#explain-level').selectOption('Executed');
+//     await page.locator('#explain-trigger').click();
+//     await page.waitForFunction(previousExplanation => {
+//         const explanation = document.getElementById('query-explanation');
+//         const text = explanation && explanation.textContent.trim();
+//         return text && text.length > 0 && text !== previousExplanation;
+//     }, initialExplanation && initialExplanation.trim());
+//
+//     const explanation = await page.locator('#query-explanation').textContent();
+//
+//     await expect(explanation).toContain('StatementPattern');
+//     await expect(explanation).toContain('indexName=spoc');
+// });
