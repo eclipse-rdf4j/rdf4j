@@ -1,0 +1,5 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/equivalence --retain-logs
+Reports: core/queryalgebra/equivalence/target/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceCheckerTest.xml, core/queryalgebra/equivalence/target/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceRegressionTest.xml, core/queryalgebra/equivalence/target/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.equivalence.PublicApiContractTest.xml, +13 more
+Summary: tests=56, failures=0, errors=0, skipped=0, time=1.018s
+Log: logs/mvnf/20260712-181903-verify.log
