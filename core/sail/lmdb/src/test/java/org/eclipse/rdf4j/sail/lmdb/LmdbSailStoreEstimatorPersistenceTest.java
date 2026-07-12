@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.lang.reflect.Field;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -282,16 +284,20 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
-	void ignoresFilterSelectivitySidecarWhenEstimatorSnapshotRevisionChanges(@TempDir File dataDir) throws Exception {
+	void keepsFilterSelectivitySidecarWhenOnlyMetadataTimestampChanges(@TempDir File dataDir) throws Exception {
 		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
 
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		double learnedPassRatio;
 		try {
 			loadNameData(repository);
 			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 			recordLearnedFilterPassRatio(store, learnedFilter);
+			learnedPassRatio = store.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPassRatio(learnedFilter);
 		} finally {
 			repository.shutDown();
 		}
@@ -304,10 +310,120 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		reopened.init();
 		try {
 			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
-			assertTrue(statistics.estimateFilterPassRatio(learnedFilter) < 0.0d,
-					"Expected mismatched estimator snapshot revision to invalidate persisted filter selectivity");
+			assertEquals(learnedPassRatio, statistics.estimateFilterPassRatio(learnedFilter), 0.00001d,
+					"File timestamps are not evidence identity and must not invalidate persisted filter selectivity");
 		} finally {
 			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void rejectsStaleFilterSidecarWhenMetadataSizeAndTimestampAreReused(@TempDir File dataDir) throws Exception {
+		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
+		LmdbStoreConfig config = sketchEnabledConfig("spoc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingEnabled(false);
+
+		LmdbStore initial = new LmdbStore(dataDir, config);
+		SailRepository initialRepository = new SailRepository(initial);
+		initialRepository.init();
+		try {
+			loadNameData(initialRepository);
+			assertTrue(initial.awaitSketchesReady(10, TimeUnit.SECONDS));
+			recordLearnedFilterPassRatio(initial, learnedFilter);
+		} finally {
+			initialRepository.shutDown();
+		}
+
+		Path metadata = dataDir.toPath().resolve(SNAPSHOT_FILE).resolve(SNAPSHOT_METADATA_FILE);
+		Path sidecar = dataDir.toPath().resolve(FILTER_SNAPSHOT_FILE);
+		long originalMetadataSize = Files.size(metadata);
+		FileTime originalMetadataTimestamp = Files.getLastModifiedTime(metadata);
+		byte[] staleSidecar = Files.readAllBytes(sidecar);
+
+		LmdbStore mutated = new LmdbStore(dataDir, config);
+		mutated.init();
+		try {
+			assertTrue(mutated.awaitSketchesReady(10, TimeUnit.SECONDS),
+					"The collision contract requires an incrementally updatable persisted snapshot");
+			var vf = SimpleValueFactory.getInstance();
+			try (NotifyingSailConnection connection = mutated.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.addStatement(vf.createIRI("urn:stale:s"), vf.createIRI("urn:test:name"),
+						vf.createLiteral("stale"));
+				connection.commit();
+			}
+		} finally {
+			mutated.shutDown();
+		}
+
+		assertEquals(originalMetadataSize, Files.size(metadata),
+				"Fixed-width snapshot identity must keep metadata size stable across mutations");
+		Files.write(sidecar, staleSidecar);
+		Files.setLastModifiedTime(metadata, originalMetadataTimestamp);
+
+		LmdbStore reopened = new LmdbStore(dataDir, config);
+		reopened.init();
+		try {
+			EvaluationStatistics.FilterPassEstimate estimate = reopened.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPass(learnedFilter);
+			assertFalse(Set.of(
+					EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+					EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+					EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN)
+					.contains(estimate.getSource()),
+					"An old sidecar must be rejected even when file size and timestamp collide");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void deferredMutationInvalidatesUnloadedPersistedSnapshot(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = sketchEnabledConfig("spoc");
+		LmdbStore initial = new LmdbStore(dataDir, config);
+		SailRepository initialRepository = new SailRepository(initial);
+		initialRepository.init();
+		try {
+			loadNameData(initialRepository);
+			assertTrue(initial.awaitSketchesReady(10, TimeUnit.SECONDS));
+		} finally {
+			initialRepository.shutDown();
+		}
+
+		Path metadata = dataDir.toPath().resolve(SNAPSHOT_FILE).resolve(SNAPSHOT_METADATA_FILE);
+		SketchSnapshotIdentity originalIdentity = readSnapshotIdentity(metadata);
+
+		LmdbStore mutated = new LmdbStore(dataDir, config);
+		mutated.init();
+		try {
+			SketchBasedJoinEstimator estimator = mutated.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.unload();
+			var vf = SimpleValueFactory.getInstance();
+			try (NotifyingSailConnection connection = mutated.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.addStatement(vf.createIRI("urn:deferred:s"), vf.createIRI("urn:test:name"),
+						vf.createLiteral("deferred"));
+				connection.commit();
+			}
+		} finally {
+			mutated.shutDown();
+		}
+
+		assertTrue(!Files.isRegularFile(metadata) || !originalIdentity.equals(readSnapshotIdentity(metadata)),
+				"A store mutation that cannot update unloaded sketches must invalidate the old persisted identity");
+	}
+
+	private static SketchSnapshotIdentity readSnapshotIdentity(Path metadata) throws Exception {
+		try (DataInputStream in = new DataInputStream(Files.newInputStream(metadata))) {
+			assertEquals('R', in.readUnsignedByte());
+			assertEquals('J', in.readUnsignedByte());
+			assertEquals('E', in.readUnsignedByte());
+			assertEquals('D', in.readUnsignedByte());
+			assertEquals(7, in.readInt());
+			return SketchSnapshotIdentity.readFrom(in);
 		}
 	}
 

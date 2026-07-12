@@ -73,6 +73,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchKeyProvider;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
@@ -369,18 +370,23 @@ class LmdbSailStore implements SailStore {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
 				boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
+				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
+				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
-						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
-				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath);
-				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
+						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
+						sketchBasedJoinEstimator::snapshotIdentity,
+						config.getSketchEstimatorColdSynopsisCapacity());
+				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
+						sketchBasedJoinEstimator::snapshotIdentity,
+						sketchBasedJoinEstimator::adaptiveEvidenceAllowed);
 				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
+				sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
 				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
 				sketchBasedJoinEstimator.setExactJoinSurfaceProvider(new LmdbSamplingJoinCardinalityEstimator(
 						valueStore, tripleStore, statementPatternCardinalitySource,
 						this::lockEstimatorExactJoinSurfaceProvider));
-				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 				if (!snapshotExists && storeHasTriples) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
@@ -506,9 +512,9 @@ class LmdbSailStore implements SailStore {
 		private final Long2ObjectOpenHashMap<SketchTermKey> byId = new Long2ObjectOpenHashMap<>(
 				LMDB_SKETCH_KEY_CACHE_INITIAL_CAPACITY);
 
-		private SketchTermKey lmdbValueId(long id, long currentScope) {
-			if (scope != currentScope) {
-				scope = currentScope;
+		private SketchTermKey lmdbValueId(long id, long currentRevision) {
+			if (scope != currentRevision) {
+				scope = currentRevision;
 				byId.clear();
 			}
 			SketchTermKey key = byId.get(id);
@@ -516,7 +522,9 @@ class LmdbSailStore implements SailStore {
 				if (byId.size() >= LMDB_SKETCH_KEY_CACHE_MAX_ENTRIES) {
 					byId.clear();
 				}
-				key = SketchTermKey.lmdbValueId(id, currentScope);
+				// The revision bounds this process-local cache, but persisted sketch keys need a stable LMDB ID
+				// namespace.
+				key = SketchTermKey.lmdbValueId(id, 0L);
 				byId.put(id, key);
 			}
 			return key;
@@ -578,6 +586,10 @@ class LmdbSailStore implements SailStore {
 		return sketchBasedJoinEstimator;
 	}
 
+	Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		return filterSelectivityStats == null ? Optional.empty() : filterSelectivityStats.coldSynopsisFootprint();
+	}
+
 	boolean forceFlushSketchEstimator() {
 		SketchBasedJoinEstimator estimator = sketchBasedJoinEstimator;
 		if (estimator == null) {
@@ -623,6 +635,8 @@ class LmdbSailStore implements SailStore {
 				.withZeroIntersectionExactDistinctLimit(0)
 				.withZeroIntersectionRowBudget(SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET)
 				.withZeroIntersectionSampleSize(0)
+				.withEvidenceMode(config.getSketchEstimatorEvidenceMode())
+				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity())
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
 						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.OMNI));
 		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {

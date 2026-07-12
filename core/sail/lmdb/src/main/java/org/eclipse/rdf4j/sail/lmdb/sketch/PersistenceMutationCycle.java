@@ -27,12 +27,28 @@ final class PersistenceMutationCycle {
 		return mutationVersion.get();
 	}
 
+	long currentVersion() {
+		return mutationVersion.get();
+	}
+
+	long persistedVersion() {
+		return persistedVersion.get();
+	}
+
 	void markPersistedThrough(long targetVersion) {
 		persistedVersion.accumulateAndGet(targetVersion, Math::max);
 	}
 
 	void markCurrentPersisted() {
 		markPersistedThrough(captureTargetVersion());
+	}
+
+	void restorePersistedVersion(long version) {
+		if (version < 0L) {
+			throw new IllegalArgumentException("version must be non-negative: " + version);
+		}
+		mutationVersion.set(version);
+		persistedVersion.set(version);
 	}
 
 	boolean hasUnpersistedMutations() {

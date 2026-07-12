@@ -183,6 +183,26 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void persistedApproximateStoreSizeUsesStatementCountRatherThanSnapshotBytes(@TempDir Path tempDir)
+			throws Exception {
+		StubSketchStatementSource source = new StubSketchStatementSource();
+		IRI predicate = VF.createIRI("urn:size:p");
+		for (int i = 0; i < 12; i++) {
+			source.add(st(VF.createIRI("urn:size:s:" + i), predicate, VF.createIRI("urn:size:o:" + i)));
+		}
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(source, smallConfig()));
+		estimator.configurePersistence(storeDirectory, false);
+		assertEquals(12L, estimator.rebuild());
+		assertTrue(estimator.persistIfDirty());
+
+		SketchEstimatorMetadata metadata = SketchEstimatorMetadata.readFrom(
+				new DataInputStream(Files.newInputStream(storeDirectory.resolve("metadata.bin"))));
+		assertEquals(12L, metadata.seenCount);
+		assertEquals(12L, metadata.approxStoreSize);
+	}
+
+	@Test
 	void oldSingleBucketMetadataReadsAsUniformBucketsWithContextPairsEnabled() throws Exception {
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 		try (DataOutputStream out = new DataOutputStream(bytes)) {

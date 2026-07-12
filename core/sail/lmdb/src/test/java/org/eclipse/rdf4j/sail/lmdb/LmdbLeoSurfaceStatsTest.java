@@ -20,10 +20,12 @@ import java.nio.file.Path;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbLeoSurfaceStatsTest {
+	private static final SketchSnapshotIdentity TEST_SNAPSHOT_IDENTITY = new SketchSnapshotIdentity(17L, 23L, 1L);
 
 	@Test
 	void fanoutStatsKeepTopKAndQuantileBuckets() {
@@ -122,11 +124,11 @@ class LmdbLeoSurfaceStatsTest {
 	@Test
 	void operatorFeedbackServicePersistsFanoutSurfaceWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath, () -> TEST_SNAPSHOT_IDENTITY);
 		stats.recordFanout(5L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 90L, 44L, 1L);
 		stats.persistIfDirty();
 
-		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath, () -> TEST_SNAPSHOT_IDENTITY);
 		LeoEvidence evidence = reloaded.evidence(LeoSurfaceKey.fanout(5L, "subject", 90L)).orElseThrow();
 
 		assertEquals(44.0d, evidence.rows());

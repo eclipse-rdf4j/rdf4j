@@ -46,10 +46,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfil
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbOperatorFeedbackStatsTest {
+	private static final SketchSnapshotIdentity TEST_SNAPSHOT_IDENTITY = new SketchSnapshotIdentity(0x1234L, 0x5678L,
+			9L);
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI P1 = VF.createIRI("urn:test:operator-feedback:p1");
@@ -253,19 +256,19 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void persistsAndResetsWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeBinary(observed, 144_000, 7, 7, 72_000, 72_000);
 		stats.recordOperatorOutcome(observed);
 		stats.persistIfDirty();
 
-		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		assertNotNull(reloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"Persisted operator feedback should reload for same estimator revision");
 
 		reloaded.reset();
 		reloaded.persistIfDirty();
-		LmdbOperatorFeedbackStats resetReloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats resetReloaded = persistentStats(estimatorPath);
 		assertNull(resetReloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"Reset feedback should persist as empty");
 	}
@@ -273,7 +276,7 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void operatorFeedbackRecordsQErrorSummary(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(observed, 1_000, 10, 100, 600, 400);
 
@@ -290,7 +293,7 @@ class LmdbOperatorFeedbackStatsTest {
 				"Large learned q-error should expose non-zero planning uncertainty");
 
 		stats.persistIfDirty();
-		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		LmdbOperatorFeedbackStats.OperatorEstimate reloadedEstimate = reloaded.estimate(
 				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
 		assertNotNull(reloadedEstimate);
@@ -301,7 +304,7 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void persistedFeedbackRestoresConfidenceModel(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union first = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(first, 100, 100, 100, 60, 40);
 		stats.recordOperatorOutcome(first);
@@ -314,7 +317,7 @@ class LmdbOperatorFeedbackStatsTest {
 		assertNotNull(before);
 		stats.persistIfDirty();
 
-		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		LmdbOperatorFeedbackStats.OperatorEstimate after = reloaded.estimate(
 				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
 		assertNotNull(after);
@@ -388,13 +391,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void operatorFeedbackServiceExposesAndPersistsFanoutEvidence(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
-		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		stats.recordFanout(33L, LmdbLeoSurfaceStats.BoundPosition.OBJECT, 44L, 123L, 1L);
 
 		assertEquals(123.0d, stats.evidence(LeoSurfaceKey.fanout(33L, "object", 44L)).orElseThrow().rows());
 		stats.persistIfDirty();
 
-		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath);
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		assertEquals(123.0d, reloaded.evidence(LeoSurfaceKey.fanout(33L, "object", 44L)).orElseThrow().rows());
 	}
 
@@ -741,6 +744,10 @@ class LmdbOperatorFeedbackStatsTest {
 		Files.createDirectories(estimatorPath);
 		Files.writeString(estimatorPath.resolve("metadata.bin"), "metadata");
 		return estimatorPath;
+	}
+
+	private static LmdbOperatorFeedbackStats persistentStats(Path estimatorPath) {
+		return new LmdbOperatorFeedbackStats(estimatorPath, () -> TEST_SNAPSHOT_IDENTITY);
 	}
 
 	private static Join join(String leftSubject, String sharedName, String rightObject) {

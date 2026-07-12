@@ -14,18 +14,20 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -53,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
@@ -64,6 +67,9 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSamplingEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,9 +80,11 @@ class LmdbFilterSelectivityStats
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
-	private static final int PERSIST_VERSION = 3;
+	private static final String COLD_SYNOPSIS_SUFFIX = ".cold";
+	private static final int PERSIST_VERSION = 4;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
+	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
 	private static final double FULL_SCAN_ROW_BUDGET = 1_000_000.0d;
@@ -85,8 +93,10 @@ class LmdbFilterSelectivityStats
 
 	private final TripleStore tripleStore;
 	private final ValueStore valueStore;
-	private final Path estimatorPath;
 	private final Path sidecarPath;
+	private final Path coldSynopsisPath;
+	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
+	private final int coldSynopsisCapacity;
 	private final boolean optimizerSamplingEnabled;
 	private final long optimizerSamplingMaxMillis;
 	private final int optimizerSamplingMaxRows;
@@ -100,6 +110,9 @@ class LmdbFilterSelectivityStats
 	private final Map<RuntimeRowsKey, Double> expectedRuntimeRowsByPattern = new HashMap<>();
 
 	private boolean dirty;
+	private ColdFilterSynopsis coldSynopsis;
+	private long coldSynopsisMutationVersion = -1L;
+	private boolean coldSynopsisDirty;
 	private long backgroundSamplingSequence;
 
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore) {
@@ -116,8 +129,28 @@ class LmdbFilterSelectivityStats
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
 			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
 			boolean backgroundRawSamplingEnabled) {
-		this.estimatorPath = Objects.requireNonNull(estimatorPath, "estimatorPath");
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, () -> null);
+	}
+
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier) {
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, 0);
+	}
+
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity) {
+		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this.coldSynopsisPath = estimatorPath.resolveSibling(
+				estimatorPath.getFileName().toString() + COLD_SYNOPSIS_SUFFIX);
+		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
+		this.coldSynopsisCapacity = Math.clamp(coldSynopsisCapacity, 0, ColdFilterSynopsis.MAX_CAPACITY);
 		this.tripleStore = Objects.requireNonNull(tripleStore, "tripleStore");
 		this.valueStore = Objects.requireNonNull(valueStore, "valueStore");
 		this.optimizerSamplingEnabled = optimizerSamplingEnabled;
@@ -125,6 +158,7 @@ class LmdbFilterSelectivityStats
 		this.optimizerSamplingMaxRows = Math.max(0, optimizerSamplingMaxRows);
 		this.backgroundRawSamplingEnabled = backgroundRawSamplingEnabled;
 		loadIfPresent();
+		loadColdSynopsisIfPresent();
 	}
 
 	@Override
@@ -132,7 +166,8 @@ class LmdbFilterSelectivityStats
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
 				|| !learnedByPattern.isEmpty() || !sampledByFilter.isEmpty();
 		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
-		if (!hasPersistedStats && !hasVolatileStats) {
+		boolean hasColdSynopsis = coldSynopsis != null;
+		if (!hasPersistedStats && !hasVolatileStats && !hasColdSynopsis) {
 			return;
 		}
 		learnedByFilter.clear();
@@ -141,6 +176,12 @@ class LmdbFilterSelectivityStats
 		sampledByFilter.clear();
 		backgroundSamplingRequests.clear();
 		expectedRuntimeRowsByPattern.clear();
+		coldSynopsis = null;
+		coldSynopsisMutationVersion = -1L;
+		if (hasColdSynopsis) {
+			coldSynopsisDirty = true;
+			deleteColdSynopsisSidecar();
+		}
 		if (hasPersistedStats) {
 			dirty = true;
 		}
@@ -148,6 +189,19 @@ class LmdbFilterSelectivityStats
 
 	void recordStoreMutation() {
 		reset();
+	}
+
+	SketchRebuildObserver coldSynopsisRebuildObserver() {
+		return coldSynopsisCapacity <= 0 ? null : ColdSynopsisRebuildObservation::new;
+	}
+
+	synchronized Optional<SketchFootprint> coldSynopsisFootprint() {
+		SketchSnapshotIdentity identity = currentSnapshotIdentity();
+		if (coldSynopsis == null || identity == null
+				|| identity.mutationVersion() != coldSynopsisMutationVersion) {
+			return Optional.empty();
+		}
+		return Optional.of(coldSynopsis.footprint());
 	}
 
 	@Override
@@ -256,6 +310,12 @@ class LmdbFilterSelectivityStats
 	@Override
 	public PatternFilterSampleEstimate estimateFilterPass(Filter filter,
 			StatementPattern pattern) {
+		PatternFilterSampleEstimate cached = estimateCachedFilterPass(filter, pattern);
+		return isValidPassRatio(cached.passRatio()) ? cached : estimateLiveFilterPass(filter, pattern);
+	}
+
+	@Override
+	public PatternFilterSampleEstimate estimateCachedFilterPass(Filter filter, StatementPattern pattern) {
 		PatternFilterKey key = samplingKey(filter, pattern);
 		if (key == null) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -265,15 +325,23 @@ class LmdbFilterSelectivityStats
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
-		SamplingCandidate candidate = samplingCandidate(filter, pattern, key);
-		voteBackgroundSamplingRequest(candidate, true);
-
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
 			if (isUsableSampledPassRatio(cached)) {
 				return new PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
 			}
 		}
+		return new PatternFilterSampleEstimate(-1.0d, -1L);
+	}
+
+	@Override
+	public PatternFilterSampleEstimate estimateLiveFilterPass(Filter filter, StatementPattern pattern) {
+		PatternFilterKey key = samplingKey(filter, pattern);
+		if (key == null || !supportsSampling(filter, pattern)) {
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
+		}
+		SamplingCandidate candidate = samplingCandidate(filter, pattern, key);
+		voteBackgroundSamplingRequest(candidate, true);
 
 		if (!optimizerSamplingEnabled || optimizerSamplingMaxMillis <= 0L || optimizerSamplingMaxRows <= 0) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -289,6 +357,29 @@ class LmdbFilterSelectivityStats
 			dirty = true;
 		}
 		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
+	}
+
+	@Override
+	public EvaluationStatistics.FilterPassEstimate estimateSnapshotFilterPass(Filter filter,
+			StatementPattern pattern) {
+		if (coldSynopsisCapacity <= 0 || !supportsColdSynopsis(filter, pattern)) {
+			return unknownFilterPassEstimate();
+		}
+		ColdSamplingCandidate candidate = coldSamplingCandidate(filter, pattern);
+		if (candidate == null) {
+			return unknownFilterPassEstimate();
+		}
+
+		ColdFilterSynopsis synopsis;
+		SketchSnapshotIdentity identity = currentSnapshotIdentity();
+		synchronized (this) {
+			if (coldSynopsis == null || identity == null
+					|| identity.mutationVersion() != coldSynopsisMutationVersion) {
+				return unknownFilterPassEstimate();
+			}
+			synopsis = coldSynopsis;
+		}
+		return evaluateColdSynopsis(candidate, synopsis);
 	}
 
 	synchronized List<BackgroundSamplingRequest> drainBackgroundSamplingRequests(int maxCount) {
@@ -360,19 +451,27 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized void persistIfDirty() {
-		if (!dirty) {
+		if (!dirty && !coldSynopsisDirty) {
 			return;
 		}
 
-		SnapshotRevision estimatorRevision = currentEstimatorRevision();
-		if (estimatorRevision == null) {
+		SketchSnapshotIdentity snapshotIdentity = currentSnapshotIdentity();
+		if (snapshotIdentity == null) {
 			return;
 		}
+		if (dirty && persistFilterSidecar(snapshotIdentity)) {
+			dirty = false;
+		}
+		if (coldSynopsisDirty && persistColdSynopsis(snapshotIdentity)) {
+			coldSynopsisDirty = false;
+		}
+	}
 
+	private boolean persistFilterSidecar(SketchSnapshotIdentity snapshotIdentity) {
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
-			estimatorRevision.writeTo(out);
+			snapshotIdentity.writeTo(out);
 			out.writeInt(learnedByFilter.size());
 			for (var entry : learnedByFilter.entrySet()) {
 				entry.getKey().writeTo(out);
@@ -394,24 +493,60 @@ class LmdbFilterSelectivityStats
 			} catch (IOException ignored) {
 				// ignored
 			}
-			return;
+			return false;
+		}
+		return replaceAtomically(tempPath, sidecarPath);
+	}
+
+	private boolean persistColdSynopsis(SketchSnapshotIdentity snapshotIdentity) {
+		if (coldSynopsis == null || coldSynopsisMutationVersion != snapshotIdentity.mutationVersion()) {
+			coldSynopsis = null;
+			coldSynopsisMutationVersion = -1L;
+			deleteColdSynopsisSidecar();
+			return true;
 		}
 
+		Path tempPath = coldSynopsisPath.resolveSibling(coldSynopsisPath.getFileName().toString() + ".tmp");
 		try {
-			Files.move(tempPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			byte[] serialized = coldSynopsis.serialize(snapshotIdentity);
+			Files.write(tempPath, serialized);
+		} catch (IOException e) {
+			try {
+				Files.deleteIfExists(tempPath);
+			} catch (IOException ignored) {
+				// ignored
+			}
+			return false;
+		}
+		return replaceAtomically(tempPath, coldSynopsisPath);
+	}
+
+	private static boolean replaceAtomically(Path tempPath, Path targetPath) {
+		try {
+			Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			return true;
 		} catch (IOException atomicMoveFailure) {
 			try {
-				Files.move(tempPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING);
+				Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+				return true;
 			} catch (IOException moveFailure) {
 				try {
 					Files.deleteIfExists(tempPath);
 				} catch (IOException ignored) {
 					// ignored
 				}
-				return;
+				return false;
 			}
 		}
-		dirty = false;
+	}
+
+	private void deleteColdSynopsisSidecar() {
+		try {
+			Files.deleteIfExists(coldSynopsisPath);
+			Files.deleteIfExists(coldSynopsisPath.resolveSibling(coldSynopsisPath.getFileName().toString() + ".tmp"));
+		} catch (IOException e) {
+			logger.debug("Unable to delete stale cold filter synopsis {}", coldSynopsisPath, e);
+		}
 	}
 
 	private void loadIfPresent() {
@@ -419,8 +554,8 @@ class LmdbFilterSelectivityStats
 			return;
 		}
 
-		SnapshotRevision currentRevision = currentEstimatorRevision();
-		if (currentRevision == null) {
+		SketchSnapshotIdentity currentIdentity = currentSnapshotIdentity();
+		if (currentIdentity == null) {
 			return;
 		}
 
@@ -432,11 +567,11 @@ class LmdbFilterSelectivityStats
 		int persistedVersion;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			persistedVersion = in.readInt();
-			if (persistedVersion != PERSIST_VERSION && persistedVersion != 2) {
+			if (persistedVersion != PERSIST_VERSION) {
 				return;
 			}
-			SnapshotRevision persistedRevision = SnapshotRevision.readFrom(in);
-			if (!persistedRevision.matches(currentRevision)) {
+			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
+			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
 			}
 
@@ -488,6 +623,31 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
+	private void loadColdSynopsisIfPresent() {
+		if (coldSynopsisCapacity <= 0 || !Files.isRegularFile(coldSynopsisPath)) {
+			return;
+		}
+		SketchSnapshotIdentity identity = currentSnapshotIdentity();
+		if (identity == null) {
+			return;
+		}
+		try {
+			long length = Files.size(coldSynopsisPath);
+			if (length < 0L || length > ColdFilterSynopsis.maxSerializedBytes(coldSynopsisCapacity)) {
+				return;
+			}
+			ColdFilterSynopsis loaded = ColdFilterSynopsis.deserialize(Files.readAllBytes(coldSynopsisPath), identity,
+					coldSynopsisCapacity);
+			synchronized (this) {
+				coldSynopsis = loaded;
+				coldSynopsisMutationVersion = identity.mutationVersion();
+				coldSynopsisDirty = false;
+			}
+		} catch (IOException | RuntimeException e) {
+			logger.debug("Ignoring invalid cold filter synopsis {}", coldSynopsisPath, e);
+		}
+	}
+
 	private SamplingCandidate samplingCandidate(Filter filter, StatementPattern pattern, PatternFilterKey key) {
 		long subjId;
 		long predId;
@@ -510,6 +670,81 @@ class LmdbFilterSelectivityStats
 		double expectedBenefitRows = expectedBenefitRows(filter, expectedRuntimeRows);
 		return new SamplingCandidate(key, pattern.clone(), filter.getCondition().clone(), subjId, predId, objId,
 				contextId, expectedRuntimeRows, expectedBenefitRows);
+	}
+
+	private ColdSamplingCandidate coldSamplingCandidate(Filter filter, StatementPattern pattern) {
+		long subjId;
+		long predId;
+		long objId;
+		long contextId;
+		try {
+			subjId = resolvePatternId(pattern.getSubjectVar());
+			predId = resolvePatternId(pattern.getPredicateVar());
+			objId = resolvePatternId(pattern.getObjectVar());
+			contextId = resolvePatternId(pattern.getContextVar());
+		} catch (IOException e) {
+			return null;
+		}
+		if (subjId == MISSING_VALUE_ID || predId == MISSING_VALUE_ID || objId == MISSING_VALUE_ID
+				|| contextId == MISSING_VALUE_ID) {
+			return null;
+		}
+		return new ColdSamplingCandidate(pattern.clone(), filter.getCondition().clone(), subjId, predId, objId,
+				contextId);
+	}
+
+	private EvaluationStatistics.FilterPassEstimate evaluateColdSynopsis(ColdSamplingCandidate candidate,
+			ColdFilterSynopsis synopsis) {
+		DefaultEvaluationStrategy strategy = samplingStrategy();
+		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
+		if (condition == null) {
+			return unknownFilterPassEstimate();
+		}
+
+		long matchingRows = 0L;
+		long passedRows = 0L;
+		for (int i = 0; i < synopsis.retainedRows(); i++) {
+			long subject = synopsis.subjectAt(i);
+			long predicate = synopsis.predicateAt(i);
+			long object = synopsis.objectAt(i);
+			long context = synopsis.contextAt(i);
+			if (!matchesColdPattern(candidate, subject, predicate, object, context)) {
+				continue;
+			}
+			matchingRows++;
+			try {
+				BindingSet bindings = toBindingSet(candidate.pattern, subject, predicate, object, context);
+				if (strategy.isTrue(condition, bindings)) {
+					passedRows++;
+				}
+			} catch (ValueExprEvaluationException e) {
+				// RDF4J query execution treats expression errors as filtered rows.
+			} catch (IOException | RuntimeException e) {
+				return unknownFilterPassEstimate();
+			}
+		}
+
+		if (matchingRows < COLD_SYNOPSIS_MIN_MATCHING_ROWS
+				|| passedRows == 0L && !synopsis.complete() && matchingRows < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+			return unknownFilterPassEstimate();
+		}
+		double passRatio = (double) passedRows / matchingRows;
+		EvaluationStatistics.FilterPassEstimate.Source source = synopsis.complete()
+				? EvaluationStatistics.FilterPassEstimate.Source.EXACT
+				: EvaluationStatistics.FilterPassEstimate.Source.SAMPLED;
+		return new EvaluationStatistics.FilterPassEstimate(passRatio, source, matchingRows);
+	}
+
+	private boolean matchesColdPattern(ColdSamplingCandidate candidate, long subject, long predicate, long object,
+			long context) {
+		if (candidate.subjId != LmdbValue.UNKNOWN_ID && candidate.subjId != subject
+				|| candidate.predId != LmdbValue.UNKNOWN_ID && candidate.predId != predicate
+				|| candidate.objId != LmdbValue.UNKNOWN_ID && candidate.objId != object
+				|| candidate.contextId != LmdbValue.UNKNOWN_ID && candidate.contextId != context
+				|| candidate.pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS && context == 0L) {
+			return false;
+		}
+		return matchesRepeatedVarEquality(candidate.pattern, subject, predicate, object, context);
 	}
 
 	private SampledPassRatio sampleFilterPassRatio(SamplingCandidate candidate, boolean foregroundSampling,
@@ -824,6 +1059,39 @@ class LmdbFilterSelectivityStats
 		return supported[0];
 	}
 
+	private boolean supportsColdSynopsis(Filter filter, StatementPattern pattern) {
+		if (filter == null || filter.getCondition() == null || pattern == null
+				|| pattern.getBindingNames().isEmpty()) {
+			return false;
+		}
+		Set<String> patternBindings = pattern.getBindingNames();
+		final boolean[] supported = { true };
+		filter.getCondition().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (!node.hasValue() && node.getName() != null && !patternBindings.contains(node.getName())) {
+					supported[0] = false;
+				}
+			}
+
+			@Override
+			public void meet(Exists node) {
+				supported[0] = false;
+			}
+
+			@Override
+			public void meet(CompareAny node) {
+				supported[0] = false;
+			}
+
+			@Override
+			public void meet(CompareAll node) {
+				supported[0] = false;
+			}
+		});
+		return supported[0];
+	}
+
 	private boolean isFiniteAnchorCondition(ValueExpr condition, Set<String> patternBindings) {
 		if (!(condition instanceof ListMemberOperator listMemberOperator)) {
 			return false;
@@ -868,6 +1136,25 @@ class LmdbFilterSelectivityStats
 				&& matchesRepeatedVar(pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX], bindingsByName);
 	}
 
+	private boolean matchesRepeatedVarEquality(StatementPattern pattern, long subject, long predicate, long object,
+			long context) {
+		Var subjectVar = pattern.getSubjectVar();
+		Var predicateVar = pattern.getPredicateVar();
+		Var objectVar = pattern.getObjectVar();
+		Var contextVar = pattern.getContextVar();
+		return repeatedVarsMatch(subjectVar, subject, predicateVar, predicate)
+				&& repeatedVarsMatch(subjectVar, subject, objectVar, object)
+				&& repeatedVarsMatch(subjectVar, subject, contextVar, context)
+				&& repeatedVarsMatch(predicateVar, predicate, objectVar, object)
+				&& repeatedVarsMatch(predicateVar, predicate, contextVar, context)
+				&& repeatedVarsMatch(objectVar, object, contextVar, context);
+	}
+
+	private static boolean repeatedVarsMatch(Var left, long leftId, Var right, long rightId) {
+		return left == null || right == null || left.hasValue() || right.hasValue() || left.getName() == null
+				|| !left.getName().equals(right.getName()) || leftId == rightId;
+	}
+
 	private boolean matchesRepeatedVar(Var var, long valueId, Map<String, Long> bindingsByName) {
 		if (var == null || var.hasValue() || var.getName() == null) {
 			return true;
@@ -885,6 +1172,16 @@ class LmdbFilterSelectivityStats
 		return bindingSet;
 	}
 
+	private BindingSet toBindingSet(StatementPattern pattern, long subject, long predicate, long object, long context)
+			throws IOException {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		addBinding(bindingSet, pattern.getSubjectVar(), subject);
+		addBinding(bindingSet, pattern.getPredicateVar(), predicate);
+		addBinding(bindingSet, pattern.getObjectVar(), object);
+		addBinding(bindingSet, pattern.getContextVar(), context);
+		return bindingSet;
+	}
+
 	private void addBinding(QueryBindingSet bindingSet, Var var, long valueId) throws IOException {
 		if (var == null || var.hasValue() || var.getName() == null || bindingSet.hasBinding(var.getName())
 				|| valueId == 0L) {
@@ -893,21 +1190,77 @@ class LmdbFilterSelectivityStats
 		bindingSet.addBinding(var.getName(), valueStore.getValue(valueId));
 	}
 
-	private SnapshotRevision currentEstimatorRevision() {
-		try {
-			Path metadataPath = estimatorPath.resolve("metadata.bin");
-			if (!Files.isRegularFile(metadataPath)) {
-				return null;
+	private long statementValueId(Value value) throws IOException {
+		if (value == null) {
+			return 0L;
+		}
+		if (value instanceof LmdbValue lmdbValue && lmdbValue.getInternalID() != LmdbValue.UNKNOWN_ID) {
+			return lmdbValue.getInternalID();
+		}
+		long id = valueStore.getId(value);
+		if (id == LmdbValue.UNKNOWN_ID) {
+			throw new IOException("Statement value has no LMDB identifier");
+		}
+		return id;
+	}
+
+	private final class ColdSynopsisRebuildObservation implements SketchRebuildObserver.RebuildObservation {
+
+		private final ColdFilterSynopsis.Builder builder = ColdFilterSynopsis.builder(coldSynopsisCapacity);
+		private boolean finished;
+
+		private ColdSynopsisRebuildObservation(long startingMutationVersion) {
+			// The estimator supplies the publication version to complete after proving that this version did not drift.
+		}
+
+		@Override
+		public void statementScanned(Statement statement) {
+			if (finished) {
+				throw new IllegalStateException("Cold synopsis rebuild observation is already finished");
 			}
-			BasicFileAttributes attributes = Files.readAttributes(metadataPath, BasicFileAttributes.class);
-			return new SnapshotRevision(attributes.size(), attributes.lastModifiedTime().toMillis());
-		} catch (IOException e) {
+			try {
+				builder.offer(statementValueId(statement.getSubject()), statementValueId(statement.getPredicate()),
+						statementValueId(statement.getObject()), statementValueId(statement.getContext()));
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
+		@Override
+		public void complete(long publishedMutationVersion) {
+			if (finished) {
+				return;
+			}
+			ColdFilterSynopsis completed = builder.build();
+			synchronized (LmdbFilterSelectivityStats.this) {
+				coldSynopsis = completed;
+				coldSynopsisMutationVersion = publishedMutationVersion;
+				coldSynopsisDirty = true;
+			}
+			finished = true;
+		}
+
+		@Override
+		public void abort() {
+			finished = true;
+		}
+	}
+
+	private SketchSnapshotIdentity currentSnapshotIdentity() {
+		try {
+			return snapshotIdentitySupplier.get();
+		} catch (RuntimeException e) {
 			return null;
 		}
 	}
 
 	private static boolean isValidPassRatio(double value) {
 		return Double.isFinite(value) && value >= 0.0d && value <= 1.0d;
+	}
+
+	private static EvaluationStatistics.FilterPassEstimate unknownFilterPassEstimate() {
+		return new EvaluationStatistics.FilterPassEstimate(-1.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
 	}
 
 	private static boolean isUsableSampledPassRatio(SampledPassRatio sampled) {
@@ -933,6 +1286,10 @@ class LmdbFilterSelectivityStats
 
 	private record SamplingCandidate(PatternFilterKey key, StatementPattern pattern, ValueExpr condition, long subjId,
 			long predId, long objId, long contextId, double expectedRuntimeRows, double expectedBenefitRows) {
+	}
+
+	private record ColdSamplingCandidate(StatementPattern pattern, ValueExpr condition, long subjId, long predId,
+			long objId, long contextId) {
 	}
 
 	static final class BackgroundSamplingRequest {
@@ -1142,19 +1499,4 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private record SnapshotRevision(long size, long lastModifiedMillis) {
-
-		private boolean matches(SnapshotRevision other) {
-			return other != null && size == other.size && lastModifiedMillis == other.lastModifiedMillis;
-		}
-
-		private void writeTo(DataOutputStream out) throws IOException {
-			out.writeLong(size);
-			out.writeLong(lastModifiedMillis);
-		}
-
-		private static SnapshotRevision readFrom(DataInputStream in) throws IOException {
-			return new SnapshotRevision(in.readLong(), in.readLong());
-		}
-	}
 }

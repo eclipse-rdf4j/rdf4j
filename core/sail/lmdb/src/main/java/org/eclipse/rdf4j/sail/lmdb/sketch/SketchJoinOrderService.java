@@ -61,8 +61,11 @@ final class SketchJoinOrderService {
 					return Optional.empty();
 				}
 				JoinFactorCostModel.FactorCostEstimate estimate = factorEstimate.get();
-				factorRows = finiteNonNegative(estimate.getOutputRows(), prefixRows);
-				stepWorkRows = finiteNonNegative(estimate.getWorkRows(), factorRows);
+				factorRows = estimate.getOutputRows();
+				stepWorkRows = estimate.getWorkRows();
+				if (!isFiniteNonNegative(factorRows) || !isFiniteNonNegative(stepWorkRows)) {
+					return Optional.empty();
+				}
 				stringMetrics.putAll(estimate.getStringMetrics());
 				doubleMetrics.putAll(estimate.getDoubleMetrics());
 			} else {
@@ -101,8 +104,8 @@ final class SketchJoinOrderService {
 				summaryStringMetrics, summaryDoubleMetrics, steps));
 	}
 
-	private static double finiteNonNegative(double value, double fallback) {
-		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	private static boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	record FactorEstimate(double outputRows, double workRows, Map<String, String> stringMetrics,

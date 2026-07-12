@@ -66,6 +66,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
+	public static final int SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY = 6_144;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
@@ -136,6 +138,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
 
 	private String sketchEstimatorStrategy = "omni";
+
+	private String sketchEstimatorEvidenceMode = "adaptive";
+
+	private int sketchEstimatorColdSynopsisCapacity;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -441,6 +447,25 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public String getSketchEstimatorEvidenceMode() {
+		return sketchEstimatorEvidenceMode;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorEvidenceMode(String sketchEstimatorEvidenceMode) {
+		this.sketchEstimatorEvidenceMode = normalizeSketchEstimatorEvidenceMode(sketchEstimatorEvidenceMode);
+		return this;
+	}
+
+	public int getSketchEstimatorColdSynopsisCapacity() {
+		return sketchEstimatorColdSynopsisCapacity;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorColdSynopsisCapacity(int capacity) {
+		this.sketchEstimatorColdSynopsisCapacity = Math.clamp(capacity, 0,
+				SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY);
+		return this;
+	}
+
 	public boolean getOptimizerSamplingEnabled() {
 		return optimizerSamplingEnabled;
 	}
@@ -633,6 +658,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!"omni".equals(sketchEstimatorStrategy)) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
+		}
+		if (!"adaptive".equals(sketchEstimatorEvidenceMode)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE,
+					vf.createLiteral(sketchEstimatorEvidenceMode));
+		}
+		if (sketchEstimatorColdSynopsisCapacity > 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY,
+					vf.createLiteral(sketchEstimatorColdSynopsisCapacity));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -889,6 +922,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, null))
 					.ifPresent(lit -> setSketchEstimatorStrategy(lit.getLabel()));
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE, null))
+					.ifPresent(lit -> setSketchEstimatorEvidenceMode(lit.getLabel()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY, null))
+					.ifPresent(lit -> setSketchEstimatorColdSynopsisCapacity(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY)));
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -990,6 +1031,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		default -> throw new SailConfigException(
 				"Sketch estimator strategy value required: omni, fastagms, countmin, or countmin-dual; found "
 						+ value);
+		};
+	}
+
+	private static String normalizeSketchEstimatorEvidenceMode(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator evidence mode value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "snapshotonly" -> "snapshot-only";
+		case "adaptive" -> "adaptive";
+		default -> throw new SailConfigException(
+				"Sketch estimator evidence mode value required: snapshot-only or adaptive; found " + value);
 		};
 	}
 }

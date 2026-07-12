@@ -27,13 +27,13 @@ final class SketchEstimatorIngestService {
 	void addStatement(Statement statement) {
 		Objects.requireNonNull(statement, "statement");
 		estimator.prepareIngestMutation();
+		estimator.markPersistenceMutation();
 		if (!estimator.isReadyForIncrementalUpdates()) {
 			estimator.recordDeferredStoreSizeDelta(1L, 0L);
 			return;
 		}
 		estimator.recordIncrementalStoreSizeDelta(1L, 0L);
 		estimator.enqueueIncrementalStatement(statement, false);
-		estimator.markPersistenceMutation();
 	}
 
 	void addStatements(List<? extends Statement> statements) {
@@ -42,13 +42,13 @@ final class SketchEstimatorIngestService {
 			return;
 		}
 		estimator.prepareIngestMutation();
+		estimator.markPersistenceMutation();
 		if (!estimator.isReadyForIncrementalUpdates()) {
 			estimator.recordDeferredStoreSizeDelta(statements.size(), 0L);
 			return;
 		}
 		estimator.recordIncrementalStoreSizeDelta(statements.size(), 0L);
 		estimator.enqueueIncrementalStatements(statements, false);
-		estimator.markPersistenceMutation();
 	}
 
 	void recordStoreSizeDelta(long additions, long deletions) {
@@ -59,12 +59,14 @@ final class SketchEstimatorIngestService {
 			return;
 		}
 		estimator.prepareIngestMutation();
+		estimator.markPersistenceMutation();
 		estimator.recordDeferredStoreSizeDelta(additions, deletions);
 	}
 
 	void deleteStatement(Statement statement) {
 		Objects.requireNonNull(statement, "statement");
 		estimator.prepareIngestMutation();
+		estimator.markPersistenceMutation();
 		if (estimator.usesOmniStrategy()) {
 			estimator.markOmniDeleteRequiresRebuild(1L);
 			return;
@@ -75,7 +77,6 @@ final class SketchEstimatorIngestService {
 		}
 		estimator.recordIncrementalStoreSizeDelta(0L, 1L);
 		estimator.enqueueIncrementalStatement(statement, true);
-		estimator.markPersistenceMutation();
 	}
 
 	void deleteStatements(List<? extends Statement> statements) {
@@ -84,6 +85,7 @@ final class SketchEstimatorIngestService {
 			return;
 		}
 		estimator.prepareIngestMutation();
+		estimator.markPersistenceMutation();
 		if (estimator.usesOmniStrategy()) {
 			estimator.markOmniDeleteRequiresRebuild(statements.size());
 			return;
@@ -94,6 +96,5 @@ final class SketchEstimatorIngestService {
 		}
 		estimator.recordIncrementalStoreSizeDelta(0L, statements.size());
 		estimator.enqueueIncrementalStatements(statements, true);
-		estimator.markPersistenceMutation();
 	}
 }

@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +29,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -74,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRuleHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 
 final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
@@ -87,7 +89,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static final String SIDECAR_SUFFIX = ".operators";
 	private static final String LEO_SURFACE_SUFFIX = ".leo";
-	private static final int PERSIST_VERSION = 11;
+	private static final int PERSIST_VERSION = 12;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -137,9 +139,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String PATH_RETURNED_ROWS_ACTUAL = "optimizer.pathReturnedRowsActual";
 	private static final String ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL = "optimizer.zeroLengthPathCandidateRowsActual";
 
-	private final Path estimatorPath;
 	private final Path sidecarPath;
 	private final Path leoSurfacePath;
+	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
+	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
 	private final LmdbLeoFeedbackStore leoFeedbackStore;
 	private final LmdbLeoSurfaceStats leoSurfaceStats;
@@ -160,8 +163,22 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private boolean surfaceDirty;
 
 	LmdbOperatorFeedbackStats(Path estimatorPath) {
-		this.estimatorPath = Objects.requireNonNull(estimatorPath, "estimatorPath");
+		this(estimatorPath, () -> null, () -> true);
+	}
+
+	LmdbOperatorFeedbackStats(Path estimatorPath,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier) {
+		this(estimatorPath, snapshotIdentitySupplier, () -> true);
+	}
+
+	LmdbOperatorFeedbackStats(Path estimatorPath,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
+		this.adaptiveEvidenceAllowedSupplier = Objects.requireNonNull(adaptiveEvidenceAllowedSupplier,
+				"adaptiveEvidenceAllowedSupplier");
 		this.leoFeedbackConfig = LmdbLeoFeedbackConfig.defaultConfig();
 		this.leoSurfacePath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
 		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig);
@@ -219,6 +236,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public void observe(TupleExpr tupleExpr, boolean completedRoot) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		if (completedRoot) {
 			recordCompletedQuery(tupleExpr);
 		} else {
@@ -395,6 +415,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	@Override
 	public synchronized void observePlanCandidate(TupleExpr tupleExpr, String ruleId, double estimatedRows,
 			double estimatedWorkRows, int candidateRank, boolean accepted) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		OperatorKey key = planShadowKeyFor(tupleExpr);
 		if (key == null || !isFiniteNonNegative(estimatedRows) || !isFiniteNonNegative(estimatedWorkRows)) {
 			return;
@@ -407,6 +430,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized void observePlanCandidate(LeoPlanCandidate candidate, boolean accepted, String reason) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		if (candidate == null || candidate.tupleExpr() == null || !rollout().observationEnabled()) {
 			return;
 		}
@@ -422,6 +448,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr tupleExpr) {
+		if (!adaptiveEvidenceAllowed()) {
+			return Optional.empty();
+		}
 		if (shadowByOperator.isEmpty() && planCandidates.isEmpty()) {
 			return Optional.empty();
 		}
@@ -449,6 +478,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	public synchronized LeoPlanRanking rankPlanCandidates(List<LeoPlanCandidate> candidates) {
 		if (candidates == null || candidates.isEmpty()) {
 			return LeoPlanRanking.empty();
+		}
+		if (!adaptiveEvidenceAllowed()) {
+			return LeoPlanRanking.byCost(candidates, "snapshot-only");
 		}
 		if (shadowByOperator.isEmpty() && planCandidates.isEmpty()) {
 			return LeoPlanRanking.byCost(candidates, "lmdb-plan-ranking-no-evidence");
@@ -504,6 +536,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized boolean shouldApplyPlanRanking(LeoPlanRanking ranking, String candidateId) {
+		if (!adaptiveEvidenceAllowed()) {
+			return false;
+		}
 		if (ranking == null || !ranking.wouldChangeChoice() || candidateId == null || candidateId.isBlank()) {
 			return false;
 		}
@@ -555,6 +590,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
 			double baseWorkRows, String executionMode, String planningContext) {
+		if (!adaptiveEvidenceAllowed()) {
+			return null;
+		}
 		if (learnedByOperator.isEmpty()) {
 			trace("estimate-skip-empty", node, null, "");
 			return null;
@@ -599,6 +637,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	@Override
 	public synchronized LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingUniverse universe,
 			BindingShape bindingShape) {
+		if (!adaptiveEvidenceAllowed()) {
+			return LeoMemoFeedback.empty();
+		}
 		if (tupleExpr == null) {
 			return LeoMemoFeedback.empty();
 		}
@@ -644,7 +685,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized Optional<LeoEvidence> evidence(LeoSurfaceKey key) {
-		return fanoutEvidence(key);
+		return adaptiveEvidenceAllowed() ? fanoutEvidence(key) : Optional.empty();
 	}
 
 	synchronized void recordFanout(long predicateId, LmdbLeoSurfaceStats.BoundPosition position, long valueId,
@@ -654,6 +695,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized void recordFanout(long predicateId, LmdbLeoSurfaceStats.BoundPosition position, long valueId,
 			long contextId, long fanout, long epoch) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		if (leoSurfaceStats.recordFanout(predicateId, position, valueId, contextId, fanout, epoch)) {
 			surfaceDirty = true;
 		}
@@ -665,6 +709,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	synchronized void recordPredicateFanout(long predicateId, long fanout, long epoch) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		if (leoSurfaceStats.recordPredicateFanout(predicateId, fanout, epoch)) {
 			surfaceDirty = true;
 		}
@@ -672,6 +719,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized Optional<LeoEvidence> estimateFanout(long predicateId, LmdbLeoSurfaceStats.BoundPosition position,
 			long valueId, long contextId) {
+		if (!adaptiveEvidenceAllowed()) {
+			return Optional.empty();
+		}
 		return leoSurfaceStats.estimateFanout(predicateId, position, valueId, contextId)
 				.or(() -> leoSurfaceStats.bucketEstimate(predicateId, position, valueId, contextId))
 				.or(() -> leoSurfaceStats.predicateEstimate(predicateId, position, valueId, contextId))
@@ -770,23 +820,23 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!dirty && !surfaceDirty) {
 			return;
 		}
-		SnapshotRevision estimatorRevision = currentEstimatorRevision();
-		if (estimatorRevision == null) {
+		SketchSnapshotIdentity snapshotIdentity = currentSnapshotIdentity();
+		if (snapshotIdentity == null) {
 			return;
 		}
-		if (dirty && persistOperatorFeedback(estimatorRevision)) {
+		if (dirty && persistOperatorFeedback(snapshotIdentity)) {
 			dirty = false;
 		}
-		if (surfaceDirty && persistLeoSurfaces(estimatorRevision)) {
+		if (surfaceDirty && persistLeoSurfaces(snapshotIdentity)) {
 			surfaceDirty = false;
 		}
 	}
 
-	private boolean persistOperatorFeedback(SnapshotRevision estimatorRevision) {
+	private boolean persistOperatorFeedback(SketchSnapshotIdentity snapshotIdentity) {
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
-			estimatorRevision.writeTo(out);
+			snapshotIdentity.writeTo(out);
 			out.writeLong(feedbackEpoch);
 			out.writeLong(ruleSteeringCooldownUntilEpoch);
 			out.writeInt(ruleSteeringBadMisses);
@@ -829,9 +879,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
-	private boolean persistLeoSurfaces(SnapshotRevision estimatorRevision) {
+	private boolean persistLeoSurfaces(SketchSnapshotIdentity snapshotIdentity) {
 		try {
-			leoFeedbackStore.persist(estimatorRevision.token(), leoSurfaceStats);
+			leoFeedbackStore.persist(snapshotIdentity.token(), leoSurfaceStats);
 			return true;
 		} catch (IOException e) {
 			return false;
@@ -839,12 +889,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private LmdbLeoSurfaceStats loadLeoSurfaceStats() {
-		SnapshotRevision currentRevision = currentEstimatorRevision();
-		if (currentRevision == null) {
+		SketchSnapshotIdentity currentIdentity = currentSnapshotIdentity();
+		if (currentIdentity == null) {
 			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
 		}
 		try {
-			return leoFeedbackStore.load(currentRevision.token());
+			return leoFeedbackStore.load(currentIdentity.token());
 		} catch (IOException | RuntimeException e) {
 			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
 		}
@@ -854,8 +904,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!Files.isRegularFile(sidecarPath)) {
 			return;
 		}
-		SnapshotRevision currentRevision = currentEstimatorRevision();
-		if (currentRevision == null) {
+		SketchSnapshotIdentity currentIdentity = currentSnapshotIdentity();
+		if (currentIdentity == null) {
 			return;
 		}
 
@@ -868,11 +918,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		int loadedSteeringBadMisses = 0;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			int version = in.readInt();
-			if (version != PERSIST_VERSION && version != 10 && version != 9 && version != 8) {
+			if (version != PERSIST_VERSION) {
 				return;
 			}
-			SnapshotRevision persistedRevision = SnapshotRevision.readFrom(in);
-			if (!persistedRevision.matches(currentRevision)) {
+			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
+			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
 			}
 			if (version >= 10) {
@@ -1055,7 +1105,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	boolean shouldRecordFanoutObservation(TupleExpr node) {
-		return rollout().observationEnabled()
+		return adaptiveEvidenceAllowed()
+				&& rollout().observationEnabled()
 				&& node != null
 				&& operatorLearningPolicy(node).runtimeObservable()
 				&& feedbackPoisonReason(node).isBlank()
@@ -1064,17 +1115,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public boolean shouldTrackRuntimeFeedback(TupleExpr tupleExpr) {
-		return rollout().observationEnabled() && operatorLearningPolicy(tupleExpr).runtimeObservable();
+		return adaptiveEvidenceAllowed() && rollout().observationEnabled()
+				&& operatorLearningPolicy(tupleExpr).runtimeObservable();
 	}
 
 	@Override
 	public boolean shouldRecordDirectEvidence(TupleExpr tupleExpr) {
-		return rollout().observationEnabled() && supportsOperatorFeedback(tupleExpr);
+		return adaptiveEvidenceAllowed() && rollout().observationEnabled() && supportsOperatorFeedback(tupleExpr);
 	}
 
 	@Override
 	public boolean shouldExposePlanningEvidence(TupleExpr tupleExpr) {
-		return rollout().cardinalityCorrectionEnabled() && supportsOperatorFeedback(tupleExpr);
+		return adaptiveEvidenceAllowed() && rollout().cardinalityCorrectionEnabled()
+				&& supportsOperatorFeedback(tupleExpr);
 	}
 
 	@Override
@@ -1088,7 +1141,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public LeoOperatorLearningPolicy learningPolicy(TupleExpr node) {
-		return operatorLearningPolicy(node);
+		return adaptiveEvidenceAllowed() ? operatorLearningPolicy(node) : LeoOperatorLearningPolicy.DO_NOT_LEARN;
 	}
 
 	static LeoOperatorLearningPolicy operatorLearningPolicy(TupleExpr node) {
@@ -1821,6 +1874,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized String debugEvidence(TupleExpr tupleExpr) {
+		if (!adaptiveEvidenceAllowed()) {
+			return "";
+		}
 		if (tupleExpr == null) {
 			return "";
 		}
@@ -1877,6 +1933,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public synchronized String explainEstimateDiff(TupleExpr tupleExpr) {
+		if (!adaptiveEvidenceAllowed()) {
+			return "";
+		}
 		if (tupleExpr == null || !rollout().explainEnabled()) {
 			return "";
 		}
@@ -1913,16 +1972,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return builder.toString();
 	}
 
-	private SnapshotRevision currentEstimatorRevision() {
+	private SketchSnapshotIdentity currentSnapshotIdentity() {
 		try {
-			Path metadataPath = estimatorPath.resolve("metadata.bin");
-			if (!Files.isRegularFile(metadataPath)) {
-				return null;
-			}
-			BasicFileAttributes attributes = Files.readAttributes(metadataPath, BasicFileAttributes.class);
-			return new SnapshotRevision(attributes.size(), attributes.lastModifiedTime().toMillis());
-		} catch (IOException e) {
+			return snapshotIdentitySupplier.get();
+		} catch (RuntimeException e) {
 			return null;
+		}
+	}
+
+	private boolean adaptiveEvidenceAllowed() {
+		try {
+			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
+		} catch (RuntimeException e) {
+			return false;
 		}
 	}
 
@@ -2779,23 +2841,4 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
-	private record SnapshotRevision(long size, long lastModifiedMillis) {
-
-		boolean matches(SnapshotRevision other) {
-			return other != null && size == other.size && lastModifiedMillis == other.lastModifiedMillis;
-		}
-
-		void writeTo(DataOutputStream out) throws IOException {
-			out.writeLong(size);
-			out.writeLong(lastModifiedMillis);
-		}
-
-		String token() {
-			return size + ":" + lastModifiedMillis;
-		}
-
-		static SnapshotRevision readFrom(DataInputStream in) throws IOException {
-			return new SnapshotRevision(in.readLong(), in.readLong());
-		}
-	}
 }

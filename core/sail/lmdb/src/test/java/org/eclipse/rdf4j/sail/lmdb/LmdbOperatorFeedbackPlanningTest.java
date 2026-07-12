@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -131,6 +135,83 @@ class LmdbOperatorFeedbackPlanningTest {
 				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Second plan should apply completed-query operator feedback through the cost model "
 								+ "to the bound OPTIONAL fanout");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void persistedOperatorFeedbackIgnoresMetadataTimestampChanges(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
+				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
+				assertFusedOperatorCostPath(
+						connection.prepareTupleQuery(leftJoinFanoutQuery())
+								.explain(Explanation.Level.Optimized)
+								.toString(),
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Expected operator feedback before restart");
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		Path metadata = dataDir.toPath().resolve("join-estimator.rjes").resolve("metadata.bin");
+		FileTime originalTimestamp = Files.getLastModifiedTime(metadata);
+		Files.setLastModifiedTime(metadata, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
+
+		LmdbStore reopened = new LmdbStore(dataDir, config);
+		SailRepository reopenedRepository = new SailRepository(reopened);
+		reopenedRepository.init();
+		try {
+			LmdbPlannerAwait.awaitSketchesReady(reopened);
+			try (SailRepositoryConnection connection = reopenedRepository.getConnection()) {
+				assertFusedOperatorCostPath(
+						connection.prepareTupleQuery(leftJoinFanoutQuery())
+								.explain(Explanation.Level.Optimized)
+								.toString(),
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"File timestamps are not LEO evidence identity");
+			}
+		} finally {
+			reopenedRepository.shutDown();
+		}
+	}
+
+	@Test
+	void snapshotOnlyPlanningNeverConsultsOperatorFeedback(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEvidenceMode("snapshot-only");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
+				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
+
+				String retrainedPlan = connection.prepareTupleQuery(leftJoinFanoutQuery())
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertFalse(containsFusedOperatorCostPath(retrainedPlan,
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE),
+						"Snapshot-only planning must not consult LEO feedback even when execution has trained it:\n"
+								+ retrainedPlan);
 			}
 		} finally {
 			repository.shutDown();

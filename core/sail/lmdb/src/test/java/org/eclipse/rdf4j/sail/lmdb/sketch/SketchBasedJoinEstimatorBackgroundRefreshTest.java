@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -143,6 +144,49 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 					"In-progress background rebuild should not make the published snapshot unavailable");
 		} finally {
 			store.releaseSecondRebuild();
+			estimator.close();
+		}
+	}
+
+	@Test
+	void mutationDuringRebuildAbortsExperimentalObserverPublication() {
+		Statement scanned = VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o"));
+		Statement concurrent = VF.createStatement(VF.createIRI("urn:later"), VF.createIRI("urn:p"),
+				VF.createIRI("urn:o"));
+		CountingEmptyStore store = new CountingEmptyStore(scanned);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0));
+		AtomicBoolean completed = new AtomicBoolean();
+		AtomicBoolean aborted = new AtomicBoolean();
+		AtomicBoolean mutationRecorded = new AtomicBoolean();
+		estimator.setRebuildObserver(startingVersion -> new SketchRebuildObserver.RebuildObservation() {
+			@Override
+			public void statementScanned(Statement statement) {
+				if (mutationRecorded.compareAndSet(false, true)) {
+					estimator.addStatement(concurrent);
+				}
+			}
+
+			@Override
+			public void complete(long publishedMutationVersion) {
+				completed.set(true);
+			}
+
+			@Override
+			public void abort() {
+				aborted.set(true);
+			}
+		});
+
+		try {
+			estimator.rebuild();
+			assertTrue(mutationRecorded.get());
+			assertTrue(aborted.get(), "Concurrent mutation must discard the observer candidate");
+			assertFalse(completed.get(), "A drifted rebuild must not publish its observer candidate");
+		} finally {
 			estimator.close();
 		}
 	}

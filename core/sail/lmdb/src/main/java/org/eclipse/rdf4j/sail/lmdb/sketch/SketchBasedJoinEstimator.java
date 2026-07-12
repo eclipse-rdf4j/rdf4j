@@ -19,7 +19,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.channels.ClosedByInterruptException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
@@ -43,6 +42,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -527,8 +527,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private final long zeroIntersectionRowBudget;
 	private final int zeroIntersectionSampleSize;
 	private final SketchStrategy sketchStrategy;
+	private final SketchEvidencePolicy defaultEvidencePolicy;
+	private final int coldSynopsisCapacity;
 	private final SketchChurnSampler churnSampler;
 	private final AtomicLong approxStoreSize = new AtomicLong();
+	private volatile long storeIdHigh;
+	private volatile long storeIdLow;
+	private volatile SketchSnapshotIdentity publishedSnapshotIdentity;
 
 	/** Two interchangeable buffers; one of them is always the current snapshot. */
 	private final State bufA, bufB;
@@ -544,6 +549,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private volatile PatternFilterSamplingEstimator patternFilterSamplingEstimator;
 	private volatile PatternCardinalityProvider patternCardinalityProvider;
 	private volatile ExactJoinSurfaceProvider exactJoinSurfaceProvider;
+	private volatile SketchRebuildObserver rebuildObserver;
 	private volatile SketchPlannerPath lastJoinOrderPlannerPath = SketchPlannerPath.ROBUST_NOT_READY;
 	private volatile SketchPlannerPath lastRobustCardinalityPath = SketchPlannerPath.ROBUST_NOT_READY;
 
@@ -1737,9 +1743,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final SketchEstimatorIngestService ingestService = new SketchEstimatorIngestService(this);
-	private final SketchEstimatorPersistenceManager persistenceManager = new SketchEstimatorPersistenceManager();
+	private final SketchEstimatorPersistenceManager persistenceManager = new SketchEstimatorPersistenceManager(this);
 	private final SketchJoinOrderService joinOrderService = new SketchJoinOrderService(this);
 	private final OmniSketchEstimatorService omniEstimatorService = new OmniSketchEstimatorService();
+	private final SketchFilterEvidenceSelector filterEvidenceSelector = new SketchFilterEvidenceSelector();
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
 	private final Object readyMonitor = new Object();
@@ -1828,6 +1835,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 */
 	public SketchBasedJoinEstimator(SketchStatementSource statementSource, Config cfg) {
 		Objects.requireNonNull(cfg, "cfg");
+		UUID generatedStoreId = UUID.randomUUID();
+		this.storeIdHigh = generatedStoreId.getMostSignificantBits();
+		this.storeIdLow = generatedStoreId.getLeastSignificantBits();
 
 		// Base from provided config
 		int sketchNominalEntries = cfg.nominalEntries;
@@ -1840,6 +1850,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		int witnessCohortIndex = cfg.omniWitnessCohortBucketIndex;
 		int witnessCohortMaxEntries = cfg.omniWitnessCohortMaxEntries;
 		SketchStrategy configuredSketchStrategy = cfg.sketchStrategy;
+		SketchEvidencePolicy configuredEvidencePolicy = cfg.evidencePolicy;
+		int configuredColdSynopsisCapacity = cfg.coldSynopsisCapacity;
 		long thrEvery = cfg.throttleEveryN;
 		long thrMs = cfg.throttleMillis;
 		long refreshMs = cfg.refreshSleepMillis;
@@ -1961,6 +1973,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.zeroIntersectionRowBudget = zeroIntersectionBudget;
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
 		this.sketchStrategy = configuredSketchStrategy;
+		this.defaultEvidencePolicy = configuredEvidencePolicy;
+		this.coldSynopsisCapacity = Math.clamp(configuredColdSynopsisCapacity, 0, 6_144);
 		this.incrementalQueueInitialLimit = queueInitialLimit;
 		this.incrementalQueueIdleResetMillis = queueIdleResetMillis;
 		this.incrementalWorkerKeepAliveMillis = workerKeepAliveMillis;
@@ -2096,7 +2110,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
-		return optimizationScope.begin();
+		return beginQueryOptimizationScope(defaultEvidencePolicy);
+	}
+
+	QueryOptimizationScope beginQueryOptimizationScope(SketchEvidencePolicy evidencePolicy) {
+		Objects.requireNonNull(evidencePolicy, "evidencePolicy");
+		OptimizationScopeState existing = optimizationScope.get();
+		if (existing != null && existing.depth > 0 && existing.evidencePolicy != evidencePolicy) {
+			throw new IllegalStateException("Nested sketch optimization scope cannot change evidence policy from "
+					+ existing.evidencePolicy + " to " + evidencePolicy);
+		}
+		QueryOptimizationScope scope = optimizationScope.begin();
+		OptimizationScopeState opened = optimizationScope.get();
+		if (opened.depth == 1) {
+			opened.evidencePolicy = evidencePolicy;
+		}
+		return scope;
+	}
+
+	private SketchEvidencePolicy currentEvidencePolicy() {
+		OptimizationScopeState scope = optimizationScope.get();
+		return scope == null ? defaultEvidencePolicy : scope.evidencePolicy;
 	}
 
 	public boolean isReady() {
@@ -2483,6 +2517,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.patternFilterSamplingEstimator = patternFilterSamplingEstimator;
 	}
 
+	public void setRebuildObserver(SketchRebuildObserver rebuildObserver) {
+		this.rebuildObserver = rebuildObserver;
+	}
+
 	public void setPatternCardinalityProvider(PatternCardinalityProvider patternCardinalityProvider) {
 		this.patternCardinalityProvider = patternCardinalityProvider;
 	}
@@ -2763,6 +2801,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		clearEstimateCacheIfPopulated();
 		clearPositiveReadinessCache();
 		long requestVersion = rebuildRequestVersion.get();
+		long observationStartMutationVersion = persistenceMutationCycle.currentVersion();
+		SketchRebuildObserver.RebuildObservation rebuildObservation = startRebuildObservation(
+				observationStartMutationVersion);
+		boolean rebuildObservationFinished = false;
 		long sizeBeforeRebuild = approxStoreSize.get();
 		boolean keepRebuildRequiredOnEarlyStop = rebuildRequired.get() || !isReadyNonBlocking();
 
@@ -2799,6 +2841,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 						break;
 					}
 					Statement st = it.next();
+					if (rebuildObservation != null) {
+						try {
+							rebuildObservation.statementScanned(st);
+						} catch (RuntimeException e) {
+							logger.warn("Disabling sketch rebuild observer after a statement callback failed", e);
+							abortRebuildObservation(rebuildObservation);
+							rebuildObservation = null;
+							rebuildObservationFinished = true;
+						}
+					}
 					rebuildMemoryCheckCountdown--;
 					if (rebuildMemoryCheckCountdown <= 0) {
 						rebuildMemoryCheckCountdown = memoryMonitorCheckInterval;
@@ -2887,12 +2939,30 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			seenTriples = approxStoreSize.updateAndGet(
 					currentSize -> storeSizeAfterRebuild(rebuiltRows, sizeBeforeRebuild, currentSize));
 			sketchesLoaded = true;
+			long mutationVersionBeforePublish = persistenceMutationCycle.currentVersion();
+			boolean observationSnapshotUnchanged = mutationVersionBeforePublish == observationStartMutationVersion
+					&& rebuildRequestVersion.get() == requestVersion;
 			clearRebuildRequiredIfUnchanged(requestVersion);
 			markPersistenceMutation();
+			long publishedMutationVersion = persistenceMutationCycle.currentVersion();
 			indexDirty.set(true);
 			usingA = !usingA;
 			synchronized (sketchCacheLock) {
 				cacheDirectory.clearDirtyForSlot(previousCurrentSlot);
+			}
+			if (rebuildObservation != null) {
+				if (observationSnapshotUnchanged
+						&& publishedMutationVersion == observationStartMutationVersion + 1L) {
+					try {
+						rebuildObservation.complete(publishedMutationVersion);
+					} catch (RuntimeException e) {
+						logger.warn("Discarding sketch rebuild observer result after publication callback failed", e);
+						abortRebuildObservation(rebuildObservation);
+					}
+				} else {
+					abortRebuildObservation(rebuildObservation);
+				}
+				rebuildObservationFinished = true;
 			}
 
 			// staleness: publish times & reset churn sampler
@@ -2909,10 +2979,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					elapsedMillisSince(startMillis));
 			return seen;
 		} finally {
+			if (!rebuildObservationFinished && rebuildObservation != null) {
+				abortRebuildObservation(rebuildObservation);
+			}
 			if ((rebuildEpoch.get() & 1L) != 0L) {
 				rebuildEpoch.incrementAndGet(); // mark rebuild complete (even epoch)
 			}
 			notifyReadyWaiters();
+		}
+	}
+
+	private SketchRebuildObserver.RebuildObservation startRebuildObservation(long startingMutationVersion) {
+		SketchRebuildObserver observer = rebuildObserver;
+		if (observer == null) {
+			return null;
+		}
+		try {
+			return observer.start(startingMutationVersion);
+		} catch (RuntimeException e) {
+			logger.warn("Ignoring sketch rebuild observer that failed to start", e);
+			return null;
+		}
+	}
+
+	private void abortRebuildObservation(SketchRebuildObserver.RebuildObservation observation) {
+		try {
+			observation.abort();
+		} catch (RuntimeException e) {
+			logger.debug("Sketch rebuild observer failed while aborting", e);
 		}
 	}
 
@@ -3000,9 +3094,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			markOmniEstimatorHasDeletes(bufA);
 			markOmniEstimatorHasDeletes(bufB);
 			clearPositiveReadinessCache();
-			invalidatePersistedSketchSnapshotAfterOmniDelete();
 		}
 		markRebuildRequired();
+		invalidatePersistedSketchSnapshot();
 		notifyReadyWaiters();
 	}
 
@@ -3045,7 +3139,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		markOmniEstimatorHasDeletes(bufB);
 		markRebuildRequired();
 		clearPositiveReadinessCache();
-		invalidatePersistedSketchSnapshotAfterOmniDelete();
+		invalidatePersistedSketchSnapshot();
 		notifyReadyWaiters();
 	}
 
@@ -3057,7 +3151,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void invalidatePersistedSketchSnapshotAfterOmniDelete() {
+	private void invalidatePersistedSketchSnapshot() {
 		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
@@ -3073,7 +3167,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				Files.deleteIfExists(persistenceFile.toAbsolutePath().normalize().resolve("metadata.bin"));
 			}
 		} catch (IOException e) {
-			logger.warn("Failed to invalidate stale OMNI join estimator snapshot at {}", persistenceFile, e);
+			logger.warn("Failed to invalidate stale join estimator snapshot at {}", persistenceFile, e);
 		}
 	}
 
@@ -3762,7 +3856,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				state.omniJoinEstimatorHasDeletes = true;
 				markRebuildRequired();
 				clearPositiveReadinessCache();
-				invalidatePersistedSketchSnapshotAfterOmniDelete();
+				invalidatePersistedSketchSnapshot();
 				notifyReadyWaiters();
 				continue;
 			}
@@ -5715,11 +5809,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private OmniWitnessSet sourceCompatibleWitness(OmniWitnessSet witnesses, OmniWitnessSet.SourceKind sourceKind) {
-		if (witnesses == null || sourceKind == null) {
-			return null;
-		}
-		OmniWitnessSet candidate = witnesses.candidateFor(sourceKind);
-		return candidate == null ? witnesses : candidate;
+		return omniEstimatorService.sourceCompatibleWitness(witnesses, sourceKind);
 	}
 
 	private OmniOrderedJoinStep omniOrderedInitialStep(StatementPattern pattern) {
@@ -5759,31 +5849,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private OmniWitnessSet dominantOmniWitness(Map<String, OmniWitnessSet> witnesses) {
-		if (witnesses == null || witnesses.isEmpty()) {
-			return null;
-		}
-		OmniWitnessSet dominant = null;
-		for (OmniWitnessSet witnessSet : witnesses.values()) {
-			if (witnessSet == null) {
-				continue;
-			}
-			if (dominant == null || witnessSet.estimatedRows() > dominant.estimatedRows()) {
-				dominant = witnessSet;
-			}
-		}
-		return dominant;
+		return omniEstimatorService.dominantWitness(witnesses);
 	}
 
 	private String dominantOmniWitnessBinding(Map<String, OmniWitnessSet> witnesses, OmniWitnessSet dominantWitness) {
-		if (witnesses == null || witnesses.isEmpty() || dominantWitness == null) {
-			return null;
-		}
-		for (Map.Entry<String, OmniWitnessSet> entry : witnesses.entrySet()) {
-			if (entry.getValue() == dominantWitness) {
-				return entry.getKey();
-			}
-		}
-		return null;
+		return omniEstimatorService.dominantWitnessBinding(witnesses, dominantWitness);
 	}
 
 	public OmniSketchSurfaceEstimate estimateOmniBridgeChain(List<TupleExpr> orderedFactors, Set<String> boundVars) {
@@ -6337,26 +6407,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private OmniWitnessSet subtractOmniWitnesses(OmniWitnessSet input, OmniWitnessSet removals) {
-		if (input == null || input.isEmpty()) {
-			return OmniWitnessSet.empty();
-		}
-		return OmniWitnessAccumulator.subtract(input, removals);
+		return omniEstimatorService.subtract(input, removals);
 	}
 
 	private String omniFallbackReason(OmniWitnessSet first, OmniWitnessSet second, OmniWitnessSet third) {
-		for (OmniWitnessSet witnessSet : List.of(first, second, third)) {
-			if (witnessSet != null && witnessSet.fallbackReason() != OmniWitnessSet.FallbackReason.NONE) {
-				return witnessSet.fallbackReason().name();
-			}
-		}
-		return OmniWitnessSet.FallbackReason.NONE.name();
+		return omniEstimatorService.fallbackReason(first, second, third);
 	}
 
 	private OmniWitnessSet unionOmniWitnesses(List<OmniWitnessSet> witnessSets) {
-		if (witnessSets == null || witnessSets.isEmpty()) {
-			return OmniWitnessSet.empty();
-		}
-		return OmniWitnessAccumulator.maxUnion(witnessSets);
+		return omniEstimatorService.union(witnessSets);
 	}
 
 	private OmniSubjectStarInput omniSubjectStarInput(StatementPattern pattern, String subjectVarName) {
@@ -8303,44 +8362,150 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			return unknownFilterPassEstimate();
 		}
+		return selectFilterEvidence(filter, pattern, 0);
+	}
+
+	private EvaluationStatistics.FilterPassEstimate selectFilterEvidence(Filter filter, StatementPattern pattern,
+			int localBoundComponentMask) {
+		long freshnessVersion = persistenceMutationCycle.currentVersion();
+		return filterEvidenceSelector.select(currentEvidencePolicy(),
+				() -> snapshotFilterCandidate(filter, pattern, freshnessVersion),
+				() -> localBoundComponentMask == 0
+						? learnedFilterCandidate(filter, pattern, freshnessVersion)
+						: qualifiedLearnedFilterCandidate(filter, pattern, freshnessVersion, localBoundComponentMask),
+				() -> cachedFilterCandidate(filter, pattern, freshnessVersion),
+				() -> liveFilterCandidate(filter, pattern, freshnessVersion));
+	}
+
+	private SketchFilterEvidenceSelector.Candidate snapshotFilterCandidate(Filter filter, StatementPattern pattern,
+			long freshnessVersion) {
+		SketchFilterEvidenceSelector.Candidate heuristic = heuristicFilterCandidate(filter, pattern, freshnessVersion);
+		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
+		if (samplingEstimator == null) {
+			return heuristic;
+		}
+		EvaluationStatistics.FilterPassEstimate snapshotEstimate = samplingEstimator.estimateSnapshotFilterPass(filter,
+				pattern);
+		SketchFilterEvidenceSelector.Candidate snapshot = snapshotEstimate != null
+				&& isValidFilterMultiplier(snapshotEstimate.getPassRatio())
+				&& snapshotEstimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
+						? new SketchFilterEvidenceSelector.Candidate(snapshotEstimate, freshnessVersion)
+						: null;
+		return SketchFilterEvidenceSelector.prefer(snapshot, heuristic);
+	}
+
+	private SketchFilterEvidenceSelector.Candidate learnedFilterCandidate(Filter filter, StatementPattern pattern,
+			long freshnessVersion) {
 		JoinStatsProvider statsProvider = learnedStatsProvider;
 		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
-		if (statsProvider != null && patternKey != null) {
-			String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
-			double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
+		if (statsProvider == null || patternKey == null) {
+			return null;
+		}
+		SketchFilterEvidenceSelector.Candidate best = null;
+		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
+		if (isValidFilterMultiplier(ratio)) {
+			best = new SketchFilterEvidenceSelector.Candidate(
+					new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+							EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+							statsProvider.getFilterObservationCount(patternKey, filterKey)),
+					freshnessVersion);
+		}
+		String templateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
+		if (templateKey != null) {
+			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, templateKey);
 			if (isValidFilterMultiplier(ratio)) {
-				return new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
-						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
-						statsProvider.getFilterObservationCount(patternKey, filterKey));
-			}
-			String templateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
-			if (templateKey != null) {
-				ratio = statsProvider.getFilterTemplatePassRatio(patternKey, templateKey);
-				if (isValidFilterMultiplier(ratio)) {
-					return new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
-							EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-							statsProvider.getFilterTemplateObservationCount(patternKey, templateKey));
-				}
-			}
-			ratio = statsProvider.getPatternPassRatio(patternKey);
-			if (isValidFilterMultiplier(ratio)) {
-				return new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
-						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
-						statsProvider.getPatternObservationCount(patternKey));
+				best = SketchFilterEvidenceSelector.prefer(best,
+						new SketchFilterEvidenceSelector.Candidate(
+								new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+										EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+										statsProvider.getFilterTemplateObservationCount(patternKey, templateKey)),
+								freshnessVersion));
 			}
 		}
-		PatternFilterSampleEstimate sampledEstimate = resolveSampledFilterEstimate(filter, pattern);
+		ratio = statsProvider.getPatternPassRatio(patternKey);
+		if (isValidFilterMultiplier(ratio)) {
+			best = SketchFilterEvidenceSelector.prefer(best,
+					new SketchFilterEvidenceSelector.Candidate(
+							new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+									EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
+									statsProvider.getPatternObservationCount(patternKey)),
+							freshnessVersion));
+		}
+		return best;
+	}
+
+	private SketchFilterEvidenceSelector.Candidate qualifiedLearnedFilterCandidate(Filter filter,
+			StatementPattern pattern, long freshnessVersion, int localBoundComponentMask) {
+		JoinStatsProvider statsProvider = learnedStatsProvider;
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (statsProvider == null || patternKey == null) {
+			return null;
+		}
+		SketchFilterEvidenceSelector.Candidate best = null;
+		String filterKey = qualifiedFilterKey(filter, localBoundComponentMask);
+		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
+		if (isValidFilterMultiplier(ratio)) {
+			best = new SketchFilterEvidenceSelector.Candidate(
+					new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+							EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+							statsProvider.getFilterObservationCount(patternKey, filterKey)),
+					freshnessVersion);
+		}
+		String templateKey = qualifiedFilterTemplateKey(filter, pattern, localBoundComponentMask);
+		if (templateKey != null) {
+			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, templateKey);
+			if (isValidFilterMultiplier(ratio)) {
+				best = SketchFilterEvidenceSelector.prefer(best,
+						new SketchFilterEvidenceSelector.Candidate(
+								new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+										EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+										statsProvider.getFilterTemplateObservationCount(patternKey, templateKey)),
+								freshnessVersion));
+			}
+		}
+		return SketchFilterEvidenceSelector.prefer(best,
+				learnedFilterCandidate(filter, pattern, freshnessVersion));
+	}
+
+	private SketchFilterEvidenceSelector.Candidate cachedFilterCandidate(Filter filter, StatementPattern pattern,
+			long freshnessVersion) {
+		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
+		PatternFilterSampleEstimate sampledEstimate = samplingEstimator == null ? null
+				: samplingEstimator.estimateCachedFilterPass(filter, pattern);
+		return sampledFilterCandidate(sampledEstimate, freshnessVersion);
+	}
+
+	private SketchFilterEvidenceSelector.Candidate liveFilterCandidate(Filter filter, StatementPattern pattern,
+			long freshnessVersion) {
+		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
+		PatternFilterSampleEstimate sampledEstimate = samplingEstimator == null ? null
+				: samplingEstimator.estimateLiveFilterPass(filter, pattern);
+		return sampledFilterCandidate(sampledEstimate, freshnessVersion);
+	}
+
+	private SketchFilterEvidenceSelector.Candidate sampledFilterCandidate(PatternFilterSampleEstimate sampledEstimate,
+			long freshnessVersion) {
 		if (sampledEstimate != null && isValidFilterMultiplier(sampledEstimate.passRatio())) {
-			return new EvaluationStatistics.FilterPassEstimate(
-					normalizeExactFilterMultiplier(sampledEstimate.passRatio()),
-					EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, sampledEstimate.sampleSize());
+			return new SketchFilterEvidenceSelector.Candidate(
+					new EvaluationStatistics.FilterPassEstimate(
+							normalizeExactFilterMultiplier(sampledEstimate.passRatio()),
+							EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, sampledEstimate.sampleSize()),
+					freshnessVersion);
 		}
+		return null;
+	}
+
+	private SketchFilterEvidenceSelector.Candidate heuristicFilterCandidate(Filter filter, StatementPattern pattern,
+			long freshnessVersion) {
 		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
 		if (heuristicMultiplier > 0.0d) {
-			return new EvaluationStatistics.FilterPassEstimate(heuristicMultiplier,
-					EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC);
+			return new SketchFilterEvidenceSelector.Candidate(
+					new EvaluationStatistics.FilterPassEstimate(heuristicMultiplier,
+							EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC),
+					freshnessVersion);
 		}
-		return unknownFilterPassEstimate();
+		return null;
 	}
 
 	private static EvaluationStatistics.FilterPassEstimate unknownFilterPassEstimate() {
@@ -10608,6 +10773,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private static final class OptimizationScopeState extends SketchOptimizationScope.State {
+		private SketchEvidencePolicy evidencePolicy = SketchEvidencePolicy.ADAPTIVE;
 		private long readyEpoch;
 		private boolean readyKnown;
 		private boolean ready;
@@ -11504,7 +11670,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double boundedDirectRows = conditionedDirectRows(directRows, safePrefixRows, fanout, predicateRows);
 		double next = boundedDirectRows;
 		double cappedFanout = boundedEndpointTraversalFanout(fanout);
-		for (int depth = 1; depth <= 4; depth++) {
+		for (int depth = 1; depth <= 2; depth++) {
 			if (!Double.isFinite(next) || next <= 0.0d) {
 				break;
 			}
@@ -11512,7 +11678,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			next *= cappedFanout;
 		}
 		double capBase = Math.max(Math.max(safePrefixRows, boundedDirectRows), 1.0d);
-		return normalizeRows(Math.min(rows, capBase * 16.0d));
+		return normalizeRows(Math.min(rows, capBase * 8.0d));
 	}
 
 	private double conditionedDirectRows(double directRows, double prefixRows, double fanout, double predicateRows) {
@@ -15304,98 +15470,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return 1.0d;
 	}
 
-	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern) {
-		return resolveLearnedFilterMultiplier(filter, pattern, 0);
-	}
-
-	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern,
-			Set<String> currentlyBoundVars) {
-		return resolveLearnedFilterMultiplier(filter, pattern, localBoundComponentMask(pattern, currentlyBoundVars));
-	}
-
-	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern, OptimizationScopeState scope,
-			long currentlyBoundVarMask) {
-		return resolveLearnedFilterMultiplier(filter, pattern,
-				localBoundComponentMask(pattern, scope, currentlyBoundVarMask));
-	}
-
-	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern,
-			int localBoundComponentMask) {
-		JoinStatsProvider statsProvider = learnedStatsProvider;
-		if (statsProvider == null || filter.getCondition() == null) {
-			return -1.0d;
-		}
-		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
-		if (patternKey == null) {
-			return -1.0d;
-		}
-		String filterKey = qualifiedFilterKey(filter, localBoundComponentMask);
-		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
-		if (isValidFilterMultiplier(ratio)) {
-			return normalizeExactFilterMultiplier(ratio);
-		}
-		ratio = statsProvider.getFilterPassRatio(patternKey, FilterSelectivityKeys.filterKeyFor(filter.getCondition()));
-		if (isValidFilterMultiplier(ratio)) {
-			return normalizeExactFilterMultiplier(ratio);
-		}
-		String templateKey = qualifiedFilterTemplateKey(filter, pattern, localBoundComponentMask);
-		if (templateKey != null) {
-			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, templateKey);
-			if (isValidFilterMultiplier(ratio)) {
-				return normalizeExactFilterMultiplier(ratio);
-			}
-		}
-		String unconditionalTemplateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
-		if (unconditionalTemplateKey != null) {
-			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, unconditionalTemplateKey);
-			if (isValidFilterMultiplier(ratio)) {
-				return normalizeExactFilterMultiplier(ratio);
-			}
-		}
-		ratio = statsProvider.getPatternPassRatio(patternKey);
-		if (isValidFilterMultiplier(ratio)) {
-			return normalizeExactFilterMultiplier(ratio);
-		}
-		return -1.0d;
-	}
-
-	private double resolveSampledFilterMultiplier(Filter filter, StatementPattern pattern) {
-		PatternFilterSampleEstimate estimate = resolveSampledFilterEstimate(filter, pattern);
-		if (estimate == null || !isValidFilterMultiplier(estimate.passRatio())) {
-			return -1.0d;
-		}
-		EvaluationStatistics.FilterPassEstimate passEstimate = new EvaluationStatistics.FilterPassEstimate(
-				normalizeExactFilterMultiplier(estimate.passRatio()),
-				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.sampleSize());
-		return passEstimate.getPlanningPassRatio();
-	}
-
-	private PatternFilterSampleEstimate resolveSampledFilterEstimate(Filter filter, StatementPattern pattern) {
-		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
-		if (samplingEstimator == null || filter == null || filter.getCondition() == null || pattern == null) {
-			return null;
-		}
-		return samplingEstimator.estimateFilterPass(filter, pattern);
-	}
-
 	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern) {
 		if (filter == null || filter.getCondition() == null || pattern == null
 				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
 			return -1.0d;
 		}
-		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern);
-		if (learnedMultiplier >= 0.0d) {
-			return learnedMultiplier;
-		}
-		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
-		if (sampledMultiplier >= 0.0d) {
-			return sampledMultiplier;
-		}
-		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
-		if (heuristicMultiplier > 0.0d) {
-			return heuristicMultiplier;
-		}
-		return -1.0d;
+		return selectedFilterMultiplier(selectFilterEvidence(filter, pattern, 0));
 	}
 
 	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern,
@@ -15404,19 +15484,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
 			return -1.0d;
 		}
-		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern, currentlyBoundVars);
-		if (learnedMultiplier >= 0.0d) {
-			return learnedMultiplier;
-		}
-		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
-		if (sampledMultiplier >= 0.0d) {
-			return sampledMultiplier;
-		}
-		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
-		if (heuristicMultiplier > 0.0d) {
-			return heuristicMultiplier;
-		}
-		return -1.0d;
+		return selectedFilterMultiplier(
+				selectFilterEvidence(filter, pattern, localBoundComponentMask(pattern, currentlyBoundVars)));
 	}
 
 	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern, OptimizationScopeState scope,
@@ -15425,19 +15494,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
 			return -1.0d;
 		}
-		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern, scope, currentlyBoundVarMask);
-		if (learnedMultiplier >= 0.0d) {
-			return learnedMultiplier;
-		}
-		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
-		if (sampledMultiplier >= 0.0d) {
-			return sampledMultiplier;
-		}
-		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
-		if (heuristicMultiplier > 0.0d) {
-			return heuristicMultiplier;
-		}
-		return -1.0d;
+		return selectedFilterMultiplier(selectFilterEvidence(filter, pattern,
+				localBoundComponentMask(pattern, scope, currentlyBoundVarMask)));
+	}
+
+	private double selectedFilterMultiplier(EvaluationStatistics.FilterPassEstimate estimate) {
+		return estimate != null && estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
+				&& isValidFilterMultiplier(estimate.getPassRatio()) ? estimate.getPlanningPassRatio() : -1.0d;
 	}
 
 	private String qualifiedFilterKey(Filter filter, int localBoundComponentMask) {
@@ -16031,57 +16094,61 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
-		return persistenceManager.persist(this::persistIfDirtySerially);
+		return persistenceManager.persist();
 	}
 
-	private boolean persistIfDirtySerially() {
-		long targetMutationVersion = persistenceMutationCycle.captureTargetVersion();
+	long capturePersistenceTargetVersion() {
+		return persistenceMutationCycle.captureTargetVersion();
+	}
+
+	void flushPendingPersistenceUpdates() {
 		flushPendingIncremental();
-		SketchEstimatorPersistenceStore store;
-		try {
-			store = ensurePersistenceStore();
-		} catch (Throwable t) {
-			logger.warn("Failed to open join estimator persistence store at {}", persistenceFile, t);
-			return false;
-		}
-		if (!persistenceEnabled || persistenceFile == null || store == null) {
-			return false;
-		}
-		if ((rebuildEpoch.get() & 1L) != 0L || rebuildRequired.get()) {
-			return false;
-		}
-		if (!hasPersistenceWork()) {
-			return false;
-		}
-		try {
-			flushDirtySketches();
-			flushOmniJoinEstimatorPayloads(store);
-		} catch (Throwable t) {
-			logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
-			return false;
-		}
-		synchronized (persistLock) {
-			if (!hasPersistenceWork()) {
-				return false;
-			}
-			try {
-				store.flush();
-				writeDirectoryIndexes(store);
-				store.writeMetadata(newDirectoryMetadata(store));
-				persistenceMutationCycle.markPersistedThrough(targetMutationVersion);
-				indexDirty.set(false);
-				boolean cacheDirty = refreshDirtyFlagFromCacheDirectory();
-				dirty.set(cacheDirty || persistenceMutationCycle.hasUnpersistedMutations());
-				return true;
-			} catch (Throwable t) {
-				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
-				return false;
-			}
-		}
 	}
 
-	private boolean hasPersistenceWork() {
+	SketchEstimatorPersistenceStore ensurePersistenceStoreForManager() throws IOException {
+		return ensurePersistenceStore();
+	}
+
+	Path persistencePath() {
+		return persistenceFile;
+	}
+
+	boolean persistenceConfigured() {
+		return persistenceEnabled && persistenceFile != null;
+	}
+
+	boolean persistenceRebuildBlocked() {
+		return (rebuildEpoch.get() & 1L) != 0L || rebuildRequired.get();
+	}
+
+	boolean hasPersistenceWork() {
 		return dirty.get() || indexDirty.get() || persistenceMutationCycle.hasUnpersistedMutations();
+	}
+
+	void flushPersistencePayloads(SketchEstimatorPersistenceStore store) throws IOException {
+		flushDirtySketches();
+		flushOmniJoinEstimatorPayloads(store);
+	}
+
+	Object persistencePublicationLock() {
+		return persistLock;
+	}
+
+	void writePersistenceIndexes(SketchEstimatorPersistenceStore store) throws IOException {
+		writeDirectoryIndexes(store);
+	}
+
+	SketchEstimatorMetadata newPersistenceMetadata(SketchEstimatorPersistenceStore store, long targetMutationVersion)
+			throws IOException {
+		return newDirectoryMetadata(store, targetMutationVersion);
+	}
+
+	void completePersistencePublication(long targetMutationVersion) {
+		persistenceMutationCycle.markPersistedThrough(targetMutationVersion);
+		publishedSnapshotIdentity = new SketchSnapshotIdentity(storeIdHigh, storeIdLow, targetMutationVersion);
+		indexDirty.set(false);
+		boolean cacheDirty = refreshDirtyFlagFromCacheDirectory();
+		dirty.set(cacheDirty || persistenceMutationCycle.hasUnpersistedMutations());
 	}
 
 	/**
@@ -16089,6 +16156,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 */
 	public void unload() {
 		unloadInternal(false);
+	}
+
+	public SketchSnapshotIdentity snapshotIdentity() {
+		if (publishedSnapshotIdentity == null || persistenceMutationCycle.hasUnpersistedMutations()
+				|| rebuildRequired.get()) {
+			return null;
+		}
+		return publishedSnapshotIdentity;
+	}
+
+	public boolean adaptiveEvidenceAllowed() {
+		return currentEvidencePolicy() == SketchEvidencePolicy.ADAPTIVE;
 	}
 
 	/**
@@ -16099,6 +16178,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		unloadInternal(true);
 		clearSlotPersistence((byte) 0);
 		clearSlotPersistence((byte) 1);
+		publishedSnapshotIdentity = null;
 		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
@@ -16192,18 +16272,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private static boolean wasInterrupted(Throwable throwable) {
-		for (Throwable cursor = throwable; cursor != null; cursor = cursor.getCause()) {
-			if (cursor instanceof InterruptedException || cursor instanceof ClosedByInterruptException) {
-				Thread.currentThread().interrupt();
-				return true;
-			}
-		}
-		return Thread.currentThread().isInterrupted();
+	private boolean wasInterrupted(Throwable throwable) {
+		return persistenceManager.wasInterrupted(throwable);
 	}
 
-	private static boolean hasSnapshotAvailable(Path file) {
-		return file != null && Files.isRegularFile(file.toAbsolutePath().normalize().resolve("metadata.bin"));
+	private boolean hasSnapshotAvailable(Path file) {
+		return persistenceManager.hasSnapshot(file);
 	}
 
 	private void markRebuildRequired() {
@@ -16224,37 +16298,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		clearPositiveReadinessCache();
 		SketchEstimatorMetadata metadata = store.readMetadata();
-		if (metadata.version != SketchEstimatorMetadata.VERSION) {
-			throw new IOException("Snapshot metadata version mismatch: snapshot="
-					+ metadata.version + " current=" + SketchEstimatorMetadata.VERSION);
+		persistenceManager.validateMetadata(metadata, new SketchEstimatorPersistenceManager.SnapshotConfiguration(
+				subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, bufA.k, defaultContextString));
+		SketchSnapshotIdentity loadedIdentity = metadata.snapshotIdentity();
+		if (loadedIdentity == null) {
+			throw new IOException("Snapshot identity missing");
 		}
-		if (metadata.subjectBucketCount != subjectBucketCount || metadata.predicateBucketCount != predicateBucketCount
-				|| metadata.objectBucketCount != objectBucketCount
-				|| metadata.contextBucketCount != contextBucketCount) {
-			throw new IOException("Snapshot buckets mismatch: snapshot S/P/O/C=" + metadata.subjectBucketCount + "/"
-					+ metadata.predicateBucketCount + "/" + metadata.objectBucketCount + "/"
-					+ metadata.contextBucketCount + " current=" + subjectBucketCount + "/" + predicateBucketCount
-					+ "/" + objectBucketCount + "/" + contextBucketCount);
-		}
-		if (metadata.contextPairSketchesEnabled != contextPairSketchesEnabled) {
-			throw new IOException("Snapshot contextPairSketchesEnabled mismatch: snapshot="
-					+ metadata.contextPairSketchesEnabled + " current=" + contextPairSketchesEnabled);
-		}
-		if (metadata.sketchStrategy == null) {
-			throw new IOException("Snapshot sketch strategy missing: current=" + sketchStrategy.configValue());
-		}
-		if (metadata.sketchStrategy != sketchStrategy) {
-			throw new IOException("Snapshot sketch strategy mismatch: snapshot="
-					+ metadata.sketchStrategy.configValue() + " current=" + sketchStrategy.configValue());
-		}
-		if (metadata.sketchNominalEntries != bufA.k) {
-			throw new IOException("Snapshot FastAGMS compatibility nominal entries mismatch: snapshot="
-					+ metadata.sketchNominalEntries
-					+ " current=" + bufA.k);
-		}
-		if (!Objects.equals(metadata.defaultContext, defaultContextString)) {
-			throw new IOException("Snapshot defaultContextString mismatch");
-		}
+		storeIdHigh = loadedIdentity.storeIdHigh();
+		storeIdLow = loadedIdentity.storeIdLow();
+		publishedSnapshotIdentity = loadedIdentity;
+		persistenceMutationCycle.restorePersistedVersion(loadedIdentity.mutationVersion());
 
 		List<SketchEstimatorPersistenceStore.IndexEntry> slotAEntries = store.readIndex((byte) 0);
 		List<SketchEstimatorPersistenceStore.IndexEntry> slotBEntries = store.readIndex((byte) 1);
@@ -16288,7 +16342,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		lastRebuildPublishMs = metadata.lastPublishTime;
 		churnSampler.reset();
 		sketchesLoaded = markLoaded;
-		persistenceMutationCycle.markCurrentPersisted();
 		dirty.set(false);
 		indexDirty.set(false);
 		notifyReadyWaiters();
@@ -16317,18 +16370,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private boolean loadOmniJoinEstimatorSnapshot(State state, byte slot) throws IOException {
-		if (persistenceFile == null || state == null || state.omniJoinEstimator == null) {
-			return false;
-		}
-		try (OmniWitnessPersistenceStore witnessStore = OmniWitnessPersistenceStore.open(persistenceFile)) {
-			MappedOmniJoinSnapshot snapshot = witnessStore.openSnapshot(slot);
-			synchronized (state) {
-				state.omniJoinEstimator.loadMappedSnapshot(snapshot);
-			}
-			return true;
-		} catch (java.nio.file.NoSuchFileException e) {
-			return false;
-		}
+		return state != null && persistenceManager.loadOmniSnapshot(persistenceFile, state,
+				state.omniJoinEstimator, slot);
 	}
 
 	private void writeDirectoryIndexes(SketchEstimatorPersistenceStore store) throws IOException {
@@ -16351,14 +16394,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return entries;
 	}
 
-	private SketchEstimatorMetadata newDirectoryMetadata(SketchEstimatorPersistenceStore store) throws IOException {
+	private SketchEstimatorMetadata newDirectoryMetadata(SketchEstimatorPersistenceStore store,
+			long targetMutationVersion) throws IOException {
 		byte activeSlot = slotByte(slotOf(current));
-		long approxSize = store.approximateSize();
+		long approxSize = approxStoreSize.get();
 		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, bufA.k, defaultContextString,
 				activeSlot,
 				seenTriples, approxSize, lastRebuildPublishMs, slotGenerations[0], slotGenerations[1],
-				omniJoinEstimatorRefs[0], omniJoinEstimatorRefs[1]);
+				omniJoinEstimatorRefs[0], omniJoinEstimatorRefs[1],
+				new SketchSnapshotIdentity(storeIdHigh, storeIdLow, targetMutationVersion), coldSynopsisCapacity,
+				coldSynopsisCapacity > 0 && persistenceFile != null
+						? persistenceFile.getFileName().toString() + ".cold"
+						: null);
 	}
 
 	private void clearSlotPersistence(byte slot) {
@@ -16370,6 +16418,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void clearPersistedSketchDirectory() {
+		publishedSnapshotIdentity = null;
 		omniJoinEstimatorRefs[0] = null;
 		omniJoinEstimatorRefs[1] = null;
 		synchronized (sketchCacheLock) {
@@ -16825,9 +16874,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return;
 		}
 		byte slot = slotByte(slotOf(state));
-		try (OmniWitnessPersistenceStore witnessStore = OmniWitnessPersistenceStore.open(persistenceFile)) {
-			witnessStore.writeSnapshot(slot, state.omniJoinEstimator, slotGenerations[slot]);
-		}
+		persistenceManager.writeOmniSnapshot(persistenceFile, state.omniJoinEstimator, slot,
+				slotGenerations[slot]);
 		omniJoinEstimatorRefs[0] = null;
 		omniJoinEstimatorRefs[1] = null;
 	}
@@ -17303,6 +17351,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		boolean roundJoinEstimates = true;
 		boolean contextPairSketchesEnabled = true;
 		SketchStrategy sketchStrategy = SketchStrategy.OMNI;
+		SketchEvidencePolicy evidencePolicy = SketchEvidencePolicy.ADAPTIVE;
+		int coldSynopsisCapacity;
 
 		int churnSampleMin = 128;
 		int churnSampleMax = 4096;
@@ -17383,6 +17433,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		public Config withSketchStrategy(SketchStrategy strategy) {
 			this.sketchStrategy = SketchStrategy.runtimeStrategy(Objects.requireNonNull(strategy, "strategy"));
+			return this;
+		}
+
+		public Config withEvidenceMode(String mode) {
+			this.evidencePolicy = SketchEvidencePolicy.fromConfigValue(mode);
+			return this;
+		}
+
+		public Config withColdSynopsisCapacity(int capacity) {
+			this.coldSynopsisCapacity = Math.clamp(capacity, 0, 6_144);
 			return this;
 		}
 

@@ -124,6 +124,10 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_STRATEGY;
 
+	public final static IRI SKETCH_ESTIMATOR_EVIDENCE_MODE;
+
+	public final static IRI SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY;
+
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
@@ -179,6 +183,9 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");
 		SKETCH_ESTIMATOR_THROTTLE_MILLIS = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleMillis");
 		SKETCH_ESTIMATOR_STRATEGY = factory.createIRI(NAMESPACE, "sketchEstimatorStrategy");
+		SKETCH_ESTIMATOR_EVIDENCE_MODE = factory.createIRI(NAMESPACE, "sketchEstimatorEvidenceMode");
+		SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY = factory.createIRI(NAMESPACE,
+				"sketchEstimatorColdSynopsisCapacity");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");

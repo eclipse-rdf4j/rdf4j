@@ -16,7 +16,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -67,10 +66,7 @@ final class LmdbCascadesConnectedJoinPlanner {
 	static final String CONNECTED_JOIN_TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.traceLimit";
 	static final String TRACE_PROPERTY = CONNECTED_JOIN_TRACE_PROPERTY;
 	static final String CONNECTED_JOIN_TRACE_METRIC = "optimizer.connectedJoinTrace";
-	private static final int EXACT_DP_FACTOR_LIMIT = 20;
 	private static final int DEFAULT_TRACE_LIMIT = 24_000;
-	private static final int MAX_DISCONNECTED_FINITE_ANCHOR_ROWS = 64;
-	private static final int MAX_CONNECTED_DP_STATES_PER_MASK = 4;
 
 	private LmdbCascadesConnectedJoinPlanner() {
 	}
@@ -490,54 +486,6 @@ final class LmdbCascadesConnectedJoinPlanner {
 
 	private static boolean path(TupleExpr tupleExpr) {
 		return tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath;
-	}
-
-	private static boolean pathHasBoundEndpoint(TupleExpr tupleExpr, Set<String> boundVars) {
-		if (boundVars == null || boundVars.isEmpty()) {
-			return false;
-		}
-		return intersects(pathEndpointNames(tupleExpr), plannerNames(boundVars));
-	}
-
-	private static Set<String> pathEndpointNames(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof ArbitraryLengthPath path) {
-			return endpointNames(path.getSubjectVar(), path.getObjectVar());
-		}
-		if (tupleExpr instanceof ZeroLengthPath path) {
-			return endpointNames(path.getSubjectVar(), path.getObjectVar());
-		}
-		return Set.of();
-	}
-
-	private static Set<String> endpointNames(Var left, Var right) {
-		LinkedHashSet<String> names = new LinkedHashSet<>();
-		addEndpointName(names, left);
-		addEndpointName(names, right);
-		return names.isEmpty() ? Set.of() : Set.copyOf(names);
-	}
-
-	private static void addEndpointName(Set<String> names, Var var) {
-		if (var == null || var.hasValue() || var.isConstant()) {
-			return;
-		}
-		String name = var.getName();
-		if (name != null && !name.startsWith("_const_")) {
-			names.add(name);
-		}
-	}
-
-	private static boolean intersects(Set<String> left, Set<String> right) {
-		if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
-			return false;
-		}
-		Set<String> smaller = left.size() <= right.size() ? left : right;
-		Set<String> larger = left.size() <= right.size() ? right : left;
-		for (String value : smaller) {
-			if (larger.contains(value)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

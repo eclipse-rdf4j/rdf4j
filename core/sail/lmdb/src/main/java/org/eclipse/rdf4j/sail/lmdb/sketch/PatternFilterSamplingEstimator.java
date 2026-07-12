@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 @FunctionalInterface
 public interface PatternFilterSamplingEstimator {
@@ -22,5 +23,19 @@ public interface PatternFilterSamplingEstimator {
 
 	default PatternFilterSampleEstimate estimateFilterPass(Filter filter, StatementPattern pattern) {
 		return new PatternFilterSampleEstimate(estimateFilterPassRatio(filter, pattern), -1L);
+	}
+
+	default EvaluationStatistics.FilterPassEstimate estimateSnapshotFilterPass(Filter filter,
+			StatementPattern pattern) {
+		return new EvaluationStatistics.FilterPassEstimate(-1.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
+	}
+
+	default PatternFilterSampleEstimate estimateCachedFilterPass(Filter filter, StatementPattern pattern) {
+		return new PatternFilterSampleEstimate(-1.0d, -1L);
+	}
+
+	default PatternFilterSampleEstimate estimateLiveFilterPass(Filter filter, StatementPattern pattern) {
+		return estimateFilterPass(filter, pattern);
 	}
 }

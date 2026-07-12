@@ -21,9 +21,12 @@ import java.util.Locale;
 final class SketchEstimatorMetadata {
 
 	static final byte[] MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	static final int VERSION = 5;
+	static final int VERSION = 7;
 
 	final int version;
+	final long storeIdHigh;
+	final long storeIdLow;
+	final long mutationVersion;
 	final int bucketCount;
 	final int subjectBucketCount;
 	final int predicateBucketCount;
@@ -41,6 +44,8 @@ final class SketchEstimatorMetadata {
 	final long slotGenerationB;
 	final SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA;
 	final SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB;
+	final int coldSynopsisCapacity;
+	final String coldSynopsisReference;
 
 	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
 			int contextBucketCount, boolean contextPairSketchesEnabled,
@@ -50,7 +55,8 @@ final class SketchEstimatorMetadata {
 			long slotGenerationA, long slotGenerationB) {
 		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
 				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
-				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB, null, null);
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB, null, null, null, 0,
+				null);
 	}
 
 	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
@@ -64,7 +70,38 @@ final class SketchEstimatorMetadata {
 		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
 				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
 				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB,
-				omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+				omniJoinEstimatorRefA, omniJoinEstimatorRefB, null, 0, null);
+	}
+
+	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
+			int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
+			String defaultContext, byte activeSlot,
+			long seenCount, long approxStoreSize, long lastPublishTime,
+			long slotGenerationA, long slotGenerationB,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB,
+			SketchSnapshotIdentity snapshotIdentity) {
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB,
+				omniJoinEstimatorRefA, omniJoinEstimatorRefB, snapshotIdentity, 0, null);
+	}
+
+	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
+			int contextBucketCount, boolean contextPairSketchesEnabled,
+			SketchBasedJoinEstimator.SketchStrategy sketchStrategy, int sketchNominalEntries,
+			String defaultContext, byte activeSlot,
+			long seenCount, long approxStoreSize, long lastPublishTime,
+			long slotGenerationA, long slotGenerationB,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB,
+			SketchSnapshotIdentity snapshotIdentity, int coldSynopsisCapacity, String coldSynopsisReference) {
+		this(VERSION, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext, activeSlot,
+				seenCount, approxStoreSize, lastPublishTime, slotGenerationA, slotGenerationB,
+				omniJoinEstimatorRefA, omniJoinEstimatorRefB, snapshotIdentity, coldSynopsisCapacity,
+				coldSynopsisReference);
 	}
 
 	private SketchEstimatorMetadata(int version, int subjectBucketCount, int predicateBucketCount,
@@ -74,8 +111,12 @@ final class SketchEstimatorMetadata {
 			long seenCount, long approxStoreSize, long lastPublishTime,
 			long slotGenerationA, long slotGenerationB,
 			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA,
-			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB) {
+			SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB,
+			SketchSnapshotIdentity snapshotIdentity, int coldSynopsisCapacity, String coldSynopsisReference) {
 		this.version = version;
+		this.storeIdHigh = snapshotIdentity == null ? 0L : snapshotIdentity.storeIdHigh();
+		this.storeIdLow = snapshotIdentity == null ? 0L : snapshotIdentity.storeIdLow();
+		this.mutationVersion = snapshotIdentity == null ? 0L : snapshotIdentity.mutationVersion();
 		this.bucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
 				Math.max(objectBucketCount, contextBucketCount));
 		this.subjectBucketCount = subjectBucketCount;
@@ -95,11 +136,17 @@ final class SketchEstimatorMetadata {
 		this.slotGenerationB = slotGenerationB;
 		this.omniJoinEstimatorRefA = omniJoinEstimatorRefA;
 		this.omniJoinEstimatorRefB = omniJoinEstimatorRefB;
+		this.coldSynopsisCapacity = Math.max(0, coldSynopsisCapacity);
+		this.coldSynopsisReference = coldSynopsisReference == null || coldSynopsisReference.isBlank() ? null
+				: coldSynopsisReference;
 	}
 
 	void writeTo(DataOutput out) throws IOException {
 		out.write(MAGIC);
 		out.writeInt(VERSION);
+		out.writeLong(storeIdHigh);
+		out.writeLong(storeIdLow);
+		out.writeLong(mutationVersion);
 		out.writeInt(bucketCount);
 		out.writeInt(subjectBucketCount);
 		out.writeInt(predicateBucketCount);
@@ -118,6 +165,8 @@ final class SketchEstimatorMetadata {
 		out.writeLong(slotGenerationB);
 		writeRef(out, omniJoinEstimatorRefA);
 		writeRef(out, omniJoinEstimatorRefB);
+		out.writeInt(coldSynopsisCapacity);
+		writeString(out, coldSynopsisReference);
 	}
 
 	static SketchEstimatorMetadata readFrom(DataInput in) throws IOException {
@@ -127,9 +176,12 @@ final class SketchEstimatorMetadata {
 			}
 		}
 		int version = in.readInt();
-		if (version != 1 && version != 2 && version != 3 && version != VERSION) {
+		if (version < 1 || version > VERSION) {
 			throw new IOException("Unsupported join estimator directory metadata version: " + version);
 		}
+		SketchSnapshotIdentity snapshotIdentity = version >= 6
+				? new SketchSnapshotIdentity(in.readLong(), in.readLong(), in.readLong())
+				: null;
 		int bucketCount = in.readInt();
 		int subjectBucketCount = bucketCount;
 		int predicateBucketCount = bucketCount;
@@ -160,10 +212,31 @@ final class SketchEstimatorMetadata {
 		long slotGenerationB = in.readLong();
 		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefA = version >= 4 ? readRef(in) : null;
 		SketchEstimatorPersistenceStore.Ref omniJoinEstimatorRefB = version >= 4 ? readRef(in) : null;
+		int coldSynopsisCapacity = version >= 7 ? in.readInt() : 0;
+		String coldSynopsisReference = version >= 7 ? readString(in) : null;
+		if (coldSynopsisCapacity < 0 || coldSynopsisCapacity > 6_144
+				|| coldSynopsisCapacity == 0 && coldSynopsisReference != null && !coldSynopsisReference.isBlank()
+				|| coldSynopsisCapacity > 0 && !isValidSynopsisReference(coldSynopsisReference)) {
+			throw new IOException("Invalid cold synopsis metadata reference");
+		}
 		return new SketchEstimatorMetadata(version, subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, sketchNominalEntries, defaultContext,
 				activeSlot, seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
-				slotGenerationB, omniJoinEstimatorRefA, omniJoinEstimatorRefB);
+				slotGenerationB, omniJoinEstimatorRefA, omniJoinEstimatorRefB, snapshotIdentity, coldSynopsisCapacity,
+				coldSynopsisReference);
+	}
+
+	SketchSnapshotIdentity snapshotIdentity() {
+		return version >= 6 ? new SketchSnapshotIdentity(storeIdHigh, storeIdLow, mutationVersion) : null;
+	}
+
+	String coldSynopsisReference() {
+		return coldSynopsisReference;
+	}
+
+	private static boolean isValidSynopsisReference(String reference) {
+		return reference != null && !reference.isBlank() && reference.length() <= 512 && !reference.contains("/")
+				&& !reference.contains("\\");
 	}
 
 	private static SketchBasedJoinEstimator.SketchStrategy readPersistedSketchStrategy(String value) {

@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -484,6 +485,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public boolean forceFlushSketchEstimator() {
 		LmdbSailStore backingStore = this.backingStore;
 		return backingStore != null && backingStore.forceFlushSketchEstimator();
+	}
+
+	/** Returns exact primitive and serialized footprint diagnostics for the current cold filter synopsis. */
+	public Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore == null ? Optional.empty() : backingStore.getColdFilterSynopsisFootprint();
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {

@@ -75,6 +75,30 @@ final class LmdbEstimateAuditHarness {
 		return List.copyOf(rows);
 	}
 
+	static List<PairedAuditRow> auditQueryPair(SailRepositoryConnection snapshotOnlyConnection,
+			SailRepositoryConnection adaptiveConnection, String queryId, String query) {
+		List<AuditRow> snapshotOnly = auditQuery(snapshotOnlyConnection, queryId, query);
+		List<AuditRow> adaptive = auditQuery(adaptiveConnection, queryId, query);
+		if (snapshotOnly.size() != adaptive.size()) {
+			throw new IllegalStateException(
+					"Evidence-policy audit produced different algebra-piece counts for " + queryId);
+		}
+		List<PairedAuditRow> paired = new ArrayList<>(snapshotOnly.size());
+		for (int i = 0; i < snapshotOnly.size(); i++) {
+			AuditRow snapshotRow = snapshotOnly.get(i);
+			AuditRow adaptiveRow = adaptive.get(i);
+			if (!snapshotRow.queryId().equals(adaptiveRow.queryId())
+					|| !snapshotRow.pieceId().equals(adaptiveRow.pieceId())
+					|| snapshotRow.kind() != adaptiveRow.kind()
+					|| snapshotRow.actualRows() != adaptiveRow.actualRows()) {
+				throw new IllegalStateException("Evidence-policy audit data/query mismatch: snapshot=" + snapshotRow
+						+ " adaptive=" + adaptiveRow);
+			}
+			paired.add(new PairedAuditRow(snapshotRow, adaptiveRow));
+		}
+		return List.copyOf(paired);
+	}
+
 	private static AuditRow auditFullQuery(SailRepositoryConnection connection, String queryId, String query,
 			TupleExpr tupleExpr) {
 		PlanEstimate planned = planEstimate(PieceKind.FULL_QUERY,
@@ -175,9 +199,9 @@ final class LmdbEstimateAuditHarness {
 			return new PlanEstimate(Double.NaN, null, null);
 		}
 		QueryModelNode estimationRoot = estimationRoot(explained);
-		double rootRows = kind == PieceKind.FULL_QUERY ? rootRows(explanation) : Double.NaN;
+		double rootRows = estimateRows(estimationRoot);
 		if (!Double.isFinite(rootRows) || rootRows < 0.0d) {
-			rootRows = estimateRows(estimationRoot);
+			rootRows = kind == PieceKind.FULL_QUERY ? rootRows(explanation) : Double.NaN;
 		}
 		String source = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String usage = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
@@ -387,6 +411,9 @@ final class LmdbEstimateAuditHarness {
 
 	record AuditRow(String queryId, String pieceId, PieceKind kind, double plannedRows, long actualRows,
 			double qError, String plannedSource, String plannedUsage) {
+	}
+
+	record PairedAuditRow(AuditRow snapshotOnly, AuditRow adaptive) {
 	}
 
 	private record PlanEstimate(double rows, String source, String usage) {
