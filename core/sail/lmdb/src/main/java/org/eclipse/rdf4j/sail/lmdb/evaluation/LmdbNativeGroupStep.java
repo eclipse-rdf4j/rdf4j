@@ -301,6 +301,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			return List.of(toBindingSet(null, state, sawRow));
 		}
 
+		if (groupSlots.length == 1) {
+			return evaluateSingleSlotGroups(row, groupSlots[0]);
+		}
+
 		if (groupSlots.length <= 4) {
 			return evaluatePrimitiveTupleGroups(row);
 		}

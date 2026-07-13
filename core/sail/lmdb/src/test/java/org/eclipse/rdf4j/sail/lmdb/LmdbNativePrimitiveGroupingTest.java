@@ -83,6 +83,31 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
+	public void singleKeyDistinctAggregationKeepsSpecializedMap() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery("""
+					SELECT ?p (COUNT(?s) AS ?count) (COUNT(DISTINCT ?s) AS ?distinctCount)
+					WHERE {
+						{ ?s ?p ?o }
+						UNION
+						{ ?s ?p ?o }
+					}
+					GROUP BY ?p
+					""").evaluate());
+
+			assertThat(rows).hasSize(3).allSatisfy(row -> {
+				assertThat(((Literal) row.getValue("count")).longValue()).isEqualTo(400L);
+				assertThat(((Literal) row.getValue("distinctCount")).longValue()).isEqualTo(200L);
+			});
+		}
+
+		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
+		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
+		assertThat(PrimitiveTupleTable.PROBES.get()).isZero();
+		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isZero();
+	}
+
+	@Test
 	public void orderedSinglePatternGroupingKeepsOnlyTheActiveAggregateState() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(
