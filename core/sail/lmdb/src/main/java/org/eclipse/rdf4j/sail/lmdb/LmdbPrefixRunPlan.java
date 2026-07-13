@@ -14,10 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+
 /**
  * Package-private description of a prefix-run scan over an LMDB statement index.
  */
-final class LmdbPrefixRunPlan {
+@InternalUseOnly
+public final class LmdbPrefixRunPlan {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.prefixRun.enabled";
 
@@ -50,7 +53,8 @@ final class LmdbPrefixRunPlan {
 		RUN_ROWS_COUNTED.set(0);
 	}
 
-	TripleIndex index() {
+	@InternalUseOnly
+	public TripleIndex index() {
 		return index;
 	}
 
@@ -58,7 +62,8 @@ final class LmdbPrefixRunPlan {
 		return Arrays.copyOf(prefixFields, prefixFields.length);
 	}
 
-	int prefixLength() {
+	@InternalUseOnly
+	public int prefixLength() {
 		return prefixLength;
 	}
 }

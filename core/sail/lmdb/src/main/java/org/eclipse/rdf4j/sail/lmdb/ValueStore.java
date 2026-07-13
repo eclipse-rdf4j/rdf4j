@@ -73,6 +73,7 @@ import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -107,10 +108,12 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
-class ValueStore extends AbstractValueFactory {
+@InternalUseOnly
+public class ValueStore extends AbstractValueFactory {
 
 	@FunctionalInterface
-	interface ValueDataReader<T> {
+	@InternalUseOnly
+	public interface ValueDataReader<T> {
 		T read(long address, int length) throws IOException;
 	}
 
@@ -509,7 +512,8 @@ class ValueStore extends AbstractValueFactory {
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
-	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
+	@InternalUseOnly
+	public ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this(dir, new StoreProperties(dir), config);
 	}
 
@@ -1063,7 +1067,8 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	<T> T withData(long id, ValueDataReader<T> reader) throws IOException {
+	@InternalUseOnly
+	public <T> T withData(long id, ValueDataReader<T> reader) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
 			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());

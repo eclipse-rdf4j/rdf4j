@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -34,7 +35,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
-final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
+@InternalUseOnly
+public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private static boolean assertsEnabled = false;
 
@@ -58,7 +60,8 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
 
-	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+	@InternalUseOnly
+	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;

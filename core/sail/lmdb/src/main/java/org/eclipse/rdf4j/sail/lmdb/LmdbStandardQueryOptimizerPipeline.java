@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -31,12 +32,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
-class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
+@InternalUseOnly
+public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private final StandardQueryOptimizerPipeline delegate;
 	private final TripleSource tripleSource;
 
-	LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+	@InternalUseOnly
+	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, new OrderBlindTripleSource(tripleSource),
 				evaluationStatistics);

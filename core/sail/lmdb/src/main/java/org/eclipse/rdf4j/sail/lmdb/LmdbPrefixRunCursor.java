@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -34,7 +35,8 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * Cursor that emits one representative statement for each matching prefix run.
  */
-interface LmdbPrefixRunCursor extends AutoCloseable {
+@InternalUseOnly
+public interface LmdbPrefixRunCursor extends AutoCloseable {
 
 	LmdbPrefixRunCursor EMPTY = new LmdbPrefixRunCursor() {
 		@Override

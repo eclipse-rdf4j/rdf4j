@@ -15,12 +15,14 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
-final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
+@InternalUseOnly
+public final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
 
 	private final String partitionBindingName;
 	private final CollectionFactory collectionFactory;
@@ -28,7 +30,8 @@ final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet>
 	private Value currentPartitionValue;
 	private boolean partitionInitialized;
 
-	LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter, Set<BindingSet> seen,
+	@InternalUseOnly
+	public LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter, Set<BindingSet> seen,
 			String partitionBindingName, CollectionFactory collectionFactory) {
 		super(iter);
 		this.seen = seen;

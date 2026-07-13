@@ -29,22 +29,28 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
-class TripleIndex {
+@InternalUseOnly
+public class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 	static final int KEY_MATCH = 0;
 	static final int KEY_FILTERED = 1;
 	static final int KEY_OUT_OF_RANGE = 2;
 
 	// triples are represented by 4 varints for subject, predicate, object and context
-	static final int SUBJ_IDX = 0;
-	static final int PRED_IDX = 1;
-	static final int OBJ_IDX = 2;
-	static final int CONTEXT_IDX = 3;
+	@InternalUseOnly
+	public static final int SUBJ_IDX = 0;
+	@InternalUseOnly
+	public static final int PRED_IDX = 1;
+	@InternalUseOnly
+	public static final int OBJ_IDX = 2;
+	@InternalUseOnly
+	public static final int CONTEXT_IDX = 3;
 
 	@FunctionalInterface
 	interface StatementFieldValueAccessor {
@@ -85,7 +91,8 @@ class TripleIndex {
 		return fieldSeq;
 	}
 
-	String getName(boolean explicit) {
+	@InternalUseOnly
+	public String getName(boolean explicit) {
 		return name + (explicit ? name : name + "-inf");
 	}
 

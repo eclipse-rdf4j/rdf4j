@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -41,7 +42,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
-final class LmdbStableOrderPlanner {
+@InternalUseOnly
+public final class LmdbStableOrderPlanner {
 
 	private static final Comparator<Resolution> RESOLUTION_COMPARATOR = Comparator
 			.comparingInt((Resolution resolution) -> resolution.isAssured() ? 0 : 1)
@@ -50,11 +52,13 @@ final class LmdbStableOrderPlanner {
 
 	private final TripleSource tripleSource;
 
-	LmdbStableOrderPlanner(TripleSource tripleSource) {
+	@InternalUseOnly
+	public LmdbStableOrderPlanner(TripleSource tripleSource) {
 		this.tripleSource = tripleSource;
 	}
 
-	Optional<Resolution> plan(TupleExpr tupleExpr) {
+	@InternalUseOnly
+	public Optional<Resolution> plan(TupleExpr tupleExpr) {
 		List<String> bindingNames = new ArrayList<>(tupleExpr.getBindingNames());
 		Collections.sort(bindingNames);
 		Set<String> assuredBindingNames = tupleExpr.getAssuredBindingNames();
@@ -210,7 +214,8 @@ final class LmdbStableOrderPlanner {
 		return null;
 	}
 
-	static final class Resolution {
+	@InternalUseOnly
+	public static final class Resolution {
 		private final String visibleBindingName;
 		private final StatementPattern statementPattern;
 		private final Var anchorVar;
@@ -226,7 +231,8 @@ final class LmdbStableOrderPlanner {
 			this.assured = assured;
 		}
 
-		String getVisibleBindingName() {
+		@InternalUseOnly
+		public String getVisibleBindingName() {
 			return visibleBindingName;
 		}
 
@@ -252,7 +258,8 @@ final class LmdbStableOrderPlanner {
 			return 2;
 		}
 
-		void apply() {
+		@InternalUseOnly
+		public void apply() {
 			for (JoinDirective joinDirective : joinDirectives) {
 				joinDirective.apply();
 			}
