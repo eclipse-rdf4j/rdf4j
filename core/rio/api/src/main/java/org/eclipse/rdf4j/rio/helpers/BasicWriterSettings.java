@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import org.eclipse.rdf4j.model.util.VersionLabel;
+import org.eclipse.rdf4j.rio.RioSetting;
+
 /**
  * A class encapsulating the basic writer settings that most writers may support.
  *
@@ -125,6 +128,12 @@ public class BasicWriterSettings {
 	public static final BooleanRioSetting ANNOUNCE_RDF12_VERSION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.announce_rdf12_version",
 			"Include the rdf version declaration if RDF 1.2 features exist.", Boolean.TRUE);
+
+	/**
+	 * Setting to serialize the statements in RDF 1.2-basic or RDF 1.1 version. By default, set to RDF 1.2.
+	 */
+	public static final RioSetting<VersionLabel> RDF_OUTPUT_VERSION = new ClassRioSetting<>(
+			"org.eclipse.rdf4j.rio.rdf.output.version", "Output RDF version", VersionLabel.DEFAULT);
 
 	/**
 	 * Private default constructor.

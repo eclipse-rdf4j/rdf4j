@@ -224,6 +224,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {
 				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
+				BasicWriterSettings.RDF_OUTPUT_VERSION,
 				NTriplesWriterSettings.ESCAPE_UNICODE
 		};
 	}

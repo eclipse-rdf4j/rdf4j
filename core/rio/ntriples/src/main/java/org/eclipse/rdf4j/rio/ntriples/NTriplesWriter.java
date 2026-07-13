@@ -153,6 +153,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements CharSink {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+		result.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 		result.add(NTriplesWriterSettings.ESCAPE_UNICODE);
 
 		return result;
