@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
@@ -29,17 +28,9 @@ final class OrderedRecordIterator implements RecordIterator {
 	private Head pendingAdvance;
 	private boolean closed;
 
-	private OrderedRecordIterator(List<RecordIterator> iterators, StatementOrder order) {
+	private OrderedRecordIterator(List<RecordIterator> iterators, int[] components) {
 		this.iterators = iterators;
-		int component = switch (order) {
-		case S -> TripleIndex.SUBJ_IDX;
-		case P -> TripleIndex.PRED_IDX;
-		case O -> TripleIndex.OBJ_IDX;
-		case C -> TripleIndex.CONTEXT_IDX;
-		};
-		this.heads = new PriorityQueue<>(Comparator
-				.comparingLong((Head head) -> head.row[component])
-				.thenComparingInt(head -> head.ordinal));
+		this.heads = new PriorityQueue<>((left, right) -> compare(left, right, components));
 		try {
 			for (int i = 0; i < iterators.size(); i++) {
 				long[] row = iterators.get(i).next();
@@ -60,7 +51,49 @@ final class OrderedRecordIterator implements RecordIterator {
 		if (iterators.size() == 1) {
 			return iterators.getFirst();
 		}
-		return new OrderedRecordIterator(new ArrayList<>(iterators), order);
+		return new OrderedRecordIterator(new ArrayList<>(iterators), components(iterators, order));
+	}
+
+	private static int compare(Head left, Head right, int[] components) {
+		for (int component : components) {
+			int comparison = Long.compareUnsigned(left.row[component], right.row[component]);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return Integer.compare(left.ordinal, right.ordinal);
+	}
+
+	private static int[] components(List<RecordIterator> iterators, StatementOrder fallback) {
+		String index = iterators.getFirst().getIndexName();
+		for (int i = 1; i < iterators.size(); i++) {
+			if (!index.equals(iterators.get(i).getIndexName())) {
+				return new int[] { component(fallback) };
+			}
+		}
+		if (index.length() != 4) {
+			return new int[] { component(fallback) };
+		}
+		int[] components = new int[4];
+		for (int i = 0; i < components.length; i++) {
+			components[i] = switch (index.charAt(i)) {
+			case 's' -> TripleIndex.SUBJ_IDX;
+			case 'p' -> TripleIndex.PRED_IDX;
+			case 'o' -> TripleIndex.OBJ_IDX;
+			case 'c' -> TripleIndex.CONTEXT_IDX;
+			default -> component(fallback);
+			};
+		}
+		return components;
+	}
+
+	private static int component(StatementOrder order) {
+		return switch (order) {
+		case S -> TripleIndex.SUBJ_IDX;
+		case P -> TripleIndex.PRED_IDX;
+		case O -> TripleIndex.OBJ_IDX;
+		case C -> TripleIndex.CONTEXT_IDX;
+		};
 	}
 
 	@Override

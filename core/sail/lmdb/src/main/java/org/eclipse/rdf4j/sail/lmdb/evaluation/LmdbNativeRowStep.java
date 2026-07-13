@@ -162,6 +162,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final String[] optionalOnlyNames;
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
+	final NativeTupleDistinctPlan distinctPlan;
 	QueryEvaluationStep genericStep;
 
 	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
@@ -187,6 +188,17 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: optionalOnlyNames.toArray(String[]::new);
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
+		this.distinctPlan = previewDistinctPlan();
+	}
+
+	private NativeTupleDistinctPlan previewDistinctPlan() {
+		if (!distinct || orderSlots.length != 0) {
+			return NativeTupleDistinctPlan.global(arg, sourceSlots);
+		}
+		RowState row = new RowState(source, layout, new QueryBindingSet());
+		return initializeRow(row, row.base, source, layout)
+				? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
+				: NativeTupleDistinctPlan.global(arg, sourceSlots);
 	}
 
 	@Override
@@ -240,11 +252,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	@Override
 	public String nativePhysicalPlan() {
 		StringBuilder sb = new StringBuilder("NativeRows(arg=")
-				.append(LmdbNativeExplain.describe(arg, layout))
+				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout))
 				.append(", sourceSlots=")
 				.append(Arrays.toString(sourceSlots))
 				.append(", distinct=")
-				.append(distinct)
+				.append(distinct);
+		if (distinct) {
+			sb.append(", distinctStrategy=").append(distinctPlan.strategy);
+		}
+		sb
 				.append(", orderSlots=")
 				.append(Arrays.toString(orderSlots))
 				.append(", offset=")
@@ -405,7 +421,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	NativeRowsStep step;
 	BindingSet base;
-	NativeDistinctTracker distinctRows;
+	NativeOrderedDistinctTracker distinctRows;
+	NativeTupleDistinctPlan distinctPlan;
 	long remainingOffset;
 	long remainingLimit;
 	long remainingMultiplicity;
@@ -424,7 +441,6 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	NativeRowsIteration(NativeRowsStep step, BindingSet base) {
 		this.step = step;
 		this.base = base;
-		this.distinctRows = step.distinct ? new NativeDistinctTracker(step.sourceSlots) : null;
 		this.remainingOffset = Math.max(0L, step.offset);
 		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
 	}
@@ -528,9 +544,17 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			return false;
 		}
 		values = new AggContext(step.source, step.strictCompare);
+		distinctPlan = step.distinct
+				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
+				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);
+		distinctRows = step.distinct ? new NativeOrderedDistinctTracker(distinctPlan) : null;
 		cursor = step.openPrefixRunCursor(row);
 		if (cursor != null) {
 			distinctHandledByCursor = true;
+			return true;
+		}
+		if (distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
+			cursor = distinctPlan.arg.open(row);
 			return true;
 		}
 		if (NativeBatch.enabled()) {
@@ -606,6 +630,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				step = null;
 				base = null;
 				distinctRows = null;
+				distinctPlan = null;
 				next = null;
 				repeated = null;
 				values = null;

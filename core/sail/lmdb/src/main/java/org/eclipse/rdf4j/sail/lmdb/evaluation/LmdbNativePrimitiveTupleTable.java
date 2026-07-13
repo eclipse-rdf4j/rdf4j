@@ -100,6 +100,20 @@ final class PrimitiveTupleTable {
 		return new GroupKey(Arrays.copyOfRange(keys, offset, offset + width));
 	}
 
+	/** Clears only buckets occupied by live tuples, retaining the allocated key and bucket arrays for the next run. */
+	void clear() {
+		int mask = buckets.length - 1;
+		for (int index = 0; index < size; index++) {
+			int bucket = storedHash(index) & mask;
+			int stored = index + 1;
+			while (buckets[bucket] != stored) {
+				bucket = bucket + 1 & mask;
+			}
+			buckets[bucket] = 0;
+		}
+		size = 0;
+	}
+
 	private void ensureKeyCapacity(int tupleCount) {
 		int required = tupleCount * width;
 		if (required > keys.length) {
@@ -223,5 +237,75 @@ final class NativeDistinctTracker {
 		}
 		objects.put(probe.storedCopy(), Boolean.TRUE);
 		return true;
+	}
+
+	void clear() {
+		emptySeen = false;
+		if (primitive != null) {
+			primitive.clear();
+		} else if (objects != null) {
+			objects.clear();
+		}
+	}
+}
+
+/** DISTINCT tracker that uses a proven order frontier instead of retaining every projected tuple. */
+@Experimental
+final class NativeOrderedDistinctTracker {
+
+	final NativeTupleDistinctPlan plan;
+	final NativeDistinctTracker residual;
+	final long[] previous;
+	boolean initialized;
+	boolean emptySeen;
+
+	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan) {
+		this.plan = plan;
+		this.residual = plan.strategy == NativeDistinctStrategy.GLOBAL_HASH
+				? new NativeDistinctTracker(plan.keySlots)
+				: plan.strategy == NativeDistinctStrategy.PARTITIONED_HASH
+						? new NativeDistinctTracker(plan.residualSlots)
+						: null;
+		int previousWidth = plan.strategy == NativeDistinctStrategy.ADJACENT ? plan.keySlots.length
+				: plan.partitionSlots.length;
+		this.previous = new long[previousWidth];
+	}
+
+	boolean add(long[] row) {
+		boolean fresh = switch (plan.strategy) {
+		case GLOBAL_HASH -> residual.add(row);
+		case ADJACENT -> transition(row, plan.keySlots);
+		case PARTITIONED_HASH -> {
+			if (transition(row, plan.partitionSlots)) {
+				residual.clear();
+			}
+			yield residual.add(row);
+		}
+		};
+		if (plan.keySlots.length == 0 && fresh) {
+			emptySeen = true;
+		}
+		return fresh;
+	}
+
+	private boolean transition(long[] row, int[] slots) {
+		boolean changed = !initialized;
+		for (int i = 0; i < slots.length; i++) {
+			long value = normalize(row[slots[i]]);
+			if (!changed && previous[i] != value) {
+				changed = true;
+			}
+		}
+		if (changed) {
+			for (int i = 0; i < slots.length; i++) {
+				previous[i] = normalize(row[slots[i]]);
+			}
+			initialized = true;
+		}
+		return changed;
+	}
+
+	private long normalize(long value) {
+		return value == NULL_CONTEXT_ID ? UNKNOWN : value;
 	}
 }

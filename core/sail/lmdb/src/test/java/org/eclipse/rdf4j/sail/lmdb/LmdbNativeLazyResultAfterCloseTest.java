@@ -60,7 +60,28 @@ public class LmdbNativeLazyResultAfterCloseTest {
 
 	@AfterEach
 	public void tearDown() {
+		if (repository != null) {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void nativeRowsRemainReadableAfterRepositoryShutdown() {
+		List<BindingSet> rows;
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			rows = QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT * WHERE { ?a <" + EX + "p1> ?b . ?b <" + EX + "p1> ?b . }").evaluate());
+		}
+		assertThat(rows).hasSize(2);
+
 		repository.shutDown();
+		repository = null;
+
+		for (BindingSet row : rows) {
+			for (String bindingName : row.getBindingNames()) {
+				assertThat(row.getValue(bindingName).stringValue()).startsWith(EX);
+			}
+		}
 	}
 
 	@Test

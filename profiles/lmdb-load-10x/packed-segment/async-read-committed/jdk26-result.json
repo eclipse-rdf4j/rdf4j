@@ -1,0 +1,65 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.DatagovLoadIsolationBenchmark.loadDatagovFileSingleTransaction",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms2G",
+            "-Xmx2G",
+            "-XX:+UseG1GC",
+            "-Xms2G",
+            "-Xmx2G",
+            "-XX:+UseG1GC",
+            "-agentpath:/opt/homebrew/Cellar/async-profiler/4.4/lib/libasyncProfiler.dylib=start,file=profiles/lmdb-load-10x/packed-segment/async-read-committed/read-committed-jdk26-%p.jfr,jfr,event=cpu,interval=5ms"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35",
+        "warmupIterations" : 2,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 4,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "automaticEvaluationStrategy" : "false",
+            "isolationLevel" : "READ_COMMITTED"
+        },
+        "primaryMetric" : {
+            "score" : 708.265848875,
+            "scoreError" : 59.80375807995273,
+            "scoreConfidence" : [
+                648.4620907950473,
+                768.0696069549526
+            ],
+            "scorePercentiles" : {
+                "0.0" : 699.149083,
+                "50.0" : 706.46931275,
+                "90.0" : 720.975687,
+                "95.0" : 720.975687,
+                "99.0" : 720.975687,
+                "99.9" : 720.975687,
+                "99.99" : 720.975687,
+                "99.999" : 720.975687,
+                "99.9999" : 720.975687,
+                "100.0" : 720.975687
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    720.975687,
+                    699.149083,
+                    708.177792,
+                    704.7608335
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

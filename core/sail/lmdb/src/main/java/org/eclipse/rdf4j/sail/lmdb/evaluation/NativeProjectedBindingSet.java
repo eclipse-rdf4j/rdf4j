@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
 @Experimental
@@ -37,7 +38,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	static final AtomicLong CREATED = new AtomicLong();
 	static final AtomicLong MATERIALIZED_VALUES = new AtomicLong();
 
-	final NativeLmdbQuerySource source;
+	NativeLmdbQuerySource source;
 	final String[] names;
 	final long[] ids;
 	final Value[] values;
@@ -129,6 +130,22 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		return size == 0;
 	}
 
+	/** Resolves every bound value and removes this result row's dependency on the live LMDB value store. */
+	public void materializeAndDetach() {
+		if (source == null) {
+			return;
+		}
+		for (int i = 0; i < ids.length; i++) {
+			if (isBound(ids[i])) {
+				Value value = value(i);
+				if (value instanceof LmdbValue) {
+					((LmdbValue) value).init();
+				}
+			}
+		}
+		source = null;
+	}
+
 	int nextBound(int from) {
 		int index = from;
 		while (index < ids.length && !isBound(ids[index])) {
@@ -149,7 +166,11 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	Value value(int index) {
 		Value value = values[index];
 		if (value == null) {
-			value = source.lazyValue(ids[index]);
+			NativeLmdbQuerySource currentSource = source;
+			if (currentSource == null) {
+				throw new IllegalStateException("detached native result has an unresolved value");
+			}
+			value = currentSource.lazyValue(ids[index]);
 			values[index] = value;
 			MATERIALIZED_VALUES.incrementAndGet();
 		}

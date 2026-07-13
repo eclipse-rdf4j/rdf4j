@@ -1,0 +1,9 @@
+--- Execution profile ---
+Total samples       : 5
+
+       bytes  percent  samples  top
+  ----------  -------  -------  ---
+     5948816   48.60%        2  byte[]
+     2097152   17.13%        1  int[]
+     2097152   17.13%        1  java.lang.classfile.constantpool.PoolEntry[]
+     2097152   17.13%        1  long[]

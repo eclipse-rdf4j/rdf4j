@@ -106,6 +106,7 @@ final class FactorizedTail {
 
 	final Branch[] branches;
 	final AggregateSpec[] specs;
+	final AggregateDistinctChannels hashDistinctChannels;
 	/** Branch index whose fresh slot each spec reads, or -1 for prefix/constant specs. */
 	final int[] specBranch;
 	/** For branch specs: the value-list column within the branch result (DISTINCT) — see Branch. */
@@ -114,6 +115,7 @@ final class FactorizedTail {
 	final int tailGroupPos;
 	final boolean groupedMemoEnabled;
 	final BranchResult[] resultScratch;
+	boolean engagementRecorded;
 	/** Sentinel (compared by identity) for grouped results too large to cache. */
 	static final long[] GROUPED_TOO_LARGE = new long[] { -1 };
 	HashMap<GroupKey, long[]> groupedMemo;
@@ -123,6 +125,7 @@ final class FactorizedTail {
 			int tailGroupPos, boolean groupedMemoEnabled) {
 		this.branches = branches;
 		this.specs = specs;
+		this.hashDistinctChannels = AggregateDistinctChannels.allHash(specs);
 		this.specBranch = specBranch;
 		this.specValueColumn = specValueColumn;
 		this.tailGroupPos = tailGroupPos;
@@ -146,6 +149,16 @@ final class FactorizedTail {
 
 	static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
 			AggregateSpec[] aggregates) {
+		return tryCreate(derived, seedMask, groupSlots, aggregates, true);
+	}
+
+	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		return tryCreate(derived, seedMask, groupSlots, aggregates, false);
+	}
+
+	private static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean recordEngagement) {
 		if (!ENABLED) {
 			return null;
 		}
@@ -285,9 +298,19 @@ final class FactorizedTail {
 				}
 			}
 		}
-		ENGAGED.incrementAndGet();
-		return new FactorizedTail(branches, aggregates, specBranch, specValueColumn, tailGroupPos,
+		FactorizedTail tail = new FactorizedTail(branches, aggregates, specBranch, specValueColumn, tailGroupPos,
 				groupedMemoEnabled);
+		if (recordEngagement) {
+			tail.recordEngagement();
+		}
+		return tail;
+	}
+
+	void recordEngagement() {
+		if (!engagementRecorded) {
+			engagementRecorded = true;
+			ENGAGED.incrementAndGet();
+		}
 	}
 
 	static boolean independentBranches(SlotPlan[] order, long seedMask, int start, int last,
@@ -427,7 +450,7 @@ final class FactorizedTail {
 			AggState state = groups.get(groupKey);
 			if (state == null) {
 				// factorized tails are gated to all-COUNT specs, which never touch the value context
-				state = new AggState(specs, 16, null);
+				state = new AggState(specs, 16, null, hashDistinctChannels);
 				groups.put(groupKey, state);
 			}
 			for (int k = 0; k < specs.length; k++) {
@@ -470,7 +493,7 @@ final class FactorizedTail {
 					AggState state = groups.get(key);
 					if (state == null) {
 						// factorized tails are gated to all-COUNT specs, which never touch the value context
-						state = new AggState(specs, 16, null);
+						state = new AggState(specs, 16, null, hashDistinctChannels);
 						groups.put(key, state);
 					}
 					for (int k = 0; k < specs.length; k++) {

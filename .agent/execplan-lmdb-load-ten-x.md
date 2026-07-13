@@ -1,5 +1,7 @@
 # Make LMDB single-transaction loading ten times faster
 
+> Superseded for implementation by `.agent/execplan-lmdb-query-ready-four-index-load.md`. The packed load-only representation documented here is retained as historical performance evidence, but it is not an acceptable endpoint because it postpones ordinary value/index construction until query time.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 This document must be maintained in accordance with `.agent/PLANS.md` from the repository root.

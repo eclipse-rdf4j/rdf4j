@@ -16,6 +16,21 @@ import jmh_compare_core as core
 
 
 class ParseFileRegressionTest(unittest.TestCase):
+    def test_present_cnt_and_missing_error_do_not_shift_score(self) -> None:
+        repo_root = SCRIPT_DIR.parents[3]
+        result_file = (
+            repo_root
+            / "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-07-09-2.md"
+        )
+
+        parsed = core.parse_file(result_file, "results-2026-07-09-2", None, "mtime")
+        key = ("ThemeQueryBenchmark.executeQuery", "MEDICAL_RECORDS", "0", "avgt", "ms/op")
+
+        self.assertIn(key, parsed.score_by_key)
+        self.assertEqual(parsed.row_by_key[key]["Cnt"], "2")
+        self.assertEqual(parsed.row_by_key[key]["Error"], "")
+        self.assertAlmostEqual(parsed.score_by_key[key], 14.537, places=3)
+
     def test_missing_cnt_and_error_values_do_not_shift_score(self) -> None:
         repo_root = SCRIPT_DIR.parents[3]
         result_file = (

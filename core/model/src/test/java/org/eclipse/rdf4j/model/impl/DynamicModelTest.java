@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.junit.jupiter.api.Test;
 
@@ -616,6 +617,90 @@ public class DynamicModelTest {
 		assertThat(model.removeAll(model)).isTrue();
 		assertThat(model).isEmpty();
 		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void removedCanonicalValuesDoNotAccumulate() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		model.add(valueFactory.createIRI("urn:live"), predicate, valueFactory.createLiteral("live"));
+
+		for (int i = 0; i < 1_000; i++) {
+			Statement removed = valueFactory.createStatement(valueFactory.createIRI("urn:removed:" + i), predicate,
+					valueFactory.createLiteral("removed:" + i));
+			model.add(removed);
+			model.remove(removed);
+		}
+
+		assertThat(model.canonicalValueCacheSize()).isLessThanOrEqualTo(1_024);
+	}
+
+	@Test
+	void emptyModelAlwaysReleasesCanonicalValues() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement removed = valueFactory.createStatement(valueFactory.createIRI("urn:removed:empty"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("removed"));
+
+		model.add(removed);
+		model.remove(removed);
+		model.clear();
+
+		assertThat(model.canonicalValueCacheSize()).isZero();
+	}
+
+	@Test
+	void nestedRemovedCanonicalValuesDoNotOutrunRemovalDebt() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:nested:predicate");
+		model.add(valueFactory.createIRI("urn:live"), predicate, valueFactory.createLiteral("live"));
+
+		for (int statement = 0; statement < 100; statement++) {
+			Value object = valueFactory.createLiteral("urn:nested:leaf:" + statement);
+			for (int depth = 0; depth < 32; depth++) {
+				object = valueFactory.createTripleTerm(
+						valueFactory.createIRI("urn:nested:subject:" + statement + ":" + depth), predicate, object);
+			}
+			Statement removed = valueFactory.createStatement(
+					valueFactory.createIRI("urn:nested:statement:" + statement), predicate, object);
+			model.add(removed);
+			model.remove(removed);
+		}
+
+		assertThat(model.canonicalValueCacheSize()).isLessThanOrEqualTo(1_024);
+	}
+
+	@Test
+	void deserializationRebuildsCanonicalValuesFromLiveStatements() throws Exception {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:serialized:predicate");
+		Statement live = valueFactory.createStatement(valueFactory.createIRI("urn:serialized:live"), predicate,
+				valueFactory.createLiteral("live"));
+		model.add(live);
+		for (int i = 0; i < 10; i++) {
+			Statement removed = valueFactory.createStatement(valueFactory.createIRI("urn:serialized:removed:" + i),
+					predicate, valueFactory.createLiteral("removed:" + i));
+			model.add(removed);
+			model.remove(removed);
+		}
+		assertThat(model.canonicalValueCacheSize()).isGreaterThan(3);
+
+		byte[] serialized;
+		try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(model);
+			serialized = bytes.toByteArray();
+		}
+		DynamicModel deserialized;
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(serialized))) {
+			deserialized = (DynamicModel) input.readObject();
+		}
+
+		assertThat(deserialized).containsExactly(live);
+		assertThat(deserialized.canonicalValueCacheSize()).isEqualTo(3);
 	}
 
 	@Test

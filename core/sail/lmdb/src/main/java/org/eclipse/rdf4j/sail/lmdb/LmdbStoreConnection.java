@@ -145,7 +145,9 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
-				if (!(bs instanceof NativeProjectedBindingSet)) {
+				if (bs instanceof NativeProjectedBindingSet) {
+					((NativeProjectedBindingSet) bs).materializeAndDetach();
+				} else {
 					bs.forEach(b -> initValue(b.getValue()));
 				}
 				return bs;

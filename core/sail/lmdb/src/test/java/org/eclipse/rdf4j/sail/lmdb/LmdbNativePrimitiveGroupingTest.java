@@ -42,6 +42,35 @@ public class LmdbNativePrimitiveGroupingTest {
 
 	private SailRepository repository;
 
+	@Test
+	void primitiveTupleTableClearsOccupiedBucketsForReuse() {
+		PrimitiveTupleTable table = new PrimitiveTupleTable(2, 4);
+		int[] slots = { 0, 1 };
+		assertThat(table.findOrInsert(new long[] { 10, 20 }, slots, false)).isZero();
+		assertThat(table.findOrInsert(new long[] { 30, 40 }, slots, false)).isOne();
+
+		table.clear();
+
+		assertThat(table.size).isZero();
+		assertThat(table.find(new long[] { 10, 20 }, slots, false)).isEqualTo(-1);
+		assertThat(table.findOrInsert(new long[] { 50, 60 }, slots, false)).isZero();
+	}
+
+	@Test
+	void plainAggregateStatesShareEmptyDistinctStorage() {
+		AggregateSpec[] specs = { AggregateSpec.star("count") };
+		AggregateDistinctChannels channels = AggregateDistinctChannels.allHash(specs);
+		AggState first = new AggState(specs, 16, null, channels);
+		AggState second = new AggState(specs, 16, null, channels);
+
+		assertThat(first.channelSets).isSameAs(second.channelSets);
+		assertThat(first.channelFresh).isSameAs(second.channelFresh);
+		assertThat(first.channelInitialized).isSameAs(second.channelInitialized);
+		assertThat(first.channelLastIds).isSameAs(second.channelLastIds);
+		assertThat(first.distinctSets).isSameAs(second.distinctSets);
+		assertThat(first.counts).isNotSameAs(second.counts);
+	}
+
 	@BeforeEach
 	public void setUp() {
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
@@ -73,13 +102,46 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
-	public void twoKeyDistinctCountsUsePrimitiveKeysWithGenericAggregateState() {
+	public void twoKeyDistinctCountsStreamWhenIndexCoversGroupAndArgument() {
 		Map<String, Long> counts = groupedCounts("COUNT(DISTINCT ?s)");
 
 		assertThat(counts).hasSize(15).allSatisfy((key, count) -> assertThat(count).isEqualTo(40L));
 		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
-		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isEqualTo(600L);
-		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
+		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isZero();
+	}
+
+	@Test
+	public void unsafeContextFirstOrderKeepsPrimitiveTwoKeyGroupMap() {
+		SailRepository contextRepository = new SailRepository(
+				new LmdbStore(new File(dataDir, "context-first"), new LmdbStoreConfig("cspo")));
+		try {
+			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+				ValueFactory vf = connection.getValueFactory();
+				for (int i = 0; i < 600; i++) {
+					connection.add(vf.createIRI(EX, "context-subject/" + i),
+							vf.createIRI(EX, "context-predicate/" + (i % 3)),
+							vf.createIRI(EX, "context-object/" + (i % 5)),
+							vf.createIRI(EX, "context/" + (i % 7)));
+				}
+			}
+			resetCounters();
+			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+				List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery("""
+						SELECT ?p ?o (COUNT(DISTINCT ?s) AS ?c)
+						WHERE { GRAPH ?g { ?s ?p ?o } }
+						GROUP BY ?p ?o
+						""").evaluate());
+
+				assertThat(rows).hasSize(15)
+						.allSatisfy(row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(40L));
+			}
+
+			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isEqualTo(600L);
+			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+		} finally {
+			contextRepository.shutDown();
+		}
 	}
 
 	@Test

@@ -326,6 +326,14 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void escapedHashInPrefixedNameDoesNotHideStableIndex() {
+		String query = "PREFIX ex: <urn:>\n"
+				+ "SELECT ?s WHERE { ex:foo\\#bar ?p ?s . } ORDER BY STABLE_INDEX(?s)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
 	public void testLmdbIndexOutsideOrderByIsRejected() {
 		String query = "SELECT * WHERE { ?a a ?type. FILTER(STABLE_INDEX(?a) = 1) }";
 

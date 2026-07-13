@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -44,6 +45,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
+	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 
 	@TempDir
 	File dataDir;
@@ -54,6 +56,7 @@ public class LmdbNativeParallelAggregationTest {
 	public void setUp() {
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
+		System.setProperty(MAX_TASKS_FLAG, "4");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -81,6 +84,7 @@ public class LmdbNativeParallelAggregationTest {
 	public void tearDown() {
 		System.clearProperty(THRESHOLD_FLAG);
 		System.clearProperty(THREADS_FLAG);
+		System.clearProperty(MAX_TASKS_FLAG);
 		repository.shutDown();
 	}
 
@@ -172,9 +176,34 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	@Test
-	public void singlePatternCount() {
+	public void singlePatternPlainCountUsesParallelAggregation() {
 		assertParallelEngagesAndAllThreeAgree("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }");
+				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }");
+	}
+
+	@Test
+	public void singlePatternDistinctPrefersMonotonicAggregation() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString())
+					.contains("distinctChannels=[MONOTONIC]");
+		}
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		assertAllThreeAgree(query);
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("an exact order that removes the DISTINCT hash must run before parallel aggregation")
+				.isEqualTo(before);
+	}
+
+	@Test
+	public void factorizedDistinctStarKeepsParallelAggregation() {
+		String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		rows(query);
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("a multiply-factorized multi-join must not be replaced by a sequential ordered scan")
+				.isGreaterThan(before);
 	}
 
 	@Test

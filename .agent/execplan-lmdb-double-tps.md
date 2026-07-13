@@ -1,5 +1,7 @@
 # Double sketch-disabled LMDB transaction throughput
 
+> Superseded for packed-storage decisions by `.agent/execplan-lmdb-query-ready-four-index-load.md`. The completed TPS measurements remain historical evidence; new loading work may remove the unshipped packed representation so that ordinary indexes are query-ready at commit.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must remain current as work proceeds. This document follows `.agent/PLANS.md` from the repository root.
 
 ## Purpose / Big Picture

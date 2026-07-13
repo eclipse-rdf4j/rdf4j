@@ -64,6 +64,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private static final long serialVersionUID = -9162104133818983614L;
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
+	private static final int MIN_CANONICAL_REMOVAL_DEBT = 1024;
 
 	@SuppressWarnings("StaticNonFinalField")
 	static int LARGE_STATEMENT_SET_MIN_SIZE = 65536;
@@ -76,7 +77,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private static final StripedCleaner cleaner = new StripedCleaner();
 
 	private Map<Statement, Statement> statements;
-	private Map<Value, Value> canonicalValues = new HashMap<>();
+	private transient Map<Value, Value> canonicalValues = new HashMap<>();
+	private transient int canonicalRemovalDebt;
 	private Set<Resource> addedContexts = null;
 	private Set<Namespace> namespaces = null;
 	private long statementVersion;
@@ -271,9 +273,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 		if (model == null) {
 			if (contexts == null) {
-				boolean removed = statements
-						.remove(SimpleValueFactory.getInstance()
-								.createStatement(subj, pred, obj, (Resource) null)) != null;
+				Statement removedStatement = statements.remove(SimpleValueFactory.getInstance()
+						.createStatement(subj, pred, obj, (Resource) null));
+				boolean removed = removedStatement != null;
+				recordCanonicalRemoval(removedStatement);
 				if (removed) {
 					invalidateAddedContexts();
 				}
@@ -281,12 +284,16 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				return removed;
 			}
 
-			boolean removed = false;
+			long removalDebt = 0L;
 			for (Resource context : contexts) {
-				removed = removed
-						| statements.remove(
-								SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
+				Statement removedStatement = statements.remove(
+						SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+				if (removedStatement != null) {
+					removalDebt += canonicalRemovalWeight(removedStatement);
+				}
 			}
+			boolean removed = removalDebt > 0L;
+			recordCanonicalRemovalDebt(removalDebt);
 			if (removed) {
 				invalidateAddedContexts();
 			}
@@ -358,6 +365,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		boolean mapBacked = model == null;
 		Iterator<Statement> iterator = mapBacked ? statements.values().iterator() : model.iterator();
 		return new Iterator<>() {
+			Statement lastReturned;
+
 			@Override
 			public boolean hasNext() {
 				return iterator.hasNext();
@@ -365,15 +374,17 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 			@Override
 			public Statement next() {
-				return iterator.next();
+				return lastReturned = iterator.next();
 			}
 
 			@Override
 			public void remove() {
 				iterator.remove();
 				if (mapBacked) {
+					recordCanonicalRemoval(lastReturned);
 					invalidateAddedContexts();
 				}
+				lastReturned = null;
 				markStatementsChanged();
 			}
 		};
@@ -414,7 +425,9 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
-			boolean removed = statements.remove(o) != null;
+			Statement removedStatement = statements.remove(o);
+			boolean removed = removedStatement != null;
+			recordCanonicalRemoval(removedStatement);
 			if (removed) {
 				invalidateAddedContexts();
 			}
@@ -457,7 +470,14 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
+			long removalDebt = 0L;
+			for (Statement statement : statements.values()) {
+				if (!c.contains(statement)) {
+					removalDebt += canonicalRemovalWeight(statement);
+				}
+			}
 			boolean changed = statements.keySet().retainAll(c);
+			recordCanonicalRemovalDebt(removalDebt);
 			if (changed) {
 				invalidateAddedContexts();
 			}
@@ -473,9 +493,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
 			boolean changed = false;
+			long removalDebt = 0L;
 			for (Object statement : new ArrayList<>(c)) {
-				changed = changed | statements.remove(statement) != null;
+				Statement removedStatement = statements.remove(statement);
+				if (removedStatement != null) {
+					changed = true;
+					removalDebt += canonicalRemovalWeight(removedStatement);
+				}
 			}
+			recordCanonicalRemovalDebt(removalDebt);
 			if (changed) {
 				invalidateAddedContexts();
 			}
@@ -490,9 +516,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public void clear() {
 		if (model == null) {
+			if (canonicalValues != null) {
+				canonicalValues.clear();
+			}
+			canonicalRemovalDebt = 0;
 			if (!statements.isEmpty()) {
 				statements.clear();
-				canonicalValues.clear();
 				invalidateAddedContexts();
 				markStatementsChanged();
 			}
@@ -672,8 +701,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			iterator.remove();
 			Map<Statement, Statement> updatedStatements = new LinkedHashMap<>(statements);
-			updatedStatements.keySet().removeIf(statement -> matchesPattern(statement, subj, pred, obj, contexts));
+			long removalDebt = 0L;
+			for (Statement statement : statements.values()) {
+				if (matchesPattern(statement, subj, pred, obj, contexts)) {
+					updatedStatements.remove(statement);
+					removalDebt += canonicalRemovalWeight(statement);
+				}
+			}
 			statements = updatedStatements;
+			recordCanonicalRemovalDebt(removalDebt);
 			invalidateAddedContexts();
 			return;
 		}
@@ -781,6 +817,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			}
 			model = tempModel;
 			canonicalValues = null;
+			canonicalRemovalDebt = 0;
 		}
 	}
 
@@ -822,6 +859,60 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		}
 		Value existing = canonicalValues.putIfAbsent(value, value);
 		return existing == null ? value : existing;
+	}
+
+	private void recordCanonicalRemoval(Statement removedStatement) {
+		if (removedStatement != null) {
+			recordCanonicalRemovalDebt(canonicalRemovalWeight(removedStatement));
+		}
+	}
+
+	private void recordCanonicalRemovalDebt(long removedValues) {
+		if (removedValues <= 0L || canonicalValues == null) {
+			return;
+		}
+		if (statements.isEmpty()) {
+			canonicalValues.clear();
+			canonicalRemovalDebt = 0;
+			return;
+		}
+		long newDebt = (long) canonicalRemovalDebt + removedValues;
+		canonicalRemovalDebt = (int) Math.min(Integer.MAX_VALUE, newDebt);
+		int rebuildThreshold = Math.max(MIN_CANONICAL_REMOVAL_DEBT, canonicalValues.size() / 2);
+		if (canonicalRemovalDebt >= rebuildThreshold) {
+			rebuildCanonicalValues();
+		}
+	}
+
+	private long canonicalRemovalWeight(Statement statement) {
+		return canonicalRemovalWeight(statement.getSubject()) + canonicalRemovalWeight(statement.getPredicate())
+				+ canonicalRemovalWeight(statement.getObject()) + canonicalRemovalWeight(statement.getContext());
+	}
+
+	private long canonicalRemovalWeight(Value value) {
+		if (value == null) {
+			return 0L;
+		}
+		if (value instanceof TripleTerm triple) {
+			return 1L + canonicalRemovalWeight(triple.getSubject()) + canonicalRemovalWeight(triple.getPredicate())
+					+ canonicalRemovalWeight(triple.getObject());
+		}
+		return 1L;
+	}
+
+	private void rebuildCanonicalValues() {
+		canonicalValues = new HashMap<>();
+		canonicalRemovalDebt = 0;
+		for (Statement statement : statements.values()) {
+			canonicalValue(statement.getSubject());
+			canonicalValue(statement.getPredicate());
+			canonicalValue(statement.getObject());
+			canonicalValue(statement.getContext());
+		}
+	}
+
+	int canonicalValueCacheSize() {
+		return canonicalValues == null ? 0 : canonicalValues.size();
 	}
 
 	static LinkedHashMap<Statement, Statement> borrowLargeStatementSet() {
@@ -928,14 +1019,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private void readObject(ObjectInputStream objectInputStream) throws IOException, ClassNotFoundException {
 		objectInputStream.defaultReadObject();
-		if (model == null && canonicalValues == null) {
-			canonicalValues = new HashMap<>();
-			for (Statement statement : statements.values()) {
-				canonicalValue(statement.getSubject());
-				canonicalValue(statement.getPredicate());
-				canonicalValue(statement.getObject());
-				canonicalValue(statement.getContext());
-			}
+		if (model == null) {
+			rebuildCanonicalValues();
+		} else {
+			canonicalValues = null;
+			canonicalRemovalDebt = 0;
 		}
 		initializeAddedContextsIfNeeded();
 	}

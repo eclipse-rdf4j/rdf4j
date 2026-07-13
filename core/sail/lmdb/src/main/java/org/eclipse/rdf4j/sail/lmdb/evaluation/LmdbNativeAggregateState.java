@@ -174,9 +174,19 @@ final class AggContext {
 
 @Experimental
 final class AggState {
+	private static final LongHashSet[] NO_DISTINCT_SETS = new LongHashSet[0];
+	private static final boolean[] NO_CHANNEL_FLAGS = new boolean[0];
+	private static final long[] NO_CHANNEL_IDS = new long[0];
+
 	final AggregateSpec[] specs;
 	final AggContext ctx;
 	final long[] counts;
+	final AggregateDistinctChannels distinctChannels;
+	final LongHashSet[] channelSets;
+	final boolean[] channelFresh;
+	final boolean[] channelInitialized;
+	final long[] channelLastIds;
+	/** Per-spec aliases retained for the factorized and parallel HASH-only paths. */
 	final LongHashSet[] distinctSets;
 	/** SUM/AVG running sums; null until the first numeric value of that spec. */
 	Literal[] sums;
@@ -189,16 +199,29 @@ final class AggState {
 	/** SUM/AVG poisoned by a type error: the aggregate binding is omitted. */
 	boolean[] typeErrors;
 
-	AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx) {
+	AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
+			AggregateDistinctChannels distinctChannels) {
 		this.specs = specs;
 		this.ctx = ctx;
 		this.counts = new long[specs.length];
-		this.distinctSets = new LongHashSet[specs.length];
+		this.distinctChannels = distinctChannels;
+		int channelCount = distinctChannels.channelCount();
+		this.channelSets = channelCount == 0 ? NO_DISTINCT_SETS : new LongHashSet[channelCount];
+		this.channelFresh = channelCount == 0 ? NO_CHANNEL_FLAGS : new boolean[channelCount];
+		this.channelInitialized = channelCount == 0 ? NO_CHANNEL_FLAGS : new boolean[channelCount];
+		this.channelLastIds = channelCount == 0 ? NO_CHANNEL_IDS : new long[channelCount];
+		this.distinctSets = channelCount == 0 ? NO_DISTINCT_SETS : new LongHashSet[specs.length];
+		for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
+			if (distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH) {
+				channelSets[channel] = new LongHashSet(expectedDistinctSize);
+			}
+		}
 		boolean anyValueTyped = false;
 		for (int i = 0; i < specs.length; i++) {
 			AggKind kind = specs[i].kind;
-			if (specs[i].distinct && (kind == AggKind.COUNT || kind == AggKind.SUM || kind == AggKind.AVG)) {
-				distinctSets[i] = new LongHashSet(expectedDistinctSize);
+			int channel = distinctChannels.specChannels[i];
+			if (channel >= 0) {
+				distinctSets[i] = channelSets[channel];
 			}
 			if (kind != AggKind.COUNT) {
 				anyValueTyped = true;
@@ -215,18 +238,41 @@ final class AggState {
 	}
 
 	void add(RowState row) {
+		for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
+			long value = distinctChannels.slots[channel] >= 0
+					? row.slots[distinctChannels.slots[channel]]
+					: distinctChannels.constants[channel];
+			if (value == UNKNOWN) {
+				channelFresh[channel] = false;
+				continue;
+			}
+			channelFresh[channel] = switch (distinctChannels.modes[channel]) {
+			case HASH -> channelSets[channel].add(value);
+			case MONOTONIC -> {
+				boolean fresh = !channelInitialized[channel] || channelLastIds[channel] != value;
+				channelInitialized[channel] = true;
+				channelLastIds[channel] = value;
+				yield fresh;
+			}
+			case CONSTANT_ONCE -> {
+				boolean fresh = !channelInitialized[channel];
+				channelInitialized[channel] = true;
+				yield fresh;
+			}
+			};
+		}
 		for (int i = 0; i < specs.length; i++) {
 			long value = specs[i].value(row);
 			if (value == UNKNOWN) {
 				continue;
 			}
+			int channel = distinctChannels.specChannels[i];
+			if (channel >= 0 && !channelFresh[channel]) {
+				continue;
+			}
 			switch (specs[i].kind) {
 			case COUNT:
-				if (specs[i].distinct) {
-					distinctSets[i].add(value);
-				} else {
-					counts[i]++;
-				}
+				counts[i]++;
 				break;
 			case SUM:
 				addSum(i, value);
@@ -253,9 +299,6 @@ final class AggState {
 			typeErrors[i] = true;
 			return;
 		}
-		if (specs[i].distinct && !distinctSets[i].add(id)) {
-			return;
-		}
 		Literal literal = (Literal) v;
 		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
@@ -268,9 +311,6 @@ final class AggState {
 
 	void addAvg(int i, long id) {
 		if (typeErrors[i]) {
-			return;
-		}
-		if (specs[i].distinct && !distinctSets[i].add(id)) {
 			return;
 		}
 		Value v = ctx.value(id);
@@ -307,7 +347,10 @@ final class AggState {
 	}
 
 	long count(int index) {
-		return specs[index].distinct ? distinctSets[index].size() : counts[index];
+		int channel = distinctChannels.specChannels[index];
+		return channel >= 0 && distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH
+				? channelSets[channel].size()
+				: counts[index];
 	}
 
 	/**
@@ -315,10 +358,13 @@ final class AggState {
 	 * guarantees {@link AggregateSpec#allCounts}): plain counts add, distinct id sets union.
 	 */
 	void mergeCountsFrom(AggState other) {
+		for (int channel = 0; channel < channelSets.length; channel++) {
+			if (channelSets[channel] != null) {
+				channelSets[channel].addAll(other.channelSets[channel]);
+			}
+		}
 		for (int i = 0; i < specs.length; i++) {
-			if (distinctSets[i] != null) {
-				distinctSets[i].addAll(other.distinctSets[i]);
-			} else {
+			if (distinctChannels.specChannels[i] < 0) {
 				counts[i] += other.counts[i];
 			}
 		}

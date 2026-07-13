@@ -79,22 +79,35 @@ final class LmdbNativeParallelAggregation {
 		if (!(root.estimate(row) >= minRootEstimate)) {
 			return null;
 		}
-		NativeLmdbQuerySource.ParallelSource[] sources;
+		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+				.tryReserveTasks(threads);
+		if (reservation == null) {
+			return null;
+		}
+		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		try {
 			// one source per worker plus one for the root scan, all pinned to the same snapshot
 			sources = it.source.openParallelSources(threads + 1);
 		} catch (IOException e) {
+			reservation.close();
 			throw new QueryEvaluationException(e);
+		} catch (RuntimeException | Error e) {
+			reservation.close();
+			throw e;
 		}
-		if (sources == null) {
-			return null;
-		}
-		PARALLEL_RUNS.incrementAndGet();
 		try {
+			if (sources == null) {
+				return null;
+			}
+			PARALLEL_RUNS.incrementAndGet();
 			return evaluate(it, plan, derived, root, sources, threads);
 		} finally {
-			for (NativeLmdbQuerySource.ParallelSource source : sources) {
-				source.close();
+			try {
+				if (sources != null) {
+					LmdbNativeParallelPipelines.closeSources(sources);
+				}
+			} finally {
+				reservation.close();
 			}
 		}
 	}
@@ -105,25 +118,34 @@ final class LmdbNativeParallelAggregation {
 		ArrayBlockingQueue<Morsel> queue = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		ArrayList<Future<WorkerResult>> futures = new ArrayList<>(threads);
+		Throwable submissionFailure = null;
 		for (int i = 0; i < threads; i++) {
 			NativeLmdbQuerySource source = sources[i];
-			futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-				try {
-					return runWorker(it, plan, derived, root, source, queue, failure);
-				} catch (Throwable t) {
-					failure.compareAndSet(null, t);
-					throw t;
-				}
-			}));
+			try {
+				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+					try {
+						return runWorker(it, plan, derived, root, source, queue, failure);
+					} catch (Throwable t) {
+						failure.compareAndSet(null, t);
+						throw t;
+					}
+				}));
+			} catch (RuntimeException | Error problem) {
+				submissionFailure = problem;
+				failure.compareAndSet(null, problem);
+				break;
+			}
 		}
-		try {
-			produce(it, root, sources[threads], queue, threads, failure);
-		} catch (Throwable t) {
-			failure.compareAndSet(null, t);
+		if (submissionFailure == null) {
+			try {
+				produce(it, root, sources[threads], queue, threads, failure);
+			} catch (Throwable t) {
+				failure.compareAndSet(null, t);
+			}
 		}
 		// every future must be terminal before the caller closes the worker transactions
 		ArrayList<WorkerResult> results = new ArrayList<>(threads);
-		Throwable error = null;
+		Throwable error = submissionFailure;
 		boolean interrupted = false;
 		for (Future<WorkerResult> future : futures) {
 			while (true) {
@@ -223,7 +245,7 @@ final class LmdbNativeParallelAggregation {
 					}
 					result.longGroups = groups;
 				} else if (it.groupSlots.length == 0) {
-					AggState state = new AggState(it.aggregates, 65_536, ctx);
+					AggState state = new AggState(it.aggregates, 65_536, ctx, it.hashDistinctChannels);
 					boolean sawRow = false;
 					while (cursor.next()) {
 						if (tail != null) {
@@ -243,7 +265,7 @@ final class LmdbNativeParallelAggregation {
 						AggState state = groups.get(key);
 						boolean freshState = state == null;
 						if (freshState) {
-							state = new AggState(it.aggregates, 16, ctx);
+							state = new AggState(it.aggregates, 16, ctx, it.hashDistinctChannels);
 						}
 						if (tail != null) {
 							if (tail.aggregate(row, state) && freshState) {
@@ -265,7 +287,7 @@ final class LmdbNativeParallelAggregation {
 						AggState state = groups.get(probe);
 						boolean freshState = state == null;
 						if (freshState) {
-							state = new AggState(it.aggregates, 16, ctx);
+							state = new AggState(it.aggregates, 16, ctx, it.hashDistinctChannels);
 						}
 						if (tail != null) {
 							if (tail.aggregate(row, state) && freshState) {

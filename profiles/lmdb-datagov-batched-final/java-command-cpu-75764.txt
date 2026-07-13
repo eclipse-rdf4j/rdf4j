@@ -1,0 +1,62 @@
+--- Execution profile ---
+Total samples       : 70
+
+          ns  percent  samples  top
+  ----------  -------  -------  ---
+    55000000   15.71%       11  __psynch_cvwait
+    10000000    2.86%        2  __psynch_cvbroad
+    10000000    2.86%        2  pthread_jit_write_protect_np
+    10000000    2.86%        2  __psynch_mutexwait
+     5000000    1.43%        1  CProjNode::is_CFG
+     5000000    1.43%        1  trampoline_stub_Relocation::get_trampoline_for
+     5000000    1.43%        1  GraphBuilder::method_return
+     5000000    1.43%        1  GrowableBitMap<ResourceBitMap>::initialize
+     5000000    1.43%        1  I2C/C2I adapters(0xbaa)
+     5000000    1.43%        1  ImmutableOopMap::update_register_map
+     5000000    1.43%        1  Interval::add_use_pos
+     5000000    1.43%        1  IntervalWalker::walk_to
+     5000000    1.43%        1  JavaFieldStream::JavaFieldStream
+     5000000    1.43%        1  JfrResolution::on_runtime_resolution
+     5000000    1.43%        1  LIRGenerator::move_to_phi
+     5000000    1.43%        1  LIR_OpVisitState::visit
+     5000000    1.43%        1  LinearScan::add_use
+     5000000    1.43%        1  LinearScan::build_intervals
+     5000000    1.43%        1  LinearScanWalker::alloc_free_reg
+     5000000    1.43%        1  LinearScanWalker::alloc_locked_reg
+     5000000    1.43%        1  LoadNode::hash
+     5000000    1.43%        1  MachNode::compute_padding
+     5000000    1.43%        1  MachOper::num_edges
+     5000000    1.43%        1  MacroAssembler::mov_metadata
+     5000000    1.43%        1  MemAllocator::Allocation::notify_allocation_jvmti_sampler
+     5000000    1.43%        1  MethodLiveness::BasicBlock::get_liveness_at
+     5000000    1.43%        1  NodeHash::hash_delete
+     5000000    1.43%        1  PhaseCFG::schedule_early
+     5000000    1.43%        1  PhaseChaitin::build_ifg_physical
+     5000000    1.43%        1  PhiSimplifier::block_do
+     5000000    1.43%        1  Rewriter::scan_method
+     5000000    1.43%        1  Scheduling::ComputeRegisterAntidependencies
+     5000000    1.43%        1  ValueStack::values_do
+     5000000    1.43%        1  [unknown]
+     5000000    1.43%        1  __open
+     5000000    1.43%        1  Dict::Insert
+     5000000    1.43%        1  Dependencies::DepStream::next
+     5000000    1.43%        1  DIR_Chunk* GrowableArrayWithAllocator<DIR_Chunk*, GrowableArray<DIR_Chunk*>>::insert_sorted<&DIR_Chunk::compare(DIR_Chunk* const&, DIR_Chunk* const&)>
+     5000000    1.43%        1  __sysctl
+     5000000    1.43%        1  _platform_bzero
+     5000000    1.43%        1  _pthread_create
+     5000000    1.43%        1  bsearch
+     5000000    1.43%        1  ciObjectFactory::get_metadata
+     5000000    1.43%        1  java.io.ObjectInputStream.readObject0
+     5000000    1.43%        1  java.lang.String.length
+     5000000    1.43%        1  java.lang.StringLatin1.replace
+     5000000    1.43%        1  java.lang.invoke.LambdaFormEditor.makeArgumentCombinationForm
+     5000000    1.43%        1  java.lang.invoke.MethodHandle.<init>
+     5000000    1.43%        1  java.lang.invoke.MethodType.checkPtypes
+     5000000    1.43%        1  java.util.stream.Collectors$CollectorImpl.accumulator
+     5000000    1.43%        1  jdk.internal.classfile.impl.ClassReaderImpl.checkType
+     5000000    1.43%        1  jdk.internal.classfile.impl.StackMapGenerator$Frame.checkStack
+     5000000    1.43%        1  jdk.internal.classfile.impl.StackMapGenerator.processInvokeInstructions
+     5000000    1.43%        1  pread
+     5000000    1.43%        1  ChunkPool::allocate_chunk
+     5000000    1.43%        1  sun.misc.Unsafe.beforeMemoryAccess
+     5000000    1.43%        1  GraphBuilder::access_field

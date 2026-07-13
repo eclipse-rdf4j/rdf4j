@@ -1,0 +1,30 @@
+
+                                               Allocation by Class
+
+Object Type                                                                                   Allocation Pressure
+--------------------------------------------------------------------------------------------- -------------------
+byte[]                                                                                                     22.95%
+java.lang.String                                                                                           11.26%
+org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral                                                               8.28%
+long[]                                                                                                      8.05%
+int[]                                                                                                       5.45%
+org.eclipse.rdf4j.model.Resource[]                                                                          4.83%
+org.eclipse.rdf4j.model.base.AbstractLiteral$NumberLiteral                                                  3.95%
+java.nio.HeapByteBuffer                                                                                     3.85%
+com.sun.org.apache.xerces.internal.jaxp.datatype.XMLGregorianCalendarImpl                                   3.12%
+java.lang.Object[]                                                                                          2.63%
+java.nio.DirectByteBuffer                                                                                   2.59%
+java.lang.Long                                                                                              2.57%
+java.math.BigInteger                                                                                        2.37%
+org.eclipse.rdf4j.model.base.AbstractLiteral$TypedLiteral                                                   2.12%
+org.eclipse.rdf4j.sail.lmdb.ValueStore$$Lambda.0x00001fe0012b6c00                                           1.58%
+org.eclipse.rdf4j.sail.lmdb.ConcurrentCache$Entry                                                           1.52%
+java.util.concurrent.ConcurrentHashMap$Node                                                                 0.93%
+com.sun.org.apache.xerces.internal.jaxp.datatype.XMLGregorianCalendarImpl$Parser                            0.83%
+char[]                                                                                                      0.80%
+java.lang.Integer                                                                                           0.80%
+java.lang.Double                                                                                            0.74%
+short[]                                                                                                     0.72%
+java.math.BigDecimal                                                                                        0.69%
+org.eclipse.rdf4j.model.base.AbstractLiteral$TemporalAccessorLiteral                                        0.66%
+byte[][]                                                                                                    0.64%

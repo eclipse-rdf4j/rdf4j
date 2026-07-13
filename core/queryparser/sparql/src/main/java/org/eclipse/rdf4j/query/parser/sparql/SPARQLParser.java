@@ -257,7 +257,7 @@ public class SPARQLParser implements QueryParser {
 		int index = 0;
 		while (index < queryStr.length()) {
 			char current = queryStr.charAt(index);
-			if (current == '#') {
+			if (current == '#' && !isEscaped(queryStr, index)) {
 				index = copyUntilLineBreak(queryStr, rewritten, index);
 				continue;
 			}
@@ -278,6 +278,14 @@ public class SPARQLParser implements QueryParser {
 			index++;
 		}
 		return rewritten.toString();
+	}
+
+	private static boolean isEscaped(String text, int index) {
+		int backslashes = 0;
+		for (int i = index - 1; i >= 0 && text.charAt(i) == '\\'; i--) {
+			backslashes++;
+		}
+		return (backslashes & 1) != 0;
 	}
 
 	private static int copyUntilLineBreak(String queryStr, StringBuilder rewritten, int start) {

@@ -1,0 +1,5 @@
+Evidence:
+Command: mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -DskipITs -Dtest=<six focused methods> verify
+Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbSailStoreTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbSailStoreTest.txt
+Summary: tests=6, failures=0, errors=0, skipped=0, time=0.606s
+Log: logs/mvnf/20260710-scalar-scratch-final-verify.log

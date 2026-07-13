@@ -110,6 +110,11 @@ final class LmdbNativeExplain {
 			return "Union(left=" + describe(union.left, slotNames) + ", right=" + describe(union.right, slotNames)
 					+ ")";
 		}
+		if (plan instanceof OrderedUnionPlan) {
+			OrderedUnionPlan union = (OrderedUnionPlan) plan;
+			return "OrderedUnion(orderSlots=" + Arrays.toString(union.orderSlots) + ", left="
+					+ describe(union.left, slotNames) + ", right=" + describe(union.right, slotNames) + ")";
+		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filter = (FilterPlan) plan;
 			return "Filter(mask=" + filter.filterMask + ", arg=" + describe(filter.arg, slotNames) + ")";

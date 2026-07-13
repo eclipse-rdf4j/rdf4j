@@ -1,0 +1,9 @@
+Benchmark                                                      Mode  Cnt      Score   Error  Units
+TransactionsPerSecondBenchmarkFoaf.transaction100kx           thrpt    2     19.582          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction100kxLevelNone  thrpt    2     23.553          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction10kx            thrpt    2    225.324          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction10kxLevelNone   thrpt    2    219.963          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction10x             thrpt    2  47102.969          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction10xLevelNone    thrpt    2  11648.208          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction1x              thrpt    2  69974.891          ops/s
+TransactionsPerSecondBenchmarkFoaf.transaction1xLevelNone     thrpt    2  27152.971          ops/s

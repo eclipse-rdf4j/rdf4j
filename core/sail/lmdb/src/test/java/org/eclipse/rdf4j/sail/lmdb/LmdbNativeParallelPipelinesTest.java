@@ -40,6 +40,7 @@ public class LmdbNativeParallelPipelinesTest {
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
+	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 
 	@TempDir
 	File dataDir;
@@ -50,6 +51,7 @@ public class LmdbNativeParallelPipelinesTest {
 	public void setUp() {
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
+		System.setProperty(MAX_TASKS_FLAG, "5");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -76,6 +78,7 @@ public class LmdbNativeParallelPipelinesTest {
 	public void tearDown() {
 		System.clearProperty(THRESHOLD_FLAG);
 		System.clearProperty(THREADS_FLAG);
+		System.clearProperty(MAX_TASKS_FLAG);
 		System.clearProperty(PARALLEL_FLAG);
 		System.clearProperty(NATIVE_FLAG);
 		repository.shutDown();
@@ -147,9 +150,55 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isZero();
 	}
 
+	@Test
+	public void reservedWorkerGroupForcesSequentialFallback() {
+		long before = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
+			assertThat(held.hasNext()).isTrue();
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 1L);
+
+			assertThat(rows(chain(""))).hasSize(720);
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+					.as("the second complete worker group must fall back while the first owns the budget")
+					.isEqualTo(before + 1L);
+		}
+
+		assertThat(rows(chain(""))).hasSize(720);
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 2L);
+	}
+
+	@Test
+	public void reservedWorkerGroupForcesAggregationFallback() {
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
+			assertThat(held.hasNext()).isTrue();
+
+			rows(aggregateChain());
+			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+					.as("aggregation must share the process task budget with row pipelines")
+					.isEqualTo(before);
+		}
+
+		rows(aggregateChain());
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isEqualTo(before + 1L);
+	}
+
 	private String chain(String filter) {
 		return "SELECT ?subject ?value WHERE { ?subject <" + EX + "p1> ?middle . ?middle <" + EX
 				+ "p2> ?tail . ?tail <" + EX + "p3> ?value ." + filter + " }";
+	}
+
+	private String highFanoutChain() {
+		return "SELECT ?subject ?value ?value2 ?value3 WHERE { ?subject <" + EX
+				+ "p1> ?middle . ?middle <" + EX + "p2> ?tail . ?tail <" + EX
+				+ "p3> ?value . ?tail <" + EX + "p3> ?value2 . ?tail <" + EX + "p3> ?value3 . }";
+	}
+
+	private String aggregateChain() {
+		return "SELECT (COUNT(?subject) AS ?count) WHERE { ?subject <" + EX
+				+ "p1> ?middle . ?middle <" + EX + "p2> ?tail . ?tail <" + EX + "p3> ?value . }";
 	}
 
 	private List<String> rows(String query) {

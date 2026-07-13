@@ -1,0 +1,205 @@
+--- Execution profile ---
+Total samples       : 6447
+
+          ns  percent  samples  top
+  ----------  -------  -------  ---
+  7855000000   24.37%     1571  /private/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/lwjgl_havardottestad/3.3.6-snapshot/arm64/liblwjgl_lmdb.dylib
+  1770000000    5.49%      354  _platform_memcmp
+  1280000000    3.97%      256  org.eclipse.rdf4j.sail.lmdb.LeadingFieldSorters.lsdRadixSort
+   920000000    2.85%      184  _platform_memmove
+   620000000    1.92%      124  stub:memcmp
+   560000000    1.74%      112  G1ParScanThreadState::do_copy_to_survivor_space
+   540000000    1.68%      108  writev
+   520000000    1.61%      104  void G1ScanCardClosure::do_oop_work<narrowOop>
+   425000000    1.32%       85  G1ConcurrentMark::mark_in_bitmap
+   390000000    1.21%       78  void OopOopIterateDispatch<G1RebuildRemSetClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>
+   380000000    1.18%       76  G1PostEvacuateCollectionSetCleanupTask1::RestoreEvacFailureRegionsTask::process_chunk
+   355000000    1.10%       71  HeapWordImpl** G1HeapRegion::oops_on_memregion_iterate<G1ScanCardClosure, true>
+   350000000    1.09%       70  org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned
+   345000000    1.07%       69  org.eclipse.rdf4j.sail.lmdb.Varint.writeSignificantBits
+   330000000    1.02%       66  void OopOopIterateDispatch<G1ScanCardClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>
+   300000000    0.93%       60  void G1RebuildRemSetClosure::do_oop_work<narrowOop>
+   285000000    0.88%       57  G1CMOopClosure::do_oop
+   280000000    0.87%       56  G1ParScanThreadState::trim_queue_to_threshold
+   250000000    0.78%       50  __psynch_cvwait
+   250000000    0.78%       50  __psynch_mutexwait
+   250000000    0.78%       50  java.util.HashMap.putVal
+   230000000    0.71%       46  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.probe
+   225000000    0.70%       45  G1ConcurrentMark::scan_root_region
+   220000000    0.68%       44  G1RebuildRSAndScrubTask::G1RebuildRSAndScrubRegionClosure::scan_object
+   205000000    0.64%       41  void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>
+   205000000    0.64%       41  void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>
+   190000000    0.59%       38  java.io.PushbackReader.read
+   180000000    0.56%       36  void OopOopIterateDispatch<G1RootRegionScanClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>
+   165000000    0.51%       33  java.util.HashMap.resize
+   155000000    0.48%       31  close
+   150000000    0.47%       30  org.eclipse.rdf4j.model.impl.SimpleIRI.hashCode
+   150000000    0.47%       30  org.eclipse.rdf4j.sail.lmdb.PreparedStatementBatch.valueId
+   150000000    0.47%       30  java.lang.String.equals
+   145000000    0.45%       29  G1RebuildRSAndScrubTask::G1RebuildRSAndScrubRegionClosure::scan_and_scrub_region
+   140000000    0.43%       28  java.nio.Buffer.session
+   130000000    0.40%       26  org.lwjgl.util.lmdb.LMDB.nmdb_cursor_put
+   130000000    0.40%       26  org.eclipse.rdf4j.model.impl.SimpleLiteral.hashCode
+   130000000    0.40%       26  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.probe
+   110000000    0.34%       22  stub:memcpy
+   105000000    0.33%       21  _platform_memset
+   105000000    0.33%       21  checkcast_arraycopy
+   105000000    0.33%       21  java.nio.charset.CharsetDecoder.decode
+   100000000    0.31%       20  G1ParScanThreadState::handle_evacuation_failure_par
+   100000000    0.31%       20  java.lang.String.decodeASCII
+    95000000    0.29%       19  java.nio.ByteBuffer.order
+    95000000    0.29%       19  inflate_fast
+    95000000    0.29%       19  G1CollectedHeap::mark_evac_failure_object
+    95000000    0.29%       19  org.eclipse.rdf4j.sail.lmdb.TripleStore.encodeIndexKeys
+    90000000    0.28%       18  sun.nio.cs.StreamDecoder.read0
+    90000000    0.28%       18  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.nullSafeEquals
+    90000000    0.28%       18  org.eclipse.rdf4j.repository.sail.SailTupleQuery.evaluate
+    90000000    0.28%       18  org.eclipse.rdf4j.model.impl.SimpleIRI.equals
+    90000000    0.28%       18  org.eclipse.rdf4j.model.impl.SimpleLiteral.equals
+    85000000    0.26%       17  org.eclipse.rdf4j.common.net.ParsedIRI.parsePctEncoded
+    85000000    0.26%       17  mach_absolute_time
+    80000000    0.25%       16  org.eclipse.rdf4j.sail.lmdb.TripleStore.logAddedStatements
+    80000000    0.25%       16  G1HeapRegion::block_size
+    80000000    0.25%       16  ClassLoaderData::oops_do
+    80000000    0.25%       16  semaphore_wait_trap
+    80000000    0.25%       16  MarkBitMap::check_mark
+    75000000    0.23%       15  org.eclipse.rdf4j.rio.turtle.TurtleParser.readCodePoint
+    75000000    0.23%       15  large_arrays_hashcode_boolean
+    75000000    0.23%       15  void G1ScanHRForRegionClosure::ChunkScanner::on_dirty_cards<G1ScanHRForRegionClosure::scan_heap_roots(G1HeapRegion*)::'lambda'(unsigned char*, unsigned char*)>
+    75000000    0.23%       15  org.eclipse.rdf4j.model.base.AbstractBNode.equals
+    70000000    0.22%       14  org.eclipse.rdf4j.sail.base.SailSourceConnection.addStatement
+    70000000    0.22%       14  itable stub
+    70000000    0.22%       14  java.io.PushbackReader.unread
+    70000000    0.22%       14  void OopOopIterateDispatch<G1MarkAndPushClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>
+    65000000    0.20%       13  org.eclipse.rdf4j.sail.lmdb.ValueStore.prepareFreshValue
+    65000000    0.20%       13  IndexSetIterator::advance_and_next
+    65000000    0.20%       13  _platform_bzero
+    60000000    0.19%       12  G1CardSetHashTable::get_or_add
+    60000000    0.19%       12  count_positives
+    60000000    0.19%       12  void G1CMTask::process_grey_task_entry<true>
+    55000000    0.17%       11  org.eclipse.rdf4j.model.base.AbstractBNode.hashCode
+    55000000    0.17%       11  java.lang.String.encodeUTF8
+    55000000    0.17%       11  java.nio.Buffer.nextPutIndex
+    55000000    0.17%       11  org.eclipse.rdf4j.model.base.AbstractLiteral.hashCode
+    55000000    0.17%       11  PhaseChaitin::build_ifg_physical
+    55000000    0.17%       11  org.eclipse.rdf4j.sail.lmdb.ValueStore.persistPreparedValues
+    50000000    0.16%       10  org.eclipse.rdf4j.sail.lmdb.TripleIndex.threeOfFourAreZeroOrMax
+    50000000    0.16%       10  Arena::contains
+    50000000    0.16%       10  PhaseLive::compute
+    50000000    0.16%       10  PhaseChaitin::Split
+    50000000    0.16%       10  G1CardSet::add_card
+    50000000    0.16%       10  PhaseChaitin::elide_copy
+    50000000    0.16%       10  org.eclipse.rdf4j.sail.helpers.AbstractSailConnection.setStatementsAdded
+    50000000    0.16%       10  java.util.ArrayList.add
+    50000000    0.16%       10  sun.nio.cs.UTF_8$Decoder.decodeArrayLoop
+    50000000    0.16%       10  org.lwjgl.system.MemoryUtil.wrapBufferByte
+    45000000    0.14%        9  __unlink
+    45000000    0.14%        9  java.lang.Character.offsetByCodePoints
+    45000000    0.14%        9  org.eclipse.rdf4j.sail.lmdb.Varint.descriptor
+    40000000    0.12%        8  copy_byte_f
+    40000000    0.12%        8  org.eclipse.rdf4j.sail.lmdb.benchmark.DatagovLoadIsolationBenchmark.loadDatagovFileInBatchesInternal
+    40000000    0.12%        8  java.nio.HeapCharBuffer.<init>
+    40000000    0.12%        8  G1CardSet::add_to_container
+    40000000    0.12%        8  java.lang.String.checkIndex
+    40000000    0.12%        8  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.getIfAbsent
+    40000000    0.12%        8  java.nio.Buffer.position
+    40000000    0.12%        8  G1FullGCResetMetadataTask::G1ResetMetadataClosure::scrub_skip_compacting_region
+    40000000    0.12%        8  G1MergeHeapRootsTask::G1MergeLogBufferCardsClosure::do_card_ptr
+    35000000    0.11%        7  java.lang.String.encodeUTF8_UTF16
+    35000000    0.11%        7  updateBytesCRC32
+    35000000    0.11%        7  vtable stub
+    35000000    0.11%        7  org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap.probe
+    35000000    0.11%        7  org.eclipse.rdf4j.sail.lmdb.ValueStore.addPreparedValueRecord
+    35000000    0.11%        7  Matcher::xform
+    35000000    0.11%        7  G1FullGCMarker::publish_and_drain_oop_tasks
+    35000000    0.11%        7  DIR_Chunk* GrowableArrayWithAllocator<DIR_Chunk*, GrowableArray<DIR_Chunk*>>::insert_sorted<&DIR_Chunk::compare(DIR_Chunk* const&, DIR_Chunk* const&)>
+    35000000    0.11%        7  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.nullSafeEquals
+    35000000    0.11%        7  G1CMTask::drain_local_queue
+    35000000    0.11%        7  __open
+    35000000    0.11%        7  G1CardSet::add_to_array
+    35000000    0.11%        7  _tlv_get_addr
+    35000000    0.11%        7  os::javaTimeNanos
+    35000000    0.11%        7  pthread_jit_write_protect_np
+    35000000    0.11%        7  java.nio.DirectByteBuffer.putInt
+    35000000    0.11%        7  java.util.LinkedHashMap.afterNodeAccess
+    35000000    0.11%        7  PhaseIdealLoop::build_loop_early
+    35000000    0.11%        7  sun.nio.cs.StreamDecoder.read
+    35000000    0.11%        7  java.nio.DirectByteBuffer.putShort
+    35000000    0.11%        7  G1CardSet::add_to_howl
+    35000000    0.11%        7  G1HeapRegion::fill_range_with_dead_objects
+    30000000    0.09%        6  org.eclipse.rdf4j.sail.lmdb.IdentityValueIntCache.get
+    30000000    0.09%        6  vmSymbols::find_sid
+    30000000    0.09%        6  org.eclipse.rdf4j.sail.lmdb.LmdbSailStore$LmdbSailSink.reorder
+    30000000    0.09%        6  PhaseIdealLoop::build_loop_late_post_work
+    30000000    0.09%        6  org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters$CachingKeyWriter.write
+    30000000    0.09%        6  java.nio.CharBuffer.wrap
+    30000000    0.09%        6  org.eclipse.rdf4j.sail.base.SailSourceConnection.add
+    30000000    0.09%        6  Compile::identify_useful_nodes
+    30000000    0.09%        6  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.getIfAbsent
+    30000000    0.09%        6  __psynch_mutexdrop
+    30000000    0.09%        6  Type::Initialize_shared(Compile*)::$_0::__invoke
+    30000000    0.09%        6  org.eclipse.rdf4j.sail.lmdb.TripleStore.storeTriplesAligned
+    30000000    0.09%        6  Node::set_req_X
+    30000000    0.09%        6  java.nio.Buffer.<init>
+    30000000    0.09%        6  java.lang.StringUTF16.compress
+    30000000    0.09%        6  org.eclipse.rdf4j.common.net.ParsedIRI.peek
+    30000000    0.09%        6  Dict::Insert
+    30000000    0.09%        6  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.spread
+    30000000    0.09%        6  PhaseLive::add_liveout
+    25000000    0.08%        5  org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap.probeTwo
+    25000000    0.08%        5  org.eclipse.rdf4j.model.base.AbstractLiteral.equals
+    25000000    0.08%        5  java.lang.String.length
+    25000000    0.08%        5  Node_Array::insert
+    25000000    0.08%        5  void OopOopIterateBoundedDispatch<G1ScanCardClosure>::Table::oop_oop_iterate_bounded<ObjArrayKlass, narrowOop>
+    25000000    0.08%        5  BarrierSetC2::compute_liveness_at_stubs
+    25000000    0.08%        5  Matcher::Label_Root
+    25000000    0.08%        5  PhaseChaitin::gather_lrg_masks
+    25000000    0.08%        5  InstanceKlass::find_method_index
+    25000000    0.08%        5  PhaseChaitin::post_allocate_copy_removal
+    25000000    0.08%        5  PhaseIFG::effective_degree
+    25000000    0.08%        5  java.lang.AbstractStringBuilder.append
+    25000000    0.08%        5  PhaseIdealLoop::build_loop_late
+    25000000    0.08%        5  pwrite
+    25000000    0.08%        5  java.nio.HeapByteBuffer.put
+    25000000    0.08%        5  java.io.FilterReader.read
+    25000000    0.08%        5  org.eclipse.rdf4j.sail.lmdb.ValueStore.literal2data
+    25000000    0.08%        5  G1ParScanThreadState::record_evacuation_failed_region
+    25000000    0.08%        5  G1ParScanThreadState::allocate_copy_slow
+    25000000    0.08%        5  MultiNode::is_CFG
+    25000000    0.08%        5  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.addKeyValueAtIndex
+    25000000    0.08%        5  PhiNode::is_unsafe_data_reference
+    25000000    0.08%        5  SignatureStream::next
+    25000000    0.08%        5  org.eclipse.rdf4j.sail.lmdb.TripleIndex.toKey
+    25000000    0.08%        5  java.lang.String.hashCode
+    25000000    0.08%        5  Compile::find_alias_type
+    25000000    0.08%        5  G1CMObjArrayProcessor::should_be_sliced
+    25000000    0.08%        5  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.rehash
+    25000000    0.08%        5  org.eclipse.rdf4j.sail.lmdb.PreparedStatementBatch$Builder.add
+    25000000    0.08%        5  org.eclipse.rdf4j.sail.lmdb.LmdbSailStore$LmdbSailSink.sortForIndex
+    20000000    0.06%        4  Unique_Node_List::remove
+    20000000    0.06%        4  Node::Node
+    20000000    0.06%        4  org.eclipse.rdf4j.common.net.ParsedIRI.advance
+    20000000    0.06%        4  org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap.addKeyValueAtIndex
+    20000000    0.06%        4  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.spread
+    20000000    0.06%        4  TypeNode::hash
+    20000000    0.06%        4  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.rehash
+    20000000    0.06%        4  org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap.isNonSentinel
+    20000000    0.06%        4  ciObjectFactory::get_metadata
+    20000000    0.06%        4  org.eclipse.rdf4j.sail.lmdb.ValueStore.getInlineId
+    20000000    0.06%        4  java.util.Arrays.binarySearch0
+    20000000    0.06%        4  PhaseIterGVN::add_users_of_use_to_worklist
+    20000000    0.06%        4  PhaseIdealLoop::split_if_with_blocks_pre
+    20000000    0.06%        4  PhaseIdealLoop::split_if_with_blocks
+    20000000    0.06%        4  java.nio.DirectByteBuffer.put
+    20000000    0.06%        4  MachNode::in_RegMask
+    20000000    0.06%        4  IntervalWalker::walk_to
+    20000000    0.06%        4  sun.nio.cs.StreamDecoder.implRead
+    20000000    0.06%        4  PhaseIdealLoop::Dominators
+    20000000    0.06%        4  java.lang.Character.isBmpCodePoint
+    20000000    0.06%        4  java.nio.ByteBuffer.hasArray
+    20000000    0.06%        4  java.lang.String.charAt
+    20000000    0.06%        4  void G1CardSet::iterate_cards_or_ranges_in_container<G1ContainerCardsOrRanges<G1MergeHeapRootsTask::G1MergeCardSetClosure>>
+    20000000    0.06%        4  HandleMark::initialize
+    20000000    0.06%        4  void G1ScanClosureBase::handle_non_cset_obj_common<narrowOop>
+    20000000    0.06%        4  java.lang.StringLatin1.indexOf
+    20000000    0.06%        4  void OopOopIterateBoundedDispatch<G1CMOopClosure>::Table::oop_oop_iterate_bounded<ObjArrayKlass, narrowOop>

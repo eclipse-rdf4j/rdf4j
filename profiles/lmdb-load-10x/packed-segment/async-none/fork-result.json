@@ -1,0 +1,65 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.DatagovLoadIsolationBenchmark.loadDatagovFileSingleTransaction",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms2G",
+            "-Xmx2G",
+            "-XX:+UseG1GC",
+            "-agentpath:/opt/homebrew/Cellar/async-profiler/4.4/lib/libasyncProfiler.dylib=start,file=profiles/lmdb-load-10x/packed-segment/async-none/none-%p.jfr,jfr,event=cpu,interval=5ms",
+            "-Xms2G",
+            "-Xmx2G",
+            "-XX:+UseG1GC"
+        ],
+        "jdkVersion" : "25",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25+36-LTS",
+        "warmupIterations" : 2,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 4,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "automaticEvaluationStrategy" : "false",
+            "isolationLevel" : "NONE"
+        },
+        "primaryMetric" : {
+            "score" : 459.2600971666667,
+            "scoreError" : 24.9081802476076,
+            "scoreConfidence" : [
+                434.3519169190591,
+                484.1682774142743
+            ],
+            "scorePercentiles" : {
+                "0.0" : 456.12733333333335,
+                "50.0" : 458.0489513333333,
+                "90.0" : 464.8151526666667,
+                "95.0" : 464.8151526666667,
+                "99.0" : 464.8151526666667,
+                "99.9" : 464.8151526666667,
+                "99.99" : 464.8151526666667,
+                "99.999" : 464.8151526666667,
+                "99.9999" : 464.8151526666667,
+                "100.0" : 464.8151526666667
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    457.35379133333333,
+                    464.8151526666667,
+                    456.12733333333335,
+                    458.7441113333333
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

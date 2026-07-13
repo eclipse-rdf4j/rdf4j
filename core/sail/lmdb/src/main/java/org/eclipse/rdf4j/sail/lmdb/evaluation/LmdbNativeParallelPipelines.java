@@ -17,8 +17,8 @@ import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,13 +31,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * Shared same-snapshot morsel scheduler for native pipelines. The query thread keeps its original source; one sibling
  * source scans the selected root pattern and worker-owned siblings run the remainder of the already-compiled physical
  * join/filter pipeline. Mutable rows, cursors, filters and output batches are confined to one worker. Only immutable
- * raw-id morsels and completed batches cross threads.
+ * raw-id morsels and completed batches cross threads. Complete task groups are admitted atomically against
+ * {@code rdf4j.lmdb.parallel.maxTasks}, which defaults to the available processor count and is clamped to 1 through 65;
+ * a group that does not fit runs through the caller's sequential fallback.
  */
 @Experimental
 final class LmdbNativeParallelPipelines {
 
 	static final int MORSEL_ROWS = 1024;
 	static final int OUTPUT_ROWS = 256;
+	static final int MAX_POOL_TASKS = 65;
 
 	static final AtomicLong PARALLEL_ROW_RUNS = new AtomicLong();
 	static final AtomicLong OUTPUT_BATCHES = new AtomicLong();
@@ -46,6 +49,7 @@ final class LmdbNativeParallelPipelines {
 	static final AtomicReference<String> LAST_REJECTION = new AtomicReference<>();
 
 	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
+	private static final AtomicInteger RESERVED_TASKS = new AtomicInteger();
 	private static volatile ExecutorService pool;
 
 	private LmdbNativeParallelPipelines() {
@@ -57,12 +61,15 @@ final class LmdbNativeParallelPipelines {
 			synchronized (LmdbNativeParallelPipelines.class) {
 				current = pool;
 				if (current == null) {
-					pool = current = Executors.newCachedThreadPool(runnable -> {
-						Thread thread = new Thread(runnable,
-								"lmdb-native-parallel-" + THREAD_IDS.incrementAndGet());
-						thread.setDaemon(true);
-						return thread;
-					});
+					ThreadPoolExecutor boundedPool = new ThreadPoolExecutor(MAX_POOL_TASKS, MAX_POOL_TASKS, 60L,
+							TimeUnit.SECONDS, new ArrayBlockingQueue<>(MAX_POOL_TASKS), runnable -> {
+								Thread thread = new Thread(runnable,
+										"lmdb-native-parallel-" + THREAD_IDS.incrementAndGet());
+								thread.setDaemon(true);
+								return thread;
+							});
+					boundedPool.allowCoreThreadTimeOut(true);
+					pool = current = boundedPool;
 				}
 			}
 		}
@@ -74,6 +81,28 @@ final class LmdbNativeParallelPipelines {
 		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.threads");
 		int threads = configured != null ? configured : defaultThreads;
 		return Math.max(0, Math.min(threads, 64));
+	}
+
+	static int configuredMaxTasks() {
+		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.maxTasks");
+		int maxTasks = configured != null ? configured : Runtime.getRuntime().availableProcessors();
+		return Math.max(1, Math.min(maxTasks, MAX_POOL_TASKS));
+	}
+
+	static TaskReservation tryReserveTasks(int tasks) {
+		int maxTasks = configuredMaxTasks();
+		if (tasks <= 0 || tasks > maxTasks) {
+			return null;
+		}
+		while (true) {
+			int reserved = RESERVED_TASKS.get();
+			if (reserved > maxTasks - tasks) {
+				return null;
+			}
+			if (RESERVED_TASKS.compareAndSet(reserved, reserved + tasks)) {
+				return new TaskReservation(tasks);
+			}
+		}
 	}
 
 	static boolean enabled() {
@@ -110,27 +139,38 @@ final class LmdbNativeParallelPipelines {
 		if (!(root.estimate(consumerRow) >= threshold)) {
 			return reject("below-threshold");
 		}
-		NativeLmdbQuerySource.ParallelSource[] sources = step.source.openParallelSources(threads + 1);
-		if (sources == null) {
-			return reject("snapshot-unavailable");
+		TaskReservation reservation = tryReserveTasks(threads + 1);
+		if (reservation == null) {
+			return reject("task-budget");
 		}
-		MultiJoinPlan[] workerPlans = new MultiJoinPlan[threads];
-		for (int i = 0; i < threads; i++) {
-			MaskedFilter[] filters = forkFilters(plan.filters);
-			if (filters == null) {
-				closeSources(sources);
-				return reject("stateful-filter");
-			}
-			workerPlans[i] = new MultiJoinPlan(plan.children, filters);
-		}
+		NativeLmdbQuerySource.ParallelSource[] sources = null;
+		boolean handedOff = false;
 		try {
-			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, workerPlans, sources);
+			sources = step.source.openParallelSources(threads + 1);
+			if (sources == null) {
+				return reject("snapshot-unavailable");
+			}
+			MultiJoinPlan[] workerPlans = new MultiJoinPlan[threads];
+			for (int i = 0; i < threads; i++) {
+				MaskedFilter[] filters = forkFilters(plan.filters);
+				if (filters == null) {
+					return reject("stateful-filter");
+				}
+				workerPlans[i] = new MultiJoinPlan(plan.children, filters);
+			}
+			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, workerPlans, sources,
+					reservation);
+			handedOff = true;
 			PARALLEL_ROW_RUNS.incrementAndGet();
 			LAST_REJECTION.set(null);
 			return cursor;
-		} catch (RuntimeException | Error e) {
-			closeSources(sources);
-			throw e;
+		} finally {
+			if (!handedOff) {
+				if (sources != null) {
+					closeSources(sources);
+				}
+				reservation.close();
+			}
 		}
 	}
 
@@ -172,6 +212,22 @@ final class LmdbNativeParallelPipelines {
 		for (NativeLmdbQuerySource.ParallelSource source : sources) {
 			if (source != null) {
 				source.close();
+			}
+		}
+	}
+
+	static final class TaskReservation implements AutoCloseable {
+		final int tasks;
+		final AtomicBoolean released = new AtomicBoolean();
+
+		TaskReservation(int tasks) {
+			this.tasks = tasks;
+		}
+
+		@Override
+		public void close() {
+			if (released.compareAndSet(false, true)) {
+				RESERVED_TASKS.addAndGet(-tasks);
 			}
 		}
 	}
@@ -315,6 +371,7 @@ final class LmdbNativeParallelPipelines {
 		final AtomicBoolean cancelled = new AtomicBoolean();
 		final CountDownLatch tasks;
 		final ArrayList<Future<?>> futures;
+		final TaskReservation reservation;
 		OutputPage active;
 		int activeIndex;
 		int endedWorkers;
@@ -322,7 +379,8 @@ final class LmdbNativeParallelPipelines {
 		boolean exhausted;
 
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
-				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources) {
+				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
+				TaskReservation reservation) {
 			this.step = step;
 			this.consumerRow = consumerRow;
 			this.root = root;
@@ -333,16 +391,36 @@ final class LmdbNativeParallelPipelines {
 			this.output = new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.tasks = new CountDownLatch(workerPlans.length + 1);
 			this.futures = new ArrayList<>(workerPlans.length + 1);
+			this.reservation = reservation;
 			start();
 		}
 
 		void start() {
-			for (int i = 0; i < workerPlans.length; i++) {
-				int worker = i;
-				futures.add(pool().submit(() -> runTask(() -> runWorker(worker), sources[worker])));
+			int submitted = 0;
+			try {
+				for (int i = 0; i < workerPlans.length; i++) {
+					int worker = i;
+					futures.add(pool().submit(() -> runTask(() -> runWorker(worker), sources[worker])));
+					submitted++;
+				}
+				int producer = workerPlans.length;
+				futures.add(pool().submit(() -> runTask(this::produce, sources[producer])));
+				submitted++;
+			} catch (RuntimeException | Error problem) {
+				failure.compareAndSet(null, problem);
+				cancelled.set(true);
+				for (int i = submitted; i < sources.length; i++) {
+					try {
+						sources[i].close();
+					} catch (Throwable closeFailure) {
+						problem.addSuppressed(closeFailure);
+					} finally {
+						taskFinished();
+					}
+				}
+				awaitTasks();
+				throw problem;
 			}
-			int producer = workerPlans.length;
-			futures.add(pool().submit(() -> runTask(this::produce, sources[producer])));
 		}
 
 		void runTask(IoTask task, NativeLmdbQuerySource.ParallelSource ownedSource) {
@@ -354,8 +432,32 @@ final class LmdbNativeParallelPipelines {
 				}
 				cancelled.set(true);
 			} finally {
-				ownedSource.close();
-				tasks.countDown();
+				try {
+					ownedSource.close();
+				} finally {
+					taskFinished();
+				}
+			}
+		}
+
+		void taskFinished() {
+			tasks.countDown();
+			if (tasks.getCount() == 0) {
+				reservation.close();
+			}
+		}
+
+		void awaitTasks() {
+			boolean interrupted = false;
+			while (tasks.getCount() > 0) {
+				try {
+					tasks.await(50, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
 			}
 		}
 
@@ -492,17 +594,8 @@ final class LmdbNativeParallelPipelines {
 				CANCELLED_RUNS.incrementAndGet();
 			}
 			cancelled.set(true);
-			boolean interrupted = false;
-			while (tasks.getCount() > 0) {
-				try {
-					tasks.await(50, TimeUnit.MILLISECONDS);
-				} catch (InterruptedException e) {
-					interrupted = true;
-				}
-			}
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
+			awaitTasks();
+			reservation.close();
 			System.arraycopy(entrySlots, 0, consumerRow.slots, 0, entrySlots.length);
 			consumerRow.recomputeBoundMask();
 			active = null;
