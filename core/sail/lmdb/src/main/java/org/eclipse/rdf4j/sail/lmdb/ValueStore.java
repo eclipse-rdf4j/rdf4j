@@ -109,6 +109,11 @@ import org.slf4j.LoggerFactory;
  */
 class ValueStore extends AbstractValueFactory {
 
+	@FunctionalInterface
+	interface ValueDataReader<T> {
+		T read(long address, int length) throws IOException;
+	}
+
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
 	static final class FreshValueSession {
@@ -1051,23 +1056,23 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
+		return withData(id, (address, length) -> {
+			byte[] valueBytes = new byte[length];
+			LmdbUtil.copyMemoryToByteArray(address, valueBytes, length);
+			return valueBytes;
+		});
+	}
+
+	<T> T withData(long id, ValueDataReader<T> reader) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
 			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				return copyValueBytes(valueData);
+				return reader.read(LmdbUtil.mdbValDataAddress(valueData), LmdbUtil.mdbValSize(valueData));
 			}
 			return null;
 		});
-	}
-
-	private static byte[] copyValueBytes(MDBVal valueData) {
-		int length = LmdbUtil.mdbValSize(valueData);
-		byte[] valueBytes = new byte[length];
-		long address = LmdbUtil.mdbValDataAddress(valueData);
-		LmdbUtil.copyMemoryToByteArray(address, valueBytes, length);
-		return valueBytes;
 	}
 
 	/**

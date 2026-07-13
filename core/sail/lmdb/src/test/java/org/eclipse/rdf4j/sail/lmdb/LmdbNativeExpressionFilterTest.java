@@ -60,7 +60,7 @@ public class LmdbNativeExpressionFilterTest {
 			conn.add(s1, price, vf.createLiteral(121));
 			conn.add(s2, price, vf.createLiteral("00121", XSD.INTEGER));
 
-			conn.add(s0, label, vf.createLiteral("alpha"));
+			conn.add(s0, label, vf.createLiteral("Alphabetical stored literal"));
 			conn.add(s1, label, vf.createLiteral("Alphabetical stored literal"));
 			conn.add(s2, label, vf.createLiteral("beta"));
 		}
@@ -82,6 +82,8 @@ public class LmdbNativeExpressionFilterTest {
 	private void resetNativeExpressionCounters() {
 		LmdbNativeExpressionCompiler.COMPILED_FILTERS.set(0);
 		LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.set(0);
+		LmdbNativeValueCodec.ZERO_COPY_READS.set(0);
+		LmdbNativeValueCodec.CACHE_HITS.set(0);
 	}
 
 	@Test
@@ -112,6 +114,8 @@ public class LmdbNativeExpressionFilterTest {
 		assertThat(result).isEqualTo(2);
 		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isGreaterThan(0);
 		assertThat(LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get()).isZero();
+		assertThat(LmdbNativeValueCodec.ZERO_COPY_READS.get()).isGreaterThan(0);
+		assertThat(LmdbNativeValueCodec.CACHE_HITS.get()).isGreaterThan(0);
 	}
 
 	@Test

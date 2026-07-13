@@ -19,7 +19,6 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -267,21 +266,21 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		AggContext values = new AggContext(source, strictCompare);
 		long emitCap = limit < 0 ? Long.MAX_VALUE : offset + limit;
 
-		// ORDER BY: snapshot full slot rows (keys may be unprojected), sort on materialized key values,
-		// then project/dedup/slice in SPARQL pipeline order
+		// ORDER BY: pack slot rows into one reusable arena (keys may be unprojected), sort primitive row indexes,
+		// then project/dedup/slice in SPARQL pipeline order.
 		LmdbNativeValueCodec orderCodec = values.source.nativeValueCodec();
-		java.util.Comparator<long[]> comparator = (a, b) -> {
+		PackedRowComparator comparator = (left, leftOffset, right, rightOffset) -> {
 			for (int k = 0; k < orderSlots.length; k++) {
-				long leftId = a[orderSlots[k]];
-				long rightId = b[orderSlots[k]];
+				long leftId = left[leftOffset + orderSlots[k]];
+				long rightId = right[rightOffset + orderSlots[k]];
 				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec);
 				int cmp;
 				if (nativeCmp != null) {
 					cmp = nativeCmp;
 				} else {
-					Value left = orderValue(leftId, values);
-					Value right = orderValue(rightId, values);
-					cmp = values.comparator.compare(left, right);
+					Value leftValue = orderValue(leftId, values);
+					Value rightValue = orderValue(rightId, values);
+					cmp = values.comparator.compare(leftValue, rightValue);
 				}
 				if (cmp != 0) {
 					return orderAscending[k] ? cmp : -cmp;
@@ -291,40 +290,51 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		};
 		// bounded top-k under ORDER BY + LIMIT (skipped with DISTINCT, which dedups after projection and
 		// could underfill a pre-projection top-k): keep only the best offset+limit rows while scanning
-		long topK = !distinct && emitCap != Long.MAX_VALUE && emitCap <= 100_000 ? emitCap : -1L;
-		ArrayList<long[]> snapshots;
+		long topK = emitCap != Long.MAX_VALUE && emitCap <= 100_000 ? emitCap : -1L;
 		if (topK >= 0) {
-			java.util.PriorityQueue<long[]> best = new java.util.PriorityQueue<>((int) Math.max(1, topK),
-					comparator.reversed());
+			NativeTopKBuffer best = new NativeTopKBuffer(row.slots.length, (int) topK, comparator);
+			NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots) : null;
+			long ordinal = 0L;
 			try (RowCursor cursor = arg.open(row)) {
 				while (cursor.next()) {
-					if (best.size() < topK) {
-						best.add(Arrays.copyOf(row.slots, row.slots.length));
-					} else if (!best.isEmpty() && comparator.compare(row.slots, best.peek()) < 0) {
-						best.poll();
-						best.add(Arrays.copyOf(row.slots, row.slots.length));
+					if (topKDistinct == null || topKDistinct.add(row.slots)) {
+						best.add(row.slots, ordinal++);
 					}
 				}
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
-			snapshots = new ArrayList<>(best);
-		} else {
-			snapshots = new ArrayList<>();
-			try (RowCursor cursor = arg.open(row)) {
-				while (cursor.next()) {
-					snapshots.add(Arrays.copyOf(row.slots, row.slots.length));
-				}
+			try (NativeSortedRows sorted = best.buffer.sortedRows(comparator)) {
+				return projectSortedRows(sorted, row.slots.length, emitCap, values, distinct);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
 		}
-		snapshots.sort(comparator);
+
+		try (NativeSpillSort snapshots = new NativeSpillSort(row.slots.length, comparator)) {
+			long ordinal = 0L;
+			try (RowCursor cursor = arg.open(row)) {
+				while (cursor.next()) {
+					snapshots.add(row.slots, ordinal++);
+				}
+			}
+			try (NativeSortedRows sorted = snapshots.sortedRows()) {
+				return projectSortedRows(sorted, row.slots.length, emitCap, values, false);
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	List<BindingSet> projectSortedRows(NativeSortedRows sortedRows, int slotCount, long emitCap, AggContext values,
+			boolean distinctAlreadyApplied) throws IOException {
 		ArrayList<BindingSet> results = new ArrayList<>();
-		HashMap<GroupKey, Boolean> seen = distinct ? new HashMap<>() : null;
-		GroupKey probe = distinct ? new GroupKey(new long[sourceSlots.length]) : null;
-		for (long[] snapshot : snapshots) {
-			if (distinct && !registerDistinct(seen, probe, snapshot)) {
+		NativeDistinctTracker distinctRows = distinct && !distinctAlreadyApplied
+				? new NativeDistinctTracker(sourceSlots)
+				: null;
+		long[] snapshot = new long[slotCount];
+		while (sortedRows.next(snapshot)) {
+			if (distinctRows != null && !distinctRows.add(snapshot)) {
 				continue;
 			}
 			results.add(project(snapshot, values));
@@ -333,21 +343,6 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 		}
 		return slice(results);
-	}
-
-	boolean registerDistinct(HashMap<GroupKey, Boolean> seen, GroupKey probe, long[] slots) {
-		long[] ids = probe.ids;
-		for (int i = 0; i < sourceSlots.length; i++) {
-			long id = slots[sourceSlots[i]];
-			// a null-context binding and an unbound slot emit the same (absent) binding
-			ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
-		}
-		probe.rehash();
-		if (seen.containsKey(probe)) {
-			return false;
-		}
-		seen.put(probe.storedCopy(), Boolean.TRUE);
-		return true;
 	}
 
 	Value orderValue(long id, AggContext values) {
@@ -381,6 +376,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	BindingSet project(long[] slots, AggContext values) {
+		if (NativeProjectedBindingSet.enabled() && source != null) {
+			return new NativeProjectedBindingSet(source, targetNames, sourceSlots, slots);
+		}
 		QueryBindingSet result = new QueryBindingSet(targetNames.length);
 		for (int i = 0; i < targetNames.length; i++) {
 			long id = slots[sourceSlots[i]];
@@ -405,8 +403,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	NativeRowsStep step;
 	BindingSet base;
-	HashMap<GroupKey, Boolean> seen;
-	GroupKey distinctProbe;
+	NativeDistinctTracker distinctRows;
 	long remainingOffset;
 	long remainingLimit;
 	long remainingMultiplicity;
@@ -416,14 +413,16 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	RowState row;
 	AggContext values;
 	RowCursor cursor;
+	BatchCursor batchCursor;
+	NativeBatch batch;
+	int batchIndex;
 	BindingSet next;
 	BindingSet repeated;
 
 	NativeRowsIteration(NativeRowsStep step, BindingSet base) {
 		this.step = step;
 		this.base = base;
-		this.seen = step.distinct ? new HashMap<>() : null;
-		this.distinctProbe = step.distinct ? new GroupKey(new long[step.sourceSlots.length]) : null;
+		this.distinctRows = step.distinct ? new NativeDistinctTracker(step.sourceSlots) : null;
 		this.remainingOffset = Math.max(0L, step.offset);
 		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
 	}
@@ -463,6 +462,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		if (!initialized && !initialize()) {
 			return null;
 		}
+		if (batchCursor != null) {
+			return getNextBatchElement();
+		}
 
 		while (!closed && cursor.next()) {
 			if (closed) {
@@ -472,7 +474,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 					? ((FactorizedRowCursor) cursor).multiplicity()
 					: 1L;
 			if (step.distinct && !distinctHandledByCursor) {
-				if (!step.registerDistinct(seen, distinctProbe, row.slots)) {
+				if (!distinctRows.add(row.slots)) {
 					continue;
 				}
 				multiplicity = 1L;
@@ -493,6 +495,30 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		return null;
 	}
 
+	private BindingSet getNextBatchElement() throws IOException {
+		while (!closed) {
+			if (batchIndex >= batch.selectedCount) {
+				if (batchCursor.fill(batch) == 0) {
+					return null;
+				}
+				batchIndex = 0;
+			}
+			int physicalRow = batch.selection[batchIndex++];
+			batch.copyToRow(physicalRow, row.slots);
+			row.recomputeBoundMask();
+			if (step.distinct && !distinctRows.add(row.slots)) {
+				continue;
+			}
+			if (remainingOffset > 0) {
+				remainingOffset--;
+				continue;
+			}
+			remainingLimit--;
+			return step.project(row.slots, values);
+		}
+		return null;
+	}
+
 	private boolean initialize() throws IOException {
 		initialized = true;
 		row = new RowState(step.source, step.layout, base);
@@ -503,6 +529,20 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		cursor = step.openPrefixRunCursor(row);
 		if (cursor != null) {
 			distinctHandledByCursor = true;
+			return true;
+		}
+		if (NativeBatch.enabled()) {
+			int capacity = NativeBatch.configuredRows();
+			BatchCursor candidate = step.arg.openBatch(row, capacity);
+			if (candidate != null) {
+				batchCursor = candidate;
+				batch = new NativeBatch(row.slots.length, capacity);
+				NativeBatch.ROOT_ITERATIONS.incrementAndGet();
+				return true;
+			}
+		}
+		cursor = LmdbNativeParallelPipelines.tryOpen(step, row);
+		if (cursor != null) {
 			return true;
 		}
 		if (step.arg instanceof MultiJoinPlan && ((MultiJoinPlan) step.arg).children.length > 0) {
@@ -549,20 +589,29 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	private void closeResources() {
 		RowCursor activeCursor = cursor;
 		cursor = null;
+		BatchCursor activeBatchCursor = batchCursor;
+		batchCursor = null;
 		try {
-			if (activeCursor != null) {
-				activeCursor.close();
+			if (activeBatchCursor != null) {
+				activeBatchCursor.close();
 			}
 		} finally {
-			step = null;
-			base = null;
-			seen = null;
-			distinctProbe = null;
-			next = null;
-			repeated = null;
-			values = null;
-			row = null;
-			remainingMultiplicity = 0;
+			try {
+				if (activeCursor != null) {
+					activeCursor.close();
+				}
+			} finally {
+				step = null;
+				base = null;
+				distinctRows = null;
+				next = null;
+				repeated = null;
+				values = null;
+				row = null;
+				batch = null;
+				batchIndex = 0;
+				remainingMultiplicity = 0;
+			}
 		}
 	}
 }

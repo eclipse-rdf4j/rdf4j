@@ -149,9 +149,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	/**
-	 * Compiles a non-aggregate SELECT root: [Slice] [Distinct|Reduced] Projection [Order] over a tuple tree the slot
-	 * machinery supports (joins, OPTIONAL, UNION, MINUS, VALUES, filters, variable BINDs). The inner tree runs as a
-	 * native slot cursor; ordering sorts full slot rows on materialized key values (order keys may be unprojected
+	 * Compiles a non-aggregate SELECT root: [Slice] [Order] [Distinct|Reduced] Projection [Order] over a tuple tree the
+	 * slot machinery supports (joins, OPTIONAL, UNION, MINUS, VALUES, filters, variable BINDs). The inner tree runs as
+	 * a native slot cursor; ordering sorts full slot rows on materialized key values (order keys may be unprojected
 	 * variables), then rows are projected, de-duplicated on projected id tuples, and sliced. Returns null whenever any
 	 * piece is unsupported so the generic evaluator remains the fallback.
 	 */
@@ -168,14 +168,27 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			offset = slice.hasOffset() ? slice.getOffset() : 0L;
 			node = slice.getArg();
 		}
+		List<OrderElem> orderElems = List.of();
+		boolean orderAboveProjection = false;
+		if (node instanceof Order) {
+			orderElems = ((Order) node).getElements();
+			orderAboveProjection = true;
+			node = ((Order) node).getArg();
+			if (!supportedOrder(orderElems)) {
+				return null;
+			}
+		}
 		boolean distinct = false;
 		boolean reduced = false;
 		if (node instanceof Distinct) {
 			distinct = true;
 			node = ((Distinct) node).getArg();
 		} else if (node instanceof Reduced) {
-			// REDUCED permits but does not require de-duplication; use prefix-run de-duplication when available.
+			// REDUCED permits but does not require de-duplication. The stable-order optimizer also represents
+			// SELECT DISTINCT as Reduced + Order, so an exact native pass is both legal and required to preserve
+			// the contract of the generic prepare(Reduced) path when this physical compiler fuses the wrappers.
 			reduced = true;
+			distinct = true;
 			node = ((Reduced) node).getArg();
 		} else if (node instanceof Projection) {
 			QueryModelNode parent = node.getParentNode();
@@ -185,19 +198,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				reduced = true;
 			}
 		}
+		if (orderElems.isEmpty() && node instanceof Order) {
+			orderElems = ((Order) node).getElements();
+			orderAboveProjection = true;
+			node = ((Order) node).getArg();
+			if (!supportedOrder(orderElems)) {
+				return null;
+			}
+		}
 		if (!(node instanceof Projection)) {
 			return null;
 		}
 		Projection projection = (Projection) node;
 		node = projection.getArg();
-		List<OrderElem> orderElems = List.of();
-		if (node instanceof Order) {
+		if (orderElems.isEmpty() && node instanceof Order) {
 			orderElems = ((Order) node).getElements();
 			node = ((Order) node).getArg();
-			for (OrderElem elem : orderElems) {
-				if (!(elem.getExpr() instanceof Var) || ((Var) elem.getExpr()).hasValue()) {
-					return null;
-				}
+			if (!supportedOrder(orderElems)) {
+				return null;
 			}
 		}
 
@@ -211,8 +229,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			targetNames[i] = elem.getProjectionAlias().orElse(elem.getName());
 			required.add(sourceNames[i]);
 		}
-		for (OrderElem elem : orderElems) {
-			required.add(((Var) elem.getExpr()).getName());
+		String[] orderSourceNames = new String[orderElems.size()];
+		for (int i = 0; i < orderElems.size(); i++) {
+			String name = ((Var) orderElems.get(i).getExpr()).getName();
+			if (orderAboveProjection) {
+				for (int projectionIndex = 0; projectionIndex < targetNames.length; projectionIndex++) {
+					if (targetNames[projectionIndex].equals(name)) {
+						name = sourceNames[projectionIndex];
+						break;
+					}
+				}
+			}
+			orderSourceNames[i] = name;
+			required.add(name);
 		}
 		this.requiredAggregateNames = required;
 
@@ -238,7 +267,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		int[] orderSlots = new int[orderElems.size()];
 		boolean[] orderAscending = new boolean[orderElems.size()];
 		for (int i = 0; i < orderElems.size(); i++) {
-			orderSlots[i] = slot(((Var) orderElems.get(i).getExpr()).getName());
+			orderSlots[i] = slot(orderSourceNames[i]);
 			orderAscending[i] = orderElems.get(i).isAscending();
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
@@ -257,6 +286,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct, orderSlots,
 				orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames, prefixPattern,
 				prefixRunPlan);
+	}
+
+	private boolean supportedOrder(List<OrderElem> orderElems) {
+		for (OrderElem elem : orderElems) {
+			if (!(elem.getExpr() instanceof Var) || ((Var) elem.getExpr()).hasValue()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private PrefixRunGroupCandidate tryPrefixRunGroupPlan(NativeLmdbQuerySource stepSource, SlotPlan arg,

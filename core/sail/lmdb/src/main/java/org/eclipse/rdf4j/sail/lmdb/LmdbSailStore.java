@@ -3219,6 +3219,11 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) throws IOException {
+			// A connection-local write transaction may contain statements that a fresh read-only sibling cannot see.
+			// Keep evaluation on the owning sequential source until the write commits; this preserves read-your-writes.
+			if (storeTxnStarted.get()) {
+				return null;
+			}
 			long readStamp = acquireNativeSourceReadLock();
 			try {
 				assertNativeSourceOpen();

@@ -56,14 +56,13 @@ class LmdbNativeRowStepIterationTest {
 		NativeRowsIteration iteration = (NativeRowsIteration) step.evaluate(EmptyBindingSet.getInstance());
 
 		assertThat(iteration.hasNext()).isTrue();
-		assertThat(iteration.seen).hasSize(1);
+		assertThat(iteration.distinctRows.emptySeen).isTrue();
 
 		iteration.close();
 		iteration.close();
 
 		assertThat(iteration.hasNext()).isFalse();
-		assertThat(iteration.seen).as("DISTINCT hash table is released on close").isNull();
-		assertThat(iteration.distinctProbe).as("DISTINCT probe is released on close").isNull();
+		assertThat(iteration.distinctRows).as("DISTINCT tuple state is released on close").isNull();
 		assertThat(iteration.cursor).as("active cursor is released on close").isNull();
 		assertThat(iteration.base).as("incoming bindings are released on close").isNull();
 		assertThat(iteration.step).as("compiled step is released on close").isNull();
@@ -89,8 +88,9 @@ class LmdbNativeRowStepIterationTest {
 			assertThat(iteration.hasNext()).isTrue();
 			assertThat(LmdbNativeFactorizedRows.ENGAGED.get()).isEqualTo(engagements + 1);
 			assertThat(source.statementCalls).as("each independent tail branch scans once").isEqualTo(2);
-			assertThat(source.lazyValueCalls).as("only the first Cartesian-product row is projected").isEqualTo(4);
+			assertThat(source.lazyValueCalls).as("projection keeps the first row as native ids").isZero();
 			assertThat(iteration.next()).hasSize(4);
+			assertThat(source.lazyValueCalls).as("inspecting that row materializes only its four values").isEqualTo(4);
 		}
 
 		assertThat(source.closedIterators).as("retained tail probes close on early result close").isEqualTo(2);

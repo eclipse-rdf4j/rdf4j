@@ -19,10 +19,8 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +28,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -175,6 +174,11 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 
 @Experimental
 final class NativeGroupIteration implements CloseableIteration<BindingSet> {
+	static final AtomicLong PRIMITIVE_TUPLE_GROUP_ROWS = new AtomicLong();
+	static final AtomicLong PRIMITIVE_COUNT_GROUP_ROWS = new AtomicLong();
+	static final AtomicLong ORDERED_GROUP_ROWS = new AtomicLong();
+	static final AtomicLong ORDERED_GROUPS = new AtomicLong();
+
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
 	final NativeSlotLayout layout;
@@ -277,6 +281,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return evaluateFactorized(row, multiJoin, derived, tail);
 			}
 		}
+		List<BindingSet> orderedGroups = evaluateOrderedSinglePatternGroups(row);
+		if (orderedGroups != null) {
+			return orderedGroups;
+		}
 		if (groupSlots.length == 0) {
 			AggState state = new AggState(aggregates, 65_536, aggContext);
 			boolean sawRow = false;
@@ -291,11 +299,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			return List.of(toBindingSet(null, state, sawRow));
 		}
 
-		if (groupSlots.length == 1) {
-			return evaluateSingleSlotGroups(row, groupSlots[0]);
+		if (groupSlots.length <= 4) {
+			return evaluatePrimitiveTupleGroups(row);
 		}
 
-		HashMap<GroupKey, AggState> groups = new HashMap<>();
+		java.util.HashMap<GroupKey, AggState> groups = new java.util.HashMap<>();
 		// reusable probe key: the per-row long[] + GroupKey + lambda allocations only happen for new groups
 		GroupKey probe = new GroupKey(new long[groupSlots.length]);
 		try (RowCursor cursor = arg.open(row)) {
@@ -312,8 +320,131 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			throw new QueryEvaluationException(e);
 		}
 		ArrayList<BindingSet> results = new ArrayList<>(groups.size());
-		for (Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
+		for (java.util.Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
 			results.add(toBindingSet(entry.getKey(), entry.getValue(), true));
+		}
+		return results;
+	}
+
+	List<BindingSet> evaluateOrderedSinglePatternGroups(RowState row) {
+		if (groupSlots.length != 1 || !(arg instanceof PatternPlan)) {
+			return null;
+		}
+		PatternPlan pattern = (PatternPlan) arg;
+		int field = pattern.quadPositionOfSlot(groupSlots[0]);
+		StatementOrder order = switch (field) {
+		case 0 -> StatementOrder.S;
+		case 1 -> StatementOrder.P;
+		case 2 -> StatementOrder.O;
+		case 3 -> StatementOrder.C;
+		default -> null;
+		};
+		if (order == null) {
+			return null;
+		}
+		PatternPlan ordered = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
+				pattern.namedContextScope, order, pattern.indexName, pattern.staticEstimate);
+		ArrayList<BindingSet> results = new ArrayList<>();
+		long currentKey = UNKNOWN;
+		AggState state = null;
+		try (RowCursor cursor = ordered.open(row)) {
+			while (cursor.next()) {
+				long key = row.slots[groupSlots[0]];
+				if (state == null || key != currentKey) {
+					if (state != null) {
+						results.add(toBindingSet(new GroupKey(new long[] { currentKey }), state, true));
+						ORDERED_GROUPS.incrementAndGet();
+					}
+					currentKey = key;
+					state = new AggState(aggregates, 16, aggContext);
+				}
+				state.add(row);
+				ORDERED_GROUP_ROWS.incrementAndGet();
+			}
+		} catch (UnsupportedOperationException e) {
+			return null;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		if (state != null) {
+			results.add(toBindingSet(new GroupKey(new long[] { currentKey }), state, true));
+			ORDERED_GROUPS.incrementAndGet();
+		}
+		return results;
+	}
+
+	List<BindingSet> evaluatePrimitiveTupleGroups(RowState row) {
+		PrimitiveTupleTable groups = new PrimitiveTupleTable(groupSlots.length, 256);
+		if (primitiveCountState()) {
+			long[] counts = new long[Math.max(16, aggregates.length * 16)];
+			try (RowCursor cursor = arg.open(row)) {
+				while (cursor.next()) {
+					int group = groups.findOrInsert(row.slots, groupSlots, false);
+					int required = (group + 1) * aggregates.length;
+					if (required > counts.length) {
+						counts = Arrays.copyOf(counts, Math.max(required, counts.length << 1));
+					}
+					int offset = group * aggregates.length;
+					for (int i = 0; i < aggregates.length; i++) {
+						if (aggregates[i].value(row) != UNKNOWN) {
+							counts[offset + i]++;
+						}
+					}
+					PRIMITIVE_COUNT_GROUP_ROWS.incrementAndGet();
+				}
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+			return primitiveCountResults(groups, counts);
+		}
+
+		AggState[] states = new AggState[16];
+		try (RowCursor cursor = arg.open(row)) {
+			while (cursor.next()) {
+				int group = groups.findOrInsert(row.slots, groupSlots, false);
+				if (group >= states.length) {
+					states = Arrays.copyOf(states, states.length << 1);
+				}
+				AggState state = states[group];
+				if (state == null) {
+					state = new AggState(aggregates, 16, aggContext);
+					states[group] = state;
+				}
+				state.add(row);
+				PRIMITIVE_TUPLE_GROUP_ROWS.incrementAndGet();
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		return primitiveGroupResults(groups, states);
+	}
+
+	boolean primitiveCountState() {
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.kind != AggKind.COUNT || aggregate.distinct) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	List<BindingSet> primitiveCountResults(PrimitiveTupleTable groups, long[] counts) {
+		ArrayList<BindingSet> results = new ArrayList<>(groups.size);
+		for (int group = 0; group < groups.size; group++) {
+			AggState state = new AggState(aggregates, 4, aggContext);
+			int offset = group * aggregates.length;
+			for (int i = 0; i < aggregates.length; i++) {
+				state.counts[i] = counts[offset + i];
+			}
+			results.add(toBindingSet(groups.groupKey(group), state, true));
+		}
+		return results;
+	}
+
+	List<BindingSet> primitiveGroupResults(PrimitiveTupleTable groups, AggState[] states) {
+		ArrayList<BindingSet> results = new ArrayList<>(groups.size);
+		for (int group = 0; group < groups.size; group++) {
+			results.add(toBindingSet(groups.groupKey(group), states[group], true));
 		}
 		return results;
 	}
@@ -475,7 +606,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			}
 			return singleSlotGroupResults(groups);
 		}
-		HashMap<GroupKey, AggState> groups = new HashMap<>();
+		if (groupSlots.length <= 4) {
+			return evaluatePrimitiveFactorizedGroups(row, plan, derived, tail, prefixLength);
+		}
+		java.util.HashMap<GroupKey, AggState> groups = new java.util.HashMap<>();
 		GroupKey probe = new GroupKey(new long[groupSlots.length]);
 		try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
 			while (prefix.next()) {
@@ -493,10 +627,33 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			throw new QueryEvaluationException(e);
 		}
 		ArrayList<BindingSet> results = new ArrayList<>(groups.size());
-		for (Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
+		for (java.util.Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
 			results.add(toBindingSet(entry.getKey(), entry.getValue(), true));
 		}
 		return results;
+	}
+
+	List<BindingSet> evaluatePrimitiveFactorizedGroups(RowState row, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail, int prefixLength) {
+		PrimitiveTupleTable groups = new PrimitiveTupleTable(groupSlots.length, 256);
+		AggState[] states = new AggState[16];
+		try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
+			while (prefix.next()) {
+				int group = groups.find(row.slots, groupSlots, false);
+				AggState state = group < 0 ? new AggState(aggregates, 16, aggContext) : states[group];
+				if (tail.aggregate(row, state) && group < 0) {
+					group = groups.findOrInsert(row.slots, groupSlots, false);
+					if (group >= states.length) {
+						states = Arrays.copyOf(states, states.length << 1);
+					}
+					states[group] = state;
+				}
+				PRIMITIVE_TUPLE_GROUP_ROWS.incrementAndGet();
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		return primitiveGroupResults(groups, states);
 	}
 
 	boolean initialize(RowState row) {

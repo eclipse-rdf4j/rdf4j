@@ -150,6 +150,13 @@ final class PatternPlan implements SlotPlan {
 		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(this, row, cursor);
 	}
 
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		PatternCursor cursor = openRaw(row);
+		return cursor == PatternCursor.EMPTY ? EmptyBatchCursor.INSTANCE
+				: new PatternBatchCursor(this, row, cursor, capacity);
+	}
+
 	/** The raw quad cursor for this pattern under the current row, without the row-binding wrapper. */
 	PatternCursor openRaw(RowState row) throws IOException {
 		return openRaw(row, null);

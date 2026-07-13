@@ -17,6 +17,9 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
@@ -25,6 +28,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.sail.SailException;
+import org.lwjgl.system.MemoryUtil;
 
 /**
  * Decodes the LMDB value-id payload needed by native expressions without resolving the row value through
@@ -42,8 +46,14 @@ final class LmdbNativeValueCodec {
 	private static final int MAX_INLINE_STRING_BYTES = 6;
 	private static final int NO_FRACTION = 0x3FF;
 	private static final int NO_TIMEZONE_BITS = 0x7F;
+	private static final int CACHE_SIZE = 1 << 11;
+
+	static final AtomicLong ZERO_COPY_READS = new AtomicLong();
+	static final AtomicLong CACHE_HITS = new AtomicLong();
 
 	private final ValueStore valueStore;
+	private final AtomicLongArray cacheIds = new AtomicLongArray(CACHE_SIZE);
+	private final AtomicReferenceArray<DecodedValue> cacheValues = new AtomicReferenceArray<>(CACHE_SIZE);
 
 	LmdbNativeValueCodec(ValueStore valueStore) {
 		this.valueStore = valueStore;
@@ -53,17 +63,32 @@ final class LmdbNativeValueCodec {
 		if (id == 0L || id == NativeLmdbQuerySource.UNKNOWN_ID) {
 			return DecodedValue.ERROR;
 		}
+		int cacheIndex = cacheIndex(id);
+		long cachedId = cacheIds.get(cacheIndex);
+		DecodedValue cached = cacheValues.get(cacheIndex);
+		if (cachedId == id && cached != null && cacheIds.get(cacheIndex) == cachedId) {
+			CACHE_HITS.incrementAndGet();
+			return cached;
+		}
+		DecodedValue decoded = decodeUncached(id);
+		cacheIds.set(cacheIndex, 0L);
+		cacheValues.set(cacheIndex, decoded);
+		cacheIds.set(cacheIndex, id);
+		return decoded;
+	}
+
+	private DecodedValue decodeUncached(long id) {
 		try {
 			if (ValueIds.isInlined(id)) {
 				return decodeInlined(id);
 			}
-			byte[] data = valueStore.getData(id);
-			if (data == null || data.length == 0) {
+			StoredPayload data = readStoredPayload(id);
+			if (data == null) {
 				return DecodedValue.ERROR;
 			}
-			return switch (data[0]) {
-			case URI_VALUE -> DecodedValue.iri(readStoredIri(data));
-			case BNODE_VALUE -> DecodedValue.bnode(new String(data, 1, data.length - 1, StandardCharsets.UTF_8));
+			return switch (data.type) {
+			case URI_VALUE -> DecodedValue.iri(namespace(data.referenceId) + data.text);
+			case BNODE_VALUE -> DecodedValue.bnode(data.text);
 			case LITERAL_VALUE -> decodeStoredLiteral(data);
 			default -> DecodedValue.ERROR;
 			};
@@ -239,49 +264,95 @@ final class LmdbNativeValueCodec {
 		builder.append(text);
 	}
 
-	private DecodedValue decodeStoredLiteral(byte[] data) throws IOException {
-		ByteBuffer buffer = ByteBuffer.wrap(data);
-		buffer.get();
-		long datatypeId = Varint.readUnsignedHeap(buffer);
-		int directionAndLangLength = buffer.get() & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
-		String language = langLength == 0 ? null
-				: new String(data, buffer.position(), langLength,
-						StandardCharsets.UTF_8);
-		int labelOffset = buffer.position() + langLength;
-		String label = new String(data, labelOffset, data.length - labelOffset, StandardCharsets.UTF_8);
+	private DecodedValue decodeStoredLiteral(StoredPayload data) throws IOException {
+		String language = data.language;
+		String label = data.text;
 		if (language != null) {
-			CoreDatatype datatype = (directionAndLangLength >> 6) == 0 ? CoreDatatype.RDF.LANGSTRING
+			CoreDatatype datatype = (data.directionAndLangLength >> 6) == 0 ? CoreDatatype.RDF.LANGSTRING
 					: CoreDatatype.RDF.DIRLANGSTRING;
 			return DecodedValue.literal(label, language, datatype.getIri().stringValue(), datatype);
 		}
-		String datatype = datatypeId == 0L ? CoreDatatype.XSD.STRING.getIri().stringValue() : datatypeIri(datatypeId);
+		String datatype = data.referenceId == 0L ? CoreDatatype.XSD.STRING.getIri().stringValue()
+				: datatypeIri(data.referenceId);
 		return DecodedValue.literal(label, null, datatype, coreDatatype(datatype));
 	}
 
 	private String datatypeIri(long datatypeId) throws IOException {
-		byte[] data = valueStore.getData(datatypeId);
-		if (data == null || data.length == 0 || data[0] != URI_VALUE) {
+		StoredPayload data = readStoredPayload(datatypeId);
+		if (data == null || data.type != URI_VALUE) {
 			return null;
 		}
-		return readStoredIri(data);
-	}
-
-	private String readStoredIri(byte[] data) throws IOException {
-		ByteBuffer buffer = ByteBuffer.wrap(data);
-		buffer.get();
-		long namespaceId = Varint.readUnsignedHeap(buffer);
-		String namespace = namespace(namespaceId);
-		String localName = new String(data, buffer.position(), buffer.remaining(), StandardCharsets.UTF_8);
-		return namespace + localName;
+		return namespace(data.referenceId) + data.text;
 	}
 
 	private String namespace(long namespaceId) throws IOException {
-		byte[] data = valueStore.getData(namespaceId);
-		if (data == null || data.length == 0 || data[0] != NAMESPACE_VALUE) {
+		StoredPayload data = readStoredPayload(namespaceId);
+		if (data == null || data.type != NAMESPACE_VALUE) {
 			return "";
 		}
-		return new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
+		return data.text;
+	}
+
+	private StoredPayload readStoredPayload(long id) throws IOException {
+		return valueStore.withData(id, (address, length) -> {
+			if (length == 0) {
+				return null;
+			}
+			ZERO_COPY_READS.incrementAndGet();
+			ByteBuffer buffer = MemoryUtil.memByteBuffer(address, length);
+			byte type = buffer.get();
+			return switch (type) {
+			case URI_VALUE -> {
+				long namespaceId = Varint.readUnsigned(buffer);
+				yield new StoredPayload(type, namespaceId, 0, null,
+						decodeUtf8(buffer, buffer.position(), buffer.remaining()));
+			}
+			case BNODE_VALUE, NAMESPACE_VALUE -> new StoredPayload(type, 0L, 0, null,
+					decodeUtf8(buffer, buffer.position(), buffer.remaining()));
+			case LITERAL_VALUE -> {
+				long datatypeId = Varint.readUnsigned(buffer);
+				int directionAndLangLength = buffer.get() & 0xFF;
+				int languageLength = directionAndLangLength & 0x3F;
+				String language = languageLength == 0 ? null
+						: decodeUtf8(buffer, buffer.position(), languageLength);
+				buffer.position(buffer.position() + languageLength);
+				yield new StoredPayload(type, datatypeId, directionAndLangLength, language,
+						decodeUtf8(buffer, buffer.position(), buffer.remaining()));
+			}
+			default -> null;
+			};
+		});
+	}
+
+	private static String decodeUtf8(ByteBuffer buffer, int offset, int length) {
+		ByteBuffer slice = buffer.duplicate();
+		slice.position(offset);
+		slice.limit(offset + length);
+		return StandardCharsets.UTF_8.decode(slice).toString();
+	}
+
+	private static int cacheIndex(long id) {
+		long value = id;
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		return (int) value & (CACHE_SIZE - 1);
+	}
+
+	private static final class StoredPayload {
+		final byte type;
+		final long referenceId;
+		final int directionAndLangLength;
+		final String language;
+		final String text;
+
+		StoredPayload(byte type, long referenceId, int directionAndLangLength, String language, String text) {
+			this.type = type;
+			this.referenceId = referenceId;
+			this.directionAndLangLength = directionAndLangLength;
+			this.language = language;
+			this.text = text;
+		}
 	}
 
 	private static String decodeShortString(long id) {

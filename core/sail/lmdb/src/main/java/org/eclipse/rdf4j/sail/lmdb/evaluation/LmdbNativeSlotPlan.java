@@ -97,6 +97,11 @@ import org.eclipse.rdf4j.sail.SailException;
 interface SlotPlan {
 	RowCursor open(RowState row) throws IOException;
 
+	/** Returns a direct batch implementation, or {@code null} when this plan must use its row cursor. */
+	default BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		return null;
+	}
+
 	long producedMask();
 
 	default double estimate(RowState row) {

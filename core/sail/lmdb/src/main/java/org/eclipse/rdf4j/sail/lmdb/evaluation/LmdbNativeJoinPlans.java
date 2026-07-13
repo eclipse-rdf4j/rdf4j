@@ -135,6 +135,11 @@ final class MultiJoinPlan implements SlotPlan {
 		return openChain(derivedPlan(row), children.length, row);
 	}
 
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) {
+		return LmdbNativeHashJoin.tryOpen(this, row, capacity);
+	}
+
 	/** The ordered physical children and filter placement for the given entry row, memoized per bound-slot mask. */
 	OrderedPlan derivedPlan(RowState row) {
 		long mask = row.boundMask();

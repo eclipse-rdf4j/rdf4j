@@ -170,6 +170,12 @@ final class FilterPlan implements SlotPlan {
 	}
 
 	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor batch = arg.openBatch(row, capacity);
+		return batch == null ? null : new FilterBatchCursor(batch, filter, row);
+	}
+
+	@Override
 	public long producedMask() {
 		return arg.producedMask();
 	}
@@ -412,6 +418,11 @@ final class ValuesPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) {
 		return new ValuesCursor(rows, row);
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) {
+		return new ValuesBatchCursor(rows, row);
 	}
 
 	@Override

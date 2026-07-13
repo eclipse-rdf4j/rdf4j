@@ -19,11 +19,8 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -51,42 +48,14 @@ final class LmdbNativeParallelAggregation {
 	/** Test observability: incremented whenever a query actually runs through the parallel path. */
 	static final AtomicLong PARALLEL_RUNS = new AtomicLong();
 
-	static final int MORSEL_ROWS = 1024;
-
-	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
-	private static volatile ExecutorService pool;
+	static final int MORSEL_ROWS = LmdbNativeParallelPipelines.MORSEL_ROWS;
 
 	private LmdbNativeParallelAggregation() {
 	}
 
-	static ExecutorService pool() {
-		ExecutorService p = pool;
-		if (p == null) {
-			synchronized (LmdbNativeParallelAggregation.class) {
-				p = pool;
-				if (p == null) {
-					pool = p = Executors.newCachedThreadPool(runnable -> {
-						Thread thread = new Thread(runnable,
-								"lmdb-native-parallel-" + THREAD_IDS.incrementAndGet());
-						thread.setDaemon(true);
-						return thread;
-					});
-				}
-			}
-		}
-		return p;
-	}
-
-	static int configuredThreads() {
-		int defaultThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.threads");
-		int threads = configured != null ? configured : defaultThreads;
-		return Math.max(0, Math.min(threads, 64));
-	}
-
 	/** Runs the aggregation in parallel, or returns null when a gate fails and the sequential path must run. */
 	static List<BindingSet> tryEvaluate(NativeGroupIteration it, MultiJoinPlan plan, RowState row) {
-		if (!Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.parallel.enabled", "true"))) {
+		if (!LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
 		if (plan.filters.length != 0) {
@@ -100,7 +69,7 @@ final class LmdbNativeParallelAggregation {
 		if (!AggregateSpec.allCounts(it.aggregates)) {
 			return null;
 		}
-		int threads = configuredThreads();
+		int threads = LmdbNativeParallelPipelines.configuredThreads();
 		if (threads < 2) {
 			return null;
 		}
@@ -138,7 +107,7 @@ final class LmdbNativeParallelAggregation {
 		ArrayList<Future<WorkerResult>> futures = new ArrayList<>(threads);
 		for (int i = 0; i < threads; i++) {
 			NativeLmdbQuerySource source = sources[i];
-			futures.add(pool().submit(() -> {
+			futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 				try {
 					return runWorker(it, plan, derived, root, source, queue, failure);
 				} catch (Throwable t) {

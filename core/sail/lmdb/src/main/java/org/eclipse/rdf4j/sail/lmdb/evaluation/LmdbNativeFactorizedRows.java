@@ -202,6 +202,18 @@ final class LmdbNativeFactorizedRows {
 		return new Cursor(this, row, prefix);
 	}
 
+	/**
+	 * Worker-local variant whose ordered depth-0 scan is supplied by the morsel scheduler. The ordinary cursor chain is
+	 * used for the remaining flat prefix because chunked-prefix depth zero owns an LMDB scan and cannot consume a
+	 * partitioned root. A zero-length flat prefix cannot be partitioned safely and is rejected by the caller.
+	 */
+	FactorizedRowCursor openFrom(RowState row, RowCursor leftmost) throws IOException {
+		if (flatCount == 0) {
+			throw new IllegalStateException("a fully factorized plan has no partitionable root prefix");
+		}
+		return new Cursor(this, row, plan.openChainFrom(derived, leftmost, flatCount, row));
+	}
+
 	private static final class Cursor implements FactorizedRowCursor {
 		final LmdbNativeFactorizedRows owner;
 		final RowState row;
