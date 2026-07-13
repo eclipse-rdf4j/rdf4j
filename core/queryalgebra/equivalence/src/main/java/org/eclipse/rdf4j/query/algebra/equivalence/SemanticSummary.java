@@ -21,6 +21,7 @@ public final class SemanticSummary {
 	private final Set<String> mayBind;
 	private final Set<String> mustBind;
 	private final Set<String> readsIncomingBindings;
+	private final boolean readsAnyIncomingBinding;
 	private final CardinalityBounds cardinality;
 	private final boolean duplicateFree;
 	private final boolean deterministic;
@@ -48,9 +49,44 @@ public final class SemanticSummary {
 			boolean external,
 			boolean usesSparql12Features,
 			boolean containsOpaqueNodes) {
+		this(
+				mayBind,
+				mustBind,
+				readsIncomingBindings,
+				false,
+				cardinality,
+				duplicateFree,
+				deterministic,
+				total,
+				correlationSensitive,
+				datasetDependent,
+				activeGraphDependent,
+				sequenceSensitive,
+				external,
+				usesSparql12Features,
+				containsOpaqueNodes);
+	}
+
+	public SemanticSummary(
+			Set<String> mayBind,
+			Set<String> mustBind,
+			Set<String> readsIncomingBindings,
+			boolean readsAnyIncomingBinding,
+			CardinalityBounds cardinality,
+			boolean duplicateFree,
+			boolean deterministic,
+			boolean total,
+			boolean correlationSensitive,
+			boolean datasetDependent,
+			boolean activeGraphDependent,
+			boolean sequenceSensitive,
+			boolean external,
+			boolean usesSparql12Features,
+			boolean containsOpaqueNodes) {
 		this.mayBind = immutable(mayBind);
 		this.mustBind = immutable(mustBind);
 		this.readsIncomingBindings = immutable(readsIncomingBindings);
+		this.readsAnyIncomingBinding = readsAnyIncomingBinding;
 		this.cardinality = Objects.requireNonNull(cardinality, "cardinality");
 		this.duplicateFree = duplicateFree;
 		this.deterministic = deterministic;
@@ -76,8 +112,17 @@ public final class SemanticSummary {
 		return mustBind;
 	}
 
+	/**
+	 * Returns explicitly identified incoming binding names. This set is not exhaustive when
+	 * {@link #readsAnyIncomingBinding()} is true.
+	 */
 	public Set<String> readsIncomingBindings() {
 		return readsIncomingBindings;
+	}
+
+	/** Returns whether an arbitrary incoming binding name can affect evaluation. */
+	public boolean readsAnyIncomingBinding() {
+		return readsAnyIncomingBinding;
 	}
 
 	public CardinalityBounds cardinality() {
@@ -129,6 +174,7 @@ public final class SemanticSummary {
 		return "SemanticSummary{mayBind=" + mayBind
 				+ ", mustBind=" + mustBind
 				+ ", readsIncoming=" + readsIncomingBindings
+				+ ", readsAnyIncoming=" + readsAnyIncomingBinding
 				+ ", cardinality=" + cardinality
 				+ ", duplicateFree=" + duplicateFree
 				+ ", deterministic=" + deterministic

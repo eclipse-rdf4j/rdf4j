@@ -148,6 +148,34 @@ class RuntimeEquivalenceDifferentialTest {
 	}
 
 	@Test
+	void runtimeJoinDoesNotCommuteAcrossMinusThatInheritsLeftBindings() {
+		TupleExpr valuesFirst = new Join(repeatedValues("x", 1), unitMinusUnit());
+		TupleExpr minusFirst = new Join(unitMinusUnit(), repeatedValues("x", 1));
+
+		EvaluationOutcome valuesFirstOutcome = evaluate(valuesFirst);
+		EvaluationOutcome minusFirstOutcome = evaluate(minusFirst);
+
+		// With ?x inherited, both singleton mappings contain the same ?x and
+		// MINUS removes the left one. At top level both mappings are empty, share
+		// no variable, and MINUS keeps the left one.
+		assertTrue(valuesFirstOutcome.isEmpty(), valuesFirstOutcome::toString);
+		assertFalse(minusFirstOutcome.isEmpty(), minusFirstOutcome::toString);
+		assertFalse(
+				valuesFirstOutcome.sameAs(minusFirstOutcome, ObservationMode.BAG),
+				() -> "directional join plans unexpectedly agreed: "
+						+ valuesFirstOutcome + " versus " + minusFirstOutcome);
+
+		CheckOptions options = CheckOptions.builder()
+				.contextMode(ContextMode.ALL_BINDINGS)
+				.boundedCounterexampleSearch(false)
+				.build();
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(valuesFirst, minusFirst);
+
+		// Fails on the submitted code: the checker returns EQUIVALENT.
+		assertFalse(proof.isEquivalent(), () -> "unsound proof: " + proof.getReason());
+	}
+
+	@Test
 	void topLevelEmptyContextDoesNotLeakIntoJoinRightOperand() {
 		TupleExpr left = repeatedValues(1);
 		TupleExpr original = new Join(

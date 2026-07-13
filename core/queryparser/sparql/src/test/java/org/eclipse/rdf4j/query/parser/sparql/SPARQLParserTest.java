@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -92,6 +93,7 @@ import org.junit.jupiter.api.Test;
  * @author jeen
  */
 public class SPARQLParserTest {
+	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
 	private SPARQLParser parser;
 
@@ -142,12 +144,12 @@ public class SPARQLParserTest {
 
 	@Test
 	public void parsedQueryCarriesDenseOriginsAndNestedFrameSeed() {
-		QueryRoot root = (QueryRoot) parser.parseQuery("""
+		QueryRoot root = parseQueryWithScopeSeed("""
 				SELECT ?outer ?inner WHERE {
 				  ?outer <urn:outer> ?outerValue .
 				  { SELECT ?inner WHERE { ?inner <urn:inner> ?innerValue } }
 				}
-				""", null).getTupleExpr();
+				""");
 		QueryScopeSeed seed = root.getQueryScopeSeed();
 		List<QueryModelNode> nodes = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -198,7 +200,7 @@ public class SPARQLParserTest {
 
 	@Test
 	public void parsedSeedRecordsCorrelationAndEnvironmentBoundaries() {
-		QueryRoot root = (QueryRoot) parser.parseQuery("""
+		QueryRoot root = parseQueryWithScopeSeed("""
 				SELECT * WHERE {
 				  ?s <urn:base> ?base .
 				  FILTER EXISTS { ?s <urn:exists> ?existsValue }
@@ -207,7 +209,7 @@ public class SPARQLParserTest {
 				  GRAPH <urn:graph> { ?s <urn:graph-pattern> ?graphValue }
 				  SERVICE <urn:service> { ?s <urn:service-pattern> ?serviceValue }
 				}
-				""", null).getTupleExpr();
+				""");
 		QueryScopeSeed seed = root.getQueryScopeSeed();
 		Set<QueryScopeSeed.BoundaryKind> boundaryKinds = new HashSet<>();
 		for (int i = 0; i < seed.getBoundaryCount(); i++) {
@@ -255,14 +257,14 @@ public class SPARQLParserTest {
 
 	@Test
 	public void wildcardAndSeedShareVisibleDeclarationsWhileGeneratedNamesStayHidden() {
-		QueryRoot root = (QueryRoot) parser.parseQuery("""
+		QueryRoot root = parseQueryWithScopeSeed("""
 				SELECT * WHERE {
 				  ?s (<urn:path-a>/<urn:path-b>*) ?o .
 				  BIND(?o AS ?alias)
 				  VALUES (?declared ?allUndef) { (1 UNDEF) }
 				  FILTER EXISTS { ?s <urn:hidden> ?existsLocal }
 				}
-				""", null).getTupleExpr();
+				""");
 		Projection projection = (Projection) root.getArg();
 		QueryScopeSeed seed = root.getQueryScopeSeed();
 		Set<String> exported = new HashSet<>();
@@ -286,6 +288,32 @@ public class SPARQLParserTest {
 		assertThat(exported).contains("s", "o", "alias", "declared", "allUndef").doesNotContain("existsLocal");
 		assertThat(hidden).isNotEmpty();
 		assertThat(valuesDeclarations).containsExactlyInAnyOrder("declared", "allUndef");
+	}
+
+	@Test
+	public void scopeSeedIsNotBuiltWhenScopeSafetyIsOff() {
+		QueryRoot root = withScopeSafetyMode("OFF",
+				() -> (QueryRoot) parser.parseQuery("SELECT * WHERE { ?s ?p ?o }", null).getTupleExpr());
+
+		assertThat(root.getQueryScopeSeed()).isNull();
+	}
+
+	private QueryRoot parseQueryWithScopeSeed(String query) {
+		return withScopeSafetyMode("ENFORCE",
+				() -> (QueryRoot) parser.parseQuery(query, null).getTupleExpr());
+	}
+
+	private static <T> T withScopeSafetyMode(String mode, Supplier<T> action) {
+		String previous = System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, mode);
+		try {
+			return action.get();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCOPE_SAFETY_MODE_PROPERTY);
+			} else {
+				System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, previous);
+			}
+		}
 	}
 
 	private static StatementPattern patternWithPredicate(List<StatementPattern> patterns, String predicate) {

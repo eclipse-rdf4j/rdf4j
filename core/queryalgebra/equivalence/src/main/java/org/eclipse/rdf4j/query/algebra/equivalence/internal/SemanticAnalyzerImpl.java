@@ -76,13 +76,15 @@ public final class SemanticAnalyzerImpl {
 
 	public SemanticSummary analyze(TupleExpr expression) {
 		BindingInfo bindings = bindingAnalyzer.analyze(expression);
+		IncomingBindingInfo incomingBindings = incomingBindingAnalyzer.externalReads(expression);
 		Scan scan = new Scan();
 		scan(expression, scan, new HashSet<>());
 
 		return new SemanticSummary(
 				bindings.mayBind(),
 				bindings.mustBind(),
-				incomingBindingAnalyzer.externalReads(expression),
+				incomingBindings.explicitReads(),
+				incomingBindings.readsAnyIncomingBinding(),
 				cardinality(expression),
 				duplicateFree(expression),
 				safety.isSingleRunCounterexampleSafe(expression),

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -62,6 +63,16 @@ class SemanticApiTest {
 		SemanticSummary summary = new SemanticAnalyzer().analyze(expression);
 
 		assertEquals(Set.of("outside"), summary.readsIncomingBindings());
+	}
+
+	@Test
+	void semanticSummaryReportsArbitraryIncomingReadsForMinus() {
+		TupleExpr expression = new Difference(new SingletonSet(), new SingletonSet());
+
+		SemanticSummary summary = new SemanticAnalyzer().analyze(expression);
+
+		assertTrue(summary.readsIncomingBindings().isEmpty());
+		assertTrue(summary.readsAnyIncomingBinding());
 	}
 
 	@Test

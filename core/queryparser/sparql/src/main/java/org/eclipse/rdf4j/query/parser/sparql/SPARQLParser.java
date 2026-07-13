@@ -212,7 +212,9 @@ public class SPARQLParser implements QueryParser {
 					tupleExpr = new QueryRoot(tupleExpr);
 				}
 				QueryRoot queryRoot = (QueryRoot) tupleExpr;
-				queryRoot.setQueryScopeSeed(tupleExprBuilder.buildQueryScopeSeed(queryRoot));
+				if (tupleExprBuilder.recordsQueryScopeSeed()) {
+					queryRoot.setQueryScopeSeed(tupleExprBuilder.buildQueryScopeSeed(queryRoot));
+				}
 
 				ParsedQuery query;
 

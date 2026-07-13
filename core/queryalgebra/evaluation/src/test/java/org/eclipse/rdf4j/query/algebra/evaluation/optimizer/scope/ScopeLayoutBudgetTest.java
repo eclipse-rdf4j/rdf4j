@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.openjdk.jol.info.GraphLayout;
 
 class ScopeLayoutBudgetTest {
+	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
 	@Test
 	void narrowScopeStateFitsPerNodeBudget() {
@@ -46,12 +47,24 @@ class ScopeLayoutBudgetTest {
 			query.append("?s <urn:p").append(index).append("> ?o .\n");
 		}
 		query.append('}');
-		QueryRoot root = (QueryRoot) QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query.toString(), null)
-				.getTupleExpr();
+		QueryRoot root = parseWithScopeSeed(query.toString());
 		var seed = root.getQueryScopeSeed();
 		assertThat(seed).isNotNull();
 		assertThat(GraphLayout.parseInstance(seed).totalSize())
 				.isLessThanOrEqualTo(96L * seed.getOccurrenceCount());
+	}
+
+	private static QueryRoot parseWithScopeSeed(String query) {
+		String previous = System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, "ENFORCE");
+		try {
+			return (QueryRoot) QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCOPE_SAFETY_MODE_PROPERTY);
+			} else {
+				System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, previous);
+			}
+		}
 	}
 
 	private static QueryRoot representativeAlgebra(int patterns) {

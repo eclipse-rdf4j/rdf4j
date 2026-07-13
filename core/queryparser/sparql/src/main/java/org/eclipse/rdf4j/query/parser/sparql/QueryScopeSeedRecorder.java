@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 /** Records parser-only boundaries and resolves them into one immutable seed after the final algebra tree exists. */
 @InternalUseOnly
 final class QueryScopeSeedRecorder {
+	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
 	private final Set<Projection> subqueryProjections = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<Exists> existsBoundaries = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -48,6 +49,11 @@ final class QueryScopeSeedRecorder {
 	private final Set<Service> serviceBoundaries = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<String> graphContexts = new java.util.LinkedHashSet<>();
 	private final IdentityHashMap<Projection, Set<String>> projectionDeclarations = new IdentityHashMap<>();
+
+	static boolean isEnabledBySystemProperty() {
+		String mode = System.getProperty(SCOPE_SAFETY_MODE_PROPERTY);
+		return mode != null && !mode.isBlank() && !"OFF".equalsIgnoreCase(mode.trim());
+	}
 
 	void recordSubqueryProjection(Projection projection) {
 		subqueryProjections.add(projection);

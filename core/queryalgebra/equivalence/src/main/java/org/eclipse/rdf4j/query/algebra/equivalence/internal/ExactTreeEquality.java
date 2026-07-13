@@ -16,6 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 /** RDF4J recursive equality augmented with semantic state omitted by individual node {@code equals} methods. */
@@ -56,6 +57,9 @@ public final class ExactTreeEquality {
 	}
 
 	private static boolean sameLocalSemantics(QueryModelNode left, QueryModelNode right) {
+		if (left instanceof StatementPattern leftPattern) {
+			return leftPattern.getStatementOrder() == ((StatementPattern) right).getStatementOrder();
+		}
 		if (left instanceof Service leftService) {
 			Service rightService = (Service) right;
 			return leftService.isSilent() == rightService.isSilent()
