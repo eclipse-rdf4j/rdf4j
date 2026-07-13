@@ -40,6 +40,7 @@ public abstract class AbstractTurtleWriterTest extends RDFWriterTest {
 				BasicWriterSettings.PRETTY_PRINT,
 				BasicWriterSettings.INLINE_BLANK_NODES,
 				BasicWriterSettings.BASE_DIRECTIVE,
+				BasicWriterSettings.RDF_OUTPUT_VERSION,
 				TurtleWriterSettings.ABBREVIATE_NUMBERS,
 				TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES
 		};

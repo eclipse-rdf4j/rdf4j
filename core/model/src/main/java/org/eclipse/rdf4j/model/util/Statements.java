@@ -18,7 +18,9 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -34,6 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * @author Jeen Broekstra
  */
 public class Statements {
+	private static final String I18N_DATATYPE_TEMPLATE = "https://www.w3.org/ns/i18n#%s_%s";
 
 	/**
 	 * A {@link Function} that maps {@link TripleTerm} to {@link org.eclipse.rdf4j.model.BNode} consistently. Multiple
@@ -298,6 +301,44 @@ public class Statements {
 	}
 
 	/**
+	 * Converts the supplied RDF statement from RDF 1.2 to RDF 1.1 by replacing triple terms with proposition forms and
+	 * encoding directional language-tagged strings using the {@code https://www.w3.org/ns/i18n#} namespace as the
+	 * literal datatype.
+	 * <p>
+	 * If the supplied statement does not require conversion, it is passed to the supplied consumer unchanged.
+	 * <p>
+	 * Blank nodes required to represent proposition forms are managed by the supplied
+	 * {@link RDFVersionsConversionContext}, allowing repeated occurrences of the same {@link TripleTerm} to be
+	 * represented by the same blank node.
+	 *
+	 * @param st                   the {@link Statement} to convert.
+	 * @param consumer             the {@link Consumer} for the produced statements.
+	 * @param rdfConversionContext the conversion context used to preserve the mapping between repeated triple terms and
+	 *                             their generated blank nodes.
+	 */
+	public static void convertRDFTo11(Statement st, Consumer<Statement> consumer,
+			RDFVersionsConversionContext rdfConversionContext) {
+		convertRDFTo11(SimpleValueFactory.getInstance(), st, consumer, rdfConversionContext);
+	}
+
+	/**
+	 * Converts the supplied RDF 1.2 statement to RDF 1.2 Basic statements and sends the resulting statements to the
+	 * supplied consumer. If the supplied statement does not require conversion, it is passed to the consumer unchanged.
+	 * <p>
+	 * Blank nodes required to represent proposition forms are managed by the supplied
+	 * {@link RDFVersionsConversionContext}, allowing repeated occurrences of the same {@link TripleTerm} to be
+	 * represented by the same blank node.
+	 *
+	 * @param st                   the {@link Statement} to convert.
+	 * @param consumer             the {@link Consumer} that receives the resulting statements.
+	 * @param rdfConversionContext the context used to manage blank nodes for converted triple terms.
+	 */
+	public static void convertRDFTo12Basic(Statement st, Consumer<Statement> consumer,
+			RDFVersionsConversionContext rdfConversionContext) {
+		convertRDFTo12Basic(SimpleValueFactory.getInstance(), st, consumer, rdfConversionContext);
+	}
+
+	/**
 	 * Converts the supplied RDF 1.2 statement to RDF 1.1 reification statements, and sends the resultant statements to
 	 * the supplied consumer. If the supplied statement does not contain a triple term it will be sent to the consumer
 	 * as is.
@@ -330,6 +371,121 @@ public class Statements {
 			consumer.accept(vf.createStatement(subject, RDF.OBJECT, tripleTerm.getObject(), context));
 		} else {
 			consumer.accept(st);
+		}
+	}
+
+	public static void convertRDFTo12Basic(ValueFactory vf, Statement st, Consumer<Statement> consumer,
+			RDFVersionsConversionContext conversionContext) {
+		if (st.getObject().isTripleTerm()) {
+			consumeTripleTermInRDF12Basic(vf, st, consumer, conversionContext, false);
+		} else {
+			consumer.accept(st);
+		}
+	}
+
+	public static void convertRDFTo11(ValueFactory vf, Statement st, Consumer<Statement> consumer,
+			RDFVersionsConversionContext conversionContext) {
+		Resource subject = st.getSubject();
+		IRI predicate = st.getPredicate();
+		Value object = st.getObject();
+		Resource context = st.getContext();
+
+		if (st.getObject().isTripleTerm()) {
+			consumeTripleTermInRDF12Basic(vf, st, consumer, conversionContext, true);
+		} else {
+			consumeDowngradedDirLangString(vf, subject, predicate, object, consumer, context);
+		}
+	}
+
+	private static void consumeTripleTermInRDF12Basic(ValueFactory vf, Statement st, Consumer<Statement> consumer,
+			RDFVersionsConversionContext conversionContext, boolean downgradeDirLang) {
+		Resource subject = st.getSubject();
+		IRI predicate = st.getPredicate();
+		Value object = st.getObject();
+		Resource context = st.getContext();
+
+		if (!predicate.equals(RDF.REIFIES)) {
+			throw new IllegalArgumentException(
+					"Cannot convert tripleTerm term statement with predicate other than rdf:reifies");
+		}
+
+		TripleTerm tripleTerm = (TripleTerm) object;
+
+		BNode blankNode = conversionContext.getBNodeForTripleTerm(tripleTerm);
+		if (blankNode != null) {
+			consumer.accept(vf.createStatement(subject, RDF.REIFIES, blankNode, context));
+			return;
+		}
+
+		if (tripleTerm.getObject().isTripleTerm()) {
+			consumeInnerTripleTermRDF12Basic(vf, (TripleTerm) tripleTerm.getObject(), consumer, conversionContext,
+					context, downgradeDirLang);
+		}
+
+		// The blank node of outer triple terms is defined before, for the definition of the reifier
+		blankNode = conversionContext.getOrCreate(tripleTerm, vf::createBNode);
+		consumer.accept(vf.createStatement(blankNode, RDF.TYPE, RDF.PROPOSITION_FORM, context));
+		consumer.accept(vf.createStatement(blankNode, RDF.PROPOSITION_FORM_SUBJECT, tripleTerm.getSubject(), context));
+		consumer.accept(
+				vf.createStatement(blankNode, RDF.PROPOSITION_FORM_PREDICATE, tripleTerm.getPredicate(), context));
+		if (tripleTerm.getObject().isTripleTerm()) {
+			// Use the generated blank node:
+			consumer.accept(vf.createStatement(blankNode, RDF.PROPOSITION_FORM_OBJECT,
+					conversionContext.getBNodeForTripleTerm((TripleTerm) tripleTerm.getObject()), context));
+		} else {
+			if (downgradeDirLang) {
+				consumeDowngradedDirLangString(vf, blankNode, RDF.PROPOSITION_FORM_OBJECT, tripleTerm.getObject(),
+						consumer, context);
+			} else {
+				consumer.accept(
+						vf.createStatement(blankNode, RDF.PROPOSITION_FORM_OBJECT, tripleTerm.getObject(), context));
+			}
+		}
+		consumer.accept(vf.createStatement(subject, RDF.REIFIES, blankNode, context));
+	}
+
+	private static void consumeDowngradedDirLangString(ValueFactory vf, Resource subject, IRI predicate, Value object,
+			Consumer<Statement> consumer, Resource context) {
+		if (object.isLiteral()) {
+			Literal lit = (Literal) object;
+			if (lit.getBaseDirection() != null && lit.getBaseDirection() != Literal.BaseDirection.NONE) {
+				String datatype = String.format(I18N_DATATYPE_TEMPLATE,
+						lit.getLanguage().orElse(""),
+						lit.getBaseDirection().name().toLowerCase());
+
+				IRI newDatatype = vf.createIRI(datatype);
+				Literal converted = vf.createLiteral(lit.getLabel(), newDatatype);
+				consumer.accept(vf.createStatement(subject, predicate, converted, context));
+				return;
+			}
+		}
+		consumer.accept(vf.createStatement(subject, predicate, object, context));
+	}
+
+	private static void consumeInnerTripleTermRDF12Basic(ValueFactory vf, TripleTerm tt, Consumer<Statement> consumer,
+			RDFVersionsConversionContext conversionContext, Resource context, boolean downgradeDirLang) {
+		// Inner triples may have no reifier assigned.
+		if (tt.getObject().isTripleTerm()) {
+			consumeInnerTripleTermRDF12Basic(vf, (TripleTerm) tt.getObject(), consumer, conversionContext, context,
+					downgradeDirLang);
+		}
+
+		BNode bnode = conversionContext.getBNodeForTripleTerm(tt);
+
+		if (bnode != null) {
+			// already consumed
+			return;
+		}
+
+		bnode = conversionContext.getOrCreate(tt, vf::createBNode);
+
+		consumer.accept(vf.createStatement(bnode, RDF.TYPE, RDF.PROPOSITION_FORM, context));
+		consumer.accept(vf.createStatement(bnode, RDF.PROPOSITION_FORM_SUBJECT, tt.getSubject(), context));
+		consumer.accept(vf.createStatement(bnode, RDF.PROPOSITION_FORM_PREDICATE, tt.getPredicate(), context));
+		if (downgradeDirLang) {
+			consumeDowngradedDirLangString(vf, bnode, RDF.PROPOSITION_FORM_OBJECT, tt.getObject(), consumer, context);
+		} else {
+			consumer.accept(vf.createStatement(bnode, RDF.PROPOSITION_FORM_OBJECT, tt.getObject(), context));
 		}
 	}
 }
