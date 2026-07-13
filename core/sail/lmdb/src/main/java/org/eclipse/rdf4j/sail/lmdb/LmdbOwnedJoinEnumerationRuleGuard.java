@@ -61,7 +61,7 @@ final class LmdbOwnedJoinEnumerationRuleGuard implements CascadesRule {
 
 	@Override
 	public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-		return !dphypOwns(expression) && delegate.matches(expression, goal, memo);
+		return !dphypSuppressesEnumeration(expression) && delegate.matches(expression, goal, memo);
 	}
 
 	@Override
@@ -71,7 +71,7 @@ final class LmdbOwnedJoinEnumerationRuleGuard implements CascadesRule {
 
 	@Override
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		return dphypOwns(expression) ? List.of() : delegate.apply(expression, goal, context);
+		return dphypSuppressesEnumeration(expression) ? List.of() : delegate.apply(expression, goal, context);
 	}
 
 	@Override
@@ -79,11 +79,11 @@ final class LmdbOwnedJoinEnumerationRuleGuard implements CascadesRule {
 		return delegate.proof(expression, goal, context);
 	}
 
-	private static boolean dphypOwns(MemoExpr expression) {
+	private static boolean dphypSuppressesEnumeration(MemoExpr expression) {
 		return LmdbHypergraphJoinPlanner.enabled()
 				&& expression != null
 				&& expression.logical()
 				&& expression.tupleExpr() instanceof Join
-				&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr());
+				&& LmdbJoinIslandConnectivity.joinProviderCanOwn(expression.tupleExpr());
 	}
 }

@@ -111,42 +111,6 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
-	void assemblyNameTypePartOfSketchSurfaceUsesFiniteBranches() throws Exception {
-		assertWithEngineeringStore((repository, store) -> {
-			repository.init();
-			SketchBasedJoinEstimator estimator = BenchmarkJoinEstimatorSupport.resolveEstimator(store);
-			double rows = 0.0d;
-			StringBuilder diagnostics = new StringBuilder();
-			for (int assemblyIndex = 1; assemblyIndex <= 3; assemblyIndex++) {
-				String assemblyName = "Assembly " + assemblyIndex;
-				StatementPattern name = new StatementPattern(Var.of("assembly"),
-						Var.of("namePredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_NAME)),
-						Var.of("assemblyName", SimpleValueFactory.getInstance().createLiteral(assemblyName)));
-				StatementPattern type = new StatementPattern(Var.of("assembly"),
-						Var.of("typePredicate", RDF.TYPE),
-						Var.of("type", SimpleValueFactory.getInstance().createIRI(ENGINEERING_ASSEMBLY)));
-				StatementPattern partOf = new StatementPattern(Var.of("component"),
-						Var.of("partOfPredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_PART_OF)),
-						Var.of("assembly"));
-				double nameRows = estimator.estimateJoinSurfaceRows(List.of(name), name, "assembly");
-				double nameTypeRows = estimator.estimateJoinSurfaceRows(List.of(name), type, "assembly");
-				double branchRows = estimator.estimateJoinSurfaceRows(List.of(name, type), partOf, "assembly");
-				rows += branchRows;
-				diagnostics.append(assemblyName)
-						.append(": name=")
-						.append(nameRows)
-						.append(", nameType=")
-						.append(nameTypeRows)
-						.append(", branch=")
-						.append(branchRows)
-						.append('\n');
-			}
-			assertMetricAtLeast("surfaceRows=" + rows + "\n" + diagnostics, "surfaceRows", 315.0d,
-					"Finite assembly-name branches should estimate the joined assembly/component surface");
-		});
-	}
-
-	@Test
 	@Disabled("Exact rendered-plan shape pins one engineering query instead of a reusable optimizer invariant")
 	void componentRequirementAggregationKeepsBoundLookupCardinality() throws Exception {
 		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 8,

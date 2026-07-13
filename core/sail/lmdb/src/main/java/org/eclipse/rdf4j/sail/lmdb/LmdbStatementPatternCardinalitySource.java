@@ -45,6 +45,41 @@ final class LmdbStatementPatternCardinalitySource {
 		return estimate(pattern, true);
 	}
 
+	double estimateExact(StatementPattern pattern) {
+		if (pattern == null) {
+			return -1.0d;
+		}
+		Value subj = constantValue(pattern.getSubjectVar());
+		if (!(subj instanceof Resource)) {
+			subj = null;
+		}
+		Value pred = constantValue(pattern.getPredicateVar());
+		if (!(pred instanceof IRI)) {
+			pred = null;
+		}
+		Value obj = constantValue(pattern.getObjectVar());
+		Value ctx = constantValue(pattern.getContextVar());
+		if (!(ctx instanceof Resource)) {
+			ctx = null;
+		}
+		try {
+			long subjId = resolveId(subj);
+			long predId = resolveId(pred);
+			long objId = resolveId(obj);
+			long ctxId = resolveId(ctx);
+			if (subjId == Long.MIN_VALUE || predId == Long.MIN_VALUE || objId == Long.MIN_VALUE
+					|| ctxId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			int repeatedMask = repeatedComponentPairMask(pattern);
+			return repeatedMask == 0
+					? tripleStore.exactCardinality(subjId, predId, objId, ctxId)
+					: tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId, repeatedMask);
+		} catch (IOException | RuntimeException e) {
+			return -1.0d;
+		}
+	}
+
 	private double estimate(StatementPattern pattern, boolean planning) {
 		if (pattern == null) {
 			return -1.0d;
@@ -83,7 +118,9 @@ final class LmdbStatementPatternCardinalitySource {
 			if (ctxId == Long.MIN_VALUE) {
 				return 0.0d;
 			}
-			return estimateRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask, planning);
+			return planning
+					? estimateIds(subjId, predId, objId, ctxId, true)
+					: estimateRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask);
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
@@ -144,10 +181,10 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	private double estimateRepeatedIds(long subjId, long predId, long objId, long ctxId,
-			int repeatedComponentPairMask, boolean planning) {
+			int repeatedComponentPairMask) {
 		try {
 			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, tripleStore.getDataRevision(),
-					subjId, predId, objId, ctxId, repeatedComponentPairMask, planning);
+					subjId, predId, objId, ctxId, repeatedComponentPairMask, false);
 			Double cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
 				return cached;

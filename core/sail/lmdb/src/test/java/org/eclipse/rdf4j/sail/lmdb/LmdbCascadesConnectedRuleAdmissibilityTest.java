@@ -230,6 +230,11 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(ordinaryDisconnected));
 		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(ordinaryDisconnected, true, true),
 				"DPhyp owns maximal connected islands; a disconnected bridge remains a generic physical join");
+		List<String> ordinaryRules = applicableRuleIds(ordinaryDisconnected);
+		assertFalse(ordinaryRules.contains("join-commute"), ordinaryRules::toString);
+		assertFalse(ordinaryRules.contains("join-associate-left"), ordinaryRules::toString);
+		assertFalse(ordinaryRules.contains("join-associate-right"), ordinaryRules::toString);
+		assertFalse(ordinaryRules.contains("lmdb-inner-join-bound-lookup"), ordinaryRules::toString);
 		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(pathDerivedDisconnected, true, true),
 				"Decomposed path factors still need a generic bridge between disconnected memo groups");
 	}

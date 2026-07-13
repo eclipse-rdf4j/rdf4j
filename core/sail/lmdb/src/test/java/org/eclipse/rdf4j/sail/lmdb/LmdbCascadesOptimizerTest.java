@@ -175,7 +175,7 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
-	void statementPatternPlanningEstimateAppliesRepeatedVariableEquality() throws IOException {
+	void statementPatternPlanningDefersRepeatedVariableExactScan() throws IOException {
 		ValueStore valueStore = mock(ValueStore.class);
 		TripleStore tripleStore = mock(TripleStore.class);
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -192,11 +192,15 @@ class LmdbCascadesOptimizerTest {
 		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(valueStore,
 				tripleStore);
 
-		assertEquals(3.0d, source.estimateForPlanning(pattern));
+		assertEquals(42.0d, source.estimateForPlanning(pattern));
+		verify(tripleStore).planningCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID);
+		verify(tripleStore, never()).repeatedVariableCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID, repeatedPairMask);
+
+		assertEquals(3.0d, source.estimateExact(pattern));
 		verify(tripleStore).repeatedVariableCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
 				LmdbValue.UNKNOWN_ID, repeatedPairMask);
-		verify(tripleStore, never()).planningCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
-				LmdbValue.UNKNOWN_ID);
 	}
 
 	@Test

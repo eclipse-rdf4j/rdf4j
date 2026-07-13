@@ -54,7 +54,7 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 				&& costModel != null
 				&& expression.tupleExpr()instanceof Join join
 				&& !(LmdbHypergraphJoinPlanner.enabled()
-						&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(join))
+						&& LmdbJoinIslandConnectivity.joinProviderCanOwn(join))
 				&& !TupleExprs.isVariableScopeChange(join)
 				&& !TupleExprs.isVariableScopeChange(join.getRightArg())
 				&& !TupleExprs.containsSubquery(join.getRightArg())

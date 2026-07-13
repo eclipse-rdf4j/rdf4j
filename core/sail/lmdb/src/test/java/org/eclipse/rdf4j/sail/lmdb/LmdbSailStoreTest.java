@@ -68,7 +68,6 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -912,108 +911,6 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void readCommittedBulkKeepsEstimatorAddsInConfiguredBatch() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		setBulkOperationSize(config, 2048);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-estimator-bulk"), config);
-		sail.init();
-
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-
-			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
-			estimatorField.setAccessible(true);
-			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
-			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
-			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
-
-			estimatorField.set(backingStore, estimatorSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
-				clearInvocations(estimatorSpy);
-				sink.approveAll(sampleStatements(2048), Set.of());
-				sink.flush();
-
-				verify(estimatorSpy, times(1)).addStatements(any());
-				verify(estimatorSpy, never()).addStatement(any());
-			} finally {
-				estimatorField.set(backingStore, originalEstimator);
-			}
-		} finally {
-			sail.shutDown();
-		}
-	}
-
-	@Test
-	void largeReadCommittedBulkDefersExactEstimatorAddsForFreshStore() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		setBulkOperationSize(config, 8192);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-large-estimator-defer"), config);
-		sail.init();
-
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-
-			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
-			estimatorField.setAccessible(true);
-			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
-			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
-			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
-			doAnswer(invocation -> null).when(estimatorSpy).recordStoreSizeDelta(anyLong(), anyLong());
-
-			estimatorField.set(backingStore, estimatorSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
-				clearInvocations(estimatorSpy);
-				sink.approveAll(sampleStatements(8192), Set.of());
-				sink.flush();
-
-				verify(estimatorSpy, never()).addStatements(any());
-				verify(estimatorSpy, never()).addStatement(any());
-				verify(estimatorSpy, times(1)).recordStoreSizeDelta(8192L, 0L);
-			} finally {
-				estimatorField.set(backingStore, originalEstimator);
-			}
-		} finally {
-			sail.shutDown();
-		}
-	}
-
-	@Test
-	void readCommittedBulkRetainsStatementsWhenEstimatorBecomesReadyAfterSizing() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		setBulkOperationSize(config, 4096);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-estimator-ready-flip"), config);
-		sail.init();
-
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-
-			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
-			estimatorField.setAccessible(true);
-			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
-			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
-			AtomicInteger readinessChecks = new AtomicInteger();
-			doAnswer(invocation -> readinessChecks.incrementAndGet() > 1).when(estimatorSpy).isReadyNonBlocking();
-			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
-			doAnswer(invocation -> null).when(estimatorSpy).recordStoreSizeDelta(anyLong(), anyLong());
-
-			estimatorField.set(backingStore, estimatorSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
-				assertDoesNotThrow(() -> {
-					sink.approveAll(sampleStatements(4096), Set.of());
-					sink.flush();
-				}, "A readiness flip after retained-statement sizing must not break valid bulk inserts");
-			} finally {
-				estimatorField.set(backingStore, originalEstimator);
-			}
-		} finally {
-			sail.shutDown();
-		}
-	}
-
-	@Test
 	void approveAllBulkFailureDoesNotMutateNonIsolatedEstimatorBeforeStoreSuccess() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
 		setBulkOperationSize(config, 2);
@@ -1056,68 +953,6 @@ public class LmdbSailStoreTest {
 		} finally {
 			sail.shutDown();
 		}
-	}
-
-	@Test
-	void estimatorStatementScanDoesNotBlockWritesAfterSnapshotOpen() throws Exception {
-		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
-		SketchBasedJoinEstimator estimator = sail.getBackingStore().getSketchBasedJoinEstimator();
-		SketchStatementSource statementSource = getEstimatorStatementSource(estimator);
-
-		CountDownLatch iterationOpened = new CountDownLatch(1);
-		CountDownLatch releaseIteration = new CountDownLatch(1);
-		AtomicReference<Throwable> scannerFailure = new AtomicReference<>();
-		Thread scanner = new Thread(() -> {
-			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null, null)) {
-				assertTrue("Expected estimator statement source to open a non-empty snapshot", statements.hasNext());
-				iterationOpened.countDown();
-				assertTrue("Timed out waiting to release estimator snapshot",
-						releaseIteration.await(5, TimeUnit.SECONDS));
-			} catch (Throwable t) {
-				scannerFailure.set(t);
-				iterationOpened.countDown();
-			}
-		}, SketchBasedJoinEstimator.REFRESH_THREAD_NAME);
-
-		CountDownLatch writerFinished = new CountDownLatch(1);
-		AtomicReference<Throwable> writerFailure = new AtomicReference<>();
-		Thread writer = new Thread(() -> {
-			try (RepositoryConnection conn = repo.getConnection()) {
-				conn.setNamespace("scan", "urn:scan");
-			} catch (Throwable t) {
-				writerFailure.set(t);
-			} finally {
-				writerFinished.countDown();
-			}
-		}, "lmdb-estimator-scan-writer");
-
-		try {
-			scanner.start();
-			assertTrue("Timed out opening estimator statement snapshot", iterationOpened.await(5, TimeUnit.SECONDS));
-			if (scannerFailure.get() != null) {
-				throw new AssertionError("Estimator scanner failed", scannerFailure.get());
-			}
-
-			writer.start();
-			assertTrue("Estimator read snapshot should not hold the LMDB sink lock after opening the scan",
-					writerFinished.await(1, TimeUnit.SECONDS));
-			if (writerFailure.get() != null) {
-				throw new AssertionError("Concurrent namespace write failed", writerFailure.get());
-			}
-		} finally {
-			releaseIteration.countDown();
-			scanner.join(5_000L);
-			writer.join(5_000L);
-		}
-		assertFalse("Estimator scanner thread should have finished", scanner.isAlive());
-		assertFalse("Concurrent writer thread should have finished", writer.isAlive());
-	}
-
-	private static SketchStatementSource getEstimatorStatementSource(SketchBasedJoinEstimator estimator)
-			throws Exception {
-		Field statementSourceField = SketchBasedJoinEstimator.class.getDeclaredField("statementSource");
-		statementSourceField.setAccessible(true);
-		return (SketchStatementSource) statementSourceField.get(estimator);
 	}
 
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {

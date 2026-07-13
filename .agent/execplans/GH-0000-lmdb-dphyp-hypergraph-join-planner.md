@@ -21,7 +21,9 @@ You can see it working by running the new unit tests (they run without any LMDB 
 - [x] (2026-07-06 21:50Z) Milestone C: `PlanHypergraph`, `JoinPlan`, `CostingReceiver`, `HypergraphOptimizer` facade + costing tests (16 tests green; bushy-beats-left-deep proven).
 - [x] (2026-07-06 22:05Z) Milestone D: LMDB adapter `LmdbHypergraphJoinPlanner` behind system property, hooked into `LmdbCascadesConnectedJoinPlanner.plan(...)`, with unit tests using a synthetic cost model (9 tests green; 52 total across the feature).
 - [x] (2026-07-06 22:10Z) Test evidence captured (Surefire snippets in `Artifacts and Notes`), planner regression tests triaged against known-red baseline (1 failure = the documented pre-existing `LmdbCascadesOptimizerTest#budgetedScopedUnionOptionalKeepsDecomposedOptionalWinner`; zero new), committed.
-- [ ] Future (Milestone E, out of scope for this change): opaque factors as hyperedges via `opaqueRequiredVars`, property-path endpoint rules, bushy `PlanTemplate` caching, parameterized path storage, interesting orders, `ThemeQueryPlanRunBenchmark` A/B comparison, default-on decision.
+- [x] (2026-07-12 closeout) Milestone E: opaque dependency hyperedges/TES, property-path endpoint requirements,
+  parameterized/interesting-order state, deterministic degradation, `PlanTemplateCache`, default-on ownership, and the
+  DPhyp benchmark switch are complete.
 
 ## Surprises & Discoveries
 
@@ -58,6 +60,10 @@ You can see it working by running the new unit tests (they run without any LMDB 
   Date/Author: 2026-07-06 / Claude Code.
 
 ## Outcomes & Retrospective
+
+Milestones A-E are complete under the umbrella architecture plan. Enabled DPhyp owns maximal legal LMDB inner-join
+islands and degrades within the hypergraph planner; the kill switch returns explicitly to the standard pipeline.
+SIP, WCOJ, robust-plan selection, and mid-query replanning are deferred research phases.
 
 (2026-07-06, Milestones A–D complete.) Delivered the self-contained hypergraph optimizer package (`NodeSets`, `Hypergraph` + DOT, `SubgraphEnumerator`, `PlanHypergraph`, `JoinPlan`, `CostModel`, `CostingReceiver`, `HypergraphOptimizer`) and the flag-gated adapter `LmdbHypergraphJoinPlanner` with its hook in `LmdbCascadesConnectedJoinPlanner.plan(...)`. 52 new tests, all green. The DPhyp transcription matched the brute-force DPsub oracle on 200 random hypergraphs on its first run — the paper-faithful two-loop structure plus the `B(i)` forbidden-set conventions were transcribed correctly; the only bugs along the way were a test-code lambda capture, a record-constructor visibility mismatch, and one wrong test expectation about disconnected islands. The bushy-beats-left-deep property is demonstrated at both layers (synthetic core costs, and adapter with a symmetric synthetic estimator). Regression: the three planner-adjacent suites show exactly the one pre-existing known-red failure and nothing new; with the flag off the only code on the hot path is one `Boolean.getBoolean` check.
 

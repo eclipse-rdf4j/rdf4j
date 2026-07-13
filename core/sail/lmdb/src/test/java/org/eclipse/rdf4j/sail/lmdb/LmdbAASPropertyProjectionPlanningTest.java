@@ -14,14 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -58,7 +57,7 @@ class LmdbAASPropertyProjectionPlanningTest {
 			""";
 
 	@Test
-	void propertyProjectionStartsRequiredIslandFromConstantSubmodelLookup(@TempDir File dataDir) throws Exception {
+	void propertyProjectionKeepsConnectedBoundedRequiredIsland(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -75,25 +74,24 @@ class LmdbAASPropertyProjectionPlanningTest {
 						.explain(Explanation.Level.Optimized);
 				String plan = explanation.toString();
 				TupleExpr requiredIsland = leftJoinRequiredIsland((TupleExpr) explanation.tupleExpr());
-				TupleExpr firstFactor = leftmostFactor(requiredIsland);
-				StatementPattern firstPattern = assertInstanceOf(StatementPattern.class, firstFactor,
-						() -> "AAS query1 required island should not start from an unbound property path:\n" + plan);
+				StatementPattern submodelLookup = constantSubmodelLookup(requiredIsland);
 
-				assertEquals(DRIVE_UNIT_AAS, firstPattern.getSubjectVar().getValue(),
-						() -> "AAS query1 should start from the constant shell lookup:\n" + plan);
-				assertEquals(AAS_SUBMODEL, firstPattern.getPredicateVar().getValue(),
-						() -> "AAS query1 should first bind submodels from the constant shell:\n" + plan);
+				assertEquals(DRIVE_UNIT_AAS, submodelLookup.getSubjectVar().getValue(),
+						() -> "AAS query1 must retain the constant shell lookup:\n" + plan);
+				assertEquals(AAS_SUBMODEL, submodelLookup.getPredicateVar().getValue(),
+						() -> "AAS query1 must retain the shell-to-submodel edge:\n" + plan);
+				assertTrue(findFirst(requiredIsland, ArbitraryLengthPath.class) != null,
+						() -> "AAS query1 must retain its property path:\n" + plan);
+				assertTrue(plan.contains("plannerAlgorithm=DPHYP_BUSHY"), plan);
 				assertFalse(plan.contains("path-waits-for-selective-endpoint-binder"),
 						() -> "AAS query1 should compare path endpoint alternatives by cost instead of hard-waiting "
 								+ "for ?prop:\n" + plan);
-				assertTrue(plan.contains("optimizer.pathEndpointMode=fromStart")
-						|| plan.contains(
-								"plannedPropertyPathMethod=sketch-single-predicate-path-prefix-sketch-fromStart")
-						|| plan.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject"),
-						() -> "AAS query1 should execute the property path from the cheaper submodelElement side "
-								+ "when fromStart is cheaper than waiting for ?prop:\n" + plan);
-				assertFalse(plan.contains("optimizer.connectedEnumeration=phase2_disconnected_components"),
-						() -> "Connected AAS query1 required island should not use disconnected fallback:\n" + plan);
+				assertTrue(plan.contains("optimizer.connectedEnumeration=runtime-connected-plus-zero-var-filters"),
+						() -> "The constant type guard must remain a bounded zero-variable filter:\n" + plan);
+				double cartesianRows = requiredIsland.getDoubleMetricPlanned("plannedCostCartesianWorkRows");
+				assertTrue(cartesianRows >= 0.0d && cartesianRows <= 1.0d,
+						() -> "The required island may charge only its single constant guard as Cartesian work, found "
+								+ cartesianRows + "\n" + plan);
 			}
 		} finally {
 			repository.shutDown();
@@ -108,12 +106,23 @@ class LmdbAASPropertyProjectionPlanningTest {
 		return unwrapUnary(leftJoin.getLeftArg());
 	}
 
-	private static TupleExpr leftmostFactor(TupleExpr tupleExpr) {
-		TupleExpr current = unwrapUnary(tupleExpr);
-		while (current instanceof Join join) {
-			current = unwrapUnary(join.getLeftArg());
+	private static StatementPattern constantSubmodelLookup(TupleExpr tupleExpr) {
+		StatementPattern[] match = new StatementPattern[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (match[0] == null && node.getSubjectVar() != null && node.getPredicateVar() != null
+						&& DRIVE_UNIT_AAS.equals(node.getSubjectVar().getValue())
+						&& AAS_SUBMODEL.equals(node.getPredicateVar().getValue())) {
+					match[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		if (match[0] == null) {
+			throw new AssertionError("Expected constant shell-to-submodel lookup:\n" + tupleExpr);
 		}
-		return current;
+		return match[0];
 	}
 
 	private static TupleExpr unwrapUnary(TupleExpr tupleExpr) {

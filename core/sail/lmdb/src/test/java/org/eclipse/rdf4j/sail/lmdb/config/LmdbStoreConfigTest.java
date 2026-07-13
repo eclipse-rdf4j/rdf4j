@@ -141,10 +141,10 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void sketchEstimatorStrategyDefaultsToOmni() {
+	void sketchEstimatorStrategyDefaultsToUnified() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
-		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("omni");
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("unified");
 	}
 
 	@Test
@@ -404,19 +404,7 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual" })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
-		testParseAndExport(
-				SKETCH_ESTIMATOR_STRATEGY,
-				Values.literal(strategy),
-				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
-				strategy,
-				!"omni".equals(strategy)
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(strings = { "tuple", "joinsketch" })
+	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual", "tuple", "joinsketch" })
 	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
 		final BNode implNode = bnode();
 		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
@@ -425,13 +413,12 @@ class LmdbStoreConfigTest {
 				.build();
 
 		lmdbStoreConfig.parse(configModel, implNode);
-		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("countmin-dual");
+		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("unified");
 
 		final Model exportedModel = new LinkedHashModel();
 		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
 
-		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY,
-				Values.literal("countmin-dual"))).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY, null)).isFalse();
 	}
 
 	@Test

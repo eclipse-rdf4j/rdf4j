@@ -123,8 +123,9 @@ public final class BagEstimate {
 		}
 		Map<String, VariableEstimate> variableCopy = new LinkedHashMap<>(variables());
 		for (String variable : relation.variables()) {
-			variableCopy.put(variable,
-					VariableEstimate.bound(relation.rows(), relation.distinctRows(Set.of(variable))));
+			double boundRows = relation.boundRows(variable);
+			variableCopy.put(variable, new VariableEstimate(relation.distinctBoundRows(variable), boundRows,
+					Math.max(0.0d, relation.rows() - boundRows), null));
 		}
 		Map<VariableSetKey, FiniteRelationEstimate> relationCopy = new LinkedHashMap<>(finiteRelations());
 		relationCopy.put(relation.variableSetKey(), relation);

@@ -194,6 +194,41 @@ class LmdbCascadesContextPropagationTest {
 						.getStringMetricPlanned("optimizer.guaranteeOption"))
 				.distinct()
 				.count(), applications::toString);
+		for (RuleApplication application : applications) {
+			int[] markedNodes = { 0 };
+			application.alternative().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter node) {
+					assertEquals("true", node.getStringMetricPlanned("optimizer.guaranteeAlternative"),
+							"Nested filters must not reopen guarantee-option expansion");
+					markedNodes[0]++;
+					super.meet(node);
+				}
+
+				@Override
+				public void meet(Join node) {
+					assertEquals("true", node.getStringMetricPlanned("optimizer.guaranteeAlternative"),
+							"Nested joins must not reopen guarantee-option expansion");
+					markedNodes[0]++;
+					super.meet(node);
+				}
+			});
+			assertTrue(markedNodes[0] > 1, "The regression must exercise a nested guarantee alternative");
+		}
+
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(filter);
+		LmdbGuaranteeOptionRule rule = new LmdbGuaranteeOptionRule(statistics);
+		Join originalJoin = (Join) filter.getArg();
+		Filter rematerialized = new Filter(
+				new Join(originalJoin.getRightArg().clone(), originalJoin.getLeftArg().clone()),
+				filter.getCondition().clone());
+		MemoExpr historicalAlternative = memo
+				.addLogicalAlternative(groupId, rematerialized, applications.getFirst().proofs())
+				.orElseThrow();
+		assertFalse(rule.matches(historicalAlternative, OptimizationGoal.root(), memo),
+				"A later rewrite that drops local metrics must not reopen the same guarantee alternative");
 	}
 
 	@Test

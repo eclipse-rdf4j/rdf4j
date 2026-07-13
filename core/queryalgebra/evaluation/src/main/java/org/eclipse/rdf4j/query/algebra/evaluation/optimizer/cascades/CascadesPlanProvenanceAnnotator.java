@@ -121,8 +121,8 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static void annotateNode(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
 		EstimateSnapshot estimate = provenance.estimate();
 		CostVector cost = provenance.cost();
-		double plannedRows = finiteOr(estimate.rows(), cost.rows());
-		double plannedWorkRows = finiteOr(estimate.workRows(), cost.workRows());
+		double plannedRows = finiteOr(cost.rows(), estimate.rows());
+		double plannedWorkRows = finiteOr(cost.workRows(), estimate.workRows());
 		for (Map.Entry<String, String> entry : estimate.stringMetrics().entrySet()) {
 			String value = sanitizeStringMetric(entry.getKey(), entry.getValue());
 			if (!skipStringMetric(entry.getKey(), value)) {
@@ -182,8 +182,8 @@ public final class CascadesPlanProvenanceAnnotator {
 		}
 		EstimateSnapshot estimate = provenance.estimate();
 		CostVector cost = provenance.cost();
-		double plannedRows = finiteOr(estimate.rows(), cost.rows());
-		double plannedWorkRows = finiteOr(estimate.workRows(), cost.workRows());
+		double plannedRows = finiteOr(cost.rows(), estimate.rows());
+		double plannedWorkRows = finiteOr(cost.workRows(), estimate.workRows());
 		String decisionId = decisionId(provenance);
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
 

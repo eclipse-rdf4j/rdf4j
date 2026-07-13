@@ -74,14 +74,11 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
-import org.eclipse.rdf4j.sail.lmdb.sketch.SketchKeyProvider;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
-import org.eclipse.rdf4j.sail.lmdb.sketch.SketchTermKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import jdk.jfr.Category;
 import jdk.jfr.Enabled;
@@ -101,7 +98,6 @@ class LmdbSailStore implements SailStore {
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 4096;
 	private static final int EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD = 4096;
-	private static final long SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET = 100_000L;
 	private static final int INITIAL_PENDING_APPROVE_CAPACITY = 32;
 	private static final boolean LMDB_STORE_PATH_EVENTS_ENABLED = Boolean.getBoolean("rdf4j.benchmark.profiling")
 			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
@@ -109,8 +105,6 @@ class LmdbSailStore implements SailStore {
 	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
 	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
 	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
-	private static final int LMDB_SKETCH_KEY_CACHE_INITIAL_CAPACITY = 128;
-	private static final int LMDB_SKETCH_KEY_CACHE_MAX_ENTRIES = 16_384;
 
 	private final TripleStore tripleStore;
 
@@ -368,7 +362,8 @@ class LmdbSailStore implements SailStore {
 			initialized = true;
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
+				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
+						|| Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
 				boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
@@ -380,13 +375,6 @@ class LmdbSailStore implements SailStore {
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
 						sketchBasedJoinEstimator::snapshotIdentity,
 						sketchBasedJoinEstimator::adaptiveEvidenceAllowed);
-				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
-				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
-				sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
-				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
-				sketchBasedJoinEstimator.setExactJoinSurfaceProvider(new LmdbSamplingJoinCardinalityEstimator(
-						valueStore, tripleStore, statementPatternCardinalitySource,
-						this::lockEstimatorExactJoinSurfaceProvider));
 				if (!snapshotExists && storeHasTriples) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
@@ -400,29 +388,9 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private LmdbSamplingJoinCardinalityEstimator.Guard lockEstimatorExactJoinSurfaceProvider() {
-		boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME.equals(Thread.currentThread().getName());
-		boolean locked = refreshThread ? sinkStoreAccessLock.tryLock()
-				: lockEstimatorExactJoinSurfaceProviderBlocking();
-		if (!locked) {
-			return null;
-		}
-		if (storeTxnStarted.get()) {
-			sinkStoreAccessLock.unlock();
-			return null;
-		}
-		return sinkStoreAccessLock::unlock;
-	}
-
-	private boolean lockEstimatorExactJoinSurfaceProviderBlocking() {
-		sinkStoreAccessLock.lock();
-		return true;
-	}
-
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
 
 		private final SketchStatementSource delegate = new LmdbSketchStatementSource(LmdbSailStore.this);
-		private final SketchKeyProvider sketchKeyProvider = new LmdbSketchKeyProvider();
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
@@ -456,79 +424,6 @@ class LmdbSailStore implements SailStore {
 			return true;
 		}
 
-		@Override
-		public ValueFactory getValueFactory() {
-			return delegate.getValueFactory();
-		}
-
-		@Override
-		public SketchKeyProvider sketchKeyProvider() {
-			return sketchKeyProvider;
-		}
-	}
-
-	private final class LmdbSketchKeyProvider implements SketchKeyProvider {
-
-		private final ThreadLocal<LmdbSketchKeyCache> keyCache = ThreadLocal.withInitial(LmdbSketchKeyCache::new);
-
-		@Override
-		public SketchTermKey predicateKey(IRI predicate) {
-			return termKey(predicate);
-		}
-
-		@Override
-		public SketchTermKey contextKey(Resource context) {
-			return context == null ? SketchTermKey.defaultContext() : termKey(context);
-		}
-
-		private SketchTermKey termKey(Value value) {
-			long id = fastInternalId(value);
-			if (id == LmdbValue.UNKNOWN_ID) {
-				try {
-					id = valueStore.getId(value);
-				} catch (IOException e) {
-					throw new UncheckedIOException(e);
-				}
-			}
-			if (id != LmdbValue.UNKNOWN_ID) {
-				long scope = valueStore.getRevision().getRevisionId();
-				return keyCache.get().lmdbValueId(id, scope);
-			}
-			return SketchTermKey.iriString(value.stringValue());
-		}
-
-		private long fastInternalId(Value value) {
-			if (value instanceof LmdbValue lmdbValue
-					&& Objects.equals(lmdbValue.getValueStoreRevision(), valueStore.getRevision())) {
-				return lmdbValue.getInternalID();
-			}
-			return LmdbValue.UNKNOWN_ID;
-		}
-	}
-
-	private static final class LmdbSketchKeyCache {
-
-		private long scope = Long.MIN_VALUE;
-		private final Long2ObjectOpenHashMap<SketchTermKey> byId = new Long2ObjectOpenHashMap<>(
-				LMDB_SKETCH_KEY_CACHE_INITIAL_CAPACITY);
-
-		private SketchTermKey lmdbValueId(long id, long currentRevision) {
-			if (scope != currentRevision) {
-				scope = currentRevision;
-				byId.clear();
-			}
-			SketchTermKey key = byId.get(id);
-			if (key == null) {
-				if (byId.size() >= LMDB_SKETCH_KEY_CACHE_MAX_ENTRIES) {
-					byId.clear();
-				}
-				// The revision bounds this process-local cache, but persisted sketch keys need a stable LMDB ID
-				// namespace.
-				key = SketchTermKey.lmdbValueId(id, 0L);
-				byId.put(id, key);
-			}
-			return key;
-		}
 	}
 
 	private final class GuardedEstimatorStatementIteration implements CloseableIteration<Statement> {
@@ -628,34 +523,14 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {
-		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withMemoryBudgetBytes(config.getSketchEstimatorMemoryBudgetBytes())
 				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
 				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
-				.withEstimateCacheSeconds(60)
-				.withZeroIntersectionExactDistinctLimit(0)
-				.withZeroIntersectionRowBudget(SKETCH_ESTIMATOR_PAGE_WALK_ROW_BUDGET)
-				.withZeroIntersectionSampleSize(0)
 				.withEvidenceMode(config.getSketchEstimatorEvidenceMode())
 				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity())
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
-						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.OMNI));
-		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
-			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());
-		}
-		if (config.getSketchEstimatorPredicateBucketCount() >= 0) {
-			estimatorConfig.withPredicateBucketCount(config.getSketchEstimatorPredicateBucketCount());
-		}
-		if (config.getSketchEstimatorObjectBucketCount() >= 0) {
-			estimatorConfig.withObjectBucketCount(config.getSketchEstimatorObjectBucketCount());
-		}
-		if (config.getSketchEstimatorContextBucketCount() >= 0) {
-			estimatorConfig.withContextBucketCount(config.getSketchEstimatorContextBucketCount());
-		}
-		estimatorConfig.withOmniWitnessCohortBucket(config.getSketchEstimatorOmniWitnessCohortBucketCount(),
-				config.getSketchEstimatorOmniWitnessCohortBucketIndex());
-		estimatorConfig.withOmniWitnessCohortMaxEntries(config.getSketchEstimatorOmniWitnessCohortMaxEntries());
-		estimatorConfig.withContextPairSketchesEnabled(config.getSketchEstimatorContextPairSketchesEnabled());
-		return estimatorConfig;
+						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.UNIFIED));
 	}
 
 	private LmdbStorePathEvent beginLmdbStorePathEvent(String phase, boolean preferThreading, int statementCount,

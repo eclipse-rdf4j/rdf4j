@@ -116,40 +116,6 @@ public final class EstimateMath {
 				.rows();
 	}
 
-	private static double matchedLeftRows(BagEstimate left, BagEstimate right, Set<String> joinVars) {
-		if (joinVars.isEmpty()) {
-			return 0.0d;
-		}
-		Optional<Map<List<Value>, Double>> leftFrequencies = frequencies(left, joinVars);
-		Optional<Map<List<Value>, Double>> rightFrequencies = frequencies(right, joinVars);
-		if (leftFrequencies.isPresent() && rightFrequencies.isPresent()) {
-			return leftFrequencies.get()
-					.entrySet()
-					.stream()
-					.filter(entry -> rightFrequencies.get().containsKey(entry.getKey()))
-					.mapToDouble(Map.Entry::getValue)
-					.sum();
-		}
-		double leftDistinct = Math.max(1.0d, tupleDistinct(left, joinVars));
-		OptionalDouble sketchOverlap = singleVariableOverlapDistinct(left, right, joinVars);
-		if (sketchOverlap.isPresent()) {
-			if (right.rows() <= 0.0d) {
-				return 0.0d;
-			}
-			double matchedDistinct = clampRows(sketchOverlap.getAsDouble(), 0.0d,
-					Math.min(leftDistinct, Math.min(right.rows(), Math.max(0.0d, tupleDistinct(right, joinVars)))));
-			return left.rows() * Math.min(1.0d, matchedDistinct / leftDistinct);
-		}
-		if (rightFrequencies.isPresent()) {
-			double matchRatio = Math.min(1.0d, rightFrequencies.get().size() / leftDistinct);
-			return left.rows() * matchRatio;
-		}
-		double rightDistinct = tupleDistinct(right, joinVars);
-		double coveredRightDistinct = estimatedCoveredDistinct(right.rows(), Math.max(leftDistinct, rightDistinct));
-		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
-		return left.rows() * matchRatio;
-	}
-
 	private static Map<String, VariableEstimate> unionVariables(BagEstimate left, BagEstimate right) {
 		Map<String, VariableEstimate> variables = new LinkedHashMap<>();
 		Set<String> names = new LinkedHashSet<>();
@@ -338,47 +304,8 @@ public final class EstimateMath {
 		if (leftRelation.isEmpty() || rightRelation.isEmpty()) {
 			return Optional.empty();
 		}
-		List<String> outputVars = new ArrayList<>(leftRelation.get().variables());
-		for (String variable : rightRelation.get().variables()) {
-			if (!outputVars.contains(variable)) {
-				outputVars.add(variable);
-			}
-		}
-		Map<List<Value>, Double> rows = new LinkedHashMap<>();
-		for (Map.Entry<List<Value>, Double> leftEntry : leftRelation.get().frequencies().entrySet()) {
-			for (Map.Entry<List<Value>, Double> rightEntry : rightRelation.get().frequencies().entrySet()) {
-				if (!joinKeysMatch(leftRelation.get(), leftEntry.getKey(), rightRelation.get(), rightEntry.getKey(),
-						joinVars)) {
-					continue;
-				}
-				List<Value> output = new ArrayList<>(leftEntry.getKey());
-				for (int i = 0; i < rightRelation.get().variables().size(); i++) {
-					if (!leftRelation.get().variables().contains(rightRelation.get().variables().get(i))) {
-						output.add(rightEntry.getKey().get(i));
-					}
-				}
-				rows.merge(FiniteRelationEstimate.tupleKey(output), leftEntry.getValue() * rightEntry.getValue(),
-						Double::sum);
-			}
-		}
-		return Optional.of(FiniteRelationEstimate.fromFrequencies(outputVars, rows, "joined-finite-relation"));
-	}
-
-	private static boolean joinKeysMatch(FiniteRelationEstimate left, List<Value> leftTuple,
-			FiniteRelationEstimate right, List<Value> rightTuple, Set<String> joinVars) {
-		for (String variable : joinVars) {
-			Value leftValue = leftTuple.get(left.variables().indexOf(variable));
-			Value rightValue = rightTuple.get(right.variables().indexOf(variable));
-			if (!FiniteRelationEstimate.sameValue(leftValue, rightValue)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static Optional<Map<List<Value>, Double>> frequencies(BagEstimate estimate, Set<String> vars) {
-		return estimate.relationContaining(vars)
-				.map(relation -> relation.frequencyBy(vars));
+		return Optional.of(FiniteRelationEstimate.innerJoin(leftRelation.get(), rightRelation.get(), joinVars,
+				"joined-finite-relation"));
 	}
 
 	private static double tupleDistinct(BagEstimate estimate, Set<String> vars) {

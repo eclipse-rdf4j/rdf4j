@@ -1955,7 +1955,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				: estimate.source();
 		double confidence = estimate == null ? tupleExpr.getDoubleMetricPlanned("plannedLeoEvidenceConfidence")
 				: estimate.correctionConfidence();
-		LeoEstimateDiff diff = new LeoEstimateDiff(safeBaseRows, tupleExpr.getDoubleMetricPlanned("plannedOmniRows"),
+		LeoEstimateDiff diff = new LeoEstimateDiff(safeBaseRows, Double.NaN,
 				tupleExpr.getDoubleMetricPlanned("plannedLeoFanoutRows"), learnedRows, finalRows, safeBaseWorkRows,
 				learnedWorkRows, finalWorkRows, decision, evidenceKind, source, confidence);
 		StringBuilder builder = new StringBuilder(diff.explainSummary());

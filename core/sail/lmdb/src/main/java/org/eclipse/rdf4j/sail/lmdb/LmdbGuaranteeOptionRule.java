@@ -52,6 +52,7 @@ final class LmdbGuaranteeOptionRule extends LmdbRule {
 		return expression.logical()
 				&& expression.tupleExpr() != null
 				&& expression.tupleExpr().getStringMetricPlanned(GUARANTEE_ALTERNATIVE) == null
+				&& expression.proofs().stream().noneMatch(proof -> id().equals(proof.ruleId()))
 				&& (expression.tupleExpr() instanceof Filter || expression.tupleExpr() instanceof Join)
 				&& containsDeferredFilterSegment(expression.tupleExpr())
 				&& !containsJoinOrderBarrier(expression.tupleExpr());
@@ -147,6 +148,18 @@ final class LmdbGuaranteeOptionRule extends LmdbRule {
 		alternative.setStringMetricPlanned("optimizer.guaranteeOptionCandidates", candidates);
 		alternative.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
+			public void meet(Filter node) {
+				markMaterializedOption(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Join node) {
+				markMaterializedOption(node);
+				super.meet(node);
+			}
+
+			@Override
 			public void meet(BindingSetAssignment node) {
 				if (optionName.equals(node.getStringMetricPlanned(GUARANTEE_OPTION))) {
 					node.setStringMetricPlanned("optimizer.guaranteeOptions",
@@ -154,6 +167,11 @@ final class LmdbGuaranteeOptionRule extends LmdbRule {
 					node.setStringMetricPlanned("optimizer.guaranteeOptionCandidates", candidates);
 				}
 				super.meet(node);
+			}
+
+			private void markMaterializedOption(TupleExpr node) {
+				node.setStringMetricPlanned(GUARANTEE_ALTERNATIVE, "true");
+				node.setStringMetricPlanned(GUARANTEE_OPTION, optionName);
 			}
 		});
 	}

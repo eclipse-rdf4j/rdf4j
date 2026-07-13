@@ -58,7 +58,8 @@ final class LmdbPropertyPathImplementationRule extends LmdbRule {
 			return List.of();
 		}
 		EndpointBindingMode endpointMode = endpointBindingMode(expression.tupleExpr(), boundVars);
-		CostVector cost = pathCost(estimate.get(), endpointMode);
+		CostVector cost = CostVector.ofRowsAndWork(estimate.get().rows(), estimate.get().workRows(),
+				estimate.get().qErrorInterval());
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(expression.tupleExpr().getBindingNames())
 				.inputBoundVars(pathInputBoundVars(expression.tupleExpr(), boundVars))
@@ -78,29 +79,6 @@ final class LmdbPropertyPathImplementationRule extends LmdbRule {
 				: "lmdb-property-path";
 		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
 				cost, proof, source, snapshot(estimate.get(), cost, source)));
-	}
-
-	private CostVector pathCost(StatisticsEstimate estimate, EndpointBindingMode endpointMode) {
-		CostVector base = CostVector.ofRowsAndWork(estimate.rows(), estimate.workRows(), estimate.qErrorInterval());
-		if (LmdbOperatorFeedbackStats.LEARNED_PROPERTY_PATH.equals(estimate.method())) {
-			return base;
-		}
-		if (endpointMode == EndpointBindingMode.UNBOUND) {
-			double workRows = Math.max(base.workRows(), base.workRows() * 8.0d + base.rows());
-			return new CostVector(base.rows(), workRows, base.memoryRows() + Math.max(1.0d, base.rows()),
-					base.seeks(), base.pageWalkRows() + Math.max(1.0d, base.workRows()),
-					base.rowQErrorMean(), Math.max(base.rowQErrorMax(), 8.0d),
-					base.workQErrorMean(), Math.max(base.workQErrorMax(), 8.0d),
-					Math.max(base.uncertaintyRows(), base.rows()), Math.min(base.confidence(), 0.20d),
-					base.evidenceCount());
-		}
-		if (endpointMode == EndpointBindingMode.BOTH) {
-			return new CostVector(base.rows(), Math.max(base.rows(), base.workRows() * 0.25d), base.memoryRows(),
-					base.seeks(), base.pageWalkRows(), base.rowQErrorMean(), base.rowQErrorMax(),
-					base.workQErrorMean(), base.workQErrorMax(), base.uncertaintyRows(),
-					Math.max(base.confidence(), 0.60d), base.evidenceCount() + 1.0d);
-		}
-		return base;
 	}
 
 	private EndpointBindingMode endpointBindingMode(TupleExpr tupleExpr, Set<String> boundVars) {

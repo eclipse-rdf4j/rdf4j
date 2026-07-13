@@ -30,9 +30,10 @@ estimate-audit contract tests.
   the reactor to `6.1.0-SNAPSHOT`, and passed both LMDB and query-evaluation japicmp gates offline.
 - [x] (2026-07-11 10:28+02:00) Added a deterministic concurrent-persistence regression, serialized the complete
   publication cycle, and passed the focused selector plus all 51 persistence tests.
-- [ ] (2026-07-11 10:51+02:00) Extracted the first estimator service slice: ingest policy, persistence-cycle
+- [x] (2026-07-12 03:14+02:00) Extracted estimator ingest policy, persistence-cycle
   coordination, scope lifecycle, fixed-order plan costing, frequency arithmetic, and OMNI membership estimation now
-  have the requested package-private owners. Remaining deep OMNI/persistence kernels still need migration.
+  have the requested package-private owners. Persistence publication, metadata validation, mapped OMNI snapshot IO,
+  and reusable witness-set algebra now execute in the focused services behind facade delegation.
 - [x] (2026-07-11 11:15+02:00) Composed the statistics facade behind the five requested package-private services and
   passed matching 100-test memoization coverage.
 - [x] (2026-07-11 11:15+02:00) Made shared Cascades `EstimateVector` canonical for factor estimates, migrated every
@@ -72,7 +73,10 @@ estimate-audit contract tests.
 - [x] (2026-07-12 02:31+02:00) Deleted the disabled-DPhyp ordering rule and the unreachable connected DP/greedy
   implementations and state machinery; disconnected bridges remain ordinary generic joins between maximal DPhyp
   islands.
-- [ ] Restore estimate-audit contracts, benchmarks, hygiene, and full verification.
+- [x] (2026-07-12 06:25+02:00) Restored the complete 300-query estimate audit after repairing deterministic DPhyp
+  budgeting and exact-zero/positive-witness propagation through aggregate wrappers; the full corpus passes the
+  worst-q-error limit of 10 in 111.381 seconds.
+- [ ] Run full module, compatibility, benchmark, and hygiene gates; close the remaining architecture plans.
 
 ## Surprises & Discoveries
 
@@ -144,6 +148,37 @@ estimate-audit contract tests.
   proof and exact bag multiplicity, while the focused memo test proves every generated option is independently added.
   Evidence: the red `iriObjectEqualityAddsIriGuardAndPreservesResults` plan-string assertion and the green 39-test
   guarantee/domain/admissibility selector.
+- Observation: The persistence facade's cycle lock covered the full publication transaction, but the transaction body
+  still lived on the facade; moving it into the manager requires retaining the same outer cycle lock and inner
+  publication lock ordering.
+  Evidence: matching 51-test persistence selectors before and after extraction, including the deterministic concurrent
+  publisher regression (`logs/mvnf/20260712-011216-verify.log`).
+- Observation: A four-factor generated audit join entered exhaustive DPhyp search because `auto` budget mode only
+  considered graph node count. The query took 935 seconds before producing a q-error of 14; applying the deterministic
+  budget to every search-intensive join island reduced the focused query to 2.114 seconds.
+  Evidence: `logs/mvnf/20260712-050111-verify.log` and `logs/mvnf/20260712-055323-verify.log`.
+- Observation: Aggregate wrapper repair must distinguish an exact-zero witness from a positive full-sampling witness.
+  DISTINCT and a direct projection over an empty join require zero precedence, while a filtered inverse-path
+  projection must retain the positive endpoint witness.
+  Evidence: focused red/green logs `logs/mvnf/20260712-060026-verify.log`,
+  `logs/mvnf/20260712-062300-verify.log`, and `logs/mvnf/20260712-062357-verify.log`.
+- Observation: Four broad planning tests encoded a particular left-deep leaf order or required a generated guarantee
+  option to win. Normal memo alternatives may choose a cost-equivalent original expression, and physical access
+  annotations may sit below aggregate wrappers. Exact result counts, DPhyp ownership, semantic barriers, and bounded
+  work are the durable integration contracts.
+  Evidence: the four-test red/green selectors in `logs/mvnf/20260712-063047-verify.log` and
+  `logs/mvnf/20260712-063312-verify.log`.
+- Observation: The first full LMDB inventory after the audit repair exposed six residual contracts: two numerical
+  estimate regressions and four assertions tied to retired implementation strings or left-deep placement. A retained
+  Omni lower confidence bound must floor OPTIONAL continuation blending, while DPhyp export must refine canonical
+  equality rows only with concrete LMDB access-path evidence.
+  Evidence: `logs/mvnf/20260712-063437-verify.log`, focused red/green logs
+  `logs/mvnf/20260712-065654-verify.log`, `logs/mvnf/20260712-070739-verify.log`, and
+  `logs/mvnf/20260712-072150-verify.log`.
+- Observation: The current parameterized property-path implementation reports semantic endpoint direction as
+  `plannedPropertyPathEndpointMode=toEnd`; the older `...-bound-object` method string is no longer emitted. The AAS
+  path remains a nested right-side DPhyp factor with zero Cartesian work and exact result parity.
+  Evidence: `logs/mvnf/20260712-071539-verify.log`.
 
 ## Decision Log
 
@@ -214,6 +249,14 @@ thread-local scope lifecycle; `SketchJoinOrderService` owns fixed-order step con
 `FrequencySketchEstimator` owns net frequency arithmetic; and `OmniSketchEstimatorService` owns retained-witness
 membership estimation. Matching scope, persistence, rebuild-parity, fixed-order, and OMNI selectors are green.
 
+The estimator closeout moves the full dirty-publication transaction into `SketchEstimatorPersistenceManager`: target
+version capture, incremental draining, rebuild gating, payload flush, index/metadata publication, and mutation-version
+completion retain their former lock order. The manager also owns snapshot compatibility validation, interruption
+classification, snapshot discovery, and mapped OMNI snapshot load/write. `OmniSketchEstimatorService` now owns source
+cohort selection, dominant-witness selection, union/subtraction, fallback propagation, and membership arithmetic.
+Matching pre/post selections passed 81 tests; the post-extraction persistence log is
+`logs/mvnf/20260712-011216-verify.log`.
+
 The statistics composition and currency boundary are complete. `LmdbPlannerServices` composes
 `LmdbCardinalityEstimator`, `LmdbJoinFactorCostEstimator`, `LmdbJoinOrderEstimator`,
 `LmdbExecutionFeedbackRecorder`, and `LmdbEstimatorScope`; concrete-statistics detection remains centralized there.
@@ -263,6 +306,19 @@ and connected-greedy bodies, state records, and trace helpers are physically del
 `ThemeQueryPlanRunBenchmark` now separates DPhyp and sketch configuration. Its generic default keeps sketches off,
 the DPhyp parameter exposes both rollback and authoritative paths, and its annotations provide three forks and five
 measurement iterations for the requested plan/run comparisons.
+
+The restored estimate-quality gate now exercises all 300 generated queries and every audited nested piece with the
+original worst-q-error ceiling of 10. DPhyp `auto` mode applies its deterministic state/pair budget to search-intensive
+join islands, avoiding the q24 exhaustive-search cliff. Explain finalization preserves exact zero evidence through
+DISTINCT/direct join projections while retaining positive full-sampling evidence through filtered projections. The
+focused q24 selector passes in 2.114 seconds, and the final full corpus passes in 111.381 seconds; retained logs are
+`logs/mvnf/20260712-055323-verify.log` and `logs/mvnf/20260712-062540-verify.log`.
+
+The post-inventory cost repairs are also green. OPTIONAL continuation blending cannot fall below the scaled lower
+bound of its retained Omni surface. DPhyp keeps the canonical independent-equality forest for synthetic estimates,
+while concrete LMDB lookup steps may still refine exported rows and preserve exact missing-path zeros. Parameterized
+paths select an endpoint producer by semantic anchor strength and then physical path cost. The final 300-query rerun
+passes in 106.853 seconds (`logs/mvnf/20260712-072244-verify.log`).
 
 The estimate-audit closeout is green. All previously disabled audit contracts are active, the 30-template smoke corpus
 and complete 300-query stateful corpus pass, and focused regressions cover exact-zero nested filters, independent

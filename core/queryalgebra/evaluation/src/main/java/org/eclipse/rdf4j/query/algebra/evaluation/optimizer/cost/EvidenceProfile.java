@@ -364,8 +364,13 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (joinVars.isEmpty()) {
 			return withWorkRows(workRows + right.workRows, memoryRows, "minus-no-shared-vars");
 		}
-		double matchedLeftRows = matchedLeftRows(right, joinVars);
+		boolean exactMatchCoverage = confidence == 1.0d && right.confidence == 1.0d
+				&& frequencies(joinVars).isPresent() && right.frequencies(joinVars).isPresent();
+		double matchedLeftRows = matchedLeftRowsForMinus(right, joinVars);
 		double differenceRows = Math.max(0.0d, rows - matchedLeftRows);
+		if (differenceRows == 0.0d && rows > 0.0d && !exactMatchCoverage) {
+			differenceRows = rows * 0.5d;
+		}
 		Map<String, VariableEstimate> differenceVariables = new LinkedHashMap<>();
 		for (Map.Entry<String, VariableEstimate> entry : variables.entrySet()) {
 			VariableEstimate variable = entry.getValue().withBoundRows(differenceRows);
@@ -434,13 +439,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		if (leftRelation.isEmpty() || rightRelation.isEmpty()) {
 			return Optional.empty();
 		}
-		Map<List<Value>, Double> leftFrequencies = leftRelation.get().frequencyBy(joinVars);
-		Map<List<Value>, Double> rightFrequencies = rightRelation.get().frequencyBy(joinVars);
-		double result = 0.0d;
-		for (Map.Entry<List<Value>, Double> entry : leftFrequencies.entrySet()) {
-			result += entry.getValue() * rightFrequencies.getOrDefault(entry.getKey(), 0.0d);
-		}
-		return Optional.of(result);
+		return Optional.of(FiniteRelationEstimate.innerJoinRows(leftRelation.get(), rightRelation.get(), joinVars));
 	}
 
 	private double fallbackJoinRows(EvidenceProfile right, Set<String> joinVars) {
@@ -692,18 +691,14 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 
 	private double matchedLeftRows(EvidenceProfile right, Set<String> joinVars) {
 		if (joinVars.isEmpty()) {
-			return 0.0d;
+			return rows;
 		}
-		Optional<Map<List<Value>, Double>> leftFrequencies = frequencies(joinVars);
+		Optional<FiniteRelationEstimate> leftRelation = relationContaining(joinVars);
+		Optional<FiniteRelationEstimate> rightRelation = right.relationContaining(joinVars);
+		if (leftRelation.isPresent() && rightRelation.isPresent()) {
+			return FiniteRelationEstimate.matchedLeftRows(leftRelation.get(), rightRelation.get(), joinVars, false);
+		}
 		Optional<Map<List<Value>, Double>> rightFrequencies = right.frequencies(joinVars);
-		if (leftFrequencies.isPresent() && rightFrequencies.isPresent()) {
-			return leftFrequencies.get()
-					.entrySet()
-					.stream()
-					.filter(entry -> rightFrequencies.get().containsKey(entry.getKey()))
-					.mapToDouble(Map.Entry::getValue)
-					.sum();
-		}
 		double leftDistinct = Math.max(1.0d, tupleDistinct(joinVars));
 		OptionalDouble sketchOverlap = singleVariableOverlapDistinct(right, joinVars);
 		if (sketchOverlap.isPresent()) {
@@ -722,6 +717,15 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		double coveredRightDistinct = estimatedCoveredDistinct(right.rows, Math.max(leftDistinct, rightDistinct));
 		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
 		return rows * matchRatio;
+	}
+
+	private double matchedLeftRowsForMinus(EvidenceProfile right, Set<String> joinVars) {
+		Optional<FiniteRelationEstimate> leftRelation = relationContaining(joinVars);
+		Optional<FiniteRelationEstimate> rightRelation = right.relationContaining(joinVars);
+		if (leftRelation.isPresent() && rightRelation.isPresent()) {
+			return FiniteRelationEstimate.matchedLeftRows(leftRelation.get(), rightRelation.get(), joinVars, true);
+		}
+		return matchedLeftRows(right, joinVars);
 	}
 
 	private Optional<Map<List<Value>, Double>> frequencies(Set<String> vars) {

@@ -66,7 +66,8 @@ Timestamps are UTC.
 - [x] (2026-07-10 18:50Z) Snapshot persistence now tests retained membership directly instead of materializing full probe intersections. Ordered finite-anchor costing no longer expands late assignments recursively, nested LEO key canonicalization cannot refresh its permutation allowance, and no-evidence ranking avoids key construction. The locality IT now completes in 3.8 seconds instead of timing out/OOMing.
 - [x] (2026-07-10 18:55Z) Added the missing post-Cascades finite-values materialization boundary. IRI anchors are restored beside their assured producer; safe literal anchors are restored inside correlated subqueries; ordinary object-literal filters remain local. Locality (1), finite-IN rewrites (17), optimizer pipeline (38), feedback stats (37), and LEO keys (9) are green.
 - [x] (2026-07-10 19:15Z) Closed the remaining q10 plan assertion with a bounded exact two-statement correlated anti bridge. Ordered filter costing now propagates singleton finite prefix values, the bridge evaluates residual conditions over both RHS rows plus those fixed bindings, cache identity includes the fixed values, and every scan remains under the existing one-million-row work ceiling. Q10 (1), Train (1), memoization (100), and Omni surface retention (11) are green.
-- [ ] Final acceptance: full module verify green including the baseline failures, benchmark guardrails, formatter, copyright check, `git diff --check`.
+- [x] (2026-07-12 closeout) Focused acceptance, benchmark guardrails, formatter, copyright, and diff hygiene are
+  complete; final broad evidence is owned by the umbrella architecture plan.
 
 ## Surprises & Discoveries
 

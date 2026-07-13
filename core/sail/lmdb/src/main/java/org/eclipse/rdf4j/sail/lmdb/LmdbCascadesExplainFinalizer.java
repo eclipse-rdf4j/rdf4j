@@ -17,13 +17,17 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -70,20 +74,246 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(statistics);
-		try {
-			if (fallbackAnnotationsEnabled) {
-				CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
-						this::fallbackCost);
-				annotateDisconnectedCartesianFallback(tupleExpr);
-			}
-			capRepeatedDirectLookupJoinRows(tupleExpr);
-			repairStandardBaselineRows(tupleExpr);
-			promoteDistinctCursorSkipRuntimeHints(tupleExpr);
-			annotateCostFeedback(tupleExpr);
-		} finally {
-			services.ifPresent(LmdbPlannerServices::clearCompletedOmniEvidence);
+		if (fallbackAnnotationsEnabled) {
+			CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
+					this::fallbackCost);
 		}
+		annotateCostFeedback(tupleExpr);
+		annotateDisconnectedCartesianFallback(tupleExpr);
+		capRepeatedDirectLookupJoinRows(tupleExpr);
+		repairInnerBoundLookupRows(tupleExpr);
+		repairSemanticCardinalityBounds(tupleExpr);
+		repairStandardBaselineRows(tupleExpr);
+		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
+	}
+
+	private static void repairInnerBoundLookupRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				super.meet(node);
+				if (!INNER_BOUND_LOOKUP_ESTIMATE_SOURCE.equals(
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+					return;
+				}
+				double normalizedRows = node.getDoubleMetricPlanned("plannedInnerJoinOutputRows");
+				double currentRows = plannedRowsOrNaN(node);
+				if (isPositiveFinite(normalizedRows) && !isPositiveFinite(currentRows)) {
+					setSemanticRows(node, normalizedRows, "inner_bound_lookup_normalized_rows");
+					return;
+				}
+				double workRows = plannedWorkRowsOrNaN(node);
+				if (currentRows <= 1.0d) {
+					double leftRows = node.getDoubleMetricPlanned("plannedInnerJoinLeftRows");
+					double rightRows = node.getDoubleMetricPlanned("plannedInnerJoinRightRows");
+					if (isPositiveFinite(leftRows) && isPositiveFinite(rightRows)) {
+						setSemanticRows(node, leftRows * rightRows,
+								"inner_bound_lookup_missing_correlation_product");
+						return;
+					}
+					workRows = Math.max(workRows, maxDescendantWorkRows(node));
+				}
+				if (node.getStringMetricPlanned("optimizer.semanticCardinalityRepair") == null
+						&& isPositiveFinite(currentRows) && isPositiveFinite(workRows)
+						&& workRows / currentRows > 100.0d) {
+					setSemanticRows(node, Math.sqrt(currentRows * workRows),
+							"inner_bound_lookup_repeated_work_midpoint");
+				}
+			}
+		});
+	}
+
+	private static double maxDescendantWorkRows(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		double[] maximum = { Double.NaN };
+		tupleExpr.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr child) {
+					double childWorkRows = plannedWorkRowsOrNaN(child);
+					if (isPositiveFinite(childWorkRows)
+							&& (!isPositiveFinite(maximum[0]) || childWorkRows > maximum[0])) {
+						maximum[0] = childWorkRows;
+					}
+				}
+				node.visitChildren(this);
+			}
+		});
+		return maximum[0];
+	}
+
+	private static void repairSemanticCardinalityBounds(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(QueryRoot node) {
+				super.meet(node);
+				setSemanticRows(node, semanticChildRows(node.getArg()), "query_root_preserves_rows");
+			}
+
+			@Override
+			public void meet(LeftJoin node) {
+				super.meet(node);
+				if ("lmdb-optional-bound-lookup".equals(
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+						&& node.getDoubleMetricPlanned("plannedRepeatedInvocations") > 1.0d) {
+					double leftRows = semanticChildRows(node.getLeftArg());
+					double rightRows = semanticChildRows(node.getRightArg());
+					if (isFiniteNonNegative(leftRows) && isFiniteNonNegative(rightRows)) {
+						setSemanticRows(node, Math.max(leftRows, rightRows), "optional_parameterized_total_rows");
+					}
+				}
+			}
+
+			@Override
+			public void meet(Projection node) {
+				super.meet(node);
+				setSemanticRows(node, semanticChildRows(node.getArg()), "projection_preserves_rows");
+				if (!hasSubtreeStringMetricValue(node, "optimizer.connectedEnumeration",
+						"phase2_disconnected_components")) {
+				}
+			}
+
+			@Override
+			public void meet(Extension node) {
+				super.meet(node);
+				setSemanticRows(node, semanticChildRows(node.getArg()), "extension_preserves_rows");
+			}
+
+			@Override
+			public void meet(Filter node) {
+				super.meet(node);
+				double childRows = semanticChildRows(node.getArg());
+				double passRatio = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+				double repeatedInvocations = node.getDoubleMetricPlanned("plannedRepeatedInvocations");
+				double boundProductRows = node.getDoubleMetricPlanned("plannedBoundJoinProductRows");
+				if (LmdbHypergraphJoinPlanner.ESTIMATE_SOURCE.equals(
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+						&& repeatedInvocations > 1.0d && isFiniteNonNegative(boundProductRows)
+						&& Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
+					setSemanticRows(node, boundProductRows * passRatio, "filter_parameterized_product_rows");
+				} else if (passRatio == 1.0d || childRows == 0.0d) {
+					setSemanticRows(node, childRows, "filter_exact_boundary");
+				} else if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
+					capSemanticRows(node, childRows * passRatio, "filter_selectivity_upper_bound");
+				} else {
+					capSemanticRows(node, childRows, "filter_input_upper_bound");
+				}
+			}
+
+			@Override
+			public void meet(Join node) {
+				super.meet(node);
+				TupleExpr right = node.getRightArg();
+				if (hasExactZeroSemanticEvidence(node.getLeftArg()) || hasExactZeroSemanticEvidence(right)) {
+					setSemanticRows(node, 0.0d, "inner_join_exact_zero_child");
+				} else if (right instanceof Filter
+						&& LmdbHypergraphJoinPlanner.ESTIMATE_SOURCE.equals(
+								node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+						&& right.getDoubleMetricPlanned("plannedRepeatedInvocations") > 1.0d
+						&& isFiniteNonNegative(right.getDoubleMetricPlanned("plannedBoundJoinProductRows"))) {
+					setSemanticRows(node, semanticChildRows(right), "dphyp_parameterized_filter_rows");
+				}
+			}
+
+			@Override
+			public void meet(Distinct node) {
+				super.meet(node);
+				capSemanticRows(node, semanticChildRows(node.getArg()), "distinct_input_upper_bound");
+			}
+
+			@Override
+			public void meet(Reduced node) {
+				super.meet(node);
+				capSemanticRows(node, semanticChildRows(node.getArg()), "reduced_input_upper_bound");
+			}
+
+			@Override
+			public void meet(Slice node) {
+				super.meet(node);
+				capSemanticRows(node, semanticChildRows(node.getArg()), "slice_input_upper_bound");
+			}
+		});
+	}
+
+
+	private static boolean hasSubtreeStringMetricValue(TupleExpr tupleExpr, String metric, String expected) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (expected.equals(node.getStringMetricPlanned(metric))) {
+					found[0] = true;
+					return;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean hasExactZeroSemanticEvidence(TupleExpr tupleExpr) {
+		if (tupleExpr == null || semanticChildRows(tupleExpr) != 0.0d) {
+			return false;
+		}
+		boolean[] exact = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				double passRatio = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+				double confidence = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE);
+				if (passRatio == 0.0d && confidence == 1.0d) {
+					exact[0] = true;
+					return;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return exact[0];
+	}
+
+
+	private static double semanticChildRows(TupleExpr child) {
+		if (child == null) {
+			return Double.NaN;
+		}
+		double rows = child.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		if (isFiniteNonNegative(rows)) {
+			return rows;
+		}
+		rows = child.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (isFiniteNonNegative(rows)) {
+			return rows;
+		}
+		rows = child.getResultSizeEstimate();
+		return isFiniteNonNegative(rows) ? rows : Double.NaN;
+	}
+
+	private static void capSemanticRows(TupleExpr tupleExpr, double upperBound, String reason) {
+		if (!isFiniteNonNegative(upperBound)) {
+			return;
+		}
+		double currentRows = semanticChildRows(tupleExpr);
+		if (!isFiniteNonNegative(currentRows) || currentRows > upperBound) {
+			setSemanticRows(tupleExpr, upperBound, reason);
+		}
+	}
+
+	private static void setSemanticRows(TupleExpr tupleExpr, double rows, String reason) {
+		if (tupleExpr == null || !isFiniteNonNegative(rows)) {
+			return;
+		}
+		tupleExpr.setResultSizeEstimate(rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+		tupleExpr.setStringMetricPlanned("optimizer.semanticCardinalityRepair", reason);
 	}
 
 	private void annotateCostFeedback(TupleExpr tupleExpr) {
@@ -103,7 +333,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private void annotateCostFeedbackNode(LmdbPlannerServices services, TupleExpr tupleExpr) {
-		annotateOmniEvidence(services, tupleExpr);
 		annotateLearnedEvidence(services, tupleExpr);
 		annotateLearnedEvidenceExplain(services, tupleExpr);
 		if (!services.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
@@ -130,20 +359,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 				: LmdbOperatorFeedbackStats.DEFAULT_REPORT_Q_ERROR_THRESHOLD;
 		tupleExpr.setCostFeedbackReportQErrorThreshold(reportQErrorThreshold(tupleExpr, baseThreshold));
 		tupleExpr.setCostFeedbackTrackingEnabled(true);
-	}
-
-	private static void annotateOmniEvidence(LmdbPlannerServices services, TupleExpr tupleExpr) {
-		if (services == null || tupleExpr == null) {
-			return;
-		}
-		services.optimizationScopedOmniEvidence(tupleExpr).ifPresent(evidence -> {
-			for (var entry : evidence.toStringMetrics().entrySet()) {
-				tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
-			}
-			for (var entry : evidence.toDoubleMetrics().entrySet()) {
-				tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-			}
-		});
 	}
 
 	private static void annotateLearnedEvidence(LmdbPlannerServices services, TupleExpr tupleExpr) {
@@ -249,6 +464,10 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	}
 
 	private static void capRepeatedDirectLookupJoinRows(Join join) {
+		if ("phase2_disconnected_components"
+				.equals(join.getStringMetricPlanned("optimizer.connectedEnumeration"))) {
+			return;
+		}
 		if (!(join.getRightArg()instanceof StatementPattern rightPattern)
 				|| !"directLookup".equals(
 						rightPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
@@ -515,14 +734,17 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			return FALLBACK_COST;
 		}
-		double rows = firstPositive(plannedRowsOrNaN(tupleExpr), statisticsRows(tupleExpr));
+		double statisticsRows = statisticsRows(tupleExpr);
+		double rows = tupleExpr instanceof StatementPattern && isFiniteNonNegative(statisticsRows)
+				? statisticsRows
+				: firstFiniteNonNegative(plannedRowsOrNaN(tupleExpr), statisticsRows);
 		double workRows = firstPositive(plannedWorkRowsOrNaN(tupleExpr), rows);
 		try {
 			LogicalProperties properties = costModel == null ? null : costModel.logicalProperties(tupleExpr);
-			if (!isPositiveFinite(rows) && properties != null) {
+			if (!isFiniteNonNegative(rows) && properties != null) {
 				rows = properties.estimatedRows();
 			}
-			if (!isPositiveFinite(rows)) {
+			if (!isFiniteNonNegative(rows)) {
 				rows = 1.0d;
 			}
 			if (!isPositiveFinite(workRows)) {
@@ -546,8 +768,16 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return Double.NaN;
 		}
 		try {
+			if (tupleExpr instanceof StatementPattern pattern) {
+				double rows = LmdbPlannerServices.from(statistics)
+						.map(services -> services.estimateStatementPatternRows(pattern, Set.of()))
+						.orElse(Double.NaN);
+				if (isFiniteNonNegative(rows)) {
+					return rows;
+				}
+			}
 			double rows = statistics.getCardinality(tupleExpr);
-			return isPositiveFinite(rows) ? rows : Double.NaN;
+			return isFiniteNonNegative(rows) ? rows : Double.NaN;
 		} catch (RuntimeException ignored) {
 			return Double.NaN;
 		}
@@ -555,6 +785,10 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 
 	private static double firstPositive(double preferred, double fallback) {
 		return isPositiveFinite(preferred) ? preferred : fallback;
+	}
+
+	private static double firstFiniteNonNegative(double preferred, double fallback) {
+		return isFiniteNonNegative(preferred) ? preferred : fallback;
 	}
 
 	private static boolean isPositiveFinite(double value) {
@@ -573,13 +807,40 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return;
 		}
 		if (tupleExpr instanceof Join join) {
-			if (LmdbJoinIslandConnectivity.disconnectedJoinIsland(join, externallyBoundVars)
+			boolean supportedDisconnected = LmdbJoinIslandConnectivity.disconnectedJoinIsland(join,
+					externallyBoundVars);
+			if (supportedDisconnected
 					&& !LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE
 							.equals(join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
 				join.setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
 				join.setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
-				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS,
-						cartesianWorkRows(join));
+				double selectedRows = plannedRowsOrNaN(join);
+				double cartesianRows = cartesianWorkRows(join);
+				if (!isPositiveFinite(cartesianRows) && isPositiveFinite(selectedRows)) {
+					cartesianRows = selectedRows;
+					join.setStringMetricPlanned("optimizer.cartesianCardinalityRepair",
+							"selected_operator_estimate");
+				}
+				double totalWorkRows = plannedWorkRowsOrNaN(join);
+				if (isPositiveFinite(cartesianRows) && isPositiveFinite(totalWorkRows)
+						&& totalWorkRows > cartesianRows) {
+					cartesianRows = Math.sqrt(cartesianRows * totalWorkRows);
+					join.setStringMetricPlanned("optimizer.cartesianCardinalityRepair",
+							"disconnected_work_midpoint");
+				}
+				join.setResultSizeEstimate(cartesianRows);
+				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cartesianRows);
+				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, cartesianRows);
+				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, cartesianRows);
+			} else if (LmdbJoinIslandConnectivity.structurallyDisconnectedJoinIsland(join, externallyBoundVars)
+					&& INNER_BOUND_LOOKUP_ESTIMATE_SOURCE.equals(
+							join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+				double outputRows = plannedRowsOrNaN(join);
+				double workRows = plannedWorkRowsOrNaN(join);
+				if (isPositiveFinite(outputRows) && isPositiveFinite(workRows) && workRows > outputRows) {
+					double blendedRows = Math.sqrt(outputRows * workRows);
+					setSemanticRows(join, blendedRows, "unsupported_disconnected_work_midpoint");
+				}
 			}
 			annotateDisconnectedCartesianFallback(join.getLeftArg(), externallyBoundVars);
 			annotateDisconnectedCartesianFallback(join.getRightArg(),

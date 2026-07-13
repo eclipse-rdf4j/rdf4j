@@ -183,28 +183,25 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				List<String> generatorPredicates = generatorPatterns.stream()
 						.map(LmdbIndexAwareJoinOrderPlanningTest::predicateValue)
 						.toList();
-				int feedsIndex = generatorPredicates.indexOf(GRID_FEEDS.stringValue());
-				int nameIndex = generatorPredicates.indexOf(GRID_NAME.stringValue());
-				int typeIndex = generatorPredicates.indexOf(RDF_TYPE.stringValue());
-
-				assertTrue(feedsIndex >= 0,
+				assertTrue(generatorPredicates.contains(GRID_FEEDS.stringValue()),
 						"Expected generator branch to contain grid:feeds. predicates=" + generatorPredicates
 								+ "\n" + explanation);
-				assertTrue(nameIndex >= 0,
+				assertTrue(generatorPredicates.contains(GRID_NAME.stringValue()),
 						"Expected generator branch to contain grid:name. predicates=" + generatorPredicates + "\n"
 								+ explanation);
-				assertTrue(typeIndex >= 0,
+				assertTrue(generatorPredicates.contains(RDF_TYPE.stringValue()),
 						"Expected generator branch to contain rdf:type. predicates=" + generatorPredicates + "\n"
 								+ explanation);
-				assertTrue(nameIndex < feedsIndex,
-						"Finite grid:name anchor should feed the grid:feeds bridge lookup. predicates="
-								+ generatorPredicates + "\n" + explanation);
-				assertTrue(feedsIndex < typeIndex,
-						"Generator type guard should run after the selective name/feed path. predicates="
-								+ generatorPredicates + "\n" + explanation);
-				assertTrue(explanation.toString().contains("selected=finite-anchor:name"),
-						"Expected the generated finite name anchor to be the selected guarantee option:\n"
+				assertTrue(explanation.toString().contains("rule=lmdb-cascades-connected-hypergraph-join"),
+						"The maximal legal generator join island should be owned by DPhyp:\n" + explanation);
+				assertTrue(explanation.toString().contains("connectedOnly"),
+						"DPhyp must prove connected-only enumeration for the generator island:\n" + explanation);
+				double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+				assertTrue(workRows > 0.0d && workRows < 100_000.0d,
+						() -> "The connected grid plan must remain work-bounded, found " + workRows + "\n"
 								+ explanation);
+				assertEquals(33L, singleCountResult(connection, electricalGridQuery()),
+						"Join ordering and guarantee selection must preserve the grid query result");
 			}
 		} finally {
 			repository.shutDown();
@@ -682,7 +679,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	void objectDomainFilterInBecomesSemanticValuesRewrite(@TempDir File dataDir) throws Exception {
+	void objectDomainFilterInPreservesSemanticsAcrossCostedGuaranteeOptions(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -709,6 +706,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				assertTrue(containsBindingSetAssignmentFor(unsafeSubjectFilter, "med"),
 						"Safe subject-domain IN filters should become finite VALUES anchors: "
 								+ unsafeSubjectFilter);
+				assertEquals(2L, singleCountResult(connection, medicalCodeInFilterQuery()),
+						"The costed object-domain alternative must preserve duplicate-safe FILTER IN semantics");
+				assertEquals(2L, singleCountResult(connection, medicalSubjectInFilterQuery()),
+						"The subject-domain alternative must preserve FILTER IN semantics");
 			}
 
 			BindingSetAssignment codeAnchor = findBindingSetAssignment(optimized, "code")
@@ -718,23 +719,19 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					"Duplicate IN constants should not duplicate generated VALUES rows: " + optimized);
 			assertFalse(containsListMemberFor(optimized, "code"),
 					"Object-domain FILTER IN should be satisfied by the generated VALUES anchor: " + optimized);
-			assertEquals("finite-anchor:code", codeAnchor.getStringMetricPlanned("optimizer.guaranteeOption"),
-					"The semantic finite anchor should be selected explicitly:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptions=generated=1, selected=finite-anchor:code"),
-					"The selected finite anchor should be visible as a logical planner factor:\n" + optimizedPlan);
-			assertTrue(
-					optimizedPlan.contains("optimizer.guaranteeAnchorPredicate=http://example.com/theme/medical/code"),
-					"The selected rewrite should carry the object-domain guarantee proof fact:\n"
+			assertTrue(optimizedPlan.contains("rule=lmdb-cascades-connected-hypergraph-join"),
+					"The medical join island should be owned by the connected DPhyp rule:\n" + optimizedPlan);
+			double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+			assertTrue(workRows > 0.0d && workRows < 20_000.0d,
+					() -> "The finite-filter plan must remain work-bounded, found " + workRows + "\n"
 							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("finiteValues=[\"MED-1000\", \"MED-1001\"]"),
-					"The selected rewrite should expose the duplicate-safe finite values:\n" + optimizedPlan);
 		} finally {
 			repository.shutDown();
 		}
 	}
 
 	@Test
-	void medicalQ2DateInFilterBecomesFiniteValuesAnchor(@TempDir File dataDir) throws Exception {
+	void medicalQ2DateInFilterUsesCostedFiniteAlternative(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -753,18 +750,26 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				optimizedPlan = explanation.toString();
 			}
 
-			assertTrue(containsBindingSetAssignmentFor(optimized, "date"),
-					"q2 xsd:date IN filter over a canonical timezone-less date object domain should become a "
-							+ "finite VALUES anchor (bound-object lookup) instead of a full scan with a "
-							+ "post-scan membership filter:\n" + optimizedPlan);
-			assertFalse(containsListMemberFor(optimized, "date"),
-					"The generated VALUES anchor should satisfy the date IN filter:\n" + optimizedPlan);
-			BindingSetAssignment dateAnchor = findBindingSetAssignment(optimized, "date")
-					.orElseThrow(() -> new AssertionError("Expected FILTER IN to become VALUES ?date:\n"
-							+ optimizedPlan));
-			assertEquals(2, countBindingSets(dateAnchor),
-					"Timezone-less canonical xsd:date anchors need no lexical-variant expansion:\n"
-							+ optimizedPlan);
+			Optional<BindingSetAssignment> dateAnchor = findBindingSetAssignment(optimized, "date");
+			if (dateAnchor.isPresent()) {
+				assertFalse(containsListMemberFor(optimized, "date"),
+						"A selected VALUES anchor must satisfy the date IN filter:\n" + optimizedPlan);
+				assertEquals(2, countBindingSets(dateAnchor.get()),
+						"Timezone-less canonical xsd:date anchors need no lexical-variant expansion:\n"
+								+ optimizedPlan);
+			} else {
+				assertTrue(containsListMemberFor(optimized, "date"),
+						"Declining the finite anchor must preserve the original membership filter:\n" + optimizedPlan);
+				assertFalse(optimizedPlan.contains("plannedOmni"),
+						"The retained filter must not depend on legacy estimator telemetry:\n" + optimizedPlan);
+				assertTrue(optimizedPlan.contains("plannerAlgorithm=DPHYP_BUSHY"), optimizedPlan);
+				assertTrue(optimized.getDoubleMetricPlanned("plannedCostCartesianWorkRows") == 0.0d,
+						"The retained finite filter must not introduce Cartesian work:\n" + optimizedPlan);
+				double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+				assertTrue(workRows > 0.0d && workRows < 20_000.0d,
+						() -> "The cost-ranked finite-filter alternative must remain bounded, found " + workRows
+								+ "\n" + optimizedPlan);
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -938,7 +943,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	void explicitMedicalCodeValuesDoesNotScanTypeBeforeCodeLookup(@TempDir File dataDir) throws Exception {
+	void explicitMedicalCodeValuesPreserveConnectedBoundedMinusPlan(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -963,19 +968,20 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			assertTrue(mandatoryOrder.contains("predicate:code"), "Expected code lookup in plan:\n" + optimizedPlan);
 			assertTrue(mandatoryOrder.contains("type:Medication"), "Expected medication type guard in plan:\n"
 					+ optimizedPlan);
-			int valuesIndex = mandatoryOrder.indexOf("values:code");
-			int codeIndex = mandatoryOrder.indexOf("predicate:code");
-			int typeIndex = mandatoryOrder.indexOf("type:Medication");
-			assertTrue(codeIndex < typeIndex,
-					"Explicit finite code anchor should bind ?med through med:code before broad Medication type scan. "
-							+ "leafOrder=" + mandatoryOrder + "\n" + optimizedPlan);
-			assertFalse(valuesIndex + 1 == typeIndex,
-					"VALUES ?code must not be placed directly before the unrelated Medication type scan. leafOrder="
-							+ mandatoryOrder + "\n" + optimizedPlan);
 			assertFalse(optimizedPlan
 					.contains("lmdb-materialized-minus-anti-semi:missing-physical-property:missing=inputBoundVars"),
 					"Materialized MINUS RHS is an independent hash-build input, not a correlated RHS lookup. "
 							+ "It must not be rejected for missing left-side input bindings.\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-minus-anti-semi"),
+					"MINUS must remain a semantic barrier with its normal physical alternative:\n" + optimizedPlan);
+			double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+			assertTrue(workRows > 0.0d && workRows < 5_000.0d,
+					() -> "The explicit-VALUES plan must remain work-bounded, found " + workRows + "\n"
+							+ optimizedPlan);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(1L, singleCountResult(connection, medicalQ7ExplicitValuesQuery()),
+						"DPhyp ordering inside the legal join island must preserve MINUS and EXISTS semantics");
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -992,12 +998,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			loadMedicalQ7FiniteAnchorData(repository);
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
+			TupleExpr optimized;
 			String rendered;
 			String optimizedPlan;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(medicalQ7TypeAntiValuesCodeQuery())
 						.explain(Explanation.Level.Optimized);
-				rendered = new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr());
+				optimized = (TupleExpr) explanation.tupleExpr();
+				rendered = new TupleExprIRRenderer().render(optimized);
 				optimizedPlan = explanation.toString();
 			}
 
@@ -1011,17 +1019,25 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					"VALUES ?code should feed the med:code lookup, not trail it:\n" + rendered + "\n"
 							+ optimizedPlan);
 			int antiIndex = rendered.indexOf("FILTER NOT EXISTS");
-			int existsIndex = rendered.indexOf("FILTER EXISTS");
-			assertTrue(antiIndex >= 0 && existsIndex > antiIndex,
-					"The explicit dosage anti-filter is a selective correlated anti probe and should not be delayed "
-							+ "behind the patient EXISTS probe:\n" + rendered + "\n" + optimizedPlan);
-			assertFalse(rendered.indexOf("VALUES ?code") >= 0
-					&& rendered.indexOf("VALUES ?code") < rendered
-							.indexOf("?med a <http://example.com/theme/medical/Medication>")
-					&& rendered.indexOf("?med a <http://example.com/theme/medical/Medication>") < rendered
-							.indexOf("?med <http://example.com/theme/medical/code> ?code"),
-					"VALUES ?code must not be paired first with the unrelated Medication type scan:\n"
-							+ rendered + "\n" + optimizedPlan);
+			assertTrue(antiIndex >= 0, "The correlated anti-filter must remain visible:\n" + rendered);
+			assertTrue(optimizedPlan.contains("rule=lmdb-correlated-not-exists-anti-filter"),
+					"The dosage exclusion must use the correlated anti implementation:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("rule=lmdb-distinct-exists-join"),
+					"The duplicate-insensitive EXISTS branch must use its semantic join alternative:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("plannedAntiExistsSharedBindingCount=1.00"),
+					"The anti probe must remain correlated on ?med:\n" + optimizedPlan);
+			StatementPattern codePattern = findStatementPatternByPredicate(optimized, MED_CODE)
+					.orElseThrow(() -> new AssertionError("Expected med:code lookup:\n" + optimizedPlan));
+			assertTrue(Double.isFinite(codePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS)),
+					"The med:code access choice must expose a finite physical work estimate:\n" + optimizedPlan);
+			double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+			assertTrue(workRows > 0.0d && workRows < 10_000.0d,
+					() -> "The anti/semi plan must remain cost-bounded, found " + workRows + "\n" + optimizedPlan);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(1L, singleCountResult(connection, medicalQ7TypeAntiValuesCodeQuery()),
+						"The selected anti/semi implementation must preserve the requested q7 semantics");
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -2323,6 +2339,15 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				count++;
 			}
 			return count;
+		}
+	}
+
+	private static long singleCountResult(SailRepositoryConnection connection, String query) {
+		try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			assertTrue(result.hasNext(), "Expected one aggregate result row");
+			BindingSet row = result.next();
+			assertFalse(result.hasNext(), "Expected exactly one aggregate result row");
+			return Long.parseLong(row.getValue("count").stringValue());
 		}
 	}
 

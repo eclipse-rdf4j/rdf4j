@@ -126,8 +126,11 @@ public interface RdfStatisticsProvider {
 		}
 
 		public boolean canChangeWinner() {
-			if (candidateCost == null || incumbentCost == null || CostVector.INFINITE.equals(incumbentCost)) {
+			if (candidateCost == null || incumbentCost == null) {
 				return false;
+			}
+			if (CostVector.INFINITE.equals(incumbentCost)) {
+				return !CostVector.INFINITE.equals(candidateCost);
 			}
 			if (candidateCost.compareTo(incumbentCost) <= 0) {
 				return true;

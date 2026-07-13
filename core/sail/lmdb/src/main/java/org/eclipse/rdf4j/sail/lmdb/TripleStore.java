@@ -1701,7 +1701,7 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	private double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
+	double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
 		return txnManager.doWith((stack, txn) -> {
 			double cardinality = 0.0;
 			TxnManager.Txn txnRef = txnManager.createTxn(txn);

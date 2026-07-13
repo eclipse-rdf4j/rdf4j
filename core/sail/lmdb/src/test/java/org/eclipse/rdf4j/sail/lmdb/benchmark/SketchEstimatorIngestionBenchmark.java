@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadValueHash;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -54,11 +56,7 @@ import org.openjdk.jmh.annotations.Warmup;
 public class SketchEstimatorIngestionBenchmark {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
-	private static final SketchBasedJoinEstimator.Config CONFIG = SketchBasedJoinEstimator.Config.defaults()
-//			.withNominalEntries(128)
-//			.withThrottleEveryN(0)
-//			.withThrottleMillis(0)
-			.withRefreshSleepMillis(5);
+	private static final SketchBasedJoinEstimator.Config CONFIG = SketchBasedJoinEstimator.Config.defaults();
 
 	@State(Scope.Thread)
 	public static class Fixture {
@@ -66,13 +64,12 @@ public class SketchEstimatorIngestionBenchmark {
 		public int statementCount;
 
 		List<Statement> statements;
-		String predicateValue;
+		IRI predicate;
 
 		@Setup(Level.Trial)
 		public void setupStatements() {
-			IRI predicate = VF.createIRI("urn:bench:p");
+			predicate = VF.createIRI("urn:bench:p");
 			Resource context = VF.createIRI("urn:bench:c");
-			predicateValue = predicate.stringValue();
 			statements = new ArrayList<>(statementCount);
 			for (int i = 0; i < statementCount; i++) {
 				statements.add(VF.createStatement(
@@ -142,7 +139,9 @@ public class SketchEstimatorIngestionBenchmark {
 		for (Statement statement : state.statements) {
 			state.estimator.addStatement(statement);
 		}
-		return state.estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, state.predicateValue);
+		QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
+				QuadValueHash.hash(state.predicate), 0L, 0L, state.estimator.quadSnapshotIdentity());
+		return state.estimator.synopsisService().probe(probe).rows().estimate();
 	}
 
 	@Benchmark
@@ -158,11 +157,6 @@ public class SketchEstimatorIngestionBenchmark {
 	private record BenchmarkStatementSource(List<Statement> data) implements SketchStatementSource {
 		private BenchmarkStatementSource(List<Statement> data) {
 			this.data = List.copyOf(data);
-		}
-
-		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
 		}
 
 		@Override

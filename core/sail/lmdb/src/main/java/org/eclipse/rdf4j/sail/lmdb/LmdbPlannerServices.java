@@ -24,135 +24,113 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 
+/** Planner-facing view of the engine runtime; it never depends on an RDF4J facade implementation. */
 final class LmdbPlannerServices {
-	private final LmdbCardinalityEstimator cardinalityEstimator;
-	private final LmdbJoinFactorCostEstimator joinFactorCostEstimator;
-	private final LmdbJoinOrderEstimator joinOrderEstimator;
-	private final LmdbExecutionFeedbackRecorder executionFeedbackRecorder;
-	private final LmdbEstimatorScope estimatorScope;
+	private final LmdbEstimatorRuntime runtime;
 
-	private LmdbPlannerServices(LmdbEvaluationStatistics statistics) {
-		this.cardinalityEstimator = new LmdbCardinalityEstimator(statistics);
-		this.joinFactorCostEstimator = new LmdbJoinFactorCostEstimator(statistics);
-		this.joinOrderEstimator = new LmdbJoinOrderEstimator(statistics);
-		this.executionFeedbackRecorder = new LmdbExecutionFeedbackRecorder(statistics);
-		this.estimatorScope = new LmdbEstimatorScope(statistics);
+	private LmdbPlannerServices(LmdbEstimatorRuntime runtime) {
+		this.runtime = runtime;
 	}
 
 	static Optional<LmdbPlannerServices> from(EvaluationStatistics statistics) {
-		return statistics instanceof LmdbEvaluationStatistics lmdbStatistics
-				? Optional.of(new LmdbPlannerServices(lmdbStatistics))
+		return statistics instanceof LmdbEstimatorRuntimeProvider provider
+				? Optional.of(new LmdbPlannerServices(provider.estimatorRuntime()))
 				: Optional.empty();
 	}
 
-	static Optional<LmdbPlannerServices> from(JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
-		if (costModel instanceof LmdbEvaluationStatistics statistics) {
-			return Optional.of(new LmdbPlannerServices(statistics));
-		}
-		return from(fallbackStatistics);
+	static Optional<LmdbPlannerServices> from(JoinFactorCostModel costModel, EvaluationStatistics fallback) {
+		return costModel instanceof LmdbEstimatorRuntimeProvider provider
+				? Optional.of(new LmdbPlannerServices(provider.estimatorRuntime()))
+				: from(fallback);
 	}
 
 	ValueStore valueStore() {
-		return cardinalityEstimator.valueStore();
+		return runtime.valueStore();
 	}
 
-	Optional<EvaluationStatistics.FilterPassEstimate> estimatePatternLocalFilterPass(
-			ValueExpr condition, StatementPattern pattern, Set<StatementPattern> originPatterns) {
-		return cardinalityEstimator.estimatePatternLocalFilterPass(condition, pattern, originPatterns);
+	boolean canEstimateStatementPatternRows() {
+		return runtime.hasStorageEvidence();
+	}
+
+	double estimateStatementPatternRows(StatementPattern pattern, Set<String> boundVars) {
+		return runtime.statementPatternRows(pattern, boundVars);
+	}
+
+	Optional<EvaluationStatistics.FilterPassEstimate> estimatePatternLocalFilterPass(ValueExpr condition,
+			StatementPattern pattern, Set<StatementPattern> ignored) {
+		return runtime.patternFilterPass(condition, pattern);
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ArbitraryLengthPath path, Set<String> boundVars) {
-		return cardinalityEstimator.estimatePropertyPath(path, boundVars);
+		return runtime.propertyPath(path, boundVars);
 	}
 
 	Optional<PropertyPathEstimate> estimatePropertyPath(ZeroLengthPath path, Set<String> boundVars) {
-		return cardinalityEstimator.estimatePropertyPath(path, boundVars);
+		return runtime.propertyPath(path, boundVars);
 	}
 
 	Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns, Set<String> boundVars) {
-		return cardinalityEstimator.estimateSubjectStar(patterns, boundVars);
+		return runtime.subjectStar(patterns, boundVars);
 	}
 
-	BoundJoinProductEstimate estimateBoundJoinProduct(
-			TupleExpr leftArg, TupleExpr rightArg, double knownLeftRows) {
-		return joinFactorCostEstimator.estimateBoundJoinProduct(leftArg, rightArg, knownLeftRows);
+	BoundJoinProductEstimate estimateBoundJoinProduct(TupleExpr left, TupleExpr right, double knownLeftRows) {
+		return runtime.boundJoinProduct(left, right, knownLeftRows);
 	}
 
-	OptionalBridgeProductEstimate estimateOptionalBridgeProduct(
-			TupleExpr leftArg, TupleExpr rightArg, double knownLeftRows) {
-		return joinFactorCostEstimator.estimateOptionalBridgeProduct(leftArg, rightArg, knownLeftRows);
+	OptionalBridgeProductEstimate estimateOptionalBridgeProduct(TupleExpr left, TupleExpr right,
+			double knownLeftRows) {
+		return runtime.optionalBridgeProduct(left, right, knownLeftRows);
 	}
 
 	double estimateBoundJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
-		return joinFactorCostEstimator.estimateBoundJoinSurfaceRows(factors, joinVarName);
+		return runtime.boundJoinSurfaceRows(factors, joinVarName);
 	}
 
-	double estimateBoundJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
-		return joinFactorCostEstimator.estimateBoundJoinSurfaceRows(prefixFactors, factor, joinVarName);
+	double estimateBoundJoinSurfaceRows(List<TupleExpr> prefix, TupleExpr factor, String joinVarName) {
+		return runtime.boundJoinSurfaceRows(prefix, factor, joinVarName);
 	}
 
-	boolean supportsOperatorFeedbackTracking(TupleExpr node) {
-		return executionFeedbackRecorder.supportsOperatorFeedbackTracking(node);
+	boolean supportsOperatorFeedbackTracking(TupleExpr expression) {
+		return runtime.feedback() != null && runtime.feedback().shouldTrackRuntimeFeedback(expression);
 	}
 
-	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
+	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr expression, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
-		return executionFeedbackRecorder.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows,
-				executionMode);
+		return runtime.feedback() == null ? null
+				: runtime.feedback().estimate(expression, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
 	}
 
-	String debugEvidence(TupleExpr tupleExpr) {
-		return executionFeedbackRecorder.debugEvidence(tupleExpr);
+	String debugEvidence(TupleExpr expression) {
+		return runtime.feedback() == null ? "" : runtime.feedback().debugEvidence(expression);
 	}
 
-	Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr tupleExpr) {
-		return executionFeedbackRecorder.planRankingAdvice(tupleExpr);
+	Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr expression) {
+		return runtime.feedback() == null ? Optional.empty() : runtime.feedback().planRankingAdvice(expression);
 	}
 
-	String learnedOptimizerDebugEvidence(TupleExpr tupleExpr) {
-		return executionFeedbackRecorder.learnedOptimizerDebugEvidence(tupleExpr);
+	String learnedOptimizerDebugEvidence(TupleExpr expression) {
+		return debugEvidence(expression);
 	}
 
-	String learnedOptimizerExplainDiff(TupleExpr tupleExpr) {
-		return executionFeedbackRecorder.learnedOptimizerExplainDiff(tupleExpr);
+	String learnedOptimizerExplainDiff(TupleExpr expression) {
+		return runtime.feedback() == null ? "" : runtime.feedback().explainEstimateDiff(expression);
 	}
 
 	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
-		return estimatorScope.factorFingerprint(factor);
-	}
-
-	Optional<OmniSketchSurfaceEstimate> optimizationScopedOmniEvidence(TupleExpr tupleExpr) {
-		return estimatorScope.omniEvidence(tupleExpr);
-	}
-
-	LmdbOmniEvidenceStore optimizationScopedOmniEvidenceStore() {
-		return estimatorScope.omniEvidenceStore();
-	}
-
-	void clearCompletedOmniEvidence() {
-		estimatorScope.clearCompletedOmniEvidence();
+		return runtime.factorFingerprint(factor);
 	}
 
 	boolean hasOptimizationScopedPlannerCache() {
-		return estimatorScope.hasPlannerCache();
-	}
-
-	Object getOptimizationScopedPlannerCacheValue(Object key) {
-		return estimatorScope.getPlannerCacheValue(key);
-	}
-
-	void putOptimizationScopedPlannerCacheValue(Object key, Object value) {
-		estimatorScope.putPlannerCacheValue(key, value);
+		return runtime.hasPlannerCache();
 	}
 
 	PlanTemplateCache<Object> planTemplateCache() {
-		return estimatorScope.planTemplateCache();
+		return runtime.planTemplateCache();
 	}
 
 	long statisticsSnapshotVersion() {
-		return estimatorScope.statisticsSnapshotVersion();
+		return runtime.snapshotVersion();
 	}
 }

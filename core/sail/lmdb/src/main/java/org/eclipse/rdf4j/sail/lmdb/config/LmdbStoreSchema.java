@@ -128,6 +128,8 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY;
 
+	public final static IRI SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
+
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
@@ -186,6 +188,8 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_EVIDENCE_MODE = factory.createIRI(NAMESPACE, "sketchEstimatorEvidenceMode");
 		SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY = factory.createIRI(NAMESPACE,
 				"sketchEstimatorColdSynopsisCapacity");
+		SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorMemoryBudgetBytes");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");

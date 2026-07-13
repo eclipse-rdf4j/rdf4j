@@ -15,6 +15,7 @@ import java.util.AbstractList;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,24 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return frequencyBy(names).size();
 	}
 
+	double boundRows(String name) {
+		int index = indexes(List.of(name)).getFirst();
+		double result = 0.0d;
+		for (Map.Entry<List<Value>, Double> entry : frequencies.entrySet()) {
+			if (entry.getKey().get(index) != null) {
+				result += entry.getValue();
+			}
+		}
+		return result;
+	}
+
+	double distinctBoundRows(String name) {
+		return frequencyBy(List.of(name)).keySet()
+				.stream()
+				.filter(tuple -> tuple.getFirst() != null)
+				.count();
+	}
+
 	public Map<List<Value>, Double> frequencyBy(Collection<String> names) {
 		List<String> keyNames = names == null ? List.of() : List.copyOf(names);
 		List<Integer> indexes = indexes(keyNames);
@@ -144,6 +163,137 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return StableValueKey.of(left).equals(StableValueKey.of(right));
 	}
 
+	static double innerJoinRows(FiniteRelationEstimate left, FiniteRelationEstimate right,
+			Collection<String> sharedVariables) {
+		if (sharedVariables == null || sharedVariables.isEmpty()) {
+			return left.rows() * right.rows();
+		}
+		if (!hasUnbound(left, sharedVariables) && !hasUnbound(right, sharedVariables)) {
+			Map<List<Value>, Double> leftFrequencies = left.frequencyBy(sharedVariables);
+			Map<List<Value>, Double> rightFrequencies = right.frequencyBy(sharedVariables);
+			double result = 0.0d;
+			for (Map.Entry<List<Value>, Double> entry : leftFrequencies.entrySet()) {
+				result += entry.getValue() * rightFrequencies.getOrDefault(entry.getKey(), 0.0d);
+			}
+			return result;
+		}
+		double result = 0.0d;
+		for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+			for (Map.Entry<List<Value>, Double> rightEntry : right.frequencies.entrySet()) {
+				if (compatible(left, leftEntry.getKey(), right, rightEntry.getKey(), sharedVariables)) {
+					result += leftEntry.getValue() * rightEntry.getValue();
+				}
+			}
+		}
+		return result;
+	}
+
+	static double matchedLeftRows(FiniteRelationEstimate left, FiniteRelationEstimate right,
+			Collection<String> sharedVariables, boolean requireSharedBoundValue) {
+		if (sharedVariables != null && !sharedVariables.isEmpty()
+				&& !hasUnbound(left, sharedVariables) && !hasUnbound(right, sharedVariables)) {
+			Map<List<Value>, Double> leftFrequencies = left.frequencyBy(sharedVariables);
+			Map<List<Value>, Double> rightFrequencies = right.frequencyBy(sharedVariables);
+			double result = 0.0d;
+			for (Map.Entry<List<Value>, Double> entry : leftFrequencies.entrySet()) {
+				if (rightFrequencies.containsKey(entry.getKey())) {
+					result += entry.getValue();
+				}
+			}
+			return result;
+		}
+		double result = 0.0d;
+		for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+			for (List<Value> rightTuple : right.frequencies.keySet()) {
+				if (compatible(left, leftEntry.getKey(), right, rightTuple, sharedVariables)
+						&& (!requireSharedBoundValue
+								|| sharesBoundValue(left, leftEntry.getKey(), right, rightTuple, sharedVariables))) {
+					result += leftEntry.getValue();
+					break;
+				}
+			}
+		}
+		return result;
+	}
+
+	static FiniteRelationEstimate innerJoin(FiniteRelationEstimate left, FiniteRelationEstimate right,
+			Collection<String> sharedVariables, String source) {
+		List<String> outputVariables = new ArrayList<>(left.variables);
+		for (String variable : right.variables) {
+			if (!outputVariables.contains(variable)) {
+				outputVariables.add(variable);
+			}
+		}
+		Map<List<Value>, Double> output = new LinkedHashMap<>();
+		for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+			for (Map.Entry<List<Value>, Double> rightEntry : right.frequencies.entrySet()) {
+				if (!compatible(left, leftEntry.getKey(), right, rightEntry.getKey(), sharedVariables)) {
+					continue;
+				}
+				List<Value> tuple = mergedTuple(left, leftEntry.getKey(), right, rightEntry.getKey());
+				output.merge(tupleKey(tuple), leftEntry.getValue() * rightEntry.getValue(), Double::sum);
+			}
+		}
+		return fromFrequencies(outputVariables, output, source);
+	}
+
+	private static boolean compatible(FiniteRelationEstimate left, List<Value> leftTuple,
+			FiniteRelationEstimate right, List<Value> rightTuple, Collection<String> sharedVariables) {
+		if (sharedVariables == null) {
+			return true;
+		}
+		for (String variable : sharedVariables) {
+			Value leftValue = leftTuple.get(left.variables.indexOf(variable));
+			Value rightValue = rightTuple.get(right.variables.indexOf(variable));
+			if (leftValue != null && rightValue != null && !sameValue(leftValue, rightValue)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean hasUnbound(FiniteRelationEstimate relation, Collection<String> variables) {
+		for (String variable : variables) {
+			int index = relation.variables.indexOf(variable);
+			for (List<Value> tuple : relation.frequencies.keySet()) {
+				if (tuple.get(index) == null) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean sharesBoundValue(FiniteRelationEstimate left, List<Value> leftTuple,
+			FiniteRelationEstimate right, List<Value> rightTuple, Collection<String> sharedVariables) {
+		if (sharedVariables == null) {
+			return false;
+		}
+		for (String variable : sharedVariables) {
+			if (leftTuple.get(left.variables.indexOf(variable)) != null
+					&& rightTuple.get(right.variables.indexOf(variable)) != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static List<Value> mergedTuple(FiniteRelationEstimate left, List<Value> leftTuple,
+			FiniteRelationEstimate right, List<Value> rightTuple) {
+		List<Value> output = new ArrayList<>(leftTuple);
+		for (int index = 0; index < right.variables.size(); index++) {
+			String variable = right.variables.get(index);
+			int outputIndex = left.variables.indexOf(variable);
+			Value rightValue = rightTuple.get(index);
+			if (outputIndex < 0) {
+				output.add(rightValue);
+			} else if (output.get(outputIndex) == null) {
+				output.set(outputIndex, rightValue);
+			}
+		}
+		return output;
+	}
+
 	private static final class StableValueTupleMap extends AbstractMap<List<Value>, Double> {
 
 		private final Map<List<Value>, Double> delegate;
@@ -177,10 +327,13 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			}
 			List<Value> tuple = new ArrayList<>(values.size());
 			for (Object value : values) {
-				if (!(value instanceof Value rdfValue)) {
+				if (value == null) {
+					tuple.add(null);
+				} else if (value instanceof Value rdfValue) {
+					tuple.add(rdfValue);
+				} else {
 					return key;
 				}
-				tuple.add(rdfValue);
 			}
 			return tupleKey(tuple);
 		}
@@ -193,7 +346,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		private final int hash;
 
 		private StableValueTuple(List<Value> values) {
-			this.values = values == null ? List.of() : List.copyOf(values);
+			this.values = values == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(values));
 			this.identities = new StableValueKey[this.values.size()];
 			int computedHash = 1;
 			for (int i = 0; i < this.values.size(); i++) {
@@ -237,7 +390,10 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			}
 			for (int i = 0; i < identities.length; i++) {
 				Object value = otherValues.get(i);
-				if (!(value instanceof Value otherValue) || !identities[i].equals(StableValueKey.of(otherValue))) {
+				if (value != null && !(value instanceof Value)) {
+					return false;
+				}
+				if (!identities[i].equals(StableValueKey.of((Value) value))) {
 					return false;
 				}
 			}

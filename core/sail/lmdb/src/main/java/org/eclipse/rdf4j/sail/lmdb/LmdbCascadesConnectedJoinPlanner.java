@@ -265,6 +265,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		doubleMetrics.put("optimizer.connectedFactorIndex", (double) factorIndex);
 		if (path(factor)) {
 			stringMetrics.put("optimizer.pathEndpointMode", pathEndpointMode(factor, boundVars));
+			stringMetrics.put("plannedPropertyPathMethod", stringMetrics
+					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path"));
 		}
 		TupleExpr plannedFactor = rowPreservingPlan.map(plan -> materializeRowPreservingFactor(factor, plan))
 				.orElse(null);

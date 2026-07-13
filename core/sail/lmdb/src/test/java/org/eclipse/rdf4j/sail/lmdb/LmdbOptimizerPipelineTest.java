@@ -141,11 +141,11 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
+	void lowHeapAutomaticStoreUsesUnifiedEngineAndPageCardinality(@TempDir File dataDir) throws Exception {
 		ProcessResult result = runLowHeapProbe(dataDir);
 
 		assertEquals(0, result.exitCode, result.output);
-		assertTrue(result.output.contains("LOW_HEAP_SKETCH_GATE_OK"), result.output);
+		assertTrue(result.output.contains("LOW_HEAP_UNIFIED_ENGINE_OK"), result.output);
 	}
 
 	@Test
@@ -1072,7 +1072,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbCascadesPipelineCarriesRealOmniThreeWaySurfaceEvidence(@TempDir File dataDir) throws Exception {
+	void lmdbCascadesPipelineCarriesUnifiedThreeWayEvidence(@TempDir File dataDir) throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI leftPredicate = vf.createIRI("urn:omni:pipeline:three-way:left");
 		IRI middlePredicate = vf.createIRI("urn:omni:pipeline:three-way:middle");
@@ -1089,13 +1089,11 @@ class LmdbOptimizerPipelineTest {
 				rightPredicate, encounterClass, otherDrug);
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(sketchSource,
 				SketchBasedJoinEstimator.Config.defaults()
-						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.OMNI)
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.UNIFIED)
 						.withThrottleEveryN(1)
 						.withThrottleMillis(0));
 		estimator.rebuild();
-		// The omni subject-star surface is only offered once the estimator reports ready; without awaiting,
-		// planning can race the background snapshot and fall back to the characteristic-set source, dropping the
-		// omni-join-estimator evidence this test asserts.
+		// Planning must observe one immutable published snapshot.
 		LmdbPlannerAwait.awaitEstimatorReady(estimator);
 		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
 		try {
@@ -1117,9 +1115,9 @@ class LmdbOptimizerPipelineTest {
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
 
-			assertTrue(containsPlannedStringMetric(tupleExpr, "plannedSketchStrategy", "omni"), diagnosticPlan);
-			assertTrue(containsPlannedStringMetric(tupleExpr, "plannedSketchEstimateSource", "omni-join-estimator"),
-					diagnosticPlan);
+			assertTrue(diagnosticPlan.contains("plannedEstimateSource="), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("plannedSketchStrategy="), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("omni-join-estimator"), diagnosticPlan);
 		} finally {
 			valueStore.close();
 		}
@@ -1657,7 +1655,7 @@ class LmdbOptimizerPipelineTest {
 		command.add("-Xmx1536m");
 		command.add("-cp");
 		command.add(System.getProperty("java.class.path"));
-		command.add(LowHeapSketchGateProbe.class.getName());
+		command.add(LowHeapUnifiedEngineProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
 		Process process = new ProcessBuilder(command)
@@ -1720,7 +1718,7 @@ class LmdbOptimizerPipelineTest {
 		}
 	}
 
-	public static final class LowHeapSketchGateProbe {
+	public static final class LowHeapUnifiedEngineProbe {
 
 		public static void main(String[] args) throws Exception {
 			File dataDir = new File(args[0]);
@@ -1735,20 +1733,20 @@ class LmdbOptimizerPipelineTest {
 					throw new AssertionError("Probe must run with less than 2 GiB max heap");
 				}
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
-					throw new AssertionError("Low heap should not allocate the sketch estimator");
+					throw new AssertionError("Low heap should not allocate the optional synopsis lifecycle");
 				}
 				if (!(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
 					throw new AssertionError("Low heap should keep the LMDB evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-				if (statistics.supportsJoinEstimation()) {
-					throw new AssertionError("Low heap should not expose sketch join estimation");
+				if (!(statistics instanceof LmdbEvaluationStatistics) || !statistics.supportsJoinEstimation()) {
+					throw new AssertionError("Low heap should retain the unified LMDB estimation engine");
 				}
 				if (statistics.getCardinality(firstStatementPattern(predicate)) <= 0.0d) {
 					throw new AssertionError("Low heap should retain page-walking statement cardinality");
 				}
-				System.out.println("LOW_HEAP_SKETCH_GATE_OK");
+				System.out.println("LOW_HEAP_UNIFIED_ENGINE_OK");
 			} finally {
 				store.shutDown();
 			}

@@ -2015,12 +2015,13 @@ class LmdbThemeQueryRegressionIT {
 					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
 					assertContains(snapshot.plan(), "optimizer.cascadesWinner=cascades",
-							"Medical q4 should use the Cascades-selected OMNI-aware physical plan instead of "
+							"Medical q4 should use the Cascades-selected DPhyp physical plan instead of "
 									+ "falling back to the standard pipeline\n"
 									+ snapshot.plan());
-					assertContains(snapshot.plan(), "plannedSketchStrategy=omni",
-							"Medical q4 should expose OMNI sketch evidence in the selected optimized plan\n"
-									+ snapshot.plan());
+					assertContains(snapshot.plan(), "plannerAlgorithm=DPHYP_BUSHY",
+							"Medical q4 should use the authoritative DPhyp join order\n" + snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "plannedSketchStrategy=",
+							"Medical q4 should expose no legacy estimator strategy telemetry\n" + snapshot.plan());
 					if (renderedQuery.contains("VALUES ?code { \"DX-200\" \"DX-201\" }")) {
 						assertBefore(renderedQuery, "VALUES ?code",
 								"?cond <http://example.com/theme/medical/code> ?code",

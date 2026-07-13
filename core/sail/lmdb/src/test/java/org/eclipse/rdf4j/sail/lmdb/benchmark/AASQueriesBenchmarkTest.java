@@ -145,7 +145,7 @@ class AASQueriesBenchmarkTest {
 	}
 
 	@Test
-	void cascadesQuery3StartsFromSelectiveRatedPowerBranch() throws Exception {
+	void cascadesQuery3UsesConnectedBoundedDphypPlan() throws Exception {
 		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
 		configureBenchmark(benchmark);
 		setField(benchmark, "productionLineCount", 3);
@@ -165,34 +165,19 @@ class AASQueriesBenchmarkTest {
 			state.setup(benchmark);
 
 			String output = out.toString(StandardCharsets.UTF_8);
-			int ratedPower = output.indexOf("value=\"ratedPower\"");
-			int relationshipSecond = output.indexOf("value=https://admin-shell.io/aas/3/second");
-			assertTrue(ratedPower >= 0, output);
-			assertTrue(relationshipSecond >= 0, output);
-			assertTrue(ratedPower < relationshipSecond || usesBoundRelationshipPathAndCostedPropertyLookups(output),
-					"query3 should restrict the component-property branch before walking relationship edges, or use a"
-							+ " bound relationship path with costed component-property lookups:\n"
-							+ output);
+			assertTrue(output.contains("value=\"ratedPower\""), output);
+			assertTrue(output.contains("value=https://admin-shell.io/aas/3/value"), output);
+			assertTrue(output.contains("plannerAlgorithm=DPHYP_BUSHY"), output);
+			assertTrue(output.contains("optimizer.connectedComponentCount=1.00"), output);
+			assertTrue(output.contains("plannedCostCartesianWorkRows=0"), output);
+			assertTrue(output.contains("plannedBoundJoinProductJoinVar=prop"), output);
+			assertTrue(output.contains("plannedIndexAccessMode=directLookup"), output);
 		} finally {
 			System.setOut(previousOut);
 			state.tearDown();
 			benchmark.tearDown();
 			restore(previousProperties);
 		}
-	}
-
-	private static boolean usesBoundRelationshipPathAndCostedPropertyLookups(String output) {
-		return output.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-subject")
-				&& output.contains("plannedEstimateFusion=exact_statement_access_envelope")
-				&& output.contains("plannedEstimateFusion=tuple_sketch_surface_product")
-				&& output.contains("plannedBoundJoinProductJoinVar=prop")
-				&& output.contains("value=\"ratedPower\"")
-				&& output.contains("value=https://admin-shell.io/aas/3/value")
-				|| output.contains("optimizer.starMultiPredicateScanSubject=prop")
-						&& output.contains("plannedEstimateSource=lmdb-characteristic-set")
-						&& output.contains("plannedPropertyPathMethod=sketch-single-predicate-path-bound-pair")
-						&& output.contains("value=\"ratedPower\"")
-						&& output.contains("value=https://admin-shell.io/aas/3/value");
 	}
 
 	private static Map<String, String> snapshotBenchmarkOutputProperties() {

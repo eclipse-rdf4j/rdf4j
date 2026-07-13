@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -96,7 +97,7 @@ class LmdbValueIdFilterOptimizationTest {
 	}
 
 	@Test
-	void equalityAgainstIriDomainCreatesObjectIdKindFilter(@TempDir File dataDir) throws Exception {
+	void equalityAgainstIriDomainPreservesTypedEqualityFiltering(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -134,9 +135,11 @@ class LmdbValueIdFilterOptimizationTest {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
 				StatementPattern pattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), MIXED_OBJECT, "o");
 				assertNotNull(pattern, explanation::toString);
-				assertEquals("object:IRI", pattern.getStringMetricPlanned("optimizer.idFilter"), explanation::toString);
-				assertEquals(1L, pattern.getSourceRowsMatchedActual(), explanation::toString);
-				assertTrue(pattern.getSourceRowsFilteredActual() >= 2L, explanation::toString);
+				Filter equalityFilter = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(equalityFilter, explanation::toString);
+				assertEquals(3L, equalityFilter.getSourceRowsScannedActual(), explanation::toString);
+				assertEquals(1L, equalityFilter.getSourceRowsMatchedActual(), explanation::toString);
+				assertTrue(equalityFilter.getSourceRowsFilteredActual() >= 2L, explanation::toString);
 			}
 		} finally {
 			repository.shutDown();
@@ -207,6 +210,17 @@ class LmdbValueIdFilterOptimizationTest {
 						&& objectName.equals(node.getObjectVar().getName())) {
 					matches.add(node);
 				}
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static Filter findFilter(TupleExpr tupleExpr) {
+		List<Filter> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				matches.add(node);
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();

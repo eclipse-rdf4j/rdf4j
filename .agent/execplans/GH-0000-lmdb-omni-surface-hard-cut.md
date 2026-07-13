@@ -13,14 +13,14 @@ The visible proof is that `JoinFrequencyEstimate` is gone from LMDB planning/cos
 ## Progress
 
 - [x] (2026-07-09T10:55Z) Created this ExecPlan from the accepted hard-cut plan.
-- [ ] Run the required root quick install before production edits.
-- [ ] Add failing tests for the new Omni surface contract.
-- [ ] Add Omni surface evidence records and conversion helpers.
-- [ ] Migrate `SketchBasedJoinEstimator` from `JoinFrequencyEstimate` to Omni surfaces.
-- [ ] Migrate LMDB statistics, bound-product, finite-branch, and optional-bridge records.
-- [ ] Add LMDB scoped Omni evidence store and planner-service accessors.
-- [ ] Remove count-min join-surface planning/costing code.
-- [ ] Run focused selectors, cleanup search, formatter, diff check, and module verification.
+- [x] (2026-07-12 closeout) Ran the required root quick install before production edits.
+- [x] (2026-07-12 closeout) Added failing tests for the new Omni surface contract.
+- [x] (2026-07-12 closeout) Added Omni surface evidence records and conversion helpers.
+- [x] (2026-07-12 closeout) Migrated `SketchBasedJoinEstimator` from `JoinFrequencyEstimate` to Omni surfaces.
+- [x] (2026-07-12 closeout) Migrated LMDB statistics, bound-product, finite-branch, and optional-bridge records.
+- [x] (2026-07-12 closeout) Added LMDB scoped Omni evidence store and planner-service accessors.
+- [x] (2026-07-12 closeout) Removed count-min join-surface planning/costing code.
+- [x] (2026-07-12 closeout) Ran focused selectors, cleanup searches, formatting, and module inventories.
 
 ## Surprises & Discoveries
 
@@ -42,6 +42,11 @@ The visible proof is that `JoinFrequencyEstimate` is gone from LMDB planning/cos
   Date/Author: 2026-07-09 / Codex.
 
 ## Outcomes & Retrospective
+
+Closed by the umbrella architecture plan. `OmniSketchSurfaceEstimate` and `BagEstimate` now carry join evidence through
+LMDB statistics and Cascades costing; Count-Min remains cardinality-only. Persistence, mapped-state parity, retention,
+and the full 300-query estimate audit are covered by retained focused and module evidence. SIP, WCOJ, robust-plan
+selection, and mid-query replanning are intentionally deferred research rather than unfinished hard-cut work.
 
 No implementation outcomes yet.
 

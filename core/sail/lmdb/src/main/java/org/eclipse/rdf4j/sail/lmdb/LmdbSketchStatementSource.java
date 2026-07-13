@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailStore;
@@ -59,11 +58,6 @@ final class LmdbSketchStatementSource implements SketchStatementSource {
 			}
 			throw new SketchStatementSourceException(e);
 		}
-	}
-
-	@Override
-	public ValueFactory getValueFactory() {
-		return sailStore.getValueFactory();
 	}
 
 	private static final class DatasetClosingIteration implements CloseableIteration<Statement> {

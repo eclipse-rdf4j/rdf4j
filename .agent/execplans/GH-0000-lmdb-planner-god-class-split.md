@@ -1,5 +1,9 @@
 # Split LMDB Planner God Classes
 
+> Superseded for `SketchBasedJoinEstimator` and `LmdbEvaluationStatistics` by
+> `.agent/execplans/GH-0000-lmdb-estimation-engine-rewrite.md`. The replacement plan removes the pass-through
+> extraction architecture instead of extending it.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
@@ -21,6 +25,7 @@ write and run the smallest failing in-repo regression test before touching produ
 
 ## Progress
 
+- [x] (2026-07-13 04:58Z) Marked the two estimator-facade slices superseded by the unified-engine rewrite plan.
 - [x] (2026-07-08 07:23+02:00) Ran mandatory root quick install before source edits.
 - [x] (2026-07-08 07:30+02:00) Created this ExecPlan and `initial-evidence.txt`.
 - [x] (2026-07-08 08:12+02:00) Relocated sketch package and adapter into `core/sail/lmdb`.
@@ -44,9 +49,10 @@ write and run the smallest failing in-repo regression test before touching produ
   `SketchEstimatorRecords` file.
 - [x] (2026-07-08 11:48+02:00) Ran final closeout verification and hygiene. The full LMDB module run is still red
   with eight current-branch baseline planner/estimate failures, but no relocation errors remain.
-- [ ] Extract the remaining large guarantee/access-path Cascades implementations.
-- [ ] Extract the remaining `LmdbEvaluationStatistics` service delegates and private estimate records.
-- [ ] Extract the remaining `SketchBasedJoinEstimator` ingest/persistence/OMNI/join-order delegates.
+- [x] (2026-07-12 closeout) Extracted guarantee/access-path implementations and removed the private guarantee planner.
+- [x] (2026-07-12 closeout) Composed `LmdbEvaluationStatistics` through the requested package-private services and
+  value records.
+- [x] (2026-07-12 closeout) Extracted estimator ingest, persistence, Omni, scope, frequency, and join-order services.
 
 ## Surprises & Discoveries
 
@@ -186,6 +192,10 @@ write and run the smallest failing in-repo regression test before touching produ
   Date/Author: 2026-07-08 / Codex.
 
 ## Outcomes & Retrospective
+
+Closed by `.agent/execplans/GH-0000-lmdb-architecture-closeout.md`. Public facades retain lifecycle and compatibility
+descriptors; package-private collaborators own the implementation kernels. Remaining SIP, WCOJ, robust-plan selection,
+and mid-query replanning work is architectural research, not residual god-class extraction.
 
 Relocation completed. The sketch production tree now lives under
 `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/sketch`, the moved unit tests live under

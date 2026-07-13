@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -146,12 +146,12 @@ public class ColdFilterSynopsisBenchmark {
 
 	@Benchmark
 	public double coldCoveredFilter(BenchmarkState state) {
-		return state.coldStore.estimator().estimateFilterPass(state.nextColdFilter()).getPassRatio();
+		return state.coldStore.statistics().estimateFilterPass(state.nextColdFilter()).getPassRatio();
 	}
 
 	@Benchmark
 	public double uncachedLiveFilter(BenchmarkState state) {
-		return state.liveStore.estimator().estimateFilterPass(state.nextLiveFilter()).getPassRatio();
+		return state.liveStore.statistics().estimateFilterPass(state.nextLiveFilter()).getPassRatio();
 	}
 
 	@Benchmark
@@ -200,8 +200,8 @@ public class ColdFilterSynopsisBenchmark {
 			repository.shutDown();
 			throw new IllegalStateException("Persisted sketches did not load during benchmark setup");
 		}
-		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-		return new OpenStore(store, repository, estimator);
+		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+		return new OpenStore(store, repository, statistics);
 	}
 
 	private static LmdbStoreConfig evidenceConfig(String mode, int coldCapacity) {
@@ -215,6 +215,6 @@ public class ColdFilterSynopsisBenchmark {
 				.setBackgroundRawSamplingEnabled(false);
 	}
 
-	private record OpenStore(LmdbStore store, SailRepository repository, SketchBasedJoinEstimator estimator) {
+	private record OpenStore(LmdbStore store, SailRepository repository, EvaluationStatistics statistics) {
 	}
 }

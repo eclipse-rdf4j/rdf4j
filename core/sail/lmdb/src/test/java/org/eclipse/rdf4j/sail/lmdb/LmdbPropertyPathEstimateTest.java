@@ -325,7 +325,7 @@ class LmdbPropertyPathEstimateTest {
 		String method = path.getStringMetricPlanned("plannedPropertyPathMethod");
 		String source = path.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String proof = path.getStringMetricPlanned("optimizer.cascadesProofs");
-		assertTrue((method != null && method.startsWith("sketch-single-predicate-path"))
+		assertTrue("lmdb-property-path".equals(method)
 				|| "lmdb-property-path".equals(source)
 				|| (proof != null && proof.contains("lmdb-property-path")), explanation::toString);
 		assertTrue(path.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS) > 1.0d,

@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,11 +28,15 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  */
 public class LmdbStoreConfig extends BaseSailConfig {
+	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreConfig.class);
+	private static final AtomicBoolean LEGACY_STRATEGY_WARNING_LOGGED = new AtomicBoolean();
 	/**
 	 * The default size of the triple database.
 	 */
@@ -67,6 +72,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
 	public static final int SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY = 6_144;
+
+	public static final long SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = 256L * 1024L * 1024L;
+
+	private static final long SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES = 1024L * 1024L;
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
@@ -137,11 +146,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
 
-	private String sketchEstimatorStrategy = "omni";
+	private String sketchEstimatorStrategy = "unified";
 
 	private String sketchEstimatorEvidenceMode = "adaptive";
 
 	private int sketchEstimatorColdSynopsisCapacity;
+
+	private long sketchEstimatorMemoryBudgetBytes = SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -466,6 +477,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getSketchEstimatorMemoryBudgetBytes() {
+		return sketchEstimatorMemoryBudgetBytes;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorMemoryBudgetBytes(long memoryBudgetBytes) {
+		if (memoryBudgetBytes < SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES) {
+			throw new IllegalArgumentException("Sketch estimator memory budget must be at least one MiB");
+		}
+		this.sketchEstimatorMemoryBudgetBytes = memoryBudgetBytes;
+		return this;
+	}
+
 	public boolean getOptimizerSamplingEnabled() {
 		return optimizerSamplingEnabled;
 	}
@@ -656,7 +679,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
 					vf.createLiteral(sketchEstimatorThrottleMillis));
 		}
-		if (!"omni".equals(sketchEstimatorStrategy)) {
+		if (!"unified".equals(sketchEstimatorStrategy)) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
 		}
 		if (!"adaptive".equals(sketchEstimatorEvidenceMode)) {
@@ -666,6 +689,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorColdSynopsisCapacity > 0) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY,
 					vf.createLiteral(sketchEstimatorColdSynopsisCapacity));
+		}
+		if (sketchEstimatorMemoryBudgetBytes != SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES,
+					vf.createLiteral(sketchEstimatorMemoryBudgetBytes));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -930,6 +957,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					.ifPresent(lit -> setSketchEstimatorColdSynopsisCapacity(parseInt(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY)));
 
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES, null))
+					.ifPresent(lit -> setSketchEstimatorMemoryBudgetBytes(parseLong(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES)));
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -1023,14 +1055,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 				.replace("_", "")
 				.toLowerCase(Locale.ROOT);
 		return switch (normalized) {
-		case "omni" -> "omni";
-		case "fastagms" -> "fastagms";
-		case "tuple", "joinsketch" -> "countmin-dual";
-		case "countmin" -> "countmin";
-		case "countmindual" -> "countmin-dual";
+		case "unified" -> "unified";
+		case "omni", "fastagms", "tuple", "joinsketch", "countmin", "countmindual" -> {
+			if (LEGACY_STRATEGY_WARNING_LOGGED.compareAndSet(false, true)) {
+				logger.warn("Legacy LMDB sketch estimator strategies are deprecated; using the unified estimator");
+			}
+			yield "unified";
+		}
 		default -> throw new SailConfigException(
-				"Sketch estimator strategy value required: omni, fastagms, countmin, or countmin-dual; found "
-						+ value);
+				"Sketch estimator strategy value required: unified; found " + value);
 		};
 	}
 

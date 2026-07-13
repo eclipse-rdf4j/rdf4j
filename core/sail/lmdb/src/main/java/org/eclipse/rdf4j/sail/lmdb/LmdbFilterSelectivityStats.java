@@ -225,6 +225,19 @@ class LmdbFilterSelectivityStats
 		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
 	}
 
+	void recordFilterOutcome(Filter filter, StatementPattern pattern, long passedCount, long filteredCount) {
+		if (filter == null || pattern == null || filter.getCondition() == null) {
+			return;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null) {
+			return;
+		}
+		recordFilterOutcome(patternKey, FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
+				FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern), passedCount, filteredCount,
+				true);
+	}
+
 	synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
 			long passedCount, long filteredCount, boolean includePatternAggregate) {
 		if (key == null || filterKey == null || (passedCount <= 0L && filteredCount <= 0L)) {

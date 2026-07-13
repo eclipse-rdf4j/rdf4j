@@ -31,7 +31,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -281,10 +283,21 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
 			String plan = explanation.toString();
-			String topGroup = firstLineContaining(plan, "Group (type1, type2, language2, mbox, count, identifier2)");
+			String groupLabel = "Group (type1, type2, language2, mbox, count, identifier2)";
+			String topGroup = plan.contains(groupLabel)
+					? firstLineContaining(plan, groupLabel)
+					: firstLineContaining(plan, "Distinct (");
+			if (!plan.contains(groupLabel)) {
+				assertTrue(plan.contains("originalNode=aggregate-free-group-by")
+						&& plan.contains("replacementNode=distinct-projection"),
+						"Replacing the aggregate-free top group must carry the semantic proof.\n" + plan);
+			}
 			double rows = plannedMetricRows(topGroup, "plannedCardinalityRows");
-			assertTrue(rows <= 25_000.0d,
-					"Top GROUP BY cardinality must be bounded by its input winner rows. rows=" + rows + "\n" + plan);
+			double rootRows = ((TupleExpr) explanation.tupleExpr())
+					.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			assertTrue(Double.isFinite(rootRows) && rows <= rootRows,
+					"Top GROUP BY/DISTINCT cardinality must be bounded by the enclosing winner rows. rows=" + rows
+							+ ", rootRows=" + rootRows + "\n" + plan);
 		}
 	}
 
@@ -305,7 +318,8 @@ public class QueryBenchmarkTest {
 			Explanation explanation = connection.prepareTupleQuery(multiple_sub_select)
 					.explain(Explanation.Level.Optimized);
 			String plan = explanation.toString();
-			assertTrue(plan.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph")
+			assertTrue(plan.contains("plannedEstimateSource=lmdb-cascades-dphyp")
+					|| plan.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph")
 					|| plan.contains("plannedEstimateSource=lmdb-inner-bound-lookup"),
 					"Multiple-subselect fallback must be repaired with Cascades-planned subquery joins.\n" + plan);
 		}

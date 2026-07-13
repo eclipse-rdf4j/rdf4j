@@ -107,6 +107,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final String STANDARD_PLAN_USAGE = "standard_pipeline_baseline";
 
 	private static final int DEFAULT_SMALL_QUERY_MAX_NODES = 16;
+	private static final int DEFAULT_EXACT_JOIN_ISLAND_MAX_FACTORS = 3;
 	private static final int DEFAULT_BUDGET = 4096;
 	private static final int DEFAULT_TRACE_LIMIT = 512;
 	private static final int CANDIDATE_PLAN_TEXT_LIMIT = 16_384;
@@ -169,7 +170,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
 			int nodeCount = countNodes(tupleExpr);
-			boolean budgetedSearch = usesBudgetedSearch(mode, nodeCount);
+			boolean budgetedSearch = usesBudgetedSearch(mode, tupleExpr, nodeCount);
 			PhysicalProperties required = PhysicalProperties.builder().boundVars(initiallyBoundVars).build();
 			OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required);
 			if (budgetedSearch) {
@@ -1825,14 +1826,35 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return Mode.OFF;
 	}
 
-	private boolean usesBudgetedSearch(Mode mode, int nodeCount) {
+	private boolean usesBudgetedSearch(Mode mode, TupleExpr tupleExpr, int nodeCount) {
 		if (mode == Mode.BUDGETED || mode == Mode.SHADOW_BUDGETED) {
 			return true;
 		}
 		if (mode != Mode.AUTO) {
 			return false;
 		}
-		return nodeCount > intProperty(SMALL_QUERY_MAX_NODES_PROPERTY, DEFAULT_SMALL_QUERY_MAX_NODES);
+		return nodeCount > intProperty(SMALL_QUERY_MAX_NODES_PROPERTY, DEFAULT_SMALL_QUERY_MAX_NODES)
+				|| containsSearchIntensiveJoinIsland(tupleExpr);
+	}
+
+	private boolean containsSearchIntensiveJoinIsland(TupleExpr tupleExpr) {
+		if (tupleExpr == null || !LmdbHypergraphJoinPlanner.enabled()) {
+			return false;
+		}
+		boolean[] searchIntensive = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				if (LmdbJoinIslandConnectivity.joinProviderCanOwn(join)
+						&& LmdbJoinIslandConnectivity.flattenFactors(join)
+								.size() > DEFAULT_EXACT_JOIN_ISLAND_MAX_FACTORS) {
+					searchIntensive[0] = true;
+					return;
+				}
+				super.meet(join);
+			}
+		});
+		return searchIntensive[0];
 	}
 
 	private int countNodes(TupleExpr tupleExpr) {

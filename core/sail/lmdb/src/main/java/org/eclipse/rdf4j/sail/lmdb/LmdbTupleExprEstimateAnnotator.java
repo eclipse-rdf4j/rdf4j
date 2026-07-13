@@ -60,7 +60,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.OmniSketchSurfaceEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -1006,17 +1005,14 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private double strongestOptionalBridgeRows(StatementPattern node) {
 		return maxFinite(
 				node.getDoubleMetricPlanned("plannedConnectedJoinRows"),
-				node.getDoubleMetricPlanned("plannedConnectedJoinMinRows"),
-				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MIN_ROWS));
+				node.getDoubleMetricPlanned("plannedConnectedJoinMinRows"));
 	}
 
 	private double strongestOptionalBridgeWorkRows(StatementPattern node, double bridgeRows) {
 		return maxFinite(
 				bridgeRows,
 				node.getDoubleMetricPlanned("plannedConnectedJoinWorkRows"),
-				node.getDoubleMetricPlanned("plannedConnectedJoinMaxRows"),
-				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MIN_ROWS),
-				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MAX_ROWS));
+				node.getDoubleMetricPlanned("plannedConnectedJoinMaxRows"));
 	}
 
 	private boolean isInsideOptionalRightArg(QueryModelNode node) {
@@ -1454,7 +1450,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			BoundJoinProductEstimate estimate) {
 		if (!hasSelectedPlannerOperatorFeedback(node)) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-bound-join-product");
-			node.setStringMetricPlanned("plannedEstimateFusion", "tuple_sketch_surface_product");
+			node.setStringMetricPlanned("plannedEstimateFusion", "unified_estimate_product");
 		}
 		node.setDoubleMetricPlanned("plannedBoundJoinProductRows", estimate.productRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRows", estimate.prefixRows());
@@ -1466,7 +1462,6 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			node.setStringMetricPlanned("plannedBoundJoinProductJoinVar", estimate.joinVarName());
 			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
 		}
-		stampOmniSurfaceEstimate(node, estimate.omniSurface());
 	}
 
 	private boolean hasSelectedPlannerOperatorFeedback(QueryModelNode node) {
@@ -1499,42 +1494,6 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
 			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
-		}
-		stampOmniSurfaceEstimate(node, estimate.omniSurface());
-	}
-
-	private void stampOmniSurfaceEstimate(QueryModelNode node, OmniSketchSurfaceEstimate omniSurface) {
-		if (node == null || omniSurface == null) {
-			return;
-		}
-		for (Map.Entry<String, String> entry : omniSurface.toStringMetrics().entrySet()) {
-			node.setStringMetricPlanned(entry.getKey(), entry.getValue());
-		}
-		for (Map.Entry<String, Double> entry : omniSurface.toDoubleMetrics().entrySet()) {
-			node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-		}
-		if (lmdbPlannerServices.isPresent() && node instanceof TupleExpr tupleExpr) {
-			LmdbOmniEvidenceStore store = lmdbPlannerServices.get().optimizationScopedOmniEvidenceStore();
-			if (store != null) {
-				String fingerprint = store.put(tupleExpr, "annotator", tupleExpr, omniSurface);
-				if (fingerprint != null) {
-					node.setStringMetricPlanned(LmdbOmniEvidenceStore.PLANNED_OMNI_EVIDENCE_FINGERPRINT,
-							fingerprint);
-				}
-			}
-			lmdbPlannerServices.get()
-					.optimizationScopedOmniEvidence(tupleExpr)
-					.ifPresent(evidence -> {
-						if (evidence == omniSurface) {
-							return;
-						}
-						for (Map.Entry<String, String> entry : evidence.toStringMetrics().entrySet()) {
-							node.setStringMetricPlanned(entry.getKey(), entry.getValue());
-						}
-						for (Map.Entry<String, Double> entry : evidence.toDoubleMetrics().entrySet()) {
-							node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-						}
-					});
 		}
 	}
 
