@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -55,6 +58,29 @@ class AlgebraEquivalenceCheckerTest {
 
 		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus());
 		assertTrue(result.getEvidence().orElseThrow() instanceof StructuralEqualityProof);
+	}
+
+	@Test
+	void serviceSilentDifferenceIsNotProvedEquivalent() {
+		IRI endpoint = VF.createIRI("urn:test:service");
+		Service regular = new Service(
+				Var.of("service", endpoint),
+				new SingletonSet(),
+				"SERVICE <urn:test:service> { }",
+				Map.of(),
+				null,
+				false);
+		Service silent = new Service(
+				Var.of("service", endpoint),
+				new SingletonSet(),
+				"SERVICE SILENT <urn:test:service> { }",
+				Map.of(),
+				null,
+				true);
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(regular, silent);
+
+		assertFalse(result.isEquivalent(), result::getReason);
 	}
 
 	@Test

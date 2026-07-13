@@ -294,11 +294,17 @@ final class ScopeSafeRewriter {
 		Set<String> leftKeep = new LinkedHashSet<>(selected);
 		leftKeep.retainAll(leftNames);
 		leftKeep.addAll(shared);
+		// RDF4J evaluates the right operand with each left mapping. Preserve every left binding that the right
+		// subtree reads as an input, even when that subtree does not declare the name in its own output scope.
+		for (String requiredInput : analysis.names(SemanticMask.REQUIRED_INPUT, join.getRightArg())) {
+			if (leftNames.contains(requiredInput)) {
+				leftKeep.add(requiredInput);
+			}
+		}
 		Set<String> rightKeep = new LinkedHashSet<>(selected);
 		rightKeep.retainAll(rightNames);
 		rightKeep.addAll(shared);
-		// RDF4J evaluates the right operand with each left mapping. A projection on the right must therefore carry
-		// selected left bindings through even when the right subtree does not declare those names itself.
+		// A projection on the right must carry retained left bindings through to the join result.
 		rightKeep.addAll(leftKeep);
 		Set<String> rightInterface = new LinkedHashSet<>(rightNames);
 		rightInterface.addAll(leftKeep);
