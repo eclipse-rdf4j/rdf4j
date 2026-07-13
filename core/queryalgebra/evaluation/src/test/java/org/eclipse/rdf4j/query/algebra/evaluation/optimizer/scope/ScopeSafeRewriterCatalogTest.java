@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 public class ScopeSafeRewriterCatalogTest {
+	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
 	@Test
 	public void joinCommutePreservesIndependentInputsAndDeniesDirectionalInputs() throws Exception {
@@ -275,8 +276,8 @@ public class ScopeSafeRewriterCatalogTest {
 
 	@Test
 	public void parsedTransparentFlatteningRemapsIntoTheParentFrameWithoutDiscardingTheSeed() {
-		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-				"SELECT ?x WHERE { { SELECT ?x WHERE { VALUES ?x { 1 } } } }", null);
+		ParsedTupleQuery parsed = parseWithScopeSeed(
+				"SELECT ?x WHERE { { SELECT ?x WHERE { VALUES ?x { 1 } } } }");
 		QueryRoot root = (QueryRoot) parsed.getTupleExpr();
 		List<Projection> projections = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -300,6 +301,19 @@ public class ScopeSafeRewriterCatalogTest {
 		assertThat(flattened).as("transaction=%s", rewriter.lastRejection()).isTrue();
 		assertThat(rewriter.analysis().usesParserSeed()).isTrue();
 		assertThat(rewriter.analysis().names(SemanticMask.SCOPE_OUT, root)).containsExactly("x");
+	}
+
+	private static ParsedTupleQuery parseWithScopeSeed(String query) {
+		String previous = System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, "ENFORCE");
+		try {
+			return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCOPE_SAFETY_MODE_PROPERTY);
+			} else {
+				System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, previous);
+			}
+		}
 	}
 
 	private static boolean rewrite(QueryRoot root, String methodName, QueryModelNode boundary) throws Exception {

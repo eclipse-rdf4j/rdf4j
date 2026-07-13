@@ -376,6 +376,22 @@ class AlgebraEquivalenceRegressionTest {
 		assertFalse(defaults.isBoundedCounterexampleSearch());
 	}
 
+	@Test
+	void sequenceObservationDoesNotIgnoreStatementPatternOrder() {
+		StatementPattern subjectOrdered = pattern("s", P1, "o");
+		subjectOrdered.setOrder(subjectOrdered.getSubjectVar());
+		StatementPattern objectOrdered = subjectOrdered.clone();
+		objectOrdered.setOrder(objectOrdered.getObjectVar());
+		CheckOptions options = CheckOptions.builder()
+				.observationMode(ObservationMode.SEQUENCE)
+				.boundedCounterexampleSearch(false)
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(subjectOrdered, objectOrdered);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
 	private static AlgebraEquivalenceChecker runtimeCheckerWithEmptyCase() {
 		CheckOptions options = CheckOptions.builder()
 				.boundedCounterexampleSearch(false)
