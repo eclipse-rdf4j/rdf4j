@@ -160,6 +160,7 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 		settings.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 		settings.add(BasicWriterSettings.PRETTY_PRINT);
 		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		settings.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 		settings.add(TurtleWriterSettings.ABBREVIATE_NUMBERS);
 		settings.add(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES);
 		return settings;

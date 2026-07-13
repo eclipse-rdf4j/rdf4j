@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.rio.binary;
 
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Arjohn Kampman
@@ -25,6 +26,7 @@ public class BinaryRDFWriterTest extends RDFWriterTest {
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {
+				BasicWriterSettings.RDF_OUTPUT_VERSION,
 				BinaryRDFWriterSettings.VERSION,
 				BinaryRDFWriterSettings.BUFFER_SIZE,
 				BinaryRDFWriterSettings.CHARSET,

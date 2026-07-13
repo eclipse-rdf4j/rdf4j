@@ -14,9 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -157,5 +165,308 @@ public class StatementsTest {
 				vf.createLiteral("data"), null);
 
 		assertThat(Statements.statement(t1, null)).isEqualTo(st1);
+	}
+
+	@Test
+	public void testStatementRDF12FullToBasicWithNestedTripleTerm() {
+		Resource context = vf.createIRI("http://example.org/context");
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+		Literal object = vf.createLiteral("data");
+		IRI reifier1 = vf.createIRI("http://example.com/3");
+		IRI predicate2 = vf.createIRI("http://example.com/4");
+		IRI subject2 = vf.createIRI("http://example.com/5");
+		IRI subjectOuter = vf.createIRI("http://example.com/outer/subject");
+		IRI predicateOuter = vf.createIRI("http://example.com/outer/predicate");
+
+		TripleTerm t1 = vf.createTripleTerm(subject, predicate, object);
+		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t1, context);
+
+		// Repeat triple term t1 to ensure same blank node is used
+
+		TripleTerm outer = vf.createTripleTerm(subjectOuter, predicateOuter, t1);
+		Statement st2 = vf.createStatement(subject2, predicate2, outer, context);
+
+		Model expectedModel = new LinkedHashModel();
+		// st1:
+		BNode bnode1 = vf.createBNode();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode1, context);
+		expectedModel.add(bnode1, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_OBJECT, object, context);
+
+		// st2:
+		BNode bnode2 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, bnode2, context);
+		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context);
+
+		// Verify expected and converted models are isomorphic
+		Model convertedModel = new LinkedHashModel();
+		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add, rdf12ConversionContext);
+
+		assertTrue("RDF 1.2 conversion to 1.2 Basic",
+				Models.isomorphic(expectedModel, convertedModel));
+
+		// Verify no duplicate statements were created:
+		List<Statement> emitted = new ArrayList<>();
+		rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo12Basic(vf, st1, emitted::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st2, emitted::add, rdf12ConversionContext);
+
+		assertEquals("No duplicate statements were generated in RDF 1.2 to RDF 1.2 Basic conversion",
+				expectedModel.size(), emitted.size());
+	}
+
+	@Test
+	public void testStatementRDF12FullToBasicMultipleGraphs() {
+		Resource context1 = vf.createIRI("http://example.org/context1");
+		Resource context2 = vf.createIRI("http://example.org/context2");
+		Resource defaultContext = null;
+
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+		Literal object = vf.createLiteral("data");
+		IRI reifier1 = vf.createIRI("http://example.com/3");
+		IRI predicate2 = vf.createIRI("http://example.com/4");
+		IRI subject2 = vf.createIRI("http://example.com/5");
+		IRI subjectOuter = vf.createIRI("http://example.com/outer/subject");
+		IRI predicateOuter = vf.createIRI("http://example.com/outer/predicate");
+
+		TripleTerm t0 = vf.createTripleTerm(subject, predicate, object);
+		Statement st0 = vf.createStatement(reifier1, RDF.REIFIES, t0, defaultContext);
+
+		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t0, context1);
+
+		Statement st2 = vf.createStatement(reifier1, RDF.REIFIES, t0, context2);
+		// Repeat triple term t1 to ensure same blank node is used
+
+		TripleTerm outer1 = vf.createTripleTerm(subjectOuter, predicateOuter, t0);
+		Statement st3 = vf.createStatement(subject2, predicate2, outer1, context1);
+
+		TripleTerm outer2 = vf.createTripleTerm(subjectOuter, predicateOuter, t0);
+		Statement st4 = vf.createStatement(subject2, predicate2, outer2, context2);
+
+		Model expectedModel = new LinkedHashModel();
+		// st0:
+		BNode bnode0 = vf.createBNode();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode0, defaultContext);
+		expectedModel.add(bnode0, RDF.TYPE, RDF.PROPOSITION_FORM, defaultContext);
+		expectedModel.add(bnode0, RDF.PROPOSITION_FORM_SUBJECT, subject, defaultContext);
+		expectedModel.add(bnode0, RDF.PROPOSITION_FORM_PREDICATE, predicate, defaultContext);
+		expectedModel.add(bnode0, RDF.PROPOSITION_FORM_OBJECT, object, defaultContext);
+
+		// st1:
+		BNode bnode1 = vf.createBNode();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode1, context1);
+		expectedModel.add(bnode1, RDF.TYPE, RDF.PROPOSITION_FORM, context1);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_SUBJECT, subject, context1);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_PREDICATE, predicate, context1);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_OBJECT, object, context1);
+
+		// st2:
+		BNode bnode2 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, bnode2, context1);
+		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context1);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context1);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context1);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context1);
+
+		// st3:
+		BNode bnode3 = vf.createBNode();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode3, context2);
+		expectedModel.add(bnode3, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_SUBJECT, subject, context2);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_PREDICATE, predicate, context2);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_OBJECT, object, context2);
+
+		// st4:
+		BNode bnode4 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, bnode4, context2);
+		expectedModel.add(bnode4, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
+		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context2);
+		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context2);
+		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_OBJECT, bnode3, context2);
+
+		// Verify expected and converted models are isomorphic
+		Model convertedModel = new LinkedHashModel();
+		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo12Basic(vf, st0, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st3, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st4, convertedModel::add, rdf12ConversionContext);
+
+		assertTrue("RDF 1.2 conversion to 1.2 Basic",
+				Models.isomorphic(expectedModel, convertedModel));
+
+		// different bnodes for same triple in different graphs
+		BNode node1 = rdf12ConversionContext.getBNodeForTripleTerm(defaultContext, t0);
+		BNode node2 = rdf12ConversionContext.getBNodeForTripleTerm(context1, t0);
+		BNode node3 = rdf12ConversionContext.getBNodeForTripleTerm(context2, t0);
+
+		assertNotNull(node1);
+		assertNotNull(node2);
+		assertNotNull(node3);
+
+		assertNotEquals(node1, node2);
+		assertNotEquals(node2, node3);
+		assertNotEquals(node1, node3);
+	}
+
+	/**
+	 * This test aims to verify repeated application of the basic encoder algorithm to produce RDF 1.2 basic does not
+	 * introduce unexpected changes in the results.
+	 */
+	@Test
+	public void testStatementRDF12ConvertToBasicIsIdempotent() {
+		Resource context = vf.createIRI("http://example.org/context");
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+		BNode innerTripleBnode = vf.createBNode();
+		IRI reifier1 = vf.createIRI("http://example.com/3");
+		BNode bnode = vf.createBNode();
+
+		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, bnode, context);
+		Statement st2 = vf.createStatement(bnode, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		Statement st3 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		Statement st4 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		Statement st5 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_OBJECT, innerTripleBnode, context);
+
+		Model expectedModel = new LinkedHashModel();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode, context);
+		expectedModel.add(bnode, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_OBJECT, innerTripleBnode, context);
+
+		Model preservedModel = new LinkedHashModel();
+		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo12Basic(vf, st1, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st2, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st3, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st4, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st5, preservedModel::add, rdf12ConversionContext);
+
+		assertTrue("RDF 1.2 Basic statements preserved under 1.2 Basic conversion",
+				Models.isomorphic(expectedModel, preservedModel));
+	}
+
+	@Test
+	public void testStatementWithTripleTermRDF12FullConvertedTo11() {
+		Resource context = vf.createIRI("http://example.org/context");
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+		Literal object = vf.createLiteral("data");
+		IRI reifier1 = vf.createIRI("http://example.com/3");
+		IRI predicate2 = vf.createIRI("http://example.com/4");
+		IRI subject2 = vf.createIRI("http://example.com/5");
+		IRI subjectOuter = vf.createIRI("http://example.com/outer/subject");
+		IRI predicateOuter = vf.createIRI("http://example.com/outer/predicate");
+
+		TripleTerm t1 = vf.createTripleTerm(subject, predicate, object);
+		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t1, context);
+
+		// Repeat triple term t1 to ensure same blank node is used
+
+		TripleTerm outer = vf.createTripleTerm(subjectOuter, predicateOuter, t1);
+		Statement st2 = vf.createStatement(subject2, predicate2, outer, context);
+
+		Model expectedModel = new LinkedHashModel();
+		// st1:
+		BNode bnode1 = vf.createBNode();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode1, context);
+		expectedModel.add(bnode1, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_OBJECT, object, context);
+
+		// st2:
+		BNode bnode2 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, bnode2, context);
+		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context);
+
+		// Verify expected and converted models are isomorphic
+		Model convertedModel = new LinkedHashModel();
+		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo11(vf, st1, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st2, convertedModel::add, rdf12ConversionContext);
+
+		assertTrue("RDF 1.2 conversion to 1.1",
+				Models.isomorphic(expectedModel, convertedModel));
+
+	}
+
+	@Test
+	public void testStatementRDF12DirectionalLiteralConvertedTo11() {
+		Resource context = vf.createIRI("http://example.org/context");
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+
+		Literal directional = vf.createLiteral("مرحبا", "AR", Literal.BaseDirection.RTL);
+
+		Statement st = vf.createStatement(subject, predicate, directional, context);
+
+		IRI expectedDatatype = vf.createIRI("https://www.w3.org/ns/i18n#ar_rtl");
+
+		Literal expectedLiteral = vf.createLiteral("مرحبا", expectedDatatype);
+
+		Statement expected = vf.createStatement(subject, predicate, expectedLiteral, context);
+
+		List<Statement> emitted = new ArrayList<>();
+
+		Statements.convertRDFTo11(vf, st, emitted::add, new RDFVersionsConversionContext());
+
+		assertEquals(1, emitted.size());
+		assertEquals(expected, emitted.get(0));
+	}
+
+	/**
+	 * This test aims to verify repeated application of the basic encoder algorithm and literals conversion to produce
+	 * RDF 1.1 do not introduce unexpected changes in the results.
+	 */
+	@Test
+	public void testStatementRDF12ConvertTo11IsIdempotent() {
+		Resource context = vf.createIRI("http://example.org/context");
+		IRI subject = vf.createIRI("http://example.com/1");
+		IRI predicate = vf.createIRI("http://example.com/2");
+		Literal object = vf.createLiteral(
+				"مرحبا",
+				vf.createIRI("https://www.w3.org/ns/i18n#ar_rtl"));
+
+		IRI reifier1 = vf.createIRI("http://example.com/3");
+		BNode bnode = vf.createBNode();
+
+		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, bnode, context);
+		Statement st2 = vf.createStatement(bnode, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		Statement st3 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		Statement st4 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		Statement st5 = vf.createStatement(bnode, RDF.PROPOSITION_FORM_OBJECT, object, context);
+
+		Model expectedModel = new LinkedHashModel();
+		expectedModel.add(reifier1, RDF.REIFIES, bnode, context);
+		expectedModel.add(bnode, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(bnode, RDF.PROPOSITION_FORM_OBJECT, object, context);
+
+		Model preservedModel = new LinkedHashModel();
+		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
+		Statements.convertRDFTo11(vf, st1, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st2, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st3, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st4, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st5, preservedModel::add, rdf12ConversionContext);
+
+		assertTrue("RDF 1.1 statements preserved under 1.1 conversion",
+				Models.isomorphic(expectedModel, preservedModel));
 	}
 }

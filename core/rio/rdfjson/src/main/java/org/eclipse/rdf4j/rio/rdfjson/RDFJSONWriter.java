@@ -153,6 +153,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 
 		results.add(BasicWriterSettings.PRETTY_PRINT);
 		results.add(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
+		results.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 
 		return results;
 	}
