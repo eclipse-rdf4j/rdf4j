@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { "a" "b" "c" }
+  FILTER EXISTS { VALUES ?localOnly { "hidden" } }
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+  <head>
+    <variable name="x"/>
+    <variable name="slot"/>
+    <variable name="never"/>
+  </head>
+  <results>
+    <result>
+      <binding name="x"><literal>inner</literal></binding>
+      <binding name="slot"><literal>outer</literal></binding>
+    </result>
+  </results>
+</sparql>

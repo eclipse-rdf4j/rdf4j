@@ -18,9 +18,13 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafeRewritePass;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -41,11 +45,26 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
  * @author Jerven Bolleman
  * @see UnionScopeChangeOptimizer
  */
-public class ProjectionRemovalOptimizer implements QueryOptimizer {
+public class ProjectionRemovalOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new ProjectionFinder());
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		if (session.mode() == ScopeSafetyMode.OFF) {
+			optimize(tupleExpr, dataset, bindings);
+			return;
+		}
+		if (session.mode() == ScopeSafetyMode.ENFORCE && tupleExpr instanceof QueryRoot root) {
+			ScopeSafeRewritePass.projections(root, session);
+			return;
+		}
+		optimize(tupleExpr, dataset, bindings);
+		session.afterLegacyOptimizer(getClass());
+		session.refresh();
 	}
 
 	private static class VariableFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {

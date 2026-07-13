@@ -70,18 +70,20 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
-final class LmdbSketchJoinOptimizer implements QueryOptimizer {
+final class LmdbSketchJoinOptimizer implements ContextAwareQueryOptimizer {
 
 	private static final double FINITE_BINDING_GUARD_PRODUCT_LIMIT = 5000.0d;
 	private static final double CANONICAL_FINITE_ANCHOR_SELECTIVE_FILTER_PASS_RATIO = 0.75d;
@@ -112,6 +114,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
 			tupleExpr.visit(new JoinVisitor(initiallyBoundVars));
 			new LmdbTupleExprEstimateAnnotator(statistics).annotate(tupleExpr);
+		}
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		if (session.mode() == ScopeSafetyMode.ENFORCE) {
+			return;
+		}
+		optimize(tupleExpr, dataset, bindings);
+		if (session.mode() != ScopeSafetyMode.OFF) {
+			session.afterLegacyOptimizer(getClass());
+			session.refresh();
 		}
 	}
 

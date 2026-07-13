@@ -95,6 +95,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryScopeSeed;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
@@ -310,6 +311,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 *-----------*/
 
 	protected ValueFactory valueFactory;
+	private final QueryScopeSeedRecorder queryScopeSeedRecorder = new QueryScopeSeedRecorder();
 
 	GraphPattern graphPattern = new GraphPattern();
 
@@ -336,6 +338,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	public TupleExprBuilder(ValueFactory valueFactory) {
 		this.valueFactory = valueFactory;
+	}
+
+	QueryScopeSeed buildQueryScopeSeed(org.eclipse.rdf4j.query.algebra.QueryRoot root) {
+		return queryScopeSeedRecorder.build(root);
 	}
 
 	/*---------*
@@ -828,7 +834,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		result = new Projection(result, projElemList);
+		Projection projection = new Projection(result, projElemList, node.isSubSelect());
+		ASTSelectQuery selectQuery = (ASTSelectQuery) node.jjtGetParent();
+		queryScopeSeedRecorder.recordProjectionDeclarations(projection,
+				DeclaredVariableScanner.process(selectQuery.getWhereClause()));
+		if (node.isSubSelect()) {
+			queryScopeSeedRecorder.recordSubqueryProjection(projection);
+		}
+		result = projection;
 		if (group != null) {
 			Set<String> groupNames = group.getBindingNames();
 			List<ProjectionElem> elements = projElemList.getElements();
@@ -1489,8 +1502,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		String serviceExpressionString = node.getPatternString();
 
-		parentGP.addRequiredTE(new Service(mapValueExprToVar(serviceRef), serviceExpr, serviceExpressionString,
-				node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent()));
+		Service service = new Service(mapValueExprToVar(serviceRef), serviceExpr, serviceExpressionString,
+				node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent());
+		queryScopeSeedRecorder.recordService(service);
+		parentGP.addRequiredTE(service);
 
 		graphPattern = parentGP;
 
@@ -1521,7 +1536,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		ValueExpr newContext = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
 
-		graphPattern.setContextVar(mapValueExprToVar(newContext));
+		Var graphContext = mapValueExprToVar(newContext);
+		queryScopeSeedRecorder.recordGraphContext(graphContext);
+		graphPattern.setContextVar(graphContext);
 		graphPattern.setStatementPatternScope(Scope.NAMED_CONTEXTS);
 
 		node.jjtGetChild(1).jjtAccept(this, null);
@@ -1563,7 +1580,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
 		parentGP = new GraphPattern();
-		parentGP.addRequiredTE(new Difference(leftArg, rightArg));
+		Difference difference = new Difference(leftArg, rightArg);
+		queryScopeSeedRecorder.recordMinus(difference);
+		parentGP.addRequiredTE(difference);
 		graphPattern = parentGP;
 
 		return null;
@@ -2601,6 +2620,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr te = graphPattern.buildTupleExpr();
 
 		e.setSubQuery(te);
+		queryScopeSeedRecorder.recordExists(e);
 
 		graphPattern = parentGP;
 
@@ -2619,6 +2639,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr te = graphPattern.buildTupleExpr();
 
 		e.setSubQuery(te);
+		queryScopeSeedRecorder.recordExists(e);
 
 		graphPattern = parentGP;
 
@@ -3291,7 +3312,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Reset: subsequent patterns should join with the LATERAL result, not re-join the left arg again
 		parentGP = new GraphPattern(parentGP);
-		parentGP.addRequiredTE(new Lateral(leftArg, rightArg, rightInputBindingNames));
+		Lateral lateral = new Lateral(leftArg, rightArg, rightInputBindingNames);
+		queryScopeSeedRecorder.recordLateral(lateral);
+		parentGP.addRequiredTE(lateral);
 		parentGP.addConstraints(lateralConstraints);
 		graphPattern = parentGP;
 

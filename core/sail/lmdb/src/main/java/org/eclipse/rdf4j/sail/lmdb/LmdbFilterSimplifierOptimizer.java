@@ -46,14 +46,16 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
-final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
+final class LmdbFilterSimplifierOptimizer implements ContextAwareQueryOptimizer {
 
 	private final EvaluationStatistics statistics;
 
@@ -65,6 +67,18 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
 		optimizeScope(tupleExpr);
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		if (session.mode() == ScopeSafetyMode.ENFORCE) {
+			return;
+		}
+		optimize(tupleExpr, dataset, bindings);
+		if (session.mode() != ScopeSafetyMode.OFF) {
+			session.afterLegacyOptimizer(getClass());
+			session.refresh();
+		}
 	}
 
 	private void optimizeScope(TupleExpr expr) {
