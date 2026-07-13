@@ -82,7 +82,8 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				ORDER_LIMIT_OPTIMIZER);
+				ORDER_LIMIT_OPTIMIZER,
+				new LmdbOrderByOptimizer(tripleSource));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

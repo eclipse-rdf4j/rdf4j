@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
 @Experimental
 final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
@@ -49,6 +48,6 @@ final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategy
 		if (evaluationStatistics.supportsJoinEstimation()) {
 			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 		}
-		return new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
+		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 	}
 }

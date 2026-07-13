@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -70,10 +72,42 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
+			throws IOException {
+		List<RecordIterator> iterators = new ArrayList<>(sources.size());
+		try {
+			for (NativeLmdbQuerySource source : sources) {
+				if (source.hasStatementsInSource()) {
+					iterators.add(source.statements(order, subj, pred, obj, context));
+				}
+			}
+			return OrderedRecordIterator.merge(iterators, order);
+		} catch (IOException | RuntimeException | Error e) {
+			for (RecordIterator iterator : iterators) {
+				iterator.close();
+			}
+			throw e;
+		}
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		for (NativeLmdbQuerySource source : sources) {
 			if (source.hasStatementsInSource()) {
 				String indexName = source.indexName(subj, pred, obj, context);
+				if (!indexName.isEmpty()) {
+					return indexName;
+				}
+			}
+		}
+		return "";
+	}
+
+	@Override
+	public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
+		for (NativeLmdbQuerySource source : sources) {
+			if (source.hasStatementsInSource()) {
+				String indexName = source.indexName(order, subj, pred, obj, context);
 				if (!indexName.isEmpty()) {
 					return indexName;
 				}

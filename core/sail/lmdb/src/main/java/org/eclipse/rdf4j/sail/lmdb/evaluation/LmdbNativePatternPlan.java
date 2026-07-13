@@ -30,6 +30,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -101,23 +102,30 @@ final class PatternPlan implements SlotPlan {
 	final Term c;
 	final ContextConstraint contexts;
 	final boolean namedContextScope;
+	final StatementOrder statementOrder;
 	final String indexName;
 	final long producedMask;
 	final double staticEstimate;
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			double staticEstimate) {
-		this(s, p, o, c, contexts, namedContextScope, "", staticEstimate);
+		this(s, p, o, c, contexts, namedContextScope, null, "", staticEstimate);
 	}
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope, String indexName,
 			double staticEstimate) {
+		this(s, p, o, c, contexts, namedContextScope, null, indexName, staticEstimate);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, double staticEstimate) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
 		this.c = c;
 		this.contexts = contexts;
 		this.namedContextScope = namedContextScope;
+		this.statementOrder = statementOrder;
 		this.indexName = indexName;
 		long mask = 0L;
 		if (s.hasSlot()) {
@@ -170,13 +178,11 @@ final class PatternPlan implements SlotPlan {
 				if (!contexts.contains(context)) {
 					return PatternCursor.empty();
 				}
-				return PatternCursor.single(probe != null ? probe.open(subj, pred, obj, context)
-						: row.source.statements(subj, pred, obj, context));
+				return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
 			}
-			return PatternCursor.contexts(row.source, probe, subj, pred, obj, contexts.ids);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids);
 		}
-		return PatternCursor.single(probe != null ? probe.open(subj, pred, obj, context)
-				: row.source.statements(subj, pred, obj, context));
+		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
 	}
 
 	/**
@@ -200,13 +206,38 @@ final class PatternPlan implements SlotPlan {
 				if (!contexts.contains(context)) {
 					return PatternCursor.empty();
 				}
-				return PatternCursor.single(probe != null ? probe.open(subj, pred, obj, context)
-						: row.source.statements(subj, pred, obj, context));
+				return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
 			}
-			return PatternCursor.contexts(row.source, probe, subj, pred, obj, contexts.ids);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids);
 		}
-		return PatternCursor.single(probe != null ? probe.open(subj, pred, obj, context)
-				: row.source.statements(subj, pred, obj, context));
+		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
+	}
+
+	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+			long subj, long pred, long obj, long context) throws IOException {
+		if (statementOrder != null) {
+			return source.statements(statementOrder, subj, pred, obj, context);
+		}
+		return probe != null ? probe.open(subj, pred, obj, context) : source.statements(subj, pred, obj, context);
+	}
+
+	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+			long subj, long pred, long obj, long[] contextIds) throws IOException {
+		if (statementOrder == null) {
+			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds);
+		}
+		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
+		try {
+			for (long contextId : contextIds) {
+				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId));
+			}
+			return PatternCursor.single(OrderedRecordIterator.merge(iterators, statementOrder));
+		} catch (IOException | RuntimeException | Error e) {
+			for (RecordIterator iterator : iterators) {
+				iterator.close();
+			}
+			throw e;
+		}
 	}
 
 	static long lookupUnbinding(Term term, long[] slots, long unboundMask) {

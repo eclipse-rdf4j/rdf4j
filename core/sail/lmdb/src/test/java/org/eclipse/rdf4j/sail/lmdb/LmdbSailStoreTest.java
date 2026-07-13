@@ -35,6 +35,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +48,7 @@ import java.util.function.IntConsumer;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -55,7 +57,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -291,6 +295,265 @@ public class LmdbSailStoreTest {
 					.toString();
 
 			assertTrue(actual, actual.contains("indexName="));
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexUsesPsocNaturalOrder(@TempDir File orderedDataDir) {
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		orderedRepo.init();
+
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type1 = F.createIRI("urn:type1");
+		IRI type2 = F.createIRI("urn:type2");
+
+		try {
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				conn.add(s3, RDF.TYPE, type1);
+				conn.add(s1, RDF.TYPE, type2);
+				conn.add(s2, RDF.TYPE, type1);
+			}
+
+			LmdbStore sail = (LmdbStore) ((SailRepository) orderedRepo).getSail();
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection();
+					CloseableIteration<? extends Statement> statements = connection.getStatements(StatementOrder.O,
+							null,
+							RDF.TYPE, null, false)) {
+				List<String> orderedSubjects = new ArrayList<>();
+				while (statements.hasNext()) {
+					orderedSubjects.add(statements.next().getSubject().stringValue());
+				}
+				assertEquals(List.of("urn:s3", "urn:s2", "urn:s1"), orderedSubjects);
+			}
+
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				List<String> subjects = new ArrayList<>();
+				try (TupleQueryResult result = conn
+						.prepareTupleQuery("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?a)")
+						.evaluate()) {
+					while (result.hasNext()) {
+						subjects.add(result.next().getValue("a").stringValue());
+					}
+				}
+
+				assertEquals(List.of("urn:s3", "urn:s1", "urn:s2"), subjects);
+
+				String actual = conn
+						.prepareTupleQuery("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?a)")
+						.explain(Explanation.Level.Executed)
+						.toString();
+				assertTrue(actual, actual.contains("indexName=psoc"));
+			}
+		} finally {
+			orderedRepo.shutDown();
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexUsesPoscNaturalOrder(@TempDir File orderedDataDir) {
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		orderedRepo.init();
+
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type1 = F.createIRI("urn:type1");
+		IRI type2 = F.createIRI("urn:type2");
+
+		try {
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				conn.add(s3, RDF.TYPE, type1);
+				conn.add(s1, RDF.TYPE, type2);
+				conn.add(s2, RDF.TYPE, type1);
+			}
+
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				List<String> subjects = new ArrayList<>();
+				try (TupleQueryResult result = conn
+						.prepareTupleQuery("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?type)")
+						.evaluate()) {
+					while (result.hasNext()) {
+						subjects.add(result.next().getValue("a").stringValue());
+					}
+				}
+
+				String actual = conn
+						.prepareTupleQuery("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?type)")
+						.explain(Explanation.Level.Executed)
+						.toString();
+				assertEquals(actual, List.of("urn:s3", "urn:s2", "urn:s1"), subjects);
+				assertTrue(actual, actual.contains("indexName=posc"));
+			}
+		} finally {
+			orderedRepo.shutDown();
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexPreservesJoinOrder(@TempDir File orderedDataDir) {
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		orderedRepo.init();
+
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type1 = F.createIRI("urn:type1");
+		IRI type2 = F.createIRI("urn:type2");
+		IRI label = F.createIRI("urn:label");
+
+		try {
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				conn.add(s3, RDF.TYPE, type1);
+				conn.add(s1, RDF.TYPE, type2);
+				conn.add(s2, RDF.TYPE, type1);
+				conn.add(s3, label, F.createLiteral("three"));
+				conn.add(s1, label, F.createLiteral("one"));
+				conn.add(s2, label, F.createLiteral("two"));
+			}
+
+			try (RepositoryConnection conn = orderedRepo.getConnection()) {
+				List<String> subjects = new ArrayList<>();
+				try (TupleQueryResult result = conn.prepareTupleQuery(
+						"select ?a ?type ?label where { ?a a ?type. ?a <urn:label> ?label. } order by STABLE_INDEX(?type)")
+						.evaluate()) {
+					while (result.hasNext()) {
+						subjects.add(result.next().getValue("a").stringValue());
+					}
+				}
+
+				assertEquals(List.of("urn:s3", "urn:s2", "urn:s1"), subjects);
+			}
+		} finally {
+			orderedRepo.shutDown();
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexDescFails() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			QueryEvaluationException error = org.junit.jupiter.api.Assertions.assertThrows(
+					QueryEvaluationException.class,
+					() -> {
+						try (TupleQueryResult result = conn
+								.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL
+										+ "> ?o } order by DESC(STABLE_INDEX(?s))")
+								.evaluate()) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					});
+
+			assertTrue(error.getMessage().contains("STABLE_INDEX"));
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexRejectsDirtyTransaction() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin(IsolationLevels.SNAPSHOT_READ);
+			conn.add(F.createIRI("urn:dirty"), RDFS.LABEL, F.createLiteral("dirty"));
+
+			QueryEvaluationException error = org.junit.jupiter.api.Assertions.assertThrows(
+					QueryEvaluationException.class,
+					() -> {
+						try (TupleQueryResult result = conn
+								.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL
+										+ "> ?o } order by STABLE_INDEX(?s)")
+								.evaluate()) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					});
+
+			assertTrue(error.getMessage().contains("STABLE_INDEX"));
+			assertTrue(error.getMessage().toLowerCase().contains("transaction"));
+			conn.rollback();
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexAcrossDatasetGraphsDoesNotLeakOtherContexts() {
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type = F.createIRI("urn:type");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(s3, RDF.TYPE, type, CTX_1);
+			conn.add(s1, RDF.TYPE, type, CTX_2);
+			conn.add(s2, RDF.TYPE, type, CTX_INV);
+		}
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			List<String> subjects = new ArrayList<>();
+			try (TupleQueryResult result = conn.prepareTupleQuery(
+					"select ?a ?type from <urn:one> from <urn:two> where { ?a a ?type. } order by STABLE_INDEX(?a)")
+					.evaluate()) {
+				while (result.hasNext()) {
+					subjects.add(result.next().getValue("a").stringValue());
+				}
+			}
+
+			assertEquals(List.of("urn:s3", "urn:s1"), subjects);
+		}
+	}
+
+	@Test
+	public void testOrderedGetStatementsWithMultipleContextsDoesNotLeakOtherContexts() {
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type = F.createIRI("urn:type");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(s3, RDF.TYPE, type, CTX_1);
+			conn.add(s1, RDF.TYPE, type, CTX_2);
+			conn.add(s2, RDF.TYPE, type, CTX_INV);
+		}
+
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection();
+				CloseableIteration<? extends Statement> statements = connection.getStatements(StatementOrder.S, null,
+						RDF.TYPE, type, false, CTX_1, CTX_2)) {
+			List<String> subjects = new ArrayList<>();
+			while (statements.hasNext()) {
+				subjects.add(statements.next().getSubject().stringValue());
+			}
+
+			assertEquals(List.of("urn:s3", "urn:s1"), subjects);
+		}
+	}
+
+	@Test
+	public void testOrderByLmdbIndexIncludesInferredStatements() {
+		IRI inferredSubject = F.createIRI("urn:inferred");
+
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addInferredStatement(inferredSubject, RDFS.LABEL, F.createLiteral("inferred"));
+			connection.commit();
+		}
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			List<String> subjects = new ArrayList<>();
+			TupleQuery query = connection
+					.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL + "> ?o } order by STABLE_INDEX(?s)");
+			query.setIncludeInferred(true);
+
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					subjects.add(result.next().getValue("s").stringValue());
+				}
+			}
+
+			assertEquals(
+					List.of("http://example.org/0", "http://example.org/1", "http://example.org/2", "urn:inferred"),
+					subjects);
 		}
 	}
 

@@ -30,6 +30,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -157,7 +158,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
-				indexName(s, p, o, c),
+				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				staticEstimate(s, p, o, c, contexts));
 	}
 
@@ -335,13 +336,22 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
-				indexName(s, p, o, c),
+				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				algebraEstimate(sp));
 	}
 
 	private String indexName(Term s, Term p, Term o, Term c) {
 		return source.indexName(s.isConstant() ? s.constant : UNKNOWN, p.isConstant() ? p.constant : UNKNOWN,
 				o.isConstant() ? o.constant : UNKNOWN, c.isConstant() ? c.constant : UNKNOWN);
+	}
+
+	private String indexName(StatementOrder order, Term s, Term p, Term o, Term c) {
+		if (order == null) {
+			return indexName(s, p, o, c);
+		}
+		return source.indexName(order, s.isConstant() ? s.constant : UNKNOWN,
+				p.isConstant() ? p.constant : UNKNOWN, o.isConstant() ? o.constant : UNKNOWN,
+				c.isConstant() ? c.constant : UNKNOWN);
 	}
 
 	double algebraEstimate(StatementPattern sp) {

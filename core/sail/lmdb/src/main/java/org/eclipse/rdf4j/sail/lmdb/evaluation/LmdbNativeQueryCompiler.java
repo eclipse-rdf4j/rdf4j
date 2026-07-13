@@ -25,6 +25,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -148,7 +149,8 @@ final class LmdbNativeQueryCompiler {
 				return collect(join.getLeftArg()) && collect(join.getRightArg());
 			}
 			if (expr instanceof StatementPattern) {
-				NativePattern pattern = compilePattern((StatementPattern) expr);
+				StatementPattern statementPattern = (StatementPattern) expr;
+				NativePattern pattern = compilePattern(statementPattern);
 				if (pattern == null) {
 					impossible = true;
 					return true;
@@ -206,7 +208,8 @@ final class LmdbNativeQueryCompiler {
 			long staticContext = contexts.staticContextForEstimate();
 			double estimate = source.estimate(s.constantOrUnknown(), p.constantOrUnknown(), o.constantOrUnknown(),
 					staticContext);
-			return new NativePattern(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS, estimate);
+			return new NativePattern(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+					sp.getStatementOrder(), estimate);
 		}
 
 		private ContextConstraint compileContextConstraint(StatementPattern sp, Dataset dataset) {
@@ -635,17 +638,19 @@ final class LmdbNativeQueryCompiler {
 		private final Term c;
 		private final ContextConstraint contexts;
 		private final boolean namedContextScope;
+		private final StatementOrder statementOrder;
 		private final double staticEstimate;
 		private final long producedMask;
 
 		private NativePattern(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
-				double staticEstimate) {
+				StatementOrder statementOrder, double staticEstimate) {
 			this.s = s;
 			this.p = p;
 			this.o = o;
 			this.c = c;
 			this.contexts = contexts;
 			this.namedContextScope = namedContextScope;
+			this.statementOrder = statementOrder;
 			this.staticEstimate = staticEstimate;
 			long mask = 0L;
 			if (s.hasSlot()) {
@@ -681,12 +686,35 @@ final class LmdbNativeQueryCompiler {
 			if (contexts.isFixed()) {
 				if (context != UNKNOWN) {
 					return contexts.contains(context)
-							? PatternCursor.single(source.statements(subj, pred, obj, context))
+							? PatternCursor.single(statements(source, subj, pred, obj, context))
 							: PatternCursor.empty();
 				}
-				return PatternCursor.contexts(source, subj, pred, obj, contexts.ids);
+				return statementOrder == null ? PatternCursor.contexts(source, subj, pred, obj, contexts.ids)
+						: orderedContexts(source, subj, pred, obj, contexts.ids);
 			}
-			return PatternCursor.single(source.statements(subj, pred, obj, context));
+			return PatternCursor.single(statements(source, subj, pred, obj, context));
+		}
+
+		private RecordIterator statements(NativeLmdbQuerySource source, long subj, long pred, long obj, long context)
+				throws IOException {
+			return statementOrder == null ? source.statements(subj, pred, obj, context)
+					: source.statements(statementOrder, subj, pred, obj, context);
+		}
+
+		private PatternCursor orderedContexts(NativeLmdbQuerySource source, long subj, long pred, long obj,
+				long[] contextIds) throws IOException {
+			List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
+			try {
+				for (long contextId : contextIds) {
+					iterators.add(source.statements(statementOrder, subj, pred, obj, contextId));
+				}
+				return PatternCursor.single(OrderedRecordIterator.merge(iterators, statementOrder));
+			} catch (IOException | RuntimeException | Error e) {
+				for (RecordIterator iterator : iterators) {
+					iterator.close();
+				}
+				throw e;
+			}
 		}
 
 		private boolean doesNotProduceBindings(long[] slots) {
@@ -717,7 +745,7 @@ final class LmdbNativeQueryCompiler {
 			if (namedContextScope && context == UNKNOWN) {
 				// mdb_get/has with an unknown context cannot distinguish "only the default graph" from
 				// "some named graph". Fall back to the scanning cursor where bind() filters null contexts.
-				return PatternCursor.single(source.statements(subj, pred, obj, context));
+				return PatternCursor.single(statements(source, subj, pred, obj, context));
 			}
 			return PatternCursor.exists(source.has(subj, pred, obj, context), subj, pred, obj, context);
 		}

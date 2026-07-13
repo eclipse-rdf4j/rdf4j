@@ -758,8 +758,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Predicate<Statement> filter = null;
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
 			filter = st -> st.getContext() != null;
+		} else if (contexts.length > 1) {
+			filter = st -> matchesAnyContext(st.getContext(), contexts);
 		}
 		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);
+	}
+
+	private static boolean matchesAnyContext(Resource context, Resource[] contexts) {
+		for (Resource candidate : contexts) {
+			if (candidate == null ? context == null : candidate.equals(context)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

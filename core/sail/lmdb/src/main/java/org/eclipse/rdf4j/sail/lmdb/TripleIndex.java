@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
@@ -203,6 +204,36 @@ class TripleIndex {
 		}
 
 		return score;
+	}
+
+	boolean supportsOrder(StatementOrder statementOrder, long subj, long pred, long obj, long context) {
+		int orderedComponent = switch (statementOrder) {
+		case S -> SUBJ_IDX;
+		case P -> PRED_IDX;
+		case O -> OBJ_IDX;
+		case C -> CONTEXT_IDX;
+		};
+
+		for (int component : indexMap) {
+			if (component == orderedComponent) {
+				return true;
+			}
+			if (!isFixed(component, subj, pred, obj, context)) {
+				return false;
+			}
+		}
+
+		return false;
+	}
+
+	private boolean isFixed(int component, long subj, long pred, long obj, long context) {
+		return switch (component) {
+		case SUBJ_IDX -> subj >= 0;
+		case PRED_IDX -> pred >= 0;
+		case OBJ_IDX -> obj >= 0;
+		case CONTEXT_IDX -> context >= 0;
+		default -> throw new IllegalStateException("Unknown component: " + component);
+		};
 	}
 
 	int getRangePrefixLength(long subj, long pred, long obj, long context) {
@@ -503,6 +534,25 @@ class TripleIndex {
 		TripleIndex bestIndex = null;
 
 		for (TripleIndex index : indexes) {
+			int score = index.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				bestIndex = index;
+			}
+		}
+
+		return bestIndex;
+	}
+
+	static TripleIndex getBestCompatibleOrderedIndex(List<TripleIndex> indexes, StatementOrder statementOrder,
+			long subj, long pred, long obj, long context) {
+		int bestScore = -1;
+		TripleIndex bestIndex = null;
+
+		for (TripleIndex index : indexes) {
+			if (!index.supportsOrder(statementOrder, subj, pred, obj, context)) {
+				continue;
+			}
 			int score = index.getPatternScore(subj, pred, obj, context);
 			if (score > bestScore) {
 				bestScore = score;

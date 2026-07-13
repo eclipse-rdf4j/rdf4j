@@ -13,10 +13,17 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.List;
+import java.util.Optional;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -38,6 +45,7 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 	private final NativeLmdbQuerySource nativeSource;
 	private final boolean nativeEnabled;
 	private final EvaluationStatistics evaluationStatistics;
+	private final LmdbStableOrderPlanner stableOrderPlanner;
 
 	LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
@@ -47,6 +55,7 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 		this.nativeSource = extractNativeSource(tripleSource);
 		this.nativeEnabled = Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
 		this.evaluationStatistics = evaluationStatistics;
+		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
 	}
 
 	@Override
@@ -80,6 +89,38 @@ final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 		}
 		return super.precompile(expr, context);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = stableOrderPlanner.plan(node.getArg());
+		if (resolution.isPresent()) {
+			return preparePartitioned(node.getArg(), resolution.get(), context);
+		}
+		return super.prepare(node, context);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = stableOrderPlanner.plan(node.getArg());
+		if (resolution.isPresent()) {
+			return preparePartitioned(node.getArg(), resolution.get(), context);
+		}
+		return super.prepare(node, context);
+	}
+
+	private QueryEvaluationStep preparePartitioned(TupleExpr tupleExpr,
+			LmdbStableOrderPlanner.Resolution resolution, QueryEvaluationContext context) {
+		resolution.apply();
+		QueryEvaluationStep child = genericPrecompile(tupleExpr, context);
+		CollectionFactory collectionFactory = getCollectionFactory().get();
+		return bindings -> {
+			CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
+			return new LmdbPartitionedDistinctIteration(evaluate, collectionFactory.createSetOfBindingSets(),
+					resolution.getVisibleBindingName(), collectionFactory);
+		};
 	}
 
 	private void annotateNativeExplainPlan(TupleExpr expr, QueryEvaluationContext context) {

@@ -30,6 +30,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -160,8 +161,22 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
+			throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.statements(order, subj, pred, obj, context);
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(subj, pred, obj, context);
+	}
+
+	@Override
+	public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
+		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(order, subj, pred, obj, context);
 	}
 
 	@Override

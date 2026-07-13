@@ -237,7 +237,8 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, sketchIndex));
+		assertEquals(List.of(OrderLimitOptimizer.class, LmdbOrderByOptimizer.class),
+				nonCheckerOptimizerTypesAfter(optimizers, sketchIndex));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 

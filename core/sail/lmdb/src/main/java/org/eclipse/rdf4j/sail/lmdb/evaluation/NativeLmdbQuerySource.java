@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -45,8 +46,17 @@ interface NativeLmdbQuerySource {
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
+	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
+			throws IOException {
+		throw new UnsupportedOperationException("Ordered native statement scans are not supported");
+	}
+
 	default String indexName(long subj, long pred, long obj, long context) {
 		return "";
+	}
+
+	default String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
+		return indexName(subj, pred, obj, context);
 	}
 
 	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {

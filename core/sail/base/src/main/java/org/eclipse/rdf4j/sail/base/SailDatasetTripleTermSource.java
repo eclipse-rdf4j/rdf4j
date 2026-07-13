@@ -65,6 +65,14 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	}
 
 	/**
+	 * Returns whether any dataset layer contains transaction-local statement changes. Physical store order only
+	 * describes the committed snapshot, so store-specific optimizers must not request ordered scans in this state.
+	 */
+	public boolean hasPendingStatementChanges() {
+		return hasPendingStatementChanges(dataset, Collections.newSetFromMap(new IdentityHashMap<>()));
+	}
+
+	/**
 	 * Finds all backing datasets of the requested type behind transparent base-layer dataset wrappers. This
 	 * deliberately stops at wrappers that can change statement semantics or add required side effects, for example
 	 * transaction changesets and serializable read-observation wrappers. Store-specific evaluators can therefore
@@ -100,6 +108,26 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 			DelegatingSailDataset delegating = (DelegatingSailDataset) candidate;
 			return delegating.isStatementAccessTransparent()
 					&& collectDatasets(delegating.getDelegate(), type, result, seen);
+		}
+		return false;
+	}
+
+	private static boolean hasPendingStatementChanges(SailDataset candidate, Set<SailDataset> seen) {
+		if (candidate == null || !seen.add(candidate)) {
+			return false;
+		}
+		if (candidate instanceof SailDatasetImpl) {
+			SailDatasetImpl derived = (SailDatasetImpl) candidate;
+			return derived.hasStatementChanges()
+					|| hasPendingStatementChanges(derived.getDerivedFrom(), seen);
+		}
+		if (candidate instanceof UnionSailDataset) {
+			UnionSailDataset union = (UnionSailDataset) candidate;
+			return hasPendingStatementChanges(union.getLeftDataset(), seen)
+					|| hasPendingStatementChanges(union.getRightDataset(), seen);
+		}
+		if (candidate instanceof DelegatingSailDataset) {
+			return hasPendingStatementChanges(((DelegatingSailDataset) candidate).getDelegate(), seen);
 		}
 		return false;
 	}
@@ -150,6 +178,10 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement> statements = null;
 		try {
+			if (hasPendingStatementChanges()) {
+				throw new QueryEvaluationException(
+						"Statement ordering is unavailable after the current transaction has pending changes");
+			}
 			statements = dataset.getStatements(order, subj, pred, obj, contexts);
 			if (statements instanceof EmptyIteration) {
 				return statements;
@@ -168,11 +200,17 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (hasPendingStatementChanges()) {
+			return Set.of();
+		}
 		return dataset.getSupportedOrders(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public Comparator<Value> getComparator() {
+		if (hasPendingStatementChanges()) {
+			return null;
+		}
 		return dataset.getComparator();
 	}
 

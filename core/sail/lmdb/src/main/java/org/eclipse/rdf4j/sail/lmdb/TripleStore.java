@@ -71,6 +71,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -96,6 +97,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -1457,8 +1459,35 @@ class TripleStore implements Closeable {
 				bestIndexByBoundMask[mask], rangeSearchByBoundMask[mask]);
 	}
 
+	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
+			long context, boolean explicit) throws IOException {
+		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(indexes, statementOrder, subj, pred, obj,
+				context);
+		if (index == null) {
+			throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
+		}
+		boolean rangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, rangeSearch);
+	}
+
+	Set<StatementOrder> getSupportedOrders(long subj, long pred, long obj, long context) {
+		EnumSet<StatementOrder> supportedOrders = EnumSet.noneOf(StatementOrder.class);
+		for (StatementOrder statementOrder : StatementOrder.values()) {
+			if (TripleIndex.getBestCompatibleOrderedIndex(indexes, statementOrder, subj, pred, obj, context) != null) {
+				supportedOrders.add(statementOrder);
+			}
+		}
+		return supportedOrders;
+	}
+
 	String getIndexName(long subj, long pred, long obj, long context) {
 		return bestIndexByBoundMask[boundMask(subj, pred, obj, context)].toString();
+	}
+
+	String getIndexName(StatementOrder statementOrder, long subj, long pred, long obj, long context) {
+		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(indexes, statementOrder, subj, pred, obj,
+				context);
+		return index == null ? "" : index.toString();
 	}
 
 	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
