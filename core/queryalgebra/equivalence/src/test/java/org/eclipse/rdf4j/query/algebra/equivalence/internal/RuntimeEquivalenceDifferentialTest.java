@@ -16,16 +16,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -34,10 +41,14 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceChecker;
+import org.eclipse.rdf4j.query.algebra.equivalence.CheckOptions;
+import org.eclipse.rdf4j.query.algebra.equivalence.ContextMode;
 import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceResult;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationCase;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationOutcome;
 import org.eclipse.rdf4j.query.algebra.equivalence.ObservationMode;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
@@ -50,6 +61,170 @@ class RuntimeEquivalenceDifferentialTest {
 	private static final Resource SUBJECT = VF.createIRI("urn:test:subject");
 	private static final IRI GRAPH_1 = VF.createIRI("urn:test:g1");
 	private static final IRI GRAPH_2 = VF.createIRI("urn:test:g2");
+	private static final String INVOCATION_SENSITIVE_FILTER = "urn:test:invocation-sensitive-filter";
+
+	@Test
+	void setObservationPreservesCallsToInvocationSensitiveFilters() {
+		InvocationSensitiveBooleanFunction function = new InvocationSensitiveBooleanFunction();
+		withFunction(function, () -> {
+			TupleExpr duplicateInput = new Filter(repeatedValues(2), new FunctionCall(function.getURI()));
+			TupleExpr singleInput = new Filter(repeatedValues(1), new FunctionCall(function.getURI()));
+
+			function.reset();
+			EvaluationOutcome duplicateOutcome = evaluate(duplicateInput);
+			function.reset();
+			EvaluationOutcome singleOutcome = evaluate(singleInput);
+			assertFalse(
+					duplicateOutcome.sameAs(singleOutcome, ObservationMode.SET),
+					() -> "invocation-sensitive filters produced the same SET outcome: " + duplicateOutcome);
+
+			CheckOptions options = CheckOptions.builder()
+					.observationMode(ObservationMode.SET)
+					.boundedCounterexampleSearch(false)
+					.build();
+			EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(duplicateInput, singleInput);
+
+			assertFalse(proof.isEquivalent(), proof::getReason);
+		});
+	}
+
+	@Test
+	void setObservationPreservesCallsToInvocationSensitiveLeftJoinConditions() {
+		InvocationSensitiveBooleanFunction function = new InvocationSensitiveBooleanFunction();
+		withFunction(function, () -> {
+			TupleExpr duplicateInput = new LeftJoin(
+					repeatedValues(2),
+					repeatedValues("y", 1),
+					new FunctionCall(function.getURI()));
+			TupleExpr singleInput = new LeftJoin(
+					repeatedValues(1),
+					repeatedValues("y", 1),
+					new FunctionCall(function.getURI()));
+
+			function.reset();
+			EvaluationOutcome duplicateOutcome = evaluate(duplicateInput);
+			function.reset();
+			EvaluationOutcome singleOutcome = evaluate(singleInput);
+			assertFalse(
+					duplicateOutcome.sameAs(singleOutcome, ObservationMode.SET),
+					() -> "invocation-sensitive OPTIONAL conditions produced the same SET outcome: "
+							+ duplicateOutcome);
+
+			CheckOptions options = CheckOptions.builder()
+					.observationMode(ObservationMode.SET)
+					.boundedCounterexampleSearch(false)
+					.build();
+			EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(duplicateInput, singleInput);
+
+			assertFalse(proof.isEquivalent(), proof::getReason);
+		});
+	}
+
+	@Test
+	void setObservationPreservesPerLeftJoinRightEvaluations() {
+		InvocationSensitiveBooleanFunction function = new InvocationSensitiveBooleanFunction();
+		withFunction(function, () -> assertSetObservesInvocationSchedule(
+				function,
+				new Join(repeatedValues(2), invocationSensitiveFilter(function)),
+				new Join(repeatedValues(1), invocationSensitiveFilter(function))));
+	}
+
+	@Test
+	void setObservationPreservesPerLeftOptionalRightEvaluations() {
+		InvocationSensitiveBooleanFunction function = new InvocationSensitiveBooleanFunction();
+		withFunction(function, () -> assertSetObservesInvocationSchedule(
+				function,
+				new LeftJoin(repeatedValues(2), invocationSensitiveFilter(function)),
+				new LeftJoin(repeatedValues(1), invocationSensitiveFilter(function))));
+	}
+
+	@Test
+	void setObservationPreservesPerLeftLateralRightEvaluations() {
+		InvocationSensitiveBooleanFunction function = new InvocationSensitiveBooleanFunction();
+		withFunction(function, () -> assertSetObservesInvocationSchedule(
+				function,
+				new Lateral(repeatedValues(2), invocationSensitiveFilter(function), Set.of("x")),
+				new Lateral(repeatedValues(1), invocationSensitiveFilter(function), Set.of("x"))));
+	}
+
+	@Test
+	void topLevelEmptyContextDoesNotLeakIntoJoinRightOperand() {
+		TupleExpr left = repeatedValues(1);
+		TupleExpr original = new Join(
+				left.clone(),
+				new Difference(new SingletonSet(), new SingletonSet()));
+		TupleExpr candidate = new Join(left.clone(), new SingletonSet());
+
+		EvaluationOutcome originalOutcome = evaluate(original);
+		EvaluationOutcome candidateOutcome = evaluate(candidate);
+		assertFalse(
+				originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
+				() -> "directional join operands produced the same BAG outcome: " + originalOutcome);
+
+		CheckOptions options = CheckOptions.builder()
+				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
+				.boundedCounterexampleSearch(false)
+				.build();
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertFalse(proof.isEquivalent(), proof::getReason);
+	}
+
+	@Test
+	void topLevelEmptyContextDoesNotLeakIntoLeftJoinRightOperand() {
+		TupleExpr left = repeatedValues(1);
+		TupleExpr original = new LeftJoin(
+				left.clone(),
+				new Join(
+						new Difference(new SingletonSet(), new SingletonSet()),
+						repeatedValues("y", 1)));
+		TupleExpr candidate = new LeftJoin(left.clone(), repeatedValues("y", 1));
+
+		EvaluationOutcome originalOutcome = evaluate(original);
+		EvaluationOutcome candidateOutcome = evaluate(candidate);
+		assertFalse(
+				originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
+				() -> "directional OPTIONAL operands produced the same BAG outcome: " + originalOutcome);
+
+		CheckOptions options = CheckOptions.builder()
+				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
+				.boundedCounterexampleSearch(false)
+				.build();
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertFalse(proof.isEquivalent(), proof::getReason);
+	}
+
+	@Test
+	void everyTopLevelEmptyProofAgreesAcrossContextSensitivePlans() {
+		List<NamedPlan> plans = contextSensitivePlans();
+		List<EvaluationOutcome> outcomes = new ArrayList<>(plans.size());
+		for (NamedPlan plan : plans) {
+			outcomes.add(evaluate(plan.expression()));
+		}
+		CheckOptions options = CheckOptions.builder()
+				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
+				.boundedCounterexampleSearch(false)
+				.build();
+		AlgebraEquivalenceChecker checker = new AlgebraEquivalenceChecker(options);
+
+		for (int left = 0; left < plans.size(); left++) {
+			for (int right = left + 1; right < plans.size(); right++) {
+				NamedPlan leftPlan = plans.get(left);
+				NamedPlan rightPlan = plans.get(right);
+				EquivalenceResult proof = checker.check(leftPlan.expression(), rightPlan.expression());
+				if (proof.isEquivalent()) {
+					EvaluationOutcome leftOutcome = outcomes.get(left);
+					EvaluationOutcome rightOutcome = outcomes.get(right);
+					assertTrue(
+							leftOutcome.sameAs(rightOutcome, ObservationMode.BAG),
+							() -> leftPlan.label() + " and " + rightPlan.label()
+									+ " were proved equivalent but evaluate as "
+									+ leftOutcome + " and " + rightOutcome);
+				}
+			}
+		}
+	}
 
 	@Test
 	void everyProvedRuntimePairAgreesAcrossExactEvaluationMatrix() {
@@ -179,6 +354,128 @@ class RuntimeEquivalenceDifferentialTest {
 				Var.of(objectName));
 	}
 
+	private static BindingSetAssignment repeatedValues(int rowCount) {
+		return repeatedValues("x", rowCount);
+	}
+
+	private static BindingSetAssignment repeatedValues(String bindingName, int rowCount) {
+		List<BindingSet> rows = new ArrayList<>(rowCount);
+		for (int i = 0; i < rowCount; i++) {
+			MapBindingSet row = new MapBindingSet();
+			row.setBinding(bindingName, VF.createLiteral("value"));
+			rows.add(row);
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static List<NamedPlan> contextSensitivePlans() {
+		return List.of(
+				new NamedPlan("unit", new SingletonSet()),
+				new NamedPlan("values x", repeatedValues(1)),
+				new NamedPlan("unit minus unit", unitMinusUnit()),
+				new NamedPlan("values x minus unit", new Difference(repeatedValues(1), new SingletonSet())),
+				new NamedPlan("minus then values", new Join(unitMinusUnit(), repeatedValues(1))),
+				new NamedPlan("values then minus", new Join(repeatedValues(1), unitMinusUnit())),
+				new NamedPlan(
+						"left-associated productive join",
+						new Join(new Join(unitMinusUnit(), repeatedValues(1)), repeatedValues("y", 1))),
+				new NamedPlan(
+						"right-associated productive join",
+						new Join(unitMinusUnit(), new Join(repeatedValues(1), repeatedValues("y", 1)))),
+				new NamedPlan(
+						"left-associated blocked join",
+						new Join(new Join(repeatedValues(1), unitMinusUnit()), repeatedValues("y", 1))),
+				new NamedPlan(
+						"right-associated blocked join",
+						new Join(repeatedValues(1), new Join(unitMinusUnit(), repeatedValues("y", 1)))),
+				new NamedPlan(
+						"optional with contextual right",
+						new LeftJoin(
+								repeatedValues(1),
+								new Join(unitMinusUnit(), repeatedValues("y", 1)))),
+				new NamedPlan(
+						"optional with values right",
+						new LeftJoin(repeatedValues(1), repeatedValues("y", 1))));
+	}
+
+	private static Difference unitMinusUnit() {
+		return new Difference(new SingletonSet(), new SingletonSet());
+	}
+
+	private static EvaluationOutcome evaluate(TupleExpr expression) {
+		EvaluationAttempt attempt = new Rdf4jEvaluator()
+				.evaluate(expression, EvaluationCase.builder("empty dataset").build(), 10);
+		assertTrue(attempt.isComplete(), attempt::getIncompleteReason);
+		EvaluationOutcome outcome = attempt.getOutcome().orElseThrow();
+		assertFalse(outcome.hasError(), outcome::toString);
+		return outcome;
+	}
+
+	private static Filter invocationSensitiveFilter(Function function) {
+		return new Filter(repeatedValues("y", 1), new FunctionCall(function.getURI()));
+	}
+
+	private static void assertSetObservesInvocationSchedule(
+			InvocationSensitiveBooleanFunction function,
+			TupleExpr duplicateInput,
+			TupleExpr singleInput) {
+		function.reset();
+		EvaluationOutcome duplicateOutcome = evaluate(duplicateInput);
+		function.reset();
+		EvaluationOutcome singleOutcome = evaluate(singleInput);
+		assertFalse(
+				duplicateOutcome.sameAs(singleOutcome, ObservationMode.SET),
+				() -> "per-left evaluations produced the same SET outcome: " + duplicateOutcome);
+
+		CheckOptions options = CheckOptions.builder()
+				.observationMode(ObservationMode.SET)
+				.boundedCounterexampleSearch(false)
+				.build();
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(duplicateInput, singleInput);
+		assertFalse(proof.isEquivalent(), proof::getReason);
+	}
+
+	private static void withFunction(Function function, Runnable action) {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Optional<Function> previous = registry.add(function);
+		try {
+			action.run();
+		} finally {
+			registry.remove(function);
+			previous.ifPresent(registry::add);
+		}
+	}
+
+	private static final class InvocationSensitiveBooleanFunction implements Function {
+		private int invocationCount;
+
+		@Override
+		public String getURI() {
+			return INVOCATION_SENSITIVE_FILTER;
+		}
+
+		@Override
+		@SuppressWarnings("deprecation")
+		public Value evaluate(ValueFactory valueFactory, Value... args) {
+			return valueFactory.createLiteral(invocationCount++);
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
+		}
+
+		private void reset() {
+			invocationCount = 0;
+		}
+	}
+
 	private record EquivalentPair(String label, TupleExpr original, TupleExpr candidate) {
+	}
+
+	private record NamedPlan(String label, TupleExpr expression) {
 	}
 }

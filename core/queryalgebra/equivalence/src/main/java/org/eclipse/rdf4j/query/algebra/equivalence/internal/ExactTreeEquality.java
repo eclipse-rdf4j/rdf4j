@@ -12,11 +12,13 @@
 package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
-/** RDF4J recursive equality augmented with variable-scope-boundary equality. */
+/** RDF4J recursive equality augmented with semantic state omitted by individual node {@code equals} methods. */
 public final class ExactTreeEquality {
 	private ExactTreeEquality() {
 	}
@@ -29,6 +31,9 @@ public final class ExactTreeEquality {
 			return false;
 		}
 		if (!left.equals(right)) {
+			return false;
+		}
+		if (!sameLocalSemantics(left, right)) {
 			return false;
 		}
 		if (left instanceof VariableScopeChange
@@ -46,6 +51,20 @@ public final class ExactTreeEquality {
 			if (!equal(leftChildren.get(i), rightChildren.get(i))) {
 				return false;
 			}
+		}
+		return true;
+	}
+
+	private static boolean sameLocalSemantics(QueryModelNode left, QueryModelNode right) {
+		if (left instanceof Service leftService) {
+			Service rightService = (Service) right;
+			return leftService.isSilent() == rightService.isSilent()
+					&& Objects.equals(leftService.getBaseURI(), rightService.getBaseURI())
+					&& Objects.equals(leftService.getServiceExpressionString(),
+							rightService.getServiceExpressionString())
+					&& Objects.equals(leftService.getPrefixDeclarations(), rightService.getPrefixDeclarations())
+					&& Objects.equals(leftService.getServiceVars(), rightService.getServiceVars())
+					&& Objects.equals(leftService.getAskQueryString(), rightService.getAskQueryString());
 		}
 		return true;
 	}

@@ -233,6 +233,27 @@ public class ScopeSafeRewriterCatalogTest {
 	}
 
 	@Test
+	public void projectionPushdownRetainsDirectionalRightInputs() throws Exception {
+		Projection outer = projection(
+				new Join(
+						pattern("leftSubject", "x"),
+						new Filter(pattern("rightSubject", "o"), Var.of("x"))),
+				false,
+				new ProjectionElem("o"));
+		QueryRoot root = new QueryRoot(outer);
+
+		assertThat(rewrite(root, "pushProjectionBelowJoin", outer)).isTrue();
+
+		Projection replacement = (Projection) root.getArg();
+		assertThat(replacement.getBindingNames()).containsExactly("o");
+		Join join = (Join) replacement.getArg();
+		assertThat(join.getLeftArg()).isInstanceOf(Projection.class);
+		assertThat(join.getLeftArg().getBindingNames()).contains("x");
+		assertThat(join.getRightArg()).isInstanceOf(Projection.class);
+		assertThat(join.getRightArg().getBindingNames()).contains("x", "o");
+	}
+
+	@Test
 	public void transparentSubqueryFlatteningRequiresACompleteIdentityExport() throws Exception {
 		Projection transparent = projection(pattern("x", "y"), true,
 				new ProjectionElem("x"), new ProjectionElem("y"));
