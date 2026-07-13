@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -27,11 +29,20 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
  *
  * @author Jeen Broekstra
  */
-public class UnionScopeChangeOptimizer implements QueryOptimizer {
+public class UnionScopeChangeOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new UnionScopeChangeFixer());
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		optimize(tupleExpr, dataset, bindings);
+		if (session.mode() != ScopeSafetyMode.OFF) {
+			session.afterLegacyOptimizer(getClass());
+			session.refresh();
+		}
 	}
 
 	private static class UnionScopeChangeFixer extends AbstractSimpleQueryModelVisitor<RuntimeException> {

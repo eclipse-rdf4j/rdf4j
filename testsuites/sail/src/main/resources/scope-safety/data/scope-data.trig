@@ -1,0 +1,10 @@
+@prefix ex: <urn:> .
+
+ex:a ex:next ex:b ; ex:value "1" ; ex:kind "A" .
+ex:b ex:next ex:c ; ex:value "2" ; ex:kind "B" .
+ex:c ex:value "3" ; ex:kind "A" .
+ex:d ex:next ex:e .
+ex:e ex:next ex:f .
+
+<urn:g1> { ex:a ex:mark "m1" . }
+<urn:g2> { ex:b ex:mark "m2" . }

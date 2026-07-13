@@ -1,0 +1,6 @@
+# Each branch exports only its alias; the common source name ?v stays branch-local.
+SELECT ?left ?right WHERE {
+  { { SELECT (?v AS ?left) WHERE { VALUES ?v { "L" } } } }
+  UNION
+  { { SELECT (?v AS ?right) WHERE { VALUES ?v { "R" } } } }
+}

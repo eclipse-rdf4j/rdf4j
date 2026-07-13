@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -180,6 +181,10 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(sketchIndex >= 0);
 		assertTrue(filterIndex < sketchIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
+		assertTrue(optimizers.stream()
+				.filter(optimizer -> optimizer instanceof LmdbFilterSimplifierOptimizer
+						|| optimizer instanceof LmdbSketchJoinOptimizer)
+				.allMatch(ContextAwareQueryOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
 		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
 				.stream()

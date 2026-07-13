@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { "0" "1" "2" "3" "4" }
+  BIND(IF(?x = "0", ?missing, CONCAT("q", ?x)) AS ?q)
+}

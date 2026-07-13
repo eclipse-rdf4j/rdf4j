@@ -802,7 +802,7 @@ public final class Rdf4jCanonicalizer {
 					"One empty VALUES row is the incoming-mapping identity"));
 			return CanonicalNode.UNIT;
 		}
-		String declaredNames = CanonicalEncoding.names(assignment.getBindingNames());
+		String declaredNames = CanonicalEncoding.names(assignment.getDeclaredBindingNames());
 		return CanonicalNode.multiset(
 				"VALUES",
 				mode.name() + "|declared=" + declaredNames,

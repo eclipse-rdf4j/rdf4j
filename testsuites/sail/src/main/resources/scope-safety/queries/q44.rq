@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?hidden { "outer" }
+  { SELECT ?x WHERE { VALUES (?x ?hidden) { ("a" "inner-a") ("b" "inner-b") } } }
+}
