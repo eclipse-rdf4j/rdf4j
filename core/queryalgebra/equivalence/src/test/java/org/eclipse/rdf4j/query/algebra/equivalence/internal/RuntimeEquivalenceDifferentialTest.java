@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -145,6 +146,33 @@ class RuntimeEquivalenceDifferentialTest {
 				function,
 				new Lateral(repeatedValues(2), invocationSensitiveFilter(function), Set.of("x")),
 				new Lateral(repeatedValues(1), invocationSensitiveFilter(function), Set.of("x"))));
+	}
+
+	@Test
+	void structuralEqualityDoesNotIgnoreArbitraryLengthPathMinimumLength() {
+		TupleExpr zeroOrMore = fixedSelfPath(0);
+		TupleExpr oneOrMore = fixedSelfPath(1);
+
+		EvaluationOutcome zeroOrMoreOutcome = evaluate(zeroOrMore);
+		EvaluationOutcome oneOrMoreOutcome = evaluate(oneOrMore);
+
+		// On an empty graph, a zero-length path from a fixed term to itself
+		// succeeds once. Requiring at least one edge produces no result.
+		assertFalse(zeroOrMoreOutcome.isEmpty(), zeroOrMoreOutcome::toString);
+		assertTrue(oneOrMoreOutcome.isEmpty(), oneOrMoreOutcome::toString);
+		assertFalse(
+				zeroOrMoreOutcome.sameAs(oneOrMoreOutcome, ObservationMode.BAG),
+				() -> "different minimum path lengths unexpectedly agreed: "
+						+ zeroOrMoreOutcome + " versus " + oneOrMoreOutcome);
+
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(
+				CheckOptions.builder().boundedCounterexampleSearch(false).build())
+						.check(zeroOrMore, oneOrMore);
+
+		// Fails on the submitted code: ArbitraryLengthPath.equals omits minLength,
+		// and ExactTreeEquality has no local-semantic check for this node.
+		assertFalse(proof.isEquivalent(), () -> "unsound proof: " + proof.getReason());
+		assertTrue(proof.isUnknown(), proof::toString);
 	}
 
 	@Test
@@ -427,6 +455,16 @@ class RuntimeEquivalenceDifferentialTest {
 				new NamedPlan(
 						"optional with values right",
 						new LeftJoin(repeatedValues(1), repeatedValues("y", 1))));
+	}
+
+	private static ArbitraryLengthPath fixedSelfPath(long minLength) {
+		Var start = Var.of("path-start", SUBJECT);
+		Var end = Var.of("path-end", SUBJECT);
+		StatementPattern step = new StatementPattern(
+				start.clone(),
+				Var.of("path-predicate", P1),
+				end.clone());
+		return new ArbitraryLengthPath(start, step, end, minLength);
 	}
 
 	private static Difference unitMinusUnit() {

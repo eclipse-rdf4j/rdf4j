@@ -14,9 +14,18 @@ package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 import java.util.List;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 /** RDF4J recursive equality augmented with semantic state omitted by individual node {@code equals} methods. */
@@ -57,6 +66,29 @@ public final class ExactTreeEquality {
 	}
 
 	private static boolean sameLocalSemantics(QueryModelNode left, QueryModelNode right) {
+		if (left instanceof ArbitraryLengthPath leftPath) {
+			return leftPath.getMinLength() == ((ArbitraryLengthPath) right).getMinLength();
+		}
+		if (left instanceof GroupConcat leftGroupConcat) {
+			return equal(leftGroupConcat.getSeparator(), ((GroupConcat) right).getSeparator());
+		}
+		if (left instanceof IRIFunction leftIriFunction) {
+			return Objects.equals(leftIriFunction.getBaseURI(), ((IRIFunction) right).getBaseURI());
+		}
+		if (left instanceof Join leftJoin) {
+			return leftJoin.isMergeJoin() == ((Join) right).isMergeJoin();
+		}
+		if (left instanceof Projection leftProjection) {
+			Projection rightProjection = (Projection) right;
+			return leftProjection.isSubquery() == rightProjection.isSubquery()
+					&& equal(leftProjection.getProjectionContext(), rightProjection.getProjectionContext());
+		}
+		if (left instanceof ProjectionElem leftProjectionElem) {
+			ProjectionElem rightProjectionElem = (ProjectionElem) right;
+			return leftProjectionElem.hasAggregateOperatorInExpression() == rightProjectionElem
+					.hasAggregateOperatorInExpression()
+					&& equal(leftProjectionElem.getSourceExpression(), rightProjectionElem.getSourceExpression());
+		}
 		if (left instanceof StatementPattern leftPattern) {
 			return leftPattern.getStatementOrder() == ((StatementPattern) right).getStatementOrder();
 		}
@@ -69,6 +101,16 @@ public final class ExactTreeEquality {
 					&& Objects.equals(leftService.getPrefixDeclarations(), rightService.getPrefixDeclarations())
 					&& Objects.equals(leftService.getServiceVars(), rightService.getServiceVars())
 					&& Objects.equals(leftService.getAskQueryString(), rightService.getAskQueryString());
+		}
+		if (left instanceof TripleComponent leftTripleComponent) {
+			return leftTripleComponent.getRole() == ((TripleComponent) right).getRole();
+		}
+		if (left instanceof ValueExprTripleRef leftTripleRef) {
+			return Objects.equals(leftTripleRef.getExtVarName(), ((ValueExprTripleRef) right).getExtVarName());
+		}
+		if (left instanceof Var leftVar) {
+			Var rightVar = (Var) right;
+			return leftVar.isConstant() == rightVar.isConstant() && leftVar.isBNode() == rightVar.isBNode();
 		}
 		return true;
 	}

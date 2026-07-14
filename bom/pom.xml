@@ -60,6 +60,11 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-queryalgebra-json</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-queryalgebra-geosparql</artifactId>
 				<version>${project.version}</version>
 			</dependency>
