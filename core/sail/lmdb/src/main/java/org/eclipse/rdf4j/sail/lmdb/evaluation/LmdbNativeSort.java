@@ -174,6 +174,25 @@ final class NativeTopKBuffer {
 		this.comparator = comparator;
 	}
 
+	/**
+	 * Whether {@link #add} with this row and ordinal would enter the heap. The comparator only reads order-key columns,
+	 * so callers may test admission before paying to fill the row's payload columns.
+	 */
+	boolean wouldAccept(long[] row, long ordinal) {
+		if (capacity == 0) {
+			return false;
+		}
+		if (buffer.size < capacity) {
+			return true;
+		}
+		int worst = heap[0];
+		int compared = comparator.compare(row, 0, buffer.rows, worst * buffer.slotCount);
+		if (compared == 0) {
+			compared = Long.compare(ordinal, buffer.ordinals[worst]);
+		}
+		return compared < 0;
+	}
+
 	void add(long[] row, long ordinal) {
 		NativeSortBuffer.TOP_K_CANDIDATES.incrementAndGet();
 		if (capacity == 0) {

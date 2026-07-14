@@ -150,11 +150,250 @@ public class LmdbNativeChunkPipelineTest {
 	}
 
 	@Test
+	public void chunkPrefixMergesOrderAlignedStage() {
+		// the depth-1 stage's key ?x is the root's leading varying field (posc: p1 constant, then o=?x)
+		// and the probe pattern ?x p2 ?y sweeps subject-ordered (spoc): the stage must walk the range
+		// forward in merge/zig-zag mode instead of opening a store probe per key
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z }";
+		long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+		long fallbacksBefore = LmdbNativeChunkPipeline.MERGE_FALLBACKS.get();
+
+		assertSameAsGeneric(query);
+
+		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get())
+				.as("the order-aligned depth-1 stage should run as a merge walk")
+				.isGreaterThan(walksBefore);
+		assertThat(LmdbNativeChunkPipeline.MERGE_FALLBACKS.get())
+				.as("the gate guarantees ascending keys: no defensive fallbacks")
+				.isEqualTo(fallbacksBefore);
+	}
+
+	@Test
+	public void mergeWalkSeeksAcrossDeadKeyRuns() throws Exception {
+		// every live probe key is separated by a run of dead keys longer than the sequential threshold:
+		// the walk must seek (MDB_SET_RANGE) across the dead runs instead of scanning them
+		File seekDir = new File(dataDir, "merge-seek");
+		SailRepository sparse = new SailRepository(new LmdbStore(seekDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try {
+			try (SailRepositoryConnection conn = sparse.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p1 = vf.createIRI(EX, "p1");
+				IRI p2 = vf.createIRI(EX, "p2");
+				IRI p3 = vf.createIRI(EX, "p3");
+				conn.begin();
+				// p1 is strictly smallest so it roots the plan
+				for (int i = 0; i < 200; i++) {
+					IRI x = vf.createIRI(EX, String.format("live%04d", i));
+					conn.add(vf.createIRI(EX, String.format("subj%04d", i)), p1, x);
+					IRI y = vf.createIRI(EX, "y" + i);
+					conn.add(x, p2, y);
+					for (int t = 0; t < 3; t++) {
+						conn.add(y, p3, vf.createIRI(EX, "t" + i + "_" + t));
+					}
+					// ten dead subjects with p2 quads between every pair of live keys
+					for (int d = 0; d < 10; d++) {
+						conn.add(vf.createIRI(EX, String.format("dead%04d_%d", i, d)), p2,
+								vf.createIRI(EX, "dy" + i + "_" + d));
+					}
+				}
+				conn.commit();
+			}
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z }";
+			long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+			long seeksBefore = LmdbNativeChunkPipeline.MERGE_SEEKS.get();
+
+			List<String> nativeRows = rows(sparse, query);
+			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			List<String> genericRows;
+			try {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				genericRows = rows(sparse, query);
+			} finally {
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+				}
+			}
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get())
+					.as("the order-aligned depth-1 stage should run as a merge walk")
+					.isGreaterThan(walksBefore);
+			assertThat(LmdbNativeChunkPipeline.MERGE_SEEKS.get())
+					.as("dead-key runs longer than the threshold should be crossed with seeks")
+					.isGreaterThan(seeksBefore);
+		} finally {
+			sparse.shutDown();
+		}
+	}
+
+	@Test
+	public void sipMaskFiltersRootRowsForStarStage() throws Exception {
+		// star shape keyed on ?s: the probe stage's key is root-produced but NOT the root's leading varying
+		// field (posc leads with the object), so the merge gate refuses and the stage floods distinct keys
+		// until it flips to a hash build — whose key set must then prune the root scan as a semi-join mask
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		File sipDir = new File(dataDir, "sip-filter");
+		SailRepository star = new SailRepository(new LmdbStore(sipDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try {
+			try (SailRepositoryConnection conn = star.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p1 = vf.createIRI(EX, "p1");
+				IRI p5 = vf.createIRI(EX, "p5");
+				IRI p6 = vf.createIRI(EX, "p6");
+				conn.begin();
+				// 4500 root subjects; p1 is strictly smallest so it roots the plan and stays big enough
+				// that scan batches keep coming after the build. Only every third subject has p5 legs, but
+				// those carry twelve legs each, so p5 vastly outsizes p1 and stays the mid probe stage
+				// (its ?w feeds the trailing p6 branch, which pins p5 into the flat prefix).
+				for (int i = 0; i < 4500; i++) {
+					IRI s = vf.createIRI(EX, String.format("star%04d", i));
+					conn.add(s, p1, vf.createIRI(EX, "sx" + i));
+					if (i % 3 == 0) {
+						for (int j = 0; j < 12; j++) {
+							IRI w = vf.createIRI(EX, "sw" + i + "_" + j);
+							conn.add(s, p5, w);
+							conn.add(w, p6, vf.createIRI(EX, "sv" + i + "_" + j));
+						}
+					}
+				}
+				conn.commit();
+			}
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?w WHERE { ?s ex:p1 ?x . ?s ex:p5 ?w . ?w ex:p6 ?v }";
+			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+			long buildsBefore = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
+			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
+
+			List<String> nativeRows = rows(star, query);
+			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			List<String> genericRows;
+			try {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				genericRows = rows(star, query);
+			} finally {
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+				}
+			}
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+					.as("the chunk pipeline should have driven the star's flat prefix")
+					.isGreaterThan(engagedBefore);
+			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get())
+					.as("the distinct-key star stage should flip to a hash build")
+					.isGreaterThan(buildsBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+					.as("the completed hash build should publish its key set to the root scan")
+					.isGreaterThan(masksBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get())
+					.as("root rows without the star leg should be dropped by the mask")
+					.isGreaterThan(maskedBefore);
+		} finally {
+			star.shutDown();
+			if (previousParallel == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
+		}
+	}
+
+	@Test
+	public void sipMaskSeeksRootRunsWhenKeyLeadsTheRootIndex() throws Exception {
+		// with the merge walk disabled, the order-aligned chain stage falls back to the hash build; its
+		// mask key is the root's leading varying field, so masked-out key runs must be crossed with seeks
+		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		File sipDir = new File(dataDir, "sip-seek");
+		SailRepository sparse = new SailRepository(new LmdbStore(sipDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try {
+			try (SailRepositoryConnection conn = sparse.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p1 = vf.createIRI(EX, "p1");
+				IRI p2 = vf.createIRI(EX, "p2");
+				IRI p3 = vf.createIRI(EX, "p3");
+				conn.begin();
+				// every live x is followed by ten dead x's (p1 only, so p1 stays the smallest pattern and
+				// roots the plan, while being big enough that scan batches keep coming after the build at
+				// probe 1024): the root's posc scan then sees ten consecutive masked misses between live keys
+				for (int i = 0; i < 280; i++) {
+					IRI x = vf.createIRI(EX, String.format("sl%04d", i));
+					conn.add(vf.createIRI(EX, String.format("ss%04d", i)), p1, x);
+					for (int j = 0; j < 30; j++) {
+						IRI y = vf.createIRI(EX, "sy" + i + "_" + j);
+						conn.add(x, p2, y);
+						conn.add(y, p3, vf.createIRI(EX, "st" + i + "_" + j));
+					}
+					for (int d = 0; d < 10; d++) {
+						conn.add(vf.createIRI(EX, String.format("sd%04d_%d", i, d)), p1,
+								vf.createIRI(EX, "sdx" + i + "_" + d));
+					}
+				}
+				conn.commit();
+			}
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z }";
+			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
+			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
+			long seeksBefore = LmdbNativeChunkPipeline.SIP_SEEKS.get();
+
+			List<String> nativeRows = rows(sparse, query);
+			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			List<String> genericRows;
+			try {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				genericRows = rows(sparse, query);
+			} finally {
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+				}
+			}
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+					.as("the completed hash build should publish its key set to the root scan")
+					.isGreaterThan(masksBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get())
+					.as("dead root keys should be dropped by the mask")
+					.isGreaterThan(maskedBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_SEEKS.get())
+					.as("masked-out key runs on the root's leading field should be crossed with seeks")
+					.isGreaterThan(seeksBefore);
+		} finally {
+			sparse.shutDown();
+			if (previousMerge == null) {
+				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+			}
+			if (previousParallel == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
+		}
+	}
+
+	@Test
 	public void chunkPrefixBuildsHashTableForDistinctKeyFloods() throws Exception {
 		// every probe key is distinct, so neither run replay nor the memo ever hits; once the probes
 		// have cost as much as one sweep of the small p2 relation, the stage must flip to a
 		// hash-join-style build and serve the remaining rows from the table. Parallel pipelines are
 		// disabled: they outrank the factorized path and would run the prefix on worker chains instead.
+		// The merge walk is disabled too: it outranks the hash build on this order-aligned shape, and
+		// this test pins the classic adaptive build for the shapes the merge gate refuses.
+		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File hashDir = new File(dataDir, "hash-build");
@@ -213,6 +452,11 @@ public class LmdbNativeChunkPipelineTest {
 				System.clearProperty("rdf4j.lmdb.parallel.enabled");
 			} else {
 				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
+			if (previousMerge == null) {
+				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
 			}
 		}
 	}

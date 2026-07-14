@@ -416,6 +416,30 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 *
+	 * Implemented by writing the target key into the positioning buffer and clearing {@code fetchNext}: the next
+	 * {@code next()}/{@code fill()} call then runs its ordinary {@code MDB_SET_RANGE} positioning against the target
+	 * instead of stepping {@code MDB_NEXT}, so range clamping, match filtering, and transaction-renew handling all
+	 * apply unchanged.
+	 */
+	@Override
+	public boolean seekForward(long subj, long pred, long obj, long context) {
+		if (closed || exactKeySearch) {
+			return false;
+		}
+		if (minKeyBuf == null) {
+			minKeyBuf = pool.getKeyBuffer();
+		}
+		minKeyBuf.clear();
+		index.toKey(minKeyBuf, subj, pred, obj, context);
+		minKeyBuf.flip();
+		fetchNext = false;
+		consecutiveFiltered = 0;
+		return true;
+	}
+
+	/**
 	 * Advances past a KEY_FILTERED key: plain MDB_NEXT for short mismatch runs, or a computed MDB_SET_RANGE seek past
 	 * the whole non-matching run once {@link #SKIP_MIN_RUN} consecutive keys were rejected (skip-scan). Returns the
 	 * cursor-get result code, or MDB_NOTFOUND when no later key in the range can match.

@@ -219,6 +219,92 @@ public class LmdbNativeDifferentialFuzzTest {
 		}
 	}
 
+	/**
+	 * ORDER BY differential round (Phase 5). The order keys cover every projected variable, including the
+	 * literal-binding objects ?c and ?d: mixed date/dateTime order keys used to be excluded while the core
+	 * ValueComparator was non-transitive for indeterminate XML calendar comparisons (making the sorted order
+	 * legitimately sort-algorithm-dependent), but the comparator is a total order now, so the engines must agree. The
+	 * assertion is tie-safe: the same row multiset as the generic evaluator, plus the native emission order
+	 * non-decreasing in the keys.
+	 */
+	@Test
+	public void randomOrderedBasicGraphPatterns() {
+		Random random = new Random(SEED + 12);
+		String[] vars = { "?a", "?b", "?c", "?d" };
+		for (int i = 0; i < 80; i++) {
+			StringBuilder where = new StringBuilder();
+			int patterns = 1 + random.nextInt(4);
+			for (int j = 0; j < patterns; j++) {
+				// ?a anchors the first pattern's subject, so it only ever binds resources
+				where.append(pattern(random, vars, j == 0 ? "?a" : vars[random.nextInt(2)]));
+			}
+			assertOrderedResults("SELECT * WHERE { " + where + "} ORDER BY ?a ?p ?b ?c ?d", "a", "p", "b", "c", "d");
+		}
+	}
+
+	/**
+	 * Both engines sort ORDER BY with a strict-mode {@link ValueComparator} under the default (STRICT) query
+	 * evaluation mode, so the same comparator is the sortedness oracle.
+	 */
+	private static final ValueComparator ORDER_KEY_COMPARATOR = new ValueComparator();
+
+	private static int compareOrderKeys(BindingSet left, BindingSet right, String[] keyNames) {
+		for (String name : keyNames) {
+			int cmp = ORDER_KEY_COMPARATOR.compare(left.getValue(name), right.getValue(name));
+			if (cmp != 0) {
+				return cmp;
+			}
+		}
+		return 0;
+	}
+
+	private void assertOrderedResults(String query, String... keyNames) {
+		List<BindingSet> nativeRows;
+		try (SailRepositoryConnection conn = lmdb.getConnection()) {
+			nativeRows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+		} catch (RuntimeException e) {
+			throw new AssertionError("native evaluation failed for query (seed " + SEED + "):\n" + query, e);
+		}
+		List<String> actual = canonicalize(nativeRows);
+		String previous = System.getProperty(NATIVE_FLAG);
+		List<String> expected;
+		try {
+			System.setProperty(NATIVE_FLAG, "false");
+			expected = evaluate(query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+		assertThat(actual)
+				.as("native vs generic ordered multiset for query (seed %d):%n%s", SEED, query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+		BindingSet previousRow = null;
+		for (BindingSet row : nativeRows) {
+			if (previousRow != null) {
+				assertThat(compareOrderKeys(previousRow, row, keyNames))
+						.as("order keys must be non-decreasing for query (seed %d):%n%s%nprev: %s%nrow: %s", SEED,
+								query, previousRow, row)
+						.isLessThanOrEqualTo(0);
+			}
+			previousRow = row;
+		}
+	}
+
+	private List<String> canonicalize(List<BindingSet> rows) {
+		List<String> canonical = new ArrayList<>(rows.size());
+		for (BindingSet bs : rows) {
+			TreeMap<String, String> sorted = new TreeMap<>();
+			for (Binding binding : bs) {
+				sorted.put(binding.getName(), binding.getValue().toString());
+			}
+			canonical.add(sorted.toString());
+		}
+		return canonical;
+	}
+
 	@Test
 	public void randomOptionalUnionMinusValues() {
 		Random random = new Random(SEED + 2);

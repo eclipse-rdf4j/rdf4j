@@ -113,8 +113,7 @@ final class PatternPayloadProbe {
 	int builtIdx = -1;
 	int[] payloadSlots;
 	int[] payloadQuadIdx;
-	PayloadMap payloads;
-	LongHashSet keySet;
+	KeyedMatches matches;
 
 	PatternPayloadProbe(PatternPlan pattern, NativeBooleanFilter filter, int[] varyingIdx) {
 		this.pattern = pattern;
@@ -166,7 +165,7 @@ final class PatternPayloadProbe {
 		if (boundIdx < 0) {
 			return null;
 		}
-		if (payloads == null && keySet == null) {
+		if (matches == null) {
 			probes++;
 			long estimatedRows = normalizedEstimate(pattern.staticEstimate);
 			int minProbes = Integer.getInteger(LEFTJOIN_HASH_MIN_PROBES, 1024);
@@ -182,10 +181,10 @@ final class PatternPayloadProbe {
 			return null;
 		}
 		long key = terms[boundIdx].lookup(row.slots);
-		if (payloads != null) {
-			return new PayloadCursor(row, payloads, payloads.head(key), payloadSlots, filter);
+		if (matches.rowsActive()) {
+			return new PayloadCursor(row, matches, matches.head(key), payloadSlots, filter);
 		}
-		return keySet.contains(key) ? null : PayloadCursor.miss(row);
+		return matches.contains(key) ? null : PayloadCursor.miss(row);
 	}
 
 	int boundIdx(RowState row) {
@@ -202,7 +201,7 @@ final class PatternPayloadProbe {
 	}
 
 	void recordDirectMatch() {
-		if (payloads == null && keySet == null && !disabled) {
+		if (matches == null && !disabled) {
 			cumulativeMatched++;
 		}
 	}
@@ -219,11 +218,11 @@ final class PatternPayloadProbe {
 				n++;
 			}
 		}
-		PayloadMap map = new PayloadMap(Math.max(16, normalizedEstimate(pattern.staticEstimate)), payloadCount);
-		LongHashSet keys = new LongHashSet(1024);
+		KeyedMatches store = new KeyedMatches(1,
+				(int) Math.min(Math.max(16L, normalizedEstimate(pattern.staticEstimate)), 1L << 20));
+		store.initRows(payloadCount);
 		long maxRows = Long.getLong(LEFTJOIN_HASH_MAX_ROWS, 1_000_000L);
 		long maxKeys = Long.getLong(MEMBERSHIP_MAX_SIZE, 4_000_000L);
-		boolean payloadOverflow = false;
 		try (PatternCursor cursor = pattern.openRawUnbinding(row, 1L << terms[keyIdx].slot, probe(row))) {
 			int rows;
 			while ((rows = cursor.fill(batch, FILL_ROWS)) > 0) {
@@ -233,17 +232,16 @@ final class PatternPayloadProbe {
 						continue;
 					}
 					long key = batch[offset + keyIdx];
-					keys.add(key);
-					if (keys.size() > maxKeys) {
+					int id = store.findOrInsert(key);
+					if (store.size() > maxKeys) {
 						disabled = true;
 						return;
 					}
-					if (!payloadOverflow) {
-						if (map.size() >= maxRows) {
-							payloadOverflow = true;
-							map = null;
+					if (store.rowsActive()) {
+						if (store.rowCount() >= maxRows) {
+							store.dropRows();
 						} else {
-							map.add(key, batch, offset, quadIdx);
+							store.addRowAt(id, batch, offset, quadIdx);
 						}
 					}
 				}
@@ -253,11 +251,7 @@ final class PatternPayloadProbe {
 		builtIdx = keyIdx;
 		payloadSlots = slots;
 		payloadQuadIdx = quadIdx;
-		if (payloadOverflow) {
-			keySet = keys;
-		} else {
-			payloads = map;
-		}
+		matches = store;
 	}
 
 	NativeLmdbQuerySource.NativeProbe probe(RowState row) {
@@ -278,7 +272,7 @@ final class PatternPayloadProbe {
 @Experimental
 final class PayloadCursor implements RowCursor {
 	final RowState row;
-	final PayloadMap payloads;
+	final KeyedMatches payloads;
 	final int[] payloadSlots;
 	final NativeBooleanFilter filter;
 	int nextEntry;
@@ -286,7 +280,7 @@ final class PayloadCursor implements RowCursor {
 	boolean matched;
 	boolean nullEmitted;
 
-	PayloadCursor(RowState row, PayloadMap payloads, int head, int[] payloadSlots,
+	PayloadCursor(RowState row, KeyedMatches payloads, int head, int[] payloadSlots,
 			NativeBooleanFilter filter) {
 		this.row = row;
 		this.payloads = payloads;
@@ -340,109 +334,6 @@ final class PayloadCursor implements RowCursor {
 		if (activeMark >= 0) {
 			row.rollback(activeMark);
 			activeMark = -1;
-		}
-	}
-}
-
-@Experimental
-final class PayloadMap {
-	final int payloadWidth;
-	long[] keys;
-	int[] heads;
-	boolean[] used;
-	int size;
-	long[] arena;
-	int rows;
-
-	PayloadMap(long expectedRows, int payloadWidth) {
-		this.payloadWidth = payloadWidth;
-		int capacity = 1;
-		long expected = Math.min(Math.max(4L, expectedRows), 1 << 20);
-		while (capacity < expected * 2) {
-			capacity <<= 1;
-		}
-		keys = new long[capacity];
-		heads = new int[capacity];
-		used = new boolean[capacity];
-		arena = new long[Math.max(16, (payloadWidth + 1) * 16)];
-	}
-
-	int size() {
-		return rows;
-	}
-
-	int head(long key) {
-		int mask = keys.length - 1;
-		int idx = LongHashSet.mix(key) & mask;
-		while (used[idx]) {
-			if (keys[idx] == key) {
-				return heads[idx];
-			}
-			idx = (idx + 1) & mask;
-		}
-		return 0;
-	}
-
-	void add(long key, long[] quad, int offset, int[] payloadQuadIdx) {
-		if ((size + 1) * 4 > keys.length * 3) {
-			growTable();
-		}
-		int slot = slot(key);
-		int entry = append(quad, offset, payloadQuadIdx, heads[slot]);
-		heads[slot] = entry;
-	}
-
-	int slot(long key) {
-		int mask = keys.length - 1;
-		int idx = LongHashSet.mix(key) & mask;
-		while (used[idx]) {
-			if (keys[idx] == key) {
-				return idx;
-			}
-			idx = (idx + 1) & mask;
-		}
-		used[idx] = true;
-		keys[idx] = key;
-		size++;
-		return idx;
-	}
-
-	int append(long[] quad, int offset, int[] payloadQuadIdx, int next) {
-		int width = payloadWidth + 1;
-		int row = ++rows;
-		int base = (row - 1) * width;
-		int required = base + width;
-		if (required > arena.length) {
-			arena = Arrays.copyOf(arena, Math.max(required, arena.length * 2));
-		}
-		for (int i = 0; i < payloadQuadIdx.length; i++) {
-			arena[base + i] = quad[offset + payloadQuadIdx[i]];
-		}
-		arena[base + payloadWidth] = next;
-		return row;
-	}
-
-	int next(int entry) {
-		return (int) arena[(entry - 1) * (payloadWidth + 1) + payloadWidth];
-	}
-
-	long payload(int entry, int index) {
-		return arena[(entry - 1) * (payloadWidth + 1) + index];
-	}
-
-	void growTable() {
-		long[] oldKeys = keys;
-		int[] oldHeads = heads;
-		boolean[] oldUsed = used;
-		keys = new long[oldKeys.length * 2];
-		heads = new int[oldHeads.length * 2];
-		used = new boolean[oldUsed.length * 2];
-		size = 0;
-		for (int i = 0; i < oldUsed.length; i++) {
-			if (oldUsed[i]) {
-				int slot = slot(oldKeys[i]);
-				heads[slot] = oldHeads[i];
-			}
 		}
 	}
 }

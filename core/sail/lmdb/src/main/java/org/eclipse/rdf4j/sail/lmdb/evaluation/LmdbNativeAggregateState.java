@@ -432,19 +432,72 @@ final class AggState {
 	}
 
 	/**
-	 * Merges a parallel worker's partial state into this one. Only valid for COUNT-kind aggregates (the parallel gate
-	 * guarantees {@link AggregateSpec#allCounts}): plain counts add, distinct id sets union.
+	 * Merges a parallel worker's partial state into this one. Sound for every spec except value-typed DISTINCT
+	 * aggregates (per-worker distinct-then-accumulate cannot merge without double counting — the parallel gate refuses
+	 * those): plain counts add (overflow-checked), distinct id sets union (COUNT(DISTINCT) reads its channel set),
+	 * running sums add with SPARQL numeric promotion, AVG value counts add, MIN/MAX keep the comparator winner, and a
+	 * poisoned partial poisons the merge.
 	 */
-	void mergeCountsFrom(AggState other) {
+	void mergeFrom(AggState other) {
 		for (int channel = 0; channel < channelSets.length; channel++) {
 			if (channelSets[channel] != null) {
 				channelSets[channel].addAll(other.channelSets[channel]);
 			}
 		}
 		for (int i = 0; i < specs.length; i++) {
-			if (distinctChannels.specChannels[i] < 0) {
-				counts[i] = FactorizedTail.addCounts(counts[i], other.counts[i]);
+			switch (specs[i].kind) {
+			case COUNT:
+				if (distinctChannels.specChannels[i] < 0) {
+					counts[i] = FactorizedTail.addCounts(counts[i], other.counts[i]);
+				}
+				break;
+			case SUM:
+				mergeSum(i, other);
+				break;
+			case AVG:
+				mergeSum(i, other);
+				if (avgCounts != null && other.avgCounts != null) {
+					avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], other.avgCounts[i]);
+				}
+				break;
+			case MIN:
+				mergeExtreme(i, other, true);
+				break;
+			case MAX:
+				mergeExtreme(i, other, false);
+				break;
 			}
+		}
+	}
+
+	private void mergeSum(int i, AggState other) {
+		if (other.typeErrors != null && other.typeErrors[i]) {
+			typeErrors[i] = true;
+		}
+		if (typeErrors[i]) {
+			return;
+		}
+		Literal otherSum = other.sums == null ? null : other.sums[i];
+		if (otherSum == null) {
+			return;
+		}
+		sums[i] = sums[i] == null ? otherSum : MathUtil.compute(sums[i], otherSum, MathExpr.MathOp.PLUS);
+	}
+
+	private void mergeExtreme(int i, AggState other, boolean min) {
+		Value otherExtreme = other.extremes == null ? null : other.extremes[i];
+		if (otherExtreme == null) {
+			return;
+		}
+		if (extremes[i] == null) {
+			extremes[i] = otherExtreme;
+			extremeIds[i] = other.extremeIds[i];
+			return;
+		}
+		int cmp = ctx.comparator.compare(otherExtreme, extremes[i]);
+		if (min ? cmp < 0 : cmp > 0) {
+			extremes[i] = otherExtreme;
+			extremeIds[i] = other.extremeIds[i];
 		}
 	}
 }

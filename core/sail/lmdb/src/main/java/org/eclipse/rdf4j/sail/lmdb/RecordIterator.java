@@ -54,6 +54,18 @@ public interface RecordIterator extends Closeable {
 		return "";
 	}
 
+	/**
+	 * Repositions the iterator forward so the next record returned is the first one whose index key is greater than or
+	 * equal to the key formed from the given quad values (in this iterator's index field order), still subject to the
+	 * iterator's range and match filtering. Callers must pass targets that do not precede the current position and that
+	 * agree with the iterator's bound fields; otherwise records may be returned twice. Returns {@code false} when this
+	 * iterator cannot seek (exhausted, exact-key lookup, or an implementation without native seek support) — the caller
+	 * must then fall back to plain iteration.
+	 */
+	default boolean seekForward(long subj, long pred, long obj, long context) {
+		return false;
+	}
+
 	default long getSourceRowsScannedActual() {
 		return -1;
 	}

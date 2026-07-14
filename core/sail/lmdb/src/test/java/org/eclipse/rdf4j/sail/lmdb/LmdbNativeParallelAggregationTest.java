@@ -76,6 +76,16 @@ public class LmdbNativeParallelAggregationTest {
 				}
 			}
 			conn.add(vf.createIRI(EX, "hub0"), p2, vf.createIRI(EX, "bGraph"), vf.createIRI(EX, "g1"));
+			// numeric branch for value-typed aggregates: exact arithmetic only (integers and decimals),
+			// so the parallel merge order cannot perturb SUM/AVG results
+			IRI p3 = vf.createIRI(EX, "p3");
+			for (int hub = 0; hub < 50; hub++) {
+				IRI subject = vf.createIRI(EX, "hub" + hub);
+				for (int i = 0; i < 5; i++) {
+					conn.add(subject, p3, vf.createLiteral(hub * 7 + i * 3 - 20));
+				}
+				conn.add(subject, p3, vf.createLiteral(new java.math.BigDecimal(hub + ".25")));
+			}
 			conn.commit();
 		}
 	}
@@ -251,6 +261,37 @@ public class LmdbNativeParallelAggregationTest {
 				System.setProperty(THRESHOLD_FLAG, previous);
 			}
 		}
+	}
+
+	@Test
+	public void valueAggregatesRunParallel() {
+		// Phase 6: SUM/AVG/MIN/MAX merge exactly across workers, so the COUNT-only gate is gone
+		assertParallelEngagesAndAllThreeAgree(starWithValues(
+				"?s (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) (MIN(?v) AS ?min) (MAX(?v) AS ?max)") + " GROUP BY ?s");
+	}
+
+	@Test
+	public void valueAggregatesWithoutGroupingRunParallel() {
+		assertParallelEngagesAndAllThreeAgree(starWithValues("(SUM(?v) AS ?sum) (MAX(?v) AS ?max)"));
+	}
+
+	@Test
+	public void distinctValueAggregateStaysSequentialButCorrect() {
+		String query = starWithValues("(SUM(DISTINCT ?v) AS ?sum)");
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		List<String> nativeRows = rows(query);
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("per-worker distinct-then-accumulate cannot merge without double counting: the gate must hold")
+				.isEqualTo(before);
+		assertThat(nativeRows).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
+	}
+
+	private static String starWithValues(String select) {
+		return "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT " + select + " WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p3 ?v .\n"
+				+ "}";
 	}
 
 	@Test

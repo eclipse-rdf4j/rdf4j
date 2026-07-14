@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 final class LmdbNativeParallelPipelines {
 
-	static final int MORSEL_ROWS = 1024;
 	static final int OUTPUT_ROWS = 256;
 	static final int MAX_POOL_TASKS = 65;
 
@@ -240,121 +239,6 @@ final class LmdbNativeParallelPipelines {
 		}
 	}
 
-	static void offer(ArrayBlockingQueue<Morsel> queue, Morsel morsel, AtomicReference<Throwable> failure,
-			AtomicBoolean cancelled) throws IOException {
-		try {
-			while (!queue.offer(morsel, 50, TimeUnit.MILLISECONDS)) {
-				throwIfAborted(failure, cancelled);
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
-		}
-	}
-
-	static void throwIfAborted(AtomicReference<Throwable> failure, AtomicBoolean cancelled) throws IOException {
-		Throwable problem = failure.get();
-		if (problem != null) {
-			throw new IOException("parallel native pipeline aborted", problem);
-		}
-		if (cancelled.get()) {
-			throw new IOException("parallel native pipeline cancelled");
-		}
-	}
-
-	static final class Morsel {
-		static final Morsel POISON = new Morsel(new long[0], 0);
-
-		final long[] quads;
-		final int rows;
-
-		Morsel(long[] quads, int rows) {
-			this.quads = quads;
-			this.rows = rows;
-		}
-	}
-
-	/** Worker-side root cursor backed by raw quad morsels. */
-	static final class MorselCursor implements RowCursor {
-		final ArrayBlockingQueue<Morsel> queue;
-		final PatternPlan root;
-		final RowState row;
-		final AtomicReference<Throwable> failure;
-		final AtomicBoolean cancelled;
-		long[] quads;
-		int rows;
-		int pos;
-		int mark = -1;
-		boolean done;
-
-		MorselCursor(ArrayBlockingQueue<Morsel> queue, PatternPlan root, RowState row,
-				AtomicReference<Throwable> failure) {
-			this(queue, root, row, failure, new AtomicBoolean());
-		}
-
-		MorselCursor(ArrayBlockingQueue<Morsel> queue, PatternPlan root, RowState row,
-				AtomicReference<Throwable> failure, AtomicBoolean cancelled) {
-			this.queue = queue;
-			this.root = root;
-			this.row = row;
-			this.failure = failure;
-			this.cancelled = cancelled;
-		}
-
-		@Override
-		public boolean next() throws IOException {
-			if (mark >= 0) {
-				row.rollback(mark);
-				mark = -1;
-			}
-			while (!done) {
-				if (quads == null || pos >= rows) {
-					Morsel morsel = take();
-					if (morsel == Morsel.POISON) {
-						done = true;
-						quads = null;
-						return false;
-					}
-					quads = morsel.quads;
-					rows = morsel.rows;
-					pos = 0;
-				}
-				int base = pos++ * 4;
-				int candidate = row.mark();
-				if (root.bind(quads, base, row)) {
-					mark = candidate;
-					return true;
-				}
-				row.rollback(candidate);
-			}
-			return false;
-		}
-
-		Morsel take() throws IOException {
-			try {
-				while (true) {
-					Morsel morsel = queue.poll(50, TimeUnit.MILLISECONDS);
-					if (morsel != null) {
-						return morsel;
-					}
-					throwIfAborted(failure, cancelled);
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException(e);
-			}
-		}
-
-		@Override
-		public void close() {
-			if (mark >= 0) {
-				row.rollback(mark);
-				mark = -1;
-			}
-			done = true;
-		}
-	}
-
 	static final class OutputPage {
 		static final OutputPage END = new OutputPage(null);
 
@@ -373,7 +257,7 @@ final class LmdbNativeParallelPipelines {
 		final MultiJoinPlan[] workerPlans;
 		final NativeLmdbQuerySource.ParallelSource[] sources;
 		final long[] entrySlots;
-		final ArrayBlockingQueue<Morsel> input;
+		final ArrayBlockingQueue<LmdbNativeExchange.Morsel> input;
 		final ArrayBlockingQueue<OutputPage> output;
 		final AtomicReference<Throwable> failure = new AtomicReference<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
@@ -472,25 +356,12 @@ final class LmdbNativeParallelPipelines {
 		void produce() throws IOException {
 			NativeLmdbQuerySource producerSource = sources[workerPlans.length];
 			RowState producerRow = new RowState(producerSource, step.layout, consumerRow.base);
-			if (NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource)) {
+			boolean seeded = NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource);
+			if (seeded) {
 				producerRow.recomputeBoundMask();
-				try (PatternCursor cursor = root.openRaw(producerRow)) {
-					while (!cancelled.get()) {
-						long[] quads = new long[4 * MORSEL_ROWS];
-						int rows = cursor.fill(quads, MORSEL_ROWS);
-						if (rows == 0) {
-							break;
-						}
-						if (rows < MORSEL_ROWS) {
-							quads = Arrays.copyOf(quads, rows * 4);
-						}
-						offer(input, new Morsel(quads, rows), failure, cancelled);
-					}
-				}
 			}
-			for (int i = 0; i < workerPlans.length && !cancelled.get(); i++) {
-				offer(input, Morsel.POISON, failure, cancelled);
-			}
+			LmdbNativeExchange.produceMorsels(root, seeded ? producerRow : null, input, workerPlans.length, failure,
+					cancelled);
 		}
 
 		void runWorker(int worker) throws IOException {
@@ -503,7 +374,8 @@ final class LmdbNativeParallelPipelines {
 			MultiJoinPlan plan = workerPlans[worker];
 			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
 			MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
-			MorselCursor leftmost = new MorselCursor(input, root, row, failure, cancelled);
+			LmdbNativeExchange.MorselCursor leftmost = new LmdbNativeExchange.MorselCursor(input, root, row, failure,
+					cancelled);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan, derived, row,
 					row.boundMask(), step.sourceSlots, step.distinct);
 			RowCursor pipeline = factorized != null && factorized.flatCount > 0 ? factorized.openFrom(row, leftmost)
@@ -542,7 +414,7 @@ final class LmdbNativeParallelPipelines {
 		void offerOutput(OutputPage page) throws IOException {
 			try {
 				while (!output.offer(page, 50, TimeUnit.MILLISECONDS)) {
-					throwIfAborted(failure, cancelled);
+					LmdbNativeExchange.throwIfAborted(failure, cancelled);
 				}
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();

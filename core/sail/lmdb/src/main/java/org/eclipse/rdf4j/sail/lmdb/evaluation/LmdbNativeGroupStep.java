@@ -359,53 +359,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			LmdbNativeExplain.recordStrategy(explainTarget, "orderedSinglePatternGroups");
 			return orderedGroups;
 		}
-		if (groupSlots.length == 0) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "aggState");
-			AggState state = new AggState(aggregates, 65_536, aggContext, sequentialDistinctChannels);
-			boolean sawRow = false;
-			try (RowCursor cursor = arg.open(row)) {
-				while (cursor.next()) {
-					sawRow = true;
-					state.add(row);
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return List.of(toBindingSet(null, state, sawRow));
-		}
-
-		if (groupSlots.length == 1) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "singleSlotGroups");
-			return evaluateSingleSlotGroups(row, groupSlots[0]);
-		}
-
-		if (groupSlots.length <= 4) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "primitiveTupleGroups");
-			return evaluatePrimitiveTupleGroups(row);
-		}
-
-		LmdbNativeExplain.recordStrategy(explainTarget, "hashGroups");
-		HashMap<GroupKey, AggState> groups = new HashMap<>();
-		// reusable probe key: the per-row long[] + GroupKey + lambda allocations only happen for new groups
-		GroupKey probe = new GroupKey(new long[groupSlots.length]);
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext,
+				sequentialDistinctChannels, true, true);
+		LmdbNativeExplain.recordStrategy(explainTarget, table.strategyName());
 		try (RowCursor cursor = arg.open(row)) {
 			while (cursor.next()) {
-				probe.refill(row.slots, groupSlots);
-				AggState state = groups.get(probe);
-				if (state == null) {
-					state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
-					groups.put(probe.storedCopy(), state);
-				}
-				state.add(row);
+				table.add(row);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size());
-		for (Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
-			results.add(toBindingSet(entry.getKey(), entry.getValue(), true));
-		}
-		return results;
+		return table.results(this);
 	}
 
 	/** Evaluates the ordered DISTINCT plan before parallel or factorized execution can destroy its proof. */
@@ -488,60 +452,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	List<BindingSet> evaluateOrderedGroupMap(RowState row, NativeAggregateDistinctPlan plan) {
-		if (groupSlots.length == 1) {
-			LongAggStateMap groups = new LongAggStateMap();
-			try (RowCursor cursor = plan.arg.open(row)) {
-				while (cursor.next()) {
-					long key = row.slots[groupSlots[0]];
-					AggState state = groups.get(key);
-					if (state == null) {
-						state = new AggState(aggregates, 16, aggContext, plan.channels);
-						groups.put(key, state);
-					}
-					state.add(row);
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return singleSlotGroupResults(groups);
-		}
-		if (groupSlots.length <= 4) {
-			PrimitiveTupleTable groups = new PrimitiveTupleTable(groupSlots.length, 256);
-			AggState[] states = new AggState[16];
-			try (RowCursor cursor = plan.arg.open(row)) {
-				while (cursor.next()) {
-					int group = groups.findOrInsert(row.slots, groupSlots, false);
-					if (group >= states.length) {
-						states = Arrays.copyOf(states, states.length << 1);
-					}
-					if (states[group] == null) {
-						states[group] = new AggState(aggregates, 16, aggContext, plan.channels);
-					}
-					states[group].add(row);
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return primitiveGroupResults(groups, states);
-		}
-		HashMap<GroupKey, AggState> groups = new HashMap<>();
-		GroupKey probe = new GroupKey(new long[groupSlots.length]);
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext, plan.channels, false,
+				false);
 		try (RowCursor cursor = plan.arg.open(row)) {
 			while (cursor.next()) {
-				probe.refill(row.slots, groupSlots);
-				AggState state = groups.get(probe);
-				if (state == null) {
-					state = new AggState(aggregates, 16, aggContext, plan.channels);
-					groups.put(probe.storedCopy(), state);
-				}
-				state.add(row);
+				table.add(row);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size());
-		appendGroupResults(results, groups);
-		return results;
+		return table.results(this);
 	}
 
 	void appendGroupResults(ArrayList<BindingSet> results, HashMap<GroupKey, AggState> groups) {
@@ -621,82 +541,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		return results;
 	}
 
-	List<BindingSet> evaluatePrimitiveTupleGroups(RowState row) {
-		PrimitiveTupleTable groups = new PrimitiveTupleTable(groupSlots.length, 256);
-		if (primitiveCountState()) {
-			long[] counts = new long[Math.max(16, aggregates.length * 16)];
-			try (RowCursor cursor = arg.open(row)) {
-				while (cursor.next()) {
-					int group = groups.findOrInsert(row.slots, groupSlots, false);
-					int required = (group + 1) * aggregates.length;
-					if (required > counts.length) {
-						counts = Arrays.copyOf(counts, Math.max(required, counts.length << 1));
-					}
-					int offset = group * aggregates.length;
-					for (int i = 0; i < aggregates.length; i++) {
-						if (aggregates[i].value(row) != UNKNOWN) {
-							counts[offset + i]++;
-						}
-					}
-					PRIMITIVE_COUNT_GROUP_ROWS.incrementAndGet();
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return primitiveCountResults(groups, counts);
-		}
-
-		AggState[] states = new AggState[16];
-		try (RowCursor cursor = arg.open(row)) {
-			while (cursor.next()) {
-				int group = groups.findOrInsert(row.slots, groupSlots, false);
-				if (group >= states.length) {
-					states = Arrays.copyOf(states, states.length << 1);
-				}
-				AggState state = states[group];
-				if (state == null) {
-					state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
-					states[group] = state;
-				}
-				state.add(row);
-				PRIMITIVE_TUPLE_GROUP_ROWS.incrementAndGet();
-			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		}
-		return primitiveGroupResults(groups, states);
-	}
-
-	boolean primitiveCountState() {
-		for (AggregateSpec aggregate : aggregates) {
-			if (aggregate.kind != AggKind.COUNT || aggregate.distinct) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	List<BindingSet> primitiveCountResults(PrimitiveTupleTable groups, long[] counts) {
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size);
-		for (int group = 0; group < groups.size; group++) {
-			AggState state = new AggState(aggregates, 4, aggContext, hashDistinctChannels);
-			int offset = group * aggregates.length;
-			for (int i = 0; i < aggregates.length; i++) {
-				state.counts[i] = counts[offset + i];
-			}
-			results.add(toBindingSet(groups.groupKey(group), state, true));
-		}
-		return results;
-	}
-
-	List<BindingSet> primitiveGroupResults(PrimitiveTupleTable groups, AggState[] states) {
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size);
-		for (int group = 0; group < groups.size; group++) {
-			results.add(toBindingSet(groups.groupKey(group), states[group], true));
-		}
-		return results;
-	}
-
 	List<BindingSet> evaluatePrefixRuns(RowState row) {
 		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
 			return null;
@@ -759,41 +603,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	/**
-	 * GROUP BY over a single variable, the overwhelmingly common case: the group table is a primitive open-addressing
-	 * long -> AggState map keyed directly on the slot id, avoiding the boxed HashMap probe (GroupKey hashing, Node
-	 * allocation per group, equals via Arrays.equals) on every input row.
-	 */
-	List<BindingSet> evaluateSingleSlotGroups(RowState row, int groupSlot) {
-		LongAggStateMap groups = new LongAggStateMap();
-		try (RowCursor cursor = arg.open(row)) {
-			while (cursor.next()) {
-				long key = row.slots[groupSlot];
-				AggState state = groups.get(key);
-				if (state == null) {
-					state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
-					groups.put(key, state);
-				}
-				state.add(row);
-			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		}
-		return singleSlotGroupResults(groups);
-	}
-
-	List<BindingSet> singleSlotGroupResults(LongAggStateMap groups) {
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size);
-		long[] keys = groups.keys;
-		AggState[] states = groups.values;
-		for (int i = 0; i < states.length; i++) {
-			if (states[i] != null) {
-				results.add(toBindingSet(new GroupKey(new long[] { keys[i] }), states[i], true));
-			}
-		}
-		return results;
-	}
-
-	/**
 	 * Aggregation with a factorized tail: the prefix of the ordered plan is enumerated as usual, but the last pattern's
 	 * matches are consumed as counted quad batches (see {@link FactorizedTail}) instead of being bound into rows one
 	 * combination at a time. Group states are only registered once the tail produced at least one match, preserving
@@ -812,98 +621,26 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail) {
 		int prefixLength = derived.order.length - tail.branchCount();
 		if (tail.groupsByTail()) {
-			LongAggStateMap groups = new LongAggStateMap();
+			NativeGroupTable table = NativeGroupTable.tailGrouped(aggregates, aggContext, hashDistinctChannels);
 			try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
 				while (prefix.next()) {
-					tail.aggregateGrouped(row, groups);
+					tail.aggregateGrouped(row, table.longGroups());
 				}
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
-			return singleSlotGroupResults(groups);
+			return table.results(this);
 		}
-		if (groupSlots.length == 0) {
-			AggState state = new AggState(aggregates, 65_536, aggContext, hashDistinctChannels);
-			boolean sawRow = false;
-			try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
-				while (prefix.next()) {
-					sawRow |= tail.aggregate(row, state);
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return List.of(toBindingSet(null, state, sawRow));
-		}
-		if (groupSlots.length == 1) {
-			int groupSlot = groupSlots[0];
-			LongAggStateMap groups = new LongAggStateMap();
-			try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
-				while (prefix.next()) {
-					long key = row.slots[groupSlot];
-					AggState state = groups.get(key);
-					boolean fresh = state == null;
-					if (fresh) {
-						state = new AggState(aggregates, 16, aggContext, hashDistinctChannels);
-					}
-					if (tail.aggregate(row, state) && fresh) {
-						groups.put(key, state);
-					}
-				}
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
-			return singleSlotGroupResults(groups);
-		}
-		if (groupSlots.length <= 4) {
-			return evaluatePrimitiveFactorizedGroups(row, plan, derived, tail, prefixLength);
-		}
-		HashMap<GroupKey, AggState> groups = new HashMap<>();
-		GroupKey probe = new GroupKey(new long[groupSlots.length]);
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext, hashDistinctChannels,
+				false, true);
 		try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
 			while (prefix.next()) {
-				probe.refill(row.slots, groupSlots);
-				AggState state = groups.get(probe);
-				boolean fresh = state == null;
-				if (fresh) {
-					state = new AggState(aggregates, 16, aggContext, hashDistinctChannels);
-				}
-				if (tail.aggregate(row, state) && fresh) {
-					groups.put(probe.storedCopy(), state);
-				}
+				table.aggregateFactorized(row, tail);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		ArrayList<BindingSet> results = new ArrayList<>(groups.size());
-		for (Map.Entry<GroupKey, AggState> entry : groups.entrySet()) {
-			results.add(toBindingSet(entry.getKey(), entry.getValue(), true));
-		}
-		return results;
-	}
-
-	List<BindingSet> evaluatePrimitiveFactorizedGroups(RowState row, MultiJoinPlan plan,
-			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail, int prefixLength) {
-		PrimitiveTupleTable groups = new PrimitiveTupleTable(groupSlots.length, 256);
-		AggState[] states = new AggState[16];
-		try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
-			while (prefix.next()) {
-				int group = groups.find(row.slots, groupSlots, false);
-				AggState state = group < 0
-						? new AggState(aggregates, 16, aggContext, hashDistinctChannels)
-						: states[group];
-				if (tail.aggregate(row, state) && group < 0) {
-					group = groups.findOrInsert(row.slots, groupSlots, false);
-					if (group >= states.length) {
-						states = Arrays.copyOf(states, states.length << 1);
-					}
-					states[group] = state;
-				}
-				PRIMITIVE_TUPLE_GROUP_ROWS.incrementAndGet();
-			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		}
-		return primitiveGroupResults(groups, states);
+		return table.results(this);
 	}
 
 	boolean initialize(RowState row) {

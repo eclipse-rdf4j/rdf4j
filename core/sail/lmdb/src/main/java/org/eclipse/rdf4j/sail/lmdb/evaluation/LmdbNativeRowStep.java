@@ -145,6 +145,16 @@ final class FilteringIteration implements CloseableIteration<BindingSet> {
 
 @Experimental
 final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	/** Test observability: ORDER BY evaluations that sorted flat factorized rows instead of enumerated rows. */
+	static final AtomicLong ORDERED_FACTORIZED_SORTS = new AtomicLong();
+	/** Test observability: ORDER BY + LIMIT evaluations that kept a bounded heap of flat factorized rows. */
+	static final AtomicLong ORDERED_FACTORIZED_TOPK = new AtomicLong();
+
+	/** ORDER BY over factorized plans: sort flat prefix rows, expand branches lazily in sorted order (Phase 5). */
+	static boolean orderedFactorizedEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.orderedFactorizedRows.enabled"));
+	}
+
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
 	final NativeSlotLayout layout;
@@ -321,6 +331,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 			return 0;
 		};
+		List<BindingSet> factorizedSorted = tryEvaluateOrderedFactorized(base, values, comparator, emitCap);
+		if (factorizedSorted != null) {
+			return factorizedSorted;
+		}
+
 		// bounded top-k under ORDER BY + LIMIT (skipped with DISTINCT, which dedups after projection and
 		// could underfill a pre-projection top-k): keep only the best offset+limit rows while scanning
 		long topK = emitCap != Long.MAX_VALUE && emitCap <= 100_000 ? emitCap : -1L;
@@ -359,6 +374,149 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
+	}
+
+	/**
+	 * ORDER BY over a factorized plan (Phase 5): sorts only the flat prefix rows — each carrying its multiplicity and
+	 * its enum branches' value runs (copied into a budget-guarded arena) — and expands them lazily in sorted order.
+	 * Under LIMIT a bounded heap keeps the best {@code offset+limit} flat rows, which is exact because expansion never
+	 * changes a row's order keys and the factorized cursor already skips prefix rows with an empty branch (every kept
+	 * flat row expands to at least one result row). Returns null when the shape gate refuses or the budget runs out —
+	 * the classic enumerated sort then runs unchanged.
+	 */
+	private List<BindingSet> tryEvaluateOrderedFactorized(BindingSet base, AggContext values,
+			PackedRowComparator comparator, long emitCap) {
+		if (!orderedFactorizedEnabled() || distinct || snapshotRows || !(arg instanceof MultiJoinPlan)
+				|| ((MultiJoinPlan) arg).children.length == 0) {
+			return null;
+		}
+		RowState row = new RowState(source, layout, base);
+		if (!initializeRow(row, base, source, layout)) {
+			return null;
+		}
+		if ((arg.producedMask() & row.boundMask()) != 0L) {
+			// correlated entry: per-open factorization analysis is waste, mirror NativeRowsIteration's gate
+			return null;
+		}
+		MultiJoinPlan multiJoin = (MultiJoinPlan) arg;
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
+				multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), sourceSlots, false);
+		if (factorized == null) {
+			return null;
+		}
+		long branchFresh = factorized.branchFreshMask();
+		for (int orderSlot : orderSlots) {
+			if ((branchFresh & 1L << orderSlot) != 0L) {
+				// an order key bound by a branch would require sorting within expansions: flat sort unsound
+				return null;
+			}
+		}
+		int slotCount = row.slots.length;
+		int enums = factorized.enumBranchCount();
+		int width = slotCount + 1 + 2 * enums;
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(LmdbNativeFactorizedRows.MEMO_BYPASSES);
+		long[] packed = new long[width];
+		boolean topK = emitCap != Long.MAX_VALUE && emitCap <= 100_000;
+		NativeTopKBuffer best = topK ? new NativeTopKBuffer(width, (int) emitCap, comparator) : null;
+		NativeSortBuffer buffer = topK ? null : new NativeSortBuffer(width, 1024);
+		long ordinal = 0L;
+		try (FlatRowCursor cursor = factorized.openFlat(row)) {
+			while (cursor.next()) {
+				System.arraycopy(row.slots, 0, packed, 0, slotCount);
+				packed[slotCount] = cursor.multiplicity();
+				if (best != null && !best.wouldAccept(packed, ordinal)) {
+					// order keys live in the slot section: rejected rows never pay the arena copy
+					ordinal++;
+					continue;
+				}
+				for (int b = 0; b < enums; b++) {
+					int stride = cursor.enumValueSlots(b).length;
+					int runLength = (int) (cursor.enumMatches(b) * stride);
+					long valuesOffset = 0L;
+					if (runLength > 0) {
+						if (!budget.tryReserve(1, runLength)) {
+							return null;
+						}
+						valuesOffset = arena.append(cursor.enumValues(b), 0, runLength);
+						if (valuesOffset == LmdbNativeLongArena.REFUSED) {
+							return null;
+						}
+					}
+					packed[slotCount + 1 + 2 * b] = valuesOffset;
+					packed[slotCount + 2 + 2 * b] = cursor.enumMatches(b);
+				}
+				if (best != null) {
+					best.add(packed, ordinal++);
+				} else {
+					if (!budget.tryReserve(0, width)) {
+						return null;
+					}
+					buffer.append(packed, ordinal++);
+				}
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		LmdbNativeExplain.recordStrategy(originalExpr, topK ? "orderedFactorizedTopK" : "orderedFactorizedSort");
+		(topK ? ORDERED_FACTORIZED_TOPK : ORDERED_FACTORIZED_SORTS).incrementAndGet();
+		NativeSortBuffer sortBuffer = topK ? best.buffer : buffer;
+		return expandSortedFlatRows(sortBuffer, sortBuffer.sortedOrder(comparator), factorized.enumValueSlots(),
+				arena, slotCount, emitCap, values);
+	}
+
+	/** Emits the sorted flat rows: odometer over each row's arena runs, repeated {@code multiplicity} times. */
+	private List<BindingSet> expandSortedFlatRows(NativeSortBuffer sortBuffer, int[] sortedOrder,
+			int[][] enumValueSlots, LmdbNativeLongArena arena, int slotCount, long emitCap, AggContext values) {
+		int enums = enumValueSlots.length;
+		ArrayList<BindingSet> results = new ArrayList<>();
+		long[] snapshot = new long[sortBuffer.slotCount];
+		long[][] runs = new long[enums][];
+		int[] odometer = new int[enums];
+		for (int index : sortedOrder) {
+			sortBuffer.copyRow(index, snapshot);
+			long multiplicity = snapshot[slotCount];
+			for (int b = 0; b < enums; b++) {
+				int runLength = (int) (snapshot[slotCount + 2 + 2 * b] * enumValueSlots[b].length);
+				long[] run = runs[b];
+				if (run == null || run.length < runLength) {
+					run = new long[Math.max(16, runLength)];
+					runs[b] = run;
+				}
+				if (runLength > 0) {
+					arena.copyTo(snapshot[slotCount + 1 + 2 * b], run, 0, runLength);
+				}
+				odometer[b] = 0;
+			}
+			while (true) {
+				for (int b = 0; b < enums; b++) {
+					int[] valueSlots = enumValueSlots[b];
+					int at = odometer[b] * valueSlots.length;
+					for (int j = 0; j < valueSlots.length; j++) {
+						snapshot[valueSlots[j]] = runs[b][at + j];
+					}
+				}
+				for (long m = 0; m < multiplicity; m++) {
+					results.add(project(snapshot, values));
+					if (results.size() >= emitCap) {
+						return slice(results);
+					}
+				}
+				int k = enums - 1;
+				while (k >= 0) {
+					odometer[k]++;
+					if (odometer[k] < snapshot[slotCount + 2 + 2 * k]) {
+						break;
+					}
+					odometer[k] = 0;
+					k--;
+				}
+				if (k < 0) {
+					break;
+				}
+			}
+		}
+		return slice(results);
 	}
 
 	List<BindingSet> projectSortedRows(NativeSortedRows sortedRows, int slotCount, long emitCap, AggContext values,

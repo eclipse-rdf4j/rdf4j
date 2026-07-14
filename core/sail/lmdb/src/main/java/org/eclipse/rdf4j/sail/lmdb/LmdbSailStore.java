@@ -3467,6 +3467,25 @@ class LmdbSailStore implements SailStore {
 			}
 
 			@Override
+			public boolean seekForward(long subj, long pred, long obj, long context) {
+				if (closed) {
+					return false;
+				}
+				try {
+					assertNativeSourceOpen();
+					boolean sought = delegate.seekForward(subj, pred, obj, context);
+					if (sought && batch != null) {
+						// buffered rows precede the seek target: drop them so the next pull refills from there
+						batchPos = batchCount;
+					}
+					return sought;
+				} catch (RuntimeException | Error e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
 			public void close() {
 				if (!closed) {
 					try {

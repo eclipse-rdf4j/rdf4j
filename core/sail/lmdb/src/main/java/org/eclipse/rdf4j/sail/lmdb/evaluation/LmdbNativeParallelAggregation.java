@@ -21,6 +21,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,8 +39,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  *
  * Gates (all must hold, otherwise the sequential path runs): parallelism enabled and ≥2 worker threads configured; the
  * plan is a filter-free {@code MultiJoinPlan} of plain statement patterns (compiled filter objects carry per-instance
- * memo state and are not thread-safe to share); every aggregate is COUNT-kind; the source supports same-snapshot
- * siblings; the root pattern's estimate meets {@code rdf4j.lmdb.parallel.minRootEstimate}. Each worker creates its own
+ * memo state and are not thread-safe to share); every aggregate merges exactly across workers (all kinds except
+ * value-typed DISTINCT — see {@link #parallelMergeable}); the source supports same-snapshot siblings; the root
+ * pattern's estimate meets {@code rdf4j.lmdb.parallel.minRootEstimate}. Each worker creates its own
  * {@code FactorizedTail} when the shape allows, so factorization and parallelism multiply.
  */
 @Experimental
@@ -48,9 +50,21 @@ final class LmdbNativeParallelAggregation {
 	/** Test observability: incremented whenever a query actually runs through the parallel path. */
 	static final AtomicLong PARALLEL_RUNS = new AtomicLong();
 
-	static final int MORSEL_ROWS = LmdbNativeParallelPipelines.MORSEL_ROWS;
-
 	private LmdbNativeParallelAggregation() {
+	}
+
+	/**
+	 * Whether every aggregate merges exactly across workers (Phase 6): plain counts add, COUNT(DISTINCT) unions its id
+	 * set, SUM/AVG add running sums, MIN/MAX keep the comparator winner. Value-typed DISTINCT aggregates cannot —
+	 * per-worker distinct-then-accumulate double-counts values seen by several workers.
+	 */
+	static boolean parallelMergeable(AggregateSpec[] specs) {
+		for (AggregateSpec spec : specs) {
+			if (spec.distinct && spec.kind != AggKind.COUNT) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Runs the aggregation in parallel, or returns null when a gate fails and the sequential path must run. */
@@ -66,7 +80,7 @@ final class LmdbNativeParallelAggregation {
 				return null;
 			}
 		}
-		if (!AggregateSpec.allCounts(it.aggregates)) {
+		if (!parallelMergeable(it.aggregates)) {
 			return null;
 		}
 		int threads = LmdbNativeParallelPipelines.configuredThreads();
@@ -115,9 +129,9 @@ final class LmdbNativeParallelAggregation {
 	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan plan,
 			MultiJoinPlan.OrderedPlan derived, PatternPlan root, NativeLmdbQuerySource.ParallelSource[] sources,
 			int threads) {
-		ArrayBlockingQueue<Morsel> queue = new ArrayBlockingQueue<>(threads * 2);
+		ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
-		ArrayList<Future<WorkerResult>> futures = new ArrayList<>(threads);
+		ArrayList<Future<NativeGroupTable>> futures = new ArrayList<>(threads);
 		Throwable submissionFailure = null;
 		for (int i = 0; i < threads; i++) {
 			NativeLmdbQuerySource source = sources[i];
@@ -144,10 +158,10 @@ final class LmdbNativeParallelAggregation {
 			}
 		}
 		// every future must be terminal before the caller closes the worker transactions
-		ArrayList<WorkerResult> results = new ArrayList<>(threads);
+		ArrayList<NativeGroupTable> results = new ArrayList<>(threads);
 		Throwable error = submissionFailure;
 		boolean interrupted = false;
-		for (Future<WorkerResult> future : futures) {
+		for (Future<NativeGroupTable> future : futures) {
 			while (true) {
 				try {
 					results.add(future.get());
@@ -184,44 +198,18 @@ final class LmdbNativeParallelAggregation {
 	}
 
 	static void produce(NativeGroupIteration it, PatternPlan root, NativeLmdbQuerySource producerSource,
-			ArrayBlockingQueue<Morsel> queue, int workers, AtomicReference<Throwable> failure) throws IOException {
+			ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue, int workers, AtomicReference<Throwable> failure)
+			throws IOException {
 		RowState row = new RowState(producerSource, it.layout, it.base);
 		boolean seeded = NativeRowSeeder.seed(row.slots, it.layout, it.base, producerSource);
 		if (seeded) {
 			row.recomputeBoundMask();
-			try (PatternCursor cursor = root.openRaw(row)) {
-				while (failure.get() == null) {
-					long[] quads = new long[4 * MORSEL_ROWS];
-					int rows = cursor.fill(quads, MORSEL_ROWS);
-					if (rows == 0) {
-						break;
-					}
-					offer(queue, new Morsel(quads, rows), failure);
-				}
-			}
 		}
-		for (int i = 0; i < workers && failure.get() == null; i++) {
-			offer(queue, Morsel.POISON, failure);
-		}
+		LmdbNativeExchange.produceMorsels(root, seeded ? row : null, queue, workers, failure, new AtomicBoolean());
 	}
 
-	static void offer(ArrayBlockingQueue<Morsel> queue, Morsel morsel, AtomicReference<Throwable> failure)
-			throws IOException {
-		try {
-			while (!queue.offer(morsel, 50, TimeUnit.MILLISECONDS)) {
-				Throwable t = failure.get();
-				if (t != null) {
-					throw new IOException("parallel aggregation aborted", t);
-				}
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
-		}
-	}
-
-	static WorkerResult runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
-			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<Morsel> queue,
+	static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
+			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
 			AtomicReference<Throwable> failure) throws IOException {
 		RowState row = new RowState(source, it.layout, it.base);
 		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
@@ -235,75 +223,27 @@ final class LmdbNativeParallelAggregation {
 				: null;
 		try {
 			int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;
-			MorselCursor leftmost = new MorselCursor(queue, root, row, failure);
-			WorkerResult result = new WorkerResult();
+			LmdbNativeExchange.MorselCursor leftmost = new LmdbNativeExchange.MorselCursor(queue, root, row, failure);
+			NativeGroupTable table = tail != null && tail.groupsByTail()
+					? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
+					: NativeGroupTable.create(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, false,
+							false);
 			try (RowCursor cursor = plan.openChainFrom(derived, leftmost, chainLength, row)) {
 				if (tail != null && tail.groupsByTail()) {
-					LongAggStateMap groups = new LongAggStateMap();
 					while (cursor.next()) {
-						tail.aggregateGrouped(row, groups);
+						tail.aggregateGrouped(row, table.longGroups());
 					}
-					result.longGroups = groups;
-				} else if (it.groupSlots.length == 0) {
-					AggState state = new AggState(it.aggregates, 65_536, ctx, it.hashDistinctChannels);
-					boolean sawRow = false;
+				} else if (tail != null) {
 					while (cursor.next()) {
-						if (tail != null) {
-							sawRow |= tail.aggregate(row, state);
-						} else {
-							sawRow = true;
-							state.add(row);
-						}
+						table.aggregateFactorized(row, tail);
 					}
-					result.state = state;
-					result.sawRow = sawRow;
-				} else if (it.groupSlots.length == 1) {
-					int groupSlot = it.groupSlots[0];
-					LongAggStateMap groups = new LongAggStateMap();
-					while (cursor.next()) {
-						long key = row.slots[groupSlot];
-						AggState state = groups.get(key);
-						boolean freshState = state == null;
-						if (freshState) {
-							state = new AggState(it.aggregates, 16, ctx, it.hashDistinctChannels);
-						}
-						if (tail != null) {
-							if (tail.aggregate(row, state) && freshState) {
-								groups.put(key, state);
-							}
-						} else {
-							state.add(row);
-							if (freshState) {
-								groups.put(key, state);
-							}
-						}
-					}
-					result.longGroups = groups;
 				} else {
-					HashMap<GroupKey, AggState> groups = new HashMap<>();
-					GroupKey probe = new GroupKey(new long[it.groupSlots.length]);
 					while (cursor.next()) {
-						probe.refill(row.slots, it.groupSlots);
-						AggState state = groups.get(probe);
-						boolean freshState = state == null;
-						if (freshState) {
-							state = new AggState(it.aggregates, 16, ctx, it.hashDistinctChannels);
-						}
-						if (tail != null) {
-							if (tail.aggregate(row, state) && freshState) {
-								groups.put(probe.storedCopy(), state);
-							}
-						} else {
-							state.add(row);
-							if (freshState) {
-								groups.put(probe.storedCopy(), state);
-							}
-						}
+						table.add(row);
 					}
-					result.keyGroups = groups;
 				}
 			}
-			return result;
+			return table;
 		} finally {
 			if (tail != null) {
 				tail.close();
@@ -311,149 +251,12 @@ final class LmdbNativeParallelAggregation {
 		}
 	}
 
-	static List<BindingSet> mergeResults(NativeGroupIteration it, ArrayList<WorkerResult> results) {
-		WorkerResult first = results.get(0);
-		if (first.longGroups != null) {
-			LongAggStateMap merged = first.longGroups;
-			for (int i = 1; i < results.size(); i++) {
-				mergeLongGroups(merged, results.get(i).longGroups);
-			}
-			return it.singleSlotGroupResults(merged);
-		}
-		if (first.keyGroups != null) {
-			HashMap<GroupKey, AggState> merged = first.keyGroups;
-			for (int i = 1; i < results.size(); i++) {
-				for (Map.Entry<GroupKey, AggState> entry : results.get(i).keyGroups.entrySet()) {
-					AggState existing = merged.get(entry.getKey());
-					if (existing == null) {
-						merged.put(entry.getKey(), entry.getValue());
-					} else {
-						existing.mergeCountsFrom(entry.getValue());
-					}
-				}
-			}
-			ArrayList<BindingSet> out = new ArrayList<>(merged.size());
-			for (Map.Entry<GroupKey, AggState> entry : merged.entrySet()) {
-				out.add(it.toBindingSet(entry.getKey(), entry.getValue(), true));
-			}
-			return out;
-		}
-		AggState merged = first.state;
-		boolean sawRow = first.sawRow;
+	static List<BindingSet> mergeResults(NativeGroupIteration it, ArrayList<NativeGroupTable> results) {
+		NativeGroupTable merged = results.get(0);
 		for (int i = 1; i < results.size(); i++) {
-			merged.mergeCountsFrom(results.get(i).state);
-			sawRow |= results.get(i).sawRow;
+			merged.mergeFrom(results.get(i));
 		}
-		return List.of(it.toBindingSet(null, merged, sawRow));
+		return merged.results(it);
 	}
 
-	static void mergeLongGroups(LongAggStateMap target, LongAggStateMap source) {
-		for (int i = 0; i < source.values.length; i++) {
-			if (source.values[i] != null) {
-				AggState existing = target.get(source.keys[i]);
-				if (existing == null) {
-					target.put(source.keys[i], source.values[i]);
-				} else {
-					existing.mergeCountsFrom(source.values[i]);
-				}
-			}
-		}
-	}
-
-	static final class WorkerResult {
-		AggState state;
-		boolean sawRow;
-		LongAggStateMap longGroups;
-		HashMap<GroupKey, AggState> keyGroups;
-	}
-
-	static final class Morsel {
-		static final Morsel POISON = new Morsel(new long[0], 0);
-
-		final long[] quads;
-		final int rows;
-
-		Morsel(long[] quads, int rows) {
-			this.quads = quads;
-			this.rows = rows;
-		}
-	}
-
-	/** Worker-side stand-in for the root scan: binds quads pulled from the shared morsel queue. */
-	static final class MorselCursor implements RowCursor {
-		final ArrayBlockingQueue<Morsel> queue;
-		final PatternPlan root;
-		final RowState row;
-		final AtomicReference<Throwable> failure;
-		long[] quads;
-		int rows;
-		int pos;
-		int mark = -1;
-		boolean done;
-
-		MorselCursor(ArrayBlockingQueue<Morsel> queue, PatternPlan root, RowState row,
-				AtomicReference<Throwable> failure) {
-			this.queue = queue;
-			this.root = root;
-			this.row = row;
-			this.failure = failure;
-		}
-
-		@Override
-		public boolean next() throws IOException {
-			if (mark >= 0) {
-				row.rollback(mark);
-				mark = -1;
-			}
-			while (!done) {
-				if (quads == null || pos >= rows) {
-					Morsel morsel = take();
-					if (morsel == Morsel.POISON) {
-						done = true;
-						quads = null;
-						return false;
-					}
-					quads = morsel.quads;
-					rows = morsel.rows;
-					pos = 0;
-				}
-				int base = pos * 4;
-				pos++;
-				int candidate = row.mark();
-				if (root.bind(quads, base, row)) {
-					mark = candidate;
-					return true;
-				}
-				row.rollback(candidate);
-			}
-			return false;
-		}
-
-		Morsel take() throws IOException {
-			try {
-				while (true) {
-					Morsel morsel = queue.poll(50, TimeUnit.MILLISECONDS);
-					if (morsel != null) {
-						return morsel;
-					}
-					Throwable t = failure.get();
-					if (t != null) {
-						throw new IOException("parallel aggregation aborted", t);
-					}
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException(e);
-			}
-		}
-
-		@Override
-		public void close() {
-			if (mark >= 0) {
-				row.rollback(mark);
-				mark = -1;
-			}
-			done = true;
-		}
-	}
 }

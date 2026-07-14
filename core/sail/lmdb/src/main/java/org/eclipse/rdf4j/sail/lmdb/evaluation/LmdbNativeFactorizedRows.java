@@ -40,6 +40,30 @@ interface FactorizedRowCursor extends RowCursor {
 	long multiplicity();
 }
 
+/**
+ * One row per surviving flat-prefix row (branches verified non-empty, COUNT branches folded into the multiplicity, ENUM
+ * branches exposed unexpanded). The branch result buffers are reused across rows: copy anything retained.
+ */
+@Experimental
+interface FlatRowCursor extends AutoCloseable {
+	boolean next() throws IOException;
+
+	long multiplicity();
+
+	int enumCount();
+
+	/** Slots the {@code i}-th enum branch writes per combination (its stride into {@link #enumValues}). */
+	int[] enumValueSlots(int i);
+
+	/** The {@code i}-th enum branch's value run for the current row: {@code enumMatches(i) × stride} longs. */
+	long[] enumValues(int i);
+
+	long enumMatches(int i);
+
+	@Override
+	void close();
+}
+
 @Experimental
 final class LmdbNativeFactorizedRows {
 
@@ -76,6 +100,8 @@ final class LmdbNativeFactorizedRows {
 	final FactorizedTail.MemoBudget memoBudget = new FactorizedTail.MemoBudget(MEMO_BYPASSES);
 	/** Which prefix strategy the last {@link #open} chose; feeds the engagement string. */
 	String prefixStrategy = "chain";
+	/** How many chunk-pipeline probe stages ran in merge/zig-zag mode (explain observability). */
+	int mergeStages;
 
 	private LmdbNativeFactorizedRows(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
 			PrefixDepth[] prefixDepths, TailBranch[] branches, NativeBooleanFilter[] prefixOnlyTailFilters) {
@@ -283,12 +309,26 @@ final class LmdbNativeFactorizedRows {
 		}
 		String branchCounts = "enumBranches=" + enums + ", countBranches=" + counts + ", existsBranches=" + exists;
 		if ("chunkPipeline".equals(prefixStrategy)) {
-			return "chunkPipeline(flat=" + flatCount + ", " + branchCounts + ")";
+			String mergeInfo = mergeStages > 0 ? ", mergeStages=" + mergeStages : "";
+			return "chunkPipeline(flat=" + flatCount + mergeInfo + ", " + branchCounts + ")";
 		}
 		return "factorizedRows(flatPrefix=" + flatCount + ", prefix=" + prefixStrategy + ", " + branchCounts + ")";
 	}
 
 	FactorizedRowCursor open(RowState row) throws IOException {
+		return new Cursor(this, row, openPrefix(row));
+	}
+
+	/**
+	 * Flat-row variant for the ordered path (Phase 5): one {@code next()} per surviving prefix row, exposing the
+	 * multiplicity and the enum branches' value runs instead of odometer-expanding them. The exposed {@link TailResult}
+	 * buffers are reused across rows — consumers must copy what they retain.
+	 */
+	FlatRowCursor openFlat(RowState row) throws IOException {
+		return new FlatCursor(this, row, openPrefix(row));
+	}
+
+	private RowCursor openPrefix(RowState row) throws IOException {
 		RowCursor prefix;
 		if (flatCount == 0) {
 			prefix = new SingletonCursor();
@@ -297,6 +337,7 @@ final class LmdbNativeFactorizedRows {
 			prefix = LmdbNativeChunkPipeline.tryOpenPrefix(plan, derived, flatCount, row, memoBudget);
 			if (prefix != null) {
 				prefixStrategy = "chunkPipeline";
+				mergeStages = ((LmdbNativeChunkPipeline.ChunkPrefixRowCursor) prefix).mergeStages;
 			} else if (prefixDepths != null) {
 				prefix = new ChunkedPrefixCursor(row, prefixDepths);
 				prefixStrategy = "chunkedMemo";
@@ -305,7 +346,41 @@ final class LmdbNativeFactorizedRows {
 				prefixStrategy = "chain";
 			}
 		}
-		return new Cursor(this, row, prefix);
+		return prefix;
+	}
+
+	/** Union of every tail branch's fresh slots — the section of the row the flat prefix does NOT bind. */
+	long branchFreshMask() {
+		long mask = 0L;
+		for (TailBranch branch : branches) {
+			for (int slot : branch.freshSlots) {
+				mask |= 1L << slot;
+			}
+		}
+		return mask;
+	}
+
+	/** How many branches enumerate projected values (a fixed property of the plan, identical for every row). */
+	int enumBranchCount() {
+		int enums = 0;
+		for (TailBranch branch : branches) {
+			if (branch.role == ROLE_ENUM) {
+				enums++;
+			}
+		}
+		return enums;
+	}
+
+	/** The enum branches' value slots, in the order {@link FlatRowCursor} exposes the branches. */
+	int[][] enumValueSlots() {
+		int[][] result = new int[enumBranchCount()][];
+		int n = 0;
+		for (TailBranch branch : branches) {
+			if (branch.role == ROLE_ENUM) {
+				result[n++] = branch.valueSlots;
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -445,14 +520,115 @@ final class LmdbNativeFactorizedRows {
 				branch.close();
 				branch.memo.clear();
 			}
-			if (owner.prefixDepths != null) {
-				for (PrefixDepth depth : owner.prefixDepths) {
-					depth.close();
-					if (depth.memo != null) {
-						depth.memo.clear();
-					}
+			closeOwnerPrefixDepths(owner);
+		}
+	}
+
+	static void closeOwnerPrefixDepths(LmdbNativeFactorizedRows owner) {
+		if (owner.prefixDepths != null) {
+			for (PrefixDepth depth : owner.prefixDepths) {
+				depth.close();
+				if (depth.memo != null) {
+					depth.memo.clear();
 				}
 			}
+		}
+	}
+
+	/** The flat-emission sibling of {@link Cursor}: identical prefix-row processing, no odometer expansion. */
+	private static final class FlatCursor implements FlatRowCursor {
+		final LmdbNativeFactorizedRows owner;
+		final RowState row;
+		final RowCursor prefix;
+		long multiplicity = 1L;
+		int enumCount;
+		boolean closed;
+
+		FlatCursor(LmdbNativeFactorizedRows owner, RowState row, RowCursor prefix) {
+			this.owner = owner;
+			this.row = row;
+			this.prefix = prefix;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			prefixLoop: while (prefix.next()) {
+				for (NativeBooleanFilter filter : owner.prefixOnlyTailFilters) {
+					if (!filter.accept(row)) {
+						continue prefixLoop;
+					}
+				}
+				multiplicity = 1L;
+				enumCount = 0;
+				for (TailBranch branch : owner.branches) {
+					TailResult result = branch.result(row, owner);
+					if (result.count == 0L) {
+						continue prefixLoop;
+					}
+					if (branch.role == ROLE_COUNT) {
+						// saturation is observationally sound: multiplicity only bounds repeated emission
+						if (multiplicity >= Long.MAX_VALUE / result.count) {
+							multiplicity = Long.MAX_VALUE;
+						} else {
+							multiplicity *= result.count;
+						}
+					} else if (branch.role == ROLE_ENUM) {
+						owner.enumResults[enumCount] = result;
+						owner.enumBranches[enumCount] = branch;
+						enumCount++;
+					}
+				}
+				return true;
+			}
+			close();
+			return false;
+		}
+
+		@Override
+		public long multiplicity() {
+			return multiplicity;
+		}
+
+		@Override
+		public int enumCount() {
+			return enumCount;
+		}
+
+		@Override
+		public int[] enumValueSlots(int i) {
+			return owner.enumBranches[i].valueSlots;
+		}
+
+		@Override
+		public long[] enumValues(int i) {
+			return owner.enumResults[i].values;
+		}
+
+		@Override
+		public long enumMatches(int i) {
+			return owner.enumResults[i].count;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			for (int k = 0; k < enumCount; k++) {
+				owner.enumResults[k] = null;
+				owner.enumBranches[k] = null;
+			}
+			enumCount = 0;
+			prefix.close();
+			for (TailBranch branch : owner.branches) {
+				branch.close();
+				branch.memo.clear();
+			}
+			closeOwnerPrefixDepths(owner);
 		}
 	}
 

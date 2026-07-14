@@ -347,6 +347,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			return null;
 		}
 
+		/**
+		 * Seeks within the currently active branch only: a later branch restarts at its own range beginning, so callers
+		 * that need globally non-decreasing keys must ensure a single active branch (the composite's unordered
+		 * {@code indexName} reports a non-empty name exactly in that case).
+		 */
+		@Override
+		public boolean seekForward(long subj, long pred, long obj, long context) {
+			if (closed || current == null) {
+				return false;
+			}
+			return current.seekForward(subj, pred, obj, context);
+		}
+
 		@Override
 		public void close() {
 			if (!closed) {

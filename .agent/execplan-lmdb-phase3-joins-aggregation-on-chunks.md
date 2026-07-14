@@ -62,12 +62,35 @@ phase: the duplicated arity switches, `PayloadMap`, and the membership/filter me
   `aggState`; first reshape attempt kept ALL children because every member shares ?s — recorded in Surprises) +
   safety tests (optional var consumed by trailing pattern; aggregates over optional vars). Fuzz 10/10 + tail 35/35
   + NonCount/LeftJoinWellDesigned/Parallel/CountStar green.
-- [ ] Milestone D (next unit of work, design in Plan of Work): one keyed-match-store — `PatternMembershipProbe`
-  (EXISTS/MINUS) and `PatternPayloadProbe` (left-join hash payloads) rebased on a single build/probe core; filter
-  memo duplicates (`LongBooleanMemo` + `HashMap` multiMemo pairs) collapse into it.
-- [ ] Milestone E (next unit of work, design in Plan of Work): one arity-adaptive group table replacing the 4
-  switch copies (GroupStep `evaluateAll`, `evaluateOrderedGroupMap`, `evaluateFactorizedInternal`;
-  ParallelAggregation worker + mergeResults dispatch).
+- [x] (2026-07-14 16:15Z) Milestone D: one keyed-match-store — new `LmdbNativeKeyedMatches.java` (`KeyedMatches`):
+  arity-adaptive key core (1 key → open-addressed long table with dense entry ids; 2..4 keys → PrimitiveTupleTable;
+  0/wide → HashMap<GroupKey,Integer>) with roles as dense parallel arrays — presence (EXISTS), boolean verdicts
+  (memo, `withVerdicts()/memoGet/memoPut`), and an arena of LIFO-chained payload rows
+  (`initRows/addRowAt/head/next/payload`, `dropRows()` degrades to the key set at the row cap while key inserts
+  continue — the historical payloadOverflow behavior). Rebased: `PatternMembershipProbe` (LongMembership interface +
+  LongHashSet adapter deleted; contains()-probes the store), `PatternPayloadProbe` (PayloadMap + separate keySet →
+  one store; LIFO row chaining preserved for identical emission order; LEFTJOIN_HASH_BUILDS counter kept),
+  `StatementPatternExistsFilter` (singleMemo/multiMemo/multiProbe → one store memo), `ExistsFilter` (HashMap memo →
+  store memo), `ValueSetFilter` + `CachedCompareFilter` (LongBooleanMemo → store memo). Deleted: `PayloadMap`,
+  `LongBooleanMemo`, `LongMembership`. Adaptive build triggers stay in the probes (see Decision Log). Routine B
+  evidence: pre-green tests=34/0 fail (MembershipJoin/LeftJoinHash/LeftJoinWellDesigned/LeftJoinCursor/
+  LeftJoinFilterRewrite), post-green tests=34/0 fail same selection; fuzz + filter memo suites
+  (DifferentialFuzz/ExpressionFilter/QueryBoundFilter/AggregateFilterSemantics/FactorizedTailAggregation) 59/0 fail.
+  Hit Proof: `LmdbNativeLeftJoinHashTest:157-171` asserts LEFTJOIN_HASH_BUILDS across the rebased build path.
+- [x] (2026-07-14 15:55Z) Milestone E: one arity-adaptive group table — new `LmdbNativeGroupTable.java`
+  (`NativeGroupTable`, modes ZERO/SINGLE_SLOT/TUPLE_COUNTS/TUPLE_STATES/GENERIC) behind `add(RowState)`,
+  `aggregateFactorized(RowState, FactorizedTail)` (deferred group registration preserved), `mergeFrom` (COUNT-only,
+  parallel), `results(NativeGroupIteration)`, `strategyName()` (exact historical explain strings). All four sites
+  rebased: `evaluateAll` final dispatch (count fast path + row metrics preserved), `evaluateOrderedGroupMap`,
+  `evaluateFactorizedInternal` (+groupsByTail via `tailGrouped`), ParallelAggregation worker/mergeResults
+  (`WorkerResult` + `mergeLongGroups` deleted; workers now use the primitive tuple table for 2-4 keys instead of the
+  boxed HashMap — outputs identical, merge handles it). Deleted from GroupStep: `evaluateSingleSlotGroups`,
+  `singleSlotGroupResults`, `evaluatePrimitiveTupleGroups`, `primitiveCountState`, `primitiveCountResults`,
+  `primitiveGroupResults`, `evaluatePrimitiveFactorizedGroups` (−392/+33 lines across the two files). Routine B
+  evidence: pre-green tests=83/0 fail (PrimitiveGrouping/ParallelAggregation/FactorizedTailAggregation/NonCount/
+  CountStar), post-green tests=83/0 fail same selection, fuzz 10/10; Hit Proof:
+  `LmdbNativePrimitiveGroupingTest:99-110` asserts the PRIMITIVE_*_GROUP_ROWS counters now incremented inside
+  `NativeGroupTable.add`.
 - [x] (2026-07-14 10:00Z) Milestone F (success-bar verification): new `sumHubValue` variant in
   `FactorizedTailStarBenchmark` — **3.95 ms/op factorized vs 108.24 ms/op with `factorizedTail.enabled=false`
   (27.4×)**: SUM now runs at the COUNT-path asymptotics. Fuzz 10/10 (SUM/AVG/MIN/MAX generated shapes included in
@@ -75,6 +98,11 @@ phase: the duplicated arity switches, `PayloadMap`, and the membership/filter me
   green, formatter + copyright clean, final full-module verify run at close. W3C compliance 174/176 — both
   failures proven pre-existing LMDB-optimizer bugs, independent of Phases 2–3 (chips task_6aa18888,
   task_2d2bba68).
+
+- [x] (2026-07-14 16:40Z) Phase exit re-verification after D+E: full lmdb module verify — 1500 tests, 1 failure
+  (the known pre-existing `LmdbEvaluationStatisticsMemoizationTest#recordsLearnedFilterPassRatio...`), 0 errors;
+  theme ITs `LmdbImprovedQueryPlanSnapshotIT` 2/2 and `ThemeQueryBenchmarkSmokeIT` 10/10 green (exact explain
+  strategy strings preserved by `NativeGroupTable.strategyName()`). Phase 3 fully complete.
 
 ## Scope exclusion (2026-07-14, user instruction)
 
@@ -111,6 +139,18 @@ from filter placement or join-order decisions has to live in the native evaluati
 - Decision: milestone order A → B → C → E → D — the success-bar milestones first (A/B/C are what the user
   observes), then the behavior-neutral consolidations (E mechanical with heavy coverage, D last because it touches
   left-join semantics). Each lands with red→green tests + the differential fuzz. Date/Author: 2026-07-14 / Claude.
+- Decision (Milestone E): the TUPLE_COUNTS pure-count fast path is gated behind `allowCountFastPath`, passed true
+  only by the `evaluateAll` final dispatch (the historical behavior); the ordered-group-map and factorized/parallel
+  sites pass false, so their ≤4-key paths keep per-group AggStates exactly as before. Parallel workers now use the
+  primitive tuple table for 2-4 group keys where they previously used the boxed HashMap — outputs are identical and
+  `mergeFrom` handles the tuple merge; recorded as the one internal (non-observable) behavior change.
+  Date/Author: 2026-07-14 / Claude Code.
+- Decision (Milestone D): the adaptive build triggers (membership missThreshold=64; payload minProbes+validated
+  estimate) stay in the probe classes, not the store — they are policy about *when* to build, while `KeyedMatches`
+  owns *what is stored*; unifying the policies would change engagement behavior, which this consolidation must not.
+  `LongCountMap` (scan-once branch count tables) is NOT migrated: it lives inside `FactorizedTail`/`Branch`, which
+  the umbrella plan deletes wholesale with the Phase 5/6 chunk-native aggregate sink — migrating it now would be
+  churn on doomed code. The COUNT role lands with that sink. Date/Author: 2026-07-14 / Claude Code.
 - Decision: with A/B/C landed and fuzz-verified in one session, milestones D and E (keyed-match store, group-table
   consolidation) are NOT rushed into the same working tree at session end — they are pure consolidations with no
   user-visible behavior, each several hundred lines of mechanical movement across 4+ call sites, and the working
@@ -119,6 +159,11 @@ from filter placement or join-order decisions has to live in the native evaluati
   Date/Author: 2026-07-14 / Claude.
 
 ## Outcomes & Retrospective
+
+2026-07-14 (final): milestones D and E landed as pure Routine B consolidations — `NativeGroupTable` (one
+arity-adaptive group table, 4 dispatch copies deleted) and `KeyedMatches` (one keyed-match store; `PayloadMap`,
+`LongBooleanMemo`, `LongMembership` deleted). Full module + theme ITs green modulo the one known pre-existing
+failure. Every Phase 3 milestone is now checked off; the phase is closed.
 
 The phase's success bar is met: value-typed aggregates (SUM/AVG/MIN/MAX, non-distinct) ride the factorized tail —
 SUM over a star with unprojected legs went from 108.2 ms/op (enumerating) to 3.95 ms/op (27.4×, the COUNT-path

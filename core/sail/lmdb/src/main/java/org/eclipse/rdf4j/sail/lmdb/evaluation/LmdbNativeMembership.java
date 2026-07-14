@@ -94,13 +94,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
-@Experimental
-interface LongMembership {
-	void add(long id);
-
-	boolean contains(long id);
-}
-
 /**
  * Materializes the match set of a single statement pattern once and answers correlated existence probes with a set
  * lookup instead of a per-row index probe. Engages only when the pattern is correlated on exactly one bound slot (the
@@ -117,7 +110,7 @@ final class PatternMembershipProbe {
 	int misses;
 	boolean disabled;
 	int builtIdx = -1;
-	LongMembership membership;
+	KeyedMatches membership;
 
 	PatternMembershipProbe(Term[] terms, int[] varyingIdx) {
 		this.terms = terms;
@@ -182,10 +175,10 @@ final class PatternMembershipProbe {
 	}
 
 	boolean build(RowState row, int keyIdx) {
-		LongMembership set = newMembership();
-		if (set == null) {
+		if (!"hash".equals(System.getProperty("rdf4j.lmdb.membership.impl", "hash"))) {
 			return false;
 		}
+		KeyedMatches set = new KeyedMatches(1, 1024);
 		long maxSize = Long.getLong("rdf4j.lmdb.membership.maxSize", 4_000_000L);
 		long[] pattern = new long[4];
 		for (int i = 0; i < 4; i++) {
@@ -195,7 +188,7 @@ final class PatternMembershipProbe {
 		try (RecordIterator records = row.source.statements(pattern[0], pattern[1], pattern[2], pattern[3])) {
 			long[] record;
 			while ((record = records.next()) != null) {
-				set.add(record[keyIdx]);
+				set.findOrInsert(record[keyIdx]);
 				if (++n > maxSize) {
 					return false;
 				}
@@ -206,24 +199,5 @@ final class PatternMembershipProbe {
 		membership = set;
 		builtIdx = keyIdx;
 		return true;
-	}
-
-	static LongMembership newMembership() {
-		String impl = System.getProperty("rdf4j.lmdb.membership.impl", "hash");
-		if ("hash".equals(impl)) {
-			LongHashSet set = new LongHashSet(1024);
-			return new LongMembership() {
-				@Override
-				public void add(long id) {
-					set.add(id);
-				}
-
-				@Override
-				public boolean contains(long id) {
-					return set.contains(id);
-				}
-			};
-		}
-		return null;
 	}
 }

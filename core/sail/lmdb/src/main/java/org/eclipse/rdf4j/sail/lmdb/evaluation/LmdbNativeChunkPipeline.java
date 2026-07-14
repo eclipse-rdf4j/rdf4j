@@ -16,11 +16,13 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 /**
@@ -45,6 +47,30 @@ final class LmdbNativeChunkPipeline {
 	static final AtomicLong MEMO_REPLAYS = new AtomicLong();
 	/** Test observability: probe stages that flipped to a hash-join-style scan-once build. */
 	static final AtomicLong HASH_BUILDS = new AtomicLong();
+
+	/** Merge/zig-zag probing of order-aligned stages: one forward range walk instead of a cursor per probe key. */
+	static boolean mergeEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled"));
+	}
+
+	/** Test observability: probe stages that opened an order-aligned merge walk. */
+	static final AtomicLong MERGE_WALKS = new AtomicLong();
+	/** Test observability: forward seeks taken inside merge walks (gaps larger than the sequential threshold). */
+	static final AtomicLong MERGE_SEEKS = new AtomicLong();
+	/** Test observability: merge-mode rows that fell back to a classic per-key probe (defensive order check). */
+	static final AtomicLong MERGE_FALLBACKS = new AtomicLong();
+
+	/** Sideways information passing: a probe stage's hash-build key set prunes the root scan as a semi-join mask. */
+	static boolean sipEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.sip.enabled"));
+	}
+
+	/** Test observability: semi-join masks published to the root scan by completed hash builds. */
+	static final AtomicLong SIP_MASKS = new AtomicLong();
+	/** Test observability: raw root rows dropped by a semi-join mask before binding. */
+	static final AtomicLong SIP_MASKED_ROWS = new AtomicLong();
+	/** Test observability: forward seeks taken by the root scan across masked-out key runs. */
+	static final AtomicLong SIP_SEEKS = new AtomicLong();
 
 	static final int BATCH_ROWS = 1024;
 	/** Replay buffers beyond this many matches fall back to re-probing (bounded memory per stage). */
@@ -72,18 +98,208 @@ final class LmdbNativeChunkPipeline {
 				return null;
 			}
 		}
-		BatchStage stage = new ScanStage((PatternPlan) derived.order[0], row);
+		PatternPlan root = (PatternPlan) derived.order[0];
+		ScanStage rootStage = new ScanStage(root, row);
+		BatchStage stage = rootStage;
 		stage = appendDepthFilters(stage, plan, derived, 0, row);
 		long bound = row.boundMask() | derived.order[0].producedMask();
 		LmdbNativeLongArena arena = flatCount > 1 ? new LmdbNativeLongArena() : null;
+		int mergeStages = 0;
 		for (int d = 1; d < flatCount; d++) {
 			PatternPlan pattern = (PatternPlan) derived.order[d];
-			stage = new ProbeStage(stage, pattern, row, bound, memoBudget, arena);
+			MergePlan merge = tryPlanMerge(root, pattern, bound, row);
+			if (merge != null) {
+				mergeStages++;
+			}
+			SipTarget sip = merge == null ? trySipTarget(root, pattern, bound, row) : null;
+			stage = new ProbeStage(stage, pattern, row, bound, memoBudget, arena, merge, rootStage, sip);
 			stage = appendDepthFilters(stage, plan, derived, d, row);
 			bound |= pattern.producedMask();
 		}
 		ENGAGED.incrementAndGet();
-		return new ChunkPrefixRowCursor(stage, row);
+		ChunkPrefixRowCursor cursor = new ChunkPrefixRowCursor(stage, row);
+		cursor.mergeStages = mergeStages;
+		return cursor;
+	}
+
+	/**
+	 * The order-alignment gate for merge/zig-zag probing (Phase 4). A stage may replace per-key store probes with one
+	 * forward walk of the probe pattern's range exactly when both sides advance through the same key sequence: every
+	 * probe key slot must be freshly produced by the root pattern (not seed-bound, not bound by an intermediate stage),
+	 * the key slots must be the leading varying fields of the root's scan index (so the upstream row stream is globally
+	 * non-decreasing in them — inner nested-loop stages only duplicate adjacent rows and never reorder), and the probe
+	 * pattern must have an index that, with the key slots unbound, yields those key fields as its leading varying
+	 * fields in the same sequence. Fixed multi-context scans are excluded on both sides: their cursors concatenate or
+	 * merge per-context ranges, which breaks the single global key order the walk relies on.
+	 */
+	static MergePlan tryPlanMerge(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
+		if (!mergeEnabled()) {
+			return null;
+		}
+		long keyMask = pattern.producedMask() & boundBefore;
+		// single-key only: ordered scans over composite (explicit+inferred) sources merge per order field, which
+		// guarantees contiguous runs for one key field but not full multi-field tuple order
+		if (Long.bitCount(keyMask) != 1 || pattern.hasRepeatedSlot() || root.hasRepeatedSlot()) {
+			return null;
+		}
+		if ((keyMask & row.boundMask()) != 0L || (keyMask & ~root.producedMask()) != 0L) {
+			return null;
+		}
+		if (root.contexts.isFixed() && root.contexts.ids.length > 1
+				|| pattern.contexts.isFixed() && pattern.contexts.ids.length > 1) {
+			return null;
+		}
+		long rootSubj = root.s.lookup(row.slots);
+		long rootPred = root.p.lookup(row.slots);
+		long rootObj = root.o.lookup(row.slots);
+		long rootCtx = root.c.lookup(row.slots);
+		String rootIndex = root.statementOrder == null
+				? row.source.indexName(rootSubj, rootPred, rootObj, rootCtx)
+				: row.source.indexName(root.statementOrder, rootSubj, rootPred, rootObj, rootCtx);
+		int[] keySeqSlots = leadingKeySequence(rootIndex, root, row, keyMask);
+		if (keySeqSlots == null) {
+			return null;
+		}
+		StatementOrder order = statementOrderOf(pattern.quadPositionOfSlot(keySeqSlots[0]));
+		if (order == null) {
+			return null;
+		}
+		long sweepSubj = PatternPlan.lookupUnbinding(pattern.s, row.slots, keyMask);
+		long sweepPred = PatternPlan.lookupUnbinding(pattern.p, row.slots, keyMask);
+		long sweepObj = PatternPlan.lookupUnbinding(pattern.o, row.slots, keyMask);
+		long sweepCtx = PatternPlan.lookupUnbinding(pattern.c, row.slots, keyMask);
+		String sweepIndex = row.source.indexName(order, sweepSubj, sweepPred, sweepObj, sweepCtx);
+		if (!sweepAligned(sweepIndex, pattern, row, keySeqSlots, keyMask)) {
+			return null;
+		}
+		int[] keyQuadPos = new int[keySeqSlots.length];
+		for (int i = 0; i < keySeqSlots.length; i++) {
+			keyQuadPos[i] = pattern.quadPositionOfSlot(keySeqSlots[i]);
+		}
+		long[] targetTemplate = new long[4];
+		targetTemplate[TripleIndex.SUBJ_IDX] = sweepSubj == UNKNOWN ? 0L : sweepSubj;
+		targetTemplate[TripleIndex.PRED_IDX] = sweepPred == UNKNOWN ? 0L : sweepPred;
+		targetTemplate[TripleIndex.OBJ_IDX] = sweepObj == UNKNOWN ? 0L : sweepObj;
+		targetTemplate[TripleIndex.CONTEXT_IDX] = sweepCtx == UNKNOWN ? 0L : sweepCtx;
+		PatternPlan sweepPlan = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
+				pattern.namedContextScope, order, sweepIndex, pattern.staticEstimate);
+		return new MergePlan(sweepPlan, keySeqSlots, keyQuadPos, keyMask, targetTemplate);
+	}
+
+	/**
+	 * The probe key slots in root emission order, or null when they are not the leading varying fields of the root's
+	 * index (a non-key varying field or a slotless wildcard before the last key field means the key tuple stream is not
+	 * globally sorted).
+	 */
+	private static int[] leadingKeySequence(String rootIndex, PatternPlan root, RowState row, long keyMask) {
+		if (rootIndex.length() != 4) {
+			return null;
+		}
+		int[] sequence = new int[Long.bitCount(keyMask)];
+		int n = 0;
+		long remaining = keyMask;
+		for (int i = 0; i < rootIndex.length() && remaining != 0L; i++) {
+			int field = quadField(rootIndex.charAt(i));
+			Term term = termOf(root, field);
+			if (term.isConstant() || term.hasSlot() && row.slots[term.slot] != UNKNOWN) {
+				continue;
+			}
+			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && root.contexts.isFixed()
+					&& root.contexts.ids.length == 1;
+			if (fixedContext) {
+				continue;
+			}
+			if (!term.hasSlot()) {
+				return null;
+			}
+			long bit = 1L << term.slot;
+			if ((remaining & bit) == 0L) {
+				return null;
+			}
+			sequence[n++] = term.slot;
+			remaining &= ~bit;
+		}
+		return remaining == 0L ? sequence : null;
+	}
+
+	/** Whether the sweep index yields the key fields as its leading varying fields, in the given slot sequence. */
+	private static boolean sweepAligned(String sweepIndex, PatternPlan pattern, RowState row, int[] keySeqSlots,
+			long keyMask) {
+		if (sweepIndex.length() != 4) {
+			return false;
+		}
+		int next = 0;
+		for (int i = 0; i < sweepIndex.length() && next < keySeqSlots.length; i++) {
+			int field = quadField(sweepIndex.charAt(i));
+			Term term = termOf(pattern, field);
+			if (term.isConstant()) {
+				continue;
+			}
+			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && pattern.contexts.isFixed()
+					&& pattern.contexts.ids.length == 1;
+			if (fixedContext) {
+				continue;
+			}
+			if (term.hasSlot() && (keyMask & 1L << term.slot) == 0L && row.slots[term.slot] != UNKNOWN) {
+				// a non-key slot that is seed-bound stays bound in the sweep
+				continue;
+			}
+			if (!term.hasSlot() || term.slot != keySeqSlots[next]) {
+				return false;
+			}
+			next++;
+		}
+		return next == keySeqSlots.length;
+	}
+
+	private static int quadField(char field) {
+		return switch (field) {
+		case 's' -> TripleIndex.SUBJ_IDX;
+		case 'p' -> TripleIndex.PRED_IDX;
+		case 'o' -> TripleIndex.OBJ_IDX;
+		case 'c' -> TripleIndex.CONTEXT_IDX;
+		default -> -1;
+		};
+	}
+
+	private static Term termOf(PatternPlan pattern, int field) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> pattern.s;
+		case TripleIndex.PRED_IDX -> pattern.p;
+		case TripleIndex.OBJ_IDX -> pattern.o;
+		case TripleIndex.CONTEXT_IDX -> pattern.c;
+		default -> throw new IllegalArgumentException("Unknown quad field: " + field);
+		};
+	}
+
+	private static StatementOrder statementOrderOf(int field) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> StatementOrder.S;
+		case TripleIndex.PRED_IDX -> StatementOrder.P;
+		case TripleIndex.OBJ_IDX -> StatementOrder.O;
+		case TripleIndex.CONTEXT_IDX -> StatementOrder.C;
+		default -> null;
+		};
+	}
+
+	/** Order-alignment proof for one probe stage: the sweep pattern plus the shared key sequence. */
+	static final class MergePlan {
+		final PatternPlan sweepPlan;
+		/** Key slots in the shared emission order (root index order = sweep index order). */
+		final int[] keySlots;
+		/** Quad positions of those key slots on the probe pattern, index-aligned with {@link #keySlots}. */
+		final int[] keyQuadPos;
+		final long keyMask;
+		/** Seek-target template: constants and seed-bound values filled in, everything else zero. */
+		final long[] targetTemplate;
+
+		MergePlan(PatternPlan sweepPlan, int[] keySlots, int[] keyQuadPos, long keyMask, long[] targetTemplate) {
+			this.sweepPlan = sweepPlan;
+			this.keySlots = keySlots;
+			this.keyQuadPos = keyQuadPos;
+			this.keyMask = keyMask;
+			this.targetTemplate = targetTemplate;
+		}
 	}
 
 	private static BatchStage appendDepthFilters(BatchStage stage, MultiJoinPlan plan,
@@ -96,6 +312,130 @@ final class LmdbNativeChunkPipeline {
 		return stage;
 	}
 
+	/**
+	 * The SIP gate: a probe stage's completed hash build can prune the root scan when the stage's single key slot is
+	 * freshly produced by the root pattern — a root row whose key is absent from a table built by one complete
+	 * unfiltered sweep of the stage's range produces zero prefix rows (the chunk prefix is a pure inner-join
+	 * conjunction; FilterStages only remove more rows; OPTIONAL never occurs in the prefix), so dropping it before
+	 * binding cannot change any result. The mask additionally *seeks* across masked-out key runs only when the key is
+	 * the root's leading varying index field (ascending key runs) — otherwise it filters row by row.
+	 */
+	static SipTarget trySipTarget(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
+		if (!sipEnabled()) {
+			return null;
+		}
+		long keyMask = pattern.producedMask() & boundBefore;
+		if (Long.bitCount(keyMask) != 1 || root.hasRepeatedSlot()) {
+			return null;
+		}
+		if ((keyMask & row.boundMask()) != 0L || (keyMask & ~root.producedMask()) != 0L) {
+			return null;
+		}
+		int slot = Long.numberOfTrailingZeros(keyMask);
+		int quadPos = root.quadPositionOfSlot(slot);
+		if (quadPos < 0) {
+			return null;
+		}
+		boolean seekable = false;
+		if (!(root.contexts.isFixed() && root.contexts.ids.length > 1)) {
+			long rootSubj = root.s.lookup(row.slots);
+			long rootPred = root.p.lookup(row.slots);
+			long rootObj = root.o.lookup(row.slots);
+			long rootCtx = root.c.lookup(row.slots);
+			String rootIndex = root.statementOrder == null
+					? row.source.indexName(rootSubj, rootPred, rootObj, rootCtx)
+					: row.source.indexName(root.statementOrder, rootSubj, rootPred, rootObj, rootCtx);
+			seekable = leadingKeySequence(rootIndex, root, row, keyMask) != null;
+		}
+		long[] template = new long[4];
+		template[TripleIndex.SUBJ_IDX] = boundOrZero(root.s, row);
+		template[TripleIndex.PRED_IDX] = boundOrZero(root.p, row);
+		template[TripleIndex.OBJ_IDX] = boundOrZero(root.o, row);
+		template[TripleIndex.CONTEXT_IDX] = boundOrZero(root.c, row);
+		return new SipTarget(quadPos, seekable, template);
+	}
+
+	private static long boundOrZero(Term term, RowState row) {
+		long value = term.lookup(row.slots);
+		return value == UNKNOWN ? 0L : value;
+	}
+
+	/** Where a probe stage's semi-join mask lands on the root pattern, decided at pipeline construction. */
+	static final class SipTarget {
+		final int quadPos;
+		final boolean seekable;
+		final long[] template;
+
+		SipTarget(int quadPos, boolean seekable, long[] template) {
+			this.quadPos = quadPos;
+			this.seekable = seekable;
+			this.template = template;
+		}
+	}
+
+	/** A published semi-join mask: the sorted key ids of one completed hash build plus its root landing spot. */
+	static final class SipMask {
+		/** Key ids in unsigned ascending order (index key order). */
+		final long[] sortedKeys;
+		final int quadPos;
+		final boolean seekable;
+		final long[] template;
+
+		SipMask(long[] sortedKeys, int quadPos, boolean seekable, long[] template) {
+			this.sortedKeys = sortedKeys;
+			this.quadPos = quadPos;
+			this.seekable = seekable;
+			this.template = template;
+		}
+	}
+
+	/** Sorts ids into unsigned ascending order (signed sort, then the negative block moves to the tail). */
+	static void sortUnsigned(long[] keys) {
+		Arrays.sort(keys);
+		int negatives = 0;
+		while (negatives < keys.length && keys[negatives] < 0L) {
+			negatives++;
+		}
+		if (negatives > 0 && negatives < keys.length) {
+			long[] rotated = new long[keys.length];
+			System.arraycopy(keys, negatives, rotated, 0, keys.length - negatives);
+			System.arraycopy(keys, 0, rotated, keys.length - negatives, negatives);
+			System.arraycopy(rotated, 0, keys, 0, keys.length);
+		}
+	}
+
+	static boolean unsignedContains(long[] keys, long key) {
+		int low = 0;
+		int high = keys.length - 1;
+		while (low <= high) {
+			int mid = (low + high) >>> 1;
+			int cmp = Long.compareUnsigned(keys[mid], key);
+			if (cmp < 0) {
+				low = mid + 1;
+			} else if (cmp > 0) {
+				high = mid - 1;
+			} else {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Index of the smallest key strictly greater than {@code key} (unsigned), or {@code keys.length}. */
+	static int unsignedUpperBound(long[] keys, long key) {
+		int low = 0;
+		int high = keys.length;
+		while (low < high) {
+			int mid = (low + high) >>> 1;
+			if (Long.compareUnsigned(keys[mid], key) <= 0) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		return low;
+	}
+
 	/** One columnar stage of the prefix chain: fills a caller-owned batch, returns rows filled (0 = exhausted). */
 	interface BatchStage {
 		int fill(NativeBatch out) throws IOException;
@@ -105,10 +445,19 @@ final class LmdbNativeChunkPipeline {
 
 	/** Depth 0: drains the root pattern's scan into whole batches (the PatternBatchCursor bind discipline). */
 	static final class ScanStage implements BatchStage {
+		static final int MASK_ACCEPT = 0;
+		static final int MASK_SKIP = 1;
+		static final int MASK_SEEK = 2;
+		static final int MASK_EXHAUSTED = 3;
+
 		final PatternPlan pattern;
 		final RowState row;
 		final long[] seedSlots;
 		final long[] quads = new long[BATCH_ROWS * 4];
+		/** Semi-join masks published by downstream probe stages after their hash builds (SIP). */
+		final ArrayList<SipMask> masks = new ArrayList<>(1);
+		final long[] seekTarget = new long[4];
+		int consecutiveMaskMisses;
 		PatternCursor cursor;
 		boolean opened;
 		boolean closed;
@@ -117,6 +466,11 @@ final class LmdbNativeChunkPipeline {
 			this.pattern = pattern;
 			this.row = row;
 			this.seedSlots = Arrays.copyOf(row.slots, row.slots.length);
+		}
+
+		void publishMask(SipMask mask) {
+			masks.add(mask);
+			SIP_MASKS.incrementAndGet();
 		}
 
 		@Override
@@ -130,21 +484,69 @@ final class LmdbNativeChunkPipeline {
 				cursor = pattern.openRaw(row);
 			}
 			int outputRows = 0;
-			while (outputRows < out.capacity) {
+			refill: while (outputRows < out.capacity) {
 				int rawRows = cursor.fill(quads, out.capacity - outputRows);
 				if (rawRows == 0) {
 					close();
 					break;
 				}
 				for (int rawRow = 0; rawRow < rawRows; rawRow++) {
+					int offset = rawRow * 4;
+					if (!masks.isEmpty()) {
+						int verdict = masksVerdict(offset);
+						if (verdict == MASK_SKIP) {
+							continue;
+						}
+						if (verdict == MASK_SEEK) {
+							// the rest of this raw batch precedes the seek target: re-read from the target
+							continue refill;
+						}
+						if (verdict == MASK_EXHAUSTED) {
+							close();
+							break refill;
+						}
+					}
 					out.copyFromRow(seedSlots, outputRows);
-					if (bindQuad(pattern, quads, rawRow * 4, out, outputRows)) {
+					if (bindQuad(pattern, quads, offset, out, outputRows)) {
 						outputRows++;
 					}
 				}
 			}
 			out.finishRows(outputRows);
 			return outputRows;
+		}
+
+		/**
+		 * Applies the semi-join masks to one raw quad. A miss on a seekable mask after a run of consecutive misses
+		 * seeks the scan to the smallest mask key above the current one (ascending leading-field runs make everything
+		 * in between a guaranteed miss); a key beyond the largest mask key exhausts the scan entirely.
+		 */
+		private int masksVerdict(int offset) {
+			for (int m = 0; m < masks.size(); m++) {
+				SipMask mask = masks.get(m);
+				long key = quads[offset + mask.quadPos];
+				if (unsignedContains(mask.sortedKeys, key)) {
+					continue;
+				}
+				SIP_MASKED_ROWS.incrementAndGet();
+				if (mask.seekable && ++consecutiveMaskMisses >= SEEK_COST_KEYS) {
+					consecutiveMaskMisses = 0;
+					int upper = unsignedUpperBound(mask.sortedKeys, key);
+					if (upper >= mask.sortedKeys.length) {
+						return MASK_EXHAUSTED;
+					}
+					System.arraycopy(mask.template, 0, seekTarget, 0, 4);
+					seekTarget[mask.quadPos] = mask.sortedKeys[upper];
+					if (cursor.seekForward(seekTarget[TripleIndex.SUBJ_IDX], seekTarget[TripleIndex.PRED_IDX],
+							seekTarget[TripleIndex.OBJ_IDX], seekTarget[TripleIndex.CONTEXT_IDX])) {
+						SIP_SEEKS.incrementAndGet();
+						return MASK_SEEK;
+					}
+				}
+				return MASK_SKIP;
+			}
+			consecutiveMaskMisses = 0;
+			return MASK_ACCEPT;
 		}
 
 		@Override
@@ -208,9 +610,23 @@ final class LmdbNativeChunkPipeline {
 		boolean replayComplete;
 		int replayEmit = -1;
 		boolean closed;
+		/** Non-null when this stage runs order-aligned merge/zig-zag probing instead of per-key store probes. */
+		final MergePlan merge;
+		final long[] mergeTarget = new long[4];
+		final long[] mergePending = new long[4];
+		PatternCursor mergeCursor;
+		boolean mergePendingValid;
+		boolean mergeExhausted;
+		boolean mergeDraining;
+		final long[] mergeLastTarget = new long[4];
+		boolean mergeLastTargetValid;
+		/** SIP: where this stage's hash-build key set can prune the root scan; null when the gate refused. */
+		final ScanStage rootStage;
+		final SipTarget sip;
 
 		ProbeStage(BatchStage upstream, PatternPlan pattern, RowState row, long boundBefore,
-				FactorizedTail.MemoBudget memoBudget, LmdbNativeLongArena arena) {
+				FactorizedTail.MemoBudget memoBudget, LmdbNativeLongArena arena, MergePlan merge,
+				ScanStage rootStage, SipTarget sip) {
 			this.upstream = upstream;
 			this.pattern = pattern;
 			this.row = row;
@@ -237,6 +653,13 @@ final class LmdbNativeChunkPipeline {
 				this.keyQuadPos = null;
 				this.freshQuadPos = null;
 			}
+			this.merge = merge;
+			if (merge != null) {
+				// the merge walk sweeps at most once; a scan-once hash build would only duplicate it
+				this.hashBuildRefused = true;
+			}
+			this.rootStage = rootStage;
+			this.sip = sip;
 		}
 
 		@Override
@@ -249,6 +672,10 @@ final class LmdbNativeChunkPipeline {
 			while (outputRows < out.capacity) {
 				if (replayEmit >= 0) {
 					outputRows = emitReplay(out, outputRows);
+					continue;
+				}
+				if (mergeDraining) {
+					outputRows = drainMergeKey(out, outputRows);
 					continue;
 				}
 				if (open != null) {
@@ -286,6 +713,10 @@ final class LmdbNativeChunkPipeline {
 			}
 			lastKeyValid = true;
 			collectKey = null;
+			if (merge != null) {
+				startMergeRow(sameKey);
+				return;
+			}
 			if (hashTable == null && shouldBuildHashTable()) {
 				buildHashTable();
 			}
@@ -317,6 +748,149 @@ final class LmdbNativeChunkPipeline {
 			storeProbes++;
 			quadCount = 0;
 			quadIndex = 0;
+		}
+
+		/**
+		 * Merge/zig-zag variant of a key change: instead of opening a store probe for the new key, the shared range
+		 * cursor advances forward to it — sequential reads for near keys, one {@code seekForward} for far ones. The
+		 * alignment gate guarantees non-decreasing targets; a violated expectation (or a replay-overflowed duplicate
+		 * key, whose run the walk has already passed) falls back to a classic per-key probe for that row.
+		 */
+		private void startMergeRow(boolean sameKey) throws IOException {
+			replayMatches = 0;
+			replayComplete = true;
+			computeMergeTarget();
+			boolean descending = mergeLastTargetValid && compareTargets(mergeTarget, mergeLastTarget) < 0;
+			if (sameKey || descending) {
+				// sameKey here implies the replay buffer overflowed for this key (complete replays returned above)
+				if (descending) {
+					MERGE_FALLBACKS.incrementAndGet();
+				}
+				openClassicProbe();
+				return;
+			}
+			System.arraycopy(mergeTarget, 0, mergeLastTarget, 0, 4);
+			mergeLastTargetValid = true;
+			if (mergeExhausted) {
+				replayEmit = 0;
+				return;
+			}
+			if (mergeCursor == null) {
+				System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
+				mergeCursor = merge.sweepPlan.openRawUnbinding(row, merge.keyMask, null);
+				MERGE_WALKS.incrementAndGet();
+			}
+			if (!advanceToTarget()) {
+				replayEmit = 0;
+				return;
+			}
+			mergeDraining = true;
+		}
+
+		private void openClassicProbe() throws IOException {
+			if (probe == null) {
+				probe = row.source.newProbe();
+			}
+			System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
+			open = pattern.openRaw(row, probe);
+			storeProbes++;
+			quadCount = 0;
+			quadIndex = 0;
+		}
+
+		private void computeMergeTarget() {
+			System.arraycopy(merge.targetTemplate, 0, mergeTarget, 0, 4);
+			for (int i = 0; i < merge.keySlots.length; i++) {
+				mergeTarget[merge.keyQuadPos[i]] = scratch[merge.keySlots[i]];
+			}
+		}
+
+		/** Compares two target quads on the key fields, in the shared emission order (unsigned, like index keys). */
+		private int compareTargets(long[] left, long[] right) {
+			for (int i = 0; i < merge.keyQuadPos.length; i++) {
+				int cmp = Long.compareUnsigned(left[merge.keyQuadPos[i]], right[merge.keyQuadPos[i]]);
+				if (cmp != 0) {
+					return cmp;
+				}
+			}
+			return 0;
+		}
+
+		/**
+		 * Advances the walk until the pending quad's key tuple is ≥ the target. Returns true when it equals the target
+		 * (a match run starts); false on a miss or when the range is exhausted.
+		 */
+		private boolean advanceToTarget() throws IOException {
+			int discarded = 0;
+			boolean sought = false;
+			while (true) {
+				if (!mergePendingValid) {
+					long[] quad = mergeCursor.next();
+					if (quad == null) {
+						mergeExhausted = true;
+						mergeCursor.close();
+						mergeCursor = null;
+						return false;
+					}
+					System.arraycopy(quad, 0, mergePending, 0, 4);
+					mergePendingValid = true;
+				}
+				int cmp = compareTargets(mergePending, mergeTarget);
+				if (cmp == 0) {
+					return true;
+				}
+				if (cmp > 0) {
+					return false;
+				}
+				mergePendingValid = false;
+				if (!sought && ++discarded >= SEEK_COST_KEYS) {
+					sought = true;
+					if (mergeCursor.seekForward(mergeTarget[TripleIndex.SUBJ_IDX], mergeTarget[TripleIndex.PRED_IDX],
+							mergeTarget[TripleIndex.OBJ_IDX], mergeTarget[TripleIndex.CONTEXT_IDX])) {
+						MERGE_SEEKS.incrementAndGet();
+					}
+				}
+			}
+		}
+
+		/** Emits the current target key's match run from the walk, recording replays like a classic probe. */
+		private int drainMergeKey(NativeBatch out, int outputRows) throws IOException {
+			while (outputRows < out.capacity) {
+				if (!mergePendingValid) {
+					long[] quad = mergeCursor == null ? null : mergeCursor.next();
+					if (quad == null) {
+						mergeExhausted = true;
+						if (mergeCursor != null) {
+							mergeCursor.close();
+							mergeCursor = null;
+						}
+						endMergeKey();
+						return outputRows;
+					}
+					System.arraycopy(quad, 0, mergePending, 0, 4);
+					mergePendingValid = true;
+				}
+				if (compareTargets(mergePending, mergeTarget) != 0) {
+					endMergeKey();
+					return outputRows;
+				}
+				if (rejectNullContext && mergePending[TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+					mergePendingValid = false;
+					continue;
+				}
+				out.copyFromRow(scratch, outputRows);
+				if (bindQuad(pattern, mergePending, 0, out, outputRows)) {
+					recordReplay(out, outputRows);
+					outputRows++;
+				}
+				mergePendingValid = false;
+			}
+			return outputRows;
+		}
+
+		private void endMergeKey() {
+			mergeDraining = false;
+			inputIndex++;
 		}
 
 		/** Loads a memo/table entry ({arena offset, matches}, or null for no matches) into the replay buffer. */
@@ -417,6 +991,15 @@ final class LmdbNativeChunkPipeline {
 			}
 			memo.clear();
 			hashTable = table;
+			if (sip != null && sipEnabled()) {
+				long[] maskKeys = new long[table.size()];
+				int n = 0;
+				for (GroupKey key : table.keySet()) {
+					maskKeys[n++] = key.ids[0];
+				}
+				sortUnsigned(maskKeys);
+				rootStage.publishMask(new SipMask(maskKeys, sip.quadPos, sip.seekable, sip.template));
+			}
 		}
 
 		/** Commits a completed probe's replay buffer to the arena-backed memo (second visit of its key). */
@@ -520,6 +1103,10 @@ final class LmdbNativeChunkPipeline {
 					open.close();
 					open = null;
 				}
+				if (mergeCursor != null) {
+					mergeCursor.close();
+					mergeCursor = null;
+				}
 				if (probe != null) {
 					probe.close();
 					probe = null;
@@ -622,6 +1209,8 @@ final class LmdbNativeChunkPipeline {
 		final BatchStage stage;
 		final RowState row;
 		final NativeBatch batch;
+		/** How many probe stages run in merge/zig-zag mode, for the explain engagement string. */
+		int mergeStages;
 		int index;
 		int count;
 		boolean closed;

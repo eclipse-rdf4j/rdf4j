@@ -156,13 +156,11 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	/**
 	 * Slots whose current values determine the outcome; the terms are explicit so this is exact. Correlated probes
 	 * repeat the same slot values constantly (per outer row of a join), so the LMDB lookups are memoized on those
-	 * values: a single varying slot uses the primitive memo, several use a probe-reuse hash map.
+	 * values through the arity-adaptive keyed-match store.
 	 */
 	final int[] varyingSlots;
-	final LongBooleanMemo singleMemo;
 	final PatternMembershipProbe membershipProbe;
-	HashMap<GroupKey, Boolean> multiMemo;
-	GroupKey multiProbe;
+	KeyedMatches memo;
 	byte constantResult;
 
 	StatementPatternExistsFilter(NativeLmdbQuerySource source, Term s, Term p, Term o, Term c,
@@ -182,7 +180,6 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		this.varyingSlots = Arrays.copyOf(varying, n);
-		this.singleMemo = n == 1 ? new LongBooleanMemo(256) : null;
 		this.membershipProbe = PatternMembershipProbe.tryCreate(s, p, o, c, contexts, namedContextScope);
 	}
 
@@ -209,27 +206,15 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			constantResult = result ? (byte) 1 : (byte) 2;
 			return result;
 		}
-		if (varyingSlots.length == 1) {
-			long key = row.slots[varyingSlots[0]];
-			Boolean cached = singleMemo.get(key);
-			if (cached != null) {
-				return cached;
-			}
-			boolean result = evaluate(subj, pred, obj, context);
-			singleMemo.put(key, result);
-			return result;
+		if (memo == null) {
+			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
 		}
-		if (multiMemo == null) {
-			multiMemo = new HashMap<>();
-			multiProbe = new GroupKey(new long[varyingSlots.length]);
-		}
-		multiProbe.refill(row.slots, varyingSlots);
-		Boolean cached = multiMemo.get(multiProbe);
+		Boolean cached = memo.memoGet(row.slots, varyingSlots);
 		if (cached != null) {
 			return cached;
 		}
 		boolean result = evaluate(subj, pred, obj, context);
-		multiMemo.put(multiProbe.storedCopy(), result);
+		memo.memoPut(row.slots, varyingSlots, result);
 		return result;
 	}
 
@@ -274,8 +259,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 	 */
 	final int[] memoSlots;
 	final PatternMembershipProbe membershipProbe;
-	HashMap<GroupKey, Boolean> memo;
-	GroupKey probe;
+	KeyedMatches memo;
 
 	ExistsFilter(SlotPlan subPlan) {
 		this.subPlan = subPlan;
@@ -300,16 +284,14 @@ final class ExistsFilter implements NativeBooleanFilter {
 			return exists(row);
 		}
 		if (memo == null) {
-			memo = new HashMap<>();
-			probe = new GroupKey(new long[memoSlots.length]);
+			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
 		}
-		probe.refill(row.slots, memoSlots);
-		Boolean cached = memo.get(probe);
+		Boolean cached = memo.memoGet(row.slots, memoSlots);
 		if (cached != null) {
 			return cached;
 		}
 		boolean result = exists(row);
-		memo.put(probe.storedCopy(), result);
+		memo.memoPut(row.slots, memoSlots, result);
 		return result;
 	}
 
@@ -329,7 +311,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	final long[] accepted;
 	final Value[] queryValues;
 	final Value[] acceptedValues;
-	final LongBooleanMemo memo = new LongBooleanMemo(256);
+	final KeyedMatches memo = new KeyedMatches(1, 256).withVerdicts();
 
 	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted) {
 		this(source, slot, accepted, null);
@@ -354,7 +336,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 				return true;
 			}
 		}
-		Boolean cached = memo.get(id);
+		Boolean cached = memo.memoGet(id);
 		if (cached != null) {
 			return cached;
 		}
@@ -371,7 +353,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		} catch (RuntimeException e) {
 			result = false;
 		}
-		memo.put(id, result);
+		memo.memoPut(id, result);
 		return result;
 	}
 
@@ -398,7 +380,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final Predicate<BindingSet> fallback;
 	final LmdbNativeValueCodec codec;
 	final LmdbNativeValueCodec.DecodedValue constantDecoded;
-	final LongBooleanMemo memo = new LongBooleanMemo(512);
+	final KeyedMatches memo = new KeyedMatches(1, 512).withVerdicts();
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict,
@@ -424,7 +406,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 			boolean equal = id == constant;
 			return op == Compare.CompareOp.EQ ? equal : !equal;
 		}
-		Boolean cached = memo.get(id);
+		Boolean cached = memo.memoGet(id);
 		if (cached != null) {
 			return cached;
 		}
@@ -434,12 +416,12 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op, strict)
 					: LmdbNativeExpressionCompiler.compareAsBoolean(value, constantDecoded, op, strict);
 			if (result != null) {
-				memo.put(id, result);
+				memo.memoPut(id, result);
 				return result;
 			}
 		}
 		boolean result = fallback.test(row.view);
-		memo.put(id, result);
+		memo.memoPut(id, result);
 		return result;
 	}
 }

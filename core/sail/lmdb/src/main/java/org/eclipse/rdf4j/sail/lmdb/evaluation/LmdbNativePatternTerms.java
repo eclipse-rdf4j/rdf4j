@@ -291,6 +291,19 @@ final class PatternCursor implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Forwards a seek to the underlying range iterator (see {@link RecordIterator#seekForward}). Supported only for
+	 * single-range cursors; fixed-multi-context concatenations and existence stubs report {@code false}, and callers
+	 * fall back to plain iteration. Open quad fields in the target must be passed as {@code 0} (the lowest key value),
+	 * not {@code UNKNOWN}.
+	 */
+	boolean seekForward(long subj, long pred, long obj, long context) {
+		if (closed || syntheticRow != null || contexts != null || current == null) {
+			return false;
+		}
+		return current.seekForward(subj, pred, obj, context);
+	}
+
 	@Override
 	public void close() {
 		if (!closed) {
