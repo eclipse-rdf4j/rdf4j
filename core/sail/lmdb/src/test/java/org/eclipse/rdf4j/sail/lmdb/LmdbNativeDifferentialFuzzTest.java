@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -243,8 +244,8 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	/**
-	 * Both engines sort ORDER BY with a strict-mode {@link ValueComparator} under the default (STRICT) query
-	 * evaluation mode, so the same comparator is the sortedness oracle.
+	 * Both engines sort ORDER BY with a strict-mode {@link ValueComparator} under the default (STRICT) query evaluation
+	 * mode, so the same comparator is the sortedness oracle.
 	 */
 	private static final ValueComparator ORDER_KEY_COMPARATOR = new ValueComparator();
 
