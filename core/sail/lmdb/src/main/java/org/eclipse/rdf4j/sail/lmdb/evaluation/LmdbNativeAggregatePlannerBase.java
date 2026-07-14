@@ -97,6 +97,12 @@ import org.eclipse.rdf4j.sail.SailException;
 abstract class LmdbNativeAggregatePlannerBase {
 	final QueryEvaluationContext context;
 	final LmdbNativeEvaluationStrategy strategy;
+
+	/** Whether comparisons follow STRICT SPARQL 1.1 operator semantics (vs the extended value space). */
+	boolean strictCompare() {
+		return strategy.getQueryEvaluationMode() == org.eclipse.rdf4j.common.transaction.QueryEvaluationMode.STRICT;
+	}
+
 	final NativeLmdbQuerySource source;
 	final Map<String, Integer> slots = new HashMap<>();
 	final NativeSlotLayout layout;

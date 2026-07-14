@@ -118,31 +118,43 @@ final class Branch {
 	final PatternPlan pattern;
 	final boolean rejectNullContext;
 	final int[] memoKeySlots;
-	final int[] distinctQuadPos;
+	final int[] valueQuadPos;
 	final boolean existenceOnly;
 	final boolean memoEnabled;
 	/** The single row-varying correlated slot when scan-once mode is applicable, else -1. */
 	final int varyingSlot;
 	final int varyingQuadPos;
+	/** Branch-local filters: they read this branch's fresh slots plus prefix slots (part of the memo key). */
+	final NativeBooleanFilter[] filters;
+	final int[] freshSlots;
+	final int[] freshQuadPos;
 	final long[] batch = new long[FILL_ROWS * 4];
+	final FactorizedTail.MemoBudget budget;
 	NativeLmdbQuerySource.NativeProbe probe;
 	HashMap<GroupKey, BranchResult> memo;
 	GroupKey probeKey;
 	int memoMisses;
 	long cumulativeScanned;
+	int reservedEntries;
+	long reservedValues;
 	/** Non-null once the branch flipped to scan-once mode: one sequential sweep, bucketed by key. */
 	LongCountMap countTable;
 
-	Branch(PatternPlan pattern, int[] memoKeySlots, int[] distinctQuadPos, boolean existenceOnly,
-			boolean memoEnabled, int varyingSlot, int varyingQuadPos) {
+	Branch(PatternPlan pattern, int[] memoKeySlots, int[] valueQuadPos, boolean existenceOnly,
+			boolean memoEnabled, int varyingSlot, int varyingQuadPos, FactorizedTail.MemoBudget budget,
+			NativeBooleanFilter[] filters, int[] freshSlots, int[] freshQuadPos) {
 		this.pattern = pattern;
 		this.rejectNullContext = pattern.rejectsNullContextAtBind();
 		this.memoKeySlots = memoKeySlots;
-		this.distinctQuadPos = distinctQuadPos;
+		this.valueQuadPos = valueQuadPos;
 		this.existenceOnly = existenceOnly;
 		this.memoEnabled = memoEnabled;
 		this.varyingSlot = varyingSlot;
 		this.varyingQuadPos = varyingQuadPos;
+		this.budget = budget;
+		this.filters = filters;
+		this.freshSlots = freshSlots;
+		this.freshQuadPos = freshQuadPos;
 	}
 
 	NativeLmdbQuerySource.NativeProbe probe(RowState row) {
@@ -182,21 +194,54 @@ final class Branch {
 		BranchResult result = scan(row);
 		memoMisses++;
 		cumulativeScanned += result.count;
+		// only trust a finite, positive sweep estimate: NaN or negative would cast to a tiny long and
+		// flip prematurely into a full-range sweep (PatternPlan.estimate has the same guard)
+		double sweepEstimate = pattern.staticEstimate;
 		if (varyingSlot >= 0 && memoMisses >= SCAN_ONCE_MIN_MISSES
-				&& memoMisses * (long) SEEK_COST_KEYS + cumulativeScanned >= (long) pattern.staticEstimate) {
+				&& Double.isFinite(sweepEstimate) && sweepEstimate > 0
+				&& memoMisses * (long) SEEK_COST_KEYS + cumulativeScanned >= (long) sweepEstimate) {
 			// probing has cost about as much as one sequential sweep of the whole branch range:
-			// flip to hash-join-style evaluation — scan once, bucket counts per correlated key
+			// flip to hash-join-style evaluation — scan once, bucket counts per correlated key.
+			// The dropped memo returns its budget so sibling memos regain the headroom.
 			buildCountTable(row);
 			memo = null;
 			probeKey = null;
+			budget.release(reservedEntries, reservedValues);
+			reservedEntries = 0;
+			reservedValues = 0;
 			return result;
 		}
-		if (distinctQuadPos.length > 0 && result.count > MAX_CACHED_VALUES) {
-			memo.put(probeKey.storedCopy(), TOO_LARGE);
+		if (valueQuadPos.length > 0 && result.count > MAX_CACHED_VALUES) {
+			if (budget.tryReserve(1, 0)) {
+				reservedEntries++;
+				memo.put(probeKey.storedCopy(), TOO_LARGE);
+			}
 		} else {
-			memo.put(probeKey.storedCopy(), result);
+			long stored = (long) valueQuadPos.length * result.count;
+			if (budget.tryReserve(1, stored)) {
+				reservedEntries++;
+				reservedValues += stored;
+				memo.put(probeKey.storedCopy(), result);
+			}
 		}
 		return result;
+	}
+
+	/**
+	 * Evaluates the branch's filters for one candidate quad by temporarily binding the fresh slots through the row's
+	 * trail (filters may consult the binding view, which the trail keeps consistent).
+	 */
+	boolean acceptFilters(RowState row, long[] buffer, int base) {
+		int mark = row.mark();
+		boolean ok = true;
+		for (int j = 0; j < freshSlots.length && ok; j++) {
+			ok = row.bind(freshSlots[j], buffer[base + freshQuadPos[j]]);
+		}
+		for (int f = 0; f < filters.length && ok; f++) {
+			ok = filters[f].accept(row);
+		}
+		row.rollback(mark);
+		return ok;
 	}
 
 	void buildCountTable(RowState row) throws IOException {
@@ -220,12 +265,13 @@ final class Branch {
 	BranchResult scan(RowState row) throws IOException {
 		long count = 0;
 		long[][] values = null;
-		if (distinctQuadPos.length > 0) {
-			values = new long[distinctQuadPos.length][16];
+		if (valueQuadPos.length > 0) {
+			values = new long[valueQuadPos.length][16];
 		}
 		try (PatternCursor cursor = pattern.openRaw(row, probe(row))) {
-			// a branch nothing consumes needs only existence: pull a single record per fill
-			int max = existenceOnly ? 1 : FILL_ROWS;
+			// a branch nothing consumes needs only existence: pull a single record per fill (unless
+			// per-quad checks may reject records, in which case single-record fills thrash)
+			int max = existenceOnly && filters.length == 0 && !rejectNullContext ? 1 : FILL_ROWS;
 			int rows;
 			while ((rows = cursor.fill(batch, max)) > 0) {
 				for (int i = 0; i < rows; i++) {
@@ -233,12 +279,23 @@ final class Branch {
 					if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
 						continue;
 					}
+					if (filters.length > 0 && !acceptFilters(row, batch, offset)) {
+						continue;
+					}
 					if (values != null) {
-						for (int d = 0; d < distinctQuadPos.length; d++) {
+						if (count >= MAX_COLLECTED_VALUES) {
+							// the int-indexed value lists are at the maximum array size; wrapping the
+							// index would read/write garbage, so fail clearly instead
+							throw new QueryEvaluationException(
+									"factorized DISTINCT collection overflow: a single probe key fans out "
+											+ "beyond the maximum in-memory value batch");
+						}
+						for (int d = 0; d < valueQuadPos.length; d++) {
 							if (count == values[d].length) {
-								values[d] = Arrays.copyOf(values[d], values[d].length * 2);
+								values[d] = Arrays.copyOf(values[d],
+										(int) Math.min(MAX_COLLECTED_VALUES, values[d].length * 2L));
 							}
-							values[d][(int) count] = batch[offset + distinctQuadPos[d]];
+							values[d][(int) count] = batch[offset + valueQuadPos[d]];
 						}
 					}
 					count++;

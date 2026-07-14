@@ -47,6 +47,12 @@ final class LmdbNativeHashJoin {
 		}
 		PatternPlan left = (PatternPlan) plan.children[0];
 		PatternPlan right = (PatternPlan) plan.children[1];
+		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+			// correlated entry: this cursor is re-opened per outer row, so a build would sweep the store
+			// each time, and the static estimates below don't describe the bound-prefix scans anyway —
+			// the nested-loop chain is the strategy that exploits the entry binding
+			return null;
+		}
 		long keyMask = left.producedMask() & right.producedMask() & ~row.boundMask();
 		int keyWidth = Long.bitCount(keyMask);
 		if (keyWidth == 0 || keyWidth > 4 || !safeContextKeys(left, right, keyMask)) {

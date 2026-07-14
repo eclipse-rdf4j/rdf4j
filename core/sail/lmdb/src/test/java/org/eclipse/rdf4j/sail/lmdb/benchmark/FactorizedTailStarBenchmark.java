@@ -69,7 +69,8 @@ public class FactorizedTailStarBenchmark {
 			"countDistinctHub",
 			"countTail",
 			"countDistinctTail",
-			"groupByTail"
+			"groupByTail",
+			"sumHubValue"
 	})
 	public String variant;
 
@@ -87,8 +88,11 @@ public class FactorizedTailStarBenchmark {
 			IRI p1 = vf.createIRI(EX, "p1");
 			IRI p2 = vf.createIRI(EX, "p2");
 			conn.begin();
+			IRI pn = vf.createIRI(EX, "pn");
 			for (int hub = 0; hub < HUBS; hub++) {
 				IRI subject = vf.createIRI(EX, "hub" + hub);
+				// one numeric per hub: SUM(?n) over the star = Σ hub × (P1_FANOUT × P2_FANOUT)
+				conn.add(subject, pn, vf.createLiteral(hub));
 				for (int i = 0; i < P1_FANOUT; i++) {
 					conn.add(subject, p1, vf.createIRI(EX, "a" + (hub * P1_FANOUT + i)));
 				}
@@ -120,6 +124,17 @@ public class FactorizedTailStarBenchmark {
 			query = star("?b (COUNT(?s) AS ?count)", "") + " GROUP BY ?b";
 			// per group: (HUBS * P2_FANOUT / P2_DISTINCT_VALUES) hub-matches x P1_FANOUT
 			expected = (long) HUBS * P2_FANOUT / P2_DISTINCT_VALUES * P1_FANOUT;
+			break;
+		case "sumHubValue":
+			// Phase 3: value-typed aggregate over a prefix slot with two counting branches — the sum
+			// contribution per hub is value × product of branch counts instead of per-row addition
+			query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT (SUM(?n) AS ?count) WHERE {\n"
+					+ "  ?s ex:pn ?n .\n"
+					+ "  ?s ex:p1 ?a .\n"
+					+ "  ?s ex:p2 ?b .\n"
+					+ "}";
+			expected = (long) HUBS * (HUBS - 1) / 2 * P1_FANOUT * P2_FANOUT;
 			break;
 		default:
 			throw new IllegalArgumentException(variant);

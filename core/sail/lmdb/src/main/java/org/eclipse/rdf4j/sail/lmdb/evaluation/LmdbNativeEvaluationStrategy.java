@@ -86,11 +86,6 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			if (aggregateStep != null) {
 				return aggregateStep;
 			}
-
-			QueryEvaluationStep nativeStep = LmdbNativeQueryCompiler.tryCompile(expr, context, this, nativeSource);
-			if (nativeStep != null) {
-				return nativeStep;
-			}
 		}
 		return super.precompile(expr, context);
 	}
@@ -131,10 +126,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		if (LmdbNativeExplain.isMarked(expr)) {
 			return;
 		}
-		if (LmdbNativeAggregateCompiler.tryAnnotateForExplain(expr, context, this, nativeSource)) {
-			return;
-		}
-		LmdbNativeQueryCompiler.tryAnnotateForExplain(expr, context, this, nativeSource);
+		LmdbNativeAggregateCompiler.tryAnnotateForExplain(expr, context, this, nativeSource);
 	}
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {

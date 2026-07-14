@@ -130,12 +130,57 @@ interface SlotPlan {
 		return new JoinPlan(left, right);
 	}
 
+	/**
+	 * The slots this plan binds on EVERY emitted row (in contrast to {@link #producedMask()}, which includes slots an
+	 * OPTIONAL arm may leave unbound). Conservative: unknown plan kinds report nothing assured. Used to decide whether
+	 * a trailing pattern may factorize against a prefix containing optional bindings.
+	 */
+	static long assuredMask(SlotPlan plan) {
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan) {
+			return plan.producedMask();
+		}
+		if (plan instanceof ValuesPlan) {
+			return ((ValuesPlan) plan).bindsAllSlotsEveryRow ? plan.producedMask() : 0L;
+		}
+		if (plan instanceof FilterPlan) {
+			return assuredMask(((FilterPlan) plan).arg);
+		}
+		if (plan instanceof JoinPlan) {
+			JoinPlan join = (JoinPlan) plan;
+			return assuredMask(join.left) | assuredMask(join.right);
+		}
+		if (plan instanceof MultiJoinPlan) {
+			long assured = 0L;
+			for (SlotPlan child : ((MultiJoinPlan) plan).children) {
+				assured |= assuredMask(child);
+			}
+			return assured;
+		}
+		if (plan instanceof LeftJoinPlan) {
+			return assuredMask(((LeftJoinPlan) plan).left);
+		}
+		if (plan instanceof UnionPlan) {
+			UnionPlan union = (UnionPlan) plan;
+			return assuredMask(union.left) & assuredMask(union.right);
+		}
+		if (plan instanceof MinusPlan) {
+			return assuredMask(((MinusPlan) plan).left);
+		}
+		return 0L;
+	}
+
 	static boolean canFlatten(SlotPlan plan) {
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
 			return filterPlan.filterMask >= 0L && canFlatten(filterPlan.arg);
 		}
-		return plan instanceof PatternPlan || plan instanceof MultiJoinPlan;
+		// self-contained inner-join leaves are reorder-safe bag members: they read only their own
+		// produced slots AND bind every produced slot on every row (the bag's planners — filter
+		// placement, the factorized splits — treat produced slots as bound). VALUES with UNDEF rows
+		// violates that guarantee and stays outside the bag.
+		return plan instanceof PatternPlan || plan instanceof MultiJoinPlan
+				|| (plan instanceof ValuesPlan && ((ValuesPlan) plan).bindsAllSlotsEveryRow)
+				|| plan instanceof MultiValuePatternPlan;
 	}
 
 	static void collectFlattenable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {

@@ -98,43 +98,96 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 final class FactorizedTail {
 	static final AtomicLong ENGAGED = new AtomicLong();
 	static final AtomicLong SCAN_ONCE_BUILDS = new AtomicLong();
+	static final AtomicLong MEMO_BYPASSES = new AtomicLong();
 	static final boolean ENABLED = !"false"
 			.equals(System.getProperty("rdf4j.lmdb.factorizedTail.enabled"));
 	static final int FILL_ROWS = 64;
 	static final int MAX_CACHED_VALUES = 1 << 14;
+	static final int MEMO_MAX_ENTRIES = 1 << 16;
+	static final long MEMO_MAX_STORED_VALUES = 1L << 20;
+	/** Hard ceiling for any single in-memory value batch: the maximum safe array length. */
+	static final long MAX_COLLECTED_VALUES = Integer.MAX_VALUE - 8;
 	static final BranchResult TOO_LARGE = new BranchResult(-1, null);
 
+	/**
+	 * One budget shared by every memo of one factorized sink (all branch memos plus the grouped memo), so total cached
+	 * state stays bounded regardless of probe-key cardinality. A failed reservation means the result is simply not
+	 * cached — callers fall back to re-scanning, never to wrong answers. Consumers that drop their cached state (the
+	 * scan-once flip) return their reservations so sibling memos regain the headroom.
+	 */
+	static final class MemoBudget {
+		private final AtomicLong bypassCounter;
+		private int entries;
+		private long storedValues;
+		private boolean bypassReported;
+
+		MemoBudget(AtomicLong bypassCounter) {
+			this.bypassCounter = bypassCounter;
+		}
+
+		boolean tryReserve(int newEntries, long newValues) {
+			if (entries + newEntries > MEMO_MAX_ENTRIES || storedValues + newValues > MEMO_MAX_STORED_VALUES) {
+				// report once per sink: the counter signals that bypassing happened, and a per-refusal
+				// atomic increment would contend across parallel workers on the per-key hot path
+				if (!bypassReported) {
+					bypassReported = true;
+					bypassCounter.incrementAndGet();
+				}
+				return false;
+			}
+			entries += newEntries;
+			storedValues += newValues;
+			return true;
+		}
+
+		void release(int releasedEntries, long releasedValues) {
+			entries -= releasedEntries;
+			storedValues -= releasedValues;
+		}
+	}
+
 	final Branch[] branches;
+	final MemoBudget memoBudget;
 	final AggregateSpec[] specs;
 	final AggregateDistinctChannels hashDistinctChannels;
 	/** Branch index whose fresh slot each spec reads, or -1 for prefix/constant specs. */
 	final int[] specBranch;
-	/** For branch specs: the value-list column within the branch result (DISTINCT) — see Branch. */
+	/** For branch specs needing per-record values (DISTINCT or value-typed): the branch result's value column. */
 	final int[] specValueColumn;
 	/** Quad position feeding the single group key when the (single) branch produces it, or -1. */
 	final int tailGroupPos;
 	final boolean groupedMemoEnabled;
+	/** Filters at tail depths that read no branch fresh slot: their verdict is constant per prefix row. */
+	final NativeBooleanFilter[] prefixOnlyTailFilters;
 	final BranchResult[] resultScratch;
 	boolean engagementRecorded;
 	/** Sentinel (compared by identity) for grouped results too large to cache. */
 	static final long[] GROUPED_TOO_LARGE = new long[] { -1 };
+	static final int[] NO_SLOTS = new int[0];
 	HashMap<GroupKey, long[]> groupedMemo;
 	GroupKey groupedProbe;
 
-	FactorizedTail(Branch[] branches, AggregateSpec[] specs, int[] specBranch, int[] specValueColumn,
-			int tailGroupPos, boolean groupedMemoEnabled) {
+	FactorizedTail(Branch[] branches, MemoBudget memoBudget, AggregateSpec[] specs, int[] specBranch,
+			int[] specValueColumn, int tailGroupPos, boolean groupedMemoEnabled,
+			NativeBooleanFilter[] prefixOnlyTailFilters) {
 		this.branches = branches;
+		this.memoBudget = memoBudget;
 		this.specs = specs;
 		this.hashDistinctChannels = AggregateDistinctChannels.allHash(specs);
 		this.specBranch = specBranch;
 		this.specValueColumn = specValueColumn;
 		this.tailGroupPos = tailGroupPos;
 		this.groupedMemoEnabled = groupedMemoEnabled;
+		this.prefixOnlyTailFilters = prefixOnlyTailFilters;
 		this.resultScratch = new BranchResult[branches.length];
 	}
 
 	int branchCount() {
 		return branches.length;
+	}
+
+	String describeEngagement() {
+		return "factorizedTail(branches=" + branches.length + (groupsByTail() ? ", groupedByTail" : "") + ")";
 	}
 
 	boolean groupsByTail() {
@@ -147,24 +200,28 @@ final class FactorizedTail {
 		}
 	}
 
-	static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
-			AggregateSpec[] aggregates) {
-		return tryCreate(derived, seedMask, groupSlots, aggregates, true);
+	static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
+			int[] groupSlots, AggregateSpec[] aggregates) {
+		return tryCreate(derived, filters, seedMask, groupSlots, aggregates, true);
 	}
 
-	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
-			AggregateSpec[] aggregates) {
-		return tryCreate(derived, seedMask, groupSlots, aggregates, false);
+	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
+			int[] groupSlots, AggregateSpec[] aggregates) {
+		return tryCreate(derived, filters, seedMask, groupSlots, aggregates, false);
 	}
 
-	private static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, long seedMask, int[] groupSlots,
-			AggregateSpec[] aggregates, boolean recordEngagement) {
+	private static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
+			int[] groupSlots, AggregateSpec[] aggregates, boolean recordEngagement) {
 		if (!ENABLED) {
 			return null;
 		}
-		if (!AggregateSpec.allCounts(aggregates)) {
-			// count-product batching cannot feed value-typed aggregates (SUM/MIN/MAX/AVG read term values)
-			return null;
+		boolean allCounts = AggregateSpec.allCounts(aggregates);
+		for (AggregateSpec spec : aggregates) {
+			if (spec.distinct && spec.kind != AggKind.COUNT) {
+				// SUM/AVG/MIN/MAX DISTINCT need multiplicity-free per-value aggregation at emission
+				// time, which this state does not represent yet — stay on the enumerating path
+				return null;
+			}
 		}
 		SlotPlan[] order = derived.order;
 		int last = order.length - 1;
@@ -174,10 +231,6 @@ final class FactorizedTail {
 		int maxFilterDepth = -1;
 		for (int depth : derived.filterDepth) {
 			maxFilterDepth = Math.max(maxFilterDepth, depth);
-		}
-		if (maxFilterDepth >= last) {
-			// a filter that runs at (or after) the branch depths consumes enumerated rows
-			return null;
 		}
 
 		long boundBeforeLast = seedMask;
@@ -189,8 +242,10 @@ final class FactorizedTail {
 
 		int branchStart = last;
 		int tailGroupPos = -1;
-		if (groupSlots.length == 1 && (lastFresh & (1L << groupSlots[0])) != 0L) {
+		if (groupSlots.length == 1 && (lastFresh & (1L << groupSlots[0])) != 0L && allCounts
+				&& maxFilterDepth < last) {
 			// a single group key produced by the last pattern: single-branch per-key sub-counting mode
+			// (count-only, filter-free — the grouped pair bucketing cannot carry filter verdicts)
 			tailGroupPos = lastPattern.quadPositionOfSlot(groupSlots[0]);
 			if (tailGroupPos < 0) {
 				return null;
@@ -203,12 +258,13 @@ final class FactorizedTail {
 				}
 			}
 			// grow the branch set towards the front while branches stay pairwise independent given the
-			// prefix; at least one pattern must remain in the prefix to drive the shared variables
+			// prefix; at least one pattern must remain in the prefix to drive the shared variables.
+			// Filters no longer stop growth: a filter at a branch depth attaches to the single branch
+			// whose fresh slots it reads (validated below, shrinking the set when one spans branches).
 			while (branchStart > 1) {
 				int candidate = branchStart - 1;
 				if (!(order[candidate] instanceof PatternPlan)
 						|| ((PatternPlan) order[candidate]).hasRepeatedSlot()
-						|| maxFilterDepth >= candidate
 						|| !independentBranches(order, seedMask, candidate, last, groupSlots)) {
 					break;
 				}
@@ -216,19 +272,78 @@ final class FactorizedTail {
 			}
 		}
 
-		long boundByPrefix = seedMask;
-		for (int i = 0; i < branchStart; i++) {
-			boundByPrefix |= order[i].producedMask();
+		long boundByPrefix;
+		int branchCount;
+		long[] freshMasks;
+		while (true) {
+			boundByPrefix = seedMask;
+			for (int i = 0; i < branchStart; i++) {
+				boundByPrefix |= order[i].producedMask();
+			}
+			branchCount = last - branchStart + 1;
+			freshMasks = new long[branchCount];
+			for (int i = 0; i < branchCount; i++) {
+				freshMasks[i] = ((PatternPlan) order[branchStart + i]).freshProducedMask(boundByPrefix);
+			}
+			// a filter reading two branches' fresh slots ties them together: push the shallowest
+			// touched branch (and everything before it) back into the prefix and revalidate
+			int shrinkTo = -1;
+			for (int f = 0; f < filters.length; f++) {
+				if (derived.filterDepth[f] < branchStart) {
+					continue;
+				}
+				int shallowestTouched = -1;
+				int touched = 0;
+				for (int b = 0; b < branchCount; b++) {
+					if ((filters[f].mask & freshMasks[b]) != 0L) {
+						touched++;
+						if (shallowestTouched < 0) {
+							shallowestTouched = branchStart + b;
+						}
+					}
+				}
+				if (touched > 1) {
+					shrinkTo = Math.max(shrinkTo, shallowestTouched + 1);
+				}
+			}
+			if (shrinkTo < 0) {
+				break;
+			}
+			branchStart = shrinkTo;
 		}
-		int branchCount = last - branchStart + 1;
-		long[] freshMasks = new long[branchCount];
-		for (int i = 0; i < branchCount; i++) {
-			freshMasks[i] = ((PatternPlan) order[branchStart + i]).freshProducedMask(boundByPrefix);
+		if (tailGroupPos < 0 && branchStart > last) {
+			return null;
+		}
+		// attach branch-depth filters: to their branch (widening its memo key by the filter's prefix
+		// reads), or — when they read no branch fresh slot at all — as per-prefix-row gates
+		List<List<NativeBooleanFilter>> branchFilterLists = new ArrayList<>(branchCount);
+		for (int b = 0; b < branchCount; b++) {
+			branchFilterLists.add(new ArrayList<>());
+		}
+		long[] branchFilterReads = new long[branchCount];
+		ArrayList<NativeBooleanFilter> prefixOnly = new ArrayList<>();
+		for (int f = 0; f < filters.length; f++) {
+			if (derived.filterDepth[f] < branchStart) {
+				continue;
+			}
+			int target = -1;
+			for (int b = 0; b < branchCount; b++) {
+				if ((filters[f].mask & freshMasks[b]) != 0L) {
+					target = b;
+					break;
+				}
+			}
+			if (target < 0) {
+				prefixOnly.add(filters[f].filter);
+			} else {
+				branchFilterLists.get(target).add(filters[f].filter);
+				branchFilterReads[target] |= filters[f].mask & ~freshMasks[target];
+			}
 		}
 
 		int[] specBranch = new int[aggregates.length];
 		int[] specValueColumn = new int[aggregates.length];
-		int[] distinctPerBranch = new int[branchCount];
+		int[] valueColumnsPerBranch = new int[branchCount];
 		boolean anyNonDistinct = false;
 		for (int i = 0; i < aggregates.length; i++) {
 			AggregateSpec spec = aggregates[i];
@@ -246,35 +361,52 @@ final class FactorizedTail {
 					if (((PatternPlan) order[branchStart + b]).quadPositionOfSlot(spec.slot) < 0) {
 						return null;
 					}
-					if (spec.distinct) {
-						specValueColumn[i] = distinctPerBranch[b]++;
+					// distinct COUNT and value-typed specs both need the branch's per-record values
+					if (spec.distinct || spec.kind != AggKind.COUNT) {
+						specValueColumn[i] = valueColumnsPerBranch[b]++;
 					}
 					break;
 				}
 			}
 		}
 
+		MemoBudget memoBudget = new MemoBudget(MEMO_BYPASSES);
 		Branch[] branches = new Branch[branchCount];
 		for (int b = 0; b < branchCount; b++) {
 			PatternPlan pattern = (PatternPlan) order[branchStart + b];
-			int[] distinctQuadPos = new int[distinctPerBranch[b]];
-			int[] plainQuadPos = new int[0];
+			int[] valueQuadPos = new int[valueColumnsPerBranch[b]];
 			int n = 0;
 			for (int i = 0; i < aggregates.length; i++) {
-				if (specBranch[i] == b && aggregates[i].distinct) {
-					distinctQuadPos[n++] = pattern.quadPositionOfSlot(aggregates[i].slot);
+				if (specBranch[i] == b && (aggregates[i].distinct || aggregates[i].kind != AggKind.COUNT)) {
+					valueQuadPos[n++] = pattern.quadPositionOfSlot(aggregates[i].slot);
+				}
+			}
+			NativeBooleanFilter[] branchFilters = branchFilterLists.get(b).toArray(new NativeBooleanFilter[0]);
+			int[] filterFreshSlots = NO_SLOTS;
+			int[] filterFreshQuadPos = NO_SLOTS;
+			if (branchFilters.length > 0) {
+				// the filters evaluate against candidate quads: every fresh slot must be bindable
+				filterFreshSlots = slotsOf(freshMasks[b]);
+				filterFreshQuadPos = new int[filterFreshSlots.length];
+				for (int i = 0; i < filterFreshSlots.length; i++) {
+					filterFreshQuadPos[i] = pattern.quadPositionOfSlot(filterFreshSlots[i]);
+					if (filterFreshQuadPos[i] < 0) {
+						return null;
+					}
 				}
 			}
 			// a branch nothing consumes only needs existence; counts are needed as soon as any
 			// non-distinct aggregate exists (the product is its multiplicity)
-			boolean existenceOnly = !anyNonDistinct && distinctPerBranch[b] == 0 && tailGroupPos < 0;
-			int[] memoKeySlots = slotsOf(pattern.producedMask() & boundByPrefix);
+			boolean existenceOnly = !anyNonDistinct && valueColumnsPerBranch[b] == 0 && tailGroupPos < 0;
+			// the memo key covers everything the branch's result can depend on: the pattern's probe
+			// slots plus any prefix slots its filters read
+			int[] memoKeySlots = slotsOf((pattern.producedMask() & boundByPrefix) | branchFilterReads[b]);
 			// scan-once (hash-join-style) mode needs exactly one row-varying correlated slot, count-only
-			// consumption, and a quad position for the key
+			// filter-free consumption, and a quad position for the key
 			long varyingMask = pattern.producedMask() & boundByPrefix & ~seedMask;
 			int varyingSlot = -1;
 			int varyingQuadPos = -1;
-			if (!existenceOnly && tailGroupPos < 0 && distinctPerBranch[b] == 0
+			if (!existenceOnly && tailGroupPos < 0 && valueColumnsPerBranch[b] == 0 && branchFilters.length == 0
 					&& Long.bitCount(varyingMask) == 1) {
 				int slot = Long.numberOfTrailingZeros(varyingMask);
 				int quadPos = pattern.quadPositionOfSlot(slot);
@@ -283,8 +415,8 @@ final class FactorizedTail {
 					varyingQuadPos = quadPos;
 				}
 			}
-			branches[b] = new Branch(pattern, memoKeySlots, distinctQuadPos, existenceOnly, tailGroupPos < 0,
-					varyingSlot, varyingQuadPos);
+			branches[b] = new Branch(pattern, memoKeySlots, valueQuadPos, existenceOnly, tailGroupPos < 0,
+					varyingSlot, varyingQuadPos, memoBudget, branchFilters, filterFreshSlots, filterFreshQuadPos);
 		}
 		boolean groupedMemoEnabled = tailGroupPos >= 0;
 		if (groupedMemoEnabled) {
@@ -298,8 +430,8 @@ final class FactorizedTail {
 				}
 			}
 		}
-		FactorizedTail tail = new FactorizedTail(branches, aggregates, specBranch, specValueColumn, tailGroupPos,
-				groupedMemoEnabled);
+		FactorizedTail tail = new FactorizedTail(branches, memoBudget, aggregates, specBranch, specValueColumn,
+				tailGroupPos, groupedMemoEnabled, prefixOnly.toArray(new NativeBooleanFilter[0]));
 		if (recordEngagement) {
 			tail.recordEngagement();
 		}
@@ -346,6 +478,11 @@ final class FactorizedTail {
 	 * (inner-join semantics).
 	 */
 	boolean aggregate(RowState row, AggState state) throws IOException {
+		for (NativeBooleanFilter filter : prefixOnlyTailFilters) {
+			if (!filter.accept(row)) {
+				return false;
+			}
+		}
 		BranchResult[] results = resultScratch;
 		long product = 1;
 		for (int b = 0; b < branches.length; b++) {
@@ -354,7 +491,7 @@ final class FactorizedTail {
 				return false;
 			}
 			results[b] = result;
-			product *= result.count;
+			product = multiplyCounts(product, result.count);
 		}
 		for (int k = 0; k < specs.length; k++) {
 			AggregateSpec spec = specs[k];
@@ -371,17 +508,69 @@ final class FactorizedTail {
 						state.distinctSets[k].add(value);
 					}
 				}
+			} else if (spec.kind != AggKind.COUNT) {
+				if (specBranch[k] >= 0) {
+					// each of the branch's per-key values joins with every combination of the OTHER
+					// branches' matches: weight = product of the other branches' counts
+					long[] values = results[specBranch[k]].values[specValueColumn[k]];
+					long weight = productExcluding(results, specBranch[k]);
+					for (long value : values) {
+						state.addWeighted(k, value, weight);
+					}
+				} else {
+					long value = spec.value(row);
+					if (value != UNKNOWN) {
+						state.addWeighted(k, value, product);
+					}
+				}
 			} else if (specBranch[k] >= 0) {
 				// every solution binds the branch variable exactly once: multiplicity is the product
-				state.counts[k] += product;
+				state.counts[k] = addCounts(state.counts[k], product);
 			} else {
 				long value = spec.value(row);
 				if (value != UNKNOWN) {
-					state.counts[k] += product;
+					state.counts[k] = addCounts(state.counts[k], product);
 				}
 			}
 		}
 		return true;
+	}
+
+	/** Product of every branch's match count except {@code exclude}'s (overflow-checked). */
+	private long productExcluding(BranchResult[] results, int exclude) {
+		long weight = 1L;
+		for (int b = 0; b < branches.length; b++) {
+			if (b != exclude) {
+				weight = multiplyCounts(weight, results[b].count);
+			}
+		}
+		return weight;
+	}
+
+	/**
+	 * Factorized counts are combined arithmetically instead of by iteration, so a count above 2^63-1 is reachable in
+	 * ordinary queries; unchecked arithmetic would wrap and silently report a wrong COUNT. No fallback exists: an
+	 * enumerating engine cannot produce such a count either, so the only honest outcome is an error.
+	 */
+	static long multiplyCounts(long a, long b) {
+		try {
+			return Math.multiplyExact(a, b);
+		} catch (ArithmeticException e) {
+			throw countOverflow();
+		}
+	}
+
+	static long addCounts(long a, long b) {
+		try {
+			return Math.addExact(a, b);
+		} catch (ArithmeticException e) {
+			throw countOverflow();
+		}
+	}
+
+	static QueryEvaluationException countOverflow() {
+		return new QueryEvaluationException(
+				"COUNT overflow in factorized aggregation: the aggregate value exceeds 2^63-1");
 	}
 
 	/**
@@ -407,8 +596,10 @@ final class FactorizedTail {
 		} else if (pairs == null) {
 			pairs = scanGroupedPairs(row);
 			if (pairs.length / 2 > MAX_CACHED_VALUES) {
-				groupedMemo.put(groupedProbe.storedCopy(), GROUPED_TOO_LARGE);
-			} else {
+				if (memoBudget.tryReserve(1, 0)) {
+					groupedMemo.put(groupedProbe.storedCopy(), GROUPED_TOO_LARGE);
+				}
+			} else if (memoBudget.tryReserve(1, pairs.length)) {
 				groupedMemo.put(groupedProbe.storedCopy(), pairs);
 			}
 		}
@@ -460,7 +651,7 @@ final class FactorizedTail {
 					if (spec.distinct) {
 						state.distinctSets[k].add(groupKey);
 					} else {
-						state.counts[k] += recordCount;
+						state.counts[k] = addCounts(state.counts[k], recordCount);
 					}
 				} else {
 					long value = spec.value(row);
@@ -468,7 +659,7 @@ final class FactorizedTail {
 						if (spec.distinct) {
 							state.distinctSets[k].add(value);
 						} else {
-							state.counts[k] += recordCount;
+							state.counts[k] = addCounts(state.counts[k], recordCount);
 						}
 					}
 				}

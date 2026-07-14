@@ -96,6 +96,8 @@ import org.eclipse.rdf4j.sail.SailException;
 @Experimental
 final class MultiJoinPlan implements SlotPlan {
 	static final int ORDER_CACHE_CAPACITY = 8;
+	/** Kill switch for the factorization-aware sinking reorder used by the factorized strategies. */
+	static final boolean SINK_ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.factorizedSink.enabled"));
 
 	final SlotPlan[] children;
 	final MaskedFilter[] filters;
@@ -105,6 +107,12 @@ final class MultiJoinPlan implements SlotPlan {
 	 * order; only filter depth depends on the entry mask. Copy-on-write: a lost race just recomputes an identical plan.
 	 */
 	volatile OrderCache orderCache;
+	/**
+	 * Like {@link #orderCache} but with unconsumed patterns sunk to a trailing suffix. Used only by the factorized
+	 * strategies (their tail split claims trailing patterns), so plain nested-loop execution keeps the compiler's
+	 * cost-chosen order untouched.
+	 */
+	volatile OrderCache factorizedOrderCache;
 
 	MultiJoinPlan(SlotPlan[] children, MaskedFilter[] filters) {
 		this.children = children;
@@ -115,6 +123,7 @@ final class MultiJoinPlan implements SlotPlan {
 		}
 		this.producedMask = mask;
 		this.orderCache = OrderCache.EMPTY;
+		this.factorizedOrderCache = OrderCache.EMPTY;
 	}
 
 	MultiJoinPlan withFilter(NativeBooleanFilter filter, long mask) {
@@ -145,10 +154,32 @@ final class MultiJoinPlan implements SlotPlan {
 		long mask = row.boundMask();
 		OrderedPlan plan = orderCache.get(mask);
 		if (plan == null) {
-			plan = derive(mask);
+			plan = derive(mask, false);
 			OrderCache cache = orderCache;
 			if (cache.size() < ORDER_CACHE_CAPACITY) {
 				orderCache = cache.with(mask, plan);
+			}
+		}
+		return plan;
+	}
+
+	/**
+	 * The ordered physical plan the factorized strategies plan against: unconsumed patterns are sunk to a trailing
+	 * suffix so the factorized tail split can claim them as per-key branches. Sinking only moves patterns later and
+	 * never moves filter-read producers (their re-placed filter would disqualify the aggregation tail's gate), so the
+	 * sunk order claims at least the branches the plain order would.
+	 */
+	OrderedPlan derivedFactorizedPlan(RowState row) {
+		if (!SINK_ENABLED) {
+			return derivedPlan(row);
+		}
+		long mask = row.boundMask();
+		OrderedPlan plan = factorizedOrderCache.get(mask);
+		if (plan == null) {
+			plan = derive(mask, true);
+			OrderCache cache = factorizedOrderCache;
+			if (cache.size() < ORDER_CACHE_CAPACITY) {
+				factorizedOrderCache = cache.with(mask, plan);
 			}
 		}
 		return plan;
@@ -197,12 +228,20 @@ final class MultiJoinPlan implements SlotPlan {
 		return cursor;
 	}
 
-	/**
-	 * Keeps the compiler-provided child order and attaches each filter at the earliest depth at which all slots in its
-	 * mask are bound; filters whose mask is never fully covered run at the top, which matches their original placement.
-	 */
 	OrderedPlan derive(long initialBoundMask) {
+		return derive(initialBoundMask, false);
+	}
+
+	/**
+	 * Keeps the compiler-provided child order (optionally sinking unconsumed patterns to a trailing suffix for the
+	 * factorized strategies) and attaches each filter at the earliest depth at which all slots in its mask are bound;
+	 * filters whose mask is never fully covered run at the top, which matches their original placement.
+	 */
+	OrderedPlan derive(long initialBoundMask, boolean sinkUnconsumed) {
 		SlotPlan[] ordered = children.clone();
+		if (sinkUnconsumed) {
+			sinkUnconsumedPatterns(ordered, initialBoundMask, filters);
+		}
 		int[] filterDepth = new int[filters.length];
 		if (filters.length > 0) {
 			int last = ordered.length - 1;
@@ -225,6 +264,112 @@ final class MultiJoinPlan implements SlotPlan {
 			}
 		}
 		return new OrderedPlan(ordered, filterDepth);
+	}
+
+	/**
+	 * Stable-partitions patterns whose exclusively produced slots nothing else consumes — no other child, no filter,
+	 * not the seed — to a trailing suffix, so the factorized tail split can claim them as per-key branches instead of
+	 * enumerating them mid-plan. Reordering an inner-join bag is result-neutral, and filters are re-placed afterwards
+	 * by the earliest-cover rule; patterns whose exclusive output a filter reads stay put, because the re-placed filter
+	 * would land at the sunk depth and disqualify the aggregation tail's filter gate. Cost guard against losing early
+	 * pruning: selective patterns are the pipeline's pruning workhorses, so a candidate must be at least as bulky as
+	 * the most selective stationary child; when no stationary child has a usable estimate, the most selective candidate
+	 * stays put to drive the prefix.
+	 */
+	static void sinkUnconsumedPatterns(SlotPlan[] ordered, long seedMask, MaskedFilter[] filters) {
+		int n = ordered.length;
+		if (n < 2) {
+			return;
+		}
+		long[] produced = new long[n];
+		long seenOnce = 0L;
+		long seenTwice = 0L;
+		for (int i = 0; i < n; i++) {
+			produced[i] = ordered[i].producedMask();
+			seenTwice |= seenOnce & produced[i];
+			seenOnce |= produced[i];
+		}
+		long filterReadMask = 0L;
+		for (MaskedFilter filter : filters) {
+			filterReadMask |= filter.mask < 0L ? ~0L : filter.mask;
+		}
+		long sharedOrSeed = seenTwice | seedMask;
+		boolean[] candidate = new boolean[n];
+		boolean any = false;
+		for (int i = 0; i < n; i++) {
+			if (!(ordered[i] instanceof PatternPlan) || ((PatternPlan) ordered[i]).hasRepeatedSlot()
+					|| !Double.isFinite(((PatternPlan) ordered[i]).staticEstimate)) {
+				continue;
+			}
+			long exclusive = produced[i] & ~sharedOrSeed;
+			boolean joinsRest = (produced[i] & sharedOrSeed) != 0L;
+			if (exclusive != 0L && joinsRest && (exclusive & filterReadMask) == 0L) {
+				candidate[i] = true;
+				any = true;
+			}
+		}
+		if (!any) {
+			return;
+		}
+		double pruningFloor = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < n; i++) {
+			if (!candidate[i]) {
+				double estimate = staticEstimateOf(ordered[i]);
+				if (!Double.isNaN(estimate)) {
+					pruningFloor = Math.min(pruningFloor, estimate);
+				}
+			}
+		}
+		if (Double.isFinite(pruningFloor)) {
+			for (int i = 0; i < n; i++) {
+				if (candidate[i] && ((PatternPlan) ordered[i]).staticEstimate < pruningFloor) {
+					candidate[i] = false;
+				}
+			}
+		} else {
+			int keep = -1;
+			for (int i = 0; i < n; i++) {
+				if (candidate[i] && (keep < 0
+						|| ((PatternPlan) ordered[i]).staticEstimate < ((PatternPlan) ordered[keep]).staticEstimate)) {
+					keep = i;
+				}
+			}
+			candidate[keep] = false;
+		}
+		any = false;
+		for (int i = 0; i < n; i++) {
+			any |= candidate[i];
+		}
+		if (!any) {
+			return;
+		}
+		SlotPlan[] result = new SlotPlan[n];
+		int at = 0;
+		for (int i = 0; i < n; i++) {
+			if (!candidate[i]) {
+				result[at++] = ordered[i];
+			}
+		}
+		for (int i = 0; i < n; i++) {
+			if (candidate[i]) {
+				result[at++] = ordered[i];
+			}
+		}
+		System.arraycopy(result, 0, ordered, 0, n);
+	}
+
+	/** Best-effort static row estimate for the pruning guard; NaN when the plan type has none. */
+	private static double staticEstimateOf(SlotPlan plan) {
+		if (plan instanceof PatternPlan) {
+			return ((PatternPlan) plan).staticEstimate;
+		}
+		if (plan instanceof ValuesPlan) {
+			return ((ValuesPlan) plan).rows.length;
+		}
+		if (plan instanceof MultiValuePatternPlan) {
+			return ((MultiValuePatternPlan) plan).staticEstimate;
+		}
+		return Double.NaN;
 	}
 
 	@Override

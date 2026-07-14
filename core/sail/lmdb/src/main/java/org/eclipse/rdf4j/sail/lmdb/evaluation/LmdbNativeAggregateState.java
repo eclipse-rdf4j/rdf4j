@@ -158,6 +158,10 @@ final class AggContext {
 	static final Literal INTEGER_ZERO = SimpleValueFactory.getInstance()
 			.createLiteral("0", CoreDatatype.XSD.INTEGER);
 
+	static Literal integerLiteral(long value) {
+		return SimpleValueFactory.getInstance().createLiteral(String.valueOf(value), CoreDatatype.XSD.INTEGER);
+	}
+
 	final NativeLmdbQuerySource source;
 	final ValueComparator comparator = new ValueComparator();
 	final HashMap<Long, Value> valueCache = new HashMap<>();
@@ -309,6 +313,80 @@ final class AggState {
 		}
 	}
 
+	/**
+	 * Adds one bound value with a multiplicity weight — the factorized tail's entry point where the same solution row
+	 * appears {@code weight} times without being enumerated. COUNT adds the weight; SUM/AVG add value×weight (a bag of
+	 * {@code weight} equal terms, with the per-row numeric-promotion and type-error semantics — the weight is an exact
+	 * integer, so the product equals the repeated addition); MIN/MAX ignore the weight. DISTINCT specs must not use
+	 * this entry point: their contributions are multiplicity-free and flow into the distinct sets directly.
+	 */
+	void addWeighted(int i, long id, long weight) {
+		switch (specs[i].kind) {
+		case COUNT:
+			counts[i] = FactorizedTail.addCounts(counts[i], weight);
+			break;
+		case SUM:
+			addSumWeighted(i, id, weight);
+			break;
+		case AVG:
+			addAvgWeighted(i, id, weight);
+			break;
+		case MIN:
+			addExtreme(i, id, true);
+			break;
+		case MAX:
+			addExtreme(i, id, false);
+			break;
+		}
+	}
+
+	private void addSumWeighted(int i, long id, long weight) {
+		if (typeErrors[i]) {
+			return;
+		}
+		Value v = ctx.value(id);
+		if (!v.isLiteral()) {
+			typeErrors[i] = true;
+			return;
+		}
+		Literal literal = (Literal) v;
+		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+			Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
+			sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
+		} else {
+			typeErrors[i] = true;
+		}
+	}
+
+	private void addAvgWeighted(int i, long id, long weight) {
+		if (typeErrors[i]) {
+			return;
+		}
+		Value v = ctx.value(id);
+		if (v.isLiteral()) {
+			Literal literal = (Literal) v;
+			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+				Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
+				sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
+			} else {
+				typeErrors[i] = true;
+			}
+			avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], weight);
+		} else {
+			typeErrors[i] = true;
+		}
+	}
+
+	/** value × weight with SPARQL numeric promotion (integer weight, so the type of the term is preserved). */
+	private static Literal weightedTerm(Literal literal, long weight) {
+		if (weight == 1L) {
+			return literal;
+		}
+		return MathUtil.compute(literal, AggContext.integerLiteral(weight), MathExpr.MathOp.MULTIPLY);
+	}
+
 	void addAvg(int i, long id) {
 		if (typeErrors[i]) {
 			return;
@@ -365,7 +443,7 @@ final class AggState {
 		}
 		for (int i = 0; i < specs.length; i++) {
 			if (distinctChannels.specChannels[i] < 0) {
-				counts[i] += other.counts[i];
+				counts[i] = FactorizedTail.addCounts(counts[i], other.counts[i]);
 			}
 		}
 	}

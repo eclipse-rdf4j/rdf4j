@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 
 /**
- * LMDB-local bridge used by {@link LmdbNativeQueryCompiler}. This internal interface lets the root LMDB store integrate
- * with the evaluation package without exposing the bridge as supported public API.
+ * LMDB-local bridge used by the native query compilers. This internal interface lets the root LMDB store integrate with
+ * the evaluation package without exposing the bridge as supported public API.
  */
 @Experimental
 @InternalUseOnly

@@ -149,7 +149,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			return genericStep().evaluate(bindings);
 		}
 		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
-				prefixPattern, prefixRunPlan, prefixCountRunRows);
+				prefixPattern, prefixRunPlan, prefixCountRunRows, originalExpr);
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
@@ -213,13 +213,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final boolean prefixCountRunRows;
+	/** Compiled expression to stamp with the executed-strategy explain metric; may be null in tests. */
+	final TupleExpr explainTarget;
 	Iterator<BindingSet> resultIterator;
 	BindingSet next;
 	boolean closed;
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
-			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows) {
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			TupleExpr explainTarget) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -234,6 +237,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
 		this.prefixCountRunRows = prefixCountRunRows;
+		this.explainTarget = explainTarget;
 	}
 
 	@Override
@@ -283,6 +287,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		List<BindingSet> prefixResults = evaluatePrefixRuns(row);
 		if (prefixResults != null) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "prefixRunGroups");
 			return prefixResults;
 		}
 		NativeAggregateDistinctPlan orderedDistinct = LmdbNativeOrderPlanner.aggregate(arg, groupSlots, aggregates,
@@ -290,9 +295,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		MultiJoinPlan directMultiJoin = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 2
 				? (MultiJoinPlan) arg
 				: null;
+		if (directMultiJoin == null && arg instanceof LeftJoinPlan) {
+			directMultiJoin = reshapeLeftJoinForFactorization((LeftJoinPlan) arg);
+		}
+		if (directMultiJoin == null) {
+			directMultiJoin = peelTrailingPatterns(arg);
+		}
 		if (orderedDistinct.specialized() && directMultiJoin != null) {
-			MultiJoinPlan.OrderedPlan derived = directMultiJoin.derivedPlan(row);
-			FactorizedTail factorized = FactorizedTail.probe(derived, row.boundMask(), groupSlots, aggregates);
+			MultiJoinPlan.OrderedPlan derived = directMultiJoin.derivedFactorizedPlan(row);
+			FactorizedTail factorized = FactorizedTail.probe(derived, directMultiJoin.filters, row.boundMask(),
+					groupSlots, aggregates);
 			if (factorized != null) {
 				List<BindingSet> parallel;
 				try {
@@ -303,13 +315,18 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				}
 				if (parallel != null) {
 					factorized.close();
+					LmdbNativeExplain.recordStrategy(explainTarget, "parallelAggregation");
 					return parallel;
 				}
 				factorized.recordEngagement();
+				if (LmdbNativeExplain.recordsStrategies(explainTarget)) {
+					LmdbNativeExplain.recordStrategy(explainTarget, factorized.describeEngagement());
+				}
 				return evaluateFactorized(row, directMultiJoin, derived, factorized);
 			}
 		}
 		if (orderedDistinct.specialized()) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "orderedDistinctGroups");
 			return evaluateOrderedDistinct(row, orderedDistinct);
 		}
 		MultiJoinPlan parallelPlan = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 1
@@ -321,22 +338,29 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (parallelPlan != null) {
 			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row);
 			if (parallel != null) {
+				LmdbNativeExplain.recordStrategy(explainTarget, "parallelAggregation");
 				return parallel;
 			}
 		}
 		if (directMultiJoin != null) {
 			MultiJoinPlan multiJoin = directMultiJoin;
-			MultiJoinPlan.OrderedPlan derived = multiJoin.derivedPlan(row);
-			FactorizedTail tail = FactorizedTail.tryCreate(derived, row.boundMask(), groupSlots, aggregates);
+			MultiJoinPlan.OrderedPlan derived = multiJoin.derivedFactorizedPlan(row);
+			FactorizedTail tail = FactorizedTail.tryCreate(derived, multiJoin.filters, row.boundMask(), groupSlots,
+					aggregates);
 			if (tail != null) {
+				if (LmdbNativeExplain.recordsStrategies(explainTarget)) {
+					LmdbNativeExplain.recordStrategy(explainTarget, tail.describeEngagement());
+				}
 				return evaluateFactorized(row, multiJoin, derived, tail);
 			}
 		}
 		List<BindingSet> orderedGroups = evaluateOrderedSinglePatternGroups(row);
 		if (orderedGroups != null) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "orderedSinglePatternGroups");
 			return orderedGroups;
 		}
 		if (groupSlots.length == 0) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "aggState");
 			AggState state = new AggState(aggregates, 65_536, aggContext, sequentialDistinctChannels);
 			boolean sawRow = false;
 			try (RowCursor cursor = arg.open(row)) {
@@ -351,13 +375,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 
 		if (groupSlots.length == 1) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "singleSlotGroups");
 			return evaluateSingleSlotGroups(row, groupSlots[0]);
 		}
 
 		if (groupSlots.length <= 4) {
+			LmdbNativeExplain.recordStrategy(explainTarget, "primitiveTupleGroups");
 			return evaluatePrimitiveTupleGroups(row);
 		}
 
+		LmdbNativeExplain.recordStrategy(explainTarget, "hashGroups");
 		HashMap<GroupKey, AggState> groups = new HashMap<>();
 		// reusable probe key: the per-row long[] + GroupKey + lambda allocations only happen for new groups
 		GroupKey probe = new GroupKey(new long[groupSlots.length]);
@@ -885,6 +912,83 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		row.recomputeBoundMask();
 		return true;
+	}
+
+	/**
+	 * Aggregations over plans the bag cannot flatten (an OPTIONAL in the join) still factorize their trailing
+	 * inner-join patterns: the unflattenable prefix becomes one opaque bag child and the peeled right arms rejoin as
+	 * ordinary members. Sound only when every peeled pattern joins exclusively on slots the prefix ALWAYS binds — a
+	 * maybe-unbound (optional-only) slot read by a branch would be treated as a bound probe key. The synthetic bag
+	 * preserves the original chain order (the bag keeps compiler order and only sinks unconsumed patterns).
+	 */
+	/**
+	 * {@code LeftJoin(Join(A, B...), R) ≡ Join(LeftJoin(A, R), B...)} when R's row stream is fully determined by
+	 * declared slots (a {@code memoReadMask}) and R neither reads nor rebinds anything the B members produce: the
+	 * optional extension then commutes with the inner joins, so bag members the OPTIONAL ignores hoist above it, where
+	 * the factorized tail can claim them as branches. Left-bag filters move to the outer bag — they read no
+	 * optional-fresh slot (it was never in their scope), and filtering left rows before or after the optional extension
+	 * is equivalent.
+	 */
+	static MultiJoinPlan reshapeLeftJoinForFactorization(LeftJoinPlan leftJoinPlan) {
+		if (!(leftJoinPlan.left instanceof MultiJoinPlan)) {
+			return null;
+		}
+		long rightReads = memoReadMask(leftJoinPlan.right);
+		if (rightReads < 0L) {
+			return null;
+		}
+		MultiJoinPlan leftBag = (MultiJoinPlan) leftJoinPlan.left;
+		// bag members ALWAYS bind their produced slots and shared slots are equal on every joined row,
+		// so the optional's reads only need to be covered by the kept members (greedy, in compiler
+		// order); everything else hoists. Members can never produce the optional's fresh slots (those
+		// are outside the bag's produced mask by construction).
+		long needCover = rightReads & leftBag.producedMask();
+		ArrayList<SlotPlan> keep = new ArrayList<>();
+		ArrayList<SlotPlan> hoist = new ArrayList<>();
+		long keepProduced = 0L;
+		for (SlotPlan child : leftBag.children) {
+			if ((needCover & ~keepProduced) != 0L && (child.producedMask() & needCover & ~keepProduced) != 0L) {
+				keep.add(child);
+				keepProduced |= child.producedMask();
+			} else {
+				hoist.add(child);
+			}
+		}
+		if ((needCover & ~keepProduced) != 0L || hoist.isEmpty() || keep.isEmpty()) {
+			return null;
+		}
+		SlotPlan keepPlan = keep.size() == 1 ? keep.get(0)
+				: new MultiJoinPlan(keep.toArray(SlotPlan[]::new), new MaskedFilter[0]);
+		SlotPlan[] children = new SlotPlan[hoist.size() + 1];
+		children[0] = new LeftJoinPlan(keepPlan, leftJoinPlan.right);
+		for (int i = 0; i < hoist.size(); i++) {
+			children[i + 1] = hoist.get(i);
+		}
+		return new MultiJoinPlan(children, leftBag.filters);
+	}
+
+	static MultiJoinPlan peelTrailingPatterns(SlotPlan arg) {
+		ArrayList<SlotPlan> trailingReversed = new ArrayList<>();
+		SlotPlan node = arg;
+		while (node instanceof JoinPlan && ((JoinPlan) node).right instanceof PatternPlan) {
+			trailingReversed.add(((JoinPlan) node).right);
+			node = ((JoinPlan) node).left;
+		}
+		if (trailingReversed.isEmpty()) {
+			return null;
+		}
+		long optionalOnly = node.producedMask() & ~SlotPlan.assuredMask(node);
+		for (SlotPlan pattern : trailingReversed) {
+			if ((pattern.producedMask() & optionalOnly) != 0L) {
+				return null;
+			}
+		}
+		SlotPlan[] children = new SlotPlan[trailingReversed.size() + 1];
+		children[0] = node;
+		for (int i = 0; i < trailingReversed.size(); i++) {
+			children[i + 1] = trailingReversed.get(trailingReversed.size() - 1 - i);
+		}
+		return new MultiJoinPlan(children, new MaskedFilter[0]);
 	}
 
 	List<BindingSet> noInputResult() {

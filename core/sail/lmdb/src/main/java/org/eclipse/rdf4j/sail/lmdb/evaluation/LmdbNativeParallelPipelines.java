@@ -129,11 +129,19 @@ final class LmdbNativeParallelPipelines {
 				return reject("non-pattern-child");
 			}
 		}
+		for (SlotPlan child : plan.children) {
+			if (((PatternPlan) child).hasRuntimeBoundSlot(consumerRow)) {
+				// correlated entry: tryOpen runs once per outer row, so workers, snapshot sources, and
+				// read txns would be spun up and torn down per row — and the structural estimate that
+				// clears the root threshold does not describe the bound-prefix scan anyway
+				return reject("correlated-entry");
+			}
+		}
 		int threads = configuredThreads();
 		if (threads < 2) {
 			return reject("single-thread");
 		}
-		MultiJoinPlan.OrderedPlan derived = plan.derivedPlan(consumerRow);
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(consumerRow);
 		PatternPlan root = (PatternPlan) derived.order[0];
 		long threshold = Long.getLong("rdf4j.lmdb.parallel.minRootEstimate", 50_000L);
 		if (!(root.estimate(consumerRow) >= threshold)) {
@@ -493,7 +501,8 @@ final class LmdbNativeParallelPipelines {
 			}
 			row.recomputeBoundMask();
 			MultiJoinPlan plan = workerPlans[worker];
-			MultiJoinPlan.OrderedPlan derived = plan.derivedPlan(row);
+			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
+			MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
 			MorselCursor leftmost = new MorselCursor(input, root, row, failure, cancelled);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan, derived, row,
 					row.boundMask(), step.sourceSlots, step.distinct);

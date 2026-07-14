@@ -290,6 +290,53 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				prefixRunPlan);
 	}
 
+	/**
+	 * Compiles a bare LMDB-local BGP fragment — Filter/Join/StatementPattern trees without a Projection root, the exact
+	 * claim set of the deleted legacy BGP compiler. Such fragments reach precompile when the generic evaluator recurses
+	 * into algebra the native root compilers do not support, so their rows must reproduce the generic contract: every
+	 * fragment variable the match binds is emitted AND base bindings for foreign names pass through (the generic join
+	 * iterators rely on the child stream carrying its input bindings). The step therefore runs in snapshot mode —
+	 * {@link RowBindingSetView} over the full slot row with base fallback — instead of projecting.
+	 */
+	QueryEvaluationStep compileBareRoot(TupleExpr expr) {
+		TupleExpr node = expr;
+		if (node instanceof QueryRoot) {
+			node = ((QueryRoot) node).getArg();
+		}
+		if (!isBareBgpFragment(node)) {
+			return null;
+		}
+		this.requiredAggregateNames = VarNameCollector.process(node);
+		SlotPlan arg = compileTuple(node, false);
+		if (arg == null) {
+			return null;
+		}
+		if (slotNames.size() > MAX_NATIVE_SLOTS) {
+			return null;
+		}
+		int[] sourceSlots = new int[slotNames.size()];
+		String[] targetNames = new String[slotNames.size()];
+		for (int i = 0; i < sourceSlots.length; i++) {
+			sourceSlots[i] = i;
+			targetNames[i] = slotNames.get(i);
+		}
+		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
+		layout.freeze(slotNames);
+		return NativeRowsStep.bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy,
+				expr, context);
+	}
+
+	private boolean isBareBgpFragment(TupleExpr node) {
+		if (node instanceof Filter) {
+			return isBareBgpFragment(((Filter) node).getArg());
+		}
+		if (node instanceof Join) {
+			Join join = (Join) node;
+			return isBareBgpFragment(join.getLeftArg()) && isBareBgpFragment(join.getRightArg());
+		}
+		return node instanceof StatementPattern;
+	}
+
 	private boolean supportedOrder(List<OrderElem> orderElems) {
 		for (OrderElem elem : orderElems) {
 			if (!(elem.getExpr() instanceof Var) || ((Var) elem.getExpr()).hasValue()) {

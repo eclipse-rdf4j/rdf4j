@@ -26,8 +26,33 @@ final class LmdbNativeExplain {
 	static final String KIND_ROW = "row";
 	static final String KIND_BGP = "bgp";
 	static final String PHYSICAL_PLAN = "nativePhysicalPlan";
+	static final String EXECUTION_STRATEGY = "nativeExecutionStrategy";
 
 	private LmdbNativeExplain() {
+	}
+
+	/**
+	 * Records which physical execution strategy actually ran, as an "actual" explain metric on the compiled expression.
+	 * The strategy choice happens at evaluation time (it depends on the runtime bound mask and per-strategy gates), so
+	 * it cannot be part of the planned physical plan; without this, a regression that silently disqualifies a strategy
+	 * such as factorization is invisible in {@code explain(Executed)}.
+	 */
+	static void recordStrategy(TupleExpr expr, String strategy) {
+		if (expr == null || strategy == null) {
+			return;
+		}
+		expr.setStringMetricActual(EXECUTION_STRATEGY, strategy);
+		if (expr instanceof QueryRoot) {
+			((QueryRoot) expr).getArg().setStringMetricActual(EXECUTION_STRATEGY, strategy);
+		}
+	}
+
+	/**
+	 * True when the expression collects runtime telemetry — {@code setStringMetricActual} is a no-op otherwise, so
+	 * callers whose strategy string is built dynamically can skip the string construction entirely.
+	 */
+	static boolean recordsStrategies(TupleExpr expr) {
+		return expr != null && expr.isRuntimeTelemetryEnabled();
 	}
 
 	static void mark(TupleExpr expr, String kind) {

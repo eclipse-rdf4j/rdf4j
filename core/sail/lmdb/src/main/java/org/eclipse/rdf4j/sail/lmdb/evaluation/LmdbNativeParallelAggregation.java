@@ -73,7 +73,7 @@ final class LmdbNativeParallelAggregation {
 		if (threads < 2) {
 			return null;
 		}
-		MultiJoinPlan.OrderedPlan derived = plan.derivedPlan(row);
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
 		PatternPlan root = (PatternPlan) derived.order[0];
 		long minRootEstimate = Long.getLong("rdf4j.lmdb.parallel.minRootEstimate", 50_000L);
 		if (!(root.estimate(row) >= minRootEstimate)) {
@@ -231,7 +231,7 @@ final class LmdbNativeParallelAggregation {
 		row.recomputeBoundMask();
 		AggContext ctx = new AggContext(source, it.strictCompare);
 		FactorizedTail tail = derived.order.length >= 2
-				? FactorizedTail.tryCreate(derived, row.boundMask(), it.groupSlots, it.aggregates)
+				? FactorizedTail.tryCreate(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates)
 				: null;
 		try {
 			int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;

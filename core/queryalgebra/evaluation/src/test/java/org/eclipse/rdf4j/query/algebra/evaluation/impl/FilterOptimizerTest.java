@@ -62,6 +62,28 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void doesNotPushFilterIntoValuesWithUndef() throws Exception {
+		// VALUES rows with UNDEF do not bind ?b on every solution: relocating the filter onto the
+		// BindingSetAssignment evaluates it while ?b is unbound (error -> row dropped) even though the
+		// join later binds ?b — silently missing solutions on every store using this optimizer
+		String query = "SELECT * WHERE { VALUES ?b { <http://e/x> UNDEF } ?s <http://e/p> ?b ."
+				+ " FILTER(?b != <http://e/y>) }";
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsed.getTupleExpr().clone());
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				assertThat(filter.getArg())
+						.as("filter must not be pushed onto a VALUES whose rows do not all bind the filter variable"
+								+ " (got: %s)", filter.getParentNode())
+						.isNotInstanceOf(BindingSetAssignment.class);
+				super.meet(filter);
+			}
+		});
+	}
+
+	@Test
 	public void merge() {
 		String expectedQuery = "SELECT * WHERE {?s ?p ?o . FILTER( ?o <4 && ?o > 2) }";
 		String query = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2) . FILTER(?o <4) }";

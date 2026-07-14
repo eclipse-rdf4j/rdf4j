@@ -19,8 +19,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -72,6 +75,19 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			conn.add(hub1, p2, vf.createIRI(EX, "bGraph"), vf.createIRI(EX, "g1"));
 			// self-referencing triple for the repeated-variable gate
 			conn.add(hub1, p1, hub1);
+			// numeric branch values for value-typed aggregates (SUM/AVG/MIN/MAX): mixed integer/decimal,
+			// duplicates within and across hubs, and hub3 gets one so inner-join drops are observable
+			IRI pn = vf.createIRI(EX, "pn");
+			conn.add(hub1, pn, vf.createLiteral(3));
+			conn.add(hub1, pn, vf.createLiteral(3));
+			conn.add(hub1, pn, vf.createLiteral("2.5", CoreDatatype.XSD.DECIMAL));
+			conn.add(hub2, pn, vf.createLiteral(7));
+			conn.add(hub3, pn, vf.createLiteral(100));
+			// per-hub scalar for prefix-slot aggregation (exactly one pn0 per hub)
+			IRI pn0 = vf.createIRI(EX, "pn0");
+			conn.add(hub1, pn0, vf.createLiteral(10));
+			conn.add(hub2, pn0, vf.createLiteral(20));
+			conn.add(hub3, pn0, vf.createLiteral(40));
 		}
 	}
 
@@ -182,8 +198,40 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
-	public void filterOnTailVariableFallsBack() {
-		assertSameAsGeneric(star("(COUNT(?s) AS ?c)", "  FILTER(?b != ex:b1)\n"));
+	public void filterOnBranchVariableAttachesToBranch() {
+		// one filter per pattern: wherever the planner places them, at least one sits at a branch
+		// depth — it must attach to its branch and filter candidate quads there instead of
+		// disqualifying the whole factorization (a single filter just reorders into the prefix)
+		String query = star("(COUNT(?s) AS ?c)", "  FILTER(?a != ex:a9)\n  FILTER(?b != ex:b1)\n");
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("a branch-local filter should attach to its branch instead of disqualifying the tail")
+				.startsWith("factorizedTail");
+	}
+
+	@Test
+	public void filterReadingBranchAndPrefixAttachesWithWidenedMemoKey() {
+		// reads the branch fresh slot AND a prefix slot: attachable, but the branch memo key must
+		// include the prefix slot the filter reads or memo hits would replay wrong verdicts
+		assertSameAsGeneric(star("(COUNT(?a) AS ?c)", "  FILTER(?b != ?s)\n"));
+		assertSameAsGeneric(star("?s (COUNT(?a) AS ?c)", "  FILTER(?b != ?s)\n") + " GROUP BY ?s");
+	}
+
+	@Test
+	public void filterSpanningTwoBranchesStaysCorrect() {
+		// reads fresh slots of two different would-be branches: not attachable to either — must stay
+		// correct (fall back or shrink the branch set)
+		assertSameAsGeneric(star("(COUNT(?s) AS ?c)", "  FILTER(?a != ?b)\n"));
+	}
+
+	@Test
+	public void filteredBranchWithValueAggregates() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(?n) AS ?sum) (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "  FILTER(?n > 2)\n"
+				+ "}");
 	}
 
 	@Test
@@ -260,5 +308,162 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	@Test
 	public void plainStarCountDoesNotDependOnFactorizedTail() {
 		assertSameAsGeneric(star("(COUNT(?b) AS ?c)", ""));
+	}
+
+	// --- Phase 3 Milestone A: value-typed aggregates ride the factorized tail ---
+
+	@Test
+	public void sumOverBranchValuesEngagesFactorizedTail() {
+		// ?n is a branch fresh slot: SUM must walk the branch's per-key value list weighted by the
+		// other branches' match counts instead of enumerating the cross product
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(?n) AS ?sum) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "}";
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("value-typed aggregates over branch slots should ride the factorized tail")
+				.startsWith("factorizedTail");
+	}
+
+	@Test
+	public void sumOverPrefixSlotWithCountingBranchesEngagesFactorizedTail() {
+		// ?n0 is bound in the prefix (one per hub); the branches contribute pure multiplicity, so the
+		// sum contribution per prefix row is value × product of branch counts
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (SUM(?n0) AS ?sum) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "} GROUP BY ?s";
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("prefix-slot value aggregates with counting branches should ride the factorized tail")
+				.startsWith("factorizedTail");
+	}
+
+	@Test
+	public void avgMinMaxOverBranchValues() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (AVG(?n) AS ?avg) (MIN(?n) AS ?min) (MAX(?n) AS ?max) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "}");
+	}
+
+	@Test
+	public void mixedValueAndCountAggregates() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(?n) AS ?sum) (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "}");
+	}
+
+	@Test
+	public void groupedSumOverBranchValues() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (SUM(?n) AS ?sum) (AVG(?n) AS ?avg) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "} GROUP BY ?s");
+	}
+
+	@Test
+	public void sumOverNonNumericBranchValuesMatchesGenericTypeErrors() {
+		// ?b values are IRIs and strings: SUM must produce the same type-error outcome as generic
+		assertSameAsGeneric(star("(SUM(?b) AS ?sum)", ""));
+		assertSameAsGeneric(star("?s (SUM(?b) AS ?sum)", "") + " GROUP BY ?s");
+	}
+
+	@Test
+	public void sumDistinctStaysCorrectWherever() {
+		// value-typed DISTINCT is out of scope for the factorized tail this phase — must stay correct
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(DISTINCT ?n) AS ?sum) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:pn ?n .\n"
+				+ "}");
+	}
+
+	@Test
+	public void minMaxOverPrefixSlotWithCountingBranches() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (MIN(?n0) AS ?min) (MAX(?n0) AS ?max) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "}");
+	}
+
+	// --- Phase 3 Milestone C: OPTIONAL in the prefix stops disqualifying trailing branches ---
+
+	@Test
+	public void optionalInPrefixStillFactorizesTrailingBranches() {
+		// the OPTIONAL binds only ?opt, which no trailing pattern reads: the trailing star legs must
+		// still factorize into counting branches with the OPTIONAL evaluated inside the flat prefix
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) (SUM(?n0) AS ?sum) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  OPTIONAL { ?s ex:pn ?opt }\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "}";
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("an OPTIONAL binding only unconsumed slots must not disqualify trailing branches")
+				.startsWith("factorizedTail");
+	}
+
+	@Test
+	public void optionalVariableConsumedByTrailingPatternStaysCorrect() {
+		// ?opt may be unbound, and the trailing pattern joins on it: the factorization must refuse
+		// (the branch key would treat a maybe-unbound slot as bound) and results must match generic
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  OPTIONAL { ?s ex:p2 ?opt }\n"
+				+ "  ?opt ex:p3 ?z .\n"
+				+ "}");
+	}
+
+	@Test
+	public void aggregateOverOptionalVariableStaysCorrect() {
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?opt) AS ?c) (SUM(?opt) AS ?sum) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  OPTIONAL { ?s ex:pn ?opt }\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "}");
+	}
+
+	private String strategy(String query) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			String strategy = findStrategy(conn.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode());
+			assertThat(strategy).as("expected a nativeExecutionStrategy metric in the explanation").isNotNull();
+			return strategy;
+		}
+	}
+
+	private static String findStrategy(GenericPlanNode node) {
+		if (node == null) {
+			return null;
+		}
+		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findStrategy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 }

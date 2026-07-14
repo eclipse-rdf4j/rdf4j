@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -32,9 +33,10 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -44,6 +46,7 @@ import org.junit.jupiter.api.io.TempDir;
  * aggregates and property paths must return identical result multisets on both paths. Any mismatch is a correctness bug
  * in one of the engines — the query string and seed are in the assertion message.
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS) // the store is read-only and identical per test: build once
 public class LmdbNativeDifferentialFuzzTest {
 
 	private static final String EX = "http://example.com/";
@@ -55,7 +58,7 @@ public class LmdbNativeDifferentialFuzzTest {
 
 	private SailRepository lmdb;
 
-	@BeforeEach
+	@BeforeAll
 	public void setUp() {
 		lmdb = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		Random random = new Random(SEED);
@@ -130,7 +133,7 @@ public class LmdbNativeDifferentialFuzzTest {
 	private record Statement4(Resource s, IRI p, Value o, Resource c) {
 	}
 
-	@AfterEach
+	@AfterAll
 	public void tearDown() {
 		lmdb.shutDown();
 	}
@@ -242,11 +245,11 @@ public class LmdbNativeDifferentialFuzzTest {
 						.append(EX)
 						.append("s")
 						.append(random.nextInt(20))
-						.append("> <")
-						.append(EX)
-						.append("s")
-						.append(random.nextInt(20))
-						.append("> } ");
+						.append("> ")
+						// UNDEF rows leave the slot unbound: the native planners must not treat the
+						// VALUES-produced slot as statically bound (jagged-row soundness)
+						.append(random.nextInt(3) == 0 ? "UNDEF" : "<" + EX + "s" + random.nextInt(20) + ">")
+						.append(" } ");
 			}
 			if (random.nextInt(3) == 0) {
 				where.append("FILTER(bound(?b)) ");
@@ -328,6 +331,197 @@ public class LmdbNativeDifferentialFuzzTest {
 		}
 	}
 
+	/**
+	 * Star joins with a random subset of the legs projected away: unprojected legs become COUNT/EXISTS factorized tail
+	 * branches whose match counts turn into solution multiplicity, projected legs become enumerated (odometer)
+	 * branches. The multiset comparison against the generic evaluator is exactly the bag-semantics proof the
+	 * factorization rests on. A third of the queries add a filter that reads a single leg's fresh variable, exercising
+	 * the in-branch filter protocol (the memo key must include the filter's prefix reads).
+	 */
+	@Test
+	public void factorizedStarProjections() {
+		Random random = new Random(SEED + 4);
+		for (int i = 0; i < 120; i++) {
+			int legs = 2 + random.nextInt(3);
+			StringBuilder where = new StringBuilder();
+			for (int j = 0; j < legs; j++) {
+				where.append("?a <")
+						.append(EX)
+						.append("p")
+						.append(1 + random.nextInt(5))
+						.append("> ?v")
+						.append(j)
+						.append(" . ");
+			}
+			if (random.nextInt(3) == 0) {
+				int leg = random.nextInt(legs);
+				where.append(random.nextBoolean()
+						? "FILTER(isIRI(?v" + leg + ")) "
+						: "FILTER(?v" + leg + " != 3) ");
+			}
+			StringBuilder select = new StringBuilder("?a");
+			for (int j = 0; j < legs; j++) {
+				if (random.nextBoolean()) {
+					select.append(" ?v").append(j);
+				}
+			}
+			String distinct = random.nextInt(3) == 0 ? "DISTINCT " : "";
+			assertSameResults("SELECT " + distinct + select + " WHERE { " + where + "}");
+		}
+	}
+
+	/**
+	 * COUNT aggregates over star joins: the factorized aggregation tail folds branch match counts into products instead
+	 * of enumerating, across plain/DISTINCT counts over branch variables, the anchor, and {@code COUNT(*)}, ungrouped,
+	 * grouped by the prefix anchor, and grouped by a branch-produced variable (the grouped-by-tail sub-counting mode).
+	 */
+	@Test
+	public void factorizedStarAggregates() {
+		Random random = new Random(SEED + 5);
+		for (int i = 0; i < 100; i++) {
+			int legs = 2 + random.nextInt(3);
+			StringBuilder where = new StringBuilder();
+			for (int j = 0; j < legs; j++) {
+				where.append("?a <")
+						.append(EX)
+						.append("p")
+						.append(1 + random.nextInt(5))
+						.append("> ?v")
+						.append(j)
+						.append(" . ");
+			}
+			String countTarget = switch (random.nextInt(4)) {
+			case 0 -> "?a";
+			case 1 -> "*";
+			default -> "?v" + random.nextInt(legs);
+			};
+			String agg = countTarget.equals("*") ? "COUNT(*)"
+					: (random.nextBoolean() ? "COUNT(" : "COUNT(DISTINCT ") + countTarget + ")";
+			String query;
+			switch (random.nextInt(3)) {
+			case 0:
+				query = "SELECT (" + agg + " AS ?agg) WHERE { " + where + "}";
+				break;
+			case 1:
+				query = "SELECT ?a (" + agg + " AS ?agg) WHERE { " + where + "} GROUP BY ?a";
+				break;
+			default:
+				// group key produced by a tail branch: exercises per-key sub-counting / grouped memo
+				query = "SELECT ?v0 (" + agg + " AS ?agg) WHERE { " + where + "} GROUP BY ?v0";
+				break;
+			}
+			if (random.nextInt(4) == 0) {
+				query += " HAVING(COUNT(*) > 2)";
+			}
+			assertSameResults(query);
+		}
+	}
+
+	/**
+	 * OFFSET/LIMIT over factorized rows interact with multiplicity (skips happen inside one prefix row's repeated
+	 * emissions). Without ORDER BY the engines may pick different rows, so equality is not required — instead assert
+	 * the two sound properties: the sliced result has exactly {@code min(limit, total - offset)} rows, and it is a
+	 * sub-multiset of the full result.
+	 */
+	@Test
+	public void slicesOverFactorizedRowsStayWithinFullResult() {
+		Random random = new Random(SEED + 6);
+		for (int i = 0; i < 40; i++) {
+			int legs = 2 + random.nextInt(2);
+			StringBuilder where = new StringBuilder();
+			for (int j = 0; j < legs; j++) {
+				where.append("?a <")
+						.append(EX)
+						.append("p")
+						.append(1 + random.nextInt(5))
+						.append("> ?v")
+						.append(j)
+						.append(" . ");
+			}
+			String base = "SELECT ?a WHERE { " + where + "}";
+			int offset = random.nextInt(5) == 0 ? 0 : random.nextInt(30);
+			int limit = 1 + random.nextInt(20);
+			String sliced = base + (offset > 0 ? " OFFSET " + offset : "") + " LIMIT " + limit;
+
+			List<String> full = evaluateWithEngine(base, false);
+			List<String> nativeSliced;
+			try {
+				nativeSliced = evaluate(sliced);
+			} catch (RuntimeException e) {
+				throw new AssertionError("native evaluation failed for query (seed " + SEED + "):\n" + sliced, e);
+			}
+			int expectedSize = Math.max(0, Math.min(limit, full.size() - offset));
+			assertThat(nativeSliced)
+					.as("slice size for query (seed %d):%n%s", SEED, sliced)
+					.hasSize(expectedSize);
+			TreeMap<String, Integer> fullCounts = new TreeMap<>();
+			for (String row : full) {
+				fullCounts.merge(row, 1, Integer::sum);
+			}
+			for (String row : nativeSliced) {
+				Integer remaining = fullCounts.merge(row, -1, Integer::sum);
+				assertThat(remaining)
+						.as("sliced row not contained in full result multiset (seed %d):%n%s%nrow: %s", SEED, sliced,
+								row)
+						.isGreaterThanOrEqualTo(0);
+			}
+		}
+	}
+
+	/**
+	 * REDUCED permits any degree of duplicate elimination, so row-for-row comparison between engines is not sound; both
+	 * engines must instead agree on the distinct set, and neither may emit more rows than the full multiset. The native
+	 * engine compiles REDUCED to the same existential-skip (semi-join) branches as DISTINCT.
+	 */
+	@Test
+	public void reducedProjectionsAgreeOnDistinctSet() {
+		Random random = new Random(SEED + 7);
+		for (int i = 0; i < 40; i++) {
+			int legs = 2 + random.nextInt(2);
+			StringBuilder where = new StringBuilder();
+			for (int j = 0; j < legs; j++) {
+				where.append("?a <")
+						.append(EX)
+						.append("p")
+						.append(1 + random.nextInt(5))
+						.append("> ?v")
+						.append(j)
+						.append(" . ");
+			}
+			String reduced = "SELECT REDUCED ?a WHERE { " + where + "}";
+			String plain = "SELECT ?a WHERE { " + where + "}";
+
+			List<String> nativeRows;
+			try {
+				nativeRows = evaluate(reduced);
+			} catch (RuntimeException e) {
+				throw new AssertionError("native evaluation failed for query (seed " + SEED + "):\n" + reduced, e);
+			}
+			List<String> genericRows = evaluateWithEngine(reduced, false);
+			List<String> fullRows = evaluateWithEngine(plain, false);
+			assertThat(new TreeSet<>(nativeRows))
+					.as("REDUCED distinct set for query (seed %d):%n%s", SEED, reduced)
+					.isEqualTo(new TreeSet<>(genericRows));
+			assertThat(nativeRows.size())
+					.as("REDUCED must not emit more rows than the full multiset (seed %d):%n%s", SEED, reduced)
+					.isLessThanOrEqualTo(fullRows.size());
+		}
+	}
+
+	private List<String> evaluateWithEngine(String query, boolean nativeEnabled) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
+			return evaluate(query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
 	@Test
 	public void nativeExpressionHotCatalogMatchesGenericEvaluator() {
 		String[] queries = {
@@ -342,6 +536,19 @@ public class LmdbNativeDifferentialFuzzTest {
 						+ "SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(DATATYPE(?o) = xsd:integer) }",
 				"SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(LANG(?o) = \"de\") }",
 				"SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(!(?missing = 1)) }",
+				// pinned regression (found by factorizedStarProjections): != against a constant must keep
+				// IRI/bnode rows — SPARQL term inequality, not a type error (only literal pairs may error)
+				"SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(?o != 3) }",
+				"SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(!(?o = 3)) }",
+				"SELECT ?s ?o WHERE { ?s ?p ?o . FILTER(?o != \"text1\") }",
+				// pinned regression: VALUES with UNDEF must not be flattened into the reorderable bag —
+				// its produced slot is a union, not a guarantee, and planners treating it as bound
+				// mis-place filters and mis-classify factorized branches
+				"SELECT ?s ?b WHERE { VALUES ?b { <" + EX + "s1> UNDEF } ?s <" + EX + "p1> ?b }",
+				"SELECT ?b (COUNT(?s) AS ?c) WHERE { VALUES ?b { <" + EX + "s1> UNDEF } ?s <" + EX + "p1> ?b }"
+						+ " GROUP BY ?b",
+				"SELECT DISTINCT ?s WHERE { VALUES ?b { <" + EX + "s2> UNDEF } ?s <" + EX + "p2> ?b"
+						+ " . FILTER(?b != <" + EX + "s3>) }",
 		};
 		for (String query : queries) {
 			assertSameResults(query);

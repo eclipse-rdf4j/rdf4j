@@ -13,11 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 @Experimental
 interface LmdbNativeSlotResolver {
@@ -216,9 +222,11 @@ final class LmdbNativeExpressionOps {
 	private LmdbNativeExpressionOps() {
 	}
 
+	private static final ValueFactory TERM_FACTORY = SimpleValueFactory.getInstance();
+
 	static Boolean compareAsBoolean(LmdbNativeValueCodec.DecodedValue left,
-			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op) {
-		LmdbNativeTruth truth = compareValues(left, right, op);
+			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
+		LmdbNativeTruth truth = compareValues(left, right, op, strict);
 		return truth == LmdbNativeTruth.ERROR ? null : truth == LmdbNativeTruth.TRUE;
 	}
 
@@ -231,12 +239,15 @@ final class LmdbNativeExpressionOps {
 	}
 
 	static LmdbNativeTruth compareValues(LmdbNativeValueCodec.DecodedValue left,
-			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op) {
+			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
 		if (left.error() || right.error()) {
 			return LmdbNativeTruth.ERROR;
 		}
 		Integer cmp = nativeCompare(left, right);
 		if (cmp == null) {
+			if (op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE) {
+				return rdfTermCompare(left, right, op, strict);
+			}
 			return LmdbNativeTruth.ERROR;
 		}
 		boolean result = switch (op) {
@@ -248,6 +259,41 @@ final class LmdbNativeExpressionOps {
 		case GE -> cmp >= 0;
 		};
 		return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+	}
+
+	/**
+	 * SPARQL {@code =} and {@code !=} only raise errors for literal pairs the value rules cannot decide; when either
+	 * side is an IRI or blank node, RDF term equality decides (mirroring {@code QueryEvaluationUtil.compareEQ/NE}).
+	 * Incomparable literal pairs delegate to the generic literal rules so both engines agree exactly — this path is
+	 * only reached when the fast native comparison already returned "incomparable", so the materialization cost is
+	 * confined to rare operand-type combinations.
+	 */
+	private static LmdbNativeTruth rdfTermCompare(LmdbNativeValueCodec.DecodedValue left,
+			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
+		if (left.literal() && right.literal()) {
+			try {
+				boolean result = op == Compare.CompareOp.EQ
+						? QueryEvaluationUtil.compareLiteralsEQ(asLiteral(left), asLiteral(right), strict)
+						: QueryEvaluationUtil.compareLiteralsNE(asLiteral(left), asLiteral(right), strict);
+				return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+			} catch (ValueExprEvaluationException e) {
+				return LmdbNativeTruth.ERROR;
+			}
+		}
+		boolean equal = left.literal() == right.literal() && left.iri() == right.iri()
+				&& Objects.equals(left.stringValue(), right.stringValue());
+		boolean result = (op == Compare.CompareOp.EQ) == equal;
+		return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+	}
+
+	private static Literal asLiteral(LmdbNativeValueCodec.DecodedValue value) {
+		if (value.language().isPresent()) {
+			return TERM_FACTORY.createLiteral(value.label(), value.language().get());
+		}
+		if (value.datatypeIri() != null) {
+			return TERM_FACTORY.createLiteral(value.label(), TERM_FACTORY.createIRI(value.datatypeIri()));
+		}
+		return TERM_FACTORY.createLiteral(value.label());
 	}
 
 	static LmdbNativeNumericValue compute(LmdbNativeNumericValue left, LmdbNativeNumericValue right,

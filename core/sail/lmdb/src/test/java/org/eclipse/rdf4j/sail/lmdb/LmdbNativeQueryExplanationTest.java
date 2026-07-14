@@ -105,6 +105,28 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
+	public void telemetryExplanationShowsChunkPipelineEngagement() {
+		// ?price is unprojected, so the trailing price pattern becomes a factorized tail branch and the
+		// chunk pipeline drives the all-pattern prefix; the telemetry explanation must say so, or silent
+		// disqualification regressions stay invisible
+		// (generic actual string metrics surface at the Telemetry level by framework design)
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString()).contains("nativeExecutionStrategy=chunkPipeline");
+	}
+
+	@Test
+	public void telemetryExplanationShowsFactorizedTailEngagement() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?price) AS ?c) WHERE { ?s a ex:Item . ?s ex:price ?price }";
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString()).contains("nativeExecutionStrategy=factorizedTail");
+	}
+
+	@Test
 	public void disabledNativeEngineSuppressesNativeExplanationMarker() {
 		String previous = System.getProperty(NATIVE_FLAG);
 		try {

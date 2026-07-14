@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 /**
@@ -71,6 +72,10 @@ final class LmdbNativeFactorizedRows {
 	final TailResult[] enumResults;
 	final TailBranch[] enumBranches;
 	final int[] odometer;
+	/** One cumulative cap across every branch memo — per-entry caps alone let N branches × 64k entries blow up. */
+	final FactorizedTail.MemoBudget memoBudget = new FactorizedTail.MemoBudget(MEMO_BYPASSES);
+	/** Which prefix strategy the last {@link #open} chose; feeds the engagement string. */
+	String prefixStrategy = "chain";
 
 	private LmdbNativeFactorizedRows(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
 			PrefixDepth[] prefixDepths, TailBranch[] branches, NativeBooleanFilter[] prefixOnlyTailFilters) {
@@ -87,61 +92,25 @@ final class LmdbNativeFactorizedRows {
 
 	/**
 	 * Plans the factorized shape over the ordered physical children, or returns null when a gate fails and the
-	 * enumerating cursor chain must run instead. Gates: every ordered child is a plain {@link PatternPlan}; tail
-	 * branches have no repeated variable; at least one tail branch exists. Patterns whose fresh slots are consumed by a
-	 * later pattern's probe or by a filter of another depth stay in the flat prefix.
+	 * enumerating cursor chain must run instead. Gates: tail branches are plain {@link PatternPlan}s without repeated
+	 * variables; at least one tail branch exists. The flat prefix may contain any {@link SlotPlan} (VALUES, BIND,
+	 * OPTIONAL, paths — the ordinary cursor chain drives it), but patterns whose fresh slots are consumed by a later
+	 * pattern's probe or by a filter of another depth stay in the flat prefix.
 	 */
 	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
 			long seedMask, int[] sourceSlots, boolean distinct) {
-		if (!ENABLED) {
+		Split split = analyzeSplit(plan, derived, seedMask);
+		if (split == null) {
 			return null;
 		}
 		SlotPlan[] order = derived.order;
 		int n = order.length;
-		if (n == 0) {
-			return null;
-		}
-		for (SlotPlan child : order) {
-			if (!(child instanceof PatternPlan)) {
-				return null;
-			}
-		}
-		long[] boundBefore = new long[n + 1];
-		boundBefore[0] = seedMask;
-		long[] fresh = new long[n];
-		long[] reads = new long[n];
-		for (int d = 0; d < n; d++) {
-			PatternPlan pattern = (PatternPlan) order[d];
-			fresh[d] = pattern.freshProducedMask(boundBefore[d]);
-			reads[d] = pattern.producedMask() & boundBefore[d];
-			boundBefore[d + 1] = boundBefore[d] | pattern.producedMask();
-		}
+		long[] fresh = split.fresh;
+		long[] reads = split.reads;
+		int flatCount = split.flatCount;
 		MaskedFilter[] filters = plan.filters;
 		int[] filterDepth = derived.filterDepth;
-		// laterNeeds[d] = slots consumed at depths >= d by pattern probes or by filter reads outside that
-		// depth's own fresh slots; a chunk stays unflat only if nothing after it consumes its fresh slots
-		long[] laterNeeds = new long[n + 1];
-		for (int d = n - 1; d >= 0; d--) {
-			long filtersAtDepth = 0L;
-			for (int f = 0; f < filters.length; f++) {
-				if (filterDepth[f] == d) {
-					filtersAtDepth |= filters[f].mask;
-				}
-			}
-			laterNeeds[d] = laterNeeds[d + 1] | reads[d] | (filtersAtDepth & ~fresh[d]);
-		}
-		int flatCount = n;
-		while (flatCount > 0 && (fresh[flatCount - 1] & laterNeeds[flatCount]) == 0L
-				&& !((PatternPlan) order[flatCount - 1]).hasRepeatedSlot()) {
-			flatCount--;
-		}
-		if (flatCount == n) {
-			return null;
-		}
-		long outputMask = 0L;
-		for (int slot : sourceSlots) {
-			outputMask |= 1L << slot;
-		}
+		long outputMask = outputMask(sourceSlots);
 		TailBranch[] branches = new TailBranch[n - flatCount];
 		ArrayList<NativeBooleanFilter> prefixOnly = new ArrayList<>();
 		for (int d = flatCount; d < n; d++) {
@@ -176,8 +145,15 @@ final class LmdbNativeFactorizedRows {
 					valueQuadPos, branchFilters.toArray(new NativeBooleanFilter[0]),
 					pattern.rejectsNullContextAtBind());
 		}
+		boolean allPrefixDepthsArePatterns = true;
+		for (int d = 0; d < flatCount; d++) {
+			if (!(order[d] instanceof PatternPlan)) {
+				allPrefixDepthsArePatterns = false;
+				break;
+			}
+		}
 		PrefixDepth[] prefixDepths = null;
-		if (CHUNKED_PREFIX_ENABLED) {
+		if (CHUNKED_PREFIX_ENABLED && allPrefixDepthsArePatterns) {
 			prefixDepths = new PrefixDepth[flatCount];
 			for (int d = 0; d < flatCount; d++) {
 				ArrayList<NativeBooleanFilter> depthFilters = new ArrayList<>();
@@ -196,10 +172,139 @@ final class LmdbNativeFactorizedRows {
 				prefixOnly.toArray(new NativeBooleanFilter[0]));
 	}
 
+	/** The flat-prefix/branch split shared by planning ({@link #tryCreate}) and the cheap dispatch probe. */
+	private static final class Split {
+		final long[] fresh;
+		final long[] reads;
+		final int flatCount;
+
+		Split(long[] fresh, long[] reads, int flatCount) {
+			this.fresh = fresh;
+			this.reads = reads;
+			this.flatCount = flatCount;
+		}
+	}
+
+	private static Split analyzeSplit(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, long seedMask) {
+		if (!ENABLED) {
+			return null;
+		}
+		SlotPlan[] order = derived.order;
+		int n = order.length;
+		if (n == 0) {
+			return null;
+		}
+		long[] boundBefore = new long[n + 1];
+		boundBefore[0] = seedMask;
+		long[] fresh = new long[n];
+		long[] reads = new long[n];
+		for (int d = 0; d < n; d++) {
+			SlotPlan child = order[d];
+			long producedMask = child.producedMask();
+			if (child instanceof PatternPlan) {
+				fresh[d] = ((PatternPlan) child).freshProducedMask(boundBefore[d]);
+				reads[d] = producedMask & boundBefore[d];
+			} else {
+				fresh[d] = producedMask & ~boundBefore[d];
+				// non-pattern children can read outside their produced mask (correlated left-join
+				// conditions, filter barriers), so their consumption is over-approximated: no pattern
+				// before this depth can become a branch
+				reads[d] = ~0L;
+			}
+			boundBefore[d + 1] = boundBefore[d] | producedMask;
+		}
+		MaskedFilter[] filters = plan.filters;
+		int[] filterDepth = derived.filterDepth;
+		// laterNeeds[d] = slots consumed at depths >= d by pattern probes or by filter reads outside that
+		// depth's own fresh slots; a chunk stays unflat only if nothing after it consumes its fresh slots
+		long[] laterNeeds = new long[n + 1];
+		for (int d = n - 1; d >= 0; d--) {
+			long filtersAtDepth = 0L;
+			for (int f = 0; f < filters.length; f++) {
+				if (filterDepth[f] == d) {
+					filtersAtDepth |= filters[f].mask;
+				}
+			}
+			laterNeeds[d] = laterNeeds[d + 1] | reads[d] | (filtersAtDepth & ~fresh[d]);
+		}
+		int flatCount = n;
+		while (flatCount > 0 && order[flatCount - 1] instanceof PatternPlan
+				&& (fresh[flatCount - 1] & laterNeeds[flatCount]) == 0L
+				&& !((PatternPlan) order[flatCount - 1]).hasRepeatedSlot()) {
+			flatCount--;
+		}
+		if (flatCount == n) {
+			return null;
+		}
+		return new Split(fresh, reads, flatCount);
+	}
+
+	private static long outputMask(int[] sourceSlots) {
+		long outputMask = 0L;
+		for (int slot : sourceSlots) {
+			outputMask |= 1L << slot;
+		}
+		return outputMask;
+	}
+
+	/**
+	 * Cheap dispatch probe: reports whether this plan would factorize with at least one counting or existence branch —
+	 * the case that provably outranks the enumerating batch strategy (per-distinct-key probes instead of per-row
+	 * enumeration). Shares {@link #analyzeSplit} with {@link #tryCreate} so the two can never disagree, builds nothing,
+	 * and counts no engagement.
+	 */
+	static boolean plansCountingBranch(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, long seedMask,
+			int[] sourceSlots) {
+		Split split = analyzeSplit(plan, derived, seedMask);
+		if (split == null) {
+			return false;
+		}
+		long outputMask = outputMask(sourceSlots);
+		for (int d = split.flatCount; d < split.fresh.length; d++) {
+			if ((split.fresh[d] & outputMask) == 0L) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	String describeEngagement() {
+		int enums = 0;
+		int counts = 0;
+		int exists = 0;
+		for (TailBranch branch : branches) {
+			if (branch.role == ROLE_ENUM) {
+				enums++;
+			} else if (branch.role == ROLE_COUNT) {
+				counts++;
+			} else {
+				exists++;
+			}
+		}
+		String branchCounts = "enumBranches=" + enums + ", countBranches=" + counts + ", existsBranches=" + exists;
+		if ("chunkPipeline".equals(prefixStrategy)) {
+			return "chunkPipeline(flat=" + flatCount + ", " + branchCounts + ")";
+		}
+		return "factorizedRows(flatPrefix=" + flatCount + ", prefix=" + prefixStrategy + ", " + branchCounts + ")";
+	}
+
 	FactorizedRowCursor open(RowState row) throws IOException {
-		RowCursor prefix = flatCount == 0 ? new SingletonCursor()
-				: prefixDepths != null ? new ChunkedPrefixCursor(row, prefixDepths)
-						: plan.openChain(derived, flatCount, row);
+		RowCursor prefix;
+		if (flatCount == 0) {
+			prefix = new SingletonCursor();
+			prefixStrategy = "singleton";
+		} else {
+			prefix = LmdbNativeChunkPipeline.tryOpenPrefix(plan, derived, flatCount, row, memoBudget);
+			if (prefix != null) {
+				prefixStrategy = "chunkPipeline";
+			} else if (prefixDepths != null) {
+				prefix = new ChunkedPrefixCursor(row, prefixDepths);
+				prefixStrategy = "chunkedMemo";
+			} else {
+				prefix = plan.openChain(derived, flatCount, row);
+				prefixStrategy = "chain";
+			}
+		}
 		return new Cursor(this, row, prefix);
 	}
 
@@ -212,6 +317,7 @@ final class LmdbNativeFactorizedRows {
 		if (flatCount == 0) {
 			throw new IllegalStateException("a fully factorized plan has no partitionable root prefix");
 		}
+		prefixStrategy = "chain";
 		return new Cursor(this, row, plan.openChainFrom(derived, leftmost, flatCount, row));
 	}
 
@@ -259,6 +365,11 @@ final class LmdbNativeFactorizedRows {
 						continue prefixLoop;
 					}
 					if (branch.role == ROLE_COUNT) {
+						// saturation is observationally sound here: multiplicity only controls how many times an
+						// identical row is emitted, no consumer can pull more than 2^63-1 rows, and every consumable
+						// prefix is the same under the saturated and the true value (LIMIT results stay exact).
+						// Aggregate COUNTs must NOT saturate — they fold into a scalar the user reads — see
+						// FactorizedTail.multiplyCounts.
 						if (multiplicity >= Long.MAX_VALUE / result.count) {
 							multiplicity = Long.MAX_VALUE;
 						} else {
@@ -393,11 +504,9 @@ final class LmdbNativeFactorizedRows {
 				return memoized;
 			}
 			TailResult result = scan(row, owner.quadBuffer);
-			if (memo.size() < MEMO_MAX_ENTRIES
-					&& (result.values == null || result.values.length <= MEMO_MAX_VALUES)) {
+			long stored = result.values == null ? 0L : result.values.length;
+			if (owner.memoBudget.tryReserve(1, stored)) {
 				memo.put(probeKey.storedCopy(), result);
-			} else {
-				MEMO_BYPASSES.incrementAndGet();
 			}
 			return result;
 		}
@@ -429,13 +538,21 @@ final class LmdbNativeFactorizedRows {
 							return TailResult.ONE;
 						}
 						if (values != null) {
-							int at = (int) count * valueSlots.length;
-							if (at + valueSlots.length > values.length) {
+							long at = count * valueSlots.length;
+							if (at + valueSlots.length > FactorizedTail.MAX_COLLECTED_VALUES) {
+								// the int-indexed value batch is at the maximum array size; wrapping the
+								// index would read/write garbage, so fail clearly instead
+								throw new QueryEvaluationException(
+										"factorized enumeration overflow: a single probe key fans out beyond "
+												+ "the maximum in-memory value batch");
+							}
+							int atInt = (int) at;
+							if (atInt + valueSlots.length > values.length) {
 								values = Arrays.copyOf(values, Math.max(values.length * 2,
-										at + valueSlots.length));
+										atInt + valueSlots.length));
 							}
 							for (int j = 0; j < valueSlots.length; j++) {
-								values[at + j] = buffer[base + valueQuadPos[j]];
+								values[atInt + j] = buffer[base + valueQuadPos[j]];
 							}
 						}
 						count++;
@@ -448,7 +565,7 @@ final class LmdbNativeFactorizedRows {
 					return count == 1L ? TailResult.ONE : new TailResult(count, null);
 				}
 				return new TailResult(count, values.length == count * valueSlots.length ? values
-						: Arrays.copyOf(values, (int) count * valueSlots.length));
+						: Arrays.copyOf(values, (int) (count * valueSlots.length)));
 			}
 		}
 

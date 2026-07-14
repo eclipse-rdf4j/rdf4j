@@ -101,18 +101,63 @@ class LmdbNativeHashJoinBatchTest {
 		assertThat(LmdbNativeHashJoin.PROBE_BATCHES.get()).isZero();
 	}
 
+	@Test
+	void correlatedFragmentEntryNeverBuildsPerOuterRow() {
+		// An OPTIONAL arm with a BIND compiles to a generic LeftJoin whose right-arm join is a bare native
+		// fragment, re-evaluated once per outer row with ?s bound. A hash join build sweeps the arm's full
+		// pattern per entry, turning the correlated nested loop into outer-rows × store-scan work — the
+		// bound-prefix chain is the strategy that exploits the entry binding, so the build must refuse.
+		String correlated = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (COUNT(DISTINCT ?b) AS ?cnt) WHERE { ?s ex:p1 ?a .\n"
+				+ "  OPTIONAL { ?s ex:p2 ?b . ?b ex:p3 ?c . BIND(?c AS ?c2) }\n"
+				+ "  FILTER(?c2 != ?s)\n"
+				+ "  FILTER EXISTS { ?b ex:p3 ?c3 }\n"
+				+ "} GROUP BY ?s";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI p1 = vf.createIRI(EX, "p1");
+			IRI p2 = vf.createIRI(EX, "p2");
+			IRI p3 = vf.createIRI(EX, "p3");
+			for (int i = 0; i < 20; i++) {
+				IRI subject = vf.createIRI(EX, "s" + i);
+				IRI bridge = vf.createIRI(EX, "b" + i);
+				connection.add(subject, p1, vf.createIRI(EX, "a" + i));
+				connection.add(subject, p2, bridge);
+				connection.add(bridge, p3, vf.createIRI(EX, "c" + i));
+			}
+		}
+		List<String> generic = genericRows(correlated);
+		resetCounters();
+		long parallelRunsBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+		long batchRootsBefore = NativeBatch.ROOT_ITERATIONS.get();
+
+		assertThat(rows(correlated)).isEqualTo(generic).hasSize(20);
+		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelRunsBefore);
+		// only the uncorrelated root pattern scan may batch; the per-row EXISTS and OPTIONAL-arm entries must not
+		assertThat(NativeBatch.ROOT_ITERATIONS.get() - batchRootsBefore).isLessThanOrEqualTo(1L);
+	}
+
 	private List<String> genericRows() {
+		return genericRows(QUERY);
+	}
+
+	private List<String> genericRows(String query) {
 		System.setProperty(NATIVE_FLAG, "false");
 		try {
-			return rows();
+			return rows(query);
 		} finally {
 			System.clearProperty(NATIVE_FLAG);
 		}
 	}
 
 	private List<String> rows() {
+		return rows(QUERY);
+	}
+
+	private List<String> rows(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(QUERY).evaluate())
+			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
 					.stream()
 					.map(LmdbNativeHashJoinBatchTest::canonical)
 					.sorted()

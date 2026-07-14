@@ -213,7 +213,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 					}
 				} else {
 					LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
-							.compileInlineId(expression, source, this::slot);
+							.compileInlineId(expression, source, this::slot,
+									strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 					if (computed == null) {
 						return null;
 					}

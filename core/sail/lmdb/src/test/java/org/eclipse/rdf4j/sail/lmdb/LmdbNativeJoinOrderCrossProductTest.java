@@ -74,15 +74,19 @@ public class LmdbNativeJoinOrderCrossProductTest {
 
 	@Test
 	public void slotPlanJoinKeepsValuesBeforeBroadPattern() {
+		// VALUES now joins the reorderable bag (so the factorized split can claim trailing patterns), but
+		// the invariant this test guards is unchanged: the selective VALUES seed stays before the broad
+		// pattern — both in the bag's compiler order and in the physical order derived from it
 		ValuesPlan values = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { S }, new long[] { 11L }) });
 		PatternPlan knows = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 1_000D);
 
 		SlotPlan join = SlotPlan.join(values, knows);
 
-		assertThat(join).isInstanceOf(JoinPlan.class);
-		JoinPlan ordered = (JoinPlan) join;
-		assertThat(ordered.left).isSameAs(values);
-		assertThat(ordered.right).isSameAs(knows);
+		assertThat(join).isInstanceOf(MultiJoinPlan.class);
+		MultiJoinPlan bag = (MultiJoinPlan) join;
+		assertThat(bag.children).containsExactly(values, knows);
+		assertThat(bag.derivedPlan(emptyRow()).order).containsExactly(values, knows);
+		assertThat(bag.derivedFactorizedPlan(emptyRow()).order).containsExactly(values, knows);
 	}
 
 	@Test
@@ -100,6 +104,47 @@ public class LmdbNativeJoinOrderCrossProductTest {
 
 	@Test
 	public void rowCompilerOpensPatternsInAlgebraOrder() {
+		// the batch hash join may scan its build side first (physical refinement, same rows); every
+		// order-driven execution path must still open the first algebra pattern first, so it is
+		// disabled here to expose the cursor-chain/factorized order
+		String previousBatch = System.getProperty("rdf4j.lmdb.nativeBatch.enabled");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			StatementPattern broadFirst = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+			StatementPattern constantPredicateSecond = new StatementPattern(Var.of("s"),
+					Var.of("edge", EDGE_IRI, true), Var.of("x"));
+
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(
+					new Join(broadFirst, constantPredicateSecond),
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+
+			assertThat(step)
+					.as("a bare Join fragment must compile natively (the legacy BGP compiler's claim set)")
+					.isNotNull();
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(iteration.hasNext()).isTrue();
+			}
+			assertThat(source.calls)
+					.as("the first native scan must be the first algebra pattern, even when a later pattern scores better")
+					.first()
+					.isEqualTo(new PatternCall(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID));
+		} finally {
+			if (previousBatch == null) {
+				System.clearProperty("rdf4j.lmdb.nativeBatch.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeBatch.enabled", previousBatch);
+			}
+		}
+	}
+
+	@Test
+	public void bareFragmentRowsBindAllVariablesAndCarryBaseBindings() {
+		// a bare fragment reaches precompile when the generic evaluator recurses into unsupported outer
+		// algebra; its rows join with the caller's bindings, so every fragment variable must be bound AND
+		// base bindings for foreign names must pass through untouched (the generic iterators rely on it)
 		RecordingNativeSource source = new RecordingNativeSource();
 		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
 				0L, new EvaluationStatistics(), false);
@@ -107,17 +152,23 @@ public class LmdbNativeJoinOrderCrossProductTest {
 		StatementPattern constantPredicateSecond = new StatementPattern(Var.of("s"), Var.of("edge", EDGE_IRI, true),
 				Var.of("x"));
 
-		QueryEvaluationStep step = LmdbNativeQueryCompiler.tryCompile(new Join(broadFirst, constantPredicateSecond),
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(new Join(broadFirst, constantPredicateSecond),
 				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
-
 		assertThat(step).isNotNull();
-		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+
+		org.eclipse.rdf4j.query.impl.MapBindingSet base = new org.eclipse.rdf4j.query.impl.MapBindingSet();
+		base.addBinding("unrelated", VF.createIRI("urn:test:carried"));
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(base)) {
 			assertThat(iteration.hasNext()).isTrue();
+			BindingSet row = iteration.next();
+			assertThat(row.getValue("s")).as("fragment variables must be bound").isNotNull();
+			assertThat(row.getValue("p")).isNotNull();
+			assertThat(row.getValue("o")).isNotNull();
+			assertThat(row.getValue("x")).isNotNull();
+			assertThat(row.getValue("unrelated"))
+					.as("base bindings for names outside the fragment must be carried through")
+					.isEqualTo(VF.createIRI("urn:test:carried"));
 		}
-		assertThat(source.calls)
-				.as("the first native scan must be the first algebra pattern, even when a later pattern scores better")
-				.first()
-				.isEqualTo(new PatternCall(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID));
 	}
 
 	private static final class RecordingNativeSource implements NativeLmdbQuerySource {

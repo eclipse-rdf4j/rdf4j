@@ -124,13 +124,13 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 

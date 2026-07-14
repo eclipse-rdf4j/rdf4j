@@ -63,15 +63,17 @@ public final class LmdbNativeExpressionCompiler {
 
 	private final LmdbNativeSlotResolver slots;
 	private final LmdbNativeScalarExpressionCompiler scalar;
+	private final boolean strictCompare;
 
 	private LmdbNativeExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
-			LmdbNativeSlotResolver slots) {
+			LmdbNativeSlotResolver slots, boolean strictCompare) {
 		this.slots = slots;
 		this.scalar = new LmdbNativeScalarExpressionCompiler(source, codec, slots);
+		this.strictCompare = strictCompare;
 	}
 
 	static LmdbNativeCompiledBoolean compileBoolean(ValueExpr expr, NativeLmdbQuerySource source,
-			LmdbNativeSlotResolver slots) {
+			LmdbNativeSlotResolver slots, boolean strictCompare) {
 		if (!enabled()) {
 			return null;
 		}
@@ -79,7 +81,8 @@ public final class LmdbNativeExpressionCompiler {
 		if (codec == null) {
 			return null;
 		}
-		LmdbNativeCompiledTruth compiled = new LmdbNativeExpressionCompiler(source, codec, slots).compileTruth(expr);
+		LmdbNativeCompiledTruth compiled = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare)
+				.compileTruth(expr);
 		if (compiled == null) {
 			return null;
 		}
@@ -88,7 +91,7 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	static LmdbNativeCompiledInlineId compileInlineId(ValueExpr expr, NativeLmdbQuerySource source,
-			LmdbNativeSlotResolver slots) {
+			LmdbNativeSlotResolver slots, boolean strictCompare) {
 		if (!enabled()) {
 			return null;
 		}
@@ -100,7 +103,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (constant != null) {
 			return constant;
 		}
-		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots);
+		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare);
 		LmdbNativeCompiledValue value = compiler.compileValue(expr);
 		if (value == null) {
 			return null;
@@ -231,8 +234,9 @@ public final class LmdbNativeExpressionCompiler {
 			return null;
 		}
 		Compare.CompareOp op = compare.getOperator();
+		boolean strict = strictCompare;
 		return truth(left.requiredMask | right.requiredMask, row -> LmdbNativeExpressionOps
-				.compareValues(left.evaluator.eval(row), right.evaluator.eval(row), op));
+				.compareValues(left.evaluator.eval(row), right.evaluator.eval(row), op, strict));
 	}
 
 	private boolean anchoredComparison(ValueExpr left, ValueExpr right) {
@@ -263,8 +267,8 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	static Boolean compareAsBoolean(LmdbNativeValueCodec.DecodedValue left,
-			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op) {
-		return LmdbNativeExpressionOps.compareAsBoolean(left, right, op);
+			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
+		return LmdbNativeExpressionOps.compareAsBoolean(left, right, op, strict);
 	}
 
 	static Integer compareDecoded(LmdbNativeValueCodec.DecodedValue left,

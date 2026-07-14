@@ -403,6 +403,11 @@ final class MinusCursor implements RowCursor {
 final class ValuesPlan implements SlotPlan {
 	final ValuesRow[] rows;
 	final long producedMask;
+	/**
+	 * True when every row binds every slot of {@link #producedMask}. UNDEF rows make the mask a union, not a guarantee
+	 * — such plans must not join the reorderable bag, whose planners treat produced slots as bound.
+	 */
+	final boolean bindsAllSlotsEveryRow;
 
 	ValuesPlan(ValuesRow[] rows) {
 		this.rows = rows;
@@ -413,6 +418,18 @@ final class ValuesPlan implements SlotPlan {
 			}
 		}
 		this.producedMask = mask;
+		boolean complete = true;
+		for (ValuesRow row : rows) {
+			long rowMask = 0L;
+			for (int slot : row.slots) {
+				rowMask |= 1L << slot;
+			}
+			if (rowMask != mask) {
+				complete = false;
+				break;
+			}
+		}
+		this.bindsAllSlotsEveryRow = complete;
 	}
 
 	@Override

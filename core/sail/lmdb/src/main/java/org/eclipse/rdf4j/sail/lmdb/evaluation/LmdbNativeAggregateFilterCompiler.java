@@ -274,7 +274,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				}
 			} else {
 				LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
-						.compileInlineId(expression, source, this::slot);
+						.compileInlineId(expression, source, this::slot,
+								strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 				if (computed == null) {
 					return null;
 				}
@@ -391,7 +392,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return compileGenericBoolean(expr);
 		}
 		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
-				.compileBoolean(expr, source, this::slot);
+				.compileBoolean(expr, source, this::slot, strictCompare());
 		if (nativeExpression != null) {
 			return nativeExpression;
 		}
@@ -591,11 +592,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	NativeBooleanFilter cachedCompareIfPossible(Compare.CompareOp op, IdOperand left, IdOperand right,
 			Predicate<BindingSet> fallback) {
+		boolean strict = strictCompare();
 		if (left.isSlot() && right.isConstant()) {
-			return new CachedCompareFilter(source, left.slot, right.constant, false, op, fallback);
+			return new CachedCompareFilter(source, left.slot, right.constant, false, op, strict, fallback);
 		}
 		if (left.isConstant() && right.isSlot()) {
-			return new CachedCompareFilter(source, right.slot, left.constant, true, op, fallback);
+			return new CachedCompareFilter(source, right.slot, left.constant, true, op, strict, fallback);
 		}
 		return null;
 	}

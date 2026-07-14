@@ -163,7 +163,22 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final NativeTupleDistinctPlan distinctPlan;
+	/**
+	 * Bare-fragment mode: rows are full-slot snapshots carrying base bindings through ({@link RowBindingSetView})
+	 * instead of projections — the contract for BGP fragments the generic evaluator drives with its own bindings.
+	 */
+	boolean snapshotRows;
 	QueryEvaluationStep genericStep;
+
+	/** A bare BGP fragment: no projection, distinct, order, or slice — snapshot rows over the whole slot layout. */
+	static NativeRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context) {
+		NativeRowsStep step = new NativeRowsStep(source, arg, layout, sourceSlots, targetNames, false, new int[0],
+				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null, null);
+		step.snapshotRows = true;
+		return step;
+	}
 
 	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
 			String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
@@ -310,6 +325,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// could underfill a pre-projection top-k): keep only the best offset+limit rows while scanning
 		long topK = emitCap != Long.MAX_VALUE && emitCap <= 100_000 ? emitCap : -1L;
 		if (topK >= 0) {
+			LmdbNativeExplain.recordStrategy(originalExpr, "orderedTopK");
 			NativeTopKBuffer best = new NativeTopKBuffer(row.slots.length, (int) topK, comparator);
 			NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots) : null;
 			long ordinal = 0L;
@@ -329,6 +345,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 		}
 
+		LmdbNativeExplain.recordStrategy(originalExpr, "orderedSpillSort");
 		try (NativeSpillSort snapshots = new NativeSpillSort(row.slots.length, comparator)) {
 			long ordinal = 0L;
 			try (RowCursor cursor = arg.open(row)) {
@@ -405,6 +422,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 		}
 		return result;
+	}
+
+	/** Row emission honoring {@link #snapshotRows}: fragments snapshot the full row and carry base bindings. */
+	BindingSet emit(long[] slots, AggContext values, BindingSet base) {
+		if (snapshotRows) {
+			return new RowBindingSetView(source, layout, base, Arrays.copyOf(slots, slots.length), true);
+		}
+		return project(slots, values);
 	}
 
 	List<BindingSet> slice(ArrayList<BindingSet> results) {
@@ -505,7 +530,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 					continue;
 				}
 			}
-			repeated = step.project(row.slots, values);
+			repeated = step.emit(row.slots, values, base);
 			remainingMultiplicity = multiplicity - 1;
 			remainingLimit--;
 			return repeated;
@@ -532,7 +557,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				continue;
 			}
 			remainingLimit--;
-			return step.project(row.slots, values);
+			return step.emit(row.slots, values, base);
 		}
 		return null;
 	}
@@ -551,36 +576,58 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		cursor = step.openPrefixRunCursor(row);
 		if (cursor != null) {
 			distinctHandledByCursor = true;
+			LmdbNativeExplain.recordStrategy(step.originalExpr, "prefixRun");
 			return true;
 		}
 		if (distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
 			cursor = distinctPlan.arg.open(row);
+			LmdbNativeExplain.recordStrategy(step.originalExpr, "orderedDistinct");
 			return true;
 		}
-		if (NativeBatch.enabled()) {
+		MultiJoinPlan multiJoin = step.arg instanceof MultiJoinPlan && ((MultiJoinPlan) step.arg).children.length > 0
+				? (MultiJoinPlan) step.arg
+				: null;
+		// correlated entry (the caller pre-bound a slot this plan produces): initialize() runs once per
+		// outer row, so per-open batch setup outweighs bulk-fill amortization on a bound-prefix probe —
+		// the plain cursor chain is the strategy that exploits the binding
+		boolean correlatedEntry = (step.arg.producedMask() & row.boundMask()) != 0L;
+		// a factorization with a counting/existence branch replaces per-row enumeration with per-key
+		// probes, so the enumerating batch hash join must yield to it; parallel execution keeps its
+		// priority (its workers multiply with factorization internally). The probe only walks slot
+		// masks — the factorization itself is built at its own dispatch slot below.
+		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,
+				multiJoin.derivedFactorizedPlan(row), row.boundMask(), step.sourceSlots);
+		if (!correlatedEntry && NativeBatch.enabled() && !countingBranch) {
 			int capacity = NativeBatch.configuredRows();
 			BatchCursor candidate = step.arg.openBatch(row, capacity);
 			if (candidate != null) {
 				batchCursor = candidate;
 				batch = new NativeBatch(row.slots.length, capacity);
 				NativeBatch.ROOT_ITERATIONS.incrementAndGet();
+				LmdbNativeExplain.recordStrategy(step.originalExpr, "batch");
 				return true;
 			}
 		}
 		cursor = LmdbNativeParallelPipelines.tryOpen(step, row);
 		if (cursor != null) {
+			LmdbNativeExplain.recordStrategy(step.originalExpr, "parallelPipelines");
 			return true;
 		}
-		if (step.arg instanceof MultiJoinPlan && ((MultiJoinPlan) step.arg).children.length > 0) {
-			MultiJoinPlan multiJoin = (MultiJoinPlan) step.arg;
+		// under correlated entry an all-ENUM factorization is memoized enumeration whose memos die with
+		// this per-outer-row open — only a counting/existence branch pays for the per-open analysis
+		if (multiJoin != null && (!correlatedEntry || countingBranch)) {
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-					multiJoin.derivedPlan(row), row, row.boundMask(), step.sourceSlots, step.distinct);
+					multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), step.sourceSlots, step.distinct);
 			if (factorized != null) {
 				cursor = factorized.open(row);
+				if (LmdbNativeExplain.recordsStrategies(step.originalExpr)) {
+					LmdbNativeExplain.recordStrategy(step.originalExpr, factorized.describeEngagement());
+				}
 				return true;
 			}
 		}
 		cursor = step.arg.open(row);
+		LmdbNativeExplain.recordStrategy(step.originalExpr, "nestedLoop");
 		return true;
 	}
 

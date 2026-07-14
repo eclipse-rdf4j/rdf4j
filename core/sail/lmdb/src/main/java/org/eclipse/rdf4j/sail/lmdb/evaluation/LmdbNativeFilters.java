@@ -394,18 +394,20 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final long constant;
 	final boolean constantOnLeft;
 	final Compare.CompareOp op;
+	final boolean strict;
 	final Predicate<BindingSet> fallback;
 	final LmdbNativeValueCodec codec;
 	final LmdbNativeValueCodec.DecodedValue constantDecoded;
 	final LongBooleanMemo memo = new LongBooleanMemo(512);
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
-			Compare.CompareOp op,
+			Compare.CompareOp op, boolean strict,
 			Predicate<BindingSet> fallback) {
 		this.slot = slot;
 		this.constant = constant;
 		this.constantOnLeft = constantOnLeft;
 		this.op = op;
+		this.strict = strict;
 		this.fallback = fallback;
 		this.codec = source.nativeValueCodec();
 		this.constantDecoded = codec == null ? null : codec.decode(constant);
@@ -429,8 +431,8 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		if (codec != null && constantDecoded != null && !constantDecoded.error()) {
 			LmdbNativeValueCodec.DecodedValue value = codec.decode(id);
 			Boolean result = constantOnLeft
-					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op)
-					: LmdbNativeExpressionCompiler.compareAsBoolean(value, constantDecoded, op);
+					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op, strict)
+					: LmdbNativeExpressionCompiler.compareAsBoolean(value, constantDecoded, op, strict);
 			if (result != null) {
 				memo.put(id, result);
 				return result;
