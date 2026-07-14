@@ -594,7 +594,9 @@ final class LmdbNativeChunkPipeline {
 		/** Key whose matches the current probe collects for the memo, or null. */
 		GroupKey collectKey;
 		/** Non-null once the stage flipped to scan-once mode: every probe key resolves from this table. */
-		HashMap<GroupKey, long[]> hashTable;
+		HashMap<GroupKey, HashBucket> hashTable;
+		int hashReservedEntries;
+		long hashReservedValues;
 		boolean hashBuildRefused;
 		int storeProbes;
 		long cumulativeScanned;
@@ -721,7 +723,7 @@ final class LmdbNativeChunkPipeline {
 				buildHashTable();
 			}
 			if (hashTable != null) {
-				replayFromEntry(hashTable.get(probeKey.refill(scratch, keySlots)));
+				replayFromBucket(hashTable.get(probeKey.refill(scratch, keySlots)));
 				return;
 			}
 			// a zero-slot key means every row repeats the same key: run replay already covers it
@@ -908,6 +910,21 @@ final class LmdbNativeChunkPipeline {
 			replayEmit = 0;
 		}
 
+		/** Loads a hash bucket directly, without copying its payload through the shared append-only arena. */
+		private void replayFromBucket(HashBucket bucket) {
+			int matches = bucket == null ? 0 : (int) bucket.matches;
+			int len = matches * freshSlots.length;
+			if (len > replay.length) {
+				replay = Arrays.copyOf(replay, Math.max(replay.length * 2, len));
+			}
+			if (len > 0) {
+				System.arraycopy(bucket.values, 0, replay, 0, len);
+			}
+			replayMatches = matches;
+			replayComplete = true;
+			replayEmit = 0;
+		}
+
 		/**
 		 * The validated scan-once trigger ported from the factorized tail: once per-key probing has cost about as much
 		 * as one sequential sweep of the whole pattern range, flip to hash-join-style evaluation. Only a finite,
@@ -928,7 +945,6 @@ final class LmdbNativeChunkPipeline {
 		 * the stage keeps probing per key and never retries the build.
 		 */
 		private void buildHashTable() throws IOException {
-			HASH_BUILDS.incrementAndGet();
 			long unboundMask = 0L;
 			for (int slot : keySlots) {
 				unboundMask |= 1L << slot;
@@ -936,69 +952,76 @@ final class LmdbNativeChunkPipeline {
 			int stride = freshSlots.length;
 			HashMap<GroupKey, HashBucket> buckets = new HashMap<>();
 			GroupKey sweepKey = new GroupKey(new long[keySlots.length]);
-			long totalValues = 0L;
+			int reservedEntries = 0;
+			long reservedValues = 0L;
+			boolean published = false;
 			if (probe == null) {
 				probe = row.source.newProbe();
 			}
 			// fresh slots are UNKNOWN in the input row, so only constants stay bound in the sweep
 			System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
 			boolean namedContextCheck = pattern.namedContextScope && !pattern.contexts.isFixed();
-			try (PatternCursor cursor = pattern.openRawUnbinding(row, unboundMask, probe)) {
-				int rows;
-				while ((rows = cursor.fill(quads, BATCH_ROWS)) > 0) {
-					for (int i = 0; i < rows; i++) {
-						int offset = i * 4;
-						long context = quads[offset + TripleIndex.CONTEXT_IDX];
-						if ((rejectNullContext || namedContextCheck) && context == NULL_CONTEXT_ID) {
-							continue;
-						}
-						for (int k = 0; k < keyQuadPos.length; k++) {
-							sweepKey.ids[k] = quads[offset + keyQuadPos[k]];
-						}
-						sweepKey.rehash();
-						HashBucket bucket = buckets.get(sweepKey);
-						if (bucket == null) {
-							bucket = new HashBucket();
-							buckets.put(sweepKey.storedCopy(), bucket);
-						}
-						if (stride > 0) {
-							bucket.ensureRoom(stride);
-							for (int j = 0; j < stride; j++) {
-								bucket.values[bucket.length++] = quads[offset + freshQuadPos[j]];
+			try {
+				try (PatternCursor cursor = pattern.openRawUnbinding(row, unboundMask, probe)) {
+					int rows;
+					while ((rows = cursor.fill(quads, BATCH_ROWS)) > 0) {
+						for (int i = 0; i < rows; i++) {
+							int offset = i * 4;
+							long context = quads[offset + TripleIndex.CONTEXT_IDX];
+							if ((rejectNullContext || namedContextCheck) && context == NULL_CONTEXT_ID) {
+								continue;
 							}
+							for (int k = 0; k < keyQuadPos.length; k++) {
+								sweepKey.ids[k] = quads[offset + keyQuadPos[k]];
+							}
+							sweepKey.rehash();
+							HashBucket bucket = buckets.get(sweepKey);
+							int addedEntry = bucket == null ? 1 : 0;
+							if (!memoBudget.tryReserve(addedEntry, stride)) {
+								hashBuildRefused = true;
+								return;
+							}
+							reservedEntries += addedEntry;
+							reservedValues += stride;
+							if (bucket == null) {
+								bucket = new HashBucket();
+								buckets.put(sweepKey.storedCopy(), bucket);
+							}
+							if (stride > 0) {
+								bucket.ensureRoom(stride);
+								for (int j = 0; j < stride; j++) {
+									bucket.values[bucket.length++] = quads[offset + freshQuadPos[j]];
+								}
+							}
+							bucket.matches++;
 						}
-						bucket.matches++;
-						totalValues += stride;
 					}
 				}
-			}
-			if (!memoBudget.tryReserve(buckets.size(), totalValues)) {
-				hashBuildRefused = true;
-				return;
-			}
-			HashMap<GroupKey, long[]> table = new HashMap<>(Math.max(16, buckets.size() * 2));
-			for (HashMap.Entry<GroupKey, HashBucket> entry : buckets.entrySet()) {
-				HashBucket bucket = entry.getValue();
-				long offset = 0L;
-				if (bucket.length > 0) {
-					offset = arena.append(bucket.values, 0, bucket.length);
-					if (offset == LmdbNativeLongArena.REFUSED) {
-						hashBuildRefused = true;
-						return;
+				SipMask mask = null;
+				if (sip != null && sipEnabled()) {
+					long[] maskKeys = new long[buckets.size()];
+					int n = 0;
+					for (GroupKey key : buckets.keySet()) {
+						maskKeys[n++] = key.ids[0];
 					}
+					sortUnsigned(maskKeys);
+					mask = new SipMask(maskKeys, sip.quadPos, sip.seekable, sip.template);
 				}
-				table.put(entry.getKey(), new long[] { offset, bucket.matches });
-			}
-			memo.clear();
-			hashTable = table;
-			if (sip != null && sipEnabled()) {
-				long[] maskKeys = new long[table.size()];
-				int n = 0;
-				for (GroupKey key : table.keySet()) {
-					maskKeys[n++] = key.ids[0];
+				int memoEntries = memo.size();
+				memo.clear();
+				memoBudget.release(memoEntries, 0);
+				hashTable = buckets;
+				hashReservedEntries = reservedEntries;
+				hashReservedValues = reservedValues;
+				published = true;
+				HASH_BUILDS.incrementAndGet();
+				if (mask != null) {
+					rootStage.publishMask(mask);
 				}
-				sortUnsigned(maskKeys);
-				rootStage.publishMask(new SipMask(maskKeys, sip.quadPos, sip.seekable, sip.template));
+			} finally {
+				if (!published) {
+					memoBudget.release(reservedEntries, reservedValues);
+				}
 			}
 		}
 
@@ -1111,7 +1134,15 @@ final class LmdbNativeChunkPipeline {
 					probe.close();
 					probe = null;
 				}
+				memoBudget.release(memo.size(), 0);
 				memo.clear();
+				if (hashTable != null) {
+					hashTable.clear();
+					hashTable = null;
+					memoBudget.release(hashReservedEntries, hashReservedValues);
+					hashReservedEntries = 0;
+					hashReservedValues = 0L;
+				}
 				upstream.close();
 			}
 		}

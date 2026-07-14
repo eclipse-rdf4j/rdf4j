@@ -15,6 +15,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import java.util.Comparator;
 import java.util.Optional;
 
+import javax.xml.datatype.DatatypeConstants;
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -113,6 +116,10 @@ public class ValueComparator implements Comparator<Value> {
 		// form."
 
 		if (!(QueryEvaluationUtility.isPlainLiteral(leftLit) || QueryEvaluationUtility.isPlainLiteral(rightLit))) {
+			Integer calendarOrder = compareSameCalendarDatatype(leftLit, rightLit);
+			if (calendarOrder != null) {
+				return calendarOrder;
+			}
 			QueryEvaluationUtility.Order order = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, strict);
 			if (order == QueryEvaluationUtility.Order.illegalArgument) {
 				throw new IllegalStateException();
@@ -127,6 +134,60 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		return comparePlainLiterals(leftLit, rightLit);
+	}
+
+	/**
+	 * Totalizes one XML Schema calendar datatype without mixing its partial timeline order with lexical fallback. A
+	 * timezone-free value denotes any instant obtained with an offset from -14:00 through +14:00, so it is represented
+	 * by its earliest and latest possible UTC values. Lexicographically ordering those closed intervals extends every
+	 * determinate XML calendar comparison and remains transitive for overlapping (otherwise indeterminate) intervals.
+	 */
+	private static Integer compareSameCalendarDatatype(Literal leftLit, Literal rightLit) {
+		CoreDatatype.XSD datatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == null || datatype != rightLit.getCoreDatatype().asXSDDatatypeOrNull()
+				|| !datatype.isCalendarDatatype()) {
+			return null;
+		}
+		try {
+			CalendarBounds left = calendarBounds(leftLit.calendarValue());
+			CalendarBounds right = calendarBounds(rightLit.calendarValue());
+			int lower = left.lower.compare(right.lower);
+			if (lower == DatatypeConstants.INDETERMINATE) {
+				return null;
+			}
+			if (lower != DatatypeConstants.EQUAL) {
+				return Integer.signum(lower);
+			}
+			int upper = left.upper.compare(right.upper);
+			if (upper == DatatypeConstants.INDETERMINATE) {
+				return null;
+			}
+			return Integer.signum(upper);
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
+	private static CalendarBounds calendarBounds(XMLGregorianCalendar value) {
+		if (value.getTimezone() != DatatypeConstants.FIELD_UNDEFINED) {
+			XMLGregorianCalendar normalized = value.normalize();
+			return new CalendarBounds(normalized, normalized);
+		}
+		XMLGregorianCalendar earliest = (XMLGregorianCalendar) value.clone();
+		earliest.setTimezone(14 * 60);
+		XMLGregorianCalendar latest = (XMLGregorianCalendar) value.clone();
+		latest.setTimezone(-14 * 60);
+		return new CalendarBounds(earliest.normalize(), latest.normalize());
+	}
+
+	private static final class CalendarBounds {
+		private final XMLGregorianCalendar lower;
+		private final XMLGregorianCalendar upper;
+
+		private CalendarBounds(XMLGregorianCalendar lower, XMLGregorianCalendar upper) {
+			this.lower = lower;
+			this.upper = upper;
+		}
 	}
 
 	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {

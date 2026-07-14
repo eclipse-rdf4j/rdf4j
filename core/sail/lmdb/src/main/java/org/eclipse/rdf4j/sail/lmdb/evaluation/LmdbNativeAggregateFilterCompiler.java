@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -57,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -88,6 +90,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -153,10 +156,13 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 * above the join when nothing in R or the conditions reads their targets, which keeps the pattern set flattenable.
 	 */
 	SlotPlan compileLeftJoinFilterAsInnerJoin(Filter filter, boolean duplicateInsensitive) {
-		if (!(filter.getArg() instanceof LeftJoin)) {
+		if (!(filter.getArg() instanceof LeftJoin) || !isRepeatable(filter.getCondition())) {
 			return null;
 		}
 		LeftJoin leftJoin = (LeftJoin) filter.getArg();
+		if (leftJoin.hasCondition() && !isRepeatable(leftJoin.getCondition())) {
+			return null;
+		}
 		Set<String> rightOnly = rightOnlyBindingNames(leftJoin);
 		if (rightOnly.isEmpty() || !nullRejects(filter.getCondition(), rightOnly)) {
 			return null;
@@ -286,10 +292,13 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	SlotPlan compileFactorizedLeftJoinFilter(Filter filter, boolean duplicateInsensitive) {
-		if (!duplicateInsensitive || !(filter.getArg() instanceof LeftJoin)) {
+		if (!duplicateInsensitive || !(filter.getArg() instanceof LeftJoin) || !isRepeatable(filter.getCondition())) {
 			return null;
 		}
 		LeftJoin leftJoin = (LeftJoin) filter.getArg();
+		if (leftJoin.hasCondition() && !isRepeatable(leftJoin.getCondition())) {
+			return null;
+		}
 		Set<String> rightNames = rightOnlyBindingNames(leftJoin);
 		if (rightNames.isEmpty() || !Collections.disjoint(rightNames, requiredAggregateNames)
 				|| !nullRejects(filter.getCondition(), rightNames)) {
@@ -483,12 +492,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	/**
 	 * The placement mask of a filter condition: the slots the condition can read, or -1 when the condition is not
 	 * safely placeable. A filter with a complete mask may run at any join depth at which all masked slots are bound —
-	 * evaluating it later never changes the outcome because slots are write-once. Conditions containing EXISTS are
-	 * never placeable: an EXISTS constrains differently depending on which of its variables happen to be bound at
-	 * evaluation time, so it must stay exactly where the algebra put it.
+	 * evaluating it later never changes the outcome because slots are write-once. Conditions containing EXISTS or a
+	 * per-evaluation expression are never placeable: EXISTS depends on which variables happen to be bound, while moving
+	 * a volatile expression changes how often it is called. Both must stay exactly where the algebra put them.
 	 */
 	long placeableFilterMask(ValueExpr condition) {
-		if (containsExists(condition)) {
+		if (containsExists(condition) || !isRepeatable(condition)) {
 			return -1L;
 		}
 		long mask = 0L;
@@ -514,6 +523,34 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		ExistsFinder finder = new ExistsFinder();
 		expr.visit(finder);
 		return finder.found;
+	}
+
+	/** Whether evaluating this expression again with the same bindings is guaranteed to produce the same result. */
+	static boolean isRepeatable(ValueExpr expr) {
+		class VolatileFinder extends AbstractQueryModelVisitor<RuntimeException> {
+			boolean found;
+
+			@Override
+			public void meet(FunctionCall node) {
+				boolean repeatable = FunctionRegistry.getInstance()
+						.get(node.getURI())
+						.map(function -> !function.mustReturnDifferentResult())
+						.orElse(false);
+				if (!repeatable) {
+					found = true;
+					return;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(BNodeGenerator node) {
+				found = true;
+			}
+		}
+		VolatileFinder finder = new VolatileFinder();
+		expr.visit(finder);
+		return !finder.found;
 	}
 
 	NativeBooleanFilter compileListMember(ListMemberOperator list) {

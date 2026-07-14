@@ -21,6 +21,7 @@ import java.util.Random;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -57,11 +58,13 @@ public class LmdbNativeDifferentialFuzzTest {
 	@TempDir
 	File dataDir;
 
+	private LmdbStore store;
 	private SailRepository lmdb;
 
 	@BeforeAll
 	public void setUp() {
-		lmdb = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		lmdb = new SailRepository(store);
 		Random random = new Random(SEED);
 		try (SailRepositoryConnection lmdbConn = lmdb.getConnection()) {
 			ValueFactory vf = lmdbConn.getValueFactory();
@@ -225,8 +228,8 @@ public class LmdbNativeDifferentialFuzzTest {
 	 * literal-binding objects ?c and ?d: mixed date/dateTime order keys used to be excluded while the core
 	 * ValueComparator was non-transitive for indeterminate XML calendar comparisons (making the sorted order
 	 * legitimately sort-algorithm-dependent), but the comparator is a total order now, so the engines must agree. The
-	 * assertion is tie-safe: the same row multiset as the generic evaluator, plus the native emission order
-	 * non-decreasing in the keys.
+	 * assertion is tie-safe: the same row multiset on both engines, plus each engine's emission order non-decreasing in
+	 * the keys.
 	 */
 	@Test
 	public void randomOrderedBasicGraphPatterns() {
@@ -244,14 +247,46 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	/**
-	 * Both engines sort ORDER BY with a strict-mode {@link ValueComparator} under the default (STRICT) query evaluation
-	 * mode, so the same comparator is the sortedness oracle.
+	 * The STANDARD-mode variant of the ORDER BY round: extended comparison orders xsd:date against xsd:dateTime on the
+	 * timeline instead of the strict datatype-precedence fallback, so this round pins both engines to the extended sort
+	 * order (the generic evaluator used to sort strictly regardless of the configured mode).
 	 */
-	private static final ValueComparator ORDER_KEY_COMPARATOR = new ValueComparator();
+	@Test
+	public void randomOrderedBasicGraphPatternsStandardMode() {
+		QueryEvaluationMode previousMode = store.getDefaultQueryEvaluationMode();
+		store.setDefaultQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		try {
+			Random random = new Random(SEED + 12);
+			String[] vars = { "?a", "?b", "?c", "?d" };
+			for (int i = 0; i < 80; i++) {
+				StringBuilder where = new StringBuilder();
+				int patterns = 1 + random.nextInt(4);
+				for (int j = 0; j < patterns; j++) {
+					// ?a anchors the first pattern's subject, so it only ever binds resources
+					where.append(pattern(random, vars, j == 0 ? "?a" : vars[random.nextInt(2)]));
+				}
+				assertOrderedResults("SELECT * WHERE { " + where + "} ORDER BY ?a ?p ?b ?c ?d", "a", "p", "b", "c",
+						"d");
+			}
+		} finally {
+			store.setDefaultQueryEvaluationMode(previousMode);
+		}
+	}
 
-	private static int compareOrderKeys(BindingSet left, BindingSet right, String[] keyNames) {
+	/**
+	 * Both engines must sort ORDER BY with a {@link ValueComparator} that follows the query evaluation mode of the
+	 * store (strict under STRICT, extended under STANDARD), so the mode's comparator is the sortedness oracle.
+	 */
+	private static ValueComparator orderKeyComparator(QueryEvaluationMode mode) {
+		ValueComparator comparator = new ValueComparator();
+		comparator.setStrict(mode == QueryEvaluationMode.STRICT);
+		return comparator;
+	}
+
+	private static int compareOrderKeys(BindingSet left, BindingSet right, ValueComparator comparator,
+			String[] keyNames) {
 		for (String name : keyNames) {
-			int cmp = ORDER_KEY_COMPARATOR.compare(left.getValue(name), right.getValue(name));
+			int cmp = comparator.compare(left.getValue(name), right.getValue(name));
 			if (cmp != 0) {
 				return cmp;
 			}
@@ -260,18 +295,20 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	private void assertOrderedResults(String query, String... keyNames) {
+		ValueComparator comparator = orderKeyComparator(store.getDefaultQueryEvaluationMode());
 		List<BindingSet> nativeRows;
 		try (SailRepositoryConnection conn = lmdb.getConnection()) {
 			nativeRows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 		} catch (RuntimeException e) {
 			throw new AssertionError("native evaluation failed for query (seed " + SEED + "):\n" + query, e);
 		}
-		List<String> actual = canonicalize(nativeRows);
 		String previous = System.getProperty(NATIVE_FLAG);
-		List<String> expected;
+		List<BindingSet> genericRows;
 		try {
 			System.setProperty(NATIVE_FLAG, "false");
-			expected = evaluate(query);
+			try (SailRepositoryConnection conn = lmdb.getConnection()) {
+				genericRows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			}
 		} finally {
 			if (previous == null) {
 				System.clearProperty(NATIVE_FLAG);
@@ -279,15 +316,21 @@ public class LmdbNativeDifferentialFuzzTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
-		assertThat(actual)
+		assertThat(canonicalize(nativeRows))
 				.as("native vs generic ordered multiset for query (seed %d):%n%s", SEED, query)
-				.containsExactlyInAnyOrderElementsOf(expected);
+				.containsExactlyInAnyOrderElementsOf(canonicalize(genericRows));
+		assertSortedRows("native", nativeRows, comparator, query, keyNames);
+		assertSortedRows("generic", genericRows, comparator, query, keyNames);
+	}
+
+	private void assertSortedRows(String engine, List<BindingSet> rows, ValueComparator comparator, String query,
+			String... keyNames) {
 		BindingSet previousRow = null;
-		for (BindingSet row : nativeRows) {
+		for (BindingSet row : rows) {
 			if (previousRow != null) {
-				assertThat(compareOrderKeys(previousRow, row, keyNames))
-						.as("order keys must be non-decreasing for query (seed %d):%n%s%nprev: %s%nrow: %s", SEED,
-								query, previousRow, row)
+				assertThat(compareOrderKeys(previousRow, row, comparator, keyNames))
+						.as("%s order keys must be non-decreasing for query (seed %d):%n%s%nprev: %s%nrow: %s", engine,
+								SEED, query, previousRow, row)
 						.isLessThanOrEqualTo(0);
 			}
 			previousRow = row;

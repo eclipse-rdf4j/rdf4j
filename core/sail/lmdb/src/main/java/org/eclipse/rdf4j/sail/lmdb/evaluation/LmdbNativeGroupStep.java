@@ -662,9 +662,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	 * {@code LeftJoin(Join(A, B...), R) ≡ Join(LeftJoin(A, R), B...)} when R's row stream is fully determined by
 	 * declared slots (a {@code memoReadMask}) and R neither reads nor rebinds anything the B members produce: the
 	 * optional extension then commutes with the inner joins, so bag members the OPTIONAL ignores hoist above it, where
-	 * the factorized tail can claim them as branches. Left-bag filters move to the outer bag — they read no
-	 * optional-fresh slot (it was never in their scope), and filtering left rows before or after the optional extension
-	 * is equivalent.
+	 * the factorized tail can claim them as branches. Left-bag filters stay below the OPTIONAL: moving them above it
+	 * would let them observe optional-fresh bindings that were out of scope in the original left argument. Children
+	 * producing values those filters read must stay below it as well; unrelated children may still hoist.
 	 */
 	static MultiJoinPlan reshapeLeftJoinForFactorization(LeftJoinPlan leftJoinPlan) {
 		if (!(leftJoinPlan.left instanceof MultiJoinPlan)) {
@@ -679,7 +679,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		// so the optional's reads only need to be covered by the kept members (greedy, in compiler
 		// order); everything else hoists. Members can never produce the optional's fresh slots (those
 		// are outside the bag's produced mask by construction).
-		long needCover = rightReads & leftBag.producedMask();
+		long keepReads = rightReads;
+		for (MaskedFilter filter : leftBag.filters) {
+			if (filter.mask < 0L) {
+				return null;
+			}
+			keepReads |= filter.mask;
+		}
+		long needCover = keepReads & leftBag.producedMask();
 		ArrayList<SlotPlan> keep = new ArrayList<>();
 		ArrayList<SlotPlan> hoist = new ArrayList<>();
 		long keepProduced = 0L;
@@ -694,14 +701,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if ((needCover & ~keepProduced) != 0L || hoist.isEmpty() || keep.isEmpty()) {
 			return null;
 		}
-		SlotPlan keepPlan = keep.size() == 1 ? keep.get(0)
-				: new MultiJoinPlan(keep.toArray(SlotPlan[]::new), new MaskedFilter[0]);
+		SlotPlan keepPlan = keep.size() == 1 && leftBag.filters.length == 0 ? keep.get(0)
+				: new MultiJoinPlan(keep.toArray(SlotPlan[]::new), leftBag.filters);
 		SlotPlan[] children = new SlotPlan[hoist.size() + 1];
 		children[0] = new LeftJoinPlan(keepPlan, leftJoinPlan.right);
 		for (int i = 0; i < hoist.size(); i++) {
 			children[i + 1] = hoist.get(i);
 		}
-		return new MultiJoinPlan(children, leftBag.filters);
+		return new MultiJoinPlan(children, new MaskedFilter[0]);
 	}
 
 	static MultiJoinPlan peelTrailingPatterns(SlotPlan arg) {

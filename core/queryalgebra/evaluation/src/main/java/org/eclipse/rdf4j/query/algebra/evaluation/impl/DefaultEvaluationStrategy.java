@@ -710,6 +710,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 
 		ValueComparator vcmp = new ValueComparator();
+		vcmp.setStrict(getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
