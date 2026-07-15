@@ -122,6 +122,8 @@ class LmdbSailStore implements SailStore {
 
 	interface CommitListener {
 		void onCommit(long transactionId, List<Statement> additions, List<Statement> removals);
+
+		void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals, Throwable error);
 	}
 
 	/**
@@ -1149,6 +1151,7 @@ class LmdbSailStore implements SailStore {
 								listener.onCommit(tripleStore.getLastCommittedTxnId(), additions, removals);
 							} catch (RuntimeException e) {
 								logger.warn("Failed to publish LMDB commit delta for backup", e);
+								listener.onCommitFailure(tripleStore.getLastCommittedTxnId(), additions, removals, e);
 							}
 						} else {
 							clearCommittedDelta();
