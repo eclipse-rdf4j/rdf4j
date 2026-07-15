@@ -2980,6 +2980,12 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
+			if (csrCache != null) {
+				RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit);
+				if (scan != null) {
+					return scan;
+				}
+			}
 			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 		}
 
@@ -3218,6 +3224,13 @@ class LmdbSailStore implements SailStore {
 				assertNativeSourceOpen();
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
+				}
+				if (csrCache != null && csrEligible) {
+					RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit);
+					if (scan != null) {
+						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
+						return scan;
+					}
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 				releaseReadLock = false;

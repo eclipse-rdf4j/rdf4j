@@ -48,7 +48,22 @@ workload — per the user's mandate.
 
 ## Surprises & Discoveries
 
-(To be filled.)
+- Observation (2026-07-16, M1 session): M1 landed parity-correct (10 unit tests incl. full-scan
+  order parity + context filtering + seekForward; fuzz green with the cache hot) but is NOT yet a
+  proven performance win, and the session uncovered a REGRESSION in the phase 8 M2 skips: with
+  `csrCache.enabled` the parallel countHub aggregation went 2.87 → ~9.2 ms — isolated to the cache
+  itself (persists with `rootScans=false` and in morsel mode). First-order cause identified: the M2
+  TailBranch skip disabled the scan-once COUNT-TABLE flip, which is O(1) per key where a CSR-served
+  COUNT scan is O(run length) — an asymptotic loss on hub-shaped branches. Restoring the flip (skip
+  only value-memo puts) did NOT recover it (21 ms ± 9 — high variance suggests per-worker count-table
+  sweep churn or build interactions). NEXT STEP: counter-driven diagnosis — run countHub with
+  `BUILDS/HITS/CSR_ROOT_SCANS/SCAN_ONCE_BUILDS` sampled per iteration and a JFR profile; suspects are
+  (a) per-worker countTable sweeps now racing 12 CSR-probing workers, (b) the probe-decoration miss
+  path interacting with `openRawUnbinding` sweeps, (c) build churn against the budget. The q4 chain
+  win (24.3 → 21.2) is probe-serving (phase 8) and unaffected. Since the flag defaults OFF, nothing
+  regresses by default.
+  Evidence: `profiles/lmdb-opt/jmh/phase7-10-bench-20260716/agg-*.json` (morsel 2.87, range 2.13,
+  csr+range 9.6/8.3, csr-noscan+range 9.3, csr-morsel 9.2, csr-fixed+range 21.2±9).
 
 ## Decision Log
 

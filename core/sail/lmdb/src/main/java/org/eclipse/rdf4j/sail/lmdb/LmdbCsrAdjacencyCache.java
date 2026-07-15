@@ -53,6 +53,7 @@ final class LmdbCsrAdjacencyCache {
 	static final AtomicLong STALE_DROPS = new AtomicLong();
 	static final AtomicLong EVICTIONS = new AtomicLong();
 	static final AtomicLong REFUSALS = new AtomicLong();
+	static final AtomicLong CSR_ROOT_SCANS = new AtomicLong();
 
 	/** How many probe opens a decorated probe accumulates locally before flushing into the shared slot. */
 	static final int PROBE_FLUSH_INTERVAL = 256;
@@ -66,6 +67,11 @@ final class LmdbCsrAdjacencyCache {
 
 	static boolean enabled() {
 		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.enabled", "false"));
+	}
+
+	/** Whether full root scans over cached predicates are served from entries (phase 11 M1). */
+	static boolean rootScansEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.rootScans", "true"));
 	}
 
 	static int minProbes() {
@@ -275,7 +281,8 @@ final class LmdbCsrAdjacencyCache {
 			return;
 		}
 
-		CsrEntry entry = new CsrEntry(counts.tableKeys, counts.tableValues, runStart, neighbors, contexts,
+		CsrEntry entry = new CsrEntry(counts.tableKeys, counts.tableValues,
+				Arrays.copyOf(counts.keysInOrder, nKeys), runStart, neighbors, contexts,
 				revisionBefore, neighborMin, neighborMax, allOrderedIntegers && nPairs > 0);
 		if (!reserveBytes(entry.bytes)) {
 			REFUSALS.incrementAndGet();
@@ -334,6 +341,23 @@ final class LmdbCsrAdjacencyCache {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Serves a FULL scan {@code (-1, pred, -1, c)} from a BY_OBJECT entry, or returns {@code null} for the LMDB path. A
+	 * BY_OBJECT entry is built from one posc sweep, so enumerating its keys in dense order with their runs reproduces
+	 * the posc emission order such a scan gets from LMDB — byte-identical results, zero JNI.
+	 */
+	RecordIterator tryScan(long subj, long pred, long obj, long context, boolean explicit) {
+		if (!rootScansEnabled() || pred <= 0 || subj > 0 || obj > 0) {
+			return null;
+		}
+		CsrEntry entry = lookup(pred, BY_OBJECT, explicit);
+		if (entry == null) {
+			return null;
+		}
+		CSR_ROOT_SCANS.incrementAndGet();
+		return new LmdbCsrScanIterator(entry, pred, context, BY_OBJECT);
 	}
 
 	/**
@@ -405,6 +429,8 @@ final class LmdbCsrAdjacencyCache {
 	static final class CsrEntry {
 		final long[] tableKeys;
 		final int[] tableSlotPlus1;
+		/** Keys in dense-ordinal (first-encounter = index emission) order; drives full-entry scans. */
+		final long[] keysByDense;
 		final int[] runStart;
 		final long[] neighbors;
 		final long[] contexts;
@@ -420,10 +446,12 @@ final class LmdbCsrAdjacencyCache {
 		final boolean allNeighborsOrderedIntegers;
 		volatile long lastAccessNanos = System.nanoTime();
 
-		CsrEntry(long[] tableKeys, int[] tableSlotPlus1, int[] runStart, long[] neighbors, long[] contexts,
-				long revision, long neighborMinId, long neighborMaxId, boolean allNeighborsOrderedIntegers) {
+		CsrEntry(long[] tableKeys, int[] tableSlotPlus1, long[] keysByDense, int[] runStart, long[] neighbors,
+				long[] contexts, long revision, long neighborMinId, long neighborMaxId,
+				boolean allNeighborsOrderedIntegers) {
 			this.tableKeys = tableKeys;
 			this.tableSlotPlus1 = tableSlotPlus1;
+			this.keysByDense = keysByDense;
 			this.runStart = runStart;
 			this.neighbors = neighbors;
 			this.contexts = contexts;
@@ -431,8 +459,13 @@ final class LmdbCsrAdjacencyCache {
 			this.neighborMinId = neighborMinId;
 			this.neighborMaxId = neighborMaxId;
 			this.allNeighborsOrderedIntegers = allNeighborsOrderedIntegers;
-			this.bytes = 8L * tableKeys.length + 4L * tableSlotPlus1.length + 4L * runStart.length
-					+ 8L * neighbors.length + (contexts == null ? 0L : 8L * contexts.length) + 64;
+			this.bytes = 8L * tableKeys.length + 4L * tableSlotPlus1.length + 8L * keysByDense.length
+					+ 4L * runStart.length + 8L * neighbors.length
+					+ (contexts == null ? 0L : 8L * contexts.length) + 64;
+		}
+
+		long keyOfDense(int dense) {
+			return keysByDense[dense];
 		}
 
 		/**

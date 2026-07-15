@@ -243,6 +243,30 @@ public class LmdbCsrAdjacencyCacheTest {
 	}
 
 	@Test
+	public void fullScanMatchesLmdbContentAndOrder() throws Exception {
+		loadDefaultData();
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_OBJECT, true);
+		RecordIterator scan = cache.tryScan(-1, 10, -1, -1, true);
+		assertThat(scan).isNotNull();
+		List<long[]> served = new ArrayList<>();
+		long[] quad;
+		while ((quad = scan.next()) != null) {
+			served.add(quad.clone());
+		}
+		assertSameQuads(served, referenceProbe(-1, 10, -1, -1));
+		// bound-context scan filters but keeps order
+		RecordIterator contextScan = cache.tryScan(-1, 10, -1, 7, true);
+		List<long[]> contextServed = new ArrayList<>();
+		while ((quad = contextScan.next()) != null) {
+			contextServed.add(quad.clone());
+		}
+		assertSameQuads(contextServed, referenceProbe(-1, 10, -1, 7));
+		// non-full-scan shapes and uncached predicates fall through
+		assertThat(cache.tryScan(105, 10, -1, -1, true)).isNull();
+		assertThat(cache.tryScan(-1, 99, -1, -1, true)).isNull();
+	}
+
+	@Test
 	public void countAndHasServeFromExistingEntries() throws Exception {
 		loadDefaultData();
 		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
