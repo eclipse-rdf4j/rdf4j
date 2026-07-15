@@ -56,6 +56,40 @@ public class ValueIds {
 	public static final int T_UNSIGNEDSHORT = 34;
 	public static final int T_UNSIGNEDBYTE = 35;
 
+	// Value-ORDERED variants of the signed integer family (stores with numeric-id-encoding=ordered-v1): the 56-bit
+	// value field holds the number in biased/offset-binary form (value + 2^55) instead of ZigZag, so comparing the
+	// value fields of two ordered ids as plain longs equals numeric order — and, because index keys are
+	// order-preserving varints of the compound id, all values >= a threshold form one contiguous key range per code.
+	public static final int T_ORD_INTEGER = 36;
+	public static final int T_ORD_LONG = 37;
+	public static final int T_ORD_INT = 38;
+	public static final int T_ORD_SHORT = 39;
+	public static final int T_ORD_BYTE = 40;
+	public static final int T_ORD_POSITIVE_INTEGER = 41;
+	public static final int T_ORD_NEGATIVE_INTEGER = 42;
+	public static final int T_ORD_NON_NEGATIVE_INTEGER = 43;
+	public static final int T_ORD_NON_POSITIVE_INTEGER = 44;
+
+	/** Bias added to signed values in the ordered encoding: shifts [-2^55, 2^55) onto [0, 2^56). */
+	public static final long ORDERED_BIAS = 1L << 55;
+
+	/**
+	 * True when the id uses one of the value-ORDERED (biased) integer codes. Two such ids — of any ordered subtype —
+	 * compare exactly like the numbers they encode by comparing their {@link #getValue value fields} as plain longs.
+	 */
+	public static boolean isOrderedInteger(long id) {
+		if (isDouble(id)) {
+			return false;
+		}
+		int type = getIdType(id);
+		return type >= T_ORD_INTEGER && type <= T_ORD_NON_POSITIVE_INTEGER;
+	}
+
+	/** The signed numeric value of an {@link #isOrderedInteger} id (removes the bias). */
+	public static long orderedIntegerValue(long id) {
+		return getValue(id) - ORDERED_BIAS;
+	}
+
 	/**
 	 * Returns the type section of the given id.
 	 *

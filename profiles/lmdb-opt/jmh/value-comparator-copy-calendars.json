@@ -1,0 +1,142 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.query.algebra.evaluation.util.benchmark.ValueComparatorBenchmark.copyCalendars",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 3,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms8G",
+            "-Xmx8G",
+            "-Xmn4G",
+            "-XX:+UseSerialGC"
+        ],
+        "jdkVersion" : "25",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25+36-LTS",
+        "warmupIterations" : 4,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 4,
+        "measurementTime" : "2 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "mode" : "STANDARD"
+        },
+        "primaryMetric" : {
+            "score" : 9.863685815992398E-5,
+            "scoreError" : 7.486001943006389E-6,
+            "scoreConfidence" : [
+                9.115085621691759E-5,
+                1.0612286010293036E-4
+            ],
+            "scorePercentiles" : {
+                "0.0" : 9.023710775112689E-5,
+                "50.0" : 9.944360618416226E-5,
+                "90.0" : 1.086119537420445E-4,
+                "95.0" : 1.0941208323101902E-4,
+                "99.0" : 1.0941208323101902E-4,
+                "99.9" : 1.0941208323101902E-4,
+                "99.99" : 1.0941208323101902E-4,
+                "99.999" : 1.0941208323101902E-4,
+                "99.9999" : 1.0941208323101902E-4,
+                "100.0" : 1.0941208323101902E-4
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    1.00150328451355E-4,
+                    9.329758397067544E-5,
+                    1.0941208323101902E-4,
+                    9.023710775112689E-5
+                ],
+                [
+                    1.0125773574522628E-4,
+                    9.371772048534667E-5,
+                    1.0228011515118364E-4,
+                    1.0674498493443727E-4
+                ],
+                [
+                    9.943697773230984E-5,
+                    9.945023463601468E-5,
+                    9.3249909536269E-5,
+                    9.44075162941237E-5
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.query.algebra.evaluation.util.benchmark.ValueComparatorBenchmark.copyCalendars",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 3,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms8G",
+            "-Xmx8G",
+            "-Xmn4G",
+            "-XX:+UseSerialGC"
+        ],
+        "jdkVersion" : "25",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25+36-LTS",
+        "warmupIterations" : 4,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 4,
+        "measurementTime" : "2 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "mode" : "STRICT"
+        },
+        "primaryMetric" : {
+            "score" : 9.135465832018436E-5,
+            "scoreError" : 8.968777763099866E-7,
+            "scoreConfidence" : [
+                9.045778054387437E-5,
+                9.225153609649434E-5
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.978443651558124E-5,
+                "50.0" : 9.161113397461595E-5,
+                "90.0" : 9.205717606759598E-5,
+                "95.0" : 9.20572070158058E-5,
+                "99.0" : 9.20572070158058E-5,
+                "99.9" : 9.20572070158058E-5,
+                "99.99" : 9.20572070158058E-5,
+                "99.999" : 9.20572070158058E-5,
+                "99.9999" : 9.20572070158058E-5,
+                "100.0" : 9.20572070158058E-5
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    9.052983991829724E-5,
+                    9.13386264656525E-5,
+                    9.20572070158058E-5,
+                    9.205710385510643E-5
+                ],
+                [
+                    9.067605764746682E-5,
+                    9.158643339409415E-5,
+                    9.172157711183618E-5,
+                    9.17995923594409E-5
+                ],
+                [
+                    9.163583455513775E-5,
+                    9.190176370555373E-5,
+                    9.116742729823964E-5,
+                    8.978443651558124E-5
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

@@ -90,6 +90,28 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void reopenRecoversCompactNextIdCounter() throws Exception {
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(valueStore.createIRI("urn:test:recover:first"));
+		valueStore.commit();
+		long firstValue = ValueIds.getValue(firstId);
+
+		valueStore.close();
+		valueStore = createValueStore();
+
+		valueStore.startTransaction(true);
+		long secondId = valueStore.storeValue(valueStore.createIRI("urn:test:recover:second"));
+		valueStore.commit();
+		long secondValue = ValueIds.getValue(secondId);
+
+		// the reopen scan must recover the max assigned VALUE counter (compound id >> 7), not a
+		// partially-shifted compound id: an inflated counter multiplies the consumed id space ~32x
+		// per reopen and would exhaust the 57-bit value space after a few dozen reopen cycles
+		assertTrue("value counter must continue compactly across reopen: first=" + firstValue + " second="
+				+ secondValue, secondValue <= firstValue + 16);
+	}
+
+	@Test
 	public void storeValuesStoresMultipleValuesWithSingleReadTransaction() throws Exception {
 		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values"),
 				new LmdbStoreConfig());

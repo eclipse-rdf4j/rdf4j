@@ -749,6 +749,9 @@ class LmdbSailStore implements SailStore {
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
 
+	/** In-memory per-predicate adjacency cache, or {@code null} when disabled. See {@link LmdbCsrAdjacencyCache}. */
+	private final LmdbCsrAdjacencyCache csrCache;
+
 	/**
 	 * Creates a new {@link LmdbSailStore}.
 	 */
@@ -783,6 +786,8 @@ class LmdbSailStore implements SailStore {
 			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
+			csrCache = LmdbCsrAdjacencyCache.enabled() ? new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted)
+					: null;
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
@@ -2820,6 +2825,85 @@ class LmdbSailStore implements SailStore {
 	 * snapshot as its source and is confined to the worker thread that uses it. The shared value store is safe to read
 	 * concurrently; per-thread LMDB cursor pooling comes from {@code TripleStore.CursorPool}.
 	 */
+	/**
+	 * Per-probe CSR cache front end shared by both concrete {@code NativeProbe} implementations. On a probe of the
+	 * servable shape ({@code pred} bound, exactly one of subject/object bound) it either serves the adjacency run from
+	 * the cache (reusing one {@link LmdbCsrRunIterator} per probe, matching the probe contract) or counts the miss
+	 * locally, flushing accumulated counts into the shared cache every {@code PROBE_FLUSH_INTERVAL} opens and on close
+	 * so the adaptive build trigger sees cross-query traffic.
+	 */
+	private final class CsrProbeSupport {
+		private final Txn txn;
+		private final boolean explicit;
+		private LmdbCsrRunIterator iterator;
+		private long pendingPred = -1;
+		private int pendingDirection;
+		private int pendingCount;
+		private boolean servedFromCache;
+
+		CsrProbeSupport(Txn txn, boolean explicit) {
+			this.txn = txn;
+			this.explicit = explicit;
+		}
+
+		boolean servedFromCache() {
+			return servedFromCache;
+		}
+
+		/** Serves the probe from the cache, or returns {@code null} for the ordinary LMDB path. */
+		RecordIterator tryServe(long subj, long pred, long obj, long context) {
+			if (pred <= 0 || (subj > 0) == (obj > 0)) {
+				return null;
+			}
+			int direction = subj > 0 ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
+			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+			if (entry != null) {
+				if (iterator == null) {
+					iterator = new LmdbCsrRunIterator();
+				}
+				iterator.init(entry, direction == LmdbCsrAdjacencyCache.BY_SUBJECT ? subj : obj, pred, context,
+						direction);
+				servedFromCache = true;
+				return iterator;
+			}
+			if (pred != pendingPred || direction != pendingDirection) {
+				flushPending();
+				pendingPred = pred;
+				pendingDirection = direction;
+			}
+			if (++pendingCount >= LmdbCsrAdjacencyCache.PROBE_FLUSH_INTERVAL) {
+				flushPending();
+				pendingPred = pred;
+				pendingDirection = direction;
+			}
+			return null;
+		}
+
+		void flushPending() {
+			if (pendingCount > 0 && pendingPred > 0) {
+				csrCache.recordProbes(pendingPred, pendingDirection, explicit, pendingCount, txn);
+			}
+			pendingCount = 0;
+		}
+	}
+
+	/**
+	 * Wraps split keys from {@link TripleStore#planRootSplitKeys} into the half-open partition ranges
+	 * {@code [null,k1), [k1,k2), ..., [kn,null)}. With zero splits the single returned partition is the full natural
+	 * range; callers decide whether enough partitions exist to engage.
+	 */
+	private static LmdbRootScanPartition[] toRootScanPartitions(List<byte[]> splits, String indexName) {
+		LmdbRootScanPartition[] partitions = new LmdbRootScanPartition[splits.size() + 1];
+		byte[] low = null;
+		for (int i = 0; i < splits.size(); i++) {
+			byte[] high = splits.get(i);
+			partitions[i] = new LmdbRootScanPartition(0, new LmdbKeyRange(low, high, indexName));
+			low = high;
+		}
+		partitions[splits.size()] = new LmdbRootScanPartition(0, new LmdbKeyRange(low, null, indexName));
+		return partitions;
+	}
+
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
 
 		private final Txn txn;
@@ -2900,6 +2984,28 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+				int targetPartitions) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return new LmdbRootScanPartition[0];
+			}
+			return toRootScanPartitions(
+					tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
+					tripleStore.getIndexName(subj, pred, obj, context));
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				LmdbRootScanPartition partition) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			return tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, partition.range());
+		}
+
+		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			checkOpen();
@@ -2944,12 +3050,19 @@ class LmdbSailStore implements SailStore {
 		public NativeProbe newProbe() {
 			return new NativeProbe() {
 				private LmdbRecordIterator retained;
+				private final CsrProbeSupport csr = csrCache != null ? new CsrProbeSupport(txn, explicit) : null;
 
 				@Override
 				public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
 					checkOpen();
 					if (!hasStatementsInSource()) {
 						return EmptyRecordIterator.INSTANCE;
+					}
+					if (csr != null) {
+						RecordIterator served = csr.tryServe(subj, pred, obj, context);
+						if (served != null) {
+							return served;
+						}
 					}
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
@@ -2960,7 +3073,15 @@ class LmdbSailStore implements SailStore {
 				}
 
 				@Override
+				public boolean adjacencyCacheBacked() {
+					return csr != null && csr.servedFromCache();
+				}
+
+				@Override
 				public void close() {
+					if (csr != null) {
+						csr.flushPending();
+					}
 					if (retained != null) {
 						retained.dispose();
 						retained = null;
@@ -2975,13 +3096,28 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return 0;
 			}
+			if (csrCache != null) {
+				long cached = csrCache.tryCount(subj, pred, obj, context, explicit);
+				if (cached >= 0) {
+					return cached;
+				}
+			}
 			return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
 		}
 
 		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			checkOpen();
-			return hasStatementsInSource() && tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
+			if (!hasStatementsInSource()) {
+				return false;
+			}
+			if (csrCache != null) {
+				int cached = csrCache.tryHas(subj, pred, obj, context, explicit);
+				if (cached >= 0) {
+					return cached == 1;
+				}
+			}
+			return tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
 		}
 
 		@Override
@@ -3007,11 +3143,17 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
+		/**
+		 * Untracked datasets (the estimator refresh reader) stay pinned to their snapshot across commits, so the
+		 * revision-validated CSR cache — which tracks the LATEST committed state — must not serve them.
+		 */
+		private final boolean csrEligible;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
 		private volatile boolean closed;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
+			this.csrEligible = trackActiveTxn;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				this.txn = trackActiveTxn ? txnManager.createReadTxn()
@@ -3108,6 +3250,44 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+				int targetPartitions) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return new LmdbRootScanPartition[0];
+				}
+				return toRootScanPartitions(
+						tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
+						tripleStore.getIndexName(subj, pred, obj, context));
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				LmdbRootScanPartition partition) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return EmptyRecordIterator.INSTANCE;
+				}
+				RecordIterator iterator = tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit,
+						partition.range());
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
@@ -3179,6 +3359,8 @@ class LmdbSailStore implements SailStore {
 			private boolean stampHeld;
 			private LmdbRecordIterator retained;
 			private boolean closed;
+			private final CsrProbeSupport csr = csrCache != null && csrEligible ? new CsrProbeSupport(txn, explicit)
+					: null;
 
 			@Override
 			public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
@@ -3194,6 +3376,12 @@ class LmdbSailStore implements SailStore {
 					if (!hasStatementsInSource()) {
 						return EmptyRecordIterator.INSTANCE;
 					}
+					if (csr != null) {
+						RecordIterator served = csr.tryServe(subj, pred, obj, context);
+						if (served != null) {
+							return served;
+						}
+					}
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
@@ -3207,12 +3395,20 @@ class LmdbSailStore implements SailStore {
 			}
 
 			@Override
+			public boolean adjacencyCacheBacked() {
+				return csr != null && csr.servedFromCache();
+			}
+
+			@Override
 			public void close() {
 				if (closed) {
 					return;
 				}
 				closed = true;
 				try {
+					if (csr != null) {
+						csr.flushPending();
+					}
 					if (retained != null) {
 						retained.dispose();
 					}
@@ -3234,6 +3430,12 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return 0;
 				}
+				if (csrCache != null && csrEligible) {
+					long cached = csrCache.tryCount(subj, pred, obj, context, explicit);
+					if (cached >= 0) {
+						return cached;
+					}
+				}
 				return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
@@ -3245,7 +3447,16 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLock();
 			try {
 				assertNativeSourceOpen();
-				return hasStatementsInSource() && tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
+				if (!hasStatementsInSource()) {
+					return false;
+				}
+				if (csrCache != null && csrEligible) {
+					int cached = csrCache.tryHas(subj, pred, obj, context, explicit);
+					if (cached >= 0) {
+						return cached == 1;
+					}
+				}
+				return tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}

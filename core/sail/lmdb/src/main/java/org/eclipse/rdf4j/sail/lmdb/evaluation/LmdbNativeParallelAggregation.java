@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -105,11 +107,25 @@ final class LmdbNativeParallelAggregation {
 			return null;
 		}
 		long preflightAggregateSlots = preflightAggregateSlots(it, plan, derived, root, row);
+		LmdbRootScanPartition[] partitions = null;
+		if (LmdbNativeParallelPipelines.rangePartitionEnabled()) {
+			try {
+				partitions = LmdbNativeExchange.tryPlanRootPartitions(it.source, root, row,
+						LmdbNativeParallelPipelines.rangePartitionTarget(threads, root.estimate(row)));
+			} catch (IOException e) {
+				// split planning is best-effort: an IO hiccup falls back to the morsel producer, never fails the query
+				LmdbNativeParallelPipelines.rejectRangePartitioning("planning-failed");
+				partitions = null;
+			}
+		} else {
+			LmdbNativeParallelPipelines.rejectRangePartitioning("flag-off");
+		}
 		PreparedRootScan preparedRoot = null;
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(threads);
 		if (reservation == null) {
 			return null;
 		}
+		int sourceCount = threads + (partitions != null ? 0 : 1);
 		MultiJoinPlan[] workerPlans = null;
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		LmdbNativeAttemptMetrics metrics = null;
@@ -120,10 +136,20 @@ final class LmdbNativeParallelAggregation {
 			// Admission precedes the sibling readers so task-budget losers cannot exhaust LMDB reader capacity. The
 			// complete sibling set is then opened together: the handed-off root cursor and every worker probe must
 			// observe one pinned snapshot.
-			sources = it.source.openParallelSources(threads + 1);
+			sources = it.source.openParallelSources(sourceCount);
 			if (sources != null) {
 				boolean setupReady = preflightAggregateSlots == 0L;
-				if (!setupReady) {
+				if (!setupReady && partitions != null) {
+					// no producer sibling exists in partition mode: run the floating SUM/AVG sample on the query
+					// thread's own source over a throwaway cursor and discard it (partition 0's worker re-reads
+					// those rows — noise against the >=50k-row gate); EncounterOrderFallback propagates unchanged
+					RowState sampleRow = new RowState(it.source, it.layout, it.base);
+					if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
+						sampleRow.recomputeBoundMask();
+						prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
+						setupReady = true;
+					}
+				} else if (!setupReady) {
 					RowState producerRow = new RowState(sources[threads], it.layout, it.base);
 					if (NativeRowSeeder.seed(producerRow.slots, it.layout, it.base, sources[threads])) {
 						producerRow.recomputeBoundMask();
@@ -143,7 +169,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		if (primaryFailure == null && workerPlans != null) {
 			try {
-				results = evaluate(it, workerPlans, root, sources, threads, metrics, preparedRoot);
+				results = evaluate(it, workerPlans, root, sources, threads, metrics, preparedRoot, partitions);
 			} catch (RuntimeException | Error problem) {
 				primaryFailure = problem;
 			}
@@ -171,7 +197,27 @@ final class LmdbNativeParallelAggregation {
 		}
 		metrics.recordParallelRun();
 		metrics.commitToParent();
+		if (partitions != null) {
+			LmdbNativeParallelPipelines.RANGE_PARTITION_RUNS.incrementAndGet();
+			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
+			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
+			LAST_STRATEGY_LABEL.set("parallelAggregation(rangePartitioned=" + partitions.length + ")");
+		} else {
+			LAST_STRATEGY_LABEL.set("parallelAggregation");
+		}
 		return results;
+	}
+
+	/**
+	 * Explain label of the most recent successful {@link #tryEvaluate} on this thread, consumed by the caller right
+	 * after the call returns. Thread-confined: tryEvaluate runs synchronously on the query thread.
+	 */
+	private static final ThreadLocal<String> LAST_STRATEGY_LABEL = new ThreadLocal<>();
+
+	static String consumeLastStrategyLabel() {
+		String label = LAST_STRATEGY_LABEL.get();
+		LAST_STRATEGY_LABEL.remove();
+		return label != null ? label : "parallelAggregation";
 	}
 
 	/**
@@ -459,10 +505,21 @@ final class LmdbNativeParallelAggregation {
 	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
 			PreparedRootScan preparedRoot) {
-		if (workerPlans == null || workerPlans.length != threads || sources == null || sources.length != threads + 1) {
+		return evaluate(it, workerPlans, root, sources, threads, metrics, preparedRoot, null);
+	}
+
+	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
+			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
+			PreparedRootScan preparedRoot, LmdbRootScanPartition[] plannedPartitions) {
+		int expectedSources = threads + (plannedPartitions != null ? 0 : 1);
+		if (workerPlans == null || workerPlans.length != threads || sources == null
+				|| sources.length != expectedSources) {
 			throw new IllegalArgumentException("parallel worker plans and sources must match the admitted task count");
 		}
 		ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue = new ArrayBlockingQueue<>(threads * 2);
+		ConcurrentLinkedQueue<LmdbRootScanPartition> partitions = plannedPartitions != null
+				? new ConcurrentLinkedQueue<>(Arrays.asList(plannedPartitions))
+				: null;
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		ArrayList<Future<NativeGroupTable>> futures = new ArrayList<>(threads);
 		ArrayList<NativeGroupTable> results = new ArrayList<>(threads);
@@ -479,7 +536,7 @@ final class LmdbNativeParallelAggregation {
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try {
-						return runWorkerOwned(it, workerPlan, root, source, queue, failure, workerMetric);
+						return runWorkerOwned(it, workerPlan, root, source, queue, partitions, failure, workerMetric);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -496,7 +553,7 @@ final class LmdbNativeParallelAggregation {
 					submissionFailure);
 		}
 		Throwable producerFailure = null;
-		if (submissionFailure == null) {
+		if (submissionFailure == null && partitions == null) {
 			try {
 				produce(it, root, sources[threads], queue, threads, failure, preparedRoot);
 			} catch (Throwable t) {
@@ -603,6 +660,13 @@ final class LmdbNativeParallelAggregation {
 	static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
 			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
 			AtomicReference<Throwable> failure, LmdbNativeAttemptMetrics metrics) throws IOException {
+		return runWorker(it, plan, derived, root, source, queue, null, failure, metrics);
+	}
+
+	static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
+			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
+			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
+			LmdbNativeAttemptMetrics metrics) throws IOException {
 		RowState row = new RowState(source, it.layout, it.base);
 		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
 			// the main thread seeded the identical bindings against the same value store before gating in
@@ -623,7 +687,9 @@ final class LmdbNativeParallelAggregation {
 		Throwable failureOutcome = null;
 		try {
 			int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;
-			LmdbNativeExchange.MorselCursor leftmost = new LmdbNativeExchange.MorselCursor(queue, root, row, failure);
+			RowCursor leftmost = partitions != null
+					? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, new AtomicBoolean())
+					: new LmdbNativeExchange.MorselCursor(queue, root, row, failure);
 			FactorizedTail.MemoBudget prefixBudget = tail != null ? tail.memoBudget
 					: new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
 			NativeGroupTable table = tail != null && tail.groupsByTail()
@@ -678,11 +744,12 @@ final class LmdbNativeParallelAggregation {
 
 	private static NativeGroupTable runWorkerOwned(NativeGroupIteration it, MultiJoinPlan plan, PatternPlan root,
 			NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
-			AtomicReference<Throwable> failure, LmdbNativeAttemptMetrics metrics) throws IOException {
+			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
+			LmdbNativeAttemptMetrics metrics) throws IOException {
 		NativeGroupTable result = null;
 		Throwable failureOutcome = null;
 		try {
-			result = runWorker(it, plan, null, root, source, queue, failure, metrics);
+			result = runWorker(it, plan, null, root, source, queue, partitions, failure, metrics);
 		} catch (IOException | RuntimeException | Error problem) {
 			failureOutcome = problem;
 		}

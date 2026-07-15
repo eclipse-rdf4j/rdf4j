@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 
@@ -106,6 +107,15 @@ public interface NativeLmdbQuerySource {
 
 		RecordIterator open(long subj, long pred, long obj, long context) throws IOException;
 
+		/**
+		 * True when this probe's opens are being answered by the in-memory adjacency cache (O(1), no store access).
+		 * Operators use this to skip their own memo/replay/hash-build layers, which only add overhead on top of a
+		 * cache-served probe.
+		 */
+		default boolean adjacencyCacheBacked() {
+			return false;
+		}
+
 		@Override
 		void close();
 	}
@@ -143,5 +153,25 @@ public interface NativeLmdbQuerySource {
 	 */
 	default ParallelSource[] openParallelSources(int count) throws IOException {
 		return null;
+	}
+
+	/**
+	 * Plans disjoint key subranges tiling this pattern's scan for range-partitioned parallel root scans, or
+	 * {@code null} when unsupported (the default). A non-null result may contain any number of partitions (including
+	 * zero for an empty source); callers decide whether enough partitions exist to engage. Partitions planned on one
+	 * member of a same-snapshot parallel source family are valid on every sibling.
+	 */
+	default LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+			int targetPartitions) throws IOException {
+		return null;
+	}
+
+	/**
+	 * Opens the bounded scan for one partition previously planned by {@link #planRootScanPartitions} on this source or
+	 * on a same-snapshot family sibling.
+	 */
+	default RecordIterator statements(long subj, long pred, long obj, long context, LmdbRootScanPartition partition)
+			throws IOException {
+		throw new UnsupportedOperationException("Range-partitioned scans are not supported by this source");
 	}
 }

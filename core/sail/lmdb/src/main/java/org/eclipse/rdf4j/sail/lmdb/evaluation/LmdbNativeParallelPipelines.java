@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 
 /**
  * Shared same-snapshot morsel scheduler for native pipelines. The query thread keeps its original source; one sibling
@@ -46,6 +48,19 @@ final class LmdbNativeParallelPipelines {
 	static final AtomicLong CANCELLED_RUNS = new AtomicLong();
 	static final AtomicLong WORKER_FAILURES = new AtomicLong();
 	static final AtomicReference<String> LAST_REJECTION = new AtomicReference<>();
+
+	static final AtomicLong RANGE_PARTITION_RUNS = new AtomicLong();
+	static final AtomicLong RANGE_PARTITIONS_PLANNED = new AtomicLong();
+	static final AtomicLong RANGE_PARTITIONS_EMPTY = new AtomicLong();
+	static final AtomicLong RANGE_SPLIT_PLANNING_NANOS = new AtomicLong();
+	/**
+	 * Last reason range partitioning fell back to the morsel producer. Deliberately distinct from
+	 * {@link #LAST_REJECTION}: a range rejection still runs the query in parallel, just in morsel mode.
+	 */
+	static final AtomicReference<String> LAST_RANGE_REJECTION = new AtomicReference<>();
+
+	/** Smallest worthwhile partition; below ~8 morsels the per-partition open cost dominates. */
+	static final long MIN_PARTITION_ROWS = 8192;
 
 	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
 	private static final AtomicInteger RESERVED_TASKS = new AtomicInteger();
@@ -108,6 +123,29 @@ final class LmdbNativeParallelPipelines {
 		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.parallel.enabled", "true"));
 	}
 
+	static boolean rangePartitionEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.parallel.rangePartition.enabled", "false"));
+	}
+
+	static int rangePartitionFactor() {
+		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.rangePartition.factor");
+		return Math.max(1, Math.min(configured != null ? configured : 4, 16));
+	}
+
+	static void rejectRangePartitioning(String reason) {
+		LAST_RANGE_REJECTION.set(reason);
+	}
+
+	/**
+	 * Over-partitioned target: {@code threads * factor}, capped at 64 and at one partition per
+	 * {@link #MIN_PARTITION_ROWS} estimated rows (floor 2 — with fewer than two ranges there is nothing to partition;
+	 * workers beyond the partition count simply finish early).
+	 */
+	static int rangePartitionTarget(int threads, double rootEstimate) {
+		long byEstimate = Math.max(2L, (long) (rootEstimate / MIN_PARTITION_ROWS));
+		return (int) Math.min(Math.min(64L, (long) threads * rangePartitionFactor()), byEstimate);
+	}
+
 	/** Returns a streaming parallel cursor, or {@code null} when any structural or snapshot gate fails. */
 	static RowCursor tryOpen(NativeRowsStep step, RowState consumerRow) throws IOException {
 		if (!enabled()) {
@@ -149,7 +187,15 @@ final class LmdbNativeParallelPipelines {
 		if (!parallelWorkerForkable(plan.filters)) {
 			return reject("stateful-filter");
 		}
-		TaskReservation reservation = tryReserveTasks(threads + 1);
+		LmdbRootScanPartition[] partitions = null;
+		if (rangePartitionEnabled()) {
+			partitions = LmdbNativeExchange.tryPlanRootPartitions(step.source, root, consumerRow,
+					rangePartitionTarget(threads, root.estimate(consumerRow)));
+		} else {
+			rejectRangePartitioning("flag-off");
+		}
+		int taskCount = partitions != null ? threads : threads + 1;
+		TaskReservation reservation = tryReserveTasks(taskCount);
 		if (reservation == null) {
 			return reject("task-budget");
 		}
@@ -159,15 +205,20 @@ final class LmdbNativeParallelPipelines {
 		Throwable primaryFailure = null;
 		try {
 			workerPlans = forkWorkerPlans(plan, threads);
-			sources = step.source.openParallelSources(threads + 1);
+			sources = step.source.openParallelSources(taskCount);
 			if (sources == null) {
 				return reject("snapshot-unavailable");
 			}
 			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, workerPlans, sources,
-					reservation, false);
+					reservation, partitions, false);
 			handedOff = true;
 			cursor.start();
 			PARALLEL_ROW_RUNS.incrementAndGet();
+			if (partitions != null) {
+				RANGE_PARTITION_RUNS.incrementAndGet();
+				RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
+				LAST_RANGE_REJECTION.set(null);
+			}
 			LAST_REJECTION.set(null);
 			return cursor;
 		} catch (IOException | RuntimeException | Error problem) {
@@ -332,6 +383,8 @@ final class LmdbNativeParallelPipelines {
 		final NativeLmdbQuerySource.ParallelSource[] sources;
 		final long[] entrySlots;
 		final ArrayBlockingQueue<LmdbNativeExchange.Morsel> input;
+		final ConcurrentLinkedQueue<LmdbRootScanPartition> partitions;
+		final int plannedPartitionCount;
 		final ArrayBlockingQueue<OutputPage> output;
 		final AtomicReference<Throwable> failure = new AtomicReference<>();
 		final AtomicReference<Throwable> cleanupFailure = new AtomicReference<>();
@@ -352,21 +405,31 @@ final class LmdbNativeParallelPipelines {
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation) {
-			this(step, consumerRow, root, workerPlans, sources, reservation, true);
+			this(step, consumerRow, root, workerPlans, sources, reservation, null, true);
 		}
 
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation, boolean start) {
+			this(step, consumerRow, root, workerPlans, sources, reservation, null, start);
+		}
+
+		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
+				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
+				TaskReservation reservation, LmdbRootScanPartition[] plannedPartitions, boolean start) {
 			this.step = step;
 			this.consumerRow = consumerRow;
 			this.root = root;
 			this.workerPlans = workerPlans;
 			this.sources = sources;
+			this.plannedPartitionCount = plannedPartitions != null ? plannedPartitions.length : 0;
+			this.partitions = plannedPartitions != null
+					? new ConcurrentLinkedQueue<>(Arrays.asList(plannedPartitions))
+					: null;
 			this.entrySlots = Arrays.copyOf(consumerRow.slots, consumerRow.slots.length);
-			this.input = new ArrayBlockingQueue<>(workerPlans.length * 2);
+			this.input = partitions != null ? null : new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.output = new ArrayBlockingQueue<>(workerPlans.length * 2);
-			this.tasks = new CountDownLatch(workerPlans.length + 1);
+			this.tasks = new CountDownLatch(workerPlans.length + (partitions != null ? 0 : 1));
 			this.futures = new ArrayList<>(workerPlans.length + 1);
 			this.reservation = reservation;
 			this.attemptMetrics = LmdbNativeAttemptMetrics.root();
@@ -388,9 +451,11 @@ final class LmdbNativeParallelPipelines {
 							() -> runTask(() -> runWorker(worker), workerPlans[worker], sources[worker])));
 					submitted++;
 				}
-				int producer = workerPlans.length;
-				futures.add(pool().submit(() -> runTask(this::produce, null, sources[producer])));
-				submitted++;
+				if (partitions == null) {
+					int producer = workerPlans.length;
+					futures.add(pool().submit(() -> runTask(this::produce, null, sources[producer])));
+					submitted++;
+				}
 			} catch (RuntimeException | Error problem) {
 				recordStartupFailure(problem);
 				cancelled.set(true);
@@ -504,6 +569,12 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
+		/** Explain label: names range-partition mode only when it actually engaged. */
+		String strategyLabel() {
+			return partitions != null ? "parallelPipelines(rangePartitioned=" + plannedPartitionCount + ")"
+					: "parallelPipelines";
+		}
+
 		void produce() throws IOException {
 			NativeLmdbQuerySource producerSource = sources[workerPlans.length];
 			RowState producerRow = new RowState(producerSource, step.layout, consumerRow.base);
@@ -528,8 +599,9 @@ final class LmdbNativeParallelPipelines {
 			MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, row,
 					row.boundMask(), step.sourceSlots, step.distinct, metrics);
-			LmdbNativeExchange.MorselCursor leftmost = new LmdbNativeExchange.MorselCursor(input, root, row, failure,
-					cancelled);
+			RowCursor leftmost = partitions != null
+					? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, cancelled)
+					: new LmdbNativeExchange.MorselCursor(input, root, row, failure, cancelled);
 			RowCursor pipeline;
 			try {
 				if (factorized != null) {
@@ -690,7 +762,12 @@ final class LmdbNativeParallelPipelines {
 			System.arraycopy(entrySlots, 0, consumerRow.slots, 0, entrySlots.length);
 			consumerRow.recomputeBoundMask();
 			active = null;
-			input.clear();
+			if (input != null) {
+				input.clear();
+			}
+			if (partitions != null) {
+				partitions.clear();
+			}
 			output.clear();
 		}
 	}

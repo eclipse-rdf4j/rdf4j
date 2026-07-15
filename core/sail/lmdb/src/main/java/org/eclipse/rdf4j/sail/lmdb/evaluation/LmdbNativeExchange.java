@@ -13,12 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
 /**
  * The one exchange substrate for intra-query morsel parallelism (Phase 6): the query thread scans the root pattern into
@@ -122,6 +125,136 @@ final class LmdbNativeExchange {
 		Morsel(long[] quads, int rows) {
 			this.quads = quads;
 			this.rows = rows;
+		}
+	}
+
+	/**
+	 * Plans range partitions for a root pattern, or returns {@code null} (recording the rejection reason) when the
+	 * root's scan shape or the source refuses. Callers gate on the range-partition flag before calling; a null result
+	 * means "fall back to the morsel producer", never "fail the query".
+	 */
+	static LmdbRootScanPartition[] tryPlanRootPartitions(NativeLmdbQuerySource source, PatternPlan root, RowState row,
+			int targetPartitions) throws IOException {
+		long[] quad = root.partitionableScanQuad(row);
+		if (quad == null) {
+			LmdbNativeParallelPipelines.rejectRangePartitioning("unsupported-root-shape");
+			return null;
+		}
+		long started = System.nanoTime();
+		LmdbRootScanPartition[] partitions = source.planRootScanPartitions(quad[0], quad[1], quad[2], quad[3],
+				targetPartitions);
+		LmdbNativeParallelPipelines.RANGE_SPLIT_PLANNING_NANOS.addAndGet(System.nanoTime() - started);
+		if (partitions == null) {
+			LmdbNativeParallelPipelines.rejectRangePartitioning("planner-unsupported");
+			return null;
+		}
+		if (partitions.length < 2) {
+			LmdbNativeParallelPipelines.rejectRangePartitioning("too-few-splits");
+			return null;
+		}
+		return partitions;
+	}
+
+	/**
+	 * Worker-side root cursor over dynamically claimed key-range partitions: the drop-in, producer-less alternative to
+	 * {@link MorselCursor}. Each worker owns one of these; all of them poll the same pre-seeded partition queue, so
+	 * load balances itself without a producer thread or an input queue crossing. The root pattern's ids are resolved
+	 * once at construction via {@link PatternPlan#partitionableScanQuad} — identical on every worker because correlated
+	 * entries are refused and worker seeding asserts equality with the query thread.
+	 */
+	static final class PartitionCursor implements RowCursor {
+		final Queue<LmdbRootScanPartition> partitions;
+		final PatternPlan root;
+		final RowState row;
+		final AtomicReference<Throwable> failure;
+		final AtomicBoolean cancelled;
+		final long subj;
+		final long pred;
+		final long obj;
+		final long context;
+		final long[] quads = new long[4 * MORSEL_ROWS];
+		RecordIterator scan;
+		boolean currentPartitionMatched;
+		int rows;
+		int pos;
+		int mark = -1;
+		boolean done;
+
+		PartitionCursor(Queue<LmdbRootScanPartition> partitions, PatternPlan root, RowState row,
+				AtomicReference<Throwable> failure, AtomicBoolean cancelled) {
+			this.partitions = partitions;
+			this.root = root;
+			this.row = row;
+			this.failure = failure;
+			this.cancelled = cancelled;
+			long[] quad = root.partitionableScanQuad(row);
+			if (quad == null) {
+				throw new IllegalStateException("root pattern stopped being range-partitionable on the worker");
+			}
+			this.subj = quad[0];
+			this.pred = quad[1];
+			this.obj = quad[2];
+			this.context = quad[3];
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (mark >= 0) {
+				row.rollback(mark);
+				mark = -1;
+			}
+			while (!done) {
+				if (pos >= rows && !refill()) {
+					return false;
+				}
+				int base = pos++ * 4;
+				int candidate = row.mark();
+				if (root.bind(quads, base, row)) {
+					mark = candidate;
+					return true;
+				}
+				row.rollback(candidate);
+			}
+			return false;
+		}
+
+		private boolean refill() throws IOException {
+			while (true) {
+				throwIfAborted(failure, cancelled);
+				if (scan == null) {
+					LmdbRootScanPartition partition = partitions.poll();
+					if (partition == null) {
+						done = true;
+						return false;
+					}
+					scan = row.source.statements(subj, pred, obj, context, partition);
+					currentPartitionMatched = false;
+				}
+				rows = scan.fill(quads, MORSEL_ROWS);
+				pos = 0;
+				if (rows > 0) {
+					currentPartitionMatched = true;
+					return true;
+				}
+				scan.close();
+				scan = null;
+				if (!currentPartitionMatched) {
+					LmdbNativeParallelPipelines.RANGE_PARTITIONS_EMPTY.incrementAndGet();
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			if (mark >= 0) {
+				row.rollback(mark);
+				mark = -1;
+			}
+			done = true;
+			if (scan != null) {
+				scan.close();
+				scan = null;
+			}
 		}
 	}
 

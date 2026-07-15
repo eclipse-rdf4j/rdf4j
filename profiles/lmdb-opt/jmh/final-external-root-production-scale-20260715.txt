@@ -1,0 +1,317 @@
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G --enable-native-access=ALL-UNNAMED
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 2 s each
+# Measurement: 4 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect
+# Parameters: (strategy = externalRootChunk)
+
+# Run progress: 0.00% complete, ETA 00:01:36
+# Fork: 1 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 13.507 ms/op
+# Warmup Iteration   2: 12.619 ms/op
+# Warmup Iteration   3: 13.310 ms/op
+# Warmup Iteration   4: 11.287 ms/op
+Iteration   1: 11.656 ms/op
+                 gc.alloc.rate:      2243.898 MB/sec
+                 gc.alloc.rate.norm: 27427085.873 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            7.000 ms
+
+Iteration   2: 10.824 ms/op
+                 gc.alloc.rate:      2415.878 MB/sec
+                 gc.alloc.rate.norm: 27421031.178 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            8.000 ms
+
+Iteration   3: 10.845 ms/op
+                 gc.alloc.rate:      2411.654 MB/sec
+                 gc.alloc.rate.norm: 27425028.714 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            7.000 ms
+
+Iteration   4: 11.387 ms/op
+                 gc.alloc.rate:      2290.021 MB/sec
+                 gc.alloc.rate.norm: 27415557.017 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            8.000 ms
+
+
+# Run progress: 16.67% complete, ETA 00:01:27
+# Fork: 2 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 12.683 ms/op
+# Warmup Iteration   2: 12.291 ms/op
+# Warmup Iteration   3: 11.202 ms/op
+# Warmup Iteration   4: 12.210 ms/op
+Iteration   1: 11.305 ms/op
+                 gc.alloc.rate:      2671.884 MB/sec
+                 gc.alloc.rate.norm: 31675453.258 B/op
+                 gc.count:           9.000 counts
+                 gc.time:            7.000 ms
+
+Iteration   2: 12.184 ms/op
+                 gc.alloc.rate:      2479.932 MB/sec
+                 gc.alloc.rate.norm: 31684792.291 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            6.000 ms
+
+Iteration   3: 10.968 ms/op
+                 gc.alloc.rate:      2754.040 MB/sec
+                 gc.alloc.rate.norm: 31676356.721 B/op
+                 gc.count:           9.000 counts
+                 gc.time:            8.000 ms
+
+Iteration   4: 11.420 ms/op
+                 gc.alloc.rate:      2628.546 MB/sec
+                 gc.alloc.rate.norm: 31680589.273 B/op
+                 gc.count:           9.000 counts
+                 gc.time:            7.000 ms
+
+
+# Run progress: 33.33% complete, ETA 00:01:09
+# Fork: 3 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 12.195 ms/op
+# Warmup Iteration   2: 12.069 ms/op
+# Warmup Iteration   3: 11.268 ms/op
+# Warmup Iteration   4: 10.898 ms/op
+Iteration   1: 10.820 ms/op
+                 gc.alloc.rate:      2416.822 MB/sec
+                 gc.alloc.rate.norm: 27420600.559 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            7.000 ms
+
+Iteration   2: 10.853 ms/op
+                 gc.alloc.rate:      2410.126 MB/sec
+                 gc.alloc.rate.norm: 27428964.000 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            8.000 ms
+
+Iteration   3: 11.644 ms/op
+                 gc.alloc.rate:      2246.252 MB/sec
+                 gc.alloc.rate.norm: 27428437.087 B/op
+                 gc.count:           7.000 counts
+                 gc.time:            7.000 ms
+
+Iteration   4: 10.829 ms/op
+                 gc.alloc.rate:      2409.963 MB/sec
+                 gc.alloc.rate.norm: 27424485.419 B/op
+                 gc.count:           9.000 counts
+                 gc.time:            8.000 ms
+
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect":
+  11.228 ±(99.9%) 0.571 ms/op [Average]
+  (min, avg, max) = (10.820, 11.228, 12.184), stdev = 0.446
+  CI (99.9%): [10.657, 11.799] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate":
+  2448.251 ±(99.9%) 208.300 MB/sec [Average]
+  (min, avg, max) = (2243.898, 2448.251, 2754.040), stdev = 162.627
+  CI (99.9%): [2239.951, 2656.552] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate.norm":
+  28842365.116 ±(99.9%) 2683650.887 B/op [Average]
+  (min, avg, max) = (27415557.017, 28842365.116, 31684792.291), stdev = 2095218.089
+  CI (99.9%): [26158714.229, 31526016.002] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.count":
+  99.000 ±(99.9%) 0.001 counts [Sum]
+  (min, avg, max) = (7.000, 8.250, 9.000), stdev = 0.622
+  CI (99.9%): [99.000, 99.000] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.time":
+  88.000 ±(99.9%) 0.001 ms [Sum]
+  (min, avg, max) = (6.000, 7.333, 8.000), stdev = 0.651
+  CI (99.9%): [88.000, 88.000] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G --enable-native-access=ALL-UNNAMED
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 2 s each
+# Measurement: 4 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect
+# Parameters: (strategy = workerRowChain)
+
+# Run progress: 50.00% complete, ETA 00:00:52
+# Fork: 1 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 12.001 ms/op
+# Warmup Iteration   2: 11.116 ms/op
+# Warmup Iteration   3: 11.596 ms/op
+# Warmup Iteration   4: 12.471 ms/op
+Iteration   1: 12.124 ms/op
+                 gc.alloc.rate:      2145.738 MB/sec
+                 gc.alloc.rate.norm: 27279592.289 B/op
+                 gc.count:           7.000 counts
+                 gc.time:            9.000 ms
+
+Iteration   2: 11.689 ms/op
+                 gc.alloc.rate:      2225.339 MB/sec
+                 gc.alloc.rate.norm: 27277079.953 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            11.000 ms
+
+Iteration   3: 12.652 ms/op
+                 gc.alloc.rate:      2055.960 MB/sec
+                 gc.alloc.rate.norm: 27277600.604 B/op
+                 gc.count:           7.000 counts
+                 gc.time:            9.000 ms
+
+Iteration   4: 10.908 ms/op
+                 gc.alloc.rate:      2379.022 MB/sec
+                 gc.alloc.rate.norm: 27278348.478 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            10.000 ms
+
+
+# Run progress: 66.67% complete, ETA 00:00:34
+# Fork: 2 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 12.279 ms/op
+# Warmup Iteration   2: 12.248 ms/op
+# Warmup Iteration   3: 12.559 ms/op
+# Warmup Iteration   4: 11.564 ms/op
+Iteration   1: 11.760 ms/op
+                 gc.alloc.rate:      2212.085 MB/sec
+                 gc.alloc.rate.norm: 27279530.199 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            10.000 ms
+
+Iteration   2: 10.899 ms/op
+                 gc.alloc.rate:      2387.392 MB/sec
+                 gc.alloc.rate.norm: 27284442.609 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            10.000 ms
+
+Iteration   3: 10.580 ms/op
+                 gc.alloc.rate:      2459.075 MB/sec
+                 gc.alloc.rate.norm: 27281167.916 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            10.000 ms
+
+Iteration   4: 11.288 ms/op
+                 gc.alloc.rate:      2290.045 MB/sec
+                 gc.alloc.rate.norm: 27279303.236 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            11.000 ms
+
+
+# Run progress: 83.33% complete, ETA 00:00:17
+# Fork: 3 of 3
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 14.071 ms/op
+# Warmup Iteration   2: 12.264 ms/op
+# Warmup Iteration   3: 11.005 ms/op
+# Warmup Iteration   4: 10.628 ms/op
+Iteration   1: 10.727 ms/op
+                 gc.alloc.rate:      2423.790 MB/sec
+                 gc.alloc.rate.norm: 27264775.059 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            11.000 ms
+
+Iteration   2: 11.051 ms/op
+                 gc.alloc.rate:      2353.183 MB/sec
+                 gc.alloc.rate.norm: 27268499.033 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            11.000 ms
+
+Iteration   3: 10.824 ms/op
+                 gc.alloc.rate:      2402.620 MB/sec
+                 gc.alloc.rate.norm: 27269767.827 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            10.000 ms
+
+Iteration   4: 10.572 ms/op
+                 gc.alloc.rate:      2454.087 MB/sec
+                 gc.alloc.rate.norm: 27274268.379 B/op
+                 gc.count:           8.000 counts
+                 gc.time:            11.000 ms
+
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect":
+  11.256 ±(99.9%) 0.849 ms/op [Average]
+  (min, avg, max) = (10.572, 11.256, 12.652), stdev = 0.662
+  CI (99.9%): [10.407, 12.105] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate":
+  2315.695 ±(99.9%) 166.291 MB/sec [Average]
+  (min, avg, max) = (2055.960, 2315.695, 2459.075), stdev = 129.829
+  CI (99.9%): [2149.403, 2481.986] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate.norm":
+  27276197.965 ±(99.9%) 7399.725 B/op [Average]
+  (min, avg, max) = (27264775.059, 27276197.965, 27284442.609), stdev = 5777.219
+  CI (99.9%): [27268798.240, 27283597.690] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.count":
+  94.000 ±(99.9%) 0.001 counts [Sum]
+  (min, avg, max) = (7.000, 7.833, 8.000), stdev = 0.389
+  CI (99.9%): [94.000, 94.000] (assumes normal distribution)
+
+Secondary result "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.time":
+  123.000 ±(99.9%) 0.001 ms [Sum]
+  (min, avg, max) = (9.000, 10.250, 11.000), stdev = 0.754
+  CI (99.9%): [123.000, 123.000] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:01:44
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                                                                       (strategy)  Mode  Cnt         Score         Error   Units
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect                     externalRootChunk  avgt   12        11.228 ±       0.571   ms/op
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate       externalRootChunk  avgt   12      2448.251 ±     208.300  MB/sec
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate.norm  externalRootChunk  avgt   12  28842365.116 ± 2683650.887    B/op
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.count            externalRootChunk  avgt   12        99.000                counts
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.time             externalRootChunk  avgt   12        88.000                    ms
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect                        workerRowChain  avgt   12        11.256 ±       0.849   ms/op
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate          workerRowChain  avgt   12      2315.695 ±     166.291  MB/sec
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.alloc.rate.norm     workerRowChain  avgt   12  27276197.965 ±    7399.725    B/op
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.count               workerRowChain  avgt   12        94.000                counts
+LmdbNativeSubstrateBenchmark.externalRootChunkSelect:gc.time                workerRowChain  avgt   12       123.000                    ms
+
+Benchmark result is saved to profiles/lmdb-opt/jmh/final-external-root-production-scale-20260715.json

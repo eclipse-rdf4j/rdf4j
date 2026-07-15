@@ -93,6 +93,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 @Experimental
 final class FilteringIteration implements CloseableIteration<BindingSet> {
@@ -637,6 +638,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				|| rightId == NULL_CONTEXT_ID) {
 			return null;
 		}
+		if (ValueIds.isOrderedInteger(leftId) && ValueIds.isOrderedInteger(rightId)) {
+			// biased value fields compare exactly like the numbers, across all ordered subtypes — no decode
+			return Long.compare(ValueIds.getValue(leftId), ValueIds.getValue(rightId));
+		}
 		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId), codec.decode(rightId));
 	}
 
@@ -867,7 +872,10 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		cursor = LmdbNativeParallelPipelines.tryOpen(step, row);
 		if (cursor != null) {
-			LmdbNativeExplain.recordStrategy(step.originalExpr, "parallelPipelines");
+			LmdbNativeExplain.recordStrategy(step.originalExpr,
+					cursor instanceof LmdbNativeParallelPipelines.ParallelRowCursor
+							? ((LmdbNativeParallelPipelines.ParallelRowCursor) cursor).strategyLabel()
+							: "parallelPipelines");
 			return true;
 		}
 		// under correlated entry an all-ENUM factorization is memoized enumeration whose memos die with

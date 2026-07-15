@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
 @Experimental
@@ -84,6 +85,48 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			return active.newProbe();
 		}
 		return new CompositeProbe(activeSources);
+	}
+
+	@Override
+	public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+			int targetPartitions) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
+		}
+		List<LmdbRootScanPartition> combined = new ArrayList<>();
+		for (int i = 0; i < activeSources.size(); i++) {
+			// each member gets the full target: over-partitioning is by design, the shared partition queue
+			// balances the actual work; a null member refuses partitioning for the whole composite
+			LmdbRootScanPartition[] memberPartitions = activeSources.get(i)
+					.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
+			if (memberPartitions == null) {
+				return null;
+			}
+			for (LmdbRootScanPartition partition : memberPartitions) {
+				combined.add(new LmdbRootScanPartition(i, partition.range()));
+			}
+		}
+		return combined.toArray(new LmdbRootScanPartition[0]);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbRootScanPartition partition)
+			throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.statements(subj, pred, obj, context, partition);
+		}
+		int member = partition.member();
+		if (member < 0 || member >= activeSources.size()) {
+			throw new IllegalStateException("Partition member " + member + " out of range for composite with "
+					+ activeSources.size() + " active sources");
+		}
+		// member ordinals are stable across same-snapshot siblings because parallel families are built in
+		// activeSources order; the member source planned its ranges under ordinal 0
+		return activeSources.get(member)
+				.statements(subj, pred, obj, context,
+						new LmdbRootScanPartition(0, partition.range()));
 	}
 
 	@Override
@@ -356,6 +399,18 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			return delegate.statements(order, subj, pred, obj, context);
+		}
+
+		@Override
+		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+				int targetPartitions) throws IOException {
+			return delegate.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				LmdbRootScanPartition partition) throws IOException {
+			return delegate.statements(subj, pred, obj, context, partition);
 		}
 
 		@Override

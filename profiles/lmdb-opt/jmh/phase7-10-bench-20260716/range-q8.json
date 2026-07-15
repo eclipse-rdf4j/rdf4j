@@ -1,0 +1,62 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms1G",
+            "-Xmx16G",
+            "-Drdf4j.lmdb.parallel.rangePartition.enabled=true"
+        ],
+        "jdkVersion" : "25",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25+36-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "themeName" : "MEDICAL_RECORDS",
+            "z_queryIndex" : "8"
+        },
+        "primaryMetric" : {
+            "score" : 71.77768901238096,
+            "scoreError" : 2.04700451271042,
+            "scoreConfidence" : [
+                69.73068449967055,
+                73.82469352509138
+            ],
+            "scorePercentiles" : {
+                "0.0" : 70.88718333333334,
+                "50.0" : 71.950175,
+                "90.0" : 72.27488692857143,
+                "95.0" : 72.27488692857143,
+                "99.0" : 72.27488692857143,
+                "99.9" : 72.27488692857143,
+                "99.99" : 72.27488692857143,
+                "99.999" : 72.27488692857143,
+                "99.9999" : 72.27488692857143,
+                "100.0" : 72.27488692857143
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    71.950175,
+                    72.27488692857143,
+                    71.7538278,
+                    70.88718333333334,
+                    72.022372
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

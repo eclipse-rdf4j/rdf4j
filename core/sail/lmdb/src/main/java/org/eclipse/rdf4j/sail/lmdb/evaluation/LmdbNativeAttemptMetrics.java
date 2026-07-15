@@ -49,6 +49,7 @@ final class LmdbNativeAttemptMetrics {
 	private long chunkEngaged;
 	private long chunkRunReplays;
 	private long chunkMemoReplays;
+	private long chunkCsrBackedProbes;
 	private long chunkHashBuilds;
 	private long chunkHashReplayRows;
 	private long chunkMergeWalks;
@@ -295,6 +296,19 @@ final class LmdbNativeAttemptMetrics {
 		}
 	}
 
+	/** A probe stage detected a cache-served probe and disabled its own memo/hash-build layers. */
+	void recordChunkCsrBackedProbe() {
+		if (committed) {
+			parent.recordChunkCsrBackedProbe();
+			return;
+		}
+		if (direct) {
+			LmdbNativeChunkPipeline.CSR_BACKED_PROBES.incrementAndGet();
+		} else {
+			chunkCsrBackedProbes++;
+		}
+	}
+
 	void recordChunkHashReplayRows(long rows) {
 		if (rows == 0L) {
 			return;
@@ -444,6 +458,7 @@ final class LmdbNativeAttemptMetrics {
 		chunkEngaged += child.chunkEngaged;
 		chunkRunReplays += child.chunkRunReplays;
 		chunkMemoReplays += child.chunkMemoReplays;
+		chunkCsrBackedProbes += child.chunkCsrBackedProbes;
 		chunkHashBuilds += child.chunkHashBuilds;
 		chunkHashReplayRows += child.chunkHashReplayRows;
 		chunkMergeWalks += child.chunkMergeWalks;
@@ -478,6 +493,7 @@ final class LmdbNativeAttemptMetrics {
 		add(LmdbNativeChunkPipeline.ENGAGED, completed.chunkEngaged);
 		add(LmdbNativeChunkPipeline.RUN_REPLAYS, completed.chunkRunReplays);
 		add(LmdbNativeChunkPipeline.MEMO_REPLAYS, completed.chunkMemoReplays);
+		add(LmdbNativeChunkPipeline.CSR_BACKED_PROBES, completed.chunkCsrBackedProbes);
 		add(LmdbNativeChunkPipeline.HASH_BUILDS, completed.chunkHashBuilds);
 		add(LmdbNativeChunkPipeline.HASH_REPLAY_ROWS, completed.chunkHashReplayRows);
 		add(LmdbNativeChunkPipeline.MERGE_WALKS, completed.chunkMergeWalks);

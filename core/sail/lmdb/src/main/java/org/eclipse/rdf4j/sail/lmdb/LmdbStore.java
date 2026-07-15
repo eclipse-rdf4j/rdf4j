@@ -70,7 +70,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * The current version of the LMDB store.
 	 */
-	static final int VERSION = 2;
+	/**
+	 * Version 3 adds the optional value-ordered inlined-numeric id encoding (recorded in {@code store.properties} as
+	 * {@code numeric-id-encoding=ordered-v1} on newly created stores). Version 2 stores open unchanged and keep the
+	 * legacy ZigZag encoding; ids are self-describing so no data migration exists or is needed.
+	 */
+	static final int VERSION = 3;
 
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
@@ -285,8 +290,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
 					updateVersion = upgradeStore(dataDir, properties.getVersion());
 				}
+				// existing stores keep their recorded numeric-id encoding (absent = legacy ZigZag) — never rewritten
 			} else {
 				properties.setVersion(String.valueOf(VERSION));
+				if (config.getOrderedNumericIds()) {
+					// newly created store: record that writers use the value-ordered inlined-numeric encoding
+					properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
+				}
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();

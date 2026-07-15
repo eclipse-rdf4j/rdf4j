@@ -95,6 +95,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 @Experimental
 interface NativeBooleanFilter {
@@ -455,6 +456,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final Predicate<BindingSet> fallback;
 	final LmdbNativeValueCodec codec;
 	final LmdbNativeValueCodec.DecodedValue constantDecoded;
+	final Long constantIntegerValue;
 	final KeyedMatches memo = new KeyedMatches(1, 512).withVerdicts();
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
@@ -473,6 +475,26 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		this.fallback = fallback;
 		this.codec = codec;
 		this.constantDecoded = codec == null ? null : codec.decode(constant);
+		this.constantIntegerValue = exactIntegerValue(constant, constantDecoded);
+	}
+
+	/**
+	 * The constant's exact integer value when it has one (an ordered-integer id, or any numeric constant that is
+	 * exactly integral), enabling decode-free raw-long comparison against ordered-integer candidate ids.
+	 */
+	private static Long exactIntegerValue(long constantId, LmdbNativeValueCodec.DecodedValue decoded) {
+		if (ValueIds.isOrderedInteger(constantId)) {
+			return ValueIds.orderedIntegerValue(constantId);
+		}
+		if (decoded == null || decoded.error() || !decoded.numeric() || decoded.floatingValue() != null
+				|| decoded.decimalValue() == null) {
+			return null;
+		}
+		try {
+			return decoded.decimalValue().longValueExact();
+		} catch (ArithmeticException e) {
+			return null;
+		}
 	}
 
 	@Override
@@ -495,6 +517,22 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 				&& safeResourceId(constant)) {
 			boolean equal = id == constant;
 			return op == Compare.CompareOp.EQ ? equal : !equal;
+		}
+		if (constantIntegerValue != null && ValueIds.isOrderedInteger(id)) {
+			// both sides are exact integers: numeric SPARQL comparison reduces to one long compare — no
+			// decode, no memo, no BigDecimal
+			int cmp = Long.compare(ValueIds.orderedIntegerValue(id), constantIntegerValue);
+			if (constantOnLeft) {
+				cmp = -cmp;
+			}
+			return switch (op) {
+			case LT -> cmp < 0;
+			case LE -> cmp <= 0;
+			case GT -> cmp > 0;
+			case GE -> cmp >= 0;
+			case EQ -> cmp == 0;
+			case NE -> cmp != 0;
+			};
 		}
 		Boolean cached = memo.memoGet(id);
 		if (cached != null) {

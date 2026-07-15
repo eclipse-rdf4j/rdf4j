@@ -372,7 +372,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				}
 				if (parallel != null) {
 					factorized.close();
-					metrics.deferStrategy(explainTarget, "parallelAggregation");
+					metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
 					return parallel;
 				}
 				return evaluateFactorized(row, directMultiJoin, derived, factorized);
@@ -393,7 +393,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (parallelPlan != null) {
 			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row, metrics);
 			if (parallel != null) {
-				metrics.deferStrategy(explainTarget, "parallelAggregation");
+				metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
 				return parallel;
 			}
 		}

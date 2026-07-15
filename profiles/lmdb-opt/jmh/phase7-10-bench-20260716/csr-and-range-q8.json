@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms1G",
+            "-Xmx16G",
+            "-Drdf4j.lmdb.csrCache.enabled=true",
+            "-Drdf4j.lmdb.parallel.rangePartition.enabled=true"
+        ],
+        "jdkVersion" : "25",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25+36-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "themeName" : "MEDICAL_RECORDS",
+            "z_queryIndex" : "8"
+        },
+        "primaryMetric" : {
+            "score" : 68.23382042916667,
+            "scoreError" : 8.927625970459632,
+            "scoreConfidence" : [
+                59.30619445870704,
+                77.1614463996263
+            ],
+            "scorePercentiles" : {
+                "0.0" : 65.928362,
+                "50.0" : 67.1203222,
+                "90.0" : 71.46985833333333,
+                "95.0" : 71.46985833333333,
+                "99.0" : 71.46985833333333,
+                "99.9" : 71.46985833333333,
+                "99.99" : 71.46985833333333,
+                "99.999" : 71.46985833333333,
+                "99.9999" : 71.46985833333333,
+                "100.0" : 71.46985833333333
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    65.928362,
+                    67.1203222,
+                    66.8323568125,
+                    69.8182028,
+                    71.46985833333333
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

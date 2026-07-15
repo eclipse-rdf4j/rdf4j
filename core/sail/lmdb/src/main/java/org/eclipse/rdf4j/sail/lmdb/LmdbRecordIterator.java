@@ -72,6 +72,12 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private ByteBuffer maxKeyBuf;
 
+	/**
+	 * When true, {@link #maxKeyBuf} is an exclusive bound injected via {@link LmdbKeyRange}: a key byte-equal to the
+	 * bound is out of range. When false (the default), {@link #maxKeyBuf} is the pattern's natural inclusive max key.
+	 */
+	private boolean upperExclusive;
+
 	private final long[] quad;
 	private long matchSubj;
 	private long matchPred;
@@ -127,6 +133,12 @@ class LmdbRecordIterator implements RecordIterator {
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
 			throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range) throws IOException {
 		this.retainOnClose = retainOnClose;
 		this.matchSubj = subj > 0 ? subj : -1;
 		this.matchPred = pred > 0 ? pred : -1;
@@ -156,6 +168,29 @@ class LmdbRecordIterator implements RecordIterator {
 			minKeyBuf = null;
 			this.rangePrefixLength = 0;
 			this.exactKeySearch = false;
+		}
+
+		if (range != null) {
+			if (exactKeySearch) {
+				throw new IllegalArgumentException("Bounded scans are not supported for exact key lookups");
+			}
+			if (range.lowKey() != null) {
+				if (minKeyBuf == null) {
+					minKeyBuf = pool.getKeyBuffer();
+				}
+				minKeyBuf.clear();
+				minKeyBuf.put(range.lowKey());
+				minKeyBuf.flip();
+			}
+			if (range.highKeyExclusive() != null) {
+				if (maxKeyBuf == null) {
+					maxKeyBuf = pool.getKeyBuffer();
+				}
+				maxKeyBuf.clear();
+				maxKeyBuf.put(range.highKeyExclusive());
+				maxKeyBuf.flip();
+				this.upperExclusive = true;
+			}
 		}
 
 		this.dbi = index.getDB(explicit);
@@ -275,7 +310,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 			while (lastResult == MDB_SUCCESS) {
 				sourceRowsScannedActual++;
-				if (rangePrefixLength == 0 && isOutOfRange()) {
+				if (isOutOfRange()) {
 					sourceRowsFilteredActual++;
 					lastResult = MDB_NOTFOUND;
 				} else {
@@ -374,7 +409,7 @@ class LmdbRecordIterator implements RecordIterator {
 			int rows = 0;
 			while (lastResult == MDB_SUCCESS) {
 				sourceRowsScannedActual++;
-				if (rangePrefixLength == 0 && isOutOfRange()) {
+				if (isOutOfRange()) {
 					sourceRowsFilteredActual++;
 					break;
 				}
@@ -491,7 +526,9 @@ class LmdbRecordIterator implements RecordIterator {
 				return a > b;
 			}
 		}
-		return keyLength > maxLength;
+		// equal common prefix: a longer key sorts after the bound (out in both modes); a byte-equal key is out
+		// only when the bound is exclusive; a strict prefix of the bound sorts before it (in range in both modes)
+		return upperExclusive ? keyLength >= maxLength : keyLength > maxLength;
 	}
 
 	private void freeResources() {
@@ -559,6 +596,8 @@ class LmdbRecordIterator implements RecordIterator {
 		this.exactKeyFound = false;
 		this.consecutiveFiltered = 0;
 		this.index = index;
+		// reset() re-derives the pattern's natural (inclusive) bounds; any injected exclusive bound is gone
+		this.upperExclusive = false;
 		if (rangeSearch) {
 			if (minKeyBuf == null) {
 				minKeyBuf = pool.getKeyBuffer();

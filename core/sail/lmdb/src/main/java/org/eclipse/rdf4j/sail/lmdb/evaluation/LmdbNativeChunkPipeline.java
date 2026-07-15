@@ -56,6 +56,7 @@ final class LmdbNativeChunkPipeline {
 	static final AtomicLong MEMO_REPLAYS = new AtomicLong();
 	/** Test observability: probe stages that flipped to a hash-join-style scan-once build. */
 	static final AtomicLong HASH_BUILDS = new AtomicLong();
+	static final AtomicLong CSR_BACKED_PROBES = new AtomicLong();
 	/** Test observability: rows emitted directly from immutable published hash buckets. */
 	static final AtomicLong HASH_REPLAY_ROWS = new AtomicLong();
 
@@ -807,6 +808,8 @@ final class LmdbNativeChunkPipeline {
 		int hashReservedEntries;
 		long hashReservedValues;
 		boolean hashBuildRefused;
+		/** Set once the probe reports adjacency-cache-backed opens: memos and hash builds are skipped from then on. */
+		boolean probeCacheBacked;
 		/** Build requested at a completed classic probe, deferred until the consumer asks for another batch. */
 		boolean pendingHashBuild;
 		int storeProbes;
@@ -973,8 +976,10 @@ final class LmdbNativeChunkPipeline {
 				replayFromBucket(hashTable.get(probeKey.refill(scratch, keySlots)));
 				return;
 			}
-			// a zero-slot key means every row repeats the same key: run replay already covers it
-			long[] memoized = keySlots.length == 0 ? null : memo.get(probeKey.refill(scratch, keySlots));
+			// a zero-slot key means every row repeats the same key: run replay already covers it; a
+			// cache-backed probe answers in O(1) so memoizing its results would only waste budget
+			long[] memoized = keySlots.length == 0 || probeCacheBacked ? null
+					: memo.get(probeKey.refill(scratch, keySlots));
 			if (memoized != null && memoized != SEEN_ONCE && memoized != UNCACHEABLE) {
 				metrics.recordChunkMemoReplay();
 				replayFromEntry(memoized);
@@ -990,7 +995,7 @@ final class LmdbNativeChunkPipeline {
 				if (memoized == SEEN_ONCE) {
 					collectKey = probeKey.storedCopy();
 					replayMemoKey = collectKey;
-				} else if (memoized == null && replayCollectable && keySlots.length > 0
+				} else if (memoized == null && replayCollectable && keySlots.length > 0 && !probeCacheBacked
 						&& memoBudget.tryReserve(1, 0)) {
 					markerReserved = true;
 					publishedMarker = probeKey.storedCopy();
@@ -1005,6 +1010,13 @@ final class LmdbNativeChunkPipeline {
 				System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
 				open = pattern.openRaw(row, probe);
 				storeProbes++;
+				if (!probeCacheBacked && probe.adjacencyCacheBacked()) {
+					// the adjacency cache answers this probe in O(1): per-stage memos and hash builds would
+					// only duplicate it in query-local memory and waste the shared memo budget
+					probeCacheBacked = true;
+					hashBuildRefused = true;
+					metrics.recordChunkCsrBackedProbe();
+				}
 				quadCount = 0;
 				quadIndex = 0;
 			} catch (IOException | RuntimeException | Error problem) {

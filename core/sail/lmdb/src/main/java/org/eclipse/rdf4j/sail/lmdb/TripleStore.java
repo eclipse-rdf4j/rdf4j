@@ -2120,6 +2120,25 @@ class TripleStore implements Closeable {
 	}
 
 	/**
+	 * Opens a pattern scan constrained to a raw key subrange of the pattern's index: {@code range.lowKey} inclusive,
+	 * {@code range.highKeyExclusive} exclusive, {@code null} bounds meaning the pattern's natural start/end. The index
+	 * is re-derived from the pattern's bound mask exactly like {@link #getTriples}; it must match the index the range
+	 * was planned against ({@code range.indexFieldSeq}), otherwise the planned bounds would slice a different key space
+	 * and results would be silently wrong.
+	 */
+	RecordIterator getTriplesRange(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbKeyRange range) throws IOException {
+		int mask = boundMask(subj, pred, obj, context);
+		TripleIndex index = bestIndexByBoundMask[mask];
+		if (!index.toString().equals(range.indexFieldSeq())) {
+			throw new IllegalStateException("Key range was planned against index " + range.indexFieldSeq()
+					+ " but the pattern resolves to index " + index);
+		}
+		return new LmdbRecordIterator(index, rangeSearchByBoundMask[mask], subj, pred, obj, context, explicit, txn,
+				cursorPool, false, range);
+	}
+
+	/**
 	 * Creates an iterator in retained mode: close() only marks it exhausted, so the owner can re-aim it at the next
 	 * probe with {@link #resetTriples} and must eventually call {@code dispose()}.
 	 */
@@ -2135,6 +2154,119 @@ class TripleStore implements Closeable {
 			throws IOException {
 		int mask = boundMask(subj, pred, obj, context);
 		iterator.reset(bestIndexByBoundMask[mask], rangeSearchByBoundMask[mask], subj, pred, obj, context, explicit);
+	}
+
+	/**
+	 * Plans sorted, deduplicated raw split keys strictly inside the given pattern's key range on the pattern's best
+	 * index, for partitioning a root scan into disjoint {@link LmdbKeyRange} subranges. Split candidates are computed
+	 * by linear interpolation between the range's first and last existing keys ({@link #bucketStart}) and snapped to
+	 * the actual key found by {@code MDB_SET_RANGE}, so degenerate splits collapse and empty partitions are visible at
+	 * plan time. An empty result means the range cannot be partitioned (too small, too skewed, or empty).
+	 *
+	 * <p>
+	 * Cost: 2 + (targetPartitions - 1) cursor seeks on the caller's transaction. Correctness of the resulting tiling
+	 * does not depend on splits being existing keys — half-open byte ranges tile the key space regardless.
+	 */
+	List<byte[]> planRootSplitKeys(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit,
+			int targetPartitions) throws IOException {
+		TripleIndex index = bestIndexByBoundMask[boundMask(subj, pred, obj, context)];
+		List<byte[]> splits = new ArrayList<>();
+		if (targetPartitions < 2) {
+			return splits;
+		}
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			long txn = txnRef.get();
+			int dbi = index.getDB(explicit);
+
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				// first existing key of the pattern's range
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyData.mv_data(keyBuf);
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					return splits;
+				}
+				long[] firstValues = new long[4];
+				Varint.readListUnsigned(keyData.mv_data(), firstValues);
+				byte[] firstKey = copyKey(keyData);
+
+				// last existing key of the range
+				keyData.mv_data(maxKeyBuf);
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS) {
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+				} else if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+				}
+				if (rc != MDB_SUCCESS) {
+					return splits;
+				}
+				byte[] lastKey = copyKey(keyData);
+				if (Arrays.compareUnsigned(firstKey, lastKey) >= 0) {
+					return splits;
+				}
+				long[] lastValues = new long[4];
+				Varint.readListUnsigned(keyData.mv_data(), lastValues);
+
+				long[] splitValues = new long[4];
+				byte[] previous = firstKey;
+				for (int i = 1; i < targetPartitions; i++) {
+					bucketStart((double) i / targetPartitions, firstValues, lastValues, splitValues);
+					keyBuf.clear();
+					Varint.writeListUnsigned(keyBuf, splitValues);
+					keyBuf.flip();
+					keyData.mv_data(keyBuf);
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
+						break; // interpolated key is past the end of the database
+					}
+					byte[] snapped = copyKey(keyData);
+					// keep only splits strictly inside (firstKey, lastKey]: a split == lastKey still yields a
+					// non-empty right partition holding exactly that key
+					if (Arrays.compareUnsigned(snapped, previous) <= 0) {
+						continue;
+					}
+					if (Arrays.compareUnsigned(snapped, lastKey) > 0) {
+						break;
+					}
+					splits.add(snapped);
+					previous = snapped;
+				}
+				return splits;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	private static byte[] copyKey(MDBVal keyData) {
+		ByteBuffer bb = keyData.mv_data();
+		byte[] key = new byte[bb.remaining()];
+		bb.duplicate().get(key);
+		return key;
 	}
 
 	/**

@@ -509,6 +509,7 @@ public class ValueStore extends AbstractValueFactory {
 	private final long valueEvictionInterval;
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
+	private final boolean orderedNumericIds;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
@@ -527,6 +528,9 @@ public class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
+		// the persisted store property is the single writer gate: absent (all pre-ordered-encoding stores) means
+		// legacy ZigZag ids; LmdbStore records ordered-v1 at store creation when the config enables it
+		this.orderedNumericIds = properties.usesOrderedNumericIds();
 
 		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
 				/ VALUE_CACHE_WAYS));
@@ -569,8 +573,10 @@ public class ValueStore extends AbstractValueFactory {
 						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 					}
 					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						// remove lower 2 type bits
-						nextId = Math.max(nextId, (data2id(keyData.mv_data()) >> 2) + 1);
+						// recover the VALUE part of the compound id (nextId is the value-space counter that
+						// createId() combines with a 6-bit type + 1 double-flag bit); shifting by anything less
+						// than the full 7 low bits inflates the counter ~32x on every reopen
+						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {
@@ -744,15 +750,18 @@ public class ValueStore extends AbstractValueFactory {
 		try {
 			String indexSpecStr = config.getTripleIndexes();
 			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
+			Set<String> effectiveTermIndexSpecs;
 			if (!properties.isLoaded()) {
 				// newly created lmdb store
 				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
 				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
 				initTripleTermIndexes(termIndexSpecs);
+				effectiveTermIndexSpecs = termIndexSpecs;
 			} else {
 				// Initialize existing indexes
 				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
 				initTripleTermIndexes(termIndexSpecs);
+				effectiveTermIndexSpecs = termIndexSpecs;
 
 				// Compare the existing triple term indexes with the requested indexes
 				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
@@ -763,11 +772,16 @@ public class ValueStore extends AbstractValueFactory {
 				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
 					// Set of indexes needs to be changed
 					reindex(termIndexSpecs, reqTermIndexSpecs);
+					effectiveTermIndexSpecs = reqTermIndexSpecs;
 				}
 			}
 
 			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			// persist the EFFECTIVE term index set: the raw config string may be null (defaults applied above),
+			// and a properties file without this key fails getTripleTermIndexSpecs() on the next open
+			properties.setTripleTermIndexes(tripleTermIndexSpecStr == null || tripleTermIndexSpecStr.trim().isEmpty()
+					? String.join(",", effectiveTermIndexSpecs)
+					: tripleTermIndexSpecStr);
 		} catch (IOException | SailException e) {
 			throw e;
 		}
@@ -2676,7 +2690,7 @@ public class ValueStore extends AbstractValueFactory {
 			return LmdbValue.UNKNOWN_ID;
 		}
 		try {
-			long packedId = Values.packLiteral(literal);
+			long packedId = Values.packLiteral(literal, orderedNumericIds);
 			if (packedId != 0L) {
 				Literal unpacked = Values.unpackLiteral(packedId, this);
 				if (unpacked.equals(value)) {

@@ -241,6 +241,11 @@ final class Branch {
 			return cached;
 		}
 		BranchResult result = scan(row);
+		if (probe != null && probe.adjacencyCacheBacked()) {
+			// O(1) cache-served probes: memoizing results or flipping to a scan-once count table would only
+			// duplicate the shared cache in query-local memory and waste the memo budget
+			return result;
+		}
 		memoMisses++;
 		cumulativeScanned += result.count;
 		// only trust a finite, positive sweep estimate: NaN or negative would cast to a tiny long and

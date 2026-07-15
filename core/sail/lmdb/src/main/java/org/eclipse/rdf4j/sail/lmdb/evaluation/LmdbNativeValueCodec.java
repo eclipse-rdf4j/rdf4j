@@ -186,6 +186,19 @@ final class LmdbNativeValueCodec {
 				CoreDatatype.XSD.BOOLEAN.getIri().stringValue(), CoreDatatype.XSD.BOOLEAN);
 		case ValueIds.T_SHORTSTRING -> DecodedValue.literal(decodeShortString(id), null,
 				CoreDatatype.XSD.STRING.getIri().stringValue(), CoreDatatype.XSD.STRING);
+		case ValueIds.T_ORD_INTEGER -> integerLiteral(ValueIds.orderedIntegerValue(id), CoreDatatype.XSD.INTEGER);
+		case ValueIds.T_ORD_LONG -> integerLiteral(ValueIds.orderedIntegerValue(id), CoreDatatype.XSD.LONG);
+		case ValueIds.T_ORD_INT -> integerLiteral(ValueIds.orderedIntegerValue(id), CoreDatatype.XSD.INT);
+		case ValueIds.T_ORD_SHORT -> integerLiteral(ValueIds.orderedIntegerValue(id), CoreDatatype.XSD.SHORT);
+		case ValueIds.T_ORD_BYTE -> integerLiteral(ValueIds.orderedIntegerValue(id), CoreDatatype.XSD.BYTE);
+		case ValueIds.T_ORD_POSITIVE_INTEGER -> integerLiteral(ValueIds.orderedIntegerValue(id),
+				CoreDatatype.XSD.POSITIVE_INTEGER);
+		case ValueIds.T_ORD_NEGATIVE_INTEGER -> integerLiteral(ValueIds.orderedIntegerValue(id),
+				CoreDatatype.XSD.NEGATIVE_INTEGER);
+		case ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> integerLiteral(ValueIds.orderedIntegerValue(id),
+				CoreDatatype.XSD.NON_NEGATIVE_INTEGER);
+		case ValueIds.T_ORD_NON_POSITIVE_INTEGER -> integerLiteral(ValueIds.orderedIntegerValue(id),
+				CoreDatatype.XSD.NON_POSITIVE_INTEGER);
 		default -> DecodedValue.ERROR;
 		};
 	}

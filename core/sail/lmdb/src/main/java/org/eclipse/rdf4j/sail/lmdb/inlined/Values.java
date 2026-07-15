@@ -31,6 +31,15 @@ public class Values {
 	static int MAX_LENGTH = 7;
 
 	public static long packLiteral(Literal literal) {
+		return packLiteral(literal, false);
+	}
+
+	/**
+	 * Packs a literal into an inline id. With {@code orderedNumericIds} the signed integer family uses the
+	 * value-ordered (biased) type codes — written only by stores whose {@code store.properties} records
+	 * {@code numeric-id-encoding=ordered-v1}; all other types keep their single encoding.
+	 */
+	public static long packLiteral(Literal literal, boolean orderedNumericIds) {
 		XSD xsdDataType = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (xsdDataType == null) {
 			return 0L;
@@ -39,19 +48,23 @@ public class Values {
 		case DECIMAL -> packDecimal(literal.decimalValue());
 		case DOUBLE -> packDouble(literal.doubleValue());
 		case FLOAT -> packFloat(literal.floatValue());
-		case INTEGER -> packInteger(literal);
-		case LONG -> packLong(literal);
-		case INT -> packInt(literal);
-		case SHORT -> packShort(literal);
-		case BYTE -> packByte(literal);
+		case INTEGER -> orderedNumericIds ? Integers.packOrderedInteger(literal) : packInteger(literal);
+		case LONG -> orderedNumericIds ? Integers.packOrderedLong(literal) : packLong(literal);
+		case INT -> orderedNumericIds ? Integers.packOrderedInt(literal) : packInt(literal);
+		case SHORT -> orderedNumericIds ? Integers.packOrderedShort(literal) : packShort(literal);
+		case BYTE -> orderedNumericIds ? Integers.packOrderedByte(literal) : packByte(literal);
 		case UNSIGNED_LONG -> packUnsignedLong(literal);
 		case UNSIGNED_INT -> packUnsignedInt(literal);
 		case UNSIGNED_SHORT -> packUnsignedShort(literal);
 		case UNSIGNED_BYTE -> packUnsignedByte(literal);
-		case POSITIVE_INTEGER -> packPositiveInteger(literal);
-		case NEGATIVE_INTEGER -> packNegativeInteger(literal);
-		case NON_NEGATIVE_INTEGER -> packNonNegativeInteger(literal);
-		case NON_POSITIVE_INTEGER -> packNonPositiveInteger(literal);
+		case POSITIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedPositiveInteger(literal)
+				: packPositiveInteger(literal);
+		case NEGATIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNegativeInteger(literal)
+				: packNegativeInteger(literal);
+		case NON_NEGATIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNonNegativeInteger(literal)
+				: packNonNegativeInteger(literal);
+		case NON_POSITIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNonPositiveInteger(literal)
+				: packNonPositiveInteger(literal);
 		case STRING -> packString(literal);
 		case DATETIME -> packDateTime(literal);
 		case DATETIMESTAMP -> packDateTimeStamp(literal);
@@ -87,6 +100,15 @@ public class Values {
 		case ValueIds.T_DATETIMESTAMP -> unpackDateTimeStamp(value, valueFactory);
 		case ValueIds.T_DATE -> unpackDate(value, valueFactory);
 		case ValueIds.T_BOOLEAN -> unpackBoolean(value, valueFactory);
+		case ValueIds.T_ORD_INTEGER -> Integers.unpackOrderedInteger(value, valueFactory);
+		case ValueIds.T_ORD_LONG -> Integers.unpackOrderedLong(value, valueFactory);
+		case ValueIds.T_ORD_INT -> Integers.unpackOrderedInt(value, valueFactory);
+		case ValueIds.T_ORD_SHORT -> Integers.unpackOrderedShort(value, valueFactory);
+		case ValueIds.T_ORD_BYTE -> Integers.unpackOrderedByte(value, valueFactory);
+		case ValueIds.T_ORD_POSITIVE_INTEGER -> Integers.unpackOrderedPositiveInteger(value, valueFactory);
+		case ValueIds.T_ORD_NEGATIVE_INTEGER -> Integers.unpackOrderedNegativeInteger(value, valueFactory);
+		case ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> Integers.unpackOrderedNonNegativeInteger(value, valueFactory);
+		case ValueIds.T_ORD_NON_POSITIVE_INTEGER -> Integers.unpackOrderedNonPositiveInteger(value, valueFactory);
 		default -> throw new IllegalArgumentException("Invalid packed value " + value + " with id type: " + idType);
 		};
 	}

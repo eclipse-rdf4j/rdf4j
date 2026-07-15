@@ -177,11 +177,16 @@ public class ParallelAggregationBenchmark {
 		}
 		executeQuery();
 		String actualStrategy = strategy();
-		if (expectedStrategy != null && !expectedStrategy.equals(actualStrategy)) {
+		// strategy labels may carry an engagement suffix, e.g. parallelAggregation(rangePartitioned=12)
+		if (expectedStrategy != null && actualStrategy != null && !actualStrategy.equals(expectedStrategy)
+				&& !actualStrategy.startsWith(expectedStrategy + "(")) {
 			throw new IllegalStateException(
 					variant + ": expected strategy " + expectedStrategy + " but got " + actualStrategy);
 		}
-		if (expectedStrategy == null && "parallelAggregation".equals(actualStrategy)) {
+		if (expectedStrategy != null && actualStrategy == null) {
+			throw new IllegalStateException(variant + ": expected strategy " + expectedStrategy + " but got null");
+		}
+		if (expectedStrategy == null && actualStrategy != null && actualStrategy.startsWith("parallelAggregation")) {
 			throw new IllegalStateException(variant + ": disabled control unexpectedly used parallel aggregation");
 		}
 	}

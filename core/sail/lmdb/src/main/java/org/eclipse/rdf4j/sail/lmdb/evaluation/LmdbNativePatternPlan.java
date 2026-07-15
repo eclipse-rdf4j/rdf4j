@@ -195,6 +195,40 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	/**
+	 * Resolves this pattern's four scan ids for a range-partitionable root scan, or returns {@code null} when the scan
+	 * shape is unsupported: ordered scans, empty context constraints, fixed multi-context constraints (which open one
+	 * concatenated scan per context), named-graph-scope violations, and existence-check shapes all refuse. Resolution
+	 * mirrors {@link #openRaw} exactly, so the query thread (partition planning) and every worker (partition scanning)
+	 * derive identical ids from their identically seeded rows.
+	 */
+	long[] partitionableScanQuad(RowState row) {
+		if (statementOrder != null || contexts.isEmpty()) {
+			return null;
+		}
+		long subj = s.lookup(row.slots);
+		long pred = p.lookup(row.slots);
+		long obj = o.lookup(row.slots);
+		long context = c.lookup(row.slots);
+		if (namedContextScope && context == NULL_CONTEXT_ID) {
+			return null;
+		}
+		if (doesNotProduceBindings(row.slots) && atMostOneQuadCanMatch(context)) {
+			return null;
+		}
+		if (contexts.isFixed()) {
+			if (context == UNKNOWN) {
+				if (contexts.ids.length != 1) {
+					return null;
+				}
+				context = contexts.ids[0];
+			} else if (!contexts.contains(context)) {
+				return null;
+			}
+		}
+		return new long[] { subj, pred, obj, context };
+	}
+
+	/**
 	 * Scan variant that treats the slots in {@code unboundMask} as unbound wildcards even when the row has them bound:
 	 * used to sweep a whole branch range once when building a scan-once count table.
 	 */

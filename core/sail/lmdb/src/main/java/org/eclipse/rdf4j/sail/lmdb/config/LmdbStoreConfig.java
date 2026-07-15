@@ -104,6 +104,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean inlineLiterals = true;
 
+	private boolean orderedNumericIds = true;
+
 	private Boolean sketchEstimatorEnabled;
 
 	private int sketchEstimatorSubjectBucketCount = -1;
@@ -300,6 +302,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setInlineLiterals(boolean inlineLiterals) {
 		this.inlineLiterals = inlineLiterals;
+		return this;
+	}
+
+	/**
+	 * Whether NEWLY CREATED stores inline numeric literals with the value-ordered (biased) id encoding, making
+	 * same-family numeric id comparison a raw long compare. Applies at store creation only — existing stores keep
+	 * whatever encoding their {@code store.properties} records (absent = legacy ZigZag) and are never rewritten.
+	 */
+	public boolean getOrderedNumericIds() {
+		return orderedNumericIds;
+	}
+
+	public LmdbStoreConfig setOrderedNumericIds(boolean orderedNumericIds) {
+		this.orderedNumericIds = orderedNumericIds;
 		return this;
 	}
 
