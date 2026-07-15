@@ -14,4 +14,3 @@ public enum BackupType {
 	FULL,
 	INCREMENTAL
 }
-
