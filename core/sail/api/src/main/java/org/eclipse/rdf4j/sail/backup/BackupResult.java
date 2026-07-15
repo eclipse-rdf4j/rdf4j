@@ -16,6 +16,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class BackupResult {
 
 	private final String backupId;
