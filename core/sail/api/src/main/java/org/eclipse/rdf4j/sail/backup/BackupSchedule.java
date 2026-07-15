@@ -34,4 +34,3 @@ public final class BackupSchedule {
 		return request;
 	}
 }
-

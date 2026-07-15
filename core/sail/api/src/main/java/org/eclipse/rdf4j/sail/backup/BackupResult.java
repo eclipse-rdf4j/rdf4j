@@ -28,7 +28,8 @@ public final class BackupResult {
 	private final String sha256;
 	private final boolean verified;
 
-	public BackupResult(String backupId, BackupType type, Instant createdAt, long startTransactionId, long endTransactionId,
+	public BackupResult(String backupId, BackupType type, Instant createdAt, long startTransactionId,
+			long endTransactionId,
 			OptionalLong baseTransactionId, Path artifactPath, String sha256, boolean verified) {
 		this.backupId = Objects.requireNonNull(backupId, "backupId");
 		this.type = Objects.requireNonNull(type, "type");
@@ -81,4 +82,3 @@ public final class BackupResult {
 		return verified;
 	}
 }
-

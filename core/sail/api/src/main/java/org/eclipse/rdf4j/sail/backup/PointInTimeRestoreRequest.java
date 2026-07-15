@@ -43,4 +43,3 @@ public final class PointInTimeRestoreRequest {
 		return verifyBeforeRestore;
 	}
 }
-
