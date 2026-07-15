@@ -12,12 +12,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -28,6 +31,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.backup.BackupCompression;
 import org.eclipse.rdf4j.sail.backup.BackupRequest;
 import org.eclipse.rdf4j.sail.backup.BackupResult;
+import org.eclipse.rdf4j.sail.backup.BackupSchedule;
+import org.eclipse.rdf4j.sail.backup.BackupScheduleStatus;
+import org.eclipse.rdf4j.sail.backup.BackupServiceStatus;
 import org.eclipse.rdf4j.sail.backup.BackupType;
 import org.eclipse.rdf4j.sail.backup.PointInTimeRestoreRequest;
 import org.eclipse.rdf4j.sail.backup.SailBackupService;
@@ -175,6 +181,51 @@ class LmdbBackupServiceTest {
 			try (var stream = Files.list(txLogDir)) {
 				assertFalse(stream.anyMatch(Files::isRegularFile));
 			}
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void reportsBackupAndScheduleFailures(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path invalidBackupTarget = tempDir.resolve("backup-target");
+		Files.createDirectories(storeDir);
+		Files.writeString(invalidBackupTarget, "not a directory");
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+
+		try {
+			SailBackupService backupService = store.getBackupService();
+
+			assertThrows(Exception.class, () -> backupService
+					.createBackup(BackupRequest.builder(invalidBackupTarget, BackupType.FULL)
+							.compression(BackupCompression.ZIP)
+							.build()));
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(vf.createStatement(vf.createIRI("urn:s1"), RDF.TYPE, vf.createIRI("urn:Thing")));
+			}
+
+			BackupServiceStatus status = backupService.getStatus();
+			assertTrue(status.getLastFailureStage().isPresent());
+			assertEquals("commit-delta", status.getLastFailureStage().get());
+			assertTrue(status.getLastFailureMessage().isPresent());
+
+			UUID scheduleId = backupService.schedule(
+					new BackupSchedule(Duration.ofMillis(50),
+							BackupRequest.builder(invalidBackupTarget, BackupType.FULL)
+									.build()));
+			Thread.sleep(200L);
+			BackupServiceStatus scheduledStatus = backupService.getStatus();
+			assertTrue(scheduledStatus.getLastFailureStage().isPresent());
+			assertEquals("scheduled-backup", scheduledStatus.getLastFailureStage().get());
+			BackupScheduleStatus scheduleStatus = backupService.getScheduleStatus(scheduleId).orElseThrow();
+			assertTrue(scheduleStatus.getLastFailureAt().isPresent());
+			assertTrue(scheduleStatus.getLastFailureMessage().isPresent());
+			assertTrue(scheduleStatus.isActive());
 		} finally {
 			repo.shutDown();
 		}
